@@ -1,0 +1,28 @@
+{
+  "standalone_rejected_source_cases": 34,
+  "pass_count": 34,
+  "baseline_candidate_modes": [
+    "off",
+    "shadow"
+  ],
+  "exact_diagnostic_fields": [
+    "code",
+    "message",
+    "line",
+    "column",
+    "span"
+  ],
+  "package_incomplete_expression": {
+    "baseline_off": "MOSS_COMPILE_ERROR invalid arithmetic expression at 2:1",
+    "baseline_shadow": "MOSS_COMPILE_ERROR invalid arithmetic expression at 2:1",
+    "candidate_off": "MOSS_COMPILE_ERROR invalid arithmetic expression at 2:1",
+    "candidate_shadow": "MOSS_COMPILE_ERROR invalid arithmetic expression at 2:1"
+  },
+  "source_free_package_oracle": {
+    "baseline_off": "PASS",
+    "candidate_off": "PASS",
+    "baseline_shadow": "PASS",
+    "candidate_shadow": "PASS",
+    "runtime_output": "advanced data source-free consumer ok\n"
+  }
+}

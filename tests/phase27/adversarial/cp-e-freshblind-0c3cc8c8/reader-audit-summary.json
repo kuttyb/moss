@@ -1,0 +1,18 @@
+{
+  "files_scanned": 9,
+  "slot_reads": 868,
+  "by_classification": {
+    "tree_or_semantic_consumer": 228,
+    "Stmt-kind name/presence/flow/forwarding": 640
+  },
+  "by_file": {
+    "src/semantic_checker.cpp": 575,
+    "src/native_generator.cpp": 174,
+    "src/fileio_semantics.inc": 55,
+    "src/file_chunk_codegen.inc": 16,
+    "src/file_chunk_lowering.inc": 2,
+    "src/executor_invoke_lowering.inc": 22,
+    "src/static_bounds.inc": 24
+  },
+  "tree_expression_text_hits": 0
+}

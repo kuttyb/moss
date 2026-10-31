@@ -1,0 +1,50 @@
+[
+  {
+    "compiler": "baseline",
+    "diagnostic": {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "line": 2,
+      "message": "heterogeneous or unresolved collection element type"
+    },
+    "mode": "off",
+    "ok": false,
+    "returncode": 1
+  },
+  {
+    "compiler": "baseline",
+    "diagnostic": {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "line": 2,
+      "message": "heterogeneous or unresolved collection element type"
+    },
+    "mode": "shadow",
+    "ok": false,
+    "returncode": 1
+  },
+  {
+    "compiler": "candidate",
+    "diagnostic": {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "line": 2,
+      "message": "heterogeneous or unresolved collection element type"
+    },
+    "mode": "off",
+    "ok": false,
+    "returncode": 1
+  },
+  {
+    "compiler": "candidate",
+    "diagnostic": {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "line": 2,
+      "message": "heterogeneous or unresolved collection element type"
+    },
+    "mode": "shadow",
+    "ok": false,
+    "returncode": 1
+  }
+]

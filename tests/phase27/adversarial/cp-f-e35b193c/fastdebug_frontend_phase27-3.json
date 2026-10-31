@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-agent2-e35b193c/build/compiler/moss-dev",
+    "debug",
+    "examples/frontend_syntax.moss"
+  ],
+  "compiler_sha256": "7e12d81c73b66fe245f8a9ea13fb539db135d8d28ca89b9c21fc3ec5c4267319",
+  "elapsed_seconds": 600.501,
+  "fixture": "examples/frontend_syntax.moss",
+  "mode": "shadow",
+  "revision": "phase27-3",
+  "source_sha": "e35b193c4f8ffca14fd820f6c938f53e1c1a0744",
+  "status": "timeout",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "timeout_seconds": 600
+}

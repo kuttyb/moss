@@ -6,7 +6,8 @@
     string saved;
     FileIOOwnerScope(string& target, string value)
         : target(target), saved(target) {
-      target = moss::strip_redundant_outer_parentheses(trim(value));
+      auto syntax = est::parse_view(trim(value));
+      target = syntax ? est::strip_grouping(*syntax) : trim(value);
     }
     ~FileIOOwnerScope() { target = std::move(saved); }
   };
@@ -27,7 +28,7 @@
         if (fileio_contains_scoped_type(field.type, visited)) return true;
     auto open = t.find('[');
     if (open == string::npos || !ends_with(t, "]")) return false;
-    auto arguments = split_top_level(
+    auto arguments = tree_split_top_level(
         t.substr(open + 1, t.size() - open - 2), ',');
     for (const auto& argument : arguments)
       if (fileio_contains_scoped_type(argument, visited)) return true;
@@ -147,10 +148,10 @@
                                             const TypeEnv& env) const {
     // `file.chunks(n) |> map(f) |> reduce(...)` is typed by the functional
     // pipeline IR; parse_member_call would misread it as `file.chunks(...)`.
-    if (parse_functional_pipeline(expression)) return std::nullopt;
+    if (functional_pipeline_from_est(expression)) return std::nullopt;
     string receiver, method;
     vector<string> args;
-    if (!parse_member_call(expression, receiver, method, args)) return std::nullopt;
+    if (!tree_parse_member_call(expression, receiver, method, args)) return std::nullopt;
     if (receiver == "FileIO" && method == "open") return string("FileIO");
     auto owner = inferred_expr_type(receiver, env);
     if (!owner) return std::nullopt;
@@ -182,7 +183,7 @@
     if (constructor) {
       string owner_receiver, owner_method;
       vector<string> owner_args;
-      if (!parse_member_call(trim(fileio_owner_initializer_), owner_receiver,
+      if (!tree_parse_member_call(trim(fileio_owner_initializer_), owner_receiver,
                              owner_method, owner_args) ||
           owner_receiver != "FileIO" || owner_method != "open")
         err(line, "FileIO.open must initialize a pinned local owner",
@@ -223,7 +224,8 @@
       fail("FileIO.chunks expects a chunk size");
     if (method == "sync" && args.size() > 1) fail("FileIO.sync accepts at most dataonly");
     if (method == "close" && !args.empty()) fail("FileIO.close accepts no arguments");
-    if (method == "sync" && args.size() == 1 && trim(args[0]) != "dataonly")
+    if (method == "sync" && args.size() == 1 &&
+        !tree_identifier_named(args[0], "dataonly"))
       fail("FileIO.sync accepts only dataonly");
     if ((method == "open" && args.size() != 2) ||
         (method == "read" && args.size() != 1 && args.size() != 2) ||
@@ -330,8 +332,10 @@
     }
     if (!constructor) check_expression(line, receiver, env);
     for (const auto& arg : args)
-      if (trim(arg) != "ro" && trim(arg) != "rw" &&
-          trim(arg) != "create" && trim(arg) != "dataonly")
+      if (!tree_identifier_named(arg, "ro") &&
+          !tree_identifier_named(arg, "rw") &&
+          !tree_identifier_named(arg, "create") &&
+          !tree_identifier_named(arg, "dataonly"))
         check_expression(line, arg, env);
     return true;
   }
@@ -416,10 +420,10 @@
 
   void fileio_lifecycle_expression(int line, const string& expression,
                                    FileIOFlow& flow) const {
-    string value = strip_redundant_outer_parentheses(trim(expression));
+    string value = tree_strip_redundant_outer_parentheses(trim(expression));
     if (value.empty()) return;
     for (const auto& operation : vector<string>{" or ", " and "})
-      if (auto binary = split_binary(value, {operation})) {
+      if (auto binary = tree_split_binary(value, {operation})) {
         fileio_lifecycle_expression(line, binary->first, flow);
         FileIOFlow right = flow;
         fileio_lifecycle_expression(line, binary->second, right);
@@ -429,14 +433,13 @@
     for (const auto& operators : vector<vector<string>>{
              {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         fileio_lifecycle_expression(line, binary->first, flow);
         fileio_lifecycle_expression(line, binary->second, flow);
         return;
       }
-    if (starts_with(value, "[") && ends_with(value, "]")) {
-      for (const auto& item : split_top_level(
-               value.substr(1, value.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(value)) {
+      for (const auto& item : *elements)
         fileio_lifecycle_expression(line, item, flow);
       return;
     }
@@ -444,9 +447,9 @@
     vector<string> call_args;
     string member_receiver, member_method;
     vector<string> member_args;
-    bool is_member_call = parse_member_call(value, member_receiver,
+    bool is_member_call = tree_parse_member_call(value, member_receiver,
                                              member_method, member_args);
-    if (!is_member_call && parse_simple_call(value, callee, call_args)) {
+    if (!is_member_call && tree_parse_simple_call(value, callee, call_args)) {
       for (const auto& argument : call_args)
         fileio_lifecycle_expression(line, argument, flow);
       auto function = functions_.find(callee);
@@ -460,7 +463,7 @@
           const auto& parameter = function->second->params[i];
           auto actual = trim(call_args[i]);
           auto actual_type = inferred_expr_type(actual, flow.types);
-          if (!simple_identifier(actual) || !actual_type ||
+          if (!tree_simple_identifier(actual) || !actual_type ||
               canonical_type_name(*actual_type) != "FileIO") continue;
           int actual_state = flow.state.count(actual) ?
               flow.state.at(actual) : 2;
@@ -513,7 +516,7 @@
     }
     string receiver, method;
     vector<string> args;
-    if (!parse_member_call(value, receiver, method, args)) return;
+    if (!tree_parse_member_call(value, receiver, method, args)) return;
     fileio_lifecycle_expression(line, receiver, flow);
     for (const auto& argument : args)
       fileio_lifecycle_expression(line, argument, flow);
@@ -560,11 +563,11 @@
     while (index < body.size() && body[index].indent == indent) {
       const Stmt& s = body[index];
       if (!flow.continuing) { ++index; continue; }
-      string use = s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Raw ||
-                   s.kind == Stmt::Kind::Echo || s.kind == Stmt::Kind::Message
-          ? s.text : s.b.empty() ? s.a : s.b;
+      const auto uses = statement_expressions(s);
       for (const auto& origin : flow.range_origin)
-        if (expression_uses(use, origin.first) &&
+        if (std::any_of(uses.begin(), uses.end(), [&](const string& use) {
+              return expression_uses(use, origin.first);
+            }) &&
             flow.batch_generation[origin.second.first] != origin.second.second)
           err(s.line, "Range '" + origin.first +
               "' outlived its RangeBatch", "RANGE_BATCH_LIFETIME");
@@ -645,8 +648,12 @@
         bool range_batch_iteration = s.kind == Stmt::Kind::For &&
             canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
                 "RangeBatch";
-        if (range_batch_iteration)
-          branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
+        if (range_batch_iteration) {
+          const auto batch_binding = tree_identifier_name(s.b);
+          if (batch_binding)
+            branch.range_origin[s.a] = {
+                *batch_binding, branch.batch_generation[*batch_binding]};
+        }
         check_fileio_lifecycle_block(body, index, indent + 1, branch,
                                      normal_exits);
         if (s.kind == Stmt::Kind::If && index < body.size() &&
@@ -674,15 +681,20 @@
         if (type && canonical_type_name(*type) == "RangeBatch")
           ++flow.batch_generation[s.a];
         string source, offset;
+        const auto source_binding = tree_identifier_name(s.b);
         if (type && canonical_type_name(*type) == "Range" &&
-            parse_index(trim(s.b), source, offset) &&
+            tree_parse_index(trim(s.b), source, offset) &&
             canonical_type_name(inferred_expr_type(source, flow.types).value_or("")) ==
-                "RangeBatch")
-          flow.range_origin[s.a] = {source, flow.batch_generation[source]};
-        else if (type && canonical_type_name(*type) == "Range" &&
-                 simple_identifier(trim(s.b)) &&
-                 flow.range_origin.count(trim(s.b)))
-          flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
+                "RangeBatch") {
+          const auto batch_binding = tree_identifier_name(source);
+          if (batch_binding)
+            flow.range_origin[s.a] = {
+                *batch_binding, flow.batch_generation[*batch_binding]};
+          else
+            flow.range_origin.erase(s.a);
+        } else if (type && canonical_type_name(*type) == "Range" &&
+                   source_binding && flow.range_origin.count(*source_binding))
+          flow.range_origin[s.a] = flow.range_origin[*source_binding];
         else flow.range_origin.erase(s.a);
         vector<string> open_args;
         if (type && canonical_type_name(*type) == "FileIO" &&
@@ -697,7 +709,7 @@
             if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
             else flow.may_be_read_only.erase(s.a);
           }
-        } else if (type && simple_identifier(s.a)) {
+        } else if (type && tree_simple_identifier(s.a)) {
           flow.types[s.a] = *type;
         }
       } else if (s.kind == Stmt::Kind::Echo) {
@@ -705,9 +717,9 @@
           fileio_lifecycle_expression(s.line, argument, flow);
       } else if (s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Raw) {
         string call_text = s.text;
-        if (s.kind == Stmt::Kind::Call && s.b.empty() && !s.a.empty() &&
-            s.a.find('.') == string::npos) {
-          call_text = s.a + "(";
+        auto call_name = tree_identifier_name(s.a);
+        if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+          call_text = *call_name + "(";
           for (size_t i = 0; i < s.args.size(); ++i) {
             if (i) call_text += ", ";
             call_text += s.args[i];
@@ -762,22 +774,17 @@
   std::optional<string> fileio_blocking_expression(
       string expression, const TypeEnv& env,
       std::set<string>& visited) const {
-    expression = strip_redundant_outer_parentheses(trim(expression));
-    if (starts_with(expression, "message ")) {
-      string target, handler;
-      vector<string> arguments;
-      if (parse_member_call(trim(expression.substr(8)), target, handler,
-                            arguments))
-        if (auto nested = fileio_blocking_message(
-                target, handler, env, arguments, visited))
-          return *nested + " via message " + target + "." + handler;
+    expression = tree_strip_redundant_outer_parentheses(trim(expression));
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(expression, message_target, message_handler,
+                           message_arguments)) {
+      if (auto nested = fileio_blocking_message(
+              message_target, message_handler, env, message_arguments, visited))
+        return *nested + " via message " + message_target + "." + message_handler;
     }
-    for (const auto& prefix : vector<string>{"echo ", "reply ",
-                                              "return ", "message "})
-      if (starts_with(expression, prefix))
-        expression = trim(expression.substr(prefix.size()));
     if (expression.empty()) return std::nullopt;
-    auto values = split_top_level(expression, ',');
+    auto values = tree_split_top_level(expression, ',');
     if (values.size() > 1) {
       for (const auto& value : values)
         if (auto nested = fileio_blocking_expression(value, env, visited))
@@ -786,7 +793,7 @@
     }
     string receiver, method;
     vector<string> args;
-    if (parse_member_call(expression, receiver, method, args)) {
+    if (tree_parse_member_call(expression, receiver, method, args)) {
       if (auto nested = fileio_blocking_expression(receiver, env, visited))
         return nested;
       for (const auto& argument : args)
@@ -799,7 +806,7 @@
       return std::nullopt;
     }
     string callee;
-    if (parse_simple_call(expression, callee, args)) {
+    if (tree_parse_simple_call(expression, callee, args)) {
       for (const auto& argument : args)
         if (auto nested = fileio_blocking_expression(argument, env, visited))
           return nested;
@@ -810,17 +817,61 @@
     for (const auto& operators : vector<vector<string>>{
              {" or ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(expression, operators)) {
+      if (auto binary = tree_split_binary(expression, operators)) {
         if (auto left = fileio_blocking_expression(binary->first, env, visited))
           return left;
         return fileio_blocking_expression(binary->second, env, visited);
       }
-    if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : split_top_level(
-               expression.substr(1, expression.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(expression))
+      for (const auto& item : *elements)
         if (auto nested = fileio_blocking_expression(item, env, visited))
           return nested;
     return std::nullopt;
+  }
+
+  std::optional<string> fileio_blocking_statement(
+      const Stmt& statement, const TypeEnv& env,
+      std::set<string>& visited) const {
+    if (statement.kind == Stmt::Kind::Message)
+      return fileio_blocking_message(statement.a, statement.b, env,
+                                     statement.args, visited);
+    auto inspect_arguments = [&](const vector<string>& arguments)
+        -> std::optional<string> {
+      for (const auto& argument : arguments)
+        if (auto nested = fileio_blocking_expression(argument, env, visited))
+          return nested;
+      return std::nullopt;
+    };
+    if (statement.kind == Stmt::Kind::Echo)
+      return inspect_arguments(statement.args);
+    if (statement.kind == Stmt::Kind::Call) {
+      if (statement.b.empty()) {
+        if (auto nested = inspect_arguments(statement.args)) return nested;
+        if (auto nested = fileio_blocking_helper(
+                statement.a, visited, env, statement.args))
+          return *nested + " via " + statement.a;
+        return std::nullopt;
+      }
+      if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+        return nested;
+      if (auto nested = inspect_arguments(statement.args)) return nested;
+      if (fileio_operation_effect(statement.b) &&
+          (statement.a == "FileIO" ||
+           canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+               "FileIO"))
+        return statement.b;
+      return std::nullopt;
+    }
+    if (statement.kind == Stmt::Kind::Raw)
+      return fileio_blocking_expression(statement.text, env, visited);
+    const string& expression =
+        statement.kind == Stmt::Kind::Return ||
+        statement.kind == Stmt::Kind::Reply ||
+        statement.kind == Stmt::Kind::If ||
+        statement.kind == Stmt::Kind::While ||
+        statement.kind == Stmt::Kind::Match
+            ? statement.a : statement.b;
+    return fileio_blocking_expression(expression, env, visited);
   }
 
   std::optional<string> fileio_blocking_helper(
@@ -842,27 +893,14 @@
             parameter.type;
     }
     for (const auto& statement : function->second->body) {
-      string expression = statement.kind == Stmt::Kind::Message
-          ? fileio_message_source(statement) :
-          statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ? statement.text :
-          statement.kind == Stmt::Kind::Reply ||
-          statement.kind == Stmt::Kind::Return ||
-          statement.kind == Stmt::Kind::If ||
-          statement.kind == Stmt::Kind::While ||
-          statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
-      auto blocking = statement.kind == Stmt::Kind::Message
-          ? fileio_blocking_message(statement.a, statement.b, env,
-                                    statement.args, visited)
-          : fileio_blocking_expression(expression, env, visited);
+      auto blocking = fileio_blocking_statement(statement, env, visited);
       if (blocking)
         return blocking;
       if (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         auto type = inferred_expr_type(statement.b, env);
-        if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
       }
     }
     if (function->second->result_expression)
@@ -916,27 +954,14 @@
           : parameter.type;
     }
     for (const auto& statement : handler->body) {
-      string expression = statement.kind == Stmt::Kind::Message
-          ? fileio_message_source(statement) :
-          statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ? statement.text :
-          statement.kind == Stmt::Kind::Reply ||
-          statement.kind == Stmt::Kind::Return ||
-          statement.kind == Stmt::Kind::If ||
-          statement.kind == Stmt::Kind::While ||
-          statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
-      auto blocking = statement.kind == Stmt::Kind::Message
-          ? fileio_blocking_message(statement.a, statement.b, env,
-                                    statement.args, visited)
-          : fileio_blocking_expression(expression, env, visited);
+      auto blocking = fileio_blocking_statement(statement, env, visited);
       if (blocking)
         return blocking;
       if (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         auto type = inferred_expr_type(statement.b, env);
-        if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
       }
     }
     return std::nullopt;
@@ -963,21 +988,8 @@
         for (const auto& route : domain.routes) env[route.name] = route.type;
         for (const auto& param : handler.params) env[param.name] = param.type;
         for (const auto& statement : handler.body) {
-          string operation = statement.kind == Stmt::Kind::Message
-              ? fileio_message_source(statement) :
-              statement.kind == Stmt::Kind::Call ||
-              statement.kind == Stmt::Kind::Raw ||
-              statement.kind == Stmt::Kind::Echo ? statement.text :
-              statement.kind == Stmt::Kind::Reply ||
-              statement.kind == Stmt::Kind::Return ||
-              statement.kind == Stmt::Kind::If ||
-              statement.kind == Stmt::Kind::While ||
-              statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
           std::set<string> visited;
-          auto blocking = statement.kind == Stmt::Kind::Message
-              ? fileio_blocking_message(statement.a, statement.b, env,
-                                        statement.args, visited)
-              : fileio_blocking_expression(operation, env, visited);
+          auto blocking = fileio_blocking_statement(statement, env, visited);
           if (blocking) {
             string states;
             for (const auto& state : other_state) {
@@ -992,7 +1004,7 @@
               statement.kind == Stmt::Kind::Var ||
               statement.kind == Stmt::Kind::Assign) {
             auto type = inferred_expr_type(statement.b, env);
-            if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+            if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
           }
         }
       }

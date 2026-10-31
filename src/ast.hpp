@@ -261,6 +261,9 @@ struct Stmt {
   string est_binding_name;
   vector<est::Handle> expression_handles;
   std::optional<est::RawForm> est_raw_form;
+  // EST pattern node for match/recover syntax. Pattern source remains on the
+  // legacy AST fields for diagnostics and serialization only.
+  std::optional<est::PatternNode> est_pattern;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
   // while this records the optional destination binding.  Keeping this on
@@ -338,6 +341,8 @@ struct FailureArm {
   // denotes the final catch-all.  `binding` is present only for the approved
   // single-concrete-error-type catch-all form.
   vector<string> patterns;
+  vector<est::PatternNode> est_patterns;
+  std::optional<est::PatternNode> est_pattern;
   string binding;
   // Reachable identities selected from the owning handler's fixed-point
   // raise set. Populated by the checker; code generation must not reconstruct

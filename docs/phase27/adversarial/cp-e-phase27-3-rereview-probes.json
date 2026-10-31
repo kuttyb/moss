@@ -1,0 +1,598 @@
+{
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-pattern.moss": {
+    "baseline": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MATCH_FIELD_NAME_MISMATCH",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 6,
+          "message": "case 'Value' requires payload field 'value' in declaration order",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:unwrap@4",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-pattern.moss",
+            "line": 6,
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-pattern.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 6,
+            "start_column": 1,
+            "start_line": 6
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MATCH_FIELD_NAME_MISMATCH",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 6,
+          "message": "case 'Value' requires payload field 'value' in declaration order",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:unwrap@4",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-pattern.moss",
+            "line": 6,
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-pattern.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 6,
+            "start_column": 1,
+            "start_line": 6
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-recovery.moss": {
+    "baseline": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "RECOVERY_FIELD_NAME_MISMATCH",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 8,
+          "message": "error variant 'Trouble.Bad' requires payload field 'code' in declaration order",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "main@5",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-recovery.moss",
+            "line": 8,
+            "span": {
+              "end_column": 1,
+              "end_line": 8,
+              "start_column": 1,
+              "start_line": 8
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-recovery.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 8,
+            "start_column": 1,
+            "start_line": 8
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "RECOVERY_FIELD_NAME_MISMATCH",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 8,
+          "message": "error variant 'Trouble.Bad' requires payload field 'code' in declaration order",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "main@5",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-recovery.moss",
+            "line": 8,
+            "span": {
+              "end_column": 1,
+              "end_line": 8,
+              "start_column": 1,
+              "start_line": 8
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-bad-recovery.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 8,
+            "start_column": 1,
+            "start_line": 8
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-for-alias.moss": {
+    "baseline": {
+      "exit": 0,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "ok": true,
+        "protocol_version": 1,
+        "result": {
+          "diagnostics": [],
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-for-alias.moss"
+        },
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 0,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "ok": true,
+        "protocol_version": 1,
+        "result": {
+          "diagnostics": [],
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-for-alias.moss"
+        },
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-malformed.moss": {
+    "baseline": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MOSS_COMPILE_ERROR",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 2,
+          "message": "invalid arithmetic expression",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "main@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-malformed.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-malformed.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MOSS_COMPILE_ERROR",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 2,
+          "message": "invalid arithmetic expression",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "main@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-malformed.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-malformed.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-multiple-declarations.moss": {
+    "baseline": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [
+            "rename the reference to an existing static symbol",
+            "declare the missing symbol or concrete type"
+          ],
+          "line": 2,
+          "message": "unknown identifier 'absent_dead'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:dead@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-multiple-declarations.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-multiple-declarations.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [
+            "rename the reference to an existing static symbol",
+            "declare the missing symbol or concrete type"
+          ],
+          "line": 2,
+          "message": "unknown identifier 'absent_dead'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:dead@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-multiple-declarations.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-multiple-declarations.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-parenthesized-enum.moss": {
+    "baseline": {
+      "exit": 0,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "ok": true,
+        "protocol_version": 1,
+        "result": {
+          "diagnostics": [],
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-parenthesized-enum.moss"
+        },
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 0,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "ok": true,
+        "protocol_version": 1,
+        "result": {
+          "diagnostics": [],
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-parenthesized-enum.moss"
+        },
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "tests/phase27/adversarial/cp-e-phase27-3-rereview-unreachable.moss": {
+    "baseline": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [
+            "rename the reference to an existing static symbol",
+            "declare the missing symbol or concrete type"
+          ],
+          "line": 2,
+          "message": "unknown identifier 'never_bound_here'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:dead@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-unreachable.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-unreachable.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    },
+    "candidate": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [
+            "rename the reference to an existing static symbol",
+            "declare the missing symbol or concrete type"
+          ],
+          "line": 2,
+          "message": "unknown identifier 'never_bound_here'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": "fn:dead@1",
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-unreachable.moss",
+            "line": 2,
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            }
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tests/phase27/adversarial/cp-e-phase27-3-rereview-unreachable.moss",
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          },
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  }
+}

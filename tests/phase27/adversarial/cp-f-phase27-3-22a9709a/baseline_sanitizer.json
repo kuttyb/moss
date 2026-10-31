@@ -1,0 +1,13 @@
+{
+  "revision": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "compiler_sha256": "3c1b8f3292b5716e384c1ed8238e6f1f4f84a3003b94cc14910f0935811b1199",
+  "sanitizers": [
+    "ASan",
+    "UBSan"
+  ],
+  "mode": "shadow",
+  "source_count": 2046,
+  "finding_count": 0,
+  "findings": [],
+  "excluded_adversarial_path_segments": true
+}

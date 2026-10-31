@@ -99,7 +99,7 @@ bool phase20_is_nontransferable_capability(const string& type) {
     return true;
   auto bracket = concrete.find('[');
   if (bracket != string::npos && ends_with(concrete, "]"))
-    for (const auto& argument : split_top_level(
+    for (const auto& argument : moss::split_top_level(
              concrete.substr(bracket + 1, concrete.size() - bracket - 2), ','))
       if (phase20_is_nontransferable_capability(trim(argument))) return true;
   return false;
@@ -320,6 +320,217 @@ bool fileio_typed(const TypeEnv& env, const string& name) {
   return fileio_typed(env.to_string_map(), name);
 }
 
+namespace {
+struct CheckerEstViewCache {
+  static constexpr size_t limit = 8192;
+  // On-demand expression views share one append-only arena for the lifetime
+  // of this check. Per-expression arenas repeat several heap allocations in
+  // specialization-heavy programs even when their views are cached.
+  std::shared_ptr<moss::est::Arena> view_arena =
+      std::make_shared<moss::est::Arena>();
+  struct Entry {
+    struct EnumCaseProjection {
+      string enum_name;
+      string case_name;
+      vector<string> fields;
+      bool called = false;
+    };
+    // Successful views own their spelling in ExpressionView::source. Keep a
+    // separate key only for parse failures so common entries do not retain
+    // the same spelling twice.
+    string failed_source;
+    std::shared_ptr<const moss::est::ExpressionView> view;
+    std::shared_ptr<const moss::est::ExpressionView> named_argument_view;
+    bool index_projection_attempted = false;
+    std::optional<std::pair<string, string>> index_projection;
+    bool member_projection_attempted = false;
+    std::optional<std::pair<string, string>> member_projection;
+    bool identifier_projection_attempted = false;
+    std::unique_ptr<string> identifier_projection;
+    std::unordered_map<string, bool> identifier_use_projections;
+    bool unary_projection_attempted = false;
+    std::unique_ptr<std::pair<string, string>> unary_projection;
+    bool enum_case_projection_attempted = false;
+    std::unique_ptr<EnumCaseProjection> enum_case_projection;
+    bool pipeline_normalization_attempted = false;
+    std::unique_ptr<string> pipeline_normalization;
+    bool expression_parens_attempted = false;
+    std::unique_ptr<string> expression_parens;
+    bool source_syntax_facts_attempted = false;
+    moss::est::SourceSyntaxIssue source_syntax_issue =
+        moss::est::SourceSyntaxIssue::None;
+    bool incomplete_trailing_operator = false;
+  };
+  std::unordered_map<size_t, vector<std::shared_ptr<Entry>>> views;
+  size_t entries = 0;
+  uint64_t hits = 0, misses = 0, after_cap = 0;
+  uint64_t projection_hits = 0, projection_misses = 0;
+  uint64_t identifier_hits = 0, identifier_misses = 0;
+  uint64_t identifier_use_hits = 0, identifier_use_misses = 0;
+  uint64_t pipeline_normalization_hits = 0, pipeline_normalization_misses = 0;
+};
+thread_local CheckerEstViewCache checker_est_view_cache;
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
+    std::string_view source);
+
+std::string_view checker_est_view_key(
+    const CheckerEstViewCache::Entry& entry) {
+  return entry.view ? std::string_view(entry.view->source)
+                    : std::string_view(entry.failed_source);
+}
+
+void reset_checker_est_view_cache() {
+  checker_est_view_cache.views.clear();
+  checker_est_view_cache.view_arena = std::make_shared<moss::est::Arena>();
+  checker_est_view_cache.entries = 0;
+  checker_est_view_cache.hits = 0;
+  checker_est_view_cache.misses = 0;
+  checker_est_view_cache.after_cap = 0;
+  checker_est_view_cache.projection_hits = 0;
+  checker_est_view_cache.projection_misses = 0;
+  checker_est_view_cache.identifier_hits = 0;
+  checker_est_view_cache.identifier_misses = 0;
+  checker_est_view_cache.identifier_use_hits = 0;
+  checker_est_view_cache.identifier_use_misses = 0;
+  checker_est_view_cache.pipeline_normalization_hits = 0;
+  checker_est_view_cache.pipeline_normalization_misses = 0;
+}
+
+CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
+  const size_t hash = std::hash<std::string_view>{}(source);
+  auto found = checker_est_view_cache.views.find(hash);
+  if (found == checker_est_view_cache.views.end()) return nullptr;
+  for (const auto& entry : found->second)
+    if (checker_est_view_key(*entry) == source) return entry.get();
+  return nullptr;
+}
+
+std::pair<moss::est::SourceSyntaxIssue, bool> checker_source_syntax_facts(
+    std::string_view source) {
+  auto* cached = checker_est_view_entry(source);
+  if (cached && cached->source_syntax_facts_attempted)
+    return {cached->source_syntax_issue,
+            cached->incomplete_trailing_operator};
+  if (!cached) {
+    (void)checker_est_view(source);
+    cached = checker_est_view_entry(source);
+  }
+  const auto issue = moss::est::source_syntax_issue(source);
+  const bool incomplete = moss::est::incomplete_trailing_operator(source);
+  if (cached) {
+    cached->source_syntax_facts_attempted = true;
+    cached->source_syntax_issue = issue;
+    cached->incomplete_trailing_operator = incomplete;
+  }
+  return {issue, incomplete};
+}
+
+std::optional<std::string_view> checker_identifier_name(
+    std::string_view source) {
+  auto* cached = checker_est_view_entry(source);
+  if (cached && cached->identifier_projection_attempted) {
+    ++checker_est_view_cache.identifier_hits;
+    return cached->identifier_projection
+        ? std::optional<std::string_view>(*cached->identifier_projection)
+        : std::nullopt;
+  }
+  ++checker_est_view_cache.identifier_misses;
+  auto syntax = cached ? cached->view : nullptr;
+  if (!cached) {
+    auto handle = checker_est_view(source);
+    syntax = handle;
+    cached = checker_est_view_entry(source);
+  }
+  string name;
+  const bool is_identifier = syntax &&
+      moss::est::project_identifier(*syntax, name);
+  if (cached) {
+    cached->identifier_projection_attempted = true;
+    if (is_identifier)
+      cached->identifier_projection = std::make_unique<string>(name);
+  }
+  if (!is_identifier) return std::nullopt;
+  if (cached && cached->identifier_projection)
+    return std::string_view(*cached->identifier_projection);
+  if (syntax && syntax->arena && syntax->root < syntax->arena->size()) {
+    if (const auto* identifier = std::get_if<moss::est::Identifier>(
+            &syntax->arena->at(syntax->root)))
+      return std::string_view(identifier->name);
+  }
+  return std::nullopt;
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
+    std::string_view source) {
+  const size_t hash = std::hash<std::string_view>{}(source);
+  auto found = checker_est_view_cache.views.find(hash);
+  if (found != checker_est_view_cache.views.end()) {
+    for (const auto& entry : found->second) {
+      if (checker_est_view_key(*entry) == source) {
+        ++checker_est_view_cache.hits;
+        return entry->view;
+      }
+    }
+  }
+  ++checker_est_view_cache.misses;
+  std::shared_ptr<const moss::est::ExpressionView> view;
+  try {
+    const auto root = moss::est::parse_expression(
+        *checker_est_view_cache.view_arena, source);
+    view = std::make_shared<moss::est::ExpressionView>(
+        moss::est::ExpressionView{checker_est_view_cache.view_arena,
+            checker_est_view_cache.view_arena.get(), root, string(source)});
+  } catch (const std::invalid_argument&) {
+  }
+  if (checker_est_view_cache.entries < CheckerEstViewCache::limit) {
+    auto entry = std::make_shared<CheckerEstViewCache::Entry>();
+    if (!view) entry->failed_source = string(source);
+    entry->view = view;
+    checker_est_view_cache.views[hash].push_back(entry);
+    ++checker_est_view_cache.entries;
+  } else {
+    ++checker_est_view_cache.after_cap;
+  }
+  return view;
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
+    std::string_view source) {
+  return checker_est_view_impl(source);
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
+    std::string_view source) {
+  const string wrapped_text = "__est_named__(" + string(source) + ")";
+  auto wrapped = checker_est_view(wrapped_text);
+  if (!wrapped || !wrapped->arena || wrapped->root >= wrapped->arena->size())
+    return {};
+  const auto make_named_view = [&]() -> std::shared_ptr<const moss::est::ExpressionView> {
+    const auto* call = std::get_if<moss::est::Call>(
+        &wrapped->arena->at(wrapped->root));
+    if (!call || call->arguments.size() != 1 ||
+        !std::holds_alternative<moss::est::NamedArgument>(
+            wrapped->arena->at(call->arguments.front())))
+      return {};
+    return std::make_shared<moss::est::ExpressionView>(
+        moss::est::ExpressionView{wrapped->owned_arena, wrapped->arena,
+            call->arguments.front(), string(source)});
+  };
+  const size_t hash = std::hash<std::string_view>{}(wrapped_text);
+  auto bucket = checker_est_view_cache.views.find(hash);
+  if (bucket == checker_est_view_cache.views.end()) return make_named_view();
+  for (auto& entry : bucket->second) {
+    if (checker_est_view_key(*entry) != wrapped_text || entry->view != wrapped)
+      continue;
+    if (entry->named_argument_view) return entry->named_argument_view;
+    entry->named_argument_view = make_named_view();
+    return entry->named_argument_view;
+  }
+  return make_named_view();
+}
+}  // namespace
+
 class Checker {
  public:
   explicit Checker(Program& p, bool legacy_signature_inference = false)
@@ -328,6 +539,7 @@ class Checker {
             std::getenv("MOSS_PROFILE_COMPILER") != nullptr ||
             std::getenv("MOSS_PROFILE_TRACE") != nullptr ||
             std::getenv("MOSS_PROFILE_HOTSPOTS") != nullptr) {
+    reset_checker_est_view_cache();
     CompilerStageTimer decl_timer("declaration_and_symbol_analysis");
     CompilerTraceRecorder::instance().set_counter("functions_analyzed", p_.functions.size());
     CompilerTraceRecorder::instance().set_counter("types_analyzed",
@@ -749,7 +961,7 @@ class Checker {
       std::set<string> assigned_binding_ids;
       for (auto& occurrence : state.statement_occurrences) {
         if (!occurrence.source || occurrence.kind != Stmt::Kind::Assign ||
-            !simple_identifier(occurrence.source->a)) {
+            !tree_simple_identifier(occurrence.source->a)) {
           if (!occurrence.assigned_binding_identity.empty())
             state.expression_occurrence_ledger_complete = false;
           continue;
@@ -1496,7 +1708,7 @@ class Checker {
                 *function.open_summary->parameter_types.front()) &&
             (*member.result)->structurally_equal(
                 *function.open_summary->result_type) &&
-            parse_simple_call(trim(function.body.front().a), target_name,
+            tree_parse_simple_call(trim(function.body.front().a), target_name,
                               arguments) &&
             arguments.size() == function.params.size() &&
             std::all_of(arguments.begin(), arguments.end(),
@@ -1566,7 +1778,7 @@ class Checker {
                 leaf_summary.result_type &&
                 (*leaf_member.result)->structurally_equal(
                     *leaf_summary.result_type) &&
-                parse_member_call(trim(leaf.body.front().a), receiver,
+                tree_parse_member_call(trim(leaf.body.front().a), receiver,
                                   member_name, member_arguments) &&
                 receiver == leaf.params.front().name &&
                 member_name == member.member_name &&
@@ -1772,6 +1984,34 @@ class Checker {
                   << parse_cache_failed_member_before_cap_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_success_after_cap|"
                   << parse_cache_success_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_hits|"
+                  << checker_est_view_cache.hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_misses|"
+                  << checker_est_view_cache.misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_entries|"
+                  << checker_est_view_cache.entries << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_after_cap|"
+                  << checker_est_view_cache.after_cap << '\n';
+        std::cerr << "MOSS_PROFILE|est_projection_cache_hits|"
+                  << checker_est_view_cache.projection_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_projection_cache_misses|"
+                  << checker_est_view_cache.projection_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_cache_hits|"
+                  << checker_est_view_cache.identifier_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_cache_misses|"
+                  << checker_est_view_cache.identifier_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_use_cache_hits|"
+                  << checker_est_view_cache.identifier_use_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_use_cache_misses|"
+                  << checker_est_view_cache.identifier_use_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_pipeline_normalization_hits|"
+                  << checker_est_view_cache.pipeline_normalization_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_pipeline_normalization_misses|"
+                  << checker_est_view_cache.pipeline_normalization_misses << '\n';
+        std::cerr << "MOSS_PROFILE|binary_parse_overflow_entries|"
+                  << binary_parse_cache_overflow_entries_ << '\n';
+        std::cerr << "MOSS_PROFILE|binary_parse_overflow_hits|"
+                  << binary_parse_cache_overflow_hits_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_after_cap|"
                   << parse_cache_failed_simple_after_cap_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_failed_member_after_cap|"
@@ -1853,6 +2093,10 @@ class Checker {
   // Syntax-only results live for one check. The cap prevents a large source
   // file with mostly distinct expressions from retaining every spelling.
   static constexpr size_t parse_cache_limit_ = 32768;
+  // Binary expressions remain hot after the shared W1 cache reaches its cap:
+  // the same syntax projections recur across concrete specializations. Keep
+  // a separate bounded tail cache so repeated calls do not reparse/recompare.
+  static constexpr size_t binary_parse_cache_overflow_limit_ = 32768;
   struct BinaryParseEntry {
     vector<string> operators;
     std::optional<std::pair<string, string>> result;
@@ -1872,6 +2116,10 @@ class Checker {
   // Results must depend only on the key; the miss path must not read checker
   // state. Keep all five parsers below pure with respect to their keys.
   mutable std::unordered_map<string, vector<BinaryParseEntry>> binary_parse_cache_;
+  mutable std::unordered_map<string, vector<BinaryParseEntry>>
+      binary_parse_cache_overflow_;
+  mutable size_t binary_parse_cache_overflow_entries_ = 0;
+  mutable uint64_t binary_parse_cache_overflow_hits_ = 0;
   mutable std::unordered_map<string, CallParseEntry> simple_call_parse_cache_;
   mutable std::unordered_map<string, MemberParseEntry> member_call_parse_cache_;
   mutable std::unordered_map<string, std::unordered_map<char, vector<string>>>
@@ -2403,7 +2651,7 @@ class Checker {
       const string value = trim(expression);
       if (auto local = resolved_local(value)) return local;
       string base, index;
-      if (parse_index(value, base, index)) {
+      if (tree_parse_index(value, base, index)) {
         auto container = known_expression(base);
         if (container && container->kind == moss::TypeKind::Builtin) {
           if ((container->name == "vector" || container->name == "queue") &&
@@ -2413,10 +2661,10 @@ class Checker {
             return solver.resolve(container->type_args[1]);
         }
       }
-      const size_t dot = value.rfind('.');
-      if (dot != string::npos) {
-        auto receiver = known_expression(value.substr(0, dot));
-        if (auto field = nominal_field(receiver, value.substr(dot + 1)))
+      string member_base, member_name;
+      if (tree_parse_member_access(value, member_base, member_name)) {
+        auto receiver = known_expression(member_base);
+        if (auto field = nominal_field(receiver, member_name))
           return solver.resolve(field);
       }
       return nullptr;
@@ -2469,7 +2717,7 @@ class Checker {
         const string& callback_source) {
       if (stage.operation_id != "functional:Map" ||
           stage.source_operands.size() != 1 ||
-          trim(stage.source_operands.front()) != trim(callback_source) ||
+          !tree_expressions_structurally_equal(stage.source_operands.front(), callback_source) ||
           !expression_uses(callback_source, "_") ||
           stage.semantic_target_id != "builtin:functional:Map" ||
           !stage.input_type_ref || !stage.output_type_ref)
@@ -2582,8 +2830,8 @@ class Checker {
                 child.child_role == "call-argument:0")
               arguments.push_back(&child);
           if (arguments.size() != 1 ||
-              trim(statement->args.front()) !=
-                  trim(arguments.front()->source_expression) ||
+              !tree_expressions_structurally_equal(statement->args.front(),
+                  trim(arguments.front()->source_expression)) ||
               !arguments.front()->checked_type ||
               !arguments.front()->checked_type->structurally_equal(
                   *moss::Type::primitive("bool"))) {
@@ -2609,20 +2857,20 @@ class Checker {
             occurrence.source_operands.size() != 2)
           return false;
         string label, key;
-        if (!parse_named_argument(occurrence.source_operands[1], label, key) ||
+        if (!tree_parse_named_argument(occurrence.source_operands[1], label, key) ||
             label != "by")
           return false;
         string wrapper;
         vector<string> wrapper_arguments;
         bool reverse_order = false;
-        if (parse_simple_call(key, wrapper, wrapper_arguments) &&
+        if (tree_parse_simple_call(key, wrapper, wrapper_arguments) &&
             wrapper == "Reverse") {
           if (wrapper_arguments.size() != 1) return false;
           reverse_order = true;
           key = trim(wrapper_arguments.front());
         }
         const auto named_target = functions_.find(key);
-        if (!plain_identifier(key) || named_target == functions_.end() ||
+        if (!tree_plain_identifier(key) || named_target == functions_.end() ||
             named_target->second->semantic_callable_id !=
                 callable.semantic_callable_id ||
             callable.reverse_order != reverse_order)
@@ -2640,19 +2888,19 @@ class Checker {
           "Map", "Filter", "Reduce", "Sum", "Count", "Any", "All"};
       if (!known_stages.count(stage_name)) return false;
       if (occurrence.source_operands.empty()) {
-        if (trim(occurrence.source_expression) != stage_name) return false;
+        if (!tree_identifier_named(occurrence.source_expression, stage_name)) return false;
       } else {
         string source_stage;
         vector<string> source_arguments;
-        if (!parse_simple_call(occurrence.source_expression, source_stage,
+        if (!tree_parse_simple_call(occurrence.source_expression, source_stage,
                                source_arguments) ||
             source_stage != stage_name ||
             source_arguments.size() != occurrence.source_operands.size())
           return false;
         for (std::size_t index = 0;
              index < source_arguments.size(); ++index)
-          if (trim(source_arguments[index]) !=
-              trim(occurrence.source_operands[index]))
+          if (!tree_expressions_structurally_equal(source_arguments[index],
+              trim(occurrence.source_operands[index])))
             return false;
       }
       std::size_t callback_operand = 0;
@@ -2699,7 +2947,7 @@ class Checker {
             occurrence.semantic_target_id ==
                 "placeholder:" + source_callback)
           continue;
-        if (plain_identifier(source_callback)) {
+        if (tree_plain_identifier(source_callback)) {
           bool parameter_found = false;
           for (std::size_t parameter = 0;
                parameter < function.params.size(); ++parameter)
@@ -2747,8 +2995,8 @@ class Checker {
           return false;
         }
         string receiver, method;
-        if (parse_bound_method_callable(source_callback, receiver, method)) {
-          if (!plain_identifier(receiver) ||
+        if (tree_parse_bound_method_callable(source_callback, receiver, method)) {
+          if (!tree_plain_identifier(receiver) ||
               occurrence.statement_id >= body.statement_occurrences.size())
             return false;
           const Stmt* statement =
@@ -2767,7 +3015,7 @@ class Checker {
         return false;
       }
       const string& target_id = occurrence.semantic_target_id;
-      if (!plain_identifier(source_callback) ||
+      if (!tree_plain_identifier(source_callback) ||
           target_id != named_callback->second->semantic_callable_id ||
           !expected_dependencies.count(target_id) ||
           !has_matching_call_edge(occurrence, *named_callback->second))
@@ -2865,8 +3113,8 @@ class Checker {
           constraint.arguments.size() != occurrence.source_operands.size())
         return false;
       for (std::size_t index = 0; index < constraint.arguments.size(); ++index)
-        if (trim(constraint.arguments[index]) !=
-            trim(occurrence.source_operands[index]))
+        if (!tree_expressions_structurally_equal(constraint.arguments[index],
+            trim(occurrence.source_operands[index])))
           return false;
     }
     return callable_constraint_count == 1;
@@ -2949,11 +3197,12 @@ class Checker {
               BodyTypeState::ExpressionOccurrence::Kind::Call ||
           !starts_with(expression.semantic_target_id, "binding:pending:"))
         continue;
-      const auto open_paren = expression.source_expression.find('(');
-      const string callee = trim(expression.source_expression.substr(
-          0, open_paren == string::npos ? string::npos : open_paren));
+      string callee;
+      std::vector<string> call_arguments;
+      const bool projected_call = tree_parse_simple_call(
+          expression.source_expression, callee, call_arguments);
       if (callee.empty() || expression.statement_id >=
-              state.statement_occurrences.size()) {
+              state.statement_occurrences.size() || !projected_call) {
         expression.semantic_target_id = "binding:unresolved:" + callee;
         state.expression_occurrence_ledger_complete = false;
         continue;
@@ -3064,8 +3313,8 @@ class Checker {
           bool arguments_match = true;
           for (std::size_t index = 0;
                index < constraint.arguments.size(); ++index)
-            if (trim(constraint.arguments[index]) !=
-                trim(expression.source_operands[index]))
+            if (!tree_expressions_structurally_equal(constraint.arguments[index],
+                trim(expression.source_operands[index])))
               arguments_match = false;
           if (!arguments_match) continue;
           matching_constraint_indices.push_back(constraint_index);
@@ -3967,7 +4216,7 @@ class Checker {
       }
       const bool introduced_assignment =
           source_statement.kind == Stmt::Kind::Assign &&
-          simple_identifier(source_statement.a) &&
+          tree_simple_identifier(source_statement.a) &&
           binding_fact != state.binding_facts.end() &&
           binding_fact->second.introduced;
       const bool introduced_for_binding =
@@ -4038,7 +4287,7 @@ class Checker {
     // prior binding fact and post-write binding occurrence agree exactly.
     for (const auto& source_statement : function.body) {
       if (source_statement.kind != Stmt::Kind::Assign ||
-          !simple_identifier(source_statement.a)) continue;
+          !tree_simple_identifier(source_statement.a)) continue;
       const auto fact = state.binding_facts.find(&source_statement);
       const auto statement = state.statement_occurrence_ids.find(
           &source_statement);
@@ -4219,37 +4468,61 @@ class Checker {
         case BodyTypeState::ExpressionOccurrence::Kind::Literal: {
           const string source = trim(occurrence.source_expression);
           if (type->kind != TypeKind::Primitive) return std::nullopt;
+          const auto* literal_arena = expression_arena(
+              occurrence.est_arena_index);
+          std::optional<est::ExpressionView> parsed_syntax;
+          est::ExpressionView syntax;
+          est::ExprId literal_expression = occurrence.est_expr_id;
+          if (!literal_arena || literal_expression >= literal_arena->size()) {
+            parsed_syntax = est::parse_view(occurrence.source_expression);
+            if (!parsed_syntax) return std::nullopt;
+            syntax = *parsed_syntax;
+            literal_arena = syntax.arena;
+            literal_expression = syntax.root;
+          } else {
+            syntax = est::view(*literal_arena, literal_expression,
+                               occurrence.source_expression);
+          }
+          const auto literal_class = est::root_literal_class(syntax);
+          const auto spelling = est::root_literal_spelling(syntax);
+          const auto* direct_literal = std::get_if<est::Literal>(
+              &literal_arena->at(literal_expression));
           if (type->name == "bool" &&
-              (source == "true" || source == "false")) {
+              direct_literal &&
+              direct_literal->literal_class == est::LiteralClass::Boolean &&
+              spelling) {
             result.kind = checked_ir::ExprKind::BoolLiteral;
-            result.literal_value = source;
-          } else if (type->name == "int") {
-            std::size_t first_digit = !source.empty() && source.front() == '-'
-                ? 1 : 0;
-            if (first_digit == source.size() ||
-                !std::all_of(source.begin() +
-                        static_cast<std::ptrdiff_t>(first_digit), source.end(),
-                    [](unsigned char character) {
-                      return moss::ascii_is_digit(character);
-                    }))
-              return std::nullopt;
-            try {
-              std::size_t consumed = 0;
-              const auto number = std::stoll(source, &consumed, 10);
-              if (consumed != source.size()) return std::nullopt;
-              result.kind = checked_ir::ExprKind::IntegerLiteral;
-              result.literal_value = std::to_string(number);
-            } catch (const std::exception&) {
-              return std::nullopt;
+            result.literal_value = *spelling;
+          } else if (type->name == "int" &&
+                     est::decimal_integer_literal(syntax, true, false)) {
+            const auto* root = &literal_arena->at(literal_expression);
+            const est::Literal* integer_literal =
+                std::get_if<est::Literal>(root);
+            if (const auto* unary = std::get_if<est::Unary>(root)) {
+              if (unary->op != "-") return std::nullopt;
+              integer_literal = std::get_if<est::Literal>(
+                  &literal_arena->at(unary->operand));
             }
+            if (!integer_literal ||
+                integer_literal->literal_class != est::LiteralClass::Integer ||
+                !integer_literal->decimal_integer_digits)
+              return std::nullopt;
+            const auto number = est::numeric_literal_value(syntax);
+            if (!number || number->kind != NumericLiteral::Kind::Int)
+              return std::nullopt;
+            result.kind = checked_ir::ExprKind::IntegerLiteral;
+            result.literal_value = std::to_string(number->integer);
           } else if (type->name == "float" &&
-                     decimal_float_literal(source)) {
+                     literal_class == est::LiteralClass::Float) {
             result.kind = checked_ir::ExprKind::FloatLiteral;
             result.literal_value = source;
           } else if (type->name == "string" &&
-                     valid_checked_string_literal_spelling(source)) {
+                     direct_literal &&
+                     direct_literal->literal_class == est::LiteralClass::String &&
+                     spelling &&
+                     valid_checked_string_literal_spelling(*spelling)) {
             result.kind = checked_ir::ExprKind::StringLiteral;
-            result.literal_value = source;
+            result.literal_value = *spelling;
           } else {
             return std::nullopt;
           }
@@ -4720,7 +4993,7 @@ class Checker {
               const auto ordinal =
                   occurrence.semantic_operand_ordinals[index];
               if (ordinal >= payloads.size() || payloads[ordinal] ||
-                  !parse_named_argument(occurrence.source_operands[index],
+                  !tree_parse_named_argument(occurrence.source_operands[index],
                                         field_name, field_value) ||
                   children[index]->child_role != "field:" + field_name)
                 return std::nullopt;
@@ -4895,7 +5168,7 @@ class Checker {
           auto expression = expression_for("initializer");
           if (!expression || !expression->type) return std::nullopt;
           const auto fact = state.binding_facts.find(&source);
-          if (simple_identifier(source.a) &&
+          if (tree_simple_identifier(source.a) &&
               fact != state.binding_facts.end() && fact->second.introduced) {
             const auto& occurrence = state.statement_occurrences.at(id);
             const auto local = local_ordinals.find(fact->second.identity);
@@ -4921,7 +5194,7 @@ class Checker {
             lowered.expr = std::move(*expression);
             return lowered;
           }
-          if (!simple_identifier(source.a)) {
+          if (!tree_simple_identifier(source.a)) {
             // Indexed assignment consumes the exact checked place tree. This
             // initial producer subset admits only a mutable local Map target;
             // the decoder independently enforces ordinal, mutability, and
@@ -5536,8 +5809,9 @@ class Checker {
               unsigned depth) -> std::optional<moss::CheckedBodyExprV1> {
         if (depth > 8) return std::nullopt;
         string value = trim(source);
+        const auto value_binding = tree_identifier_name(value);
         for (size_t index = 0; index < function.params.size(); ++index)
-          if (value == function.params[index].name &&
+          if (value_binding && *value_binding == function.params[index].name &&
               index < summary.parameter_types.size() &&
               summary.parameter_types[index] &&
               (!expected || summary.parameter_types[index]->structurally_equal(*expected)))
@@ -5545,21 +5819,24 @@ class Checker {
                 moss::CheckedBodyExprV1::Kind::Parameter,
                 summary.parameter_types[index],
                 static_cast<std::uint32_t>(index), {}, {}, {}, 0};
-        if (!value.empty() && std::all_of(value.begin(), value.end(),
-              [](unsigned char c) { return moss::ascii_is_digit(c); })) {
-          try {
-            size_t consumed = 0;
-            const auto number = std::stoll(value, &consumed, 10);
-            if (consumed == value.size()) {
-              auto integer = moss::Type::primitive("int");
-              if (!expected || integer->structurally_equal(*expected))
-                return moss::CheckedBodyExprV1{
-                    moss::CheckedBodyExprV1::Kind::Integer,
-                    integer, 0, std::to_string(number), {}, {}, 0};
-            }
-          } catch (const std::exception&) {}
+        auto syntax = checker_est_view(value);
+        const auto literal_root = syntax && syntax->arena &&
+                syntax->root < syntax->arena->size()
+            ? moss::est::unparenthesized(*syntax->arena, syntax->root)
+            : moss::est::ExprId{};
+        if (syntax && syntax->arena &&
+            std::holds_alternative<moss::est::Literal>(
+                syntax->arena->at(literal_root))) {
+          auto decoded = tree_numeric_literal_value(value);
+          if (decoded && decoded->kind == moss::NumericLiteral::Kind::Int) {
+            auto integer = moss::Type::primitive("int");
+            if (!expected || integer->structurally_equal(*expected))
+              return moss::CheckedBodyExprV1{
+                  moss::CheckedBodyExprV1::Kind::Integer,
+                  integer, 0, std::to_string(decoded->integer), {}, {}, 0};
+          }
         }
-        auto binary = split_binary(value, {"+"});
+        auto binary = tree_split_binary(value, {"+"});
         if (binary) {
           auto left = emit(binary->first, nullptr, depth + 1);
           auto right = emit(binary->second, nullptr, depth + 1);
@@ -5568,18 +5845,19 @@ class Checker {
                 moss::CheckedBodyExprV1::Kind::Add,
                 expected, 0, {}, {*left, *right}, {}, 0};
         }
-        const size_t dot = value.find('.');
-        if (dot != string::npos && value.find('.', dot + 1) == string::npos) {
-          auto receiver = emit(value.substr(0, dot), nullptr, depth + 1);
+        string receiver_expression, field_name;
+        if (tree_parse_member_access(value, receiver_expression, field_name) &&
+            tree_plain_identifier(field_name)) {
+          auto receiver = emit(receiver_expression, nullptr, depth + 1);
           if (receiver && receiver->type &&
               receiver->type->kind == moss::TypeKind::NominalInstance &&
               receiver->type->declaration) {
             auto field = BodyTypeState::nominal_field(
-                receiver->type, value.substr(dot + 1));
+                receiver->type, field_name);
             if (field && (!expected || field->structurally_equal(*expected))) {
               const auto& slots = receiver->type->declaration->fields;
               for (size_t index = 0; index < slots.size(); ++index)
-                if (slots[index].name == value.substr(dot + 1))
+                if (slots[index].name == field_name)
                   return moss::CheckedBodyExprV1{
                       moss::CheckedBodyExprV1::Kind::Field,
                       field, 0, {}, {*receiver},
@@ -5588,7 +5866,7 @@ class Checker {
             }
           }
         }
-        if (auto elements = parse_vector_literal(value);
+        if (auto elements = tree_parse_vector_literal(value);
             elements && expected && expected->kind == moss::TypeKind::Builtin &&
             expected->name == "vector" && expected->type_args.size() == 1) {
           vector<moss::CheckedBodyExprV1> children;
@@ -5603,7 +5881,7 @@ class Checker {
         }
         string callee;
         vector<string> arguments;
-        if (parse_simple_call(value, callee, arguments) && expected) {
+        if (tree_parse_simple_call(value, callee, arguments) && expected) {
           // A source spelling and a dependency-set membership do not identify
           // this call occurrence. Require one exact checker call edge at the
           // return site before retaining a callable target in the body IR.
@@ -5893,11 +6171,11 @@ class Checker {
       vector<moss::MemberDispatchRequirement> forwarded_member_requirements;
       if (function.body.size() == 2 &&
           function.body.back().kind == Stmt::Kind::Return &&
-          plain_identifier(trim(function.body.back().a)) &&
+          tree_plain_identifier(trim(function.body.back().a)) &&
           (function.body.front().kind == Stmt::Kind::Let ||
            function.body.front().kind == Stmt::Kind::Var ||
            function.body.front().kind == Stmt::Kind::Assign) &&
-          trim(function.body.front().a) == trim(function.body.back().a) &&
+          tree_expressions_structurally_equal(function.body.front().a, function.body.back().a) &&
           function.body.front().indent == function.body.back().indent)
         local_result = std::make_pair(trim(function.body.front().b),
                                       function.body.front().line);
@@ -5905,7 +6183,7 @@ class Checker {
           function.body.front().kind == Stmt::Kind::Return) {
         string target;
         vector<string> arguments;
-        if (parse_simple_call(trim(function.body.front().a), target, arguments)) {
+        if (tree_parse_simple_call(trim(function.body.front().a), target, arguments)) {
           string qualified = target;
           if (!functions_.count(qualified) && !objects_.count(qualified) &&
               !function.defining_module.empty())
@@ -5924,7 +6202,7 @@ class Checker {
       if (local_result) {
         string target;
         vector<string> arguments;
-        if (parse_simple_call(local_result->first, target, arguments)) {
+        if (tree_parse_simple_call(local_result->first, target, arguments)) {
           string qualified = target;
           if (!functions_.count(qualified) && !objects_.count(qualified) &&
               !function.defining_module.empty())
@@ -5942,13 +6220,16 @@ class Checker {
                 auto found = std::find_if(arguments.begin(), arguments.end(),
                     [&](const string& argument) {
                   string name, value;
-                  return parse_named_argument(argument, name, value) &&
+                  return tree_parse_named_argument(argument, name, value) &&
                       name == field.name;
                 });
                 if (found == arguments.end()) { valid = false; break; }
                 string name, value;
-                (void)parse_named_argument(*found, name, value);
-                auto parameter = parameter_variables.find(trim(value));
+                (void)tree_parse_named_argument(*found, name, value);
+                const auto value_binding = tree_identifier_name(value);
+                auto parameter = value_binding
+                    ? parameter_variables.find(*value_binding)
+                    : parameter_variables.end();
                 moss::TypeRef term = parameter != parameter_variables.end()
                     ? parameter->second : type_term(
                         constraint_expression_type(function, value).value_or(""));
@@ -5985,7 +6266,10 @@ class Checker {
               std::map<std::uint32_t, moss::TypeRef> replacements;
               bool valid = exact_edge;
               for (size_t index = 0; valid && index < arguments.size(); ++index) {
-                auto argument = parameter_variables.find(trim(arguments[index]));
+                const auto argument_binding = tree_identifier_name(arguments[index]);
+                auto argument = argument_binding
+                    ? parameter_variables.find(*argument_binding)
+                    : parameter_variables.end();
                 const auto& formal = source.parameter_types[index];
                 if (argument == parameter_variables.end() || !formal ||
                     formal->kind != moss::TypeKind::InferenceVar ||
@@ -6093,7 +6377,7 @@ class Checker {
                 ? &function.body.back().a : nullptr;
         string callee;
         vector<string> arguments;
-        if (returned && parse_simple_call(trim(*returned), callee, arguments) &&
+        if (returned && tree_parse_simple_call(trim(*returned), callee, arguments) &&
             std::any_of(function.constraints.begin(), function.constraints.end(),
                         [&](const Constraint& constraint) {
               return constraint.kind == ConstraintKind::Callable &&
@@ -6122,7 +6406,7 @@ class Checker {
                   function.body.back().kind == Stmt::Kind::Return
                   ? &function.body.back().a : nullptr;
           if (returned) {
-            if (trim(*returned) != result.substr(9)) {
+            if (!tree_identifier_named(*returned, result.substr(9))) {
               TypeEnv parameter_entry;
               for (const auto& parameter : function.params)
                 parameter_entry[parameter.name] = parameter.type.empty()
@@ -6136,7 +6420,7 @@ class Checker {
               else {
                 string receiver, member;
                 vector<string> arguments;
-                if (parse_member_call(trim(*returned), receiver, member,
+                if (tree_parse_member_call(trim(*returned), receiver, member,
                                       arguments) &&
                     std::any_of(function.constraints.begin(),
                                 function.constraints.end(),
@@ -6185,13 +6469,14 @@ class Checker {
           (function.body.empty() ||
            (function.body.size() == 1 &&
             function.body.front().kind == Stmt::Kind::Return))) {
-        const string expression = trim(*single_result_expression);
-        const size_t dot = expression.find('.');
-        if (dot != string::npos &&
-            expression.find('.', dot + 1) == string::npos) {
-          auto receiver = parameter_variables.find(trim(expression.substr(0, dot)));
-          const string field = trim(expression.substr(dot + 1));
-          if (receiver != parameter_variables.end() && plain_identifier(field)) {
+        string receiver_expression, field;
+        if (tree_parse_member_access(*single_result_expression,
+                                     receiver_expression, field)) {
+          const auto receiver_binding = tree_identifier_name(receiver_expression);
+          auto receiver = receiver_binding
+              ? parameter_variables.find(*receiver_binding)
+              : parameter_variables.end();
+          if (receiver != parameter_variables.end() && tree_plain_identifier(field)) {
             const auto& type = receiver->second;
             if (type && type->kind == moss::TypeKind::NominalInstance &&
                 type->declaration) {
@@ -6271,7 +6556,10 @@ class Checker {
               break;
           }
           for (const auto& argument : constraint.arguments) {
-            auto parameter = parameter_variables.find(trim(argument));
+            const auto argument_binding = tree_identifier_name(argument);
+            auto parameter = argument_binding
+                ? parameter_variables.find(*argument_binding)
+                : parameter_variables.end();
             moss::TypeRef term = parameter != parameter_variables.end()
                 ? parameter->second : type_term(
                       constraint_expression_type(function, argument).value_or(""));
@@ -6313,7 +6601,10 @@ class Checker {
                          function.line, 1, function.semantic_callable_id,
                          member.requirement_id};
         for (const auto& argument : constraint.arguments) {
-          auto parameter = parameter_variables.find(trim(argument));
+          const auto argument_binding = tree_identifier_name(argument);
+          auto parameter = argument_binding
+              ? parameter_variables.find(*argument_binding)
+              : parameter_variables.end();
           moss::TypeRef term = parameter != parameter_variables.end()
               ? parameter->second : type_term(
                     constraint_expression_type(function, argument).value_or(""));
@@ -7387,7 +7678,7 @@ class Checker {
             candidate.subject == function.params.front().name;
       });
       if (loop_count != 1 || !loop ||
-          trim(loop->b) != function.params.front().name ||
+          !tree_identifier_named(loop->b, function.params.front().name) ||
           constraint == function.constraints.end())
         continue;
       const auto loop_occurrence_id =
@@ -7773,10 +8064,10 @@ class Checker {
       if (!normal_type || !recovered_type ||
           normal_type->to_canonical_string() !=
               state.solver.resolve(formal)->to_canonical_string() ||
-          trim(state.expression_occurrences[
+          !tree_identifier_named(state.expression_occurrences[
               state.expression_root_slots.at(
-                  {normal_return->id, "return-value"})].source_expression) !=
-              function.params.front().name ||
+                  {normal_return->id, "return-value"})].source_expression,
+              function.params.front().name) ||
           raise_root == state.expression_root_slots.end() ||
           raise_root->second >= state.expression_occurrences.size())
         continue;
@@ -8547,7 +8838,7 @@ class Checker {
     string original = trim(expression);
     if (auto pipeline = functional_pipeline_from_est(original)) {
       for (const auto& parameter : function.params) {
-        if (trim(pipeline->source) == parameter.name &&
+        if (tree_identifier_named(pipeline->source, parameter.name) &&
             (parameter.type.empty() || parameter.type == "vector")) {
           auto iterable = std::find_if(function.constraints.begin(),
               function.constraints.end(), [&](const Constraint& constraint) {
@@ -8615,17 +8906,17 @@ class Checker {
         function.set_return_type("_functional_result:" + function.name);
       return;
     }
-    string e = normalize_pipeline(std::move(original));
+    string e = tree_normalize_pipeline(std::move(original));
     if (e.empty()) return;
     auto constrain_boolean_operand = [&](const string& operand) {
-      string candidate = strip_redundant_outer_parentheses(trim(operand));
+      string candidate = tree_strip_redundant_outer_parentheses(trim(operand));
       for (auto& parameter : function.params)
         if (parameter.type.empty() && candidate == parameter.name)
           parameter.bind_type(moss::Type::primitive("bool"));
       derive_expression_constraints(function, operand, "bool");
     };
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(e, {op})) {
+      if (auto binary = tree_split_binary(e, {op})) {
         constrain_boolean_operand(binary->first);
         constrain_boolean_operand(binary->second);
         if (expected_result == "$function_result" &&
@@ -8634,8 +8925,10 @@ class Checker {
         return;
       }
     }
-    if (starts_with(e, "not ")) {
-      constrain_boolean_operand(trim(e.substr(4)));
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "not") {
+      constrain_boolean_operand(unary_operand);
       if (expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
         function.bind_return_type(moss::Type::primitive("bool"));
@@ -8643,10 +8936,10 @@ class Checker {
     }
     string receiver, method;
     vector<string> member_args;
-    bool member_call = parse_member_call(e, receiver, method, member_args);
+    bool member_call = tree_parse_member_call(e, receiver, method, member_args);
     for (const auto& parameter : function.params) {
       bool trait_receiver = !parameter.type.empty() && traits_.count(parameter.type);
-      if (member_call && trim(receiver) == parameter.name &&
+      if (member_call && tree_identifier_named(receiver, parameter.name) &&
           (parameter.type.empty() || trait_receiver)) {
         add_method_requirement(function, parameter.name, method, member_args,
                                expected_result);
@@ -8679,8 +8972,8 @@ class Checker {
       }
     }
     string ib, ii;
-    if (parse_index(e, ib, ii)) {
-      for (const auto& p : function.params) if (trim(ib) == p.name && p.type.empty()) {
+    if (tree_parse_index(e, ib, ii)) {
+      for (const auto& p : function.params) if (tree_identifier_named(ib, p.name) && p.type.empty()) {
         auto existing = std::find_if(function.constraints.begin(),
             function.constraints.end(), [&](const Constraint& requirement) {
               return requirement.kind == ConstraintKind::Indexable &&
@@ -8701,7 +8994,7 @@ class Checker {
     for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                   {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                   {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(e, ops)) {
+      if (auto binary = tree_split_binary(e, ops)) {
         auto left_type = constraint_expression_type(function, binary->first);
         auto right_type = constraint_expression_type(function, binary->second);
         string left_expected = right_type.value_or("");
@@ -8718,11 +9011,12 @@ class Checker {
         derive_expression_constraints(function, binary->first, left_expected);
         derive_expression_constraints(function, binary->second, right_expected);
       }
-    if (!e.empty() && e.front() == '~') {
-      derive_expression_constraints(function, trim(e.substr(1)), "int");
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      derive_expression_constraints(function, unary_operand, "int");
     }
     string callee; vector<string> call_args;
-    if (parse_simple_call(e, callee, call_args) && !member_call) {
+    if (tree_parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
         if (callee == parameter.name && parameter.type.empty()) {
           auto existing = std::find_if(function.constraints.begin(),
@@ -9173,7 +9467,7 @@ class Checker {
           if (contains_domain_handle(field.type)) return true;
     auto bracket = value.find('[');
     if (bracket != string::npos && value.back() == ']')
-      for (const auto& argument : split_top_level(
+      for (const auto& argument : tree_split_top_level(
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
@@ -9215,7 +9509,7 @@ class Checker {
       }
       auto bracket = name.find('[');
       if (bracket != string::npos && ends_with(name, "]"))
-        for (const auto& argument : split_top_level(
+        for (const auto& argument : tree_split_top_level(
                  name.substr(bracket + 1, name.size() - bracket - 2), ','))
           visit_type(argument, file, line);
     };
@@ -9552,9 +9846,9 @@ class Checker {
                 "AMBIGUOUS_RECOVERY_BINDING");
           arm_env[arm.binding] = *error_types.begin();
         }
-        if (arm.patterns.size() == 1)
+        if (arm.est_patterns.size() == 1)
           for (const auto& binding :
-               phase21_pattern_bindings(arm.line, arm.patterns.front()))
+               phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
             arm_env[binding.first] = binding.second;
         arm.captures.clear();
         for (const auto& name :
@@ -9649,12 +9943,25 @@ class Checker {
       if (!parsed || !(*parsed)->is_closed() || contains_internal_placeholder(type)) {
         int err_line = fallback_line;
         for (const auto& stmt : body) {
-          if (stmt.a == name) {
+          const auto expression_name = tree_identifier_name(stmt.a);
+          if (expression_name && *expression_name == name) {
             err_line = stmt.line;
             break;
           }
         }
-        err(err_line, "unbound open result type for variable '" + name + "'; heterogeneous or unresolved collection element type",
+        const string expected_binding_name = name;
+        const bool incomplete_initializer = std::any_of(
+            body.begin(), body.end(), [&](const Stmt& statement) {
+          return statement.kind == Stmt::Kind::Assign &&
+              statement.est_binding_name == expected_binding_name &&
+              moss::est::incomplete_collection_initializer_syntax(
+                  statement.b);
+        });
+        if (incomplete_initializer) {
+          err(err_line, "heterogeneous or unresolved collection element type");
+        }
+        err(err_line, "unbound open result type for variable '" + name +
+            "'; heterogeneous or unresolved collection element type",
             "TYPE_AMBIGUOUS_OPEN_RESULT");
       }
     }
@@ -9679,7 +9986,7 @@ class Checker {
   }
 
   static bool legacy_spawn_expression(const string& expression) {
-    return starts_with(trim(expression), "spawn ");
+    return moss::est::begins_with_keyword(trim(expression), "spawn");
   }
 
   void build_concrete_domain_graph() {
@@ -9696,10 +10003,10 @@ class Checker {
     auto parse_bindings = [&](const string& expression) {
       vector<std::pair<string,string>> result;
       string callee; vector<string> args;
-      if (!parse_simple_call(expression, callee, args)) return result;
+      if (!tree_parse_simple_call(expression, callee, args)) return result;
       for (const auto& arg : args) {
         string name, value;
-        if (!parse_named_argument(arg, name, value)) continue;
+        if (!tree_parse_named_argument(arg, name, value)) continue;
         result.emplace_back(std::move(name), std::move(value));
       }
       return result;
@@ -9711,7 +10018,7 @@ class Checker {
     for (const auto& statement : p_.main->body) {
       auto constructed = domain_constructor(statement.b);
       if (!constructed || statement.indent != 0) continue;
-      if (!plain_identifier(statement.a)) continue;
+      if (!tree_plain_identifier(statement.a)) continue;
       if (by_binding.count(statement.a))
         fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
       const Domain& domain = *domains_.at(*constructed);
@@ -9765,7 +10072,7 @@ class Checker {
       if (constructed) {
         if (statement.indent != 0 ||
             !(statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-              statement.kind == Stmt::Kind::Assign) || !plain_identifier(statement.a))
+              statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
           fail_at(statement,
                   "domain construction is only allowed as a top-level binding in main's composition prefix");
         if (!composition_open)
@@ -9777,11 +10084,11 @@ class Checker {
 
         string constructor_name;
         vector<string> constructor_arguments;
-        if (!parse_simple_call(statement.b, constructor_name, constructor_arguments))
+        if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
           fail_at(statement, "domain construction requires a direct constructor call");
         for (const auto& argument : constructor_arguments) {
           string member_name, member_value;
-          if (!parse_named_argument(argument, member_name, member_value))
+          if (!tree_parse_named_argument(argument, member_name, member_value))
             fail_at(statement,
                    "domain constructors require named member bindings such as 'field: value'");
         }
@@ -9797,7 +10104,9 @@ class Checker {
           if (route == domain.routes.end() && field == domain.state.end())
             fail_at(statement, "unknown member '" + pair.first + "' in domain " + domain.name + " constructor");
           if (route != domain.routes.end()) {
-            auto target = binding_types.find(trim(pair.second));
+            const auto target_binding = tree_identifier_name(pair.second);
+            auto target = target_binding
+                ? binding_types.find(*target_binding) : binding_types.end();
             if (target == binding_types.end())
               fail_at(statement, "route '" + pair.first + "' must bind a concrete domain instance in main");
             if (!same_type(target->second, route->type))
@@ -9806,7 +10115,8 @@ class Checker {
             ConcreteRouteEdge edge;
             edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
             edge.route = pair.first;
-            edge.target_instance = p_.concrete_domain_graph.instances[by_binding.at(trim(pair.second))].identity;
+            edge.target_instance = p_.concrete_domain_graph.instances[
+                by_binding.at(*target_binding)].identity;
             edge.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
             edge.line = statement.line;
             p_.concrete_domain_graph.edges.push_back(std::move(edge));
@@ -10017,7 +10327,7 @@ class Checker {
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
       if (statement.kind != Stmt::Kind::Match) return false;
       return std::any_of(f.params.begin(), f.params.end(), [&](const Param& parameter) {
-        return parameter.type.empty() && trim(statement.a) == parameter.name;
+        return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
       });
     });
     OwnershipEnv ownership;
@@ -10083,7 +10393,7 @@ class Checker {
     string e = trim(expr);
     string name;
     vector<string> args;
-    if (!parse_simple_call(e, name, args) || !domains_.count(name))
+    if (!tree_parse_simple_call(e, name, args) || !domains_.count(name))
       return std::nullopt;
     return name;
   }
@@ -10103,7 +10413,7 @@ class Checker {
     // rejected here instead of reaching an engine that cannot lower it.
     for (const auto& argument : args) {
       string label, value;
-      if (parse_named_argument(argument, label, value))
+      if (tree_parse_named_argument(argument, label, value))
         err(line, "message " + dit->second->name + "." + message +
             " does not accept named argument '" + trim(argument) +
             "'; message arguments are positional in Moss v0.1, so remove the "
@@ -10131,17 +10441,20 @@ class Checker {
   static std::optional<string> obvious_expr_type(const string& expression,
                                                   const TypeEnv& env) {
     string e = trim(expression);
-    if (e == "None") return "_none";
-    if (e == "true" || e == "false") return "bool";
-    if (is_single_string_literal(e)) return "string";
-    if (is_single_char_literal(e)) return "char";
-    auto local = env.find(e);
-    if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
-    size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
-    if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
-          return moss::ascii_is_digit(static_cast<unsigned char>(c));
-        })) return "int";
-    if (decimal_float_literal(e)) return "float";
+    if (tree_identifier_named(e, "None")) return "_none";
+    const auto literal = tree_literal_class(e);
+    if (literal == moss::est::LiteralClass::Boolean) return "bool";
+    if (literal == moss::est::LiteralClass::String) return "string";
+    if (literal == moss::est::LiteralClass::Character) return "char";
+    auto identifier = tree_identifier_name(e);
+    if (!identifier && tree_placeholder_expression(e)) identifier = "_";
+    if (identifier) {
+      auto local = env.find(*identifier);
+      if (local != env.end() && local->second && local->second->name != "_value")
+        return local->second->to_canonical_string();
+    }
+    if (tree_decimal_integer_literal(e, true, false)) return "int";
+    if (literal == moss::est::LiteralClass::Float) return "float";
     return std::nullopt;
   }
 
@@ -10182,7 +10495,7 @@ class Checker {
     }
 
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(value, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(value, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       if (!receiver_type) return std::nullopt;
       const Method* method = resolve_method(
@@ -10414,7 +10727,7 @@ class Checker {
       p_.semantic_uses.push_back(
           {target, "type_use", source_file, line, enclosing, {}});
     if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
+      for (const auto& argument : tree_split_top_level(
                type.substr(bracket + 1, type.size() - bracket - 2), ','))
         retain_resolved_type_uses(argument, source_file, line, enclosing);
   }
@@ -10479,7 +10792,7 @@ class Checker {
       for (const auto& statement : p_.main->body) {
         string constructor;
         vector<string> arguments;
-        if (!parse_simple_call(statement.b, constructor, arguments)) continue;
+        if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
         auto domain = domains_.find(canonical_type_name(constructor));
         if (domain == domains_.end()) continue;
         p_.semantic_uses.push_back(
@@ -10492,15 +10805,143 @@ class Checker {
     }
   }
 
-  static bool simple_identifier(const string& value) {
-    string s = trim(value);
-    if (s.empty() || !(moss::ascii_is_alpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
-    return std::all_of(s.begin() + 1, s.end(), [](char c) {
-      return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
-    });
+  static bool tree_simple_identifier(const string& value) {
+    return checker_identifier_name(value).has_value();
+  }
+
+  static bool tree_plain_identifier(const string& value) {
+    return checker_identifier_name(value).has_value();
+  }
+
+  static bool tree_identifier_named(const string& value, std::string_view name) {
+    auto identifier = checker_identifier_name(value);
+    return identifier && *identifier == name;
+  }
+
+  static std::optional<string> tree_identifier_name(const string& value) {
+    auto name = checker_identifier_name(value);
+    return name ? std::optional<string>(string(*name)) : std::nullopt;
+  }
+
+  static bool tree_is_fileio_open(const string& value) {
+    auto syntax = checker_est_view(value);
+    vector<string> arguments;
+    return syntax && moss::est::project_fileio_open(*syntax, arguments);
+  }
+
+  static moss::est::LiteralClass tree_literal_class(const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax ? moss::est::root_literal_class(*syntax)
+                  : moss::est::LiteralClass::None;
+  }
+
+  static std::optional<moss::DecodedNumber> tree_numeric_literal_value(
+      const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax ? moss::est::numeric_literal_value(*syntax)
+                  : std::nullopt;
+  }
+
+  static bool tree_decimal_integer_literal(const string& value,
+                                           bool allow_sign,
+                                           bool allow_underscores) {
+    auto syntax = checker_est_view(value);
+    return syntax && moss::est::decimal_integer_literal(
+        *syntax, allow_sign, allow_underscores);
+  }
+
+  static bool tree_positive_decimal_integer_literal(const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax && moss::est::positive_decimal_integer_literal(*syntax);
+  }
+
+  static std::optional<string> tree_empty_typed_vector_constructor(
+      const string& value) {
+    auto syntax = checker_est_view(value);
+    if (!syntax) return std::nullopt;
+    auto type = moss::est::project_empty_constructor_type(*syntax);
+    if (!type) return std::nullopt;
+    string canonical = canonical_type_name(*type);
+    return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+        ? std::optional<string>(std::move(canonical)) : std::nullopt;
   }
 
   static bool expression_uses(const string& expression, const string& name) {
+    auto syntax = checker_est_view(expression);
+    auto* cached = checker_est_view_entry(expression);
+    bool tree = false;
+    if (cached) {
+      auto found = cached->identifier_use_projections.find(name);
+      if (found != cached->identifier_use_projections.end()) {
+        ++checker_est_view_cache.identifier_use_hits;
+        tree = found->second;
+      } else {
+        ++checker_est_view_cache.identifier_use_misses;
+        tree = syntax && moss::est::contains_identifier(*syntax, name);
+        // Expression syntax is immutable. Repeated specialization checks ask
+        // the same occurrence whether it uses the same lexical names; retain
+        // a small bounded projection cache beside the parsed view.
+        constexpr size_t kMaxIdentifierUseProjections = 64;
+        if (cached->identifier_use_projections.size() <
+            kMaxIdentifierUseProjections)
+          cached->identifier_use_projections.emplace(name, tree);
+      }
+    } else {
+      ++checker_est_view_cache.identifier_use_misses;
+      tree = syntax && moss::est::contains_identifier(*syntax, name);
+    }
+    if (!syntax) {
+      // Callable-parameter invocations with named arguments are rejected by
+      // the checker, but their individual argument fragments still flow
+      // through effect analysis before that diagnostic is produced. Preserve
+      // the old identifier-use parity for those fragments structurally.
+      auto named_argument = moss::est::parse_named_argument_view(expression);
+      if (named_argument)
+        tree |= moss::est::expression_mentions(*named_argument, name);
+      // A few checker helpers pass a comma-delimited operand list rather than
+      // one expression (for example FileIO range tuples). Parse those children
+      // as independent EST expressions instead of scanning their spelling.
+      auto children = moss::est::parse_delimited_children(expression, ',');
+      if (children && children->size() > 1)
+        for (const auto& child : *children) {
+          auto child_tree = checker_est_view(child);
+          auto* child_cached = checker_est_view_entry(child);
+          bool child_uses = false;
+          if (child_cached) {
+            auto found = child_cached->identifier_use_projections.find(name);
+            if (found != child_cached->identifier_use_projections.end()) {
+              ++checker_est_view_cache.identifier_use_hits;
+              child_uses = found->second;
+            } else {
+              ++checker_est_view_cache.identifier_use_misses;
+              child_uses = child_tree &&
+                  moss::est::contains_identifier(*child_tree, name);
+              constexpr size_t kMaxIdentifierUseProjections = 64;
+              if (child_cached->identifier_use_projections.size() <
+                  kMaxIdentifierUseProjections)
+                child_cached->identifier_use_projections.emplace(name,
+                                                                  child_uses);
+            }
+          } else {
+            ++checker_est_view_cache.identifier_use_misses;
+            child_uses = child_tree &&
+                moss::est::contains_identifier(*child_tree, name);
+          }
+          tree |= child_uses;
+        }
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const bool legacy = legacy_expression_uses(expression, name);
+      if (tree != legacy)
+        std::fprintf(stderr, "EST identifier-use mismatch <%s> name=<%s> tree=%d legacy=%d\n",
+                     expression.c_str(), name.c_str(), tree, legacy);
+      assert(tree == legacy);
+    }
+    return tree;
+  }
+
+  static bool legacy_expression_uses(const string& expression,
+                                     const string& name) {
     bool in_string = false, escaped = false;
     for (size_t i = 0; i < expression.size();) {
       char c = expression[i];
@@ -10549,7 +10990,237 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
-  bool parse_simple_call(const string& text, string& callee,
+  static bool tree_expressions_structurally_equal(const string& left,
+                                        const string& right) {
+    auto left_tree = checker_est_view(left);
+    auto right_tree = checker_est_view(right);
+    return left_tree && right_tree &&
+        moss::est::expressions_equal(*left_tree, *right_tree);
+  }
+
+  static bool tree_empty_constructor_named(const string& source,
+                                           std::string_view name) {
+    auto syntax = checker_est_view(source);
+    return syntax && moss::est::empty_constructor_named(*syntax, name);
+  }
+
+  static bool tree_empty_vector_literal(const string& source) {
+    auto syntax = checker_est_view(source);
+    return syntax && moss::est::empty_vector_literal(*syntax);
+  }
+
+  static bool tree_placeholder_expression(const string& source) {
+    auto syntax = checker_est_view(source);
+    return syntax && moss::est::placeholder_expression(*syntax);
+  }
+
+  bool tree_parse_fileio_open(const string& text, vector<string>& arguments) const {
+    auto syntax = checker_est_view(text);
+    return syntax && moss::est::project_fileio_open(*syntax, arguments);
+  }
+
+  bool tree_parse_fileio_chunks_source(const string& text, string& receiver,
+                                       string& size_expression) const {
+    auto syntax = checker_est_view(text);
+    return syntax && moss::est::project_fileio_chunks_source(
+        *syntax, receiver, size_expression);
+  }
+
+  bool tree_parse_executor_chain(
+      const string& text,
+      vector<std::pair<string, vector<string>>>& calls) const {
+    auto syntax = checker_est_view(text);
+    return syntax && moss::est::project_executor_chain(*syntax, calls);
+  }
+
+  bool tree_parse_bound_method_callable(const string& text, string& receiver,
+                                        string& method) const {
+    auto syntax = checker_est_view(text);
+    return syntax && moss::est::project_bound_method(*syntax, receiver, method);
+  }
+
+  static string tree_normalize_pipeline(string text) {
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->pipeline_normalization_attempted) {
+      ++checker_est_view_cache.pipeline_normalization_hits;
+      return *cached->pipeline_normalization;
+    }
+    ++checker_est_view_cache.pipeline_normalization_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    string normalized = syntax
+        ? moss::est::normalize_pipeline_tree(*syntax) : trim(text);
+    if (cached) {
+      cached->pipeline_normalization_attempted = true;
+      cached->pipeline_normalization =
+          std::make_unique<string>(normalized);
+    }
+    return normalized;
+  }
+
+  static bool tree_parse_index(const string& text, string& base, string& index) {
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->index_projection_attempted) {
+      ++checker_est_view_cache.projection_hits;
+      if (!cached->index_projection) return false;
+      base = cached->index_projection->first;
+      index = cached->index_projection->second;
+      return true;
+    }
+    ++checker_est_view_cache.projection_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_index(*syntax, base, index);
+    if (cached) {
+      cached->index_projection_attempted = true;
+      if (matched) cached->index_projection = std::make_pair(base, index);
+    }
+    return matched;
+  }
+
+  static bool tree_index_expression(const string& text) {
+    string base, index;
+    return tree_parse_index(text, base, index);
+  }
+
+  static bool tree_member_access(const string& text) {
+    string base, member;
+    return tree_parse_member_access(text, base, member);
+  }
+
+  static bool tree_root_member_access_named(const string& text,
+                                            std::string_view base_name,
+                                            std::string_view member_name) {
+    const auto syntax = checker_est_view(text);
+    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
+      return false;
+    const auto* member = std::get_if<moss::est::Member>(
+        &syntax->arena->at(syntax->root));
+    if (!member || member->name != member_name) return false;
+    const auto* base = std::get_if<moss::est::Identifier>(
+        &syntax->arena->at(member->base));
+    if (!base || base->name != base_name) return false;
+    const auto root_span = syntax->arena->span(syntax->root);
+    const auto base_span = syntax->arena->span(member->base);
+    const auto exact_root_size = base_name.size() + 1 + member_name.size();
+    return root_span.source_begin == 0 &&
+        root_span.source_end == text.size() &&
+        base_span.source_begin == 0 &&
+        base_span.source_end == base_name.size() &&
+        root_span.source_end - root_span.source_begin == exact_root_size;
+  }
+
+  static bool tree_parse_member_access(const string& text, string& base,
+                                       string& member) {
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->member_projection_attempted) {
+      ++checker_est_view_cache.projection_hits;
+      if (!cached->member_projection) return false;
+      base = cached->member_projection->first;
+      member = cached->member_projection->second;
+      return true;
+    }
+    ++checker_est_view_cache.projection_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_member_access(*syntax, base, member);
+    if (cached) {
+      cached->member_projection_attempted = true;
+      if (matched) cached->member_projection = std::make_pair(base, member);
+    }
+    return matched;
+  }
+
+  static bool tree_parse_unary(const string& text, string& operation,
+                               string& operand) {
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->unary_projection_attempted) {
+      if (!cached->unary_projection) return false;
+      operation = cached->unary_projection->first;
+      operand = cached->unary_projection->second;
+      return true;
+    }
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_unary(*syntax, operation, operand);
+    if (cached) {
+      cached->unary_projection_attempted = true;
+      if (matched)
+        cached->unary_projection =
+            std::make_unique<std::pair<string, string>>(operation, operand);
+    }
+    return matched;
+  }
+
+  static bool tree_parse_message(const string& text, string& target,
+                                 string& handler, vector<string>& arguments) {
+    auto syntax = checker_est_view(text);
+    return syntax && moss::est::project_message(
+        *syntax, target, handler, arguments);
+  }
+
+  static std::optional<char> tree_named_argument_separator(const string& text) {
+    auto syntax = checker_named_argument_view(text);
+    return syntax ? moss::est::project_named_argument_separator(*syntax)
+                  : std::nullopt;
+  }
+
+  static bool tree_parse_named_argument(const string& text, string& name,
+                                 string& value) {
+    auto syntax = checker_named_argument_view(text);
+    return syntax && moss::est::project_named_argument(*syntax, name, value);
+  }
+
+  static std::optional<vector<string>> tree_parse_vector_literal(const string& text) {
+    auto syntax = checker_est_view(text);
+    if (syntax) return moss::est::project_vector_literal(*syntax);
+    auto recovered = moss::est::parse_vector_literal_children(text);
+    if (moss::est::mode() == moss::est::Mode::Shadow)
+      assert(moss::parse_vector_literal(text) == recovered);
+    return recovered;
+  }
+
+  static std::optional<vector<string>> tree_parse_tuple_elements(
+      const string& text) {
+    auto syntax = checker_est_view(text);
+    return syntax ? moss::est::project_tuple_elements(*syntax) : std::nullopt;
+  }
+
+  static bool tree_parse_enum_case_expression(const string& text, string& enum_name,
+                                       string& case_name, vector<string>& fields,
+                                       bool& called) {
+    called = false;
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->enum_case_projection_attempted) {
+      if (!cached->enum_case_projection) return false;
+      enum_name = cached->enum_case_projection->enum_name;
+      case_name = cached->enum_case_projection->case_name;
+      fields = cached->enum_case_projection->fields;
+      called = cached->enum_case_projection->called;
+      return true;
+    }
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax && moss::est::project_enum_case(
+        *syntax, enum_name, case_name, fields, &called);
+    if (cached) {
+      cached->enum_case_projection_attempted = true;
+      if (matched) {
+        cached->enum_case_projection =
+            std::make_unique<CheckerEstViewCache::Entry::EnumCaseProjection>();
+        cached->enum_case_projection->enum_name = enum_name;
+        cached->enum_case_projection->case_name = case_name;
+        cached->enum_case_projection->fields = fields;
+        cached->enum_case_projection->called = called;
+      }
+    }
+    return matched;
+  }
+
+  bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
@@ -10566,7 +11237,9 @@ class Checker {
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     // Simple-call parsing leaves its output parameters untouched on failure,
     // so a negative result can be replayed without recording caller state.
-    if (!moss::parse_simple_call(text, callee, args)) {
+    auto syntax = checker_est_view(text);
+    const bool tree_ok = syntax && moss::est::project_simple_call(*syntax, callee, args);
+    if (!tree_ok) {
       if (profile_concrete_effect_work_) {
         if (cache_full) ++parse_cache_failed_simple_after_cap_;
         else ++parse_cache_failed_simple_before_cap_;
@@ -10597,7 +11270,7 @@ class Checker {
     return true;
   }
 
-  bool parse_member_call(const string& text, string& receiver, string& member,
+  bool tree_parse_member_call(const string& text, string& receiver, string& member,
                          vector<string>& args) const {
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
@@ -10620,8 +11293,26 @@ class Checker {
     bool outputs_written = false;
     // Member parsing can assign receiver/member before rejecting an empty
     // side. Preserve those observable output mutations for negative hits.
-    if (!moss::parse_member_call(text, receiver, member, args,
-                                 &outputs_written)) {
+    auto syntax = checker_est_view(text);
+    const bool tree_ok = syntax && moss::est::project_member_call(
+        *syntax, receiver, member, args, &outputs_written);
+    // Preserve the legacy failure output contract for a leading-dot call by
+    // trying the same parse with a synthetic receiver, then dropping it.
+    // The EST node query owns the shape check; arguments remain untouched.
+    if (!syntax && moss::est::leading_dot_member_call_fragment(text)) {
+      auto partial = checker_est_view("_" + text);
+      string synthetic_receiver, partial_member;
+      vector<string> partial_args;
+      bool partial_outputs = false;
+      if (partial && moss::est::project_member_call(
+              *partial, synthetic_receiver, partial_member, partial_args,
+              &partial_outputs) && partial_outputs) {
+        receiver.clear();
+        member = std::move(partial_member);
+        outputs_written = true;
+      }
+    }
+    if (!tree_ok) {
       if (profile_concrete_effect_work_) {
         if (cache_full) ++parse_cache_failed_member_after_cap_;
         else ++parse_cache_failed_member_before_cap_;
@@ -10658,7 +11349,7 @@ class Checker {
     return true;
   }
 
-  vector<string> split_top_level(const string& text, char delimiter) const {
+  vector<string> tree_split_top_level(const string& text, char delimiter) const {
     auto found = top_level_parse_cache_.find(text);
     if (found != top_level_parse_cache_.end()) {
       auto split = found->second.find(delimiter);
@@ -10669,7 +11360,13 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = moss::split_top_level(text, delimiter);
+    vector<string> result;
+    auto syntax = checker_est_view(text);
+    auto projected = syntax ? moss::est::project_delimited_children(*syntax, delimiter)
+                            : moss::est::parse_delimited_children(text, delimiter);
+    if (syntax && delimiter == ',')
+      moss::est::assert_delimited_parity(*syntax, delimiter, projected);
+    if (projected) result = std::move(*projected);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -10680,7 +11377,7 @@ class Checker {
     return result;
   }
 
-  string strip_redundant_outer_parentheses(const string& text) const {
+  string tree_strip_redundant_outer_parentheses(const string& text) const {
     auto found = outer_parentheses_parse_cache_.find(text);
     if (found != outer_parentheses_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -10688,7 +11385,12 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = moss::strip_redundant_outer_parentheses(text);
+    auto syntax = checker_est_view(text);
+    string result;
+    if (syntax) result = moss::est::strip_grouping(*syntax);
+    else if (auto fragment = moss::est::outer_grouping_fragment(text))
+      result = std::move(*fragment);
+    else result = trim(text);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -10699,7 +11401,26 @@ class Checker {
     return result;
   }
 
-  std::optional<std::pair<string,string>> split_binary(const string& expression,
+  static bool tree_outer_grouping(const string& text) {
+    auto syntax = checker_est_view(text);
+    bool result = false;
+    if (syntax && syntax->arena && syntax->root < syntax->arena->size()) {
+      const auto& node = syntax->arena->at(syntax->root);
+      result = std::holds_alternative<moss::est::Parenthesized>(node) ||
+          std::holds_alternative<moss::est::Tuple>(node);
+    } else {
+      result = moss::est::outer_grouping_fragment(text).has_value();
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const string source = trim(text);
+      const bool legacy = source.size() >= 2 && source.front() == '(' &&
+          source.back() == ')' && matching_paren(source, 0) == source.size() - 1;
+      assert(result == legacy);
+    }
+    return result;
+  }
+
+  std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
     auto found = binary_parse_cache_.find(expression);
     if (found != binary_parse_cache_.end()) {
@@ -10710,11 +11431,85 @@ class Checker {
         }
       }
     }
+    auto overflow = binary_parse_cache_overflow_.find(expression);
+    if (overflow != binary_parse_cache_overflow_.end()) {
+      for (const auto& entry : overflow->second) {
+        if (entry.operators == operators) {
+          ++parse_cache_hits_;
+          ++binary_parse_cache_overflow_hits_;
+          return entry.result;
+        }
+      }
+    }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = split_binary_uncached(expression, operators);
+    std::optional<std::pair<string,string>> result;
+    const bool named_argument =
+        static_cast<bool>(checker_named_argument_view(expression));
+    auto syntax = checker_est_view(expression);
+    if (!named_argument && !syntax)
+      syntax = checker_est_view("(" + expression + ")");
+    const auto [source_issue, trailing_operator] =
+        checker_source_syntax_facts(expression);
+    const bool incomplete_trailing_operator = !syntax && trailing_operator;
+    const bool invalid_operator_adjacency = source_issue ==
+        moss::est::SourceSyntaxIssue::InvalidOperatorAdjacency;
+    if (!named_argument && syntax) {
+      std::pair<string,string> operands;
+      string operation;
+      const bool is_tuple = std::holds_alternative<moss::est::Tuple>(
+          syntax->arena->at(syntax->root));
+      if ((is_tuple || syntax->source == expression) &&
+          moss::est::project_binary(*syntax, operators, operands, operation))
+        result = std::move(operands);
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const auto legacy = split_binary_uncached(expression, operators);
+      // A named-argument node proves that operators in its value are nested
+      // inside the argument, despite the legacy top-level text scan.
+      bool exponent_star_substring = false;
+      if (legacy && !result && syntax) {
+        const auto root = moss::est::unparenthesized(*syntax->arena,
+                                                     syntax->root);
+        if (const auto* binary = std::get_if<moss::est::Binary>(
+                &syntax->arena->at(root)); binary && binary->op == "**")
+          exponent_star_substring = std::find(operators.begin(), operators.end(),
+                                               "*") != operators.end();
+      }
+      // The legacy splitter sees the first `*` inside unsupported `**`.
+      // The EST root supplies the independent operator boundary.
+      // On a rejected `if ...: ... else: ...` expression, the legacy scanner
+      // also sees comparisons in the statement body even though EST correctly
+      // refuses to build an expression root. The diagnostic oracle is
+      // INVALID_EXPRESSION in both modes (see the CP-E adversarial probe).
+      const bool legacy_invalid_if_comparison = legacy && !result && !syntax &&
+          moss::est::has_rejected_if_else_fragment_shape(expression);
+      // The EST parser treats an unparenthesized comparison suffix as part of
+      // the final pipeline stage. The legacy reverse scan instead finds that
+      // suffix as a top-level binary expression, even though the baseline
+      // rejects it as an unknown pipeline stage. Parenthesizing the pipeline
+      // makes the comparison an ordinary Binary root.
+      const bool legacy_pipeline_comparison = legacy && !result && syntax &&
+          std::holds_alternative<moss::est::Pipeline>(
+              syntax->arena->at(syntax->root));
+      // Incomplete trailing operators are rejected by the expression parser.
+      // The legacy splitter can still return a partial pair such as ("2", "")
+      // for an input like 2 +; validation emits the shared compile diagnostic
+      // before any semantic interpretation.
+      if (result != legacy && !(named_argument && legacy && !result) &&
+          !exponent_star_substring && !legacy_invalid_if_comparison &&
+          !legacy_pipeline_comparison && !incomplete_trailing_operator &&
+          !invalid_operator_adjacency) {
+        assert(result == legacy);
+      }
+    }
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+      if (binary_parse_cache_overflow_entries_ <
+          binary_parse_cache_overflow_limit_) {
+        binary_parse_cache_overflow_[expression].push_back({operators, result});
+        ++binary_parse_cache_overflow_entries_;
+      }
     } else {
       binary_parse_cache_[expression].push_back({operators, result});
       ++parse_cache_entries_;
@@ -10801,7 +11596,7 @@ class Checker {
                                   const std::pair<string, string>& split,
                                   const vector<string>& operators) const {
     for (const auto& op : operators)
-      if (auto candidate = split_binary(expression, {op}); candidate && *candidate == split)
+      if (auto candidate = tree_split_binary(expression, {op}); candidate && *candidate == split)
         return op;
     return "";
   }
@@ -10811,42 +11606,13 @@ class Checker {
   // `%` by such a divisor cannot fail in any engine. `-1` stays conservative
   // (Int.MIN / -1 overflows; every engine currently wraps it), and every other
   // divisor (names, calls, arithmetic, 0) stays a possible panic.
-  static bool proven_safe_integer_divisor(const string& divisor) {
-    string value = trim(divisor);
-    bool negative = false;
-    for (;;) {
-      if (value.size() >= 2 && value.front() == '(' && value.back() == ')') {
-        int depth = 0;
-        bool encloses = true;
-        for (size_t index = 0; index < value.size(); ++index) {
-          if (value[index] == '(') ++depth;
-          else if (value[index] == ')' && --depth == 0 && index + 1 != value.size()) {
-            encloses = false;
-            break;
-          }
-        }
-        if (!encloses) return false;
-        value = trim(value.substr(1, value.size() - 2));
-        continue;
-      }
-      if (!value.empty() && (value.front() == '-' || value.front() == '+')) {
-        if (value.front() == '-') negative = !negative;
-        value = trim(value.substr(1));
-        continue;
-      }
-      break;
-    }
-    if (value.empty() ||
-        !std::all_of(value.begin(), value.end(), [](char ch) {
-          return moss::ascii_is_digit(static_cast<unsigned char>(ch));
-        }))
+  bool proven_safe_integer_divisor(const string& divisor) const {
+    auto syntax = checker_est_view(divisor);
+    if (!syntax || !moss::est::decimal_integer_literal(*syntax, true, false))
       return false;
-    // Compare digit strings: no numeric conversion, so no overflow. A literal
-    // outside Int range is rejected separately (INT_LITERAL_OUT_OF_RANGE).
-    const size_t significant = value.find_first_not_of('0');
-    if (significant == string::npos) return false;            // 0
-    if (negative && value.substr(significant) == "1") return false;  // -1
-    return true;
+    auto decoded = moss::est::numeric_literal_value(*syntax);
+    return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
+        decoded->integer != 0 && decoded->integer != -1;
   }
 
   struct BuiltinCallSemantics {
@@ -10875,7 +11641,7 @@ class Checker {
       std::map<string, string> supplied_types;
       for (const auto& arg : args) {
         string fn, fv;
-        if (parse_named_argument(arg, fn, fv)) {
+        if (tree_parse_named_argument(arg, fn, fv)) {
           auto ft = inferred_expr_type(fv, env);
           if (ft) supplied_types[fn] = canonical_type_name(*ft);
         }
@@ -11051,8 +11817,8 @@ class Checker {
     auto primitive = [](const char* name) -> R {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
-    string original = strip_redundant_outer_parentheses(expression);
-    if (original == "_" && current_body_types_ &&
+    string original = tree_strip_redundant_outer_parentheses(expression);
+    if (tree_placeholder_expression(original) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
       return InferredExpr{
@@ -11078,7 +11844,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
+      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
         return inferred_expr(arguments[0], env);
     }
@@ -11086,15 +11852,17 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
         return inferred_leaf(enum_name);
     }
-    if (starts_with(original, "message ")) {
-      string receiver, handler;
-      vector<string> args;
-      if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !plain_identifier(receiver) || !plain_identifier(handler))
+    string message_target, message_handler;
+    vector<string> message_args;
+    if (tree_parse_message(original, message_target, message_handler,
+                           message_args)) {
+      string receiver = message_target;
+      string handler = message_handler;
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         return std::nullopt;
       auto binding = env.find(receiver);
       if (binding == env.end()) return std::nullopt;
@@ -11106,20 +11874,22 @@ class Checker {
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return inferred_leaf(*functional);
-    string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    string e = tree_strip_redundant_outer_parentheses(tree_normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(e, {op})) {
+      if (auto binary = tree_split_binary(e, {op})) {
         return primitive_term(operand_term(binary->first), "bool") &&
                 primitive_term(operand_term(binary->second), "bool")
             ? primitive("bool") : std::nullopt;
       }
     }
-    if (starts_with(e, "not "))
-      return primitive_term(operand_term(trim(e.substr(4))), "bool")
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "not")
+      return primitive_term(operand_term(unary_operand), "bool")
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
-    if (plain_identifier(e)) {
+    if (tree_plain_identifier(e)) {
       auto fn_it = functions_.find(e);
       if (fn_it != functions_.end() && fn_it->second) {
         const string& cid = !fn_it->second->semantic_callable_id.empty()
@@ -11128,28 +11898,28 @@ class Checker {
         return InferredExpr{nullptr, "callable:" + e, cid};
       }
     }
-    if (auto typed_vector = typed_empty_vector_constructor(e))
+    if (auto typed_vector = tree_empty_typed_vector_constructor(e))
       return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
     if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(e, open_arguments)) return primitive("FileIO");
+      if (tree_parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
-    if (auto parts = parse_vector_literal(e)) {
+    if (auto parts = tree_parse_vector_literal(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
       vector<InferredExpr> elements;
       // Preserve S's contextual empty-vector siblings using checked terms.
       const bool has_typed_vector_sibling = std::any_of(
           parts->begin(), parts->end(), [&](const string& part) {
-            if (trim(part) == "[]") return false;
+            if (tree_empty_vector_literal(part)) return false;
             auto item = inferred_expr(part, env);
             return item && item->term &&
                 applied_builtin(item->term, {"vector"});
           });
       for (const auto& part : *parts) {
-        if (has_typed_vector_sibling && trim(part) == "[]") continue;
+        if (has_typed_vector_sibling && tree_empty_vector_literal(part)) continue;
         auto element = inferred_expr(part, env);
         if (!element) return std::nullopt;
         elements.push_back(std::move(*element));
@@ -11169,25 +11939,25 @@ class Checker {
           return std::nullopt;
       return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
-    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+    if (auto comparison = tree_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
-      if (auto binary = split_binary(e, ops)) {
+      if (auto binary = tree_split_binary(e, ops)) {
         return primitive_term(operand_term(binary->first), "int") &&
                 primitive_term(operand_term(binary->second), "int")
             ? primitive("int") : std::nullopt;
       }
     }
-    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
+    if (auto arithmetic = tree_split_binary(e, {"+", "-", "*", "/", "%"})) {
       auto left = operand_term(arithmetic->first);
       auto right = operand_term(arithmetic->second);
       if (left && right && left->kind == moss::TypeKind::Primitive &&
           right->kind == moss::TypeKind::Primitive) {
         if (left->name == "string" && right->name == "string" &&
-            e.find('+') != string::npos)
+            tree_split_binary(e, {"+"}))
           return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (split_binary(e, {"%"}) &&
+        if (tree_split_binary(e, {"%"}) &&
             (left->name != "int" || right->name != "int"))
           return std::nullopt;
         if ((left->name == "int" || left->name == "float") &&
@@ -11204,23 +11974,23 @@ class Checker {
           open_generic(left_open->legacy))
         return left_open;
     }
-    if (!e.empty() && e.front() == '~')
-      return primitive_term(operand_term(trim(e.substr(1))), "int")
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "~")
+      return primitive_term(operand_term(unary_operand), "int")
           ? primitive("int") : std::nullopt;
-    if (!e.empty() && e.front() == '-' && e.size() > 1 && !moss::ascii_is_digit(static_cast<unsigned char>(e[1]))) {
-      auto operand = operand_term(trim(e.substr(1)));
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "-") {
+      auto operand = operand_term(unary_operand);
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
-    }
-    // Unary minus keeps its numeric operand's type (`return -x`).
-    if (e.size() > 1 && e.front() == '-') {
-      auto operand = inferred_expr_type(trim(e.substr(1)), env);
-      if (operand && (canonical_type_name(*operand) == "int" ||
-                      canonical_type_name(*operand) == "float"))
-        return inferred_leaf(canonical_type_name(*operand));
+      // Unary minus keeps its numeric operand's type (`return -x`).
+      auto operand_type = inferred_expr_type(unary_operand, env);
+      if (operand_type && (canonical_type_name(*operand_type) == "int" ||
+                           canonical_type_name(*operand_type) == "float"))
+        return inferred_leaf(canonical_type_name(*operand_type));
     }
     string index_base, index_expr;
-    if (parse_index(e, index_base, index_expr)) {
+    if (tree_parse_index(e, index_base, index_expr)) {
       auto base = inferred_expr(index_base, env);
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
@@ -11260,7 +12030,7 @@ class Checker {
     auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
-      if (!parse_simple_call(e, callee, args)) return std::nullopt;
+      if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
         return inferred_leaf(builtin->result_type);
       string target = callee;
@@ -11369,8 +12139,8 @@ class Checker {
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
-    if (parse_member_call(e, method_receiver, method_name, method_args)) {
-      if (staged_abi_v10() && trim(method_receiver) == "Map()" &&
+    if (tree_parse_member_call(e, method_receiver, method_name, method_args)) {
+      if (staged_abi_v10() && tree_empty_constructor_named(method_receiver, "Map") &&
           method_name == "get" && method_args.size() == 2) {
         auto key = inferred_expr_type(method_args[0], env);
         auto value = inferred_expr_type(method_args[1], env);
@@ -11468,10 +12238,11 @@ class Checker {
       }
     }
 
-    auto dot = e.rfind('.');
-    if (dot != string::npos) {
-      auto base = inferred_expr(e.substr(0, dot), env);
-      string field = trim(e.substr(dot + 1));
+    string member_base, field;
+    auto member_access = checker_est_view(e);
+    if (member_access && moss::est::project_member_access(
+            *member_access, member_base, field)) {
+      auto base = inferred_expr(member_base, env);
       const auto receiver = base ? inferred_shape(*base) : nullptr;
       if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
           receiver->declaration)
@@ -11487,7 +12258,7 @@ class Checker {
     }
 
     string mr, mh; vector<string> ma;
-    if (parse_member_call(e, mr, mh, ma)) {
+    if (tree_parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
         auto receiver = inferred_shape(inferred_leaf(bt->second));
@@ -11534,7 +12305,8 @@ class Checker {
     if (current_body_types_)
       if (auto retained = current_body_types_->known_expression(expression))
         return retained;
-    auto it = env.terms.find(trim(expression));
+    const auto binding = tree_identifier_name(expression);
+    auto it = binding ? env.terms.find(*binding) : env.terms.end();
     if (it != env.terms.end() && it->second) return it->second;
     auto expr = inferred_expr(expression, env);
     if (expr && expr->term) return expr->term;
@@ -11677,13 +12449,13 @@ class Checker {
 
   void constrain_constructor_fields(int line, const string& expression,
                                     const TypeEnv& env) {
-    string normalized = normalize_pipeline(trim(expression));
+    string normalized = tree_normalize_pipeline(trim(expression));
     string constructor;
     vector<string> args;
-    if (!parse_simple_call(normalized, constructor, args)) {
+    if (!tree_parse_simple_call(normalized, constructor, args)) {
       for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                            {"+", "-", "*", "/", "%"}}) {
-        if (auto binary = split_binary(normalized, operators)) {
+        if (auto binary = tree_split_binary(normalized, operators)) {
           constrain_constructor_fields(line, binary->first, env);
           constrain_constructor_fields(line, binary->second, env);
           return;
@@ -11717,7 +12489,7 @@ class Checker {
     std::unordered_map<string,string> supplied;
     for (const auto& arg : args) {
       string field_name, field_value;
-      if (!parse_named_argument(arg, field_name, field_value))
+      if (!tree_parse_named_argument(arg, field_name, field_value))
         err(line, "object constructor fields must be named for '" + constructor + "'");
       if (!supplied.emplace(field_name, field_value).second)
         err(line, "duplicate field '" + field_name + "' in " + constructor + " constructor");
@@ -11799,7 +12571,7 @@ class Checker {
                                         const string& value,
                                         TypeEnv& env) const {
     string base, index;
-    if (!parse_index(target, base, index)) return;
+    if (!tree_parse_index(target, base, index)) return;
     auto container = env.find(base);
     if (container == env.end()) return;
     auto retained = current_body_types_
@@ -11968,7 +12740,7 @@ class Checker {
                                 const TypeEnv& solved_collections = {}) const {
     if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::Assign) {
-      if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
+      if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
         auto existing = env.find(statement.a);
         if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
             existing->second && existing->second->is_closed()) {
@@ -12012,7 +12784,7 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
       } else {
         string base, index_expression;
-        if (parse_index(statement.a, base, index_expression)) {
+        if (tree_parse_index(statement.a, base, index_expression)) {
           auto container = env.find(base);
           auto retained = current_body_types_
               ? current_body_types_->resolved_local(base) : nullptr;
@@ -12021,7 +12793,7 @@ class Checker {
             container->second = retained;
             if (record_semantic_types)
               for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                if (prior.a == base && prior.b == "Map()") {
+                if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                   prior.semantic_type = canonical_type_name(retained);
                   if (!join_context.empty()) {
                     prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
@@ -12042,7 +12814,7 @@ class Checker {
                 container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
                 if (record_semantic_types) {
                   for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                    if (prior.a == base && prior.b == "Map()") {
+                    if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                       prior.semantic_type = *refined;
                       if (!join_context.empty()) {
                         prior.semantic_types_by_context[join_context] = *refined;
@@ -12091,9 +12863,10 @@ class Checker {
         if (record_semantic_types)
           for (auto& prior : const_cast<vector<Stmt>&>(statements))
             if (prior.a == statement.a &&
-                (prior.b == "[]" || prior.b == "Queue()" ||
-                 (staged_abi_v10() && prior.b == "Set()") ||
-                 parse_vector_literal(prior.b).has_value() ||
+                (tree_empty_vector_literal(prior.b) ||
+                 tree_empty_constructor_named(prior.b, "Queue") ||
+                 (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+                 tree_parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
                  starts_with(prior.semantic_type, "queue") ||
                  (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
@@ -12113,10 +12886,11 @@ class Checker {
           container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
           if (record_semantic_types) {
             for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
-              if (prior.a == statement.a &&
-                  (prior.b == "[]" || prior.b == "Queue()" ||
-                   (staged_abi_v10() && prior.b == "Set()") ||
-                   parse_vector_literal(prior.b).has_value() ||
+              if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+                  (tree_empty_vector_literal(prior.b) ||
+                   tree_empty_constructor_named(prior.b, "Queue") ||
+                   (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+                   tree_parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
                    starts_with(prior.semantic_type, "queue") ||
                    (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
@@ -12184,42 +12958,49 @@ class Checker {
           const Stmt& arm = statements[index];
           if (arm.kind != Stmt::Kind::Case)
             err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          if (!arm.est_pattern ||
+              (arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumTag &&
+               arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumCase))
+            err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          const auto& pattern = *arm.est_pattern;
+          const auto& case_name = pattern.case_name;
+          const auto& bindings = pattern.payload_bindings;
           auto item = declaration ? std::find_if(declaration->cases.begin(), declaration->cases.end(),
-              [&](const EnumCase& candidate) { return candidate.name == arm.a; }) :
+              [&](const EnumCase& candidate) { return candidate.name == case_name; }) :
               vector<EnumCase>::const_iterator{};
           if (declaration && item == declaration->cases.end()) {
             bool other_enum = false;
             for (const auto& candidate : p_.enums)
               if (candidate.name != declaration->name)
                 for (const auto& candidate_case : candidate.cases)
-                  other_enum |= candidate_case.name == arm.a;
+                  other_enum |= candidate_case.name == case_name;
             err(arm.line, (other_enum ? "case belongs to another enum: " :
-                           "unknown enum case: ") + arm.a,
+                           "unknown enum case: ") + case_name,
                 other_enum ? "WRONG_ENUM_CASE" : "UNKNOWN_ENUM_CASE");
           }
-          if (!seen.insert(arm.a).second)
-            err(arm.line, "duplicate match case '" + arm.a + "'", "DUPLICATE_MATCH_CASE");
-          if (declaration && arm.args.size() != item->fields.size())
-            err(arm.line, "case '" + arm.a + "' must bind all " +
+          if (!seen.insert(case_name).second)
+            err(arm.line, "duplicate match case '" + case_name + "'", "DUPLICATE_MATCH_CASE");
+          if (declaration && bindings.size() != item->fields.size())
+            err(arm.line, "case '" + case_name + "' must bind all " +
                 std::to_string(item->fields.size()) + " field(s)", "MATCH_BINDING_COUNT");
           TypeEnv branch = env;
           std::set<string> pattern_names;
-          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-            if (declaration && arm.args[field_index] != item->fields[field_index].name)
-              err(arm.line, "case '" + arm.a + "' requires payload field '" +
+          for (size_t field_index = 0; field_index < bindings.size(); ++field_index) {
+            if (declaration && bindings[field_index] != item->fields[field_index].name)
+              err(arm.line, "case '" + case_name + "' requires payload field '" +
                   item->fields[field_index].name + "' in declaration order",
                   "MATCH_FIELD_NAME_MISMATCH");
-            if (!pattern_names.insert(arm.args[field_index]).second)
+            if (!pattern_names.insert(bindings[field_index]).second)
               err(arm.line, "duplicate enum pattern binding: " +
-                  arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
+                  bindings[field_index], "DUPLICATE_PATTERN_BINDING");
             string field_type = declaration
-                ? item->fields[field_index].type : "_generic:" + arm.args[field_index];
-            branch[arm.args[field_index]] = field_type;
+                ? item->fields[field_index].type : "_generic:" + bindings[field_index];
+            branch[bindings[field_index]] = field_type;
             if (declaration) {
               if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
-                branch.terms[arm.args[field_index]] = *parsed;
+                branch.terms[bindings[field_index]] = *parsed;
               else
-                branch.terms[arm.args[field_index]] = moss::Type::primitive(field_type);
+                branch.terms[bindings[field_index]] = moss::Type::primitive(field_type);
             }
           }
           ++index;
@@ -12228,7 +13009,7 @@ class Checker {
           walk_type_environment_block(statements, index, level + 2, branch,
                                       visitor, reject_conflicts, record_join_types,
                                       record_semantic_types, join_context, solved_collections);
-          for (const auto& name : arm.args) {
+          for (const auto& name : bindings) {
             auto prior = env.find(name);
             if (prior == env.end()) branch.erase(name);
             else branch[name] = prior->second;
@@ -12284,16 +13065,14 @@ class Checker {
             err(arm.line, "recover requires a statement body",
                 "EMPTY_RECOVER_BODY");
           TypeEnv recovered = incoming;
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered[arm.a] = selected_types.size() == 1
+            recovered[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-          }
-          else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+          } else {
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -12356,7 +13135,8 @@ class Checker {
               const Stmt* found = nullptr;
               for (std::size_t cursor = begin; cursor < end; ++cursor) {
                 const auto& candidate = statements[cursor];
-                if (candidate.indent != level + 1 || candidate.a != name ||
+                if (candidate.indent != level + 1 ||
+                    candidate.a != name ||
                     (candidate.kind != Stmt::Kind::Let &&
                      candidate.kind != Stmt::Kind::Var))
                   continue;
@@ -12524,7 +13304,7 @@ class Checker {
           (statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         if (auto term = current_body_types_->assignment_value(statement))
           env.terms[statement.a] = term;
       }
@@ -12623,7 +13403,7 @@ class Checker {
       if (!staged_abi_v10()) return;
       string receiver, method;
       vector<string> arguments;
-      if (!parse_member_call(trim(expression), receiver, method, arguments) ||
+      if (!tree_parse_member_call(trim(expression), receiver, method, arguments) ||
           (method != "get" && method != "delete") ||
           arguments.size() != (method == "get" ? 2u : 3u)) return;
       auto map = body_types.known_expression(receiver);
@@ -12636,14 +13416,14 @@ class Checker {
       if (value && !solver.unify(map->type_args[1], value))
         err(line, "Map fallback conflicts with the binding's value type", "TYPE_MISMATCH");
       auto resolved = solver.resolve(map);
-      if (resolved && resolved->is_closed() && simple_identifier(receiver))
+      if (resolved && resolved->is_closed() && tree_simple_identifier(receiver))
         scan[receiver] = resolved->to_canonical_string();
     };
     auto require_type = [&](int line, const string& expression,
                             const string& expected, const string& context) {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(trim(expression), callee, arguments)) {
+      if (tree_parse_simple_call(trim(expression), callee, arguments)) {
         auto function = functions_.find(callee);
         if (function != functions_.end()) {
           const auto* summary = function->second->open_summary
@@ -12690,7 +13470,7 @@ class Checker {
     auto constrain_call = [&](int line, const string& expression) {
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(expression), callee, arguments)) return;
+      if (!tree_parse_simple_call(trim(expression), callee, arguments)) return;
       auto function = functions_.find(callee);
       if (function == functions_.end()) return;
       for (size_t index = 0;
@@ -12708,7 +13488,7 @@ class Checker {
                                    const Stmt* statement) -> moss::TypeRef {
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(expression), callee, arguments)) return nullptr;
+      if (!tree_parse_simple_call(trim(expression), callee, arguments)) return nullptr;
       auto function = functions_.find(callee);
       if (function == functions_.end() || !function->second->open_summary ||
           !function->second->open_summary->scheme_complete) return nullptr;
@@ -13112,7 +13892,7 @@ class Checker {
         moss::TypeRef loop_term;
         string callee;
         vector<string> arguments;
-        if (parse_simple_call(trim(statement.b), callee, arguments) &&
+        if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
             callee == "range") {
           loop_term = moss::Type::primitive("int");
         } else if (auto source = term_for(statement.b)) {
@@ -13206,7 +13986,7 @@ class Checker {
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         if (auto constructed = domain_constructor(statement.b)) {
           scan[statement.a] = *constructed;
           continue;
@@ -13218,7 +13998,7 @@ class Checker {
         body_types.provider_origins.erase(statement.a);
         string assigned_callee;
         vector<string> assigned_arguments;
-        if (parse_simple_call(trim(statement.b), assigned_callee,
+        if (tree_parse_simple_call(trim(statement.b), assigned_callee,
                               assigned_arguments)) {
           auto target = functions_.find(assigned_callee);
           if (target != functions_.end() &&
@@ -13310,9 +14090,9 @@ class Checker {
         }
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
-                 statement.a.find('[') != string::npos) {
+                 tree_index_expression(statement.a)) {
         string base, index;
-        if (!parse_index(statement.a, base, index)) continue;
+        if (!tree_parse_index(statement.a, base, index)) continue;
         auto container = body_types.known_expression(base);
         auto key = term_for(index);
         auto value = term_for(statement.b);
@@ -13355,7 +14135,7 @@ class Checker {
           err(statement.line, "indexed assignment conflicts with the binding's type",
               "TYPE_MISMATCH");
       } else if (statement.kind == Stmt::Kind::Assign &&
-                 statement.a.find('.') != string::npos) {
+                 tree_member_access(statement.a)) {
         auto field = body_types.known_expression(statement.a);
         auto rhs = term_for(statement.b);
         if (!field || !rhs) continue;
@@ -13427,7 +14207,7 @@ class Checker {
       if (!result->is_closed()) continue;
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(statement->b), callee, arguments)) continue;
+      if (!tree_parse_simple_call(trim(statement->b), callee, arguments)) continue;
       auto function = functions_.find(callee);
       if (function == functions_.end()) continue;
       OpenCallResultFacts facts;
@@ -13553,7 +14333,7 @@ class Checker {
               executor_typed(current_env, statement.a) && statement.args.size() == 1) {
             string target, handler_name;
             vector<string> handler_args;
-            auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
+            auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
                 ? current_env.find(target) : current_env.end();
             if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
               if (auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name)) {
@@ -13828,7 +14608,7 @@ class Checker {
       bool invoke_site = false;
       if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
           statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
-          parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+          tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
                             invoke_view.args)) {
         invoke_view.kind = Stmt::Kind::Message;
         invoke_view.line = statement.line;
@@ -13927,7 +14707,7 @@ class Checker {
               for (const auto& expression : statement_expressions(body_statement)) {
                 string callee;
                 vector<string> arguments;
-                if (!parse_simple_call(expression, callee, arguments)) continue;
+                if (!tree_parse_simple_call(expression, callee, arguments)) continue;
                 auto function = functions_.find(callee);
                 if (function == functions_.end() || !function->second->static_dispatch)
                   continue;
@@ -14484,7 +15264,7 @@ class Checker {
       for (const auto& statement : function.body)
         if (statement.kind == Stmt::Kind::Match)
           for (const auto& parameter : function.params)
-            if (parameter.type.empty() && trim(statement.a) == parameter.name) {
+            if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
               function.generic = true;
               function.static_dispatch = true;
             }
@@ -14496,46 +15276,13 @@ class Checker {
             ? "_generic:" + parameter.name : parameter.type;
       auto reject_untyped_fields = [&](int line, const string& expression,
                                        const TypeEnv& env) {
-        bool quoted = false;
-        bool escaped = false;
-        for (size_t i = 0; i < expression.size();) {
-          char ch = expression[i];
-          if (quoted) {
-            if (escaped) escaped = false;
-            else if (ch == '\\') escaped = true;
-            else if (ch == '"') quoted = false;
-            ++i;
-            continue;
-          }
-          if (ch == '"') { quoted = true; ++i; continue; }
-          if (!moss::ascii_is_alpha(static_cast<unsigned char>(ch)) && ch != '_') {
-            ++i;
-            continue;
-          }
-          size_t start = i++;
-          while (i < expression.size() &&
-                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[i])) ||
-                  expression[i] == '_')) ++i;
-          string receiver = expression.substr(start, i - start);
-          size_t dot = i;
-          while (dot < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[dot]))) ++dot;
-          if (dot >= expression.size() || expression[dot] != '.') continue;
-          size_t member = dot + 1;
-          while (member < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[member]))) ++member;
-          if (member >= expression.size() ||
-              (!moss::ascii_is_alpha(static_cast<unsigned char>(expression[member])) &&
-               expression[member] != '_')) continue;
-          size_t end = member + 1;
-          while (end < expression.size() &&
-                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
-                  expression[end] == '_')) ++end;
-          size_t next = end;
-          while (next < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[next]))) ++next;
-          auto binding = env.find(receiver);
+        auto syntax = checker_est_view(expression);
+        if (!syntax) return;
+        for (const auto& access : moss::est::member_accesses(*syntax)) {
+          const auto binding = env.find(access.receiver);
           if (binding != env.end() && open_generic(binding->second) &&
-              (next >= expression.size() || expression[next] != '('))
-            err(line, "field access '" + receiver + "." +
-                expression.substr(member, end - member) +
+              !access.invoked)
+            err(line, "field access '" + access.receiver + "." + access.member +
                 "' requires a concrete receiver type; annotate the parameter or "
                 "expose the behavior through a method/trait", "UNTYPED_FIELD_ACCESS");
         }
@@ -14559,13 +15306,13 @@ class Checker {
       // helper and poison later domain specializations.
       for (const auto& parameter : function.params) {
         bool identity_result = function.result_expression &&
-            trim(*function.result_expression) == parameter.name;
+            tree_identifier_named(*function.result_expression, parameter.name);
         if (!identity_result) {
           identity_result = std::any_of(
               function.body.begin(), function.body.end(),
               [&](const Stmt& statement) {
                 return statement.kind == Stmt::Kind::Return &&
-                    trim(statement.a) == parameter.name;
+                    tree_identifier_named(statement.a, parameter.name);
               });
         }
         if (parameter.type.empty() && identity_result) {
@@ -14593,10 +15340,10 @@ class Checker {
       for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
-          auto binary = split_binary(trim(expression), {"+", "-", "*", "/", "%"});
+          auto binary = tree_split_binary(trim(expression), {"+", "-", "*", "/", "%"});
           if (binary) {
             for (const auto& p : function.params) {
-              if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
+              if (tree_identifier_named(binary->first, p.name) && tree_identifier_named(binary->second, p.name)) {
                 function.generic = true;
                 function.static_dispatch = true;
                 string e = trim(expression);
@@ -14607,8 +15354,8 @@ class Checker {
             }
           }
           string base, idx;
-          if (parse_index(expression, base, idx)) {
-            for (const auto& p : function.params) if (trim(base) == p.name) {
+          if (tree_parse_index(expression, base, idx)) {
+            for (const auto& p : function.params) if (tree_identifier_named(base, p.name)) {
               function.generic = true;
               function.static_dispatch = true;
               auto existing = std::find_if(function.constraints.begin(),
@@ -14645,7 +15392,7 @@ class Checker {
       for (const auto& s : function.body) {
         if (s.kind == Stmt::Kind::For) {
           for (const auto& parameter : function.params) {
-            if (parameter.type.empty() && trim(s.b) == parameter.name) {
+            if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
               if (!has_structural_requirement(function, parameter.name,
                                                ConstraintKind::Iterable,
                                                "static iterator"))
@@ -14670,17 +15417,22 @@ class Checker {
         if ((statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
-            plain_identifier(statement.a))
+            tree_plain_identifier(statement.a))
           local_sources[statement.a] = statement.b;
         if (statement.kind == Stmt::Kind::Return) {
-          auto source = local_sources.find(trim(statement.a));
+          const auto returned_binding = tree_identifier_name(statement.a);
+          auto source = returned_binding
+              ? local_sources.find(*returned_binding) : local_sources.end();
           if (source != local_sources.end())
             derive_expression_constraints(function, source->second,
                                           result_expectation());
         }
       }
       if (function.result_expression) {
-        auto source = local_sources.find(trim(*function.result_expression));
+        const auto returned_binding = tree_identifier_name(
+            *function.result_expression);
+        auto source = returned_binding
+            ? local_sources.find(*returned_binding) : local_sources.end();
         if (source != local_sources.end())
           derive_expression_constraints(function, source->second,
                                         result_expectation());
@@ -14976,13 +15728,13 @@ class Checker {
                       [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
-        auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
+        auto binary = tree_split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
         if (binary) {
           bool p1_found = false, p2_found = false;
           for (const auto& p : function.params) {
             if (p.type.empty()) {
-              if (trim(binary->first) == p.name) p1_found = true;
-              if (trim(binary->second) == p.name) p2_found = true;
+              if (tree_identifier_named(binary->first, p.name)) p1_found = true;
+              if (tree_identifier_named(binary->second, p.name)) p2_found = true;
             }
           }
           if (p1_found && p2_found) {
@@ -14991,7 +15743,7 @@ class Checker {
             string be = trim(*function.result_expression);
             string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : be.find('/') != string::npos ? "/" : "%";
             for (const auto& p : function.params) {
-              if (trim(binary->first) == p.name || trim(binary->second) == p.name) {
+              if (tree_identifier_named(binary->first, p.name) || tree_identifier_named(binary->second, p.name)) {
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
               }
@@ -15003,13 +15755,13 @@ class Checker {
       if (!function.generic) {
         for (const auto& parameter : function.params) {
           bool identity_result = function.result_expression &&
-              trim(*function.result_expression) == parameter.name;
+              tree_identifier_named(*function.result_expression, parameter.name);
           if (!identity_result) {
             identity_result = std::any_of(
                 function.body.begin(), function.body.end(),
                 [&](const Stmt& statement) {
                   return statement.kind == Stmt::Kind::Return &&
-                      trim(statement.a) == parameter.name;
+                      tree_identifier_named(statement.a, parameter.name);
                 });
           }
           if (parameter.type.empty() && identity_result) {
@@ -15145,7 +15897,7 @@ class Checker {
   }
 
   static bool simple_effect_identifier(const string& value) {
-    return simple_identifier(trim(value));
+    return tree_simple_identifier(trim(value));
   }
 
   // An inferred nominal field takes the type of the value each constructor
@@ -15179,12 +15931,19 @@ class Checker {
     vector<string> path;
   };
 
-  static string strip_expression_parens(string value) {
-    value = trim(std::move(value));
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
-    return value;
+  static string tree_strip_expression_parens(string value) {
+    auto* cached = checker_est_view_entry(value);
+    if (cached && cached->expression_parens_attempted)
+      return *cached->expression_parens;
+    auto syntax = cached ? cached->view : checker_est_view(value);
+    if (!cached) cached = checker_est_view_entry(value);
+    string stripped = syntax
+        ? moss::est::strip_grouping(*syntax) : trim(std::move(value));
+    if (cached) {
+      cached->expression_parens_attempted = true;
+      cached->expression_parens = std::make_unique<string>(stripped);
+    }
+    return stripped;
   }
 
   template <typename EnvT>
@@ -15192,8 +15951,14 @@ class Checker {
       const string& expression,
       const EnvT& env,
       bool require_known_root = true) const {
-    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
-    if (simple_identifier(value)) {
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
+    if (auto syntax = checker_est_view(value); syntax && syntax->arena &&
+        syntax->root < syntax->arena->size() &&
+        std::holds_alternative<moss::est::Placeholder>(
+            syntax->arena->at(moss::est::unparenthesized(
+                *syntax->arena, syntax->root))))
+      return StorageLocation{"_", {}};
+    if (tree_simple_identifier(value)) {
       if (require_known_root && !env.count(value)) return std::nullopt;
       if (current_object_ && value != "self" &&
           std::any_of(current_object_->fields.begin(), current_object_->fields.end(),
@@ -15202,17 +15967,17 @@ class Checker {
       return StorageLocation{value, {}};
     }
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       auto location = storage_location(base, env, require_known_root);
       if (!location) return std::nullopt;
       location->path.push_back("[]");
       return location;
     }
-    auto dot = value.rfind('.');
-    if (dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
-      auto location = storage_location(value.substr(0, dot), env, require_known_root);
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      auto location = storage_location(member_base, env, require_known_root);
       if (!location) return std::nullopt;
-      location->path.push_back(trim(value.substr(dot + 1)));
+      location->path.push_back(member_name);
       return location;
     }
     return std::nullopt;
@@ -15456,9 +16221,9 @@ class Checker {
       if (selected_types.size() == 1)
         arm_types[arm.binding] = *selected_types.begin();
     }
-    if (arm.patterns.size() == 1)
+    if (arm.est_patterns.size() == 1)
       for (const auto& binding :
-           phase21_pattern_bindings(arm.line, arm.patterns.front()))
+           phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
         arm_types[binding.first] = binding.second;
     return arm_types;
   }
@@ -15972,9 +16737,7 @@ class Checker {
              body[arm_index].kind == Stmt::Kind::Recover) {
         const auto& arm = body[arm_index];
         const size_t arm_end = statement_subtree_end(body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(body, arm_index + 1, arm_end)) {
           StateLeafSet written;
@@ -16172,9 +16935,7 @@ class Checker {
              source.body[arm_index].kind == Stmt::Kind::Recover) {
         const Stmt& arm = source.body[arm_index];
         size_t arm_end = statement_subtree_end(source.body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         StateLeafSet writes;
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(source.body, arm_index + 1, arm_end))
@@ -16327,9 +17088,7 @@ class Checker {
              method->body[arm_index].kind == Stmt::Kind::Recover) {
         const Stmt& arm = method->body[arm_index];
         const size_t arm_end = statement_subtree_end(method->body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(method->body, arm_index + 1, arm_end)) {
           StateLeafSet written;
@@ -16485,9 +17244,7 @@ class Checker {
           const Stmt& arm = function.body[arm_index];
           const size_t arm_end = statement_subtree_end(function.body,
                                                         arm_index);
-          const bool catch_all = arm.a.empty() ||
-              (arm.a.find('.') == string::npos &&
-               arm.a.find(',') == string::npos);
+          const bool catch_all = recovery_catchall_pattern(arm);
           if (catch_all && !arm.exceptional_alternatives.empty() &&
               phase21_noop_body(function.body, arm_index + 1, arm_end)) {
             StateLeafSet written_formals;
@@ -16710,14 +17467,16 @@ class Checker {
           source.body, index + 1, end, arm.indent + 1);
       TypeEnv local_types = phase21_local_types_before(
           domain, source, specialization, index);
-      if (!arm.a.empty() && plain_identifier(trim(arm.a))) {
+      if (recovery_binding_pattern(arm)) {
         std::set<string> selected_types;
         for (const auto& identity : arm.exceptional_alternatives)
           selected_types.insert(identity.type);
         if (selected_types.size() == 1)
-          local_types[trim(arm.a)] = *selected_types.begin();
-      } else if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-        auto alternatives = split_top_level(arm.a, ',');
+          local_types[arm.est_pattern->binding] = *selected_types.begin();
+      } else if (arm.est_pattern &&
+                 (arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+                  arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+        auto alternatives = recovery_case_patterns(arm);
         if (alternatives.size() == 1)
           for (const auto& binding :
                phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -17093,7 +17852,7 @@ class Checker {
     // Indexed reads materialize their checked result; they do not transfer the
     // collection. Match the ownership walker when deriving concrete effects.
     string base, index;
-    if (parse_index(expression, base, index)) return Effect::Read;
+    if (tree_parse_index(expression, base, index)) return Effect::Read;
     auto type = inferred_expr_type(expression, env);
     return type && transfer_type(*type) ? Effect::Consume : Effect::Read;
   }
@@ -17205,11 +17964,15 @@ class Checker {
     {
       // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
       // `s.length()` for `-s.length()` rather than a method on `-s`.
-      string trimmed = trim(expression);
-      if (trimmed.size() > 1 && trimmed.front() == '-' && trimmed[1] != '-' &&
-          !split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
+      string trimmed = trim(expression), unary_operation, unary_operand;
+      string nested_operation, nested_operand;
+      if (tree_parse_unary(trimmed, unary_operation, unary_operand) &&
+          unary_operation == "-" &&
+          (!tree_parse_unary(unary_operand, nested_operation, nested_operand) ||
+           nested_operation != "-") &&
+          !tree_split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
                                   "<=", ">=", " and ", " or ", " xor "})) {
-        analyze_effect_expression(trim(trimmed.substr(1)), env, params, parameter_effects,
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -17256,9 +18019,9 @@ class Checker {
     }
     // The observation path uses checked storage locations before the legacy
     // parameter summary collapses projections to their root.
-    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
     if (value.empty()) return;
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       // Construction owns its elements, even when the new vector is READ.
       // Use the same rule for parameter summaries and state-leaf observation.
       for (const auto& element : *elements)
@@ -17271,15 +18034,15 @@ class Checker {
       if (auto location = storage_location(value, env)) {
         observe_leaf_access(*location, projection_effect(value, requested, env));
         string projected = value, base, index;
-        while (!simple_identifier(projected)) {
-          if (parse_index(projected, base, index)) {
+        while (!tree_simple_identifier(projected)) {
+          if (tree_parse_index(projected, base, index)) {
             analyze_effect_expression(index, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
             projected = base;
           } else {
-            auto dot = projected.rfind('.');
-            if (dot == string::npos) break;
-            projected = strip_expression_parens(projected.substr(0, dot));
+            string member;
+            if (!tree_parse_member_access(projected, base, member)) break;
+            projected = tree_strip_expression_parens(base);
           }
         }
         return;
@@ -17288,7 +18051,7 @@ class Checker {
 
     if (leaf_effect_capture_) {
       for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-        if (auto binary = split_binary(value, {op})) {
+        if (auto binary = tree_split_binary(value, {op})) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17300,7 +18063,7 @@ class Checker {
            vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                   {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                   {"+", "-", "*", "/", "%"}}) {
-        if (auto binary = split_binary(value, operators)) {
+        if (auto binary = tree_split_binary(value, operators)) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17308,13 +18071,16 @@ class Checker {
           return;
         }
       }
-      if (starts_with(value, "not ")) {
-        analyze_effect_expression(value.substr(4), env, params, parameter_effects,
+      string unary_operation, unary_operand;
+      if (tree_parse_unary(value, unary_operation, unary_operand) &&
+          unary_operation == "not") {
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
-      if (!value.empty() && value.front() == '~') {
-        analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+      if (tree_parse_unary(value, unary_operation, unary_operand) &&
+          unary_operation == "~") {
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -17323,7 +18089,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(value, callee, arguments) && callee == "sort" &&
+      if (tree_parse_simple_call(value, callee, arguments) && callee == "sort" &&
           !functions_.count(callee) &&
           (arguments.size() == 1 || arguments.size() == 2)) {
         // sort writes its Vector place; the key is a pure named callable.
@@ -17331,7 +18097,7 @@ class Checker {
                                   receiver_effect, receiver_fields, Effect::Write);
         return;
       }
-      if (parse_simple_call(value, callee, arguments) && callee == "replace" &&
+      if (tree_parse_simple_call(value, callee, arguments) && callee == "replace" &&
           arguments.size() == 2) {
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Write);
@@ -17347,14 +18113,14 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
         if (item != declaration.cases.end()) for (const auto& argument : fields) {
           string name, field_value;
-          if (!parse_named_argument(argument, name, field_value)) continue;
+          if (!tree_parse_named_argument(argument, name, field_value)) continue;
           auto field = std::find_if(item->fields.begin(), item->fields.end(),
               [&](const Field& candidate) { return candidate.name == name; });
           if (field != item->fields.end())
@@ -17365,17 +18131,17 @@ class Checker {
         return;
       }
     }
-    if (starts_with(value, "message ")) {
+    {
       string receiver, handler;
       vector<string> arguments;
-      if (parse_member_call(trim(value.substr(8)), receiver, handler, arguments)) {
+      if (tree_parse_message(value, receiver, handler, arguments)) {
         analyze_effect_expression(receiver, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         for (const auto& argument : arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+        return;
       }
-      return;
     }
 
     if (simple_effect_identifier(value)) {
@@ -17392,7 +18158,7 @@ class Checker {
 
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(value, open_arguments)) {
+      if (tree_parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
@@ -17401,7 +18167,7 @@ class Checker {
     }
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
         const string concrete_receiver = canonical_type_name(*receiver_type);
@@ -17424,8 +18190,8 @@ class Checker {
             analyze_effect_expression(receiver, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, *effect);
           for (const auto& argument : arguments)
-            if (trim(argument) != "ro" && trim(argument) != "rw" &&
-                trim(argument) != "create" && trim(argument) != "dataonly")
+            if (!tree_identifier_named(argument, "ro") && !tree_identifier_named(argument, "rw") &&
+                !tree_identifier_named(argument, "create") && !tree_identifier_named(argument, "dataonly"))
               analyze_effect_expression(argument, env, params, parameter_effects,
                                         receiver_effect, receiver_fields, Effect::Read);
           return;
@@ -17515,13 +18281,13 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       if (objects_.count(callee)) {
         auto object = objects_.at(callee);
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
-          if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
+          if (tree_parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
         }
         for (const auto& field : object->fields) {
           auto value_it = supplied.find(field.name);
@@ -17599,9 +18365,15 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Read);
         }
       } else {
-        for (const auto& argument : call_arguments)
-          analyze_effect_expression(argument, env, params, parameter_effects,
+        for (const auto& argument : call_arguments) {
+          string argument_name, argument_value;
+          const string* expression = &argument;
+          if (tree_parse_named_argument(argument, argument_name,
+                                        argument_value))
+            expression = &argument_value;
+          analyze_effect_expression(*expression, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+        }
       }
       return;
     }
@@ -17610,7 +18382,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17618,14 +18390,16 @@ class Checker {
         return;
       }
     }
-    if (!value.empty() && value.front() == '~') {
-      analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                 receiver_effect, receiver_fields, Effect::Read);
       return;
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       analyze_effect_expression(base, env, params, parameter_effects,
                                 receiver_effect, receiver_fields,
                                 projection_effect(value, requested, env));
@@ -17634,9 +18408,10 @@ class Checker {
       return;
     }
 
-    auto dot = value.rfind('.');
-    if (!leaf_effect_capture_ && dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
-      analyze_effect_expression(value.substr(0, dot), env, params,
+    string member_base, member_name;
+    if (!leaf_effect_capture_ &&
+        tree_parse_member_access(value, member_base, member_name)) {
+      analyze_effect_expression(member_base, env, params,
                                 parameter_effects, receiver_effect,
                                 receiver_fields,
                                 projection_effect(value, requested, env));
@@ -17647,7 +18422,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17699,18 +18474,19 @@ class Checker {
           const Stmt& arm = statements[index];
           auto branch = env;
           if (declaration) {
+            const auto& pattern = *arm.est_pattern;
             auto item = std::find_if(declaration->cases.begin(), declaration->cases.end(),
-                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+                [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
             if (item != declaration->cases.end())
               for (size_t field_index = 0;
-                   field_index < arm.args.size() && field_index < item->fields.size();
+                   field_index < pattern.payload_bindings.size() && field_index < item->fields.size();
                    ++field_index)
-                branch[arm.args[field_index]] = item->fields[field_index].type;
+                branch[pattern.payload_bindings[field_index]] = item->fields[field_index].type;
           }
           ++index;
           analyze_effect_block(statements, index, level + 2, branch, params,
                                parameter_effects, receiver_effect, receiver_fields);
-          for (const auto& binding : arm.args) branch.erase(binding);
+          for (const auto& binding : arm.est_pattern->payload_bindings) branch.erase(binding);
           paths.push_back(std::move(branch));
         }
         if (leaf_effect_capture_ && !paths.empty())
@@ -17733,16 +18509,14 @@ class Checker {
           saw_recover = true;
           const Stmt& arm = statements[index++];
           auto recovered = env;
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered[arm.a] = selected_types.size() == 1
+            recovered[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-          }
-          else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+          } else {
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -17839,12 +18613,11 @@ class Checker {
         }
         case Stmt::Kind::Assign: {
           string base, ignored;
-          if (parse_index(statement.a, base, ignored))
+          if (tree_parse_index(statement.a, base, ignored))
             analyze_effect_expression(statement.a, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Write);
           else {
-            auto dot = statement.a.rfind('.');
-            if (dot != string::npos)
+            if (tree_member_access(statement.a))
               analyze_effect_expression(statement.a, env, params,
                                         parameter_effects, receiver_effect,
                                         receiver_fields, Effect::Write);
@@ -18017,7 +18790,7 @@ class Checker {
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
-          if (parse_bound_method_callable(identity, bound_receiver,
+          if (tree_parse_bound_method_callable(identity, bound_receiver,
                                           bound_method)) {
             auto receiver_type = inferred_expr_type(bound_receiver, env);
             if (receiver_type) {
@@ -18049,28 +18822,24 @@ class Checker {
       }
       return;
     }
-    string value = normalize_pipeline(std::move(original));
+    string value = tree_normalize_pipeline(std::move(original));
     if (value.empty()) return;
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
+    while (tree_outer_grouping(value))
+      value = tree_strip_redundant_outer_parentheses(value);
 
     // Every call evaluated by a value wrapper still needs a semantic call
     // edge.  Module projection uses these edges to emit imported generic
     // specializations into the consumer crate.  The checker and native
     // expression lowering already recurse through these forms.
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
         collect_local_call_sites(line, element, env, implicit_owner, calls);
       return;
     }
-    if (starts_with(value, "not ")) {
-      collect_local_call_sites(line, trim(value.substr(4)), env,
-                               implicit_owner, calls);
-      return;
-    }
-    if (!value.empty() && value.front() == '~') {
-      collect_local_call_sites(line, trim(value.substr(1)), env,
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        (unary_operation == "not" || unary_operation == "~")) {
+      collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls);
       return;
     }
@@ -18081,7 +18850,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
         collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
         return;
@@ -18091,11 +18860,10 @@ class Checker {
     // an imported generic call that needs a consumer-side specialization.
     // Confirm a declared field before descending so qualified module names
     // and enum cases retain their call-resolution paths below.
-    if (auto dot = value.rfind('.'); dot != string::npos) {
-      const string base = trim(value.substr(0, dot));
-      const string field = trim(value.substr(dot + 1));
-      if (plain_identifier(field)) {
-        auto base_type = inferred_expr_type(base, env);
+    string member_base, field;
+    if (tree_parse_member_access(value, member_base, field)) {
+      if (tree_plain_identifier(field)) {
+        auto base_type = inferred_expr_type(member_base, env);
         if (base_type) {
           auto object = objects_.find(canonical_type_name(*base_type));
           if (object != objects_.end() &&
@@ -18104,7 +18872,7 @@ class Checker {
                           [&](const Field& candidate) {
                             return candidate.name == field;
                           })) {
-            collect_local_call_sites(line, base, env, implicit_owner, calls);
+            collect_local_call_sites(line, member_base, env, implicit_owner, calls);
             return;
           }
         }
@@ -18113,7 +18881,7 @@ class Checker {
 
     string receiver, method_name;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method_name, arguments)) {
+    if (tree_parse_member_call(value, receiver, method_name, arguments)) {
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -18147,7 +18915,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       vector<string> argument_types;
       for (const auto& argument : call_arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -18159,9 +18927,9 @@ class Checker {
           call_arguments.size() == 2) {
         string label, key, reverse_callee;
         vector<string> reverse_args;
-        if (parse_named_argument(call_arguments[1], label, key) && label == "by") {
+        if (tree_parse_named_argument(call_arguments[1], label, key) && label == "by") {
           key = trim(key);
-          if (parse_simple_call(key, reverse_callee, reverse_args) &&
+          if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
               reverse_callee == "Reverse" && reverse_args.size() == 1)
             key = trim(reverse_args.front());
           string vector_type = canonical_type_name(argument_types.front());
@@ -18202,7 +18970,7 @@ class Checker {
       for (const auto& argument : call_arguments) {
         string field, field_value;
         collect_local_call_sites(line,
-                                 parse_named_argument(argument, field, field_value)
+                                 tree_parse_named_argument(argument, field, field_value)
                                      ? field_value : argument,
                                  env, implicit_owner, calls);
       }
@@ -18210,13 +18978,13 @@ class Checker {
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       collect_local_call_sites(line, base, env, implicit_owner, calls);
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    if (value.size() > 1 && (value.front() == '-' || value.front() == '+'))
-      collect_local_call_sites(line, trim(value.substr(1)), env,
+    if (tree_parse_unary(value, unary_operation, unary_operand))
+      collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls);
   }
 
@@ -18236,11 +19004,10 @@ class Checker {
                                           const TypeEnv& env) const {
     string value = trim(expression);
     if (value.empty()) return false;
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
+    while (tree_outer_grouping(value))
+      value = tree_strip_redundant_outer_parentheses(value);
     if (functional_pipeline_from_est(value)) return true;
-    if (auto elements = parse_vector_literal(value))
+    if (auto elements = tree_parse_vector_literal(value))
       return std::any_of(elements->begin(), elements->end(),
           [&](const string& element) {
             return has_unresolved_local_callable_call(element, env);
@@ -18250,18 +19017,16 @@ class Checker {
              {"==", "!=", "<=", ">=", "<", ">"},
              {"|"}, {"^"}, {"&"}, {"<<", ">>"},
              {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators))
+      if (auto binary = tree_split_binary(value, operators))
         return has_unresolved_local_callable_call(binary->first, env) ||
             has_unresolved_local_callable_call(binary->second, env);
-    if (starts_with(value, "not "))
-      return has_unresolved_local_callable_call(trim(value.substr(4)), env);
-    if (!value.empty() && (value.front() == '-' || value.front() == '+' ||
-                           value.front() == '~'))
-      return has_unresolved_local_callable_call(trim(value.substr(1)), env);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand))
+      return has_unresolved_local_callable_call(unary_operand, env);
 
     string receiver, member;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, member, arguments)) {
+    if (tree_parse_member_call(value, receiver, member, arguments)) {
       if (has_unresolved_local_callable_call(receiver, env)) return true;
       return std::any_of(arguments.begin(), arguments.end(),
           [&](const string& argument) {
@@ -18269,7 +19034,7 @@ class Checker {
           });
     }
     string callee;
-    if (parse_simple_call(value, callee, arguments)) {
+    if (tree_parse_simple_call(value, callee, arguments)) {
       // A local call target can acquire its callable identity in a later
       // inference pass. Keep this function on the conservative consumer list
       // until the surrounding callable signatures have settled.
@@ -18277,14 +19042,14 @@ class Checker {
       return std::any_of(arguments.begin(), arguments.end(),
           [&](const string& argument) {
             string label, value_argument;
-            const string& nested = parse_named_argument(argument, label,
+            const string& nested = tree_parse_named_argument(argument, label,
                                                          value_argument)
                 ? value_argument : argument;
             return has_unresolved_local_callable_call(nested, env);
           });
     }
     string base, index;
-    return parse_index(value, base, index) &&
+    return tree_parse_index(value, base, index) &&
         (has_unresolved_local_callable_call(base, env) ||
          has_unresolved_local_callable_call(index, env));
   }
@@ -18297,10 +19062,10 @@ class Checker {
       signature_unresolved_consumers_.insert(caller);
     string direct_callee;
     vector<string> direct_arguments;
-    if (parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
+    if (tree_parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
         direct_callee == "sort" && direct_arguments.size() == 2) {
       string label, callable;
-      if (parse_named_argument(direct_arguments[1], label, callable) &&
+      if (tree_parse_named_argument(direct_arguments[1], label, callable) &&
           label == "by")
         signature_unresolved_consumers_.insert(caller);
     }
@@ -18430,15 +19195,13 @@ class Checker {
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
-      string value = trim(expression);
-      if (!starts_with(value, "message ")) return;
       string receiver_name;
       string handler_name;
       vector<string> arguments;
-      if (!parse_member_call(trim(value.substr(8)), receiver_name,
+      if (!tree_parse_message(expression, receiver_name,
                              handler_name, arguments) ||
-          !plain_identifier(receiver_name) ||
-          !plain_identifier(handler_name))
+          !tree_plain_identifier(receiver_name) ||
+          !tree_plain_identifier(handler_name))
         return;
       auto receiver = current_env.find(receiver_name);
       if (receiver == current_env.end()) return;
@@ -18859,31 +19622,45 @@ class Checker {
     return phase21_bounded_error_type(type, visiting);
   }
 
+  vector<moss::est::PatternNode> recovery_case_patterns(
+      const Stmt& statement) const {
+    if (!statement.est_pattern) return {};
+    if (statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::GroupedAlternatives)
+      return statement.est_pattern->alternatives;
+    if (statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::QualifiedRecoveryCase)
+      return {*statement.est_pattern};
+    return {};
+  }
+
+  bool recovery_binding_pattern(const Stmt& statement) const {
+    return statement.est_pattern && statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::RecoveryBinding;
+  }
+
+  bool recovery_catchall_pattern(const Stmt& statement) const {
+    return statement.est_pattern &&
+        (statement.est_pattern->kind ==
+             moss::est::PatternNode::Kind::RecoveryBinding ||
+         statement.est_pattern->kind ==
+             moss::est::PatternNode::Kind::RecoveryCatchall);
+  }
+
   vector<std::pair<string,string>> phase21_pattern_bindings(
-      int line, string pattern) const {
-    pattern = trim(std::move(pattern));
-    const auto open = pattern.find('(');
-    if (open == string::npos) return {};
-    const auto close = matching_paren(pattern, open);
-    if (close == string::npos || close + 1 != pattern.size())
-      err(line, "error payload patterns support only plain field bindings",
-          "INVALID_RECOVERY_PATTERN");
-    const string qualified = trim(pattern.substr(0, open));
-    const auto dot = qualified.rfind('.');
-    if (dot == string::npos)
-      err(line, "error payload patterns require a qualified enum variant",
-          "RECOVERY_PATTERN_REQUIRES_VARIANT");
-    const string type = canonical_type_name(trim(qualified.substr(0, dot)));
-    const string variant = trim(qualified.substr(dot + 1));
+      int line, const moss::est::PatternNode& pattern) const {
+    if (pattern.kind != moss::est::PatternNode::Kind::QualifiedRecoveryCase)
+      return {};
+    if (!pattern.payload_pattern) return {};
+    const string type = phase21_pattern_enum_name(pattern.type_name);
+    const string variant = pattern.case_name;
     auto declaration = enums_.find(type);
     if (declaration == enums_.end()) return {};
     auto item = std::find_if(
         declaration->second->cases.begin(), declaration->second->cases.end(),
         [&](const EnumCase& candidate) { return candidate.name == variant; });
     if (item == declaration->second->cases.end()) return {};
-    vector<string> names;
-    const string inside = trim(pattern.substr(open + 1, close - open - 1));
-    if (!inside.empty()) names = split_top_level(inside, ',');
+    const auto& names = pattern.payload_bindings;
     if (names.size() != item->fields.size())
       err(line, "error variant '" + type + "." + variant +
                     "' must bind all " +
@@ -18893,7 +19670,7 @@ class Checker {
     std::set<string> seen;
     for (size_t index = 0; index < names.size(); ++index) {
       const string name = trim(names[index]);
-      if (!plain_identifier(name))
+      if (!tree_plain_identifier(name))
         err(line, "error payload patterns support only plain field bindings",
             "INVALID_RECOVERY_PATTERN");
       if (name != item->fields[index].name)
@@ -18909,16 +19686,14 @@ class Checker {
     return result;
   }
 
-  RaisedIdentity phase21_pattern_identity(int line, string pattern) const {
-    pattern = trim(std::move(pattern));
-    const auto open = pattern.find('(');
-    if (open != string::npos) pattern = trim(pattern.substr(0, open));
-    const auto dot = pattern.find('.');
-    if (dot == string::npos || pattern.find('.', dot + 1) != string::npos)
+  RaisedIdentity phase21_pattern_identity(
+      int line, const moss::est::PatternNode& pattern) const {
+    const string type = phase21_pattern_enum_name(pattern.type_name);
+    const string variant = pattern.case_name;
+    if (pattern.kind != moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+        type.empty() || variant.empty())
       err(line, "recovery patterns must name a qualified enum variant",
           "RECOVERY_PATTERN_REQUIRES_VARIANT");
-    const string type = canonical_type_name(trim(pattern.substr(0, dot)));
-    const string variant = trim(pattern.substr(dot + 1));
     auto declaration = enums_.find(type);
     if (declaration == enums_.end())
       err(line, "unknown error enum '" + type + "'",
@@ -18937,15 +19712,49 @@ class Checker {
     return {RaisedIdentityKind::EnumVariant, type, variant};
   }
 
+  string phase21_pattern_enum_name(const string& source_name) const {
+    const string canonical = canonical_type_name(source_name);
+    if (enums_.count(canonical)) return canonical;
+    string module_qualified = source_name;
+    for (size_t dot = module_qualified.find('.'); dot != string::npos;
+         dot = module_qualified.find('.', dot + 2))
+      module_qualified.replace(dot, 1, "__");
+    if (enums_.count(module_qualified)) return module_qualified;
+    const string current_module = p_.main_module.empty() ? string{} :
+        program_module_identity(p_, p_.main_module);
+    const EnumType* same_module = nullptr;
+    const EnumType* unique_name = nullptr;
+    bool ambiguous_name = false;
+    for (const auto& entry : enums_) {
+      const auto& declaration = *entry.second;
+      if (declaration.declaration_name != source_name) continue;
+      if (!unique_name) unique_name = &declaration;
+      else ambiguous_name = true;
+      if (!current_module.empty() &&
+          program_module_identity(p_, declaration.defining_module) ==
+              current_module) {
+        if (same_module) return canonical;
+        same_module = &declaration;
+      }
+    }
+    if (same_module) return same_module->name;
+    return unique_name && !ambiguous_name ? unique_name->name : canonical;
+  }
+
   RaiseSet phase21_raised_identities(int line, const string& expression,
                                     const TypeEnv& env) const {
     string enum_name, case_name;
     vector<string> fields;
     bool called = false;
-    if (parse_enum_case_expression(expression, enum_name, case_name, fields,
+    if (tree_parse_enum_case_expression(expression, enum_name, case_name, fields,
                                    called) &&
-        enums_.count(canonical_type_name(enum_name)))
-      return {phase21_pattern_identity(line, enum_name + "." + case_name)};
+        enums_.count(canonical_type_name(enum_name))) {
+      moss::est::PatternNode pattern;
+      pattern.kind = moss::est::PatternNode::Kind::QualifiedRecoveryCase;
+      pattern.type_name = enum_name;
+      pattern.case_name = case_name;
+      return {phase21_pattern_identity(line, pattern)};
+    }
     auto type = inferred_expr_type(expression, env);
     if (!type || contains_internal_placeholder(*type))
       err(line, "raise requires a statically typed error value",
@@ -18957,25 +19766,30 @@ class Checker {
     auto declaration = enums_.find(concrete);
     if (declaration != enums_.end()) {
       RaiseSet alternatives;
-      for (const auto& item : declaration->second->cases)
-        alternatives.insert(phase21_pattern_identity(
-            line, concrete + "." + item.name));
+      for (const auto& item : declaration->second->cases) {
+        moss::est::PatternNode pattern;
+        pattern.kind = moss::est::PatternNode::Kind::QualifiedRecoveryCase;
+        pattern.type_name = concrete;
+        pattern.case_name = item.name;
+        alternatives.insert(phase21_pattern_identity(line, pattern));
+      }
       return alternatives;
     }
     return {{RaisedIdentityKind::ScalarType, concrete, {}}};
   }
 
-  RaiseSet phase21_recovery_pattern(int line, const string& selector,
+  RaiseSet phase21_recovery_pattern(
+                                    int line,
+                                    const moss::est::PatternNode& pattern,
                                     const RaiseSet& remaining,
                                     string* binding_type = nullptr) const {
-    const string value = trim(selector);
-    if (value.empty()) return remaining;
-    auto alternatives = split_top_level(value, ',');
-    const bool qualified = std::all_of(
-        alternatives.begin(), alternatives.end(), [](const string& item) {
-          return trim(item).find('.') != string::npos;
-        });
-    if (qualified) {
+    if (pattern.kind == moss::est::PatternNode::Kind::RecoveryCatchall)
+      return remaining;
+    if (pattern.kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+        pattern.kind == moss::est::PatternNode::Kind::GroupedAlternatives) {
+      const auto& alternatives = pattern.kind ==
+              moss::est::PatternNode::Kind::GroupedAlternatives
+          ? pattern.alternatives : vector<moss::est::PatternNode>{pattern};
       RaiseSet result;
       for (const auto& alternative : alternatives) {
         auto identity = phase21_pattern_identity(line, alternative);
@@ -18990,7 +19804,8 @@ class Checker {
       }
       return result;
     }
-    if (alternatives.size() != 1 || !plain_identifier(value))
+    if (pattern.kind != moss::est::PatternNode::Kind::RecoveryBinding ||
+        !tree_plain_identifier(pattern.binding))
       err(line, "recover requires qualified variants, one error binding, or an unbound catch-all",
           "INVALID_RECOVERY_PATTERN");
     std::set<string> types;
@@ -19033,16 +19848,19 @@ class Checker {
           if (saw_catch_all)
             err(arm.line, "no recover arm may follow a catch-all",
                 "RECOVER_AFTER_CATCH_ALL");
+          const auto pattern = arm.est_pattern.value_or(
+              moss::est::PatternNode{});
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
-              arm.line, arm.a, remaining, &binding_type);
+              arm.line, pattern, remaining, &binding_type);
           RaiseSet reachable_matched;
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
           const_cast<Stmt&>(arm).exceptional_alternatives =
               reachable_matched;
-          const bool catch_all = arm.a.empty() ||
-              (arm.a.find('.') == string::npos && arm.a.find(',') == string::npos);
+          const bool catch_all = pattern.kind ==
+                  moss::est::PatternNode::Kind::RecoveryCatchall ||
+              pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding;
           if (catch_all) saw_catch_all = true;
           for (const auto& identity : matched) {
             if (!named.insert(identity).second)
@@ -19078,10 +19896,13 @@ class Checker {
                                    arm.source_file});
           }
           TypeEnv arm_env = env;
-          if (!binding_type.empty() && plain_identifier(trim(arm.a)))
-            arm_env[trim(arm.a)] = binding_type;
-          if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-            auto alternatives = split_top_level(arm.a, ',');
+          if (!binding_type.empty() && pattern.kind ==
+                  moss::est::PatternNode::Kind::RecoveryBinding)
+            arm_env[pattern.binding] = binding_type;
+          if (arm.est_pattern &&
+              (arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+               arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -19089,7 +19910,8 @@ class Checker {
           }
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), reachable_matched,
-              plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
+              pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding
+                  ? pattern.binding : string(), true);
           if (!reachable_matched.empty())
             recovered_raises = raise_set_union(
                 std::move(recovered_raises), arm_raises);
@@ -19111,8 +19933,9 @@ class Checker {
         } else {
           alternatives = phase21_raised_identities(
               statement.line, statement.a, env);
-          if (!selected_binding.empty() &&
-              trim(statement.a) == selected_binding) {
+          const auto raised_binding = tree_identifier_name(statement.a);
+          if (!selected_binding.empty() && raised_binding &&
+              *raised_binding == selected_binding) {
             std::set<string> selected_types;
             for (const auto& identity : selected)
               selected_types.insert(identity.type);
@@ -19276,16 +20099,17 @@ class Checker {
                  handler.body[index].indent == statement.indent + 1 &&
                  handler.body[index].kind == Stmt::Kind::Case) {
             const Stmt& arm = handler.body[index];
+            const auto& pattern = *arm.est_pattern;
             auto variant = std::find_if(
                 declaration->second->cases.begin(),
                 declaration->second->cases.end(),
-                [&](const EnumCase& item) { return item.name == arm.a; });
+                [&](const EnumCase& item) { return item.name == pattern.case_name; });
             if (variant != declaration->second->cases.end())
               for (size_t field = 0;
-                   field < arm.args.size() && field < variant->fields.size();
+                   field < pattern.payload_bindings.size() && field < variant->fields.size();
                    ++field)
-                if (!entry.count(arm.args[field]))
-                  candidates.emplace(arm.args[field],
+                if (!entry.count(pattern.payload_bindings[field]))
+                  candidates.emplace(pattern.payload_bindings[field],
                                      variant->fields[field].type);
             ++index;
             while (index < handler.body.size() &&
@@ -19297,7 +20121,7 @@ class Checker {
       if (statement.kind != Stmt::Kind::Let &&
           statement.kind != Stmt::Kind::Var &&
           statement.kind != Stmt::Kind::Assign) return;
-      if (!plain_identifier(statement.a) || entry.count(statement.a)) return;
+      if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
       auto type = inferred_expr_type(statement.b, current);
       if (!type || contains_internal_placeholder(*type)) return;
       auto [item, inserted] = candidates.emplace(statement.a, *type);
@@ -19315,9 +20139,12 @@ class Checker {
     const TypeEnvVisitor visit = [&](const Stmt& statement,
                                      const TypeEnv& current) {
       for (const auto& expression : statement_expressions(statement)) {
-        if (statement.kind == Stmt::Kind::Assign &&
-            plain_identifier(expression) && expression == statement.a)
-          continue;
+        if (statement.kind == Stmt::Kind::Assign) {
+          const auto expression_binding = tree_identifier_name(expression);
+          if (expression_binding &&
+              *expression_binding == statement.est_binding_name)
+            continue;
+        }
         for (const auto& name : functional_captures(expression, candidates))
           if (!current.count(name)) result.insert(name);
       }
@@ -19559,23 +20386,19 @@ class Checker {
       if (saw_catch_all)
         err(arm.line, "no on_fail arm may follow a catch-all",
             "ON_FAIL_AFTER_CATCH_ALL");
-      string selector;
-      if (!arm.patterns.empty()) {
-        for (const auto& pattern : arm.patterns) {
-          if (!selector.empty()) selector += ", ";
-          selector += pattern;
-        }
-      } else {
-        selector = arm.binding;
-      }
+      const auto pattern = arm.est_pattern ? *arm.est_pattern :
+          (arm.binding.empty() ? moss::est::recovery_pattern("") :
+                                 moss::est::recovery_pattern(arm.binding));
       string binding_type;
       RaiseSet matched = phase21_recovery_pattern(
-          arm.line, selector, remaining, &binding_type);
+          arm.line, pattern, remaining, &binding_type);
       RaiseSet reachable;
       for (const auto& identity : matched)
         if (remaining.count(identity)) reachable.insert(identity);
       arm.exceptional_alternatives = reachable;
-      const bool catch_all = arm.patterns.empty();
+      const bool catch_all = pattern.kind ==
+              moss::est::PatternNode::Kind::RecoveryCatchall ||
+          pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding;
       if (catch_all) saw_catch_all = true;
       for (const auto& identity : matched) {
         if (!named.insert(identity).second)
@@ -19607,9 +20430,11 @@ class Checker {
       for (const auto& parameter : handler.params)
         env[parameter.name] = parameter.type;
       if (!arm.binding.empty()) env[arm.binding] = binding_type;
-      if (arm.patterns.size() == 1)
+      if (arm.est_patterns.size() == 1 && arm.binding.empty() &&
+          arm.est_patterns.front().kind ==
+              moss::est::PatternNode::Kind::QualifiedRecoveryCase)
         for (const auto& binding :
-             phase21_pattern_bindings(arm.line, arm.patterns.front()))
+             phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
           env[binding.first] = binding.second;
       for (const auto& name :
            phase21_failure_capture_reads(arm, env, local_candidates))
@@ -19655,7 +20480,7 @@ class Checker {
       if (location && domain_fields.count(location->root))
         effects.domain_write = true;
     };
-    string original = strip_redundant_outer_parentheses(expression);
+    string original = tree_strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
 
     // A message remains a Root ingress anywhere within a main expression.
@@ -19664,7 +20489,7 @@ class Checker {
     // Grouping and vector construction do not hide effects of their contents.
     // In particular, a raised element must reach recovery/Root totality, and
     // a grouped index panic must keep a chunk mapper out of Branch work.
-    if (auto elements = parse_vector_literal(original)) {
+    if (auto elements = tree_parse_vector_literal(original)) {
       for (const auto& element : *elements)
         effects.merge(observable_expression_effects(
             element, env, domain_fields, implicit_object, parameters,
@@ -19674,33 +20499,34 @@ class Checker {
     // `not` is a value transformation, so every observable effect of its
     // operand still occurs.  Recurse before call/identifier fallback; losing
     // a typed raise here would also make Root totality and recovery unsound.
-    if (starts_with(original, "not "))
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(original, unary_operation, unary_operand) &&
+        unary_operation == "not")
       return observable_expression_effects(
-          trim(original.substr(4)), env, domain_fields, implicit_object,
+          unary_operand, env, domain_fields, implicit_object,
           parameters, proven_indices, root_ingress);
 
-    if (starts_with(original, "message ")) {
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(original, message_target, message_handler,
+                           message_arguments)) {
       effects.message = true;
-      string receiver, handler;
-      vector<string> arguments;
-      if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+      effects.merge(observable_expression_effects(
+          message_target, env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress));
+      for (const auto& argument : message_arguments)
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object, parameters,
+            argument, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
-        for (const auto& argument : arguments)
-          effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object, parameters,
-              proven_indices, root_ingress));
-        auto receiver_type = env.find(receiver);
-        if (receiver_type != env.end()) {
-          auto domain = domains_.find(canonical_type_name(receiver_type->second));
-          if (domain != domains_.end())
-            if (const Handler* target = find_handler(*domain->second, handler))
-              if (!root_ingress || target->failure_arms.empty())
-                effects.raise_set = raise_set_union(
-                    std::move(effects.raise_set),
-                    target->observable_effects.raise_set);
-        }
+      auto receiver_type = env.find(message_target);
+      if (receiver_type != env.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver_type->second));
+        if (domain != domains_.end())
+          if (const Handler* target = find_handler(*domain->second, message_handler))
+            if (!root_ingress || target->failure_arms.empty())
+              effects.raise_set = raise_set_union(
+                  std::move(effects.raise_set),
+                  target->observable_effects.raise_set);
       } else {
         effects.unresolved = true;
       }
@@ -19741,7 +20567,7 @@ class Checker {
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
-          if (parse_bound_method_callable(identity, bound_receiver,
+          if (tree_parse_bound_method_callable(identity, bound_receiver,
                                           bound_method)) {
             auto receiver_type = inferred_expr_type(bound_receiver, env);
             vector<string> input_types;
@@ -19797,10 +20623,11 @@ class Checker {
       return effects;
     }
 
-    string value = normalize_pipeline(original);
-    if (!value.empty() && value.front() == '~') {
+    string value = tree_normalize_pipeline(original);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
       return observable_expression_effects(
-          trim(value.substr(1)), env, domain_fields, implicit_object, parameters,
+          unary_operand, env, domain_fields, implicit_object, parameters,
           proven_indices, root_ingress);
     }
     for (const auto& operators :
@@ -19808,7 +20635,7 @@ class Checker {
                                 {"==", "!=", "<=", ">=", "<", ">"},
                                 {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
             binary->first, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
@@ -19835,7 +20662,7 @@ class Checker {
       }
     }
     string index_base, index_expression;
-    if (parse_index(value, index_base, index_expression)) {
+    if (tree_parse_index(value, index_base, index_expression)) {
       effects.may_panic =
           !proven_index_access(proven_indices, index_base, index_expression);
       effects.merge(observable_expression_effects(
@@ -19846,27 +20673,22 @@ class Checker {
           proven_indices, root_ingress));
       return effects;
     }
-    // Reading a field of a computed object first evaluates its base.  A
-    // function or method producing that object may raise before projection.
-    // Confirm this is an object field so enum tags and module members keep
-    // their existing effect paths below.
-    if (auto dot = value.rfind('.'); dot != string::npos) {
-      const string base = trim(value.substr(0, dot));
-      const string field = trim(value.substr(dot + 1));
-      if (plain_identifier(field)) {
-        auto base_type = inferred_expr_type(base, env);
-        if (base_type) {
-          auto object = objects_.find(canonical_type_name(*base_type));
-          if (object != objects_.end() &&
-              std::any_of(object->second->fields.begin(),
-                          object->second->fields.end(),
-                          [&](const Field& candidate) {
-                            return candidate.name == field;
-                          }))
-            return observable_expression_effects(
-                base, env, domain_fields, implicit_object, parameters,
-                proven_indices, root_ingress);
-        }
+    // Reading a field of a computed object first evaluates its base.  Read
+    // the Member node so dots inside string literals never become fake fields.
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      auto base_type = inferred_expr_type(member_base, env);
+      if (base_type) {
+        auto object = objects_.find(canonical_type_name(*base_type));
+        if (object != objects_.end() &&
+            std::any_of(object->second->fields.begin(),
+                        object->second->fields.end(),
+                        [&](const Field& candidate) {
+                          return candidate.name == member_name;
+                        }))
+          return observable_expression_effects(
+              member_base, env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress);
       }
     }
     string receiver, method;
@@ -19877,12 +20699,12 @@ class Checker {
     {
       string enum_name, case_name;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         for (const auto& argument : arguments) {
           string field, field_value;
           effects.merge(observable_expression_effects(
-              parse_named_argument(argument, field, field_value) ? field_value : argument,
+              tree_parse_named_argument(argument, field, field_value) ? field_value : argument,
               env, domain_fields, implicit_object, parameters,
               proven_indices, root_ingress));
         }
@@ -19891,7 +20713,7 @@ class Checker {
     }
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(value, open_arguments)) {
+      if (tree_parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters,
@@ -19904,7 +20726,7 @@ class Checker {
         return effects;
       }
     }
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
             receiver, env, domain_fields, implicit_object, parameters,
@@ -19978,7 +20800,7 @@ class Checker {
     }
     string callee;
     vector<string> arguments_call;
-    if (parse_simple_call(value, callee, arguments_call)) {
+    if (tree_parse_simple_call(value, callee, arguments_call)) {
       if (callee == "sort" && !functions_.count(callee) &&
           (arguments_call.size() == 1 || arguments_call.size() == 2)) {
         auto place = storage_location(arguments_call[0], env);
@@ -19999,7 +20821,7 @@ class Checker {
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
-            parse_named_argument(argument, field, field_value) ? field_value : argument,
+            tree_parse_named_argument(argument, field, field_value) ? field_value : argument,
             env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
       }
@@ -20048,7 +20870,7 @@ class Checker {
         effects.merge(builtin->observable_effects);
         return effects;
       }
-      if (typed_empty_vector_constructor(value))
+      if (tree_empty_typed_vector_constructor(value))
         return effects;
       effects.unresolved = true;
       return effects;
@@ -20058,82 +20880,56 @@ class Checker {
     return effects;
   }
 
-  static bool is_positive_integer_literal(const string& text) {
-    string s = trim(text);
-    if (s.empty()) return false;
-    size_t start = (s.front() == '+') ? 1 : 0;
-    if (start >= s.size()) return false;
-    for (size_t i = start; i < s.size(); ++i) {
-      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
-    }
-    try {
-      return std::stoll(s) > 0;
-    } catch (...) {
-      return false;
-    }
+  static bool is_integer_literal_at_least(const string& expression,
+                                          std::int64_t minimum) {
+    auto decoded = tree_numeric_literal_value(expression);
+    return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
+        decoded->integer >= minimum;
   }
 
-  static bool is_nonnegative_integer_literal(const string& text) {
-    string s = trim(text);
-    if (s.empty()) return false;
-    size_t start = (s.front() == '+') ? 1 : 0;
-    if (start >= s.size()) return false;
-    for (size_t i = start; i < s.size(); ++i) {
-      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
-    }
-    try {
-      return std::stoll(s) >= 0;
-    } catch (...) {
-      return false;
-    }
+  static bool is_positive_integer_literal(const string& expression) {
+    return is_integer_literal_at_least(expression, 1);
   }
 
-  static std::set<string> extract_expression_identifiers(const string& expr) {
-    std::set<string> ids;
-    size_t i = 0;
-    while (i < expr.size()) {
-      if (moss::ascii_is_alpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
-        size_t start = i;
-        while (i < expr.size() && (moss::ascii_is_alnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
-          ++i;
-        }
-        ids.insert(expr.substr(start, i - start));
-      } else {
-        ++i;
-      }
-    }
-    return ids;
+  static bool is_nonnegative_integer_literal(const string& expression) {
+    return is_integer_literal_at_least(expression, 0);
   }
 
-  static string extract_root_identifier(const string& target) {
-    string root = trim(target);
-    auto dot = root.find('.');
-    auto bracket = root.find('[');
-    size_t end = std::min(dot == string::npos ? root.size() : dot,
-                          bracket == string::npos ? root.size() : bracket);
-    return trim(root.substr(0, end));
+  static bool tree_expression_mentions_identifier(
+      const string& expression, std::string_view name) {
+    auto syntax = checker_est_view(expression);
+    return syntax && moss::est::expression_mentions(*syntax, name);
+  }
+
+  static std::optional<string> tree_root_identifier(
+      const string& expression) {
+    auto syntax = checker_est_view(expression);
+    string name;
+    return syntax && moss::est::project_root_identifier(*syntax, name)
+        ? std::optional<string>(std::move(name)) : std::nullopt;
   }
 
   bool is_bounded_while_loop(
       const vector<Stmt>& body, size_t while_index, const TypeEnv& env) const {
     const Stmt& while_stmt = body[while_index];
     string condition = trim(while_stmt.a);
-    auto cmp_less = split_binary(condition, {"<=", "<"});
-    auto cmp_greater = split_binary(condition, {">=", ">"});
+    auto cmp_less = tree_split_binary(condition, {"<=", "<"});
+    auto cmp_greater = tree_split_binary(condition, {">=", ">"});
     if (!cmp_less && !cmp_greater) return false;
 
     bool is_less = cmp_less.has_value();
-    string var_name = trim(is_less ? cmp_less->first : cmp_greater->first);
+    const auto induction_binding = tree_identifier_name(
+        is_less ? cmp_less->first : cmp_greater->first);
+    if (!induction_binding) return false;
+    const string& var_name = *induction_binding;
     string bound_expr = trim(is_less ? cmp_less->second : cmp_greater->second);
 
-    if (!plain_identifier(var_name)) return false;
     auto var_type = env.find(var_name);
     if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
       return false;
 
     // No induction-variable dependency in bound
-    auto bound_vars = extract_expression_identifiers(bound_expr);
-    if (bound_vars.count(var_name)) return false;
+    if (tree_expression_mentions_identifier(bound_expr, var_name)) return false;
 
     // Bound must be invariant and side-effect-free
     ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
@@ -20158,39 +20954,44 @@ class Checker {
       if (s.kind == Stmt::Kind::While) return false;
 
       if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
-        string root = extract_root_identifier(s.a);
-        if (bound_vars.count(root)) return false;
-        if (root == var_name) {
-          if (trim(s.a) != var_name || s.indent != loop_body_indent)
+        auto root = tree_root_identifier(s.a);
+        if (root && tree_expression_mentions_identifier(bound_expr, *root))
+          return false;
+        if (root && *root == var_name) {
+          if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
             return false;
           if (is_less) {
-            auto add = split_binary(trim(s.b), {"+"});
+            auto add = tree_split_binary(trim(s.b), {"+"});
             if (!add) return false;
             string left = trim(add->first);
             string right = trim(add->second);
             string step_str;
-            if (left == var_name) step_str = right;
-            else if (right == var_name) step_str = left;
+            if (tree_identifier_named(left, var_name)) step_str = right;
+            else if (tree_identifier_named(right, var_name)) step_str = left;
             else return false;
             if (!is_positive_integer_literal(step_str)) return false;
             ++progress_steps;
           } else {
-            auto sub = split_binary(trim(s.b), {"-"});
+            auto sub = tree_split_binary(trim(s.b), {"-"});
             if (!sub) return false;
             string left = trim(sub->first);
             string right = trim(sub->second);
-            if (left != var_name) return false;
+            if (!tree_identifier_named(left, var_name)) return false;
             if (!is_positive_integer_literal(right)) return false;
             ++progress_steps;
           }
         }
       } else if (s.kind == Stmt::Kind::For) {
-        string target = trim(s.a);
-        if (bound_vars.count(target) || target == var_name) return false;
+        const auto target = tree_identifier_name(s.a);
+        if (target && tree_expression_mentions_identifier(bound_expr, *target))
+          return false;
+        if (target && *target == var_name) return false;
       } else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
-        string root = trim(s.a);
+        const auto root = tree_identifier_name(s.a);
         bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
-        if (mutating && (bound_vars.count(root) || root == var_name)) return false;
+        if (mutating && root &&
+            (tree_expression_mentions_identifier(bound_expr, *root) ||
+             *root == var_name)) return false;
       }
     }
     return progress_steps == 1;
@@ -20217,7 +21018,7 @@ class Checker {
     if (loop.kind != Stmt::Kind::For) return std::nullopt;
     string callee;
     vector<string> arguments;
-    if (!parse_simple_call(trim(loop.b), callee, arguments) ||
+    if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
         callee != "range" ||
         (arguments.size() != 2 && arguments.size() != 3) ||
         !is_nonnegative_integer_literal(arguments[0]) ||
@@ -20226,10 +21027,10 @@ class Checker {
       return std::nullopt;
     string range_binding, method;
     vector<string> method_arguments;
-    if (!parse_member_call(trim(arguments[1]), range_binding, method,
+    if (!tree_parse_member_call(trim(arguments[1]), range_binding, method,
                            method_arguments) ||
         method != "length" || !method_arguments.empty() ||
-        !plain_identifier(range_binding))
+        !tree_plain_identifier(range_binding))
       return std::nullopt;
     auto range_type = env.find(range_binding);
     if (range_type == env.end() ||
@@ -20243,12 +21044,13 @@ class Checker {
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
-        const string root = extract_root_identifier(statement.a);
-        if (root == range_binding || root == induction) return std::nullopt;
+        const auto root = tree_root_identifier(statement.a);
+        if (root && (*root == range_binding || *root == induction))
+          return std::nullopt;
       }
       if (statement.kind == Stmt::Kind::For &&
-          (trim(statement.a) == range_binding ||
-           trim(statement.a) == induction))
+          (tree_identifier_named(statement.a, range_binding) ||
+           tree_identifier_named(statement.a, induction)))
         return std::nullopt;
       if (statement.kind == Stmt::Kind::Case &&
           (std::find(statement.args.begin(), statement.args.end(),
@@ -20259,9 +21061,9 @@ class Checker {
       for (const auto& expression : statement_expressions(statement)) {
         string replace_callee;
         vector<string> replace_arguments;
-        if (parse_simple_call(expression, replace_callee, replace_arguments) &&
+        if (tree_parse_simple_call(expression, replace_callee, replace_arguments) &&
             replace_callee == "replace" && !replace_arguments.empty() &&
-            extract_root_identifier(replace_arguments.front()) == range_binding)
+            tree_root_identifier(replace_arguments.front()) == range_binding)
           return std::nullopt;
       }
     }
@@ -20295,7 +21097,6 @@ class Checker {
       const ObjectType* implicit_object = nullptr,
       const ProvenIndexAccesses* invocation_proven_indices = nullptr) const {
     ObservableEffects effects = no_observable_effects();
-    std::set<string> locals = parameters;
     const auto loop_index_facts = stable_range_loop_index_facts(body, env);
     for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
       const auto& statement = body[stmt_idx];
@@ -20312,8 +21113,11 @@ class Checker {
       if (statement.kind == Stmt::Kind::For) {
         bool bounded = false;
         string iter_expr = trim(statement.b);
-        if (starts_with(iter_expr, "range(") ||
-            (starts_with(iter_expr, "[") && ends_with(iter_expr, "]"))) {
+        string range_callee;
+        vector<string> range_arguments;
+        if ((tree_parse_simple_call(iter_expr, range_callee, range_arguments) &&
+             range_callee == "range") ||
+            tree_parse_vector_literal(iter_expr)) {
           bounded = true;
         } else {
           auto collection_type = inferred_expr_type(iter_expr, env);
@@ -20339,38 +21143,32 @@ class Checker {
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
-        string root = trim(statement.a);
-        auto dot = root.find('.');
-        auto bracket = root.find('[');
-        size_t end = std::min(dot == string::npos ? root.size() : dot,
-                              bracket == string::npos ? root.size() : bracket);
-        root = trim(root.substr(0, end));
-        if (domain_fields.count(root)) effects.domain_write = true;
-        else if (parameters.count(root) ||
-                 (implicit_object && (root == "self" ||
+        const auto root = tree_root_identifier(statement.a);
+        if (root && domain_fields.count(*root)) effects.domain_write = true;
+        else if (root && (parameters.count(*root) ||
+                 (implicit_object && (*root == "self" ||
                   std::any_of(implicit_object->fields.begin(),
                               implicit_object->fields.end(),
                               [&](const Field& field) {
-                                return field.name == root;
-                              }))))
+                                return field.name == *root;
+                              })))))
           effects.local_mutation = true;
-        locals.insert(statement.a);
       }
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
-        string root = trim(statement.a);
+        const auto root = tree_root_identifier(statement.a);
         bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
         if (statement.b == "pop" || statement.b == "pop_front") {
           effects.may_panic = true;
         }
         if (mutating) {
-          if (domain_fields.count(root)) effects.domain_write = true;
-          else if (parameters.count(root) ||
-                   (implicit_object && (root == "self" ||
+          if (root && domain_fields.count(*root)) effects.domain_write = true;
+          else if (root && (parameters.count(*root) ||
+                   (implicit_object && (*root == "self" ||
                     std::any_of(implicit_object->fields.begin(),
                                 implicit_object->fields.end(),
                                 [&](const Field& field) {
-                                  return field.name == root;
-                                }))))
+                                  return field.name == *root;
+                                })))))
             effects.local_mutation = true;
         }
       }
@@ -20590,34 +21388,36 @@ class Checker {
   static vector<string> functional_captures(const string& expression,
                                             const TypeEnv& env) {
     std::set<string> captures;
-    bool in_string = false, escaped = false;
-    for (size_t index = 0; index < expression.size();) {
-      char ch = expression[index];
-      if (in_string) {
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == '"') in_string = false;
-        ++index;
-        continue;
-      }
-      if (ch == '"') { in_string = true; ++index; continue; }
-      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(ch)) || ch == '_')) {
-        ++index;
-        continue;
-      }
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      string name = expression.substr(index, end - index);
-      size_t before = index;
-      while (before > 0 &&
-             moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1])))
-        --before;
-      bool member_name = before > 0 && expression[before - 1] == '.';
-      if (name != "_" && !member_name && env.count(name)) captures.insert(name);
-      index = end;
+    auto syntax = checker_est_view(expression);
+    if (!syntax) {
+      auto children = moss::est::parse_delimited_children(expression, ',');
+      if (children && children->size() > 1) {
+        for (const auto& child : *children) {
+          auto child_syntax = checker_est_view(child);
+          if (!child_syntax) continue;
+          for (const auto& [name, _] : env)
+            if (name != "_" &&
+                moss::est::contains_identifier(*child_syntax, name))
+              captures.insert(name);
+        }
+      } else if (auto base = moss::est::trailing_member_base(expression))
+        syntax = checker_est_view(*base);
+    }
+    if (syntax) {
+      for (const auto& [name, _] : env)
+        if (name != "_" && moss::est::contains_identifier(*syntax, name))
+          captures.insert(name);
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      std::set<string> legacy_captures;
+      for (const auto& [name, _] : env)
+        if (name != "_" && legacy_expression_uses(expression, name))
+          legacy_captures.insert(name);
+      if (captures != legacy_captures)
+        std::fprintf(stderr,
+            "EST capture mismatch <%s> tree=%zu legacy=%zu\n",
+            expression.c_str(), captures.size(), legacy_captures.size());
+      assert(captures == legacy_captures);
     }
     return vector<string>(captures.begin(), captures.end());
   }
@@ -20657,7 +21457,7 @@ class Checker {
       return effects;
     }
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       const Method* method = receiver_type
           ? resolve_method(canonical_type_name(*receiver_type), bound_method,
@@ -20787,7 +21587,9 @@ class Checker {
           callback_input_types.insert(
               callback_input_types.begin(),
               inferred_expr_type(parsed_stage.arguments.front(), env).value_or(""));
-        auto fn_it = functions_.find(trim(callable));
+        const auto callable_name = tree_identifier_name(callable);
+        auto fn_it = callable_name
+            ? functions_.find(*callable_name) : functions_.end();
         if (fn_it != functions_.end()) {
           bool concrete_cb = std::all_of(callback_input_types.begin(), callback_input_types.end(),
                                          [&](const string& type) {
@@ -20813,7 +21615,8 @@ class Checker {
         // the checked functional IR must have a concrete callable identity;
         // an unresolved indirect callable here would make effect propagation
         // silently incomplete.
-        auto callable_binding = env.find(trim(callable));
+        auto callable_binding = callable_name
+            ? env.find(*callable_name) : env.end();
         const bool deferred_generic_callable =
             callable_binding != env.end() &&
             open_generic(callable_binding->second);
@@ -20837,7 +21640,7 @@ class Checker {
           node.ownership = concrete_function_parameter_effect(
               *function, 0, callback_input_types);
         string bound_receiver, bound_method;
-        if (parse_bound_method_callable(node.callable_identity, bound_receiver,
+        if (tree_parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
           auto receiver_type = inferred_expr_type(bound_receiver, env);
           const Method* method = receiver_type
@@ -21145,7 +21948,7 @@ class Checker {
       return "use replace(" + source + ", replacement) to obtain an owned enum before matching";
     if (env.message_payloads.count(source))
       return "incoming payloads are immutable; compute an independent value from this READ view";
-    return simple_identifier(source)
+    return tree_simple_identifier(source)
         ? "use 'match consume " + source + ":'"
         : "obtain an owned enum value with replace before a consuming match";
   }
@@ -21267,7 +22070,7 @@ class Checker {
       } else {
         string identity = trim(callable);
         string bound_receiver, bound_method;
-        if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+        if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
           check_ownership_expression(line, bound_receiver, env, Effect::Read);
           auto receiver_type = inferred_expr_type(bound_receiver, env.types);
           const Method* method = receiver_type
@@ -21355,17 +22158,17 @@ class Checker {
 
   RaiseSet direct_ownership_expression_raises(
       const string& expression, const TypeEnv& types) const {
-    const string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    const string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
     vector<string> arguments;
-    if (parse_fileio_open(value, arguments))
+    if (tree_parse_fileio_open(value, arguments))
       return fileio_operation_raise_set("open");
     string enum_name, case_name;
     bool called = false;
-    if (parse_enum_case_expression(value, enum_name, case_name, arguments,
+    if (tree_parse_enum_case_expression(value, enum_name, case_name, arguments,
                                    called) && enums_.count(enum_name))
       return {};
     string receiver, method;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, types);
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO"))
@@ -21382,7 +22185,7 @@ class Checker {
       return {};
     }
     string callee;
-    if (parse_simple_call(value, callee, arguments)) {
+    if (tree_parse_simple_call(value, callee, arguments)) {
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
@@ -21432,15 +22235,16 @@ class Checker {
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
     if (check_functional_pipeline_ownership(line, original, env)) return;
-    string value = strip_expression_parens(normalize_pipeline(std::move(original)));
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
         check_ownership_expression(line, element, env,
                                    vector_element_effect(element, env.types));
       return;
     }
     auto requested_type = inferred_expr_type(value, env.types);
+    string unary_operation, unary_operand;
     if (requested == Effect::Consume && requested_type &&
         fileio_scoped_type(*requested_type))
       err(line, "FileIO and borrowed ranges cannot be moved or returned",
@@ -21455,17 +22259,18 @@ class Checker {
             "MATCH_READ_BORROW_ACTIVE");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
         check_ownership_expression(line, binary->second, env, Effect::Read);
         return;
       }
     }
-    if (starts_with(value, "not ")) {
-      check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "not") {
+      check_ownership_expression(line, unary_operand, env, Effect::Read);
       return;
     }
-    if (auto typed_vector = typed_empty_vector_constructor(value)) {
+    if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
       if (contains_trait_type(*typed_vector))
         err(line,
             "trait types are static structural constraints and cannot be stored "
@@ -21476,15 +22281,16 @@ class Checker {
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
-    if (!value.empty() && value.front() == '~') {
-      check_ownership_expression(line, trim(value.substr(1)), env, Effect::Read);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      check_ownership_expression(line, unary_operand, env, Effect::Read);
       return;
     }
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
         check_ownership_expression(line, binary->second, env, Effect::Read);
         return;
@@ -21518,7 +22324,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
@@ -21534,7 +22340,7 @@ class Checker {
               "enum_case_constructor", line);
         if (item != declaration.cases.end()) for (const auto& argument : fields) {
           string name, expression;
-          if (!parse_named_argument(argument, name, expression)) continue;
+          if (!tree_parse_named_argument(argument, name, expression)) continue;
           auto field = std::find_if(item->fields.begin(), item->fields.end(),
               [&](const Field& candidate) { return candidate.name == name; });
           if (field != item->fields.end())
@@ -21544,7 +22350,7 @@ class Checker {
         return;
       }
     }
-    if (simple_identifier(value)) {
+    if (tree_simple_identifier(value)) {
       if (functions_.count(value)) return;  // Statically closed callable identity.
       auto resolved_binding = env.binding_identities.find(value);
       if (resolved_binding != env.binding_identities.end())
@@ -21563,7 +22369,7 @@ class Checker {
 
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
@@ -21571,8 +22377,8 @@ class Checker {
           check_ownership_expression(line, receiver, env,
               fileio_operation_effect(method).value_or(Effect::Read));
           for (const auto& argument : arguments)
-            if (trim(argument) != "ro" && trim(argument) != "rw" &&
-                trim(argument) != "create" && trim(argument) != "dataonly")
+            if (!tree_identifier_named(argument, "ro") && !tree_identifier_named(argument, "rw") &&
+                !tree_identifier_named(argument, "create") && !tree_identifier_named(argument, "dataonly"))
               check_ownership_expression(line, argument, env, Effect::Read);
           return;
         }
@@ -21677,7 +22483,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       auto resolved_callee = env.binding_identities.find(callee);
       if (resolved_callee != env.binding_identities.end())
         retain_semantic_use(resolved_callee->second, "binding_use", line);
@@ -21705,7 +22511,7 @@ class Checker {
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
-          if (parse_named_argument(argument, field, field_value)) {
+          if (tree_parse_named_argument(argument, field, field_value)) {
             supplied[field] = field_value;
             auto f_it = std::find_if(declaration.fields.begin(), declaration.fields.end(),
                                      [&](const Field& f) { return f.name == field; });
@@ -21777,7 +22583,7 @@ class Checker {
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       // Indexed reads materialize an element; they do not move the whole
       // collection. Only an explicit whole-place operation may consume it.
       check_ownership_expression(line, base, env, Effect::Read);
@@ -21785,11 +22591,13 @@ class Checker {
       return;
     }
 
-    auto dot = value.rfind('.');
-    if (dot != string::npos && value.find('(', dot) == string::npos) {
-      check_ownership_expression(line, value.substr(0, dot), env,
-                                 requested == Effect::Write ? Effect::Read :
-                                 projection_effect(value, requested, env.types));
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      (void)member_name;
+      check_ownership_expression(
+          line, member_base, env,
+          requested == Effect::Write ? Effect::Read :
+              projection_effect(value, requested, env.types));
       return;
     }
     require_available(line, value, env);
@@ -21960,11 +22768,11 @@ class Checker {
           err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
         bool consuming = s.b == "consume";
         if (consuming) {
-          if (storage_location(s.a, env.types) && !simple_identifier(s.a))
+          if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
             err(s.line, "consuming match cannot move an enum from an interior place; "
                 "use replace(place, replacement) to obtain an owned value",
                 "MATCH_CONSUME_INTERIOR_PLACE");
-          if (simple_identifier(s.a)) {
+          if (tree_simple_identifier(s.a)) {
             require_available(s.line, s.a, env);
             consume_binding(s.line, s.a, env, "consuming match");
           } else {
@@ -21984,14 +22792,15 @@ class Checker {
         ++index;
         while (index < statements.size() && statements[index].indent == level + 1) {
           const Stmt& arm = statements[index];
+          const auto& pattern = *arm.est_pattern;
           auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
-              [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+              [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
           if (item == declaration.cases.end())
-            err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
+            err(arm.line, "unknown enum case '" + pattern.case_name + "'", "UNKNOWN_ENUM_CASE");
           OwnershipEnv branch = incoming;
           if (read_place) branch.active_read_traversals.insert(s.a);
-          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-            const string& name = arm.args[field_index];
+          for (size_t field_index = 0; field_index < pattern.payload_bindings.size(); ++field_index) {
+            const string& name = pattern.payload_bindings[field_index];
             const string& field_type = item->fields[field_index].type;
             branch.types[name] = field_type;
             branch.binding_identities[name] =
@@ -22007,7 +22816,7 @@ class Checker {
           ++index;
           check_ownership_block(statements, index, level + 2, branch,
                                 current_domain, current_handler, exceptional);
-          for (const auto& name : arm.args) {
+          for (const auto& name : pattern.payload_bindings) {
             if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
             else branch.types.erase(name);
             if (incoming.binding_identities.count(name))
@@ -22095,17 +22904,16 @@ class Checker {
           }
           handled.insert(arm.exceptional_alternatives.begin(),
                          arm.exceptional_alternatives.end());
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered.types[arm.a] = selected_types.size() == 1
+            recovered.types[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-            recovered.immutable_locals.insert(arm.a);
-            recovered.moved.erase(arm.a);
-          } else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+            recovered.immutable_locals.insert(arm.est_pattern->binding);
+            recovered.moved.erase(arm.est_pattern->binding);
+          } else {
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front())) {
@@ -22260,7 +23068,7 @@ class Checker {
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
           if (source_type && canonical_type_name(*source_type) == "FileIO" &&
-              source != "FileIO.open" &&
+              !tree_root_member_access_named(source, "FileIO", "open") &&
               storage_location(s.b, env.types))
             err(s.line, "FileIO ownership is pinned to its original binding",
                 "FILEIO_PINNED_OWNERSHIP");
@@ -22268,7 +23076,7 @@ class Checker {
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
           if (transfers) {
-            if (simple_identifier(source)) {
+            if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
@@ -22318,18 +23126,17 @@ class Checker {
           if ((existing_owner && prior_type &&
                canonical_type_name(*prior_type) == "FileIO") ||
               (new_type && canonical_type_name(*new_type) == "FileIO" &&
-               trim(s.b) != "FileIO.open" &&
+               !tree_is_fileio_open(s.b) &&
                storage_location(s.b, env.types)))
             err(s.line, "FileIO ownership is pinned and cannot be reassigned",
                 "FILEIO_PINNED_OWNERSHIP");
           string lhs_base, lhs_index;
-          if (parse_index(s.a, lhs_base, lhs_index))
+          if (tree_parse_index(s.a, lhs_base, lhs_index))
             check_ownership_expression(s.line, s.a, env, Effect::Write);
           else {
-            auto dot = s.a.rfind('.');
-            if (dot != string::npos)
+            if (tree_member_access(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
-            else if (simple_identifier(s.a))
+            else if (tree_simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
           string source = trim(s.b);
@@ -22338,7 +23145,7 @@ class Checker {
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
           if (transfers) {
-            if (simple_identifier(source)) {
+            if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
@@ -22354,7 +23161,7 @@ class Checker {
             ++index;
             break;
           }
-          if (simple_identifier(s.a)) {
+          if (tree_simple_identifier(s.a)) {
             if (source_type) {
               auto checked = s.semantic_types_by_context.find(current_semantic_context_);
               const string& checked_type = checked == s.semantic_types_by_context.end()
@@ -22409,7 +23216,7 @@ class Checker {
           }
           record_direct_raise();
           if (!s.message_result.empty() && env.types.count(s.message_result) &&
-              simple_identifier(s.message_result))
+              tree_simple_identifier(s.message_result))
             // Assigning an existing binding or state field is a WRITE.
             check_ownership_expression(s.line, s.message_result, env, Effect::Write);
           if (!s.message_result.empty()) {
@@ -22537,7 +23344,7 @@ class Checker {
           std::to_string(operation->argument_types.size()) + " arguments, got " +
           std::to_string(argument_types.size()), "TYPE_MISMATCH");
     string signature = operation->signature;
-    auto names = split_top_level(signature.substr(signature.find('(') + 1,
+    auto names = tree_split_top_level(signature.substr(signature.find('(') + 1,
         signature.size() - signature.find('(') - 2), ',');
     for (size_t index = 0; index < argument_types.size(); ++index) {
       auto expected = builtin_operation_type(receiver_type, operation->argument_types[index]);
@@ -22575,10 +23382,11 @@ class Checker {
     CompileError error(line, message, code);
     if (!current_source_file_.empty()) error.source_file = current_source_file_;
     if (compiled_interface_file(function.source_file)) {
-      const string use = requirement.subject + "." + requirement.detail + "(";
       int origin = function.line;
       for (const auto& statement : function.body)
-        if (statement.text.find(use) != string::npos) {
+        if (auto expression = checker_est_view(statement.text);
+            expression && moss::est::contains_member_call(
+                *expression, requirement.subject, requirement.detail)) {
           origin = statement.line;
           break;
         }
@@ -23444,14 +24252,7 @@ class Checker {
           err(line, "range arguments must have type 'Int'");
       }
       if (args.size() == 3) {
-        string step = trim(args[2]);
-        size_t first_digit = !step.empty() && step.front() == '+' ? 1 : 0;
-        bool literal = first_digit < step.size() &&
-            std::all_of(step.begin() + static_cast<std::ptrdiff_t>(first_digit),
-                        step.end(), [](char value) {
-                          return moss::ascii_is_digit(static_cast<unsigned char>(value));
-                        });
-        if (!literal || (step == "0" || step == "+0"))
+        if (!tree_positive_decimal_integer_literal(args[2]))
           err(line, "range step must be a positive non-zero Int literal");
       }
       return;
@@ -23573,7 +24374,7 @@ class Checker {
         // Builtin calls are positional too (P25-S-ARCH-016): 'Char(codepoint: 65)'.
         for (const auto& argument : args) {
           string label, value;
-          if (parse_named_argument(argument, label, value))
+          if (tree_parse_named_argument(argument, label, value))
             err(line, "builtin " + name + " does not accept named argument '" +
                 trim(argument) + "'; pass the value positionally",
                 "CALL_NAMED_ARGUMENT_UNSUPPORTED");
@@ -23648,7 +24449,7 @@ class Checker {
     // surfaces, which are handled before this point.
     for (const auto& argument : args) {
       string label, value;
-      if (parse_named_argument(argument, label, value))
+      if (tree_parse_named_argument(argument, label, value))
         err(line, "function " + name + " does not accept named argument '" +
             trim(argument) + "'; function arguments are positional in Moss "
             "v0.1, so remove the label '" + label + ":' and pass the value in "
@@ -23669,7 +24470,7 @@ class Checker {
       auto required = parameter.type.empty() ? std::nullopt :
           moss::Type::parse_canonical(canonical_type_name(parameter.type));
       if (required && (*required)->is_closed() &&
-          parse_simple_call(trim(argument), nested_name, nested_arguments)) {
+          tree_parse_simple_call(trim(argument), nested_name, nested_arguments)) {
         auto nested = functions_.find(nested_name);
         if (nested != functions_.end() && nested->second->open_summary &&
             nested->second->open_summary->scheme_complete &&
@@ -23680,11 +24481,11 @@ class Checker {
           for (size_t prior = 0; prior < index; ++prior) {
             string prior_name;
             vector<string> prior_arguments;
-            if (!parse_simple_call(trim(args[prior]), prior_name,
+            if (!tree_parse_simple_call(trim(args[prior]), prior_name,
                                    prior_arguments) ||
                 prior_name != nested_name) continue;
             ++target_occurrence;
-            if (trim(args[prior]) == trim(argument))
+            if (tree_expressions_structurally_equal(args[prior], argument))
               ++expression_occurrence;
           }
           check_function_call(line, nested_name, nested_arguments, env,
@@ -23933,7 +24734,7 @@ class Checker {
     bool open_local_argument = std::any_of(args.begin(), args.end(),
         [&](const string& argument) {
           const string name = trim(argument);
-          if (!plain_identifier(name)) return false;
+          if (!tree_plain_identifier(name)) return false;
           auto binding = env.find(name);
           if (binding == env.end()) return false;
           auto term = moss::Type::parse_canonical(
@@ -23962,7 +24763,7 @@ class Checker {
                              statement.kind == Stmt::Kind::Var)) {
           string direct_callee;
           vector<string> direct_arguments;
-          direct_call = parse_simple_call(trim(statement.b), direct_callee,
+          direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
                                           direct_arguments) &&
               direct_callee == name && direct_arguments == args;
         }
@@ -24049,7 +24850,7 @@ class Checker {
             (statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
-            parse_simple_call(trim(statement.b), direct_callee,
+            tree_parse_simple_call(trim(statement.b), direct_callee,
                               direct_arguments) &&
             direct_callee == name && direct_arguments == args &&
             retained->second.callable_id ==
@@ -24073,7 +24874,7 @@ class Checker {
         string direct_callee;
         vector<string> direct_arguments;
         if (result_expression &&
-            parse_simple_call(trim(*result_expression), direct_callee,
+            tree_parse_simple_call(trim(*result_expression), direct_callee,
                               direct_arguments) &&
             direct_callee == name && direct_arguments == args &&
             checking_specialization_->return_type_ref) {
@@ -24280,9 +25081,9 @@ class Checker {
       placeholder_env["_"] = input_types.front();
       string capture_receiver, capture_method;
       vector<string> capture_arguments;
-      if (parse_member_call(identity, capture_receiver, capture_method,
+      if (tree_parse_member_call(identity, capture_receiver, capture_method,
                             capture_arguments) &&
-          trim(capture_receiver) != "_") {
+          !tree_placeholder_expression(capture_receiver)) {
         auto capture_type = inferred_expr_type(capture_receiver, env);
         bool mutates_collection = capture_type &&
             (canonical_type_name(*capture_type) == "vector" ||
@@ -24326,7 +25127,7 @@ class Checker {
     }
 
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       if (!receiver_type)
         err(line, "cannot statically resolve bound method receiver '" +
@@ -24388,7 +25189,7 @@ class Checker {
     if (!function_ptr) {
       string invoked;
       vector<string> invoked_arguments;
-      if (parse_simple_call(identity, invoked, invoked_arguments) &&
+      if (tree_parse_simple_call(identity, invoked, invoked_arguments) &&
           functions_.count(invoked)) {
         const Function& candidate = *functions_.at(invoked);
         if (provably_compatible_functional_callable(
@@ -24412,7 +25213,7 @@ class Checker {
                 "' is not compatible with the stage input",
             "FUNCTIONAL_SEMANTIC_ERROR");
       }
-      if (!plain_identifier(identity)) {
+      if (!tree_plain_identifier(identity)) {
         teaching_err(
             line, "FUNCTIONAL_PLACEHOLDER_REQUIRED",
             "callback expression '" + identity + "' for " + operation_name +
@@ -24556,13 +25357,13 @@ class Checker {
       return;
     }
     string label, key;
-    if (!parse_named_argument(args[1], label, key) || label != "by" ||
-        top_level_colon(args[1]) == string::npos)
+    if (!tree_parse_named_argument(args[1], label, key) || label != "by" ||
+        tree_named_argument_separator(args[1]) != ':')
       err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
     string reverse_callee;
     vector<string> reverse_args;
     bool reverse_order = false;
-    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+    if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
         reverse_callee == "Reverse") {
       if (reverse_args.size() != 1)
         err(line, "Reverse expects one key function", "SORT_SIGNATURE");
@@ -24570,7 +25371,7 @@ class Checker {
       key = trim(reverse_args.front());
     }
     auto function = functions_.find(key);
-    if (!plain_identifier(key) || function == functions_.end())
+    if (!tree_plain_identifier(key) || function == functions_.end())
       err(line, "sort key must be a named function, found '" + key + "'",
           "SORT_KEY_CALLABLE");
     auto result = check_functional_callable(line, key, {element}, env, "sort");
@@ -24871,7 +25672,8 @@ class Checker {
     }
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) {
-      if (auto local = env.find(trim(parsed->source));
+      const auto source_binding = tree_identifier_name(parsed->source);
+      if (auto local = source_binding ? env.find(*source_binding) : env.end();
           local != env.end() && (!local->second || canonical_type_name(local->second).empty() ||
                                  canonical_type_name(local->second) == "_value" ||
                                  contains_internal_placeholder(canonical_type_name(local->second)))) {
@@ -25046,65 +25848,6 @@ class Checker {
     return true;
   }
 
-  // Finds two operands separated only by whitespace at the top level of an
-  // expression (`foo bar`, `1 2`, `if c`), which no Moss expression form
-  // allows. Word operators and the `message` prefix are not operands.
-  static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
-    // `in` keeps its dedicated UNSUPPORTED_EXPRESSION_OPERATOR diagnostic.
-    static const std::set<string> word_operators{"and", "or", "xor", "not", "message", "in"};
-    auto is_word = [](char c) { return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_'; };
-    string previous;          // last top-level token when it ends an operand
-    bool previous_operand = false;
-    bool space = false;
-    int depth = 0;
-    for (size_t i = 0; i < expression.size();) {
-      char c = expression[i];
-      if (c == '"' || (c == '\'' && depth == 0)) {
-        size_t start = i;
-        char quote = c;
-        for (++i; i < expression.size() && expression[i] != quote; ++i)
-          if (expression[i] == '\\') ++i;
-        ++i;
-        if (depth == 0) {
-          if (previous_operand && space) return std::make_pair(previous, expression.substr(start, i - start));
-          previous = expression.substr(start, std::min(i, expression.size()) - start);
-          previous_operand = true;
-          space = false;
-        }
-        continue;
-      }
-      if (c == '(' || c == '[' || c == '{') {
-        // `data [0]` and `f (x)` are postfix index/call forms.
-        ++depth; ++i; continue;
-      }
-      if (c == ')' || c == ']' || c == '}') {
-        if (depth > 0) --depth;
-        ++i;
-        if (depth == 0) { previous = string(1, c); previous_operand = true; space = false; }
-        continue;
-      }
-      if (depth > 0) { ++i; continue; }
-      if (moss::ascii_is_space(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
-      if (is_word(c)) {
-        size_t start = i;
-        while (i < expression.size() && (is_word(expression[i]) || expression[i] == '.' ||
-               ((expression[i] == '+' || expression[i] == '-') &&
-                moss::ascii_is_digit(static_cast<unsigned char>(expression[start])) &&
-                (expression[i - 1] == 'e' || expression[i - 1] == 'E'))))
-          ++i;
-        string word = expression.substr(start, i - start);
-        if (word_operators.count(word)) { previous_operand = false; space = false; continue; }
-        if (previous_operand && space) return std::make_pair(previous, word);
-        previous = word; previous_operand = true; space = false;
-        continue;
-      }
-      previous_operand = c == '.' && previous_operand;
-      space = false;
-      ++i;
-    }
-    return std::nullopt;
-  }
-
   void retain_open_operator_operation(
       int line, const string& operation_id, const string& left_expression,
       const string& right_expression,
@@ -25119,10 +25862,10 @@ class Checker {
       for (const auto& child : current_body_types_->expression_occurrences) {
         if (child.parent_id != parent || !child.checked_type) continue;
         if (!left && child.child_role == "left" &&
-            trim(child.source_expression) == trim(left_expression))
+            tree_expressions_structurally_equal(child.source_expression, left_expression))
           left = child.checked_type;
         if (!right && child.child_role == "right" &&
-            trim(child.source_expression) == trim(right_expression))
+            tree_expressions_structurally_equal(child.source_expression, right_expression))
           right = child.checked_type;
       }
     }
@@ -25211,10 +25954,7 @@ class Checker {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr) const {
-    // Avoid constructing an EST for expressions that cannot be functional
-    // pipelines. Besides reducing checker work, this keeps unrelated source
-    // spellings outside the functional parser's migration surface.
-    if (source.find("|>") == std::string_view::npos) return std::nullopt;
+    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
@@ -25245,8 +25985,8 @@ class Checker {
         return parsed;
 
     // MOSS_EST=off intentionally omits persistent arenas. Build a temporary
-    // syntax tree for this expression so the checker plan has one parser in
-    // both modes; this path still consumes the EST representation.
+    // syntax tree for this expression; the Pipeline node is the only positive
+    // syntax oracle.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);
@@ -25413,8 +26153,10 @@ class Checker {
     const auto length = child_span.source_end - child_span.source_begin;
     if (begin > parent_source.size() || length > parent_source.size() - begin)
       return false;
-    return trim(std::string(parent_source.substr(begin, length))) ==
-        trim(std::string(child_source));
+    const string projected_source =
+        trim(std::string(parent_source.substr(begin, length)));
+    const string expected_source = trim(std::string(child_source));
+    return projected_source == expected_source;
   }
 
   static std::optional<est::ExprId> matching_expression_child(
@@ -25537,8 +26279,8 @@ class Checker {
       if (auto found = select(statement.expression_handles)) return found;
     if (current_check_result_function_ &&
         current_check_result_function_->result_expression &&
-        trim(*current_check_result_function_->result_expression) ==
-            std::string(source))
+        est::fingerprint(*current_check_result_function_->result_expression) ==
+            est::fingerprint(std::string(source)))
       return select(current_check_result_function_->expression_handles);
     return std::nullopt;
   }
@@ -25615,6 +26357,34 @@ class Checker {
                         std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
+    const auto [source_issue, trailing_operator] =
+        checker_source_syntax_facts(original);
+    switch (source_issue) {
+      case moss::est::SourceSyntaxIssue::BareNot:
+        err(line, "unknown identifier 'not'");
+        return;
+      case moss::est::SourceSyntaxIssue::UnclosedCollection:
+        if (root_slot != "initializer") break;
+        err(line, "heterogeneous or unresolved collection element type",
+            "MOSS_COMPILE_ERROR");
+        return;
+      case moss::est::SourceSyntaxIssue::InvalidOperatorAdjacency:
+        err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
+        return;
+      case moss::est::SourceSyntaxIssue::TrailingMember: {
+        const auto base = moss::est::trailing_member_base(original);
+        if (base && !env.count(*base))
+          err(line, "unknown identifier '" + *base + "'");
+        else if (!base)
+          err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
+        if (!base || !env.count(*base)) return;
+        break;
+      }
+      case moss::est::SourceSyntaxIssue::None:
+        break;
+    }
+    if (trailing_operator)
+      err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
     const string occurrence_source = original;
     std::uint32_t cursor_child_ordinal = 0;
     if (!active_est_expression_cursors_.empty() &&
@@ -25687,7 +26457,7 @@ class Checker {
         occurrence.est_arena_index = tree_cursor->arena_index;
         occurrence.est_expr_id = tree_cursor->expr;
       }
-      if (original == "_" &&
+      if (tree_placeholder_expression(original) &&
           !occurrence_state->active_pipeline_placeholder_identity.empty() &&
           occurrence_state->active_pipeline_placeholder_type) {
         occurrence.resolved_binding_id =
@@ -25828,15 +26598,16 @@ class Checker {
                 }
               })
             : std::function<void()>{});
-    if (starts_with(original, "match "))
+    if (est::begins_with_keyword(original, "match"))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
-    if (auto juxtaposed = juxtaposed_operands(original))
+    if (auto juxtaposed = est::juxtaposed_operands(original))
       err(line, "invalid expression '" + original + "': '" + juxtaposed->first +
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",
           "INVALID_EXPRESSION");
-    if (is_single_string_literal(original) || is_single_char_literal(original)) {
+    if (tree_literal_class(original) == moss::est::LiteralClass::String ||
+        tree_literal_class(original) == moss::est::LiteralClass::Character) {
       mark_active_expression(OccurrenceKind::Literal);
       return;
     }
@@ -25844,7 +26615,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> arguments;
       bool called = false;
-      if (parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         mark_active_expression(OccurrenceKind::Constructor,
                                "enum-case:" + enum_name + "." + case_name);
@@ -25868,7 +26639,7 @@ class Checker {
           occurrence.source_operands = arguments;
           for (const auto& argument : arguments) {
             string field_name, field_value;
-            if (!parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -25892,12 +26663,10 @@ class Checker {
         std::set<string> supplied;
         for (const auto& argument : arguments) {
           string name, value;
-          size_t equal = top_level_assignment(argument);
-          size_t colon = top_level_colon(argument);
-          if (equal != string::npos && (colon == string::npos || equal < colon))
+          if (tree_named_argument_separator(argument) == '=')
             err(line, "enum constructor fields use ':' rather than '='",
                 "ENUM_FIELD_REQUIRES_COLON");
-          if (!parse_named_argument(argument, name, value))
+          if (!tree_parse_named_argument(argument, name, value))
             err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
           if (!supplied.insert(name).second)
             err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
@@ -25918,12 +26687,14 @@ class Checker {
     }
     if (domain_constructor(original))
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
-    if (starts_with(original, "message ")) {
+    string message_receiver, message_handler;
+    vector<string> message_args;
+    if (tree_parse_message(original, message_receiver, message_handler,
+                           message_args)) {
       mark_active_expression(OccurrenceKind::Message);
-      string receiver, handler;
-      vector<string> args;
-      if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !plain_identifier(receiver) || !plain_identifier(handler))
+      string receiver = message_receiver, handler = message_handler;
+      vector<string> args = std::move(message_args);
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
       const Handler* target = check_message_call_after_resolution(
@@ -25957,20 +26728,44 @@ class Checker {
                          "argument:" + std::to_string(index));
       return;
     }
+    if (auto syntax = checker_est_view(original); syntax &&
+        std::holds_alternative<moss::est::Collection>(
+            syntax->arena->at(syntax->root))) {
+      const auto& collection = std::get<moss::est::Collection>(
+          syntax->arena->at(syntax->root));
+      if (collection.delimiter == '{') {
+        for (const auto entry_id : collection.elements) {
+          const auto* entry = std::get_if<moss::est::Tuple>(
+              &syntax->arena->at(entry_id));
+          if (!entry || entry->elements.size() != 2) continue;
+          const auto value_text = syntax->source_text(entry->elements[1]);
+          if (!value_text) continue;
+          auto value_type = inferred_expr_type(*value_text, env);
+          if (value_type && contains_domain_handle(*value_type)) {
+            const auto identifier = checker_identifier_name(*value_text);
+            const string binding = identifier ? string(*identifier)
+                                              : *value_text;
+            err(line, "domain handle '" + binding +
+                "' is not an ordinary value; use domainroutes and message targets only",
+                "MOSS_COMPILE_ERROR");
+            return;
+          }
+        }
+      }
+    }
     if (auto type = inferred_expr_type(original, env))
       if (contains_domain_handle(*type))
         err(line, "domain handles cannot be used as ordinary values or payloads; "
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
     // from the ordinary-expression checker.
-    if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
-        matching_paren(original, 0) == original.size() - 1) {
+    if (tree_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
-      check_expression(line, original.substr(1, original.size() - 2), env,
+      check_expression(line, tree_strip_redundant_outer_parentheses(original), env,
                        {}, "grouped-expression");
       return;
     }
-    if (auto elements = parse_vector_literal(original)) {
+    if (auto elements = tree_parse_vector_literal(original)) {
       mark_active_expression(OccurrenceKind::VectorLiteral,
                              "builtin:vector-literal");
       if (current_body_types_ && !checking_specialization_ &&
@@ -26061,24 +26856,31 @@ class Checker {
                              "functional-pipeline-v1");
       return;
     }
-    string value = normalize_pipeline(std::move(original));
-    if (!value.empty() && value.front() == '!' &&
-        (value.size() == 1 || value[1] != '='))
+    string value = tree_normalize_pipeline(std::move(original));
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
-    if (auto binary = split_binary(value, {" in "})) {
+    auto membership = tree_split_binary(value, {" not in "});
+    if (!membership) membership = tree_split_binary(value, {" in "});
+    if (membership) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
       return;
     }
+    if (tree_split_binary(value, {"**"})) {
+      err(line, "invalid arithmetic expression");
+      return;
+    }
     for (const auto& op :
          vector<string>{"&&", "||"}) {
-      if (split_binary(value, {op}))
+      if (tree_split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
         check_expression(line, binary->first, env, {}, "left");
         check_expression(line, binary->second, env, {}, "right");
@@ -26092,9 +26894,10 @@ class Checker {
         return;
       }
     }
-    if (starts_with(value, "not ")) {
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
-      string operand = trim(value.substr(4));
+      string operand = unary_operand;
       check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
@@ -26102,12 +26905,12 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
-    if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
+    if (auto ordering = tree_split_binary(value, {"<=", ">=", "<", ">"})) {
       // This pass checks the ordering-specific exclusions. The common
       // comparison branch below owns the single recursive operand traversal,
       // so the checker occurrence graph represents each source operand once.
       for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
-        auto candidate = split_binary(value, {op});
+        auto candidate = tree_split_binary(value, {op});
         if (candidate && candidate->first == ordering->first) {
           retain_open_operator_operation(line, op, ordering->first,
                                          ordering->second, env);
@@ -26142,13 +26945,13 @@ class Checker {
         }
       }
     }
-    if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+    if (auto binary = tree_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          split_binary(value, {"=="}) ? "==" :
-          split_binary(value, {"!="}) ? "!=" :
-          split_binary(value, {"<="}) ? "<=" :
-          split_binary(value, {">="}) ? ">=" :
-          split_binary(value, {"<"}) ? "<" : ">");
+          tree_split_binary(value, {"=="}) ? "==" :
+          tree_split_binary(value, {"!="}) ? "!=" :
+          tree_split_binary(value, {"<="}) ? "<=" :
+          tree_split_binary(value, {">="}) ? ">=" :
+          tree_split_binary(value, {"<"}) ? "<" : ">");
       check_expression(line, binary->first, env, {}, "left");
       check_expression(line, binary->second, env, {}, "right");
       auto left_type = inferred_expr_type(binary->first, env);
@@ -26159,7 +26962,7 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      auto equality = split_binary(value, {"==", "!="});
+      auto equality = tree_split_binary(value, {"==", "!="});
       if (equality && equality->first == binary->first && current_body_types_) {
         auto operand_term = [&](const string& operand) {
           auto retained = current_body_types_->known_expression(operand);
@@ -26174,8 +26977,8 @@ class Checker {
               (!resolved_left->is_closed() || !resolved_right->is_closed())) {
             string indexed_base, indexed_key;
             const bool compares_index =
-                parse_index(binary->first, indexed_base, indexed_key) ||
-                parse_index(binary->second, indexed_base, indexed_key);
+                tree_parse_index(binary->first, indexed_base, indexed_key) ||
+                tree_parse_index(binary->second, indexed_base, indexed_key);
             if (compares_index && !resolved_left->is_closed() &&
                 !resolved_right->is_closed() &&
                 !current_body_types_->solver.unify(left, right))
@@ -26183,7 +26986,7 @@ class Checker {
                   "TYPE_MISMATCH");
             moss::Requirement requirement;
             requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = split_binary(value, {"=="})
+            requirement.target_id = tree_split_binary(value, {"=="})
                 ? "operator:==" : "operator:!=";
             requirement.subject = left;
             requirement.arguments.push_back(right);
@@ -26219,7 +27022,7 @@ class Checker {
       return;
     }
     for (const auto& op : vector<string>{"|", "^", "&"}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
         check_expression(line, binary->first, env, {}, "left");
         check_expression(line, binary->second, env, {}, "right");
@@ -26236,14 +27039,14 @@ class Checker {
         return;
       }
     }
-    if (auto binary = split_binary(value, {"<<", ">>"})) {
+    if (auto binary = tree_split_binary(value, {"<<", ">>"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          split_binary(value, {"<<"}) ? "<<" : ">>");
-      string op = split_binary(value, {"<<"}) ? "<<" : ">>";
+          tree_split_binary(value, {"<<"}) ? "<<" : ">>");
+      string op = tree_split_binary(value, {"<<"}) ? "<<" : ">>";
       check_expression(line, binary->first, env, {}, "left");
       check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
-        if (split_binary(value, {candidate})) {
+        if (tree_split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
                                          binary->second, env);
           break;
@@ -26258,13 +27061,16 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
-    if (!value.empty() && value.front() == '-' &&
-        !split_binary(value, {"+", "-", "*", "/", "%"})) {
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "-" &&
+        !tree_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
       // the call result, so the operand is checked as one expression
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
-      string operand = trim(value.substr(1));
-      if (!operand.empty() && operand.front() != '-') {
+      string operand = unary_operand;
+      string nested_operation, nested_operand;
+      if (!tree_parse_unary(operand, nested_operation, nested_operand) ||
+          nested_operation != "-") {
         check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
@@ -26281,10 +27087,10 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{
              {"+", "-"}, {"*", "/", "%"}}) {
-        if (auto binary = split_binary(value, operators)) {
+        if (auto binary = tree_split_binary(value, operators)) {
           string operation_id;
           for (const auto& candidate : operators) {
-            auto operation = split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               operation_id = candidate;
               break;
@@ -26294,7 +27100,7 @@ class Checker {
           check_expression(line, binary->first, env, {}, "left");
           check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
-            auto operation = split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               retain_open_operator_operation(line, candidate,
                   binary->first, binary->second, env);
@@ -26324,7 +27130,7 @@ class Checker {
             string rt = canonical_type_name(*right_type);
             string op;
             for (const string candidate : {"+", "-", "*", "/", "%"}) {
-              auto split = split_binary(value, {candidate});
+              auto split = tree_split_binary(value, {candidate});
               if (split && split->first == binary->first) op = candidate;
             }
             bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
@@ -26340,7 +27146,7 @@ class Checker {
                 (contains_record_type(lt) || contains_record_type(rt)))
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
-          if (split_binary(value, {"%"})) {
+          if (tree_split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
             auto right = inferred_expr_type(binary->second, env);
             if (!left || !right || canonical_type_name(*left) != "int" ||
@@ -26351,8 +27157,9 @@ class Checker {
           return;
         }
     }
-    if (!value.empty() && value.front() == '~') {
-      string operand = trim(value.substr(1));
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      string operand = unary_operand;
       check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
@@ -26365,7 +27172,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(value, callee, arguments) &&
+      if (tree_parse_simple_call(value, callee, arguments) &&
           callee == "assertEqual" && arguments.size() == 2) {
         for (const auto& argument : arguments) {
           auto type = inferred_expr_type(argument, env);
@@ -26377,7 +27184,7 @@ class Checker {
     }
     string receiver, handler;
     vector<string> args;
-    if (parse_member_call(value, receiver, handler, args)) {
+    if (tree_parse_member_call(value, receiver, handler, args)) {
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
@@ -26447,7 +27254,7 @@ class Checker {
       }
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (staged_abi_v10() && *receiver_type == "map" &&
-            trim(receiver) == "Map()" && handler == "get" &&
+            tree_empty_constructor_named(receiver, "Map") && handler == "get" &&
             args.size() == 2) {
           auto key = inferred_expr_type(args[0], env);
           auto value = inferred_expr_type(args[1], env);
@@ -26471,7 +27278,7 @@ class Checker {
           err(line, "Set operation requires a concrete key type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
-          if (staged_abi_v10() && trim(receiver) == "Map()" &&
+          if (staged_abi_v10() && tree_empty_constructor_named(receiver, "Map") &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           for (size_t index = 0; index < args.size(); ++index)
@@ -26628,7 +27435,7 @@ class Checker {
       return;
     }
     string ib, ii;
-    if (parse_index(value, ib, ii)) {
+    if (tree_parse_index(value, ib, ii)) {
       mark_active_expression(OccurrenceKind::Index, "builtin:index");
       check_expression(line, ib, env, {}, "container");
       check_expression(line, ii, env, {}, "index");
@@ -26714,40 +27521,15 @@ class Checker {
       return;
     }
     {
-      auto dot = top_level_field_dot(value);
-      if (dot != string::npos && value.find('(', dot) == string::npos) {
-        auto receiver_type = inferred_expr_type(value.substr(0, dot), env);
+      string base, field;
+      if (tree_parse_member_access(value, base, field)) {
+        auto receiver_type = inferred_expr_type(base, env);
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
-        string field = trim(value.substr(dot + 1));
-        string base = trim(value.substr(0, dot));
-        string digits = !base.empty() && (base.front() == '-' || base.front() == '+')
-            ? trim(base.substr(1)) : base;
-        auto all_digits = [](const string& text) {
-          return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
-            return moss::ascii_is_digit(static_cast<unsigned char>(c)) || c == '_';
-          });
-        };
-        // An exponent field is only `e`/`E`, an optional sign, then digits
-        // (`1.e5`, `2.5E-3`); `1.exp` is Int `1` plus a member (P25-S-ARCH-027).
-        auto exponent = [&](const string& text) {
-          if (text.size() < 2 || (text[0] != 'e' && text[0] != 'E')) return false;
-          size_t at = (text[1] == '+' || text[1] == '-') ? 2 : 1;
-          return at < text.size() && all_digits(text.substr(at));
-        };
-        auto fraction_exponent = [&](const string& text) {
-          size_t e = text.find_first_of("eE");
-          return e != string::npos && e > 0 && all_digits(text.substr(0, e)) &&
-              exponent(text.substr(e));
-        };
-        bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
-            exponent(field) || fraction_exponent(field));
-        if (!float_literal) {
-          mark_active_expression(OccurrenceKind::Field, "field:" + field);
-          check_expression(line, base, env, {}, "receiver");
-        }
-        if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
+        mark_active_expression(OccurrenceKind::Field, "field:" + field);
+        check_expression(line, base, env, {}, "receiver");
+        if (receiver_type && !field.empty()) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
           string type = canonical_type_name(*receiver_type);
@@ -26755,7 +27537,14 @@ class Checker {
             const auto& fields = objects_.at(type)->fields;
             bool known = std::any_of(fields.begin(), fields.end(),
                 [&](const Field& candidate) { return candidate.name == field; });
-            if (!known)
+            const bool decimal_member_name = !field.empty() &&
+                std::all_of(field.begin(), field.end(), [](unsigned char ch) {
+                  return moss::ascii_is_digit(ch) || ch == '_';
+                });
+            const bool legacy_type_name_diagnostic = !field.empty() &&
+                moss::ascii_is_digit(static_cast<unsigned char>(field.front())) &&
+                !decimal_member_name;
+            if (!known && !legacy_type_name_diagnostic)
               err(line, "record '" + type + "' has no field '" + field + "'",
                   "UNKNOWN_FIELD");
           } else if (builtin_equality_type(type) || type == "map" || type == "queue" ||
@@ -26791,7 +27580,7 @@ class Checker {
           }
         }
         if (field_owner) {
-          string field_name = trim(value.substr(dot + 1));
+          string field_name = field;
           const ObjectType* obj = field_owner;
           auto it = std::find_if(obj->fields.begin(), obj->fields.end(),
               [&](const Field& f) { return f.name == field_name; });
@@ -26837,11 +27626,11 @@ class Checker {
       }
     }
     string callee;
-    if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||
-             typed_empty_vector_constructor(value)
+             tree_empty_typed_vector_constructor(value)
                 ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_ && !checking_specialization_ &&
@@ -26849,7 +27638,7 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = args;
-      if (typed_empty_vector_constructor(value) && current_body_types_ &&
+      if (tree_empty_typed_vector_constructor(value) && current_body_types_ &&
           !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
         auto& occurrence = current_body_types_->expression_occurrences.at(
@@ -26862,7 +27651,7 @@ class Checker {
         bool has_open_argument = false;
         for (const auto& argument : args) {
           string field_name, value = argument;
-          (void)parse_named_argument(argument, field_name, value);
+          (void)tree_parse_named_argument(argument, field_name, value);
           auto term = current_body_types_->known_expression(value);
           if (!term) term = inferred_expr_term(value, env);
           auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
@@ -26936,7 +27725,7 @@ class Checker {
               "REPLACE_TYPE_MISMATCH");
         return;
       }
-      if (auto typed_vector = typed_empty_vector_constructor(value)) {
+      if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
         if (contains_trait_type(*typed_vector))
           err(line,
               "trait types are static structural constraints and cannot be stored "
@@ -26967,7 +27756,7 @@ class Checker {
               program_module_identity(p_, object.defining_module), type_name);
           for (const auto& argument : args) {
             string field_name, field_value;
-            if (!parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -26986,7 +27775,7 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string field_name, field_value;
-          if (!parse_named_argument(arg, field_name, field_value))
+          if (!tree_parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
           check_expression(line, field_value, env, {}, "field:" + field_name);
@@ -27079,7 +27868,7 @@ class Checker {
           for (size_t index = 0; index < args.size(); ++index) {
             const auto& arg = args[index];
             string name, val;
-            if (parse_named_argument(arg, name, val))
+            if (tree_parse_named_argument(arg, name, val))
               check_expression(line, val, env, {},
                                "argument:" + std::to_string(index));
             else
@@ -27111,7 +27900,7 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string name, val;
-          if (parse_named_argument(arg, name, val))
+          if (tree_parse_named_argument(arg, name, val))
             check_expression(line, val, env, {},
                              "argument:" + std::to_string(index));
           else
@@ -27330,7 +28119,7 @@ class Checker {
       if (contains_domain_handle(env.at(binding)))
         err(line, "domain handle '" + binding +
             "' is not an ordinary value; use domainroutes and message targets only");
-    if (plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
+    if (tree_plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
         !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
         !traits_.count(value) && !env.count(value)) {
       err(line, "unknown identifier '" + value + "'");
@@ -27341,16 +28130,12 @@ class Checker {
           current_body_types_->active_expression_occurrences.back();
       if (current_body_types_->expression_occurrences[occurrence].kind ==
           OccurrenceKind::Unknown) {
-        if (plain_identifier(value) && value != "true" && value != "false" &&
+        if (tree_plain_identifier(value) && value != "true" && value != "false" &&
             value != "None")
           mark_active_expression(OccurrenceKind::Identifier);
-        else if (value == "true" || value == "false" || value == "None" ||
-                 is_single_string_literal(value) || is_single_char_literal(value) ||
-                 decimal_float_literal(value) ||
-                 (!value.empty() && std::all_of(value.begin(), value.end(),
-                     [](unsigned char character) {
-                       return moss::ascii_is_digit(character) || character == '_';
-                     })))
+        else if (tree_literal_class(value) != moss::est::LiteralClass::None ||
+                 tree_identifier_named(value, "None") ||
+                 tree_decimal_integer_literal(value, false, true))
           mark_active_expression(OccurrenceKind::Literal);
       }
     }
@@ -27418,7 +28203,7 @@ class Checker {
                                               const TypeEnv& env) const {
     string callee;
     vector<string> arguments;
-    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+    if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
       if (arguments.size() != 2 && arguments.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
       return "int";
@@ -27438,7 +28223,8 @@ class Checker {
     }
     auto source_type = inferred_expr_type(source, env);
     if (!source_type) {
-      auto local = env.find(trim(source));
+      const auto source_binding = tree_identifier_name(source);
+      auto local = source_binding ? env.find(*source_binding) : env.end();
       if (local != env.end() && (!local->second || canonical_type_name(local->second).empty()))
         return "_iterator_element:" + trim(source);
       err(line, "cannot infer the static iterator source type");
@@ -27507,7 +28293,7 @@ class Checker {
                         std::string_view root_slot = {}) {
     string callee;
     vector<string> arguments;
-    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+    if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
       check_function_call(line, callee, arguments, env);
       for (size_t index = 0; index < arguments.size(); ++index) {
         const string slot = "for-range-argument:" + std::to_string(index);
@@ -27654,13 +28440,13 @@ class Checker {
         check_expression(statement.line, statement.b, current_env,
                          "initializer");
         if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && !current_env.count(statement.a)) {
+            tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
           auto inferred = inferred_expr_type(statement.b, current_env);
-          if (!inferred && starts_with(trim(statement.b), "["))
+          if (!inferred && tree_parse_vector_literal(statement.b))
             err(statement.line, "heterogeneous or unresolved collection element type");
         }
         if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && current_env.count(statement.a)) {
+            tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
           const auto prior_type = current_env.at(statement.a);
           auto new_type = inferred_expr_type(statement.b, current_env);
           if (new_type && !contains_internal_placeholder(prior_type) &&
@@ -27675,10 +28461,10 @@ class Checker {
           }
         }
         if (statement.kind == Stmt::Kind::Assign) {
-          if (simple_identifier(statement.a)) {
+          if (tree_simple_identifier(statement.a)) {
             if (!current_env.count(statement.a)) {
               auto inferred = inferred_expr_type(statement.b, current_env);
-              if (!inferred && starts_with(trim(statement.b), "["))
+              if (!inferred && tree_parse_vector_literal(statement.b))
                 err(statement.line, "heterogeneous or unresolved collection element type");
             } else {
               auto bound_type = current_env.at(statement.a);
@@ -27703,9 +28489,9 @@ class Checker {
             }
           } else {
             string base, index_expression;
-            if (parse_index(statement.a, base, index_expression)) {
+            if (tree_parse_index(statement.a, base, index_expression)) {
               string inner_base, inner_index;
-              if (parse_index(base, inner_base, inner_index)) {
+              if (tree_parse_index(base, inner_base, inner_index)) {
                 err(statement.line,
                     "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
                     "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
@@ -27792,8 +28578,7 @@ class Checker {
                 if (key_type) check_map_key_type(statement.line, *key_type);
               }
             } else {
-              size_t dot = statement.a.rfind('.');
-              if (dot != string::npos && statement.a.find('(', dot) == string::npos) {
+              if (tree_member_access(statement.a)) {
                 auto field_type = inferred_expr_type(statement.a, current_env);
                 auto rhs_type = inferred_expr_type(statement.b, current_env);
                 auto field_term = checked_term(statement.a, field_type);
@@ -28069,14 +28854,14 @@ class Checker {
                   call_occurrence_id).non_expression_operand_ordinals.push_back(1);
             continue;
           }
-          if (!(fileio_builtin && (trim(argument) == "ro" ||
-                trim(argument) == "rw" || trim(argument) == "create" ||
-                trim(argument) == "dataonly"))) {
+          if (!(fileio_builtin && (tree_identifier_named(argument, "ro") ||
+                tree_identifier_named(argument, "rw") || tree_identifier_named(argument, "create") ||
+                tree_identifier_named(argument, "dataonly")))) {
             string name, val;
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (parse_named_argument(argument, name, val))
+            if (tree_parse_named_argument(argument, name, val))
               check_expression(statement.line, val, current_env, occurrence_slot,
                                "call-argument:" + std::to_string(index));
             else
@@ -28136,10 +28921,12 @@ class Checker {
               statement.line, *type,
               !current_function || !current_function->static_dispatch ||
                   checking_specialization_);
-          else if (parse_vector_literal(trim(argument)))
+          else if (tree_parse_vector_literal(trim(argument)))
             check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
-          else if (plain_identifier(trim(argument))) {
-            auto binding = current_env.find(trim(argument));
+          else if (tree_plain_identifier(trim(argument))) {
+            const auto binding_name = tree_identifier_name(argument);
+            auto binding = binding_name
+                ? current_env.find(*binding_name) : current_env.end();
             if (binding != current_env.end() &&
                 (canonical_type_name(binding->second) == "vector" ||
                  contains_internal_placeholder(binding->second)))
@@ -28173,7 +28960,7 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Raw &&
-          plain_identifier(statement.text) && statement.text != "pass")
+          tree_plain_identifier(statement.text) && statement.text != "pass")
         err(statement.line, "bare identifier is not a statement; use 'pass' for a no-op",
             "INVALID_BARE_IDENTIFIER_STATEMENT");
 
@@ -28480,7 +29267,7 @@ class Checker {
         occurrence.introduces_binding = true;
         occurrence.mutable_binding = statement->kind == Stmt::Kind::Var;
       } else if (statement->kind == Stmt::Kind::Assign &&
-                 simple_identifier(statement->a)) {
+                 tree_simple_identifier(statement->a)) {
         occurrence.binding_identity = statement_binding_identity(
             current_semantic_context_, statement->line) + ":" + statement->a;
         occurrence.binding_type = checked_types.assignment_value(*statement);
@@ -28559,8 +29346,9 @@ class Checker {
         for (const auto& identity : occurrence.recover_identities)
           occurrence.branch_role += ":" + std::to_string(identity.size()) +
               ":" + identity;
-        for (const auto& binding :
-             phase21_pattern_bindings(statement->line, statement->a)) {
+        for (const auto& pattern : recovery_case_patterns(*statement))
+          for (const auto& binding :
+               phase21_pattern_bindings(statement->line, pattern)) {
           auto parsed = moss::Type::parse_canonical(
               canonical_type_name(binding.second));
           if (!parsed) {
@@ -28770,7 +29558,8 @@ class Checker {
             if (prior.line < source_position->line &&
                 (prior.kind == Stmt::Kind::Let ||
                  prior.kind == Stmt::Kind::Var ||
-                 prior.kind == Stmt::Kind::Assign) && prior.a == name) {
+                 prior.kind == Stmt::Kind::Assign) &&
+                prior.a == name) {
               shadowed = true;
               break;
             }
@@ -29574,7 +30363,7 @@ class Checker {
                   const auto ordinal =
                       occurrence.semantic_operand_ordinals[index];
                   if (ordinal >= variant->fields.size() || seen[ordinal] ||
-                      !parse_named_argument(occurrence.source_operands[index],
+                      !tree_parse_named_argument(occurrence.source_operands[index],
                                             field_name, field_value) ||
                       variant->fields[ordinal].name != field_name ||
                       checked_types.expression_occurrences[children[index]]
@@ -30249,7 +31038,7 @@ class Checker {
           break;
         case Stmt::Kind::Assign:
           require_root(statement, "initializer");
-          if (!simple_identifier(statement.a))
+          if (!tree_simple_identifier(statement.a))
             require_root(statement, "assignment-place");
           break;
         case Stmt::Kind::If:
@@ -30263,7 +31052,7 @@ class Checker {
           {
             string callee;
             vector<string> arguments;
-            if (parse_simple_call(trim(statement.b), callee, arguments) &&
+            if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
                 callee == "range") {
               for (size_t index = 0; index < arguments.size(); ++index)
                 require_root(statement,
@@ -32009,7 +32798,7 @@ fn inspect_sample(sample: Sample) -> Int:
         [](const auto& occurrence) {
           return occurrence.kind ==
                   BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
-              trim(occurrence.source_expression) == "local" &&
+              tree_identifier_named(occurrence.source_expression, "local") &&
               !occurrence.resolved_binding_id.empty();
         });
     if (local_reads != 1 ||
@@ -32021,7 +32810,7 @@ fn inspect_sample(sample: Sample) -> Int:
         [](const auto& occurrence) {
       return occurrence.kind ==
               BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
-          trim(occurrence.source_expression) == "local";
+          tree_identifier_named(occurrence.source_expression, "local");
     });
     if (joined_read == branch_state->second->expression_occurrences.end() ||
         if_node->bindings.size() != 1 ||
@@ -32761,13 +33550,13 @@ export fn fresh(x):
 
     string callee = "preserve-callee";
     vector<string> arguments = {"preserve-argument"};
-    if (checker.parse_simple_call("not a call", callee, arguments) ||
+    if (checker.tree_parse_simple_call("not a call", callee, arguments) ||
         callee != "preserve-callee" ||
         arguments != vector<string>{"preserve-argument"})
       return false;
     callee = "different-callee";
     arguments = {"different-argument"};
-    if (checker.parse_simple_call("not a call", callee, arguments) ||
+    if (checker.tree_parse_simple_call("not a call", callee, arguments) ||
         callee != "different-callee" ||
         arguments != vector<string>{"different-argument"})
       return false;
@@ -32775,14 +33564,14 @@ export fn fresh(x):
     string receiver;
     string member = "foo";
     arguments = {"first-argument"};
-    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+    if (checker.tree_parse_member_call(".foo()", receiver, member, arguments) ||
         !receiver.empty() || member != "foo" ||
         arguments != vector<string>{"first-argument"})
       return false;
     receiver = "stale-receiver";
     member = "stale-member";
     arguments = {"second-argument"};
-    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+    if (checker.tree_parse_member_call(".foo()", receiver, member, arguments) ||
         !receiver.empty() || member != "foo" ||
         arguments != vector<string>{"second-argument"})
       return false;
@@ -32790,7 +33579,7 @@ export fn fresh(x):
     receiver = "preserve-receiver";
     member = "preserve-member";
     arguments = {"preserve-arguments"};
-    if (checker.parse_member_call("no member call", receiver, member,
+    if (checker.tree_parse_member_call("no member call", receiver, member,
                                   arguments) ||
         receiver != "preserve-receiver" || member != "preserve-member" ||
         arguments != vector<string>{"preserve-arguments"})
@@ -32798,7 +33587,7 @@ export fn fresh(x):
     receiver = "different-receiver";
     member = "different-member";
     arguments = {"different-arguments"};
-    return !checker.parse_member_call("no member call", receiver, member,
+    return !checker.tree_parse_member_call("no member call", receiver, member,
                                       arguments) &&
         receiver == "different-receiver" && member == "different-member" &&
         arguments == vector<string>{"different-arguments"};

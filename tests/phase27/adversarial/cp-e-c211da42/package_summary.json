@@ -1,0 +1,15 @@
+{
+  "baseline": [
+    0,
+    true,
+    null,
+    null
+  ],
+  "candidate": [
+    0,
+    true,
+    null,
+    null
+  ],
+  "equal": true
+}

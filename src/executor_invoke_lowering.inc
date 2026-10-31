@@ -113,9 +113,9 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
         "EXECUTOR_INVOKE_ARITY");
   string domain_binding, handler_name;
   vector<string> handler_args;
-  if (!parse_member_call(statement.args.front(), domain_binding, handler_name,
+  if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
                          handler_args) ||
-      !plain_identifier(domain_binding) || !plain_identifier(handler_name))
+      !tree_plain_identifier(domain_binding) || !tree_plain_identifier(handler_name))
     err(statement.line,
         "executor.invoke requires a statically known "
         "'domain.Handler(args...)' call expression",
@@ -246,75 +246,17 @@ void phase21_validate_root_ingress_totality(const TypeEnv& main_env) {
                  "synchronous Root message");
       continue;
     }
-    // Value-returning messages are ordinary expressions.  Walk their source
-    // spelling for checked `message binding.Handler(...)` calls, including
-    // parentheses and collection elements; a prefix-only test would let a
-    // lexical recover around `(message worker.Fetch())` bypass Root totality.
+    // Value-returning messages are ordinary expressions. Walk EST nodes so a
+    // lexical recover around `(message worker.Fetch())` still counts as Root
+    // ingress without interpreting expression characters here.
     for (const auto& expression : statement_expressions(statement)) {
-      bool quoted = false, escaped = false;
-      for (size_t index = 0; index < expression.size(); ++index) {
-        const char ch = expression[index];
-        if (quoted) {
-          if (escaped) escaped = false;
-          else if (ch == '\\') escaped = true;
-          else if (ch == '"') quoted = false;
-          continue;
-        }
-        if (ch == '"') { quoted = true; continue; }
-        if (expression.compare(index, 7, "message") != 0 ||
-            (index > 0 && (std::isalnum(static_cast<unsigned char>(expression[index - 1])) ||
-                           expression[index - 1] == '_')) ||
-            (index + 7 < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[index + 7])) ||
-              expression[index + 7] == '_')))
-          continue;
-        size_t start = index + 7;
-        while (start < expression.size() &&
-               std::isspace(static_cast<unsigned char>(expression[start]))) ++start;
-        // `message` is also a legal identifier and record-field name.  Only
-        // the keyword followed by a receiver member call is a Root ingress.
-        // The ordinary expression checker has already rejected malformed
-        // message syntax before this post-inference pass runs.
-        size_t receiver_end = start;
-        while (receiver_end < expression.size() &&
-               (std::isalnum(static_cast<unsigned char>(expression[receiver_end])) ||
-                expression[receiver_end] == '_')) ++receiver_end;
-        size_t dot = receiver_end;
-        while (dot < expression.size() &&
-               std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
-        if (receiver_end == start || dot == expression.size() ||
-            expression[dot] != '.')
-          continue;
-        size_t open = expression.find('(', start);
-        if (open == string::npos)
-          err(statement.line, "unresolved Root message expression",
-              "ROOT_MESSAGE_TARGET_UNRESOLVED");
-        int depth = 0;
-        bool call_quoted = false, call_escaped = false;
-        size_t end = open;
-        for (; end < expression.size(); ++end) {
-          const char current = expression[end];
-          if (call_quoted) {
-            if (call_escaped) call_escaped = false;
-            else if (current == '\\') call_escaped = true;
-            else if (current == '"') call_quoted = false;
-            continue;
-          }
-          if (current == '"') { call_quoted = true; continue; }
-          if (current == '(') ++depth;
-          else if (current == ')' && --depth == 0) { ++end; break; }
-        }
-        if (depth != 0)
-          err(statement.line, "unresolved Root message expression",
-              "ROOT_MESSAGE_TARGET_UNRESOLVED");
-        string binding, handler;
-        vector<string> arguments;
-        if (!parse_member_call(expression.substr(start, end - start),
-                               binding, handler, arguments) ||
-            !plain_identifier(binding))
+      auto syntax = moss::est::parse_view(expression);
+      if (!syntax) continue;  // The ordinary checker already diagnosed it.
+      for (const auto& message : moss::est::message_calls(*syntax)) {
+        if (!tree_plain_identifier(message.target))
           err(statement.line, "unresolved Root message target",
               "ROOT_MESSAGE_TARGET_UNRESOLVED");
-        target_for(binding, handler, statement.line,
+        target_for(message.target, message.handler, statement.line,
                    "synchronous Root message");
       }
     }
@@ -335,7 +277,7 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
   if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
       statement.kind == Stmt::Kind::Assign) {
     vector<std::pair<string, vector<string>>> calls;
-    if (parse_executor_chain(statement.b, calls)) {
+    if (tree_parse_executor_chain(statement.b, calls)) {
       if (!in_main)
         err(statement.line,
             "an Executor may only be configured and started directly in "
@@ -362,8 +304,8 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
     // is handled entirely by the existing functional-pipeline IR (see
     // file_chunk_lowering.inc); parse_member_call on the whole multi-stage
     // text would otherwise misparse past the first '|>'.
-    if (!parse_functional_pipeline(statement.b) &&
-        parse_member_call(statement.b, receiver, method, arguments) &&
+    if (!functional_pipeline_from_est(statement.b) &&
+        tree_parse_member_call(statement.b, receiver, method, arguments) &&
         fileio_typed(env, receiver) && method == "chunks") {
       // Report A's operand/bound diagnostics before the shape rule.
       check_expression(statement.line, statement.b, env);
@@ -564,7 +506,7 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
     vector<std::pair<string, vector<string>>> calls;
     if ((statement.kind == Stmt::Kind::Assign || statement.kind == Stmt::Kind::Let ||
          statement.kind == Stmt::Kind::Var) &&
-        parse_executor_chain(statement.b, calls) && !calls.empty() &&
+        tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
         calls.back().first == "start") {
       for (const auto& entry : state)
         if (entry.second.state == ExecutorLifecycleState::Active)

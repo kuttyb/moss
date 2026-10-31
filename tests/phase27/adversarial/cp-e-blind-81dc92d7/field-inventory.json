@@ -1,0 +1,193 @@
+{
+  "fields": [
+    "Stmt.text",
+    "Stmt.a",
+    "Stmt.b",
+    "Stmt.args"
+  ],
+  "reads": [
+    {
+      "file": "src/semantic_checker.cpp",
+      "field": "Stmt.text",
+      "direct_reads": 20
+    },
+    {
+      "file": "src/semantic_checker.cpp",
+      "field": "Stmt.a",
+      "direct_reads": 342
+    },
+    {
+      "file": "src/semantic_checker.cpp",
+      "field": "Stmt.b",
+      "direct_reads": 189
+    },
+    {
+      "file": "src/semantic_checker.cpp",
+      "field": "Stmt.args",
+      "direct_reads": 69
+    },
+    {
+      "file": "src/native_generator.cpp",
+      "field": "Stmt.text",
+      "direct_reads": 6
+    },
+    {
+      "file": "src/native_generator.cpp",
+      "field": "Stmt.a",
+      "direct_reads": 104
+    },
+    {
+      "file": "src/native_generator.cpp",
+      "field": "Stmt.b",
+      "direct_reads": 60
+    },
+    {
+      "file": "src/native_generator.cpp",
+      "field": "Stmt.args",
+      "direct_reads": 35
+    },
+    {
+      "file": "src/fileio_semantics.inc",
+      "field": "Stmt.text",
+      "direct_reads": 2
+    },
+    {
+      "file": "src/fileio_semantics.inc",
+      "field": "Stmt.a",
+      "direct_reads": 34
+    },
+    {
+      "file": "src/fileio_semantics.inc",
+      "field": "Stmt.b",
+      "direct_reads": 19
+    },
+    {
+      "file": "src/fileio_semantics.inc",
+      "field": "Stmt.args",
+      "direct_reads": 10
+    },
+    {
+      "file": "src/file_chunk_lowering.inc",
+      "field": "Stmt.text",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/file_chunk_lowering.inc",
+      "field": "Stmt.a",
+      "direct_reads": 2
+    },
+    {
+      "file": "src/file_chunk_lowering.inc",
+      "field": "Stmt.b",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/file_chunk_lowering.inc",
+      "field": "Stmt.args",
+      "direct_reads": 3
+    },
+    {
+      "file": "src/executor_invoke_lowering.inc",
+      "field": "Stmt.text",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/executor_invoke_lowering.inc",
+      "field": "Stmt.a",
+      "direct_reads": 9
+    },
+    {
+      "file": "src/executor_invoke_lowering.inc",
+      "field": "Stmt.b",
+      "direct_reads": 13
+    },
+    {
+      "file": "src/executor_invoke_lowering.inc",
+      "field": "Stmt.args",
+      "direct_reads": 3
+    },
+    {
+      "file": "src/static_bounds.inc",
+      "field": "Stmt.text",
+      "direct_reads": 1
+    },
+    {
+      "file": "src/static_bounds.inc",
+      "field": "Stmt.a",
+      "direct_reads": 17
+    },
+    {
+      "file": "src/static_bounds.inc",
+      "field": "Stmt.b",
+      "direct_reads": 6
+    },
+    {
+      "file": "src/static_bounds.inc",
+      "field": "Stmt.args",
+      "direct_reads": 2
+    },
+    {
+      "file": "src/file_chunk_codegen.inc",
+      "field": "Stmt.text",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/file_chunk_codegen.inc",
+      "field": "Stmt.a",
+      "direct_reads": 8
+    },
+    {
+      "file": "src/file_chunk_codegen.inc",
+      "field": "Stmt.b",
+      "direct_reads": 8
+    },
+    {
+      "file": "src/file_chunk_codegen.inc",
+      "field": "Stmt.args",
+      "direct_reads": 11
+    },
+    {
+      "file": "src/borrowed_views.inc",
+      "field": "Stmt.text",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/borrowed_views.inc",
+      "field": "Stmt.a",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/borrowed_views.inc",
+      "field": "Stmt.b",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/borrowed_views.inc",
+      "field": "Stmt.args",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/handler_lowering.inc",
+      "field": "Stmt.text",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/handler_lowering.inc",
+      "field": "Stmt.a",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/handler_lowering.inc",
+      "field": "Stmt.b",
+      "direct_reads": 0
+    },
+    {
+      "file": "src/handler_lowering.inc",
+      "field": "Stmt.args",
+      "direct_reads": 0
+    }
+  ],
+  "total": 973,
+  "tree_expression_text_reads": 0,
+  "note": "Counts are direct member references under checker/emitter consumer files; each field has kind-dependent meaning."
+}

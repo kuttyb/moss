@@ -1,0 +1,12 @@
+[
+  {
+    "compiler": "baseline",
+    "returncode": 0,
+    "summary": "phase27 .mossi EST passed (raw off/shadow hashes={'library': '966dfefe1fdaf19564c4cac7c1a053d68981ad903bb5eb3be7a647d723a96b1c', 'app': 'ef458867484251d82347deb1f17ac521a1b64f65ee1f4c74110bf3dae354cfe2'}, generic=1, Section2=2 imported dumps)"
+  },
+  {
+    "compiler": "candidate",
+    "returncode": 0,
+    "summary": "phase27 .mossi EST passed (raw off/shadow hashes={'library': 'f2cda5d45b8361631a5417c6b6948c9cd1fb90432fc68b0ac3183cfc46af64ce', 'app': '6574326c6e2afa5e122cf30c8357dee35f2356a3604ff0d8c1058cfbf963f3b5'}, generic=1, Section2=2 imported dumps)"
+  }
+]

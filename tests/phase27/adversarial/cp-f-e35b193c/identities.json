@@ -1,0 +1,26 @@
+{
+  "baseline_source_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "binaries": {
+    "phase27-2-dev": {
+      "path": "../cp-f-agent2-baseline-e35b193c/build/compiler/moss-dev",
+      "sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286"
+    },
+    "phase27-2-opt": {
+      "path": "../cp-f-agent2-baseline-e35b193c/build/compiler/moss-opt",
+      "sha256": "a7014f21f024ffba26801d377474d346eeecfc4c536e604d7e0816d4c7b211f0"
+    },
+    "phase27-3-asan-ubsan": {
+      "path": "build/sanitized/moss-dev",
+      "sha256": "188ff24210f57d56553ccd88a891060eb8353eabb1d923bfdbc1ce7beef918c9"
+    },
+    "phase27-3-dev": {
+      "path": "build/compiler/moss-dev",
+      "sha256": "7e12d81c73b66fe245f8a9ea13fb539db135d8d28ca89b9c21fc3ec5c4267319"
+    },
+    "phase27-3-opt": {
+      "path": "build/compiler/moss-opt",
+      "sha256": "c0b0e2c4109405a8bc37c575d8cfa496e2793cea2223141244d6150ea3431695"
+    }
+  },
+  "candidate_source_sha": "e35b193c4f8ffca14fd820f6c938f53e1c1a0744"
+}

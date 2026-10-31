@@ -1,0 +1,3 @@
+fn main():
+  values = Map()
+  echo values

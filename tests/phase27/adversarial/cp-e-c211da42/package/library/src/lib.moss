@@ -1,0 +1,7 @@
+module closure_lib
+export fn used(value: Int) -> Int:
+  return leaf(value)
+fn leaf(value: Int) -> Int:
+  return value + 1
+export fn unused(value: Int) -> Int:
+  return value + 20

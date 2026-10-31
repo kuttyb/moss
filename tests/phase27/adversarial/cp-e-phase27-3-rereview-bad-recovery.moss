@@ -1,0 +1,10 @@
+enum Trouble:
+  Bad(code: Int)
+fn fail() -> Int:
+  raise Trouble.Bad(code: 1)
+fn main():
+  try:
+    value = fail()
+  recover Trouble.Bad(other):
+    value = other
+  echo value

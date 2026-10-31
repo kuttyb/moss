@@ -1,0 +1,38 @@
+[
+  {
+    "function": "phase20_is_nontransferable_capability",
+    "case": "removed",
+    "actual": "missing exemption function(s): phase20_is_nontransferable_capability",
+    "pass": true
+  },
+  {
+    "function": "phase20_is_nontransferable_capability",
+    "case": "second reader site",
+    "actual": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'phase20_is_nontransferable_capability', 'split_top_level') (2)",
+    "pass": true
+  },
+  {
+    "function": "builtin_equality_type",
+    "case": "removed",
+    "actual": "missing exemption function(s): builtin_equality_type",
+    "pass": true
+  },
+  {
+    "function": "builtin_equality_type",
+    "case": "second reader site",
+    "actual": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'builtin_equality_type', 'split_top_level') (2)",
+    "pass": true
+  },
+  {
+    "function": "contains_float_type",
+    "case": "removed",
+    "actual": "missing exemption function(s): contains_float_type",
+    "pass": true
+  },
+  {
+    "function": "contains_float_type",
+    "case": "second reader site",
+    "actual": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'contains_float_type', 'split_top_level') (2)",
+    "pass": true
+  }
+]

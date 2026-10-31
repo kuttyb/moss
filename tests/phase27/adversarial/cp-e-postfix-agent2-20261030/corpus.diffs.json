@@ -1,0 +1,74 @@
+{
+  "files": 2103,
+  "checks": 8412,
+  "differences": [
+    {
+      "mode": "off",
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": [
+        "baseline",
+        "off",
+        "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "1",
+        "5e600dfa268577e572eb7043b6ce9f468c2c19e77f507016e55b00814bf61992",
+        "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        "recovery patterns must name a qualified enum variant",
+        57,
+        1,
+        null,
+        null,
+        "",
+        ""
+      ],
+      "candidate": [
+        "candidate",
+        "off",
+        "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "1",
+        "f3700115cdbd9003215b0d8799e023fc0aaa725b07b133af2c4564f1a231687a",
+        "UNKNOWN_ERROR_TYPE",
+        "unknown error enum 'ndarray.NdArrayError'",
+        57,
+        1,
+        null,
+        null,
+        "",
+        ""
+      ]
+    },
+    {
+      "mode": "shadow",
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": [
+        "baseline",
+        "shadow",
+        "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "1",
+        "5e600dfa268577e572eb7043b6ce9f468c2c19e77f507016e55b00814bf61992",
+        "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        "recovery patterns must name a qualified enum variant",
+        57,
+        1,
+        null,
+        null,
+        "",
+        ""
+      ],
+      "candidate": [
+        "candidate",
+        "shadow",
+        "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "1",
+        "f3700115cdbd9003215b0d8799e023fc0aaa725b07b133af2c4564f1a231687a",
+        "UNKNOWN_ERROR_TYPE",
+        "unknown error enum 'ndarray.NdArrayError'",
+        57,
+        1,
+        null,
+        null,
+        "",
+        ""
+      ]
+    }
+  ]
+}

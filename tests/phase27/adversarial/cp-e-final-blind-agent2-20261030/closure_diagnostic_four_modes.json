@@ -1,0 +1,36 @@
+{
+  "source": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+  "results": [
+    {
+      "path": "phase27-2-off",
+      "mode": "off",
+      "returncode": 1,
+      "ok": false,
+      "code": "INVALID_BARE_IDENTIFIER_STATEMENT",
+      "message": "bare identifier is not a statement; use 'pass' for a no-op",
+      "source_line": 35,
+      "column": 1
+    },
+    {
+      "path": "candidate-off",
+      "mode": "off",
+      "returncode": 1,
+      "ok": false,
+      "code": "INVALID_BARE_IDENTIFIER_STATEMENT",
+      "message": "bare identifier is not a statement; use 'pass' for a no-op",
+      "source_line": 35,
+      "column": 1
+    },
+    {
+      "path": "candidate-shadow",
+      "mode": "shadow",
+      "returncode": 1,
+      "ok": false,
+      "code": "INVALID_BARE_IDENTIFIER_STATEMENT",
+      "message": "bare identifier is not a statement; use 'pass' for a no-op",
+      "source_line": 35,
+      "column": 1
+    }
+  ],
+  "all_diagnostics_equal": true
+}

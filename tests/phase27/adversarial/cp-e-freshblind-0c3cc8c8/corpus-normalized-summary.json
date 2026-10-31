@@ -1,0 +1,29 @@
+{
+  "raw_file_count": 2004,
+  "comparable_common_files": 2003,
+  "excluded_out_of_project_context": [
+    {
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": {
+        "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        "column": 1,
+        "line": 57,
+        "message": "recovery patterns must name a qualified enum variant",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate": {
+        "code": "UNKNOWN_ERROR_TYPE",
+        "column": 1,
+        "line": 57,
+        "message": "unknown error enum 'ndarray.NdArrayError'",
+        "ok": false,
+        "returncode": 1
+      }
+    }
+  ],
+  "baseline_candidate_off_differences_after_worktree_path_normalization": 0,
+  "candidate_off_shadow_differences": 0,
+  "candidate_off_rejections_in_comparable_files": 678,
+  "baseline_candidate_off_verdict_differences": 0
+}

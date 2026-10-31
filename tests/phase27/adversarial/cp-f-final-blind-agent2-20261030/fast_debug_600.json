@@ -1,0 +1,20 @@
+[
+  {
+    "label": "baseline",
+    "mode": "off",
+    "kind": "timeout",
+    "seconds": 600.0072345689405,
+    "timeout": 600,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "label": "candidate",
+    "mode": "shadow",
+    "kind": "timeout",
+    "seconds": 600.1018308299826,
+    "timeout": 600,
+    "stdout": "",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "listed": 2225,
+  "available": 2225,
+  "missing": 0,
+  "verdict_differences": 0,
+  "diagnostic_differences": 0,
+  "checked_id_closure_differences": 4,
+  "checked_id_closure_difference_sources": [
+    "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+    "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+    "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss",
+    "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/tests/order_test.moss"
+  ],
+  "edge_target_label_difference_sources": 159,
+  "edge_owner_kind_topology_differences": 0,
+  "complete_traces_off": 661,
+  "complete_traces_shadow": 661,
+  "available_sources_sha256": "d559a2e82dcf3c98d5563601aa6a7a101fde340d6132a3839a3ab8e219a07c7b",
+  "matrix_sha256": "5e7be0dd59af36d00a2cfdd947e596d21ab7e9594bffe2de9e64d17b1c1f244d",
+  "missing_paths_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "note": "candidate EST off compared with candidate EST shadow"
+}

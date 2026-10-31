@@ -1,0 +1,216 @@
+{
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_sha": "2bdc2ea16cff57882dcfb45f99b5c2df39d6d98f",
+  "results": {
+    "baseline": {
+      "check": {
+        "argv": [
+          "<baseline>/moss",
+          "check",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+          "--json"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"<REVIEW_ROOT>/tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss\", \"diagnostics\": []}\n}\n"
+      },
+      "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+      "default": {
+        "emit": {
+          "argv": [
+            "<baseline>/moss",
+            "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/baseline-default.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/baseline-default.rs\ngenerated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/baseline-default.mossmap\n"
+        },
+        "native": {
+          "argv": [
+            "tmp/cp-f-final-cache/cross-engine/baseline-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "argv": [
+            "rustc",
+            "--edition=2021",
+            "tmp/cp-f-final-cache/cross-engine/baseline-default.rs",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/baseline-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      },
+      "fast_debug": {
+        "argv": [
+          "<baseline>/moss",
+          "debug",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "interpreter": {
+        "argv": [
+          "<baseline>/moss",
+          "run",
+          "--interp",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "optimized": {
+        "emit": {
+          "argv": [
+            "<baseline>/moss",
+            "-O",
+            "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/baseline-optimized.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/baseline-optimized.rs\ngenerated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/baseline-optimized.mossmap\n"
+        },
+        "native": {
+          "argv": [
+            "tmp/cp-f-final-cache/cross-engine/baseline-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "argv": [
+            "rustc",
+            "--edition=2021",
+            "tmp/cp-f-final-cache/cross-engine/baseline-optimized.rs",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/baseline-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      }
+    },
+    "candidate": {
+      "check": {
+        "argv": [
+          "<candidate>/moss",
+          "check",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+          "--json"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"<REVIEW_ROOT>/tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss\", \"diagnostics\": []}\n}\n"
+      },
+      "compiler_sha256": "f49f208d2f03f91f131cf329d45a5fdd16f2dbdae3fe7eb7a151d410619e139a",
+      "default": {
+        "emit": {
+          "argv": [
+            "<candidate>/moss",
+            "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/candidate-default.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/candidate-default.rs\ngenerated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/candidate-default.mossmap\n"
+        },
+        "native": {
+          "argv": [
+            "tmp/cp-f-final-cache/cross-engine/candidate-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "argv": [
+            "rustc",
+            "--edition=2021",
+            "tmp/cp-f-final-cache/cross-engine/candidate-default.rs",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/candidate-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      },
+      "fast_debug": {
+        "argv": [
+          "<candidate>/moss",
+          "debug",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "interpreter": {
+        "argv": [
+          "<candidate>/moss",
+          "run",
+          "--interp",
+          "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "optimized": {
+        "emit": {
+          "argv": [
+            "<candidate>/moss",
+            "-O",
+            "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/candidate-optimized.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/candidate-optimized.rs\ngenerated <REVIEW_ROOT>/tmp/cp-f-final-cache/cross-engine/candidate-optimized.mossmap\n"
+        },
+        "native": {
+          "argv": [
+            "tmp/cp-f-final-cache/cross-engine/candidate-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "argv": [
+            "rustc",
+            "--edition=2021",
+            "tmp/cp-f-final-cache/cross-engine/candidate-optimized.rs",
+            "-o",
+            "tmp/cp-f-final-cache/cross-engine/candidate-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      }
+    }
+  },
+  "source": "tests/phase27/adversarial/cp-f-phase27-3-final-cache/wrapping-message-argument.moss",
+  "source_sha256": "47e8a7bc6a063050d4324c00befac93f00a84b1e0f442096b4b36660838fb71e"
+}

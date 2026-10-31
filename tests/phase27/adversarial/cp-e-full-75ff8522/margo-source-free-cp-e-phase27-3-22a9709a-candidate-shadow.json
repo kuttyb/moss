@@ -1,0 +1,270 @@
+{
+  "build_order": [
+    "moss.bytes",
+    "moss.binary",
+    "moss.encoding",
+    "moss.cbor",
+    "moss.core",
+    "moss.text",
+    "moss.fmt",
+    "moss.parse",
+    "moss.csv",
+    "moss.datastructures",
+    "moss.math",
+    "moss.linalg",
+    "moss.ndarray",
+    "moss.tables",
+    "cp-e-source-free-consumer"
+  ],
+  "check_only": true,
+  "checked": [
+    "cp-e-source-free-consumer"
+  ],
+  "ok": true,
+  "packages": [
+    {
+      "name": "moss.bytes",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/bytes"
+      }
+    },
+    {
+      "name": "moss.binary",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/binary"
+      }
+    },
+    {
+      "name": "moss.encoding",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/encoding"
+      }
+    },
+    {
+      "name": "moss.cbor",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/cbor"
+      }
+    },
+    {
+      "name": "moss.core",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/core"
+      }
+    },
+    {
+      "name": "moss.text",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/text"
+      }
+    },
+    {
+      "name": "moss.fmt",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/fmt"
+      }
+    },
+    {
+      "name": "moss.parse",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/parse"
+      }
+    },
+    {
+      "name": "moss.csv",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/csv"
+      }
+    },
+    {
+      "name": "moss.datastructures",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/datastructures"
+      }
+    },
+    {
+      "name": "moss.math",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/math"
+      }
+    },
+    {
+      "name": "moss.linalg",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/linalg"
+      }
+    },
+    {
+      "name": "moss.ndarray",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/ndarray"
+      }
+    },
+    {
+      "name": "moss.tables",
+      "source": {
+        "kind": "path",
+        "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/tables"
+      }
+    },
+    {
+      "name": "cp-e-source-free-consumer",
+      "source": {
+        "kind": "root"
+      }
+    }
+  ],
+  "root_package": "cp-e-source-free-consumer",
+  "scheduling_events": [
+    {
+      "event": "start",
+      "package": "moss.bytes"
+    },
+    {
+      "event": "start",
+      "package": "moss.encoding"
+    },
+    {
+      "event": "start",
+      "package": "moss.core"
+    },
+    {
+      "event": "start",
+      "package": "moss.datastructures"
+    },
+    {
+      "event": "start",
+      "package": "moss.math"
+    },
+    {
+      "event": "finish",
+      "package": "moss.core"
+    },
+    {
+      "event": "finish",
+      "package": "moss.datastructures"
+    },
+    {
+      "event": "start",
+      "package": "moss.text"
+    },
+    {
+      "event": "finish",
+      "package": "moss.math"
+    },
+    {
+      "event": "start",
+      "package": "moss.linalg"
+    },
+    {
+      "event": "finish",
+      "package": "moss.encoding"
+    },
+    {
+      "event": "finish",
+      "package": "moss.bytes"
+    },
+    {
+      "event": "start",
+      "package": "moss.binary"
+    },
+    {
+      "event": "finish",
+      "package": "moss.text"
+    },
+    {
+      "event": "start",
+      "package": "moss.fmt"
+    },
+    {
+      "event": "start",
+      "package": "moss.parse"
+    },
+    {
+      "event": "finish",
+      "package": "moss.linalg"
+    },
+    {
+      "event": "start",
+      "package": "moss.ndarray"
+    },
+    {
+      "event": "finish",
+      "package": "moss.binary"
+    },
+    {
+      "event": "start",
+      "package": "moss.cbor"
+    },
+    {
+      "event": "finish",
+      "package": "moss.ndarray"
+    },
+    {
+      "event": "finish",
+      "package": "moss.fmt"
+    },
+    {
+      "event": "finish",
+      "package": "moss.parse"
+    },
+    {
+      "event": "start",
+      "package": "moss.csv"
+    },
+    {
+      "event": "finish",
+      "package": "moss.cbor"
+    },
+    {
+      "event": "finish",
+      "package": "moss.csv"
+    },
+    {
+      "event": "start",
+      "package": "moss.tables"
+    },
+    {
+      "event": "finish",
+      "package": "moss.tables"
+    },
+    {
+      "event": "start",
+      "package": "cp-e-source-free-consumer"
+    },
+    {
+      "event": "finish",
+      "package": "cp-e-source-free-consumer"
+    }
+  ],
+  "schema_version": "margo-1",
+  "skipped": [
+    "moss.bytes",
+    "moss.binary",
+    "moss.encoding",
+    "moss.cbor",
+    "moss.core",
+    "moss.text",
+    "moss.fmt",
+    "moss.parse",
+    "moss.csv",
+    "moss.datastructures",
+    "moss.math",
+    "moss.linalg",
+    "moss.ndarray",
+    "moss.tables"
+  ]
+}

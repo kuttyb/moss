@@ -28,10 +28,10 @@
 
   bool is_direct_fileio_open_initializer(
       const string& expression, vector<string>* open_args = nullptr) const {
-    string initializer = strip_redundant_outer_parentheses(trim(expression));
+    string initializer = tree_strip_redundant_outer_parentheses(trim(expression));
     string receiver, method;
     vector<string> args;
-    bool direct = parse_member_call(initializer, receiver, method, args) &&
+    bool direct = tree_parse_member_call(initializer, receiver, method, args) &&
         receiver == "FileIO" && method == "open" && args.size() == 2;
     if (direct && open_args) *open_args = std::move(args);
     return direct;
@@ -40,19 +40,14 @@
   void static_mark_possible_mutation(string expression,
                                      const std::set<string>& fileio_owners,
                                      std::set<string>& mutated) const {
-    expression = strip_redundant_outer_parentheses(trim(expression));
-    for (const auto& prefix : vector<string>{"echo ", "reply ",
-                                              "return ", "message "})
-      if (starts_with(expression, prefix))
-        expression = trim(expression.substr(prefix.size()));
-    // Moss statements can contain expression sequences (notably echo's
-    // comma-separated operands). Inspect every component before trying to
-    // recognize a single call; otherwise a later call can mutate a value
-    // while an earlier component hides it from the bound proof.
-    auto sequence = split_top_level(expression, ',');
-    if (sequence.size() > 1) {
-      for (const auto& item : sequence)
-        static_mark_possible_mutation(item, fileio_owners, mutated);
+    expression = tree_strip_redundant_outer_parentheses(trim(expression));
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(expression, message_target, message_handler,
+                           message_arguments)) {
+      static_mark_possible_mutation(message_target, fileio_owners, mutated);
+      for (const auto& argument : message_arguments)
+        static_mark_possible_mutation(argument, fileio_owners, mutated);
       return;
     }
     // Split compound expressions before call recognition: the textual call
@@ -60,14 +55,14 @@
     for (const auto& operators : vector<vector<string>>{
              {" or ", " xor ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(expression, operators)) {
+      if (auto binary = tree_split_binary(expression, operators)) {
         static_mark_possible_mutation(binary->first, fileio_owners, mutated);
         static_mark_possible_mutation(binary->second, fileio_owners, mutated);
         return;
       }
     string receiver, method;
     vector<string> args;
-    if (parse_member_call(expression, receiver, method, args)) {
+    if (tree_parse_member_call(expression, receiver, method, args)) {
       bool fileio_borrow = fileio_owners.count(receiver) &&
           (method == "read" || method == "write" || method == "chunks" ||
            method == "open" || method == "sync" || method == "close");
@@ -77,7 +72,7 @@
           mutated.insert(place->root);
         for (const auto& argument : args) {
           string argument_name, argument_value;
-          string actual = parse_named_argument(argument, argument_name,
+          string actual = tree_parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
           if (auto place = storage_location(actual, {}, false))
@@ -88,17 +83,17 @@
       for (const auto& argument : args) {
         string name, value;
         static_mark_possible_mutation(
-            parse_named_argument(argument, name, value) ? value : argument,
+            tree_parse_named_argument(argument, name, value) ? value : argument,
             fileio_owners, mutated);
       }
       return;
     }
     string callee;
-    if (parse_simple_call(expression, callee, args)) {
+    if (tree_parse_simple_call(expression, callee, args)) {
       if (!objects_.count(callee) && callee != "range" && callee != "Some")
         for (const auto& argument : args) {
           string argument_name, argument_value;
-          string actual = parse_named_argument(argument, argument_name,
+          string actual = tree_parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
           if (auto place = storage_location(actual, {}, false))
@@ -107,30 +102,29 @@
       for (const auto& argument : args) {
         string name, value;
         static_mark_possible_mutation(
-            parse_named_argument(argument, name, value) ? value : argument,
+            tree_parse_named_argument(argument, name, value) ? value : argument,
             fileio_owners, mutated);
       }
       return;
     }
-    if (starts_with(expression, "not ") || starts_with(expression, "-")) {
-      static_mark_possible_mutation(expression.substr(
-          starts_with(expression, "not ") ? 4 : 1), fileio_owners, mutated);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(expression, unary_operation, unary_operand)) {
+      static_mark_possible_mutation(unary_operand, fileio_owners, mutated);
       return;
     }
     string base, index;
-    if (parse_index(expression, base, index)) {
+    if (tree_parse_index(expression, base, index)) {
       static_mark_possible_mutation(base, fileio_owners, mutated);
       static_mark_possible_mutation(index, fileio_owners, mutated);
       return;
     }
-    auto dot = expression.rfind('.');
-    if (dot != string::npos && simple_identifier(trim(expression.substr(dot + 1)))) {
-      static_mark_possible_mutation(expression.substr(0, dot), fileio_owners, mutated);
+    string member_base, member_name;
+    if (tree_parse_member_access(expression, member_base, member_name)) {
+      static_mark_possible_mutation(member_base, fileio_owners, mutated);
       return;
     }
-    if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : split_top_level(
-               expression.substr(1, expression.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(expression))
+      for (const auto& item : *elements)
         static_mark_possible_mutation(item, fileio_owners, mutated);
   }
 
@@ -153,9 +147,18 @@
         break;
       case Stmt::Kind::Call:
       case Stmt::Kind::Raw:
-      case Stmt::Kind::Echo:
-      case Stmt::Kind::Message:
         expression = statement.text;
+        if (!statement.message_result.empty())
+          mutated.insert(statement.message_result);
+        break;
+      case Stmt::Kind::Echo:
+        for (const auto& argument : statement.args)
+          static_mark_possible_mutation(argument, fileio_owners, mutated);
+        break;
+      case Stmt::Kind::Message:
+        static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+        for (const auto& argument : statement.args)
+          static_mark_possible_mutation(argument, fileio_owners, mutated);
         if (!statement.message_result.empty())
           mutated.insert(statement.message_result);
         break;
@@ -317,10 +320,10 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         StaticBoundFact fact;
-        string value = strip_redundant_outer_parentheses(trim(statement.b));
-        if (simple_identifier(value)) {
+        string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+        if (tree_simple_identifier(value)) {
           auto existing = facts.find(value);
           if (existing != facts.end()) fact = existing->second;
         } else {
@@ -357,7 +360,7 @@
       // A projected store or call can mutate shared collection storage.
       bool binding = (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var || statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a);
+          tree_simple_identifier(statement.a);
       if (binding) mutated.erase(statement.a);
       if (!mutated.empty()) {
         // A collection alias may refer to the same mutable storage. Drop all
@@ -372,7 +375,7 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         fileio_owners.erase(statement.a);
         if (is_direct_fileio_open_initializer(statement.b))
           fileio_owners.insert(statement.a);
@@ -403,7 +406,7 @@
   std::optional<int64_t> static_exact_integer(string source,
                                               int depth = 0) const {
     if (depth > 32) return std::nullopt;
-    source = strip_redundant_outer_parentheses(
+    source = tree_strip_redundant_outer_parentheses(
         static_source_expression(source));
     if (auto fact = static_bound_bindings_.find(source);
         fact != static_bound_bindings_.end()) return fact->second.integer;
@@ -412,26 +415,30 @@
     // splitter so this follows the language's arithmetic syntax.
     for (const auto& operators : vector<vector<string>>{{"+", "-"},
                                                           {"*", "/", "%"}}) {
-      if (auto binary = split_binary(source, operators)) {
+      if (auto binary = tree_split_binary(source, operators)) {
         auto left = static_exact_integer(binary->first, depth + 1);
         auto right = static_exact_integer(binary->second, depth + 1);
         if (!left || !right) return std::nullopt;
         int64_t answer = 0;
-        // Recover the actual operator from the original split boundary.
-        size_t at = binary->first.size();
-        while (at < source.size() && std::isspace(
-            static_cast<unsigned char>(source[at]))) ++at;
-        char operation = at < source.size() ? source[at] : '\0';
-        if (operation == '+') {
+        // Recover the selected operator by asking EST for that exact root
+        // split, rather than inspecting characters between rendered children.
+        string operation;
+        for (const auto& candidate : vector<string>{"+", "-", "*", "/", "%"})
+          if (auto selected = tree_split_binary(source, {candidate});
+              selected && *selected == *binary) {
+            operation = candidate;
+            break;
+          }
+        if (operation == "+") {
           if (__builtin_add_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '-') {
+        } else if (operation == "-") {
           if (__builtin_sub_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '*') {
+        } else if (operation == "*") {
           if (__builtin_mul_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '/' || operation == '%') {
+        } else if (operation == "/" || operation == "%") {
           if (*right == 0 || (*left == INT64_MIN && *right == -1))
             return std::nullopt;
-          answer = operation == '/' ? *left / *right : *left % *right;
+          answer = operation == "/" ? *left / *right : *left % *right;
         } else return std::nullopt;
         return answer;
       }
@@ -452,28 +459,22 @@
     string value = static_source_expression(source);
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.entries;
-    if (!starts_with(value, "[") || !ends_with(value, "]"))
-      return std::nullopt;
-    string items = trim(value.substr(1, value.size() - 2));
-    return items.empty() ? vector<string>{} : split_top_level(items, ',');
+    return tree_parse_vector_literal(value);
   }
 
   std::optional<std::pair<string, string>> static_batch_request(
       string entry) const {
-    entry = trim(entry);
-    if (starts_with(entry, "(") && ends_with(entry, ")")) {
-      auto coordinates = split_top_level(entry.substr(1, entry.size() - 2), ',');
-      if (coordinates.size() == 2)
-        return std::make_pair(coordinates[0], coordinates[1]);
-    }
+    if (auto coordinates = tree_parse_tuple_elements(entry);
+        coordinates && coordinates->size() == 2)
+      return std::make_pair((*coordinates)[0], (*coordinates)[1]);
     string constructor;
     vector<string> fields;
-    if (parse_simple_call(entry, constructor, fields) &&
+    if (tree_parse_simple_call(entry, constructor, fields) &&
         fileio_request_record_type(constructor) && fields.size() == 2) {
       std::map<string, string> named;
       for (const auto& field : fields) {
         string name, value;
-        if (parse_named_argument(field, name, value)) named[name] = value;
+        if (tree_parse_named_argument(field, name, value)) named[name] = value;
       }
       if (named.count("offset") && named.count("size"))
         return std::make_pair(named["offset"], named["size"]);
@@ -483,7 +484,7 @@
 
   std::optional<vector<std::optional<int64_t>>> static_request_size_values(
       const string& source) const {
-    string value = strip_redundant_outer_parentheses(trim(source));
+    string value = tree_strip_redundant_outer_parentheses(trim(source));
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.request_sizes;
     auto entries = static_collection_entries(value);
@@ -499,12 +500,12 @@
 
   std::optional<vector<uint64_t>> static_batch_entry_bounds(
       const string& source) const {
-    string value = strip_redundant_outer_parentheses(trim(source));
+    string value = tree_strip_redundant_outer_parentheses(trim(source));
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.batch_entries;
     string receiver, method;
     vector<string> arguments;
-    if (!parse_member_call(value, receiver, method, arguments) ||
+    if (!tree_parse_member_call(value, receiver, method, arguments) ||
         method != "read" || arguments.size() != 1) return std::nullopt;
     auto sizes = static_request_size_values(arguments[0]);
     if (!sizes) return std::nullopt;
@@ -523,12 +524,13 @@
         fact != static_bound_bindings_.end()) return fact->second.bytes;
     std::function<std::optional<uint64_t>(string)> bounded_string =
         [&](string expression) -> std::optional<uint64_t> {
-      expression = strip_redundant_outer_parentheses(trim(expression));
+      expression = tree_strip_redundant_outer_parentheses(trim(expression));
       expression = static_source_expression(expression);
-      if (expression.size() >= 2 && expression.front() == '"' &&
-          expression.back() == '"')
-        return static_cast<uint64_t>(expression.size() - 2);
-      if (auto concatenation = split_binary(expression, {"+"})) {
+      if (auto syntax = moss::est::parse_view(expression))
+        if (auto bytes =
+                moss::est::string_literal_source_payload_bytes(*syntax))
+          return bytes;
+      if (auto concatenation = tree_split_binary(expression, {"+"})) {
         auto left = bounded_string(concatenation->first);
         auto right = bounded_string(concatenation->second);
         uint64_t total = 0;
@@ -541,7 +543,7 @@
     if (auto bound = bounded_string(value)) return bound;
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       if (method == "read" && arguments.size() == 2)
         return static_upper_bound(arguments[1]);
       if (method == "chunks" && arguments.size() == 1)
@@ -555,7 +557,7 @@
       }
     }
     string base, index_str;
-    if (parse_index(value, base, index_str)) {
+    if (tree_parse_index(value, base, index_str)) {
       auto entry_bounds = static_batch_entry_bounds(base);
       if (entry_bounds && !entry_bounds->empty()) {
         if (auto exact_idx = static_exact_integer(index_str)) {

@@ -1,0 +1,1355 @@
+src/executor_invoke_codegen.inc:95:  auto domain_type = types.find(plan.target_domain_binding);
+src/executor_invoke_codegen.inc:139:        calls.back().first != "start")
+src/handler_lowering.inc:17:      auto specialized = specialization_names_.find(instance.domain + "\n" + instance.binding);
+src/handler_lowering.inc:41:    auto object = objects_.find(canonical_type_name(type));
+src/handler_lowering.inc:56:    auto object = objects_.find(canonical_type_name(type));
+src/handler_lowering.inc:75:    auto object = objects_.find(canonical_type_name(type));
+src/handler_lowering.inc:93:    auto cls = plan.leaf_to_class.find(path);
+src/handler_lowering.inc:121:    if (h.body.empty() || h.body.front().kind != Stmt::Kind::If || h.body.front().indent != 0)
+src/handler_lowering.inc:123:    const auto& branch = h.body.front();
+src/handler_lowering.inc:355:    o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
+src/handler_lowering.inc:422:    for (size_t dot = module_qualified.find('.'); dot != string::npos;
+src/handler_lowering.inc:423:         dot = module_qualified.find('.', dot + 2))
+src/handler_lowering.inc:439:      for (size_t separator = enum_key.find("::");
+src/handler_lowering.inc:441:           separator = enum_key.find("::"))
+src/handler_lowering.inc:444:    auto declaration = enums_.find(enum_key);
+src/handler_lowering.inc:563:          for (size_t separator = enum_key.find("::");
+src/handler_lowering.inc:565:               separator = enum_key.find("::"))
+src/handler_lowering.inc:568:        auto declaration = enums_.find(enum_key);
+src/handler_lowering.inc:612:                  arm.est_patterns.front(), identity),
+src/handler_lowering.inc:716:          for (size_t separator = enum_key.find("::");
+src/handler_lowering.inc:718:               separator = enum_key.find("::"))
+src/handler_lowering.inc:721:        auto declaration = enums_.find(enum_key);
+src/handler_lowering.inc:761:                  arm.est_patterns.front(), identity),
+src/handler_lowering.inc:1122:          const auto position = type.rfind(local);
+src/handler_lowering.inc:1130:          const auto position = type.find(local);
+src/handler_lowering.inc:1154:            const auto position = parameter.find(local);
+src/borrowed_views.inc:4:    auto found = objects_.find(canonical_type_name(type));
+src/borrowed_views.inc:21:    string root = parts.front(), type, rendered;
+src/borrowed_views.inc:47:      auto object = objects_.find(canonical_type_name(type));
+src/borrowed_views.inc:89:      auto found = functions_.find(name);
+src/borrowed_views.inc:188:          auto pipeline = method.result_functional_pipeline_ids.find(context);
+src/static_bounds.inc:186:      auto other = right.find(binding.first);
+src/static_bounds.inc:288:              auto old = incoming.find(name);
+src/static_bounds.inc:310:            auto old = incoming.find(statement.a);
+src/static_bounds.inc:327:          auto existing = facts.find(value);
+src/static_bounds.inc:411:    if (auto fact = static_bound_bindings_.find(source);
+src/static_bounds.inc:460:    if (auto fact = static_bound_bindings_.find(value);
+src/static_bounds.inc:488:    if (auto fact = static_bound_bindings_.find(value);
+src/static_bounds.inc:504:    if (auto fact = static_bound_bindings_.find(value);
+src/static_bounds.inc:523:    if (auto fact = static_bound_bindings_.find(value);
+src/executor_invoke_lowering.inc:65:    const string& argument = call.second.front();
+src/executor_invoke_lowering.inc:116:  if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
+src/executor_invoke_lowering.inc:123:  auto receiver = env.find(domain_binding);
+src/executor_invoke_lowering.inc:206:    auto receiver = main_env.find(binding);
+src/executor_invoke_lowering.inc:210:    auto domain = domains_.find(canonical_type_name(receiver->second));
+src/executor_invoke_lowering.inc:286:      if (calls.empty() || calls.back().first != "start")
+src/executor_invoke_lowering.inc:290:      if (!calls.back().second.empty())
+src/executor_invoke_lowering.inc:510:        calls.back().first == "start") {
+src/executor_invoke_lowering.inc:522:      auto found = state.find(statement.a);
+src/file_chunk_lowering.inc:58:  plan.map_callable = parsed.stages[0].arguments.front();
+src/file_chunk_lowering.inc:93:  auto function = functions_.find(map_node.callable_identity);
+src/file_chunk_lowering.inc:97:  const string parameter = mapper.params.front().name;
+src/file_chunk_lowering.inc:120:          tree_root_identifier(arguments.front()) == parameter)
+src/file_chunk_lowering.inc:160:    const string handler = pipeline.context.substr(8);
+src/file_chunk_lowering.inc:161:    const size_t separator = handler.find('.');
+src/file_chunk_lowering.inc:164:      const string owner = handler.substr(0, separator);
+src/file_chunk_lowering.inc:165:      const string operation = handler.substr(separator + 1);
+src/file_chunk_lowering.inc:214:            map_node.callable_identity.find('.') != string::npos))  // bound method
+src/fileio_semantics.inc:25:    auto object = objects_.find(t);
+src/fileio_semantics.inc:29:    auto open = t.find('[');
+src/fileio_semantics.inc:32:        t.substr(open + 1, t.size() - open - 2), ',');
+src/fileio_semantics.inc:65:        t.substr(t.find('[') + 1, t.size() - t.find('[') - 2));
+src/fileio_semantics.inc:69:    auto object = objects_.find(canonical_type_name(type));
+src/fileio_semantics.inc:85:        fileio_request_record_type(canonical.substr(7, canonical.size() - 8));
+src/fileio_semantics.inc:359:      auto found = flow.state.find(owner);
+src/fileio_semantics.inc:381:      auto found = merged.state.find(entry.first);
+src/fileio_semantics.inc:397:      auto found = merged.mode.find(entry.first);
+src/fileio_semantics.inc:404:      auto found = merged.batch_generation.find(entry.first);
+src/fileio_semantics.inc:411:      auto found = merged.range_origin.find(entry.first);
+src/fileio_semantics.inc:455:      auto function = functions_.find(callee);
+src/fileio_semantics.inc:503:          auto found = returned.state.find(alias.first);
+src/fileio_semantics.inc:505:          auto mode = returned.mode.find(alias.first);
+src/fileio_semantics.inc:528:    auto found = flow.state.find(owner);
+src/fileio_semantics.inc:880:    auto function = functions_.find(name);
+src/fileio_semantics.inc:916:    auto binding = caller_env.find(receiver);
+src/fileio_semantics.inc:918:    auto domain = domains_.find(canonical_type_name(binding->second));
+src/fileio_semantics.inc:928:                return leaf.substr(0, leaf.find_first_of(".[")) == field.name;
+src/fileio_semantics.inc:978:            string root = leaf.substr(0, leaf.find_first_of(".["));
+src/native_generator.cpp:123:        auto type = specialization.state_types.find(field.name);
+src/native_generator.cpp:127:        auto parameters = specialization.handler_parameter_types.find(handler.name);
+src/native_generator.cpp:135:        auto reply = specialization.handler_reply_types.find(handler.name);
+src/native_generator.cpp:140:      specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
+src/native_generator.cpp:143:          specialized_domains_.back().name;
+src/native_generator.cpp:181:        const auto separator = operation.first.rfind('|');
+src/native_generator.cpp:183:            p_.key_proof_ids_by_type.count(operation.first.substr(separator + 1)),
+src/native_generator.cpp:187:          << p_.key_proof_ids_by_type.at(operation.first.substr(separator + 1))
+src/native_generator.cpp:263:        auto sep = entry.first.find("__");
+src/native_generator.cpp:265:          string mod_name = entry.first.substr(0, sep);
+src/native_generator.cpp:422:    auto it = callable_id_to_function_.find(id);
+src/native_generator.cpp:487:    const string frame = carrier.substr(0, carrier.find("__MossRaisedCarrier_")) +
+src/native_generator.cpp:489:        carrier.substr(carrier.find("__MossRaisedCarrier_") + 20);
+src/native_generator.cpp:561:      for (size_t separator = type.find("::"); separator != string::npos;
+src/native_generator.cpp:562:           separator = type.find("::"))
+src/native_generator.cpp:773:    auto identity = domain_instance_bindings_.find(binding);
+src/native_generator.cpp:785:    auto found = domain_instance_bindings_.find(binding);
+src/native_generator.cpp:903:      return native_echo_vector_displayable(trim(x.substr(7, x.size() - 8)));
+src/native_generator.cpp:918:      auto inner = native_echo_element(trim(x.substr(7, x.size() - 8)));
+src/native_generator.cpp:980:      return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
+src/native_generator.cpp:981:    if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
+src/native_generator.cpp:982:    if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+src/native_generator.cpp:984:      return "moss_runtime::MossSet<" + rust_type(x.substr(4, x.size()-5)) + ">";
+src/native_generator.cpp:995:      return "Option<" + rust_type(x.substr(7, x.size()-8)) + ">";
+src/native_generator.cpp:1023:    auto object = objects_.find(t);
+src/native_generator.cpp:1354:      auto nested_context = statement.nested_open_call_keys_by_context.find(
+src/native_generator.cpp:1357:        nested_context = statement.nested_open_call_keys_by_context.find(
+src/native_generator.cpp:1360:        auto nested_key = nested_context->second.find(nested_expression);
+src/native_generator.cpp:1379:      auto selected = statement.open_call_keys_by_context.find(
+src/native_generator.cpp:1382:        selected = statement.open_call_keys_by_context.find(
+src/native_generator.cpp:1385:        selected = statement.open_call_keys_by_context.find("");
+src/native_generator.cpp:1420:    auto identity = domain_instance_bindings_.find(binding);
+src/native_generator.cpp:1481:        ? canonical_type_name(canonical.substr(7, canonical.size() - 8)) : "";
+src/native_generator.cpp:1493:      key = trim(reverse_args.front());
+src/native_generator.cpp:1512:    auto key_function = functions_.find(key);
+src/native_generator.cpp:1692:        return local->second.substr(9);
+src/native_generator.cpp:1720:      if (expression.compare(index, end - index, name) == 0) return true;
+src/native_generator.cpp:1733:      placeholder_types["_"] = input_types.front();
+src/native_generator.cpp:1752:      auto function = functions_.find(identity);
+src/native_generator.cpp:1823:          auto result = generated_callable_result(stage.arguments.front(),
+src/native_generator.cpp:1835:          output = generated_expr_type(stage.arguments.front(), types).value_or("");
+src/native_generator.cpp:1881:          auto domain = domains_.find(type->second);
+src/native_generator.cpp:2018:          auto it = supplied_types.find(f.name);
+src/native_generator.cpp:2026:        auto argument = generated_expr_type(call_args.front(), types);
+src/native_generator.cpp:2031:        auto value_type = generated_expr_type(call_args.front(), types);
+src/native_generator.cpp:2041:        auto function = functions_.find(callee_id);
+src/native_generator.cpp:2057:          string parameter = result.substr(9);
+src/native_generator.cpp:2073:        auto object = objects_.find(tname);
+src/native_generator.cpp:2342:      auto function = functions_.find(name);
+src/native_generator.cpp:2422:        pipeline.stages.back().operations.size() != 1 ||
+src/native_generator.cpp:2423:        !functional_terminal_kind(pipeline.stages.back().kind))
+src/native_generator.cpp:2426:    return pipeline.stages.back().operations.front();
+src/native_generator.cpp:2439:                                                 arguments.front().expression);
+src/native_generator.cpp:2442:      callback_types[arguments.front().expression] = arguments.front().type;
+src/native_generator.cpp:2444:      callback_locals.insert(arguments.front().expression);
+src/native_generator.cpp:2512:      auto function = functions_.find(identity);
+src/native_generator.cpp:2575:        return expr(terminal.arguments.front(), domain, locals, types);
+src/native_generator.cpp:2623:          !functional_terminal_kind(parsed->stages.back().kind))
+src/native_generator.cpp:2634:          !functional_terminal_kind(lowered.stages.back().kind))
+src/native_generator.cpp:2641:              operation.arguments.front(), {element_type}, &types);
+src/native_generator.cpp:2750:                           operation.arguments.front(), {current}, domain,
+src/native_generator.cpp:2754:                    operation.arguments.front(), {current.type}, &types);
+src/native_generator.cpp:2769:                           stage.operations[predicate].arguments.front(),
+src/native_generator.cpp:2777:              const auto& operation = stage.operations.front();
+src/native_generator.cpp:2779:                  operation.arguments.front(), &types).value_or(current.type);
+src/native_generator.cpp:2801:              const auto& operation = stage.operations.front();
+src/native_generator.cpp:2805:                        operation.arguments.front(), {current}, domain,
+src/native_generator.cpp:2812:              const auto& operation = stage.operations.front();
+src/native_generator.cpp:2816:                        operation.arguments.front(), {current}, domain,
+src/native_generator.cpp:2866:          << planned->nodes.front().semantic_identity << "\n";
+src/native_generator.cpp:2892:            stage.arguments.front(), {input}, domain, locals, types);
+src/native_generator.cpp:2894:        auto result = generated_callable_result(stage.arguments.front(),
+src/native_generator.cpp:2901:            stage.arguments.front(), {input}, domain, locals, types);
+src/native_generator.cpp:2910:    const auto& terminal = pipeline.stages.back();
+src/native_generator.cpp:2927:          << expr(terminal.arguments.front(), domain, locals, types) << ";\n";
+src/native_generator.cpp:2947:      auto accumulator_type = generated_expr_type(terminal.arguments.front(), types)
+src/native_generator.cpp:2967:          : render_functional_callable(terminal.arguments.front(), {input},
+src/native_generator.cpp:2996:            operation.arguments.front(), {final_element_type}, types);
+src/native_generator.cpp:3003:        ? FunctionalNodeKind::Source : pipeline.stages.back().kind;
+src/native_generator.cpp:3022:          << expr(last->arguments.front(), domain, locals, types) << ";\n";
+src/native_generator.cpp:3045:                       operation.arguments.front(), {current}, domain,
+src/native_generator.cpp:3049:                operation.arguments.front(), {current.type}, types);
+src/native_generator.cpp:3064:                       stage.operations[predicate].arguments.front(),
+src/native_generator.cpp:3072:          const auto& operation = stage.operations.front();
+src/native_generator.cpp:3074:              operation.arguments.front(), types).value_or(current.type);
+src/native_generator.cpp:3094:          const auto& operation = stage.operations.front();
+src/native_generator.cpp:3098:                    operation.arguments.front(), {current}, domain, locals,
+src/native_generator.cpp:3107:          const auto& operation = stage.operations.front();
+src/native_generator.cpp:3111:                    operation.arguments.front(), {current}, domain, locals,
+src/native_generator.cpp:3159:          functional_terminal_kind(upstream_parsed->stages.back().kind))
+src/native_generator.cpp:3229:      auto domain_it = domains_.find(canonical_type_name(receiver_type->second));
+src/native_generator.cpp:3451:              operand.front() == '"' && operand.back() == '"';
+src/native_generator.cpp:3568:      bool string_index = ii.size() >= 2 && ii.front() == '"' && ii.back() == '"';
+src/native_generator.cpp:3594:          auto object = objects_.find(nominal_template_name(*projection_type));
+src/native_generator.cpp:3710:              trim(member_arguments.front()));
+src/native_generator.cpp:3712:              requests.front() == '[' && requests.back() == ']';
+src/native_generator.cpp:3721:            string record_type = trim(concrete_request_type.substr(
+src/native_generator.cpp:3723:            auto record = objects_.find(canonical_type_name(record_type));
+src/native_generator.cpp:3858:                  return part.size() >= 2 && part.front() == '"' &&
+src/native_generator.cpp:3859:                      part.back() == '"' ? part : "&(" +
+src/native_generator.cpp:3864:                      (part.size() >= 2 && part.front() == '"' &&
+src/native_generator.cpp:3865:                       part.back() == '"' ? "" : ".as_str()");
+src/native_generator.cpp:3922:          const string key_type = concrete.substr(4, concrete.size() - 5);
+src/native_generator.cpp:4175:        return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
+src/native_generator.cpp:4178:            expr(builtin_args.front(), d, locals, types) +
+src/native_generator.cpp:4183:            expr(builtin_args.front(), d, locals, types) +
+src/native_generator.cpp:4189:        const string value = expr(builtin_args.front(), d, locals, types);
+src/native_generator.cpp:4209:        auto argument_type = generated_expr_type(builtin_args.front(), types);
+src/native_generator.cpp:4219:        string result = expr(builtin_args.front(), d, locals, types) +
+src/native_generator.cpp:4230:        return "__moss_char_from_codepoint(" + expr(builtin_args.front(), d, locals, types) + ")";
+src/native_generator.cpp:4241:            expr(builtin_args.front(), d, locals, types));
+src/native_generator.cpp:4252:      auto oit = objects_.find(head);
+src/native_generator.cpp:4266:          auto vit = values.find(f.name);
+src/native_generator.cpp:4283:          auto it = functions_.find(head);
+src/native_generator.cpp:4372:          string path = e.substr(i, end - i);
+src/native_generator.cpp:4400:          string tok = e.substr(i, j-i);
+src/native_generator.cpp:4414:            auto pos = e.find(needle);
+src/native_generator.cpp:4435:        string member = e.substr(begin, end - begin);
+src/native_generator.cpp:4450:      if (i + from.size() <= s.size() && s.compare(i, from.size(), from) == 0 &&
+src/native_generator.cpp:4478:      if (expression.substr(start, end - start) == from &&
+src/native_generator.cpp:4803:        auto plan = method.result_functional_pipeline_ids.find(context);
+src/native_generator.cpp:4949:      if (!specialization && open_generic(rr)) rr = "T_" + rr.substr(9);
+src/native_generator.cpp:4950:      else if (!specialization && starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
+src/native_generator.cpp:4951:      else if (!specialization && starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
+src/native_generator.cpp:5022:      auto plan = f.result_functional_pipeline_ids.find(functional_context);
+src/native_generator.cpp:5136:      auto generated = specialization_names_.find(
+src/native_generator.cpp:5172:      const Handler* route_handler = find_handler(*routes.front(), handler.name);
+src/native_generator.cpp:5499:    auto plans = statement.functional_pipeline_ids.find(context);
+src/native_generator.cpp:5540:      auto concrete_binding = s.semantic_types_by_context.find(functional_context);
+src/native_generator.cpp:5610:            group->consumers.front().pipeline_id != direct_functional_id)
+src/native_generator.cpp:5679:              s.joined_types_by_context.find(functional_context);
+src/native_generator.cpp:5784:                  for (size_t separator = enum_key.find("::");
+src/native_generator.cpp:5786:                       separator = enum_key.find("::"))
+src/native_generator.cpp:5789:                auto declaration = enums_.find(enum_key);
+src/native_generator.cpp:5970:          const auto exact_join = s.joined_types_by_context.find(functional_context);
+src/native_generator.cpp:5994:                    match_callee.compare(match_callee.size() - suffix.size(), suffix.size(), suffix) == 0 &&
+src/native_generator.cpp:6070:          const auto exact_join = s.joined_types_by_context.find(functional_context);
+src/native_generator.cpp:6071:          if (functional_context.find('<') != string::npos &&
+src/native_generator.cpp:6220:                ? trim(element_type.substr(7, element_type.size() - 8))
+src/native_generator.cpp:6221:                : trim(element_type.substr(4, element_type.size() - 5));
+src/native_generator.cpp:6274:              ? trim(next_type.substr(7, next_type.size() - 8)) : "_value";
+src/native_generator.cpp:6307:                auto checked = s.echo_types_by_context.find(functional_context);
+src/native_generator.cpp:6309:                  checked = s.echo_types_by_context.find(string());
+src/native_generator.cpp:6330:                auto element = native_echo_element(shown.substr(7, shown.size() - 8));
+src/native_generator.cpp:6334:                  auto checked = s.echo_types_by_context.find(functional_context);
+src/native_generator.cpp:6336:                    checked = s.echo_types_by_context.find(string());
+src/native_generator.cpp:6341:                    element = native_echo_element(full.substr(7, full.size() - 8));
+src/native_generator.cpp:6379:            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp:6394:            auto dot_pos = root_id.find('.');
+src/native_generator.cpp:6395:            if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
+src/native_generator.cpp:6415:            bool string_index = lhs_index.size() >= 2 && lhs_index.front() == '"' &&
+src/native_generator.cpp:6416:                lhs_index.back() == '"';
+src/native_generator.cpp:6479:                ? domain_instance_bindings_.find(*source_name)
+src/native_generator.cpp:6495:              string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
+src/native_generator.cpp:6502:                  !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
+src/native_generator.cpp:6548:                  tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp:6562:                      part.front() == '"' && part.back() == '"';
+src/native_generator.cpp:6606:          auto checked_receiver = s.receiver_types_by_context.find(functional_context);
+src/native_generator.cpp:6608:            checked_receiver = s.receiver_types_by_context.find("");
+src/native_generator.cpp:6636:              << expr(s.args.front(), d, locals, &types,
+src/native_generator.cpp:6688:            auto it = functions_.find(function_name);
+src/native_generator.cpp:6778:            auto it = types.find(s.a);
+src/native_generator.cpp:6893:            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp:6903:            auto source = source_name ? types.find(*source_name) : types.end();
+src/native_generator.cpp:6953:                  ? domain_instance_bindings_.find(*source_name)
+src/native_generator.cpp:7081:    auto found = domains_.find(domain);
+src/native_generator.cpp:7099:        auto value = named.find(route.name);
+src/native_generator.cpp:7110:        auto value = named.find(field.name);
+src/semantic_checker.cpp:100:  auto bracket = concrete.find('[');
+src/semantic_checker.cpp:103:             concrete.substr(bracket + 1, concrete.size() - bracket - 2), ','))
+src/semantic_checker.cpp:117:      !functional_terminal_kind(pipeline.stages.back().kind);
+src/semantic_checker.cpp:195:  auto find(const string& key) { return bindings.find(key); }
+src/semantic_checker.cpp:196:  auto find(const string& key) const { return bindings.find(key); }
+src/semantic_checker.cpp:296:      auto term_it = terms.find(k);
+src/semantic_checker.cpp:391:  auto found = checker_est_view_cache.views.find(hash);
+src/semantic_checker.cpp:430:  auto found = checker_est_view_cache.views.find(hash);
+src/semantic_checker.cpp:477:            wrapped->arena->at(call->arguments.front())))
+src/semantic_checker.cpp:481:            call->arguments.front(), string(source)});
+src/semantic_checker.cpp:484:  auto bucket = checker_est_view_cache.views.find(hash);
+src/semantic_checker.cpp:572:        if (auto object = objects_.find(e.name); object != objects_.end()) {
+src/semantic_checker.cpp:575:        } else if (auto domain = domains_.find(e.name); domain != domains_.end()) {
+src/semantic_checker.cpp:653:      if (auto standard = enums_.find(t.name);
+src/semantic_checker.cpp:666:    if (!p_.file_check_scope) if (auto object = objects_.find(reserved); object != objects_.end())
+src/semantic_checker.cpp:669:    if (!p_.file_check_scope) if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
+src/semantic_checker.cpp:672:    if (!p_.file_check_scope) if (auto domain = domains_.find(reserved); domain != domains_.end())
+src/semantic_checker.cpp:683:      err(p_.traits.front().source_file, p_.traits.front().line,
+src/semantic_checker.cpp:774:          auto dependency = functions_.find(edge.target.substr(3));
+src/semantic_checker.cpp:932:        const auto fact = state.binding_facts.find(occurrence.source);
+src/semantic_checker.cpp:968:             occurrence.bindings.front().identity != fact->second.identity ||
+src/semantic_checker.cpp:969:             occurrence.bindings.front().name != occurrence.source->a ||
+src/semantic_checker.cpp:970:             !occurrence.bindings.front().type || !checked_type ||
+src/semantic_checker.cpp:971:             !state.solver.resolve(occurrence.bindings.front().type) ||
+src/semantic_checker.cpp:973:                 occurrence.bindings.front().type))))
+src/semantic_checker.cpp:989:      auto body = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:1021:            function.body.front().kind == Stmt::Kind::Return &&
+src/semantic_checker.cpp:1119:                  predecessor->bindings.front().identity != edge.binding_id ||
+src/semantic_checker.cpp:1127:              const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:1144:                    value.resolved_binding_id.substr(10)));
+src/semantic_checker.cpp:1194:            auto found = body_variable_projection.find(resolved->var_id);
+src/semantic_checker.cpp:1242:            auto found = body_variable_projection.find(resolved->var_id);
+src/semantic_checker.cpp:1277:          const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:1467:          const auto prior_visit = binding_visits.find(binding_id);
+src/semantic_checker.cpp:1504:          const auto initializer = state.expression_root_slots.find(
+src/semantic_checker.cpp:1555:              requirement_ids_by_occurrence.find(occurrence_id);
+src/semantic_checker.cpp:1574:                requirement_ids_by_occurrence.find(dependency_occurrence);
+src/semantic_checker.cpp:1586:                target->dependency_requirement_ids.front();
+src/semantic_checker.cpp:1605:        auto dependency = functions_.find(edge.target.substr(3));
+src/semantic_checker.cpp:1626:          function.body.front().kind == Stmt::Kind::Return) {
+src/semantic_checker.cpp:1628:            function.open_summary->member_requirements.front();
+src/semantic_checker.cpp:1629:        const auto statement = body->second->statement_occurrence_ids.find(
+src/semantic_checker.cpp:1630:            &function.body.front());
+src/semantic_checker.cpp:1634:          const auto root = body->second->expression_root_slots.find(
+src/semantic_checker.cpp:1660:          function.body.front().kind == Stmt::Kind::Return) {
+src/semantic_checker.cpp:1662:            function.open_summary->member_requirements.front();
+src/semantic_checker.cpp:1671:                *function.open_summary->parameter_types.front()) &&
+src/semantic_checker.cpp:1674:            tree_parse_simple_call(trim(function.body.front().a), target_name,
+src/semantic_checker.cpp:1688:          auto callee = functions_.find(qualified);
+src/semantic_checker.cpp:1694:                edge.line == function.body.front().line &&
+src/semantic_checker.cpp:1703:              callee->second->open_summary->member_requirements.front().member_name ==
+src/semantic_checker.cpp:1712:              callee->second->open_summary->member_requirements.front().receiver &&
+src/semantic_checker.cpp:1713:              callee->second->open_summary->member_requirements.front().receiver
+src/semantic_checker.cpp:1715:              callee->second->open_summary->member_requirements.front().result &&
+src/semantic_checker.cpp:1716:              *callee->second->open_summary->member_requirements.front().result &&
+src/semantic_checker.cpp:1717:              (**callee->second->open_summary->member_requirements.front().result)
+src/semantic_checker.cpp:1719:              callee->second->open_summary->parameter_types.front()->structurally_equal(
+src/semantic_checker.cpp:1722:              callee->second->body.front().kind == Stmt::Kind::Return &&
+src/semantic_checker.cpp:1730:            const auto& leaf_member = leaf_summary.member_requirements.front();
+src/semantic_checker.cpp:1739:                    *leaf_summary.parameter_types.front()) &&
+src/semantic_checker.cpp:1744:                tree_parse_member_call(trim(leaf.body.front().a), receiver,
+src/semantic_checker.cpp:1746:                receiver == leaf.params.front().name &&
+src/semantic_checker.cpp:1749:            auto leaf_state = checked_body_states_.find(&leaf.body);
+src/semantic_checker.cpp:1753:              auto statement = leaf_state->second->statement_occurrence_ids.find(
+src/semantic_checker.cpp:1754:                  &leaf.body.front());
+src/semantic_checker.cpp:1757:                auto root = leaf_state->second->expression_root_slots.find(
+src/semantic_checker.cpp:1815:          const Function* current = pending.back();
+src/semantic_checker.cpp:1827:            auto dependency = functions_.find(edge.target.substr(3));
+src/semantic_checker.cpp:2149:    auto it = callable_id_to_function_.find(id);
+src/semantic_checker.cpp:2159:    auto it = callable_id_to_function_.find(id);
+src/semantic_checker.cpp:2339:      auto found = statement_occurrence_ids.find(&statement);
+src/semantic_checker.cpp:2395:      retain_expression_type(active_expression_occurrences.back(),
+src/semantic_checker.cpp:2432:      const auto parent_id = active_expression_occurrences.back();
+src/semantic_checker.cpp:2456:          active_expression_occurrences.back() != id ||
+src/semantic_checker.cpp:2469:          active_expression_occurrences.back() != id ||
+src/semantic_checker.cpp:2482:      auto statement_id = statement_occurrence_ids.find(&statement);
+src/semantic_checker.cpp:2489:      auto statement_id = statement_occurrence_ids.find(&statement);
+src/semantic_checker.cpp:2491:      auto parent = expression_root_slots.find(
+src/semantic_checker.cpp:2504:      auto statement_id = statement_occurrence_ids.find(&statement);
+src/semantic_checker.cpp:2506:      auto parent = expression_root_slots.find(
+src/semantic_checker.cpp:2522:        const auto occurrence = active_expression_occurrences.back();
+src/semantic_checker.cpp:2573:      auto found = assignment_values.find(&statement);
+src/semantic_checker.cpp:2579:      auto scoped = scoped_locals.find(name);
+src/semantic_checker.cpp:2583:      auto found = locals.find(name);
+src/semantic_checker.cpp:2641:      const auto dependency = functions_.find(edge.target.substr(3));
+src/semantic_checker.cpp:2679:          !tree_expressions_structurally_equal(stage.source_operands.front(), callback_source) ||
+src/semantic_checker.cpp:2698:      if (callbacks.size() != 1 || !callbacks.front()->completed ||
+src/semantic_checker.cpp:2699:          !callbacks.front()->checked_type)
+src/semantic_checker.cpp:2701:      const auto& callback = *callbacks.front();
+src/semantic_checker.cpp:2723:            ? operation.arguments.front() : nullptr;
+src/semantic_checker.cpp:2792:              !tree_expressions_structurally_equal(statement->args.front(),
+src/semantic_checker.cpp:2793:                  trim(arguments.front()->source_expression)) ||
+src/semantic_checker.cpp:2794:              !arguments.front()->checked_type ||
+src/semantic_checker.cpp:2795:              !arguments.front()->checked_type->structurally_equal(
+src/semantic_checker.cpp:2802:        const string called_name = occurrence.operation_id.substr(5);
+src/semantic_checker.cpp:2829:          key = trim(wrapper_arguments.front());
+src/semantic_checker.cpp:2831:        const auto named_target = functions_.find(key);
+src/semantic_checker.cpp:2845:      const string stage_name = occurrence.operation_id.substr(11);
+src/semantic_checker.cpp:2899:      const auto named_callback = functions_.find(source_callback);
+src/semantic_checker.cpp:2934:              const auto& linked = occurrence.linked_constraints.front();
+src/semantic_checker.cpp:2964:          const auto locals = body.locals_at_statement.find(statement);
+src/semantic_checker.cpp:2966:          const auto receiver_type = locals->second.find(receiver);
+src/semantic_checker.cpp:3018:    const string method_name = operation.operation_id.substr(7);
+src/semantic_checker.cpp:3019:    const string receiver_name = trim(occurrence.source_operands.front());
+src/semantic_checker.cpp:3047:    const string ordinal_text = occurrence.semantic_target_id.substr(10);
+src/semantic_checker.cpp:3100:            ? state.binding_identities_at_statement.find(source_statement)
+src/semantic_checker.cpp:3108:        const auto binding = identities->second.find(callee);
+src/semantic_checker.cpp:3126:        const string ordinal_text = binding->second.substr(10);
+src/semantic_checker.cpp:3172:          ? state.binding_identities_at_statement.find(source_statement)
+src/semantic_checker.cpp:3179:      const auto binding = identities->second.find(callee);
+src/semantic_checker.cpp:3196:      const string ordinal_text = binding->second.substr(10);
+src/semantic_checker.cpp:3242:      const auto result_root = state.expression_root_slots.find(
+src/semantic_checker.cpp:3282:          const auto constraint_index = matching_constraint_indices.front();
+src/semantic_checker.cpp:3321:              requirements.front()->kind == moss::RequirementKind::Callable &&
+src/semantic_checker.cpp:3322:              requirements.front()->target_id == "static callable" &&
+src/semantic_checker.cpp:3323:              requirements.front()->subject &&
+src/semantic_checker.cpp:3324:              requirements.front()->subject->structurally_equal(
+src/semantic_checker.cpp:3326:              requirements.front()->result &&
+src/semantic_checker.cpp:3327:              (*requirements.front()->result)->structurally_equal(
+src/semantic_checker.cpp:3329:              requirements.front()->access == moss::AccessMode::Read &&
+src/semantic_checker.cpp:3330:              requirements.front()->arguments.size() ==
+src/semantic_checker.cpp:3332:              requirements.front()->argument_access ==
+src/semantic_checker.cpp:3335:              std::equal(requirements.front()->arguments.begin(),
+src/semantic_checker.cpp:3336:                  requirements.front()->arguments.end(),
+src/semantic_checker.cpp:3358:    auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:3406:         function.body.front().kind == Stmt::Kind::Return) ||
+src/semantic_checker.cpp:3428:      const string operation_name = operation.operation_id.substr(9);
+src/semantic_checker.cpp:3447:      const auto argument = state.solver.resolve(operation.arguments.front());
+src/semantic_checker.cpp:3456:          project_arithmetic_type(operation.arguments.front());
+src/semantic_checker.cpp:3469:          ? moss::TypeRef{} : function.open_summary->parameter_types.front();
+src/semantic_checker.cpp:3567:        const auto linked = arithmetic_requirement_ids.find(dependency);
+src/semantic_checker.cpp:3578:            requirement.dependency_requirement_ids.front();
+src/semantic_checker.cpp:3612:        index_write_requirement->arguments.front() &&
+src/semantic_checker.cpp:3613:        index_write_requirement->arguments.front()->structurally_equal(
+src/semantic_checker.cpp:3639:        auto found = body_type_projection.find(resolved->var_id);
+src/semantic_checker.cpp:3689:            occurrence.resolved_binding_id.substr(10)));
+src/semantic_checker.cpp:3749:        const auto source_projection = body_type_projection.find(
+src/semantic_checker.cpp:3755:        const auto element_projection = body_type_projection.find(
+src/semantic_checker.cpp:3779:          loop->bindings.front().identity.empty() ||
+src/semantic_checker.cpp:3780:          !loop->bindings.front().type)
+src/semantic_checker.cpp:3782:      const auto iterable_root = state.expression_root_slots.find(
+src/semantic_checker.cpp:3792:          !relate_type(loop->bindings.front().type, *requirement.result))
+src/semantic_checker.cpp:3859:        const auto& operation = *matching_operations.front();
+src/semantic_checker.cpp:3931:        auto found = body_type_projection.find(type->var_id);
+src/semantic_checker.cpp:4043:      const auto initializer = state.expression_root_slots.find(
+src/semantic_checker.cpp:4070:              ? definition->bindings.front().type : nullptr;
+src/semantic_checker.cpp:4145:      const auto statement = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:4149:      const auto binding_fact = state.binding_facts.find(&source_statement);
+src/semantic_checker.cpp:4166:          const auto type = join_identity_types.find(binding.identity);
+src/semantic_checker.cpp:4187:      if (node.bindings.size() != 1 || node.bindings.front().identity.empty() ||
+src/semantic_checker.cpp:4188:          !node.bindings.front().type)
+src/semantic_checker.cpp:4193:              node.bindings.front().mutable_binding ||
+src/semantic_checker.cpp:4197:              node.bindings.front().identity)) {
+src/semantic_checker.cpp:4198:        const auto joined = predecessor_to_join_identity.find(
+src/semantic_checker.cpp:4199:            node.bindings.front().identity);
+src/semantic_checker.cpp:4200:        const auto joined_type = join_identity_types.find(joined->second);
+src/semantic_checker.cpp:4201:        const auto binding_type = checked_body_type(node.bindings.front().type);
+src/semantic_checker.cpp:4208:      const string canonical_identity = node.bindings.front().identity;
+src/semantic_checker.cpp:4210:      const auto returned_type = returned_local_types.find(canonical_identity);
+src/semantic_checker.cpp:4212:          ? checked_body_type(node.bindings.front().type)
+src/semantic_checker.cpp:4216:      const auto existing_local = local_ordinals.find(canonical_identity);
+src/semantic_checker.cpp:4228:          local_ordinals.emplace(node.bindings.front().identity, ordinal);
+src/semantic_checker.cpp:4250:      const auto fact = state.binding_facts.find(&source_statement);
+src/semantic_checker.cpp:4251:      const auto statement = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:4258:      const auto local = local_ordinals.find(fact->second.identity);
+src/semantic_checker.cpp:4276:        const auto local = local_ordinals.find(binding.identity);
+src/semantic_checker.cpp:4299:                summary.member_requirements.front().member_name &&
+src/semantic_checker.cpp:4308:              occurrence.resolved_binding_id.substr(10)));
+src/semantic_checker.cpp:4341:      const auto returned_initializer = returned_initializer_types.find(id);
+src/semantic_checker.cpp:4368:          auto nested = lower_expression(children.front()->id, depth + 1);
+src/semantic_checker.cpp:4372:          if (occurrence.resolved_binding_id.rfind(
+src/semantic_checker.cpp:4406:                  occurrence.resolved_binding_id.substr(10)));
+src/semantic_checker.cpp:4418:          auto local = local_ordinals.find(occurrence.resolved_binding_id);
+src/semantic_checker.cpp:4548:          auto operand = lower_expression(children.front()->id, depth + 1);
+src/semantic_checker.cpp:4561:          auto receiver = lower_expression(children.front()->id, depth + 1);
+src/semantic_checker.cpp:4570:                  occurrence.operation_id.substr(6))
+src/semantic_checker.cpp:4574:          result.member_name = occurrence.operation_id.substr(6);
+src/semantic_checker.cpp:4599:              container->type->type_args.front()->structurally_equal(*type);
+src/semantic_checker.cpp:4612:                requirement.arguments.front() &&
+src/semantic_checker.cpp:4613:                requirement.arguments.front()->structurally_equal(*index->type);
+src/semantic_checker.cpp:4661:              occurrence.linked_constraints.front().kind ==
+src/semantic_checker.cpp:4663:              occurrence.linked_constraints.front().subject ==
+src/semantic_checker.cpp:4665:              occurrence.linked_constraints.front().detail ==
+src/semantic_checker.cpp:4667:              occurrence.linked_constraints.front().arity == 1 &&
+src/semantic_checker.cpp:4668:              occurrence.linked_constraints.front().arguments ==
+src/semantic_checker.cpp:4676:                    req.arguments.size() == 1 && req.arguments.front() &&
+src/semantic_checker.cpp:4677:                    req.arguments.front()->structurally_equal(
+src/semantic_checker.cpp:4719:                receiver_children.front()->id, depth + 1);
+src/semantic_checker.cpp:4721:                argument_children.front()->id, depth + 1);
+src/semantic_checker.cpp:4731:                !receiver->type->type_args.front()->structurally_equal(
+src/semantic_checker.cpp:4747:          const auto& member = summary.member_requirements.front();
+src/semantic_checker.cpp:4749:              member.member_name != occurrence.operation_id.substr(7) ||
+src/semantic_checker.cpp:4767:          const auto& operation = *matching_operations.front();
+src/semantic_checker.cpp:4779:              !relate_type(receiver_children.front()->checked_type,
+src/semantic_checker.cpp:4782:          auto receiver = lower_expression(receiver_children.front()->id,
+src/semantic_checker.cpp:4803:                !relate_type(argument_children.front()->checked_type,
+src/semantic_checker.cpp:4806:            auto argument = lower_expression(argument_children.front()->id,
+src/semantic_checker.cpp:4829:              statement.bindings.front().identity ==
+src/semantic_checker.cpp:4831:              statement.bindings.front().type &&
+src/semantic_checker.cpp:4832:              checked_body_type(statement.bindings.front().type) &&
+src/semantic_checker.cpp:4833:              checked_body_type(statement.bindings.front().type)
+src/semantic_checker.cpp:4842:              type->type_args.size() == 1 && type->type_args.front() &&
+src/semantic_checker.cpp:4843:              type->type_args.front()->is_closed() &&
+src/semantic_checker.cpp:4845:              statement.bindings.front().type &&
+src/semantic_checker.cpp:4846:              checked_body_type(statement.bindings.front().type) &&
+src/semantic_checker.cpp:4847:              checked_body_type(statement.bindings.front().type)
+src/semantic_checker.cpp:4860:              stages.front()->kind !=
+src/semantic_checker.cpp:4863:          if (stages.front()->operation_id == "functional:Map") {
+src/semantic_checker.cpp:4864:            const auto& stage = *stages.front();
+src/semantic_checker.cpp:4873:                !source.front()->checked_type)
+src/semantic_checker.cpp:4877:            auto source_type = checked_body_type(source.front()->checked_type);
+src/semantic_checker.cpp:4881:                !type->type_args.front() ||
+src/semantic_checker.cpp:4882:                !type->type_args.front()->structurally_equal(*callback_type))
+src/semantic_checker.cpp:4896:            auto input = lower_expression(source.front()->id, depth + 1);
+src/semantic_checker.cpp:4897:            auto callback = lower_expression(callback_children.front()->id,
+src/semantic_checker.cpp:4917:              stages.front()->semantic_target_id !=
+src/semantic_checker.cpp:4919:              !stages.front()->output_type_ref ||
+src/semantic_checker.cpp:4920:              !stages.front()->output_type_ref->structurally_equal(*type))
+src/semantic_checker.cpp:4922:          auto input = lower_expression(source.front()->id, depth + 1);
+src/semantic_checker.cpp:4935:            if (occurrence.semantic_target_id.rfind(prefix, 0) != 0 ||
+src/semantic_checker.cpp:5022:      const auto found = state.statement_occurrence_ids.find(&source);
+src/semantic_checker.cpp:5029:        const auto root = state.expression_root_slots.find({id, slot});
+src/semantic_checker.cpp:5038:          auto declaration = enums_.find(canonical_type_name(raised.type));
+src/semantic_checker.cpp:5058:          auto declaration = enums_.find(canonical_type_name(raised.type));
+src/semantic_checker.cpp:5081:              ? returned_local_types.find(node.bindings.front().identity)
+src/semantic_checker.cpp:5086:                  : checked_body_type(node.bindings.front().type)
+src/semantic_checker.cpp:5095:              node.bindings.front().identity);
+src/semantic_checker.cpp:5129:          const auto fact = state.binding_facts.find(&source);
+src/semantic_checker.cpp:5133:            const auto local = local_ordinals.find(fact->second.identity);
+src/semantic_checker.cpp:5135:                ? returned_local_types.find(
+src/semantic_checker.cpp:5136:                      occurrence.bindings.front().identity)
+src/semantic_checker.cpp:5141:                    : checked_body_type(occurrence.bindings.front().type)
+src/semantic_checker.cpp:5193:                    requirement.arguments.front() &&
+src/semantic_checker.cpp:5194:                    requirement.arguments.front()->structurally_equal(
+src/semantic_checker.cpp:5220:          const auto statement = state.statement_occurrence_ids.find(&source);
+src/semantic_checker.cpp:5235:          const auto local = local_ordinals.find(fact->second.identity);
+src/semantic_checker.cpp:5290:                predecessor = then_nodes.front();
+src/semantic_checker.cpp:5293:                predecessor = else_nodes.front();
+src/semantic_checker.cpp:5299:                  predecessor->bindings.front().identity != edge.binding_id ||
+src/semantic_checker.cpp:5303:              const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:5308:                  predecessor->bindings.front().type);
+src/semantic_checker.cpp:5322:            const auto join_ordinal = local_ordinals.find(joined->identity);
+src/semantic_checker.cpp:5396:              const auto ordinal = local_ordinals.find(payload.identity);
+src/semantic_checker.cpp:5477:              const auto colon = canonical.rfind(':');
+src/semantic_checker.cpp:5480:                  *enum_identity + ":case:" + canonical.substr(colon + 1));
+src/semantic_checker.cpp:5484:              const auto ordinal = local_ordinals.find(binding.identity);
+src/semantic_checker.cpp:5506:              node.bindings.front().identity.empty() ||
+src/semantic_checker.cpp:5507:              !node.bindings.front().type)
+src/semantic_checker.cpp:5509:          const auto identity = local_ordinals.find(
+src/semantic_checker.cpp:5510:              node.bindings.front().identity);
+src/semantic_checker.cpp:5512:              node.bindings.front().type);
+src/semantic_checker.cpp:5541:        const auto found = state.statement_occurrence_ids.find(&source);
+src/semantic_checker.cpp:5564:      const auto& last = block.back();
+src/semantic_checker.cpp:5592:          ? &summary.requirements.front() : nullptr;
+src/semantic_checker.cpp:5600:          (*vector_relation->result)->type_args.front() &&
+src/semantic_checker.cpp:5601:          (*vector_relation->result)->type_args.front()->structurally_equal(
+src/semantic_checker.cpp:5620:          is_bound_variable(summary.parameter_types.front(), 0) &&
+src/semantic_checker.cpp:5628:              *summary.parameter_types.front()) &&
+src/semantic_checker.cpp:5636:          map_operator->arguments.front()->structurally_equal(
+src/semantic_checker.cpp:5660:          callback_requirement->arguments.front() &&
+src/semantic_checker.cpp:5661:          callback_requirement->arguments.front()->structurally_equal(
+src/semantic_checker.cpp:5696:      auto checked_state = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:5848:              ? function.result_line : function.body.front().line;
+src/semantic_checker.cpp:6105:        auto known = element_relations.find(key);
+src/semantic_checker.cpp:6108:        auto source = parameter_variables.find(key.substr(8));
+src/semantic_checker.cpp:6113:          element = source->second->type_args.back();
+src/semantic_checker.cpp:6132:          function.body.back().kind == Stmt::Kind::Return &&
+src/semantic_checker.cpp:6133:          tree_plain_identifier(trim(function.body.back().a)) &&
+src/semantic_checker.cpp:6134:          (function.body.front().kind == Stmt::Kind::Let ||
+src/semantic_checker.cpp:6135:           function.body.front().kind == Stmt::Kind::Var ||
+src/semantic_checker.cpp:6136:           function.body.front().kind == Stmt::Kind::Assign) &&
+src/semantic_checker.cpp:6137:          tree_expressions_structurally_equal(function.body.front().a, function.body.back().a) &&
+src/semantic_checker.cpp:6138:          function.body.front().indent == function.body.back().indent)
+src/semantic_checker.cpp:6139:        local_result = std::make_pair(trim(function.body.front().b),
+src/semantic_checker.cpp:6140:                                      function.body.front().line);
+src/semantic_checker.cpp:6142:          function.body.front().kind == Stmt::Kind::Return) {
+src/semantic_checker.cpp:6145:        if (tree_parse_simple_call(trim(function.body.front().a), target, arguments)) {
+src/semantic_checker.cpp:6156:            local_result = std::make_pair(trim(function.body.front().a),
+src/semantic_checker.cpp:6157:                                          function.body.front().line);
+src/semantic_checker.cpp:6169:          auto nominal = objects_.find(qualified);
+src/semantic_checker.cpp:6190:                    ? parameter_variables.find(*value_binding)
+src/semantic_checker.cpp:6210:            auto callee = functions_.find(qualified);
+src/semantic_checker.cpp:6230:                    ? parameter_variables.find(*argument_binding)
+src/semantic_checker.cpp:6245:                  auto replacement = replacements.find(type->var_id.ordinal);
+src/semantic_checker.cpp:6291:                  const auto& member = source.member_requirements.front();
+src/semantic_checker.cpp:6300:                      member.receiver && source.parameter_types.front() &&
+src/semantic_checker.cpp:6302:                          *source.parameter_types.front()) &&
+src/semantic_checker.cpp:6335:                  function.body.back().kind == Stmt::Kind::Return
+src/semantic_checker.cpp:6336:                ? &function.body.back().a : nullptr;
+src/semantic_checker.cpp:6357:        auto source = parameter_variables.find(result.substr(9));
+src/semantic_checker.cpp:6365:                  function.body.back().kind == Stmt::Kind::Return
+src/semantic_checker.cpp:6366:                  ? &function.body.back().a : nullptr;
+src/semantic_checker.cpp:6368:            if (!tree_identifier_named(*returned, result.substr(9))) {
+src/semantic_checker.cpp:6406:        summary.result_type = element_relation(result.substr(9));
+src/semantic_checker.cpp:6425:              function.body.front().kind == Stmt::Kind::Return
+src/semantic_checker.cpp:6426:              ? &function.body.front().a : nullptr;
+src/semantic_checker.cpp:6430:            function.body.front().kind == Stmt::Kind::Return))) {
+src/semantic_checker.cpp:6436:              ? parameter_variables.find(*receiver_binding)
+src/semantic_checker.cpp:6464:          auto subject = parameter_variables.find(constraint.subject);
+src/semantic_checker.cpp:6520:                ? parameter_variables.find(*argument_binding)
+src/semantic_checker.cpp:6530:            auto parameter = parameter_variables.find(constraint.result);
+src/semantic_checker.cpp:6549:        auto receiver = parameter_variables.find(constraint.subject);
+src/semantic_checker.cpp:6565:              ? parameter_variables.find(*argument_binding)
+src/semantic_checker.cpp:6582:          member.result = type_term(constraint.result_expectations.front());
+src/semantic_checker.cpp:6619:            ? edge.source.substr(3) : string();
+src/semantic_checker.cpp:6641:          function.body.front().kind != Stmt::Kind::Return)
+src/semantic_checker.cpp:6643:      const auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:6646:      const auto statement = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:6647:          &function.body.front());
+src/semantic_checker.cpp:6649:      const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:6720:          auto found = projected_variables.find(type->var_id);
+src/semantic_checker.cpp:6793:          function.body.front().kind != Stmt::Kind::Return)
+src/semantic_checker.cpp:6795:      auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:6798:      const auto statement = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:6799:          &function.body.front());
+src/semantic_checker.cpp:6801:      const auto root_slot = state.expression_root_slots.find(
+src/semantic_checker.cpp:6863:            !occurrence.checked_type || !left.front()->checked_type ||
+src/semantic_checker.cpp:6864:            !right.front()->checked_type) {
+src/semantic_checker.cpp:6880:            ? moss::TypeRef{} : state.solver.resolve(operation->arguments.front());
+src/semantic_checker.cpp:6883:        const auto left_type = state.solver.resolve(left.front()->checked_type);
+src/semantic_checker.cpp:6884:        const auto right_type = state.solver.resolve(right.front()->checked_type);
+src/semantic_checker.cpp:6945:      auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7008:          auto found = variables.find(key);
+src/semantic_checker.cpp:7039:        auto local = state.locals.find(parameter.name);
+src/semantic_checker.cpp:7067:          equality_arguments.size() != 1 || !equality_arguments.front() ||
+src/semantic_checker.cpp:7070:          index_fact.arguments.size() != 1 || !index_fact.arguments.front())
+src/semantic_checker.cpp:7082:            vector_type->type_args.front()->structurally_equal(*element_type) &&
+src/semantic_checker.cpp:7088:            index_fact.arguments.front()->structurally_equal(
+src/semantic_checker.cpp:7092:            equality_arguments.front()->structurally_equal(*element_type) &&
+src/semantic_checker.cpp:7164:          function.body.front().kind != Stmt::Kind::Return)
+src/semantic_checker.cpp:7166:      const auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7224:          !pipeline_type->type_args.front()->structurally_equal(*callback_type) ||
+src/semantic_checker.cpp:7252:          !state.solver.resolve(operation.arguments.front()) ||
+src/semantic_checker.cpp:7255:          !state.solver.resolve(operation.arguments.front())->structurally_equal(
+src/semantic_checker.cpp:7296:          auto found = variables.find(key);
+src/semantic_checker.cpp:7319:          function.params.front().name.empty())
+src/semantic_checker.cpp:7321:      auto local = state.locals.find(function.params.front().name);
+src/semantic_checker.cpp:7339:      auto operation_argument = openize(operation.arguments.front());
+src/semantic_checker.cpp:7377:      const auto statement_id = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:7378:          &function.body.front());
+src/semantic_checker.cpp:7381:          : state.expression_root_slots.find(
+src/semantic_checker.cpp:7393:              &function.body.front() &&
+src/semantic_checker.cpp:7439:          function.open_summary->requirements.front().kind !=
+src/semantic_checker.cpp:7441:          function.open_summary->requirements.front().target_id !=
+src/semantic_checker.cpp:7444:      const auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7463:          const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:7473:          const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:7494:        const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:7556:          index->arguments.size() != 1 || !index->arguments.front() ||
+src/semantic_checker.cpp:7561:              *index->arguments.front()) ||
+src/semantic_checker.cpp:7622:      auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7637:            candidate.subject == function.params.front().name;
+src/semantic_checker.cpp:7640:          !tree_identifier_named(loop->b, function.params.front().name) ||
+src/semantic_checker.cpp:7644:          state.statement_occurrence_ids.find(loop);
+src/semantic_checker.cpp:7653:          loop_occurrence.bindings.front().name != loop->a ||
+src/semantic_checker.cpp:7654:          loop_occurrence.bindings.front().identity.empty())
+src/semantic_checker.cpp:7656:      const auto binder = state.for_bindings.find(loop);
+src/semantic_checker.cpp:7660:          loop_occurrence.bindings.front().type);
+src/semantic_checker.cpp:7699:          function.body.front().kind == Stmt::Kind::Raise &&
+src/semantic_checker.cpp:7701:          function.open_summary->parameter_types.front() &&
+src/semantic_checker.cpp:7702:          function.open_summary->parameter_types.front()->kind ==
+src/semantic_checker.cpp:7704:          function.open_summary->parameter_types.front()->var_id ==
+src/semantic_checker.cpp:7715:        const auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7719:          const auto formal = state.resolved_local(function.params.front().name);
+src/semantic_checker.cpp:7720:          const auto& raised_source = function.body.front();
+src/semantic_checker.cpp:7721:          const auto raise_node = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:7725:              : state.expression_root_slots.find(
+src/semantic_checker.cpp:7735:            const auto declaration = enums_.find(
+src/semantic_checker.cpp:7761:                    canonical_type_name(item.fields.front().type) == "int";
+src/semantic_checker.cpp:7769:                            ? string() : variant->fields.front().name);
+src/semantic_checker.cpp:7790:                summary.parameter_types.front() = int_type;
+src/semantic_checker.cpp:7810:          function.open_summary->parameter_types.front() &&
+src/semantic_checker.cpp:7812:          function.open_summary->parameter_types.front()->structurally_equal(
+src/semantic_checker.cpp:7823:        auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7827:          const auto formal = state.resolved_local(function.params.front().name);
+src/semantic_checker.cpp:7856:            const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:7858:            const auto result_root = state.expression_root_slots.find(
+src/semantic_checker.cpp:7870:              const auto declaration = enums_.find(
+src/semantic_checker.cpp:7885:              const auto binding_id = recovery->bindings.front().identity;
+src/semantic_checker.cpp:7887:                  recovery->bindings.front().type);
+src/semantic_checker.cpp:7893:                    expression.child_role.rfind("field:", 0) == 0)
+src/semantic_checker.cpp:7901:                  canonical_type_name(variant->fields.front().type) == "int" &&
+src/semantic_checker.cpp:7912:                  args.front()->child_role ==
+src/semantic_checker.cpp:7913:                      "field:" + variant->fields.front().name &&
+src/semantic_checker.cpp:7914:                  args.front()->kind ==
+src/semantic_checker.cpp:7916:                  args.front()->resolved_binding_id == "parameter:0" &&
+src/semantic_checker.cpp:7917:                  args.front()->checked_type && state.solver.resolve(
+src/semantic_checker.cpp:7918:                      args.front()->checked_type)->structurally_equal(*payload_type);
+src/semantic_checker.cpp:7930:                  summary.parameter_types.front() = payload_type;
+src/semantic_checker.cpp:7951:          function.params.size() != 1 || !function.params.front().type.empty() ||
+src/semantic_checker.cpp:7953:          !function.open_summary->parameter_types.front() ||
+src/semantic_checker.cpp:7955:          !function.open_summary->parameter_types.front()->structurally_equal(
+src/semantic_checker.cpp:7967:      auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:7972:      const auto formal = state.resolved_local(function.params.front().name);
+src/semantic_checker.cpp:8010:        const auto root = state.expression_root_slots.find({node.id, slot});
+src/semantic_checker.cpp:8021:      const auto raise_root = state.expression_root_slots.find(
+src/semantic_checker.cpp:8029:              function.params.front().name) ||
+src/semantic_checker.cpp:8050:      const auto declaration = enums_.find(raised_identity.type);
+src/semantic_checker.cpp:8085:      const auto argument = state.solver.resolve(comparison->arguments.front());
+src/semantic_checker.cpp:8125:      summary.parameter_types.front() = resolved_result;
+src/semantic_checker.cpp:8144:          function.body.front().kind != Stmt::Kind::Return)
+src/semantic_checker.cpp:8150:      const auto retained = checked_body_states_.find(&function.body);
+src/semantic_checker.cpp:8155:      const auto statement_id = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:8156:          &function.body.front());
+src/semantic_checker.cpp:8158:      const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:8172:          call.linked_constraints.front().kind != ConstraintKind::Callable ||
+src/semantic_checker.cpp:8173:          call.linked_constraints.front().subject != function.params[0].name ||
+src/semantic_checker.cpp:8174:          call.linked_constraints.front().detail != "static callable" ||
+src/semantic_checker.cpp:8175:          call.linked_constraints.front().arity != 1 ||
+src/semantic_checker.cpp:8176:          call.linked_constraints.front().arguments !=
+src/semantic_checker.cpp:8188:            requirement.arguments.front() &&
+src/semantic_checker.cpp:8189:            requirement.arguments.front()->structurally_equal(
+src/semantic_checker.cpp:8433:      auto owner = objects_.find(key);
+src/semantic_checker.cpp:8456:        auto imported = p_.imported_key_proof_ids.find(declared->id);
+src/semantic_checker.cpp:8477:      auto proof = p_.key_proof_ids_by_type.find(key);
+src/semantic_checker.cpp:8495:    auto bracket = type.find('[');
+src/semantic_checker.cpp:8497:    string head = type.substr(0, bracket);
+src/semantic_checker.cpp:8499:        type.substr(bracket + 1, type.size() - bracket - 2), ',');
+src/semantic_checker.cpp:8533:      return echo_display_class(trim(type.substr(7, type.size() - 8)), true);
+src/semantic_checker.cpp:8578:    else if (type == "vector" || type.find("vector[vector]") != string::npos ||
+src/semantic_checker.cpp:8579:             (starts_with(type, "vector[") && type.find("[vector]") != string::npos))
+src/semantic_checker.cpp:8616:    auto bracket = type.find('[');
+src/semantic_checker.cpp:8619:               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+src/semantic_checker.cpp:8633:        return hashable_map_key_type(trim(type.substr(head.size(), type.size() - head.size() - 1)));
+src/semantic_checker.cpp:8676:          const string key = args.front()->to_canonical_string();
+src/semantic_checker.cpp:8683:          const string key = args.front()->to_canonical_string();
+src/semantic_checker.cpp:8730:    auto it = objects_.find(type);
+src/semantic_checker.cpp:8785:          !same_type(requirement.result_expectations.front(), expected))
+src/semantic_checker.cpp:8787:            method + "': '" + requirement.result_expectations.front() +
+src/semantic_checker.cpp:8826:            string callable = trim(stage.arguments.front());
+src/semantic_checker.cpp:8842:            derive_expression_constraints(function, stage.arguments.front());
+src/semantic_checker.cpp:8961:        bool comparison = ops.front() == "==";
+src/semantic_checker.cpp:8962:        bool bitwise = ops.front() == "|" || ops.front() == "^" || ops.front() == "&" || ops.front() == "<<";
+src/semantic_checker.cpp:9083:    auto it = traits_.find(trait);
+src/semantic_checker.cpp:9088:    auto object = objects_.find(type);
+src/semantic_checker.cpp:9173:    auto self = env.find("self");
+src/semantic_checker.cpp:9192:    auto self = env.find("self");
+src/semantic_checker.cpp:9195:    const auto binding = env.find(receiver);
+src/semantic_checker.cpp:9422:    auto enum_type = enums_.find(value);
+src/semantic_checker.cpp:9427:    auto bracket = value.find('[');
+src/semantic_checker.cpp:9428:    if (bracket != string::npos && value.back() == ']')
+src/semantic_checker.cpp:9430:               value.substr(bracket + 1, value.size() - bracket - 2), ','))
+src/semantic_checker.cpp:9449:      auto enumeration = enums_.find(name);
+src/semantic_checker.cpp:9455:      auto object = objects_.find(name);
+src/semantic_checker.cpp:9469:      auto bracket = name.find('[');
+src/semantic_checker.cpp:9472:                 name.substr(bracket + 1, name.size() - bracket - 2), ','))
+src/semantic_checker.cpp:9495:      if (auto separator = short_name.rfind("__"); separator != string::npos)
+src/semantic_checker.cpp:9496:        short_name = short_name.substr(separator + 2);
+src/semantic_checker.cpp:9528:      if (code.find("FileIO.") == string::npos &&
+src/semantic_checker.cpp:9529:          code.find("FileIO(") == string::npos)
+src/semantic_checker.cpp:9561:      const auto& declaration = *imported.front();
+src/semantic_checker.cpp:9631:    auto self = env.find("self");
+src/semantic_checker.cpp:9810:               phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
+src/semantic_checker.cpp:9833:            const auto type = exit.ownership.types.find(name);
+src/semantic_checker.cpp:9835:                exit.ownership.binding_identities.find(name);
+src/semantic_checker.cpp:9894:        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+src/semantic_checker.cpp:10067:                ? binding_types.find(*target_binding) : binding_types.end();
+src/semantic_checker.cpp:10152:      size_t current = ready.front();
+src/semantic_checker.cpp:10203:      const auto& first = p_.concrete_domain_graph.edges.at(witness.front());
+src/semantic_checker.cpp:10339:    auto enclosing = functions_.find(current_semantic_context_.substr(3));
+src/semantic_checker.cpp:10362:    auto it = env.find(receiver);
+src/semantic_checker.cpp:10364:    auto dit = domains_.find(canonical_type_name(it->second));
+src/semantic_checker.cpp:10410:      auto local = env.find(*identifier);
+src/semantic_checker.cpp:10451:      placeholder_env["_"] = input_types.front();
+src/semantic_checker.cpp:10466:    auto local = env.find(value);
+src/semantic_checker.cpp:10469:      if (starts_with(value, "callable:")) value = value.substr(9);
+src/semantic_checker.cpp:10477:      auto it = functions_.find(value);
+src/semantic_checker.cpp:10531:          auto result = functional_callable_result(stage.arguments.front(),
+src/semantic_checker.cpp:10542:          auto result = functional_callable_result(stage.arguments.front(),
+src/semantic_checker.cpp:10554:          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+src/semantic_checker.cpp:10581:            auto result = functional_callable_result(stage.arguments.front(),
+src/semantic_checker.cpp:10667:    auto bracket = type.find('[');
+src/semantic_checker.cpp:10668:    string nominal = bracket == string::npos ? type : type.substr(0, bracket);
+src/semantic_checker.cpp:10670:    if (auto object = objects_.find(nominal); object != objects_.end())
+src/semantic_checker.cpp:10673:    else if (auto enumeration = enums_.find(nominal);
+src/semantic_checker.cpp:10677:    else if (auto trait = traits_.find(nominal);
+src/semantic_checker.cpp:10681:    else if (auto domain = domains_.find(nominal); domain != domains_.end())
+src/semantic_checker.cpp:10689:               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+src/semantic_checker.cpp:10754:        auto domain = domains_.find(canonical_type_name(constructor));
+src/semantic_checker.cpp:10851:                     expression.c_str(), name.c_str(), tree, legacy);
+src/semantic_checker.cpp:10874:      if (expression.compare(i, end - i, name) == 0) {
+src/semantic_checker.cpp:11139:    auto found = simple_call_parse_cache_.find(text);
+src/semantic_checker.cpp:11189:    auto found = member_call_parse_cache_.find(text);
+src/semantic_checker.cpp:11267:    auto found = top_level_parse_cache_.find(text);
+src/semantic_checker.cpp:11269:      auto split = found->second.find(delimiter);
+src/semantic_checker.cpp:11295:    auto found = outer_parentheses_parse_cache_.find(text);
+src/semantic_checker.cpp:11316:    auto found = binary_parse_cache_.find(expression);
+src/semantic_checker.cpp:11325:    auto overflow = binary_parse_cache_overflow_.find(expression);
+src/semantic_checker.cpp:11429:            expression.compare(i, op.size(), op) != 0)
+src/semantic_checker.cpp:11478:          return std::make_pair(trim(expression.substr(0, i)),
+src/semantic_checker.cpp:11479:                                trim(expression.substr(i + op.size())));
+src/semantic_checker.cpp:11546:        auto it = supplied_types.find(f.name);
+src/semantic_checker.cpp:11575:        variant(error_type.c_str(), "NonFinite");
+src/semantic_checker.cpp:11576:        variant(error_type.c_str(), "Overflow");
+src/semantic_checker.cpp:11578:        variant(error_type.c_str(), "Invalid");
+src/semantic_checker.cpp:11579:        if (numeric_name == "parse_int") variant(error_type.c_str(), "Overflow");
+src/semantic_checker.cpp:11584:      auto element = inferred_expr_type(args.front(), env);
+src/semantic_checker.cpp:11589:      auto argument = inferred_expr(args.front(), env);
+src/semantic_checker.cpp:11758:      auto binding = env.find(receiver);
+src/semantic_checker.cpp:11760:      auto domain = domains_.find(canonical_type_name(binding->second));
+src/semantic_checker.cpp:11784:      auto fn_it = functions_.find(e);
+src/semantic_checker.cpp:11822:          if (!element.term->structurally_equal(*elements.front().term))
+src/semantic_checker.cpp:11824:        return InferredExpr{moss::Type::builtin("vector", {elements.front().term}), {}};
+src/semantic_checker.cpp:11829:        if (!same_type(element.projection(), elements.front().projection()))
+src/semantic_checker.cpp:11831:      return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
+src/semantic_checker.cpp:11901:        return InferredExpr{nullptr, "_element:element:" + base->legacy.substr(9)};
+src/semantic_checker.cpp:11928:      auto binding = env.find(callee);
+src/semantic_checker.cpp:11932:          if (starts_with(target, "callable:")) target = target.substr(9);
+src/semantic_checker.cpp:11941:        auto it = functions_.find(target);
+src/semantic_checker.cpp:11977:          auto relation = function_target->generic_results.find(r.substr(9));
+src/semantic_checker.cpp:11979:            auto it = env.find(relation->second);
+src/semantic_checker.cpp:11986:          auto relation = function_target->generic_results.find(r.substr(9));
+src/semantic_checker.cpp:11988:            auto it = env.find(relation->second);
+src/semantic_checker.cpp:12003:          auto key = r.substr(7); auto pos = key.find(':');
+src/semantic_checker.cpp:12004:          if (pos != string::npos) pos = key.find(':', pos + 1);
+src/semantic_checker.cpp:12005:          string source = pos == string::npos ? key : key.substr(0, pos);
+src/semantic_checker.cpp:12010:                auto object = objects_.find(*at);
+src/semantic_checker.cpp:12012:                  if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
+src/semantic_checker.cpp:12015:          auto relation = function_target->generic_results.find(key);
+src/semantic_checker.cpp:12017:            auto base = env.find(relation->second);
+src/semantic_checker.cpp:12019:              auto object = objects_.find(canonical_type_name(base->second));
+src/semantic_checker.cpp:12021:                if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
+src/semantic_checker.cpp:12114:        auto trait = traits_.find(canonical_type_name(base->projection()));
+src/semantic_checker.cpp:12153:      auto bt = env.find(mr);
+src/semantic_checker.cpp:12200:    auto it = binding ? env.terms.find(*binding) : env.terms.end();
+src/semantic_checker.cpp:12267:    auto receiver = env.find(requirement.subject);
+src/semantic_checker.cpp:12313:      string parameter = result.substr(9);
+src/semantic_checker.cpp:12328:    string suffix = result.substr(15);
+src/semantic_checker.cpp:12357:    auto object = objects_.find(constructor);
+src/semantic_checker.cpp:12361:        auto function = functions_.find(constructor);
+src/semantic_checker.cpp:12466:    auto container = env.find(base);
+src/semantic_checker.cpp:12490:    for (const auto& entry : paths.front()) {
+src/semantic_checker.cpp:12501:          auto found = path.terms.find(binding);
+src/semantic_checker.cpp:12567:        auto it = path.find(binding);
+src/semantic_checker.cpp:12609:    auto source = env.find(receiver);
+src/semantic_checker.cpp:12622:    auto reply = specialization->handler_reply_types.find(handler);
+src/semantic_checker.cpp:12635:        auto existing = env.find(statement.a);
+src/semantic_checker.cpp:12658:              auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp:12679:          auto container = env.find(base);
+src/semantic_checker.cpp:12729:      auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:12731:        auto domain = domains_.find(canonical_type_name(receiver->second));
+src/semantic_checker.cpp:12748:      auto container = env.find(statement.a);
+src/semantic_checker.cpp:12773:      auto argument = inferred_expr_type(statement.args.front(), env);
+src/semantic_checker.cpp:12818:        auto found = current_body_types_->locals_at_statement.find(&statement);
+src/semantic_checker.cpp:12904:            auto prior = env.find(name);
+src/semantic_checker.cpp:12907:            if (auto prior_term = env.terms.find(name); prior_term != env.terms.end())
+src/semantic_checker.cpp:12969:                   phase21_pattern_bindings(arm.line, alternatives.front()))
+src/semantic_checker.cpp:13048:                  current_body_types_->statement_occurrence_ids.find(&binding);
+src/semantic_checker.cpp:13052:              const auto root = current_body_types_->expression_root_slots.find(
+src/semantic_checker.cpp:13064:            auto then_term = paths[0].terms.find(name);
+src/semantic_checker.cpp:13065:            auto else_term = paths[1].terms.find(name);
+src/semantic_checker.cpp:13074:            auto joined_term = env.terms.find(name);
+src/semantic_checker.cpp:13144:          auto binding = scoped_types->for_bindings.find(&statement);
+src/semantic_checker.cpp:13153:          auto binding = scoped_types->for_bindings.find(&statement);
+src/semantic_checker.cpp:13156:            auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp:13172:        if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp:13176:        if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp:13318:        auto function = functions_.find(callee);
+src/semantic_checker.cpp:13344:        auto term_it = entry.terms.find(name);
+src/semantic_checker.cpp:13365:      auto function = functions_.find(callee);
+src/semantic_checker.cpp:13383:      auto function = functions_.find(callee);
+src/semantic_checker.cpp:13448:              !vector_result->type_args.front()->structurally_equal(
+src/semantic_checker.cpp:13491:                 !solver.unify(*requirement.result, subject->type_args.back()))
+src/semantic_checker.cpp:13664:             (!next || next->indent <= block_scopes.back().indent)) {
+src/semantic_checker.cpp:13665:        auto& scope = block_scopes.back();
+src/semantic_checker.cpp:13678:            auto other = locals.find(name);
+src/semantic_checker.cpp:13724:          auto found = match_enums.find(i);
+src/semantic_checker.cpp:13840:        auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp:13842:            : domains_.find(canonical_type_name(receiver->second));
+src/semantic_checker.cpp:13849:            auto prior = locals.find(statement.message_result);
+src/semantic_checker.cpp:13853:              auto projected = scan.find(statement.message_result);
+src/semantic_checker.cpp:13894:          auto target = functions_.find(assigned_callee);
+src/semantic_checker.cpp:13917:        auto prior = locals.find(statement.a);
+src/semantic_checker.cpp:13946:        auto local = locals.find(statement.a);
+src/semantic_checker.cpp:13948:        auto argument = term_for(statement.args.front());
+src/semantic_checker.cpp:13963:            !solver.unify(current->type_args.front(), argument)) {
+src/semantic_checker.cpp:13967:          auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp:14051:          ? solver.resolve(requirement.arguments.front()) : nullptr;
+src/semantic_checker.cpp:14058:        err(line, "required '" + requirement.target_id.substr(9) +
+src/semantic_checker.cpp:14084:            if (closed.front().result)
+src/semantic_checker.cpp:14085:              expression_facts.type = *closed.front().result;
+src/semantic_checker.cpp:14086:            if (closed.front().selected_callable_id)
+src/semantic_checker.cpp:14088:                  *closed.front().selected_callable_id;
+src/semantic_checker.cpp:14102:      auto function = functions_.find(callee);
+src/semantic_checker.cpp:14118:        auto specialization = checked_statement.open_call_keys_by_context.find(
+src/semantic_checker.cpp:14186:            auto receiver = current_env.find(receiver_name);
+src/semantic_checker.cpp:14227:            auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
+src/semantic_checker.cpp:14228:                ? current_env.find(target) : current_env.end();
+src/semantic_checker.cpp:14248:            auto function = functions_.find(statement.a);
+src/semantic_checker.cpp:14386:        auto target = objects_.find(canonical_type_name(field.type));
+src/semantic_checker.cpp:14448:      auto prior = specialization_sites.find(key);
+src/semantic_checker.cpp:14470:      return p_.domain_specializations.back();
+src/semantic_checker.cpp:14475:        auto domain = domains_.find(*constructed);
+src/semantic_checker.cpp:14502:          tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp:14513:        auto binding = bindings.find(receiver);
+src/semantic_checker.cpp:14564:                  auto state = specialization.state_types.find(field.name);
+src/semantic_checker.cpp:14592:              auto prior = specialization.state_types.find(field.name);
+src/semantic_checker.cpp:14602:                auto function = functions_.find(callee);
+src/semantic_checker.cpp:14615:              auto inferred = handler_env.find(field.name);
+src/semantic_checker.cpp:14619:                auto prior = specialization.state_types.find(field.name);
+src/semantic_checker.cpp:14635:                auto prior = specialization.handler_reply_types.find(handler_name);
+src/semantic_checker.cpp:14730:            auto inferred = env.find(field.name);
+src/semantic_checker.cpp:15005:        auto found = after.find(part);
+src/semantic_checker.cpp:15081:      auto found = signature_function_indices_.find(&p_.functions[index]);
+src/semantic_checker.cpp:15146:        auto declaration = objects_.find(parameter.type);
+src/semantic_checker.cpp:15173:          const auto binding = env.find(access.receiver);
+src/semantic_checker.cpp:15241:                string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : e.find('/') != string::npos ? "/" : "%";
+src/semantic_checker.cpp:15316:              ? local_sources.find(*returned_binding) : local_sources.end();
+src/semantic_checker.cpp:15326:            ? local_sources.find(*returned_binding) : local_sources.end();
+src/semantic_checker.cpp:15333:          function.set_return_type(kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first);
+src/semantic_checker.cpp:15479:            auto found = body_types.locals_at_statement.find(&statement);
+src/semantic_checker.cpp:15635:            string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : be.find('/') != string::npos ? "/" : "%";
+src/semantic_checker.cpp:15925:    auto object = objects_.find(concrete);
+src/semantic_checker.cpp:15942:    auto alias = capture.aliases.find(root);
+src/semantic_checker.cpp:15947:    auto found = capture.roots.find(root);
+src/semantic_checker.cpp:15952:      auto object = objects_.find(canonical_type_name(type));
+src/semantic_checker.cpp:16028:        size_t dot = leaf.find('.');
+src/semantic_checker.cpp:16029:        string root = leaf.substr(0, dot);
+src/semantic_checker.cpp:16030:        auto actual = substitutions.find(root);
+src/semantic_checker.cpp:16036:        if (dot != string::npos) expression = "(" + expression + ")" + leaf.substr(dot);
+src/semantic_checker.cpp:16117:           phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
+src/semantic_checker.cpp:16206:        auto member = domain.leaf_to_class.find(leaf);
+src/semantic_checker.cpp:16208:        auto mode = whole.class_modes.find(member->second);
+src/semantic_checker.cpp:16235:    if (source.body.empty() || source.body.front().kind != Stmt::Kind::If ||
+src/semantic_checker.cpp:16236:        source.body.front().indent != 0) {
+src/semantic_checker.cpp:16240:    const auto& branch = source.body.front();
+src/semantic_checker.cpp:16703:            auto found = functions_.find(site.target.substr(3));
+src/semantic_checker.cpp:16717:              const size_t dot = leaf.find('.');
+src/semantic_checker.cpp:16718:              const string root = leaf.substr(0, dot);
+src/semantic_checker.cpp:16719:              const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+src/semantic_checker.cpp:16942:          const size_t dot = leaf.find('.');
+src/semantic_checker.cpp:16943:          const string root = leaf.substr(0, dot);
+src/semantic_checker.cpp:16944:          const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+src/semantic_checker.cpp:16995:            const size_t dot = leaf.find('.');
+src/semantic_checker.cpp:16996:            const string root = leaf.substr(0, dot);
+src/semantic_checker.cpp:16997:            const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+src/semantic_checker.cpp:17059:      const string callee = site.target.substr(3);
+src/semantic_checker.cpp:17061:      auto target = functions_.find(callee);
+src/semantic_checker.cpp:17076:            const size_t dot = leaf.find('.');
+src/semantic_checker.cpp:17077:            const string formal = leaf.substr(0, dot);
+src/semantic_checker.cpp:17089:              if (dot != string::npos) actual += leaf.substr(dot);
+src/semantic_checker.cpp:17152:              const size_t dot = leaf.find('.');
+src/semantic_checker.cpp:17153:              const string formal = leaf.substr(0, dot);
+src/semantic_checker.cpp:17169:              if (dot != string::npos) actual += leaf.substr(dot);
+src/semantic_checker.cpp:17264:          const string nested_name = call.target.substr(3);
+src/semantic_checker.cpp:17265:          auto nested = functions_.find(nested_name);
+src/semantic_checker.cpp:17301:        auto function = functions_.find(call.target.substr(3));
+src/semantic_checker.cpp:17373:               phase21_pattern_bindings(arm.line, alternatives.front()))
+src/semantic_checker.cpp:17395:          auto prior_class = baseline.leaf_to_class.find(leaf);
+src/semantic_checker.cpp:17397:            auto prior_mode = normal.find(prior_class->second);
+src/semantic_checker.cpp:17406:          const auto provenance = recovery_provenance.find(leaf);
+src/semantic_checker.cpp:17633:        size_t dot = leaf.find('.');
+src/semantic_checker.cpp:17635:            dot == string::npos ? leaf : leaf.substr(0, dot), {}};
+src/semantic_checker.cpp:17637:          size_t next = leaf.find('.', dot + 1);
+src/semantic_checker.cpp:17638:          location.path.push_back(leaf.substr(
+src/semantic_checker.cpp:17703:        auto function = functions_.find(call_name);
+src/semantic_checker.cpp:17815:    if (!active_effect_cursors_.empty() && active_effect_cursors_.back())
+src/semantic_checker.cpp:17816:      effect_child_ordinal = active_effect_cursors_.back()->child_count++;
+src/semantic_checker.cpp:17818:    if (!active_effect_cursors_.empty() && active_effect_cursors_.back()) {
+src/semantic_checker.cpp:17819:      const auto& parent = *active_effect_cursors_.back();
+src/semantic_checker.cpp:17837:        if (!stack.empty() && stack.back()) {
+src/semantic_checker.cpp:17838:          const auto cursor = *stack.back();
+src/semantic_checker.cpp:17883:          string callable = stage.arguments.back();
+src/semantic_checker.cpp:17887:            analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
+src/semantic_checker.cpp:17889:            auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+src/semantic_checker.cpp:18039:      auto type = env.find(value);
+src/semantic_checker.cpp:18184:          auto value_it = supplied.find(field.name);
+src/semantic_checker.cpp:18194:      if (auto callable = env.find(callee);
+src/semantic_checker.cpp:18197:        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:18225:      } else if (auto self = env.find("self"); self != env.end() &&
+src/semantic_checker.cpp:18413:                   phase21_pattern_bindings(arm.line, alternatives.front()))
+src/semantic_checker.cpp:18555:            auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:18620:    if (starts_with(id, "fn:")) return id.substr(3);
+src/semantic_checker.cpp:18621:    if (starts_with(id, "method:")) return id.substr(7);
+src/semantic_checker.cpp:18627:    string qualified = id.substr(7);
+src/semantic_checker.cpp:18628:    auto dot = qualified.find('.');
+src/semantic_checker.cpp:18630:    auto object = objects_.find(qualified.substr(0, dot));
+src/semantic_checker.cpp:18633:    string method_name = qualified.substr(dot + 1);
+src/semantic_checker.cpp:18657:          collect_local_call_sites(line, stage.arguments.front(), env,
+src/semantic_checker.cpp:18666:          callable = stage.arguments.front();
+src/semantic_checker.cpp:18672:              inferred_expr_type(stage.arguments.front(), env).value_or(""),
+src/semantic_checker.cpp:18696:            auto local = env.find(identity);
+src/semantic_checker.cpp:18699:              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:18718:    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+src/semantic_checker.cpp:18720:      value = trim(value.substr(1, value.size() - 2));
+src/semantic_checker.cpp:18760:          auto object = objects_.find(canonical_type_name(*base_type));
+src/semantic_checker.cpp:18826:            key = trim(reverse_args.front());
+src/semantic_checker.cpp:18827:          string vector_type = canonical_type_name(argument_types.front());
+src/semantic_checker.cpp:18832:                {canonical_type_name(vector_type.substr(7, vector_type.size() - 8))}});
+src/semantic_checker.cpp:18835:      auto function = functions_.find(callee);
+src/semantic_checker.cpp:18899:    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+src/semantic_checker.cpp:18901:      value = trim(value.substr(1, value.size() - 2));
+src/semantic_checker.cpp:18970:      const string callee_name = call.target.substr(3);
+src/semantic_checker.cpp:18971:      auto callee = functions_.find(callee_name);
+src/semantic_checker.cpp:18973:      auto target = signature_function_indices_.find(callee->second);
+src/semantic_checker.cpp:19099:      auto receiver = current_env.find(receiver_name);
+src/semantic_checker.cpp:19102:      auto declared = domains_.find(domain);
+src/semantic_checker.cpp:19149:        auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:19152:          auto declared = domains_.find(domain);
+src/semantic_checker.cpp:19217:      if (type.compare(at, marker.size(), marker) != 0) {
+src/semantic_checker.cpp:19226:      text += "<" + type.substr(at + marker.size(), end - at - marker.size()) + ">";
+src/semantic_checker.cpp:19244:            return candidate.name == callee.substr(3);
+src/semantic_checker.cpp:19354:      auto edges = graph.find(node);
+src/semantic_checker.cpp:19503:    auto declaration = enums_.find(concrete);
+src/semantic_checker.cpp:19550:    auto declaration = enums_.find(type);
+src/semantic_checker.cpp:19590:    auto declaration = enums_.find(type);
+src/semantic_checker.cpp:19612:    for (size_t dot = module_qualified.find('.'); dot != string::npos;
+src/semantic_checker.cpp:19613:         dot = module_qualified.find('.', dot + 2))
+src/semantic_checker.cpp:19659:    auto declaration = enums_.find(concrete);
+src/semantic_checker.cpp:19801:                   phase21_pattern_bindings(arm.line, alternatives.front()))
+src/semantic_checker.cpp:19834:            auto binding = env.find(selected_binding);
+src/semantic_checker.cpp:19892:        auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:19973:        const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp:19975:            : domains_.find(canonical_type_name(receiver->second));
+src/semantic_checker.cpp:19986:            ? enums_.find(canonical_type_name(*type)) : enums_.end();
+src/semantic_checker.cpp:20098:      auto cached = concrete_effect_cache_.find(cache_key);
+src/semantic_checker.cpp:20323:          arm.est_patterns.front().kind ==
+src/semantic_checker.cpp:20326:             phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
+src/semantic_checker.cpp:20410:      auto receiver_type = env.find(message_target);
+src/semantic_checker.cpp:20412:        auto domain = domains_.find(canonical_type_name(receiver_type->second));
+src/semantic_checker.cpp:20437:              stage.arguments.front(), env, domain_fields, implicit_object,
+src/semantic_checker.cpp:20445:          callable = stage.arguments.front();
+src/semantic_checker.cpp:20466:                  inferred_expr_type(stage.arguments.front(), env).value_or(""),
+src/semantic_checker.cpp:20486:            auto local = env.find(identity);
+src/semantic_checker.cpp:20489:              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:20500:                    inferred_expr_type(stage.arguments.front(), env).value_or(""));
+src/semantic_checker.cpp:20534:        if (operators.front() == "*") {
+src/semantic_checker.cpp:20571:        auto object = objects_.find(canonical_type_name(*base_type));
+src/semantic_checker.cpp:20718:      auto bound = env.find(callee);
+src/semantic_checker.cpp:20721:        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+src/semantic_checker.cpp:20729:        auto function = functions_.find(callee);
+src/semantic_checker.cpp:20816:    auto var_type = env.find(var_name);
+src/semantic_checker.cpp:20924:    auto range_type = env.find(range_binding);
+src/semantic_checker.cpp:20955:            tree_root_identifier(replace_arguments.front()) == range_binding)
+src/semantic_checker.cpp:21300:      string name = expression.substr(index, end - index);
+src/semantic_checker.cpp:21338:      placeholder_env["_"] = input_types.front();
+src/semantic_checker.cpp:21365:    auto local = env.find(identity);
+src/semantic_checker.cpp:21371:      if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:21376:        auto it = functions_.find(cid);
+src/semantic_checker.cpp:21381:      auto it = functions_.find(identity);
+src/semantic_checker.cpp:21466:        callable = parsed_stage.arguments.front();
+src/semantic_checker.cpp:21476:              inferred_expr_type(parsed_stage.arguments.front(), env).value_or(""));
+src/semantic_checker.cpp:21479:            ? functions_.find(*callable_name) : functions_.end();
+src/semantic_checker.cpp:21506:            ? env.find(*callable_name) : env.end();
+src/semantic_checker.cpp:21545:            parsed_stage.arguments.front(), env, domain_fields,
+src/semantic_checker.cpp:21565:              parsed_stage.arguments.front(), env).value_or("");
+src/semantic_checker.cpp:21766:      auto inner = static_payload_size(trim(t.substr(7, t.size() - 8)), visiting);
+src/semantic_checker.cpp:21769:    auto object = objects_.find(t);
+src/semantic_checker.cpp:21801:    auto type = env.types.find(receiver);
+src/semantic_checker.cpp:21803:    auto domain = domains_.find(canonical_type_name(type->second));
+src/semantic_checker.cpp:21845:    auto type = env.types.find(name);
+src/semantic_checker.cpp:21851:    auto borrowed = env.borrowed_enum_payloads.find(name);
+src/semantic_checker.cpp:21876:          current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:21895:        callable = stage.arguments.front();
+src/semantic_checker.cpp:21898:        auto accumulator = inferred_expr_type(stage.arguments.front(), env.types);
+src/semantic_checker.cpp:21901:        check_ownership_expression(line, stage.arguments.front(), env,
+src/semantic_checker.cpp:21994:          auto local = env.types.find(identity);
+src/semantic_checker.cpp:21997:          auto function = functions_.find(identity);
+src/semantic_checker.cpp:22079:      if (auto function = functions_.find(callee); function != functions_.end())
+src/semantic_checker.cpp:22189:        auto borrowed = env.borrowed_enum_payloads.find(location->root);
+src/semantic_checker.cpp:22242:      auto resolved_binding = env.binding_identities.find(value);
+src/semantic_checker.cpp:22296:            auto item = inferred_expr_type(arguments.front(), env.types);
+src/semantic_checker.cpp:22374:      auto resolved_callee = env.binding_identities.find(callee);
+src/semantic_checker.cpp:22414:          auto supplied_value = supplied.find(field.name);
+src/semantic_checker.cpp:22424:          auto supplied_value = supplied.find(field.name);
+src/semantic_checker.cpp:22431:      auto function = functions_.find(callee);
+src/semantic_checker.cpp:22510:        const auto found = path.binding_identities.find(entry.first);
+src/semantic_checker.cpp:22562:    auto retained = checked_body_states_.find(&statements);
+src/semantic_checker.cpp:22579:      auto receiver = types.find(statement.a);
+src/semantic_checker.cpp:22581:        auto domain = domains_.find(canonical_type_name(receiver->second));
+src/semantic_checker.cpp:22607:        auto found = current_body_types_->locals_at_statement.find(&s);
+src/semantic_checker.cpp:22771:              const auto before_id = incoming.binding_identities.find(binding.first);
+src/semantic_checker.cpp:22773:                  raised.ownership.binding_identities.find(binding.first);
+src/semantic_checker.cpp:22786:              } else if (auto moved = raised.ownership.moved.find(binding.first);
+src/semantic_checker.cpp:22806:                   phase21_pattern_bindings(arm.line, alternatives.front())) {
+src/semantic_checker.cpp:22927:        if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp:22942:          auto found = body.types.find(entry.first);
+src/semantic_checker.cpp:22983:          auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+src/semantic_checker.cpp:23053:              auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+src/semantic_checker.cpp:23073:              auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp:23136:            auto container = env.types.find(s.a);
+src/semantic_checker.cpp:23144:              auto element = inferred_expr_type(s.args.front(), env.types);
+src/semantic_checker.cpp:23234:    auto names = tree_split_top_level(signature.substr(signature.find('(') + 1,
+src/semantic_checker.cpp:23235:        signature.size() - signature.find('(') - 2), ',');
+src/semantic_checker.cpp:23246:            : canonical_type_name(receiver_type).substr(0, receiver_type.find('[')) +
+src/semantic_checker.cpp:23260:    return module.empty() ? name : module + "." + name.substr(module.size() + 2);
+src/semantic_checker.cpp:23312:        const string caller_name = current_semantic_context_.substr(3);
+src/semantic_checker.cpp:23323:          function.open_summary->member_requirements.front();
+src/semantic_checker.cpp:23371:      auto receiver = instantiated.find(requirement.subject);
+src/semantic_checker.cpp:23483:        type = type.substr(9);
+src/semantic_checker.cpp:23486:      const string lookup_name = starts_with(type, "callable:") ? type.substr(9) : type;
+src/semantic_checker.cpp:23491:        auto callable = functions_.find(lookup_name);
+src/semantic_checker.cpp:23520:      auto trait_binding = trait_bindings.find(source.get());
+src/semantic_checker.cpp:23705:        const string caller_name = current_semantic_context_.substr(3);
+src/semantic_checker.cpp:23706:        auto caller = functions_.find(caller_name);
+src/semantic_checker.cpp:23838:    checking_specialization_ = &function.specializations.back();
+src/semantic_checker.cpp:23975:    auto bound = p_.module_identities.find(module);
+src/semantic_checker.cpp:23985:      const string rest = context.substr(prefix);
+src/semantic_checker.cpp:23986:      return rest.substr(0, rest.rfind('.'));
+src/semantic_checker.cpp:23989:      if (auto function = functions_.find(context.substr(3)); function != functions_.end())
+src/semantic_checker.cpp:23992:      if (auto domain = domains_.find(owner(8)); domain != domains_.end())
+src/semantic_checker.cpp:23996:      if (auto object = objects_.find(type); object != objects_.end())
+src/semantic_checker.cpp:24154:      auto actual_term = checked_expression_term(args.front(), env);
+src/semantic_checker.cpp:24160:      auto actual = inferred_expr_type(args.front(), env);
+src/semantic_checker.cpp:24171:      auto actual_term = checked_expression_term(args.front(), env);
+src/semantic_checker.cpp:24178:        auto actual = inferred_expr_type(args.front(), env);
+src/semantic_checker.cpp:24186:      auto declaration = enums_.find(error_type);
+src/semantic_checker.cpp:24208:      auto condition = inferred_expr_type(args.front(), env);
+src/semantic_checker.cpp:24243:    auto binding = env.find(name);
+src/semantic_checker.cpp:24248:        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:24256:      auto it = functions_.find(target);
+src/semantic_checker.cpp:24361:        auto nested = functions_.find(nested_name);
+src/semantic_checker.cpp:24389:      actual_types.push_back(actual_results.back().projection());
+src/semantic_checker.cpp:24404:        const auto operation = requirement.target_id.substr(9);
+src/semantic_checker.cpp:24411:            !requirement.arguments.front() || !requirement.result ||
+src/semantic_checker.cpp:24424:                  *requirement.arguments.front());
+src/semantic_checker.cpp:24439:              ? actual : requirement.arguments.front();
+src/semantic_checker.cpp:24466:            requirement.arguments.front()->structurally_equal(
+src/semantic_checker.cpp:24471:          const auto& iterable = summary.requirements.front();
+src/semantic_checker.cpp:24489:              actual_element = actual->type_args.front();
+src/semantic_checker.cpp:24494:                requirement.arguments.front(), actual_element);
+src/semantic_checker.cpp:24614:      auto enclosing = functions_.find(current_semantic_context_.substr(3));
+src/semantic_checker.cpp:24625:          auto binding = env.find(name);
+src/semantic_checker.cpp:24657:        auto retained = statement.member_requirements_by_context.find(
+src/semantic_checker.cpp:24718:        auto context = current_check_statement_->nested_open_call_keys_by_context.find(
+src/semantic_checker.cpp:24722:          auto nested_key = context->second.find(
+src/semantic_checker.cpp:24732:        auto retained = statement.open_call_results_by_context.find(
+src/semantic_checker.cpp:24884:          const auto selected = current_check_statement_->open_call_keys_by_context.find(
+src/semantic_checker.cpp:24889:                ? nullptr : (active_est_expression_cursors_.back()
+src/semantic_checker.cpp:24890:                    ? &*active_est_expression_cursors_.back() : nullptr);
+src/semantic_checker.cpp:24968:      placeholder_env["_"] = input_types.front();
+src/semantic_checker.cpp:25054:    auto local = env.find(identity);
+src/semantic_checker.cpp:25058:        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+src/semantic_checker.cpp:25073:      auto it = functions_.find(identity);
+src/semantic_checker.cpp:25229:                    current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:25239:    string element = canonical_type_name(canonical.substr(7, canonical.size() - 8));
+src/semantic_checker.cpp:25258:      key = trim(reverse_args.front());
+src/semantic_checker.cpp:25260:    auto function = functions_.find(key);
+src/semantic_checker.cpp:25287:            current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:25304:          current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:25331:          current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:25386:                   expression_uses(stage.arguments.front(), "_") &&
+src/semantic_checker.cpp:25430:          check_expression(line, stage.arguments.front(), callback_env, {},
+src/semantic_checker.cpp:25514:          } else if (auto local = env.find(callable);
+src/semantic_checker.cpp:25519:              auto enclosing = functions_.find(current_semantic_context_.substr(3));
+src/semantic_checker.cpp:25539:          } else if (auto callable_function = functions_.find(callable);
+src/semantic_checker.cpp:25563:      if (auto local = source_binding ? env.find(*source_binding) : env.end();
+src/semantic_checker.cpp:25645:              line, stage.arguments.front(), {state.element_type}, env,
+src/semantic_checker.cpp:25656:              line, stage.arguments.front(), {state.element_type}, env,
+src/semantic_checker.cpp:25666:          check_expression(line, stage.arguments.front(), env, {},
+src/semantic_checker.cpp:25668:          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+src/semantic_checker.cpp:25673:                    stage.arguments.front() + "'",
+src/semantic_checker.cpp:25678:                 {"expression", stage.arguments.front(), {},
+src/semantic_checker.cpp:25679:                  stage.arguments.front(), {}, 1}},
+src/semantic_checker.cpp:25712:                line, stage.arguments.front(), {state.element_type}, env,
+src/semantic_checker.cpp:25748:      const auto parent = current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:25769:        current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:25815:          current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:25865:        active_est_expression_cursors_.back() &&
+src/semantic_checker.cpp:25866:        active_est_expression_cursors_.back()->source == source) {
+src/semantic_checker.cpp:25867:      const auto& cursor = *active_est_expression_cursors_.back();
+src/semantic_checker.cpp:25983:      if (role.size() <= prefix.size() || role.substr(0, prefix.size()) != prefix)
+src/semantic_checker.cpp:25986:      const auto suffix = role.substr(prefix.size());
+src/semantic_checker.cpp:26044:        trim(std::string(parent_source.substr(begin, length)));
+src/semantic_checker.cpp:26101:        } else if (role.rfind("field:", 0) == 0) {
+src/semantic_checker.cpp:26102:          const auto name = role.substr(6);
+src/semantic_checker.cpp:26129:    return matches.size() == 1 ? matches.front()
+src/semantic_checker.cpp:26149:    else if (root_slot.rfind("message-argument:", 0) == 0 ||
+src/semantic_checker.cpp:26150:             root_slot.rfind("echo-argument:", 0) == 0)
+src/semantic_checker.cpp:26179:        active_est_expression_cursors_.back()) {
+src/semantic_checker.cpp:26180:      const auto& parent = *active_est_expression_cursors_.back();
+src/semantic_checker.cpp:26194:        !active_est_expression_cursors_.back()) return;
+src/semantic_checker.cpp:26195:    const auto& cursor = *active_est_expression_cursors_.back();
+src/semantic_checker.cpp:26207:        current_body_types_->active_expression_occurrences.back(), kind,
+src/semantic_checker.cpp:26215:          current_body_types_->active_expression_occurrences.back(),
+src/semantic_checker.cpp:26222:        active_est_expression_cursors_.back() && current_body_types_ &&
+src/semantic_checker.cpp:26225:      const auto occurrence = current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:26227:      const auto& cursor = *active_est_expression_cursors_.back();
+src/semantic_checker.cpp:26276:        active_est_expression_cursors_.back())
+src/semantic_checker.cpp:26278:          active_est_expression_cursors_.back()->child_count++;
+src/semantic_checker.cpp:26364:            occurrence_state->active_expression_occurrences.back();
+src/semantic_checker.cpp:26391:        const auto id = state->active_expression_occurrences.back();
+src/semantic_checker.cpp:26410:                const auto id = occurrence_state->active_expression_occurrences.back();
+src/semantic_checker.cpp:26440:                      &checked_function.body.front() ==
+src/semantic_checker.cpp:26442:                      checked_function.body.front().kind == Stmt::Kind::Return &&
+src/semantic_checker.cpp:26515:              current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:26588:      auto binding = env.find(receiver);
+src/semantic_checker.cpp:26591:      auto self_binding = env.find("self");
+src/semantic_checker.cpp:26622:    if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
+src/semantic_checker.cpp:26625:      check_expression(line, original.substr(1, original.size() - 2), env,
+src/semantic_checker.cpp:26635:            current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:26665:            : current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:26721:    if (!value.empty() && value.front() == '!' &&
+src/semantic_checker.cpp:26861:                  current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:27053:            current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:27082:      const auto receiver_binding = env.find(receiver);
+src/semantic_checker.cpp:27106:                  current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:27168:      auto it = env.find(receiver);
+src/semantic_checker.cpp:27207:          auto enclosing = functions_.find(current_semantic_context_.substr(3));
+src/semantic_checker.cpp:27220:                  current_body_types_->active_expression_occurrences.back(),
+src/semantic_checker.cpp:27265:          auto enclosing = functions_.find(current_semantic_context_.substr(3));
+src/semantic_checker.cpp:27278:              ? current_body_types_->active_expression_occurrences.back()
+src/semantic_checker.cpp:27406:                moss::ascii_is_digit(static_cast<unsigned char>(field.front())) &&
+src/semantic_checker.cpp:27427:          auto object = objects_.find(canonical_type_name(*receiver_type));
+src/semantic_checker.cpp:27438:            auto object = objects_.find(
+src/semantic_checker.cpp:27477:                current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:27490:    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+src/semantic_checker.cpp:27500:            current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:27506:            current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:27556:              current_body_types_->active_expression_occurrences.back())
+src/semantic_checker.cpp:27611:              current_body_types_->active_expression_occurrences.back());
+src/semantic_checker.cpp:27652:              current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:27748:              current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:27752:          } else if (auto binding = env.find(callee);
+src/semantic_checker.cpp:27784:          const auto call_id = state.active_expression_occurrences.back();
+src/semantic_checker.cpp:27853:              auto found = substitutions.find(type->var_id);
+src/semantic_checker.cpp:27934:                element = actual->type_args.front();
+src/semantic_checker.cpp:27938:                element = actual->type_args.front();
+src/semantic_checker.cpp:27991:          current_body_types_->active_expression_occurrences.back();
+src/semantic_checker.cpp:28009:    auto retained = checked_body_states_.find(&body);
+src/semantic_checker.cpp:28043:        auto found = state.statement_occurrence_ids.find(&statement);
+src/semantic_checker.cpp:28088:      auto local = source_binding ? env.find(*source_binding) : env.end();
+src/semantic_checker.cpp:28098:      return "_iterator_element:" + source_result.legacy.substr(9);
+src/semantic_checker.cpp:28111:      string element = trim(result.substr(7, result.size() - 8));
+src/semantic_checker.cpp:28261:      if (auto snapshot = bound_snapshots.find(&statement);
+src/semantic_checker.cpp:28293:        auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp:28361:              auto container = current_env.find(base);
+src/semantic_checker.cpp:28480:        auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp:28494:          auto bound = current_env.find(trimmed);
+src/semantic_checker.cpp:28509:        auto destination = current_env.find(statement.message_result);
+src/semantic_checker.cpp:28515:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28589:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28673:              auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp:28694:            auto occurrence = call_occurrence_state->expression_root_slots.find(
+src/semantic_checker.cpp:28745:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28747:            auto domain = domains_.find(canonical_type_name(receiver->second));
+src/semantic_checker.cpp:28790:                ? current_env.find(*binding_name) : current_env.end();
+src/semantic_checker.cpp:28981:          ? checked_types.statement_occurrence_ids.find(node.source)
+src/semantic_checker.cpp:29071:             statement_scopes.back().indent >= statement->indent) {
+src/semantic_checker.cpp:29073:            statement_scopes.back().statement_id).scope_exit = true;
+src/semantic_checker.cpp:29077:        occurrence.parent_id = statement_scopes.back().statement_id;
+src/semantic_checker.cpp:29078:        occurrence.scope_id = statement_scopes.back().scope_id;
+src/semantic_checker.cpp:29114:      auto binding = checked_types.binding_facts.find(statement);
+src/semantic_checker.cpp:29139:        auto initializer = checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:29171:      const auto initializer = checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:29179:            !occurrence.bindings.front().identity.empty() &&
+src/semantic_checker.cpp:29180:            occurrence.bindings.front().type &&
+src/semantic_checker.cpp:29181:            occurrence.bindings.front().type->kind == moss::TypeKind::Builtin &&
+src/semantic_checker.cpp:29182:            occurrence.bindings.front().type->name == "map" &&
+src/semantic_checker.cpp:29183:            occurrence.bindings.front().type->type_args.size() == 2) {
+src/semantic_checker.cpp:29184:          value.resolved_binding_id = occurrence.bindings.front().identity;
+src/semantic_checker.cpp:29186:              occurrence.bindings.front().type);
+src/semantic_checker.cpp:29189:      auto case_fact = checked_types.case_facts.find(statement);
+src/semantic_checker.cpp:29199:      auto joined = checked_types.joined_bindings.find(statement);
+src/semantic_checker.cpp:29236:          statement_scopes.back().statement_id).scope_exit = true;
+src/semantic_checker.cpp:29356:      auto identities = checked_types.binding_identities_at_statement.find(
+src/semantic_checker.cpp:29360:        auto binding = identities->second.find(name);
+src/semantic_checker.cpp:29363:          auto immutable = checked_types.immutable_bindings_at_statement.find(
+src/semantic_checker.cpp:29481:        const auto root = checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:29646:      const auto root = checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:29783:          ? checked_types.statement_occurrence_ids.find(occurrence.source)
+src/semantic_checker.cpp:29808:           occurrence.bindings.front().name != occurrence.source->a ||
+src/semantic_checker.cpp:29809:           occurrence.bindings.front().identity.empty() ||
+src/semantic_checker.cpp:29810:           !occurrence.bindings.front().type ||
+src/semantic_checker.cpp:29812:               occurrence.bindings.front().type)))
+src/semantic_checker.cpp:29850:          const auto found = bindings_by_identity.find(identity);
+src/semantic_checker.cpp:29879:                  found->second.size() == 1 && found->second.front()->type
+src/semantic_checker.cpp:29880:              ? checked_types.solver.resolve(found->second.front()->type)
+src/semantic_checker.cpp:29886:              found->second.front()->name != binding.name ||
+src/semantic_checker.cpp:29887:              found->second.front()->mutable_binding != binding.mutable_binding ||
+src/semantic_checker.cpp:29931:        auto root = checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:29948:          occurrence.semantic_target_id.rfind("parameter:", 0) == 0 &&
+src/semantic_checker.cpp:29953:          occurrence.semantic_target_id.rfind("parameter:", 0) == 0 &&
+src/semantic_checker.cpp:29954:          occurrence.semantic_target_id.find(".method:") != string::npos;
+src/semantic_checker.cpp:30080:              const auto& key = occurrence.linked_callables.front();
+src/semantic_checker.cpp:30097:              occurrence.source_operands.front() == "FileIO";
+src/semantic_checker.cpp:30166:              same_terms(occurrence.checked_type->type_args.front(),
+src/semantic_checker.cpp:30196:            const auto declaration = enums_.find(enum_name);
+src/semantic_checker.cpp:30209:              if (occurrence.semantic_target_id.rfind(prefix, 0) != 0)
+src/semantic_checker.cpp:30286:                  child.child_role != expected.back())
+src/semantic_checker.cpp:30349:              occurrence.checked_type->type_args.front() &&
+src/semantic_checker.cpp:30350:              occurrence.checked_type->type_args.front()->is_closed() &&
+src/semantic_checker.cpp:30404:        const string expected = operation.operation_id.substr(9);
+src/semantic_checker.cpp:30460:              !same_resolved_term(right->checked_type, operation.arguments.front()) ||
+src/semantic_checker.cpp:30487:                                operation.arguments.front()) ||
+src/semantic_checker.cpp:30593:            !same_resolved_term(result_type->type_args.front(),
+src/semantic_checker.cpp:30658:            !same_resolved_term(operation.receiver, result->type_args.front()) ||
+src/semantic_checker.cpp:30664:        const string called_name = operation.operation_id.substr(5);
+src/semantic_checker.cpp:30787:        const string stage_name = operation.operation_id.substr(11);
+src/semantic_checker.cpp:30823:          ? requirement.target_id.substr(9) : string{};
+src/semantic_checker.cpp:30836:              ? nullptr : requirement.arguments.front()) ||
+src/semantic_checker.cpp:30840:                  requirement.arguments.front()) ||
+src/semantic_checker.cpp:30870:      const auto observed = observed_open_operator_operations.find(expected);
+src/semantic_checker.cpp:30934:            auto statement_id = checked_types.statement_occurrence_ids.find(
+src/semantic_checker.cpp:30939:                : checked_types.expression_root_slots.find(
+src/semantic_checker.cpp:30947:                  invocation.source_operands.front() == "FileIO";
+src/semantic_checker.cpp:31074:    const auto retained = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31078:    const auto joined = state.joined_bindings.find(&function->body.front());
+src/semantic_checker.cpp:31080:        joined->second.front().name != "local" ||
+src/semantic_checker.cpp:31081:        joined->second.front().identity.empty() ||
+src/semantic_checker.cpp:31082:        !joined->second.front().type)
+src/semantic_checker.cpp:31088:    const auto statement_id = state.statement_occurrence_ids.find(returned);
+src/semantic_checker.cpp:31090:    const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:31098:    const auto binding_type = state.solver.resolve(joined->second.front().type);
+src/semantic_checker.cpp:31104:        read.resolved_binding_id != joined->second.front().identity ||
+src/semantic_checker.cpp:31115:        checker.checked_body_states_.find(&branch_function->body);
+src/semantic_checker.cpp:31126:          occurrence.bindings.front().name == "item";
+src/semantic_checker.cpp:31129:        join->bindings.front().predecessor_binding_ids.size() != 2 ||
+src/semantic_checker.cpp:31130:        join->bindings.front().predecessor_control_edges.size() != 2)
+src/semantic_checker.cpp:31133:    for (const auto& edge : join->bindings.front().predecessor_control_edges)
+src/semantic_checker.cpp:31191:    const auto retained = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31222:    const auto negate_state = checker.checked_body_states_.find(&negate->body);
+src/semantic_checker.cpp:31291:    const auto retained = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31325:    const auto argument_type = state.solver.resolve(operation->arguments.front());
+src/semantic_checker.cpp:31351:    const auto retained = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31398:    const auto& summary_relation = mixed->open_summary->requirements.front();
+src/semantic_checker.cpp:31407:        !(*summary_relation.result)->type_args.front()->structurally_equal(
+src/semantic_checker.cpp:31410:    const auto mixed_retained = checker.checked_body_states_.find(&mixed->body);
+src/semantic_checker.cpp:31430:    const auto& relation = mixed_operation->type_relations.front();
+src/semantic_checker.cpp:31596:          common_body.front().kind != checked_ir::StmtKind::Return ||
+src/semantic_checker.cpp:31597:          !common_body.front().expr ||
+src/semantic_checker.cpp:31598:          common_body.front().expr->kind !=
+src/semantic_checker.cpp:31600:          common_body.front().expr->ordinal != 0 ||
+src/semantic_checker.cpp:31636:    const auto branch_state_entry = checker.checked_body_states_.find(
+src/semantic_checker.cpp:31667:            occurrence.bindings.front().name == "joined")
+src/semantic_checker.cpp:31676:          join->bindings.front().identity += ":forged";
+src/semantic_checker.cpp:31681:          if (!join || join->bindings.front().predecessor_control_edges.empty())
+src/semantic_checker.cpp:31683:          join->bindings.front().predecessor_control_edges.front().binding_id =
+src/semantic_checker.cpp:31688:          if (!join || join->bindings.front().predecessor_control_edges.empty())
+src/semantic_checker.cpp:31691:              join->bindings.front().predecessor_control_edges.front();
+src/semantic_checker.cpp:31710:      const auto state_entry = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31716:      const auto statement_id = state.statement_occurrence_ids.find(
+src/semantic_checker.cpp:31717:          &function->body.front());
+src/semantic_checker.cpp:31719:      const auto root = state.expression_root_slots.find(
+src/semantic_checker.cpp:31740:      const auto retained = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31747:        const auto found = body.statement_occurrence_ids.find(&source);
+src/semantic_checker.cpp:31843:        const auto retained_count = body.operation_counts_by_occurrence.find(
+src/semantic_checker.cpp:31939:      auto state = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:31976:                                          operation->argument_operand_ordinals.front())))
+src/semantic_checker.cpp:32016:    auto self_parent_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32045:    auto relay_state = checker.checked_body_states_.find(&relay_function->body);
+src/semantic_checker.cpp:32064:        original_dependencies.front());
+src/semantic_checker.cpp:32150:              relay_occurrences.back().semantic_target_id);
+src/semantic_checker.cpp:32155:              relay_occurrences.back().semantic_target_id);
+src/semantic_checker.cpp:32156:    relay_occurrences.back().semantic_target_id.clear();
+src/semantic_checker.cpp:32160:    relay_occurrences.back().semantic_target_id =
+src/semantic_checker.cpp:32183:    auto sort_state = checker.checked_body_states_.find(&sort_function->body);
+src/semantic_checker.cpp:32214:        sort_occurrences[duplicate_sort_id].linked_callables.front();
+src/semantic_checker.cpp:32260:    sort_occurrences[builtin_call_id].linked_callables.front().semantic_callable_id =
+src/semantic_checker.cpp:32265:    sort_occurrences[builtin_call_id].linked_callables.front().semantic_callable_id =
+src/semantic_checker.cpp:32283:    auto callback_target_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32317:    const auto pipeline_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32430:    const auto pipeline_reduce_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32470:    const auto parameter_pipeline_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32523:        .linked_constraints.front().arity = 2;
+src/semantic_checker.cpp:32530:        .linked_constraints.front().arguments.front() = "wrong-input";
+src/semantic_checker.cpp:32536:    parameter_pipeline_function->constraints.back().arguments.front() =
+src/semantic_checker.cpp:32541:    parameter_pipeline_function->constraints.back() = pipeline_formal_fact;
+src/semantic_checker.cpp:32563:    const auto bound_pipeline_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32601:    const auto empty_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32608:        empty_state->second->statement_occurrence_ids.find(
+src/semantic_checker.cpp:32609:            &empty_function->body.front());
+src/semantic_checker.cpp:32612:    const auto empty_root = empty_state->second->expression_root_slots.find(
+src/semantic_checker.cpp:32629:    const auto branch_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32678:        joined_read->resolved_binding_id != if_node->bindings.front().identity ||
+src/semantic_checker.cpp:32679:        if_node->bindings.front().predecessor_binding_ids.size() != 2)
+src/semantic_checker.cpp:32682:        if_node->bindings.front().predecessor_binding_ids.begin(),
+src/semantic_checker.cpp:32683:        if_node->bindings.front().predecessor_binding_ids.end());
+src/semantic_checker.cpp:32698:      auto state = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:32707:    const auto callback_state_entry = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32791:          requirement.arguments.front() = moss::Type::primitive("string");
+src/semantic_checker.cpp:32795:          requirement.argument_access.front() = moss::AccessMode::Consume;
+src/semantic_checker.cpp:32866:          value.arguments.front() = "callback";
+src/semantic_checker.cpp:32874:    const auto shadow_state_entry = checker.checked_body_states_.find(
+src/semantic_checker.cpp:32934:    const auto relay_return_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:33007:    const auto private_state_entry = chain_checker.checked_body_states_.find(
+src/semantic_checker.cpp:33045:        constructor_type->field_substitutions.front().first != "value")
+src/semantic_checker.cpp:33048:        constructor_type->field_substitutions.front().second);
+src/semantic_checker.cpp:33063:        common_private_body.front().kind != checked_ir::StmtKind::Var ||
+src/semantic_checker.cpp:33064:        !common_private_body.front().expr ||
+src/semantic_checker.cpp:33065:        common_private_body.front().expr->kind !=
+src/semantic_checker.cpp:33067:        common_private_body.front().expr->semantic_target_id !=
+src/semantic_checker.cpp:33069:        common_private_body.front().expr->operands.size() != 1 ||
+src/semantic_checker.cpp:33070:        common_private_body.front().expr->operands.front().kind !=
+src/semantic_checker.cpp:33072:        common_private_body.front().expr->operands.front().ordinal != 0 ||
+src/semantic_checker.cpp:33073:        common_private_body.back().kind != checked_ir::StmtKind::Return ||
+src/semantic_checker.cpp:33074:        !common_private_body.back().expr ||
+src/semantic_checker.cpp:33075:        common_private_body.back().expr->kind !=
+src/semantic_checker.cpp:33077:        common_private_body.back().expr->ordinal != 0)
+src/semantic_checker.cpp:33111:      const auto state = chain_checker.checked_body_states_.find(&helper->body);
+src/semantic_checker.cpp:33119:          checked_helper->statements.front().kind != checked_ir::StmtKind::Var ||
+src/semantic_checker.cpp:33120:          checked_helper->statements.back().kind != checked_ir::StmtKind::Return)
+src/semantic_checker.cpp:33157:    const auto relay_method_state = checker.checked_body_states_.find(
+src/semantic_checker.cpp:33203:        !method_state.solver.resolve(method_fact->arguments.front()) ||
+src/semantic_checker.cpp:33205:            *method_state.solver.resolve(method_fact->arguments.front())) ||
+src/semantic_checker.cpp:33268:    const auto count_state_entry = checker.checked_body_states_.find(
+src/semantic_checker.cpp:33357:              node.variant_identity.compare(node.variant_identity.size() - 10,
+src/semantic_checker.cpp:33382:      const auto state = checker.checked_body_states_.find(&function->body);
+src/semantic_checker.cpp:33385:      const auto statement = state->second->statement_occurrence_ids.find(
+src/semantic_checker.cpp:33386:          &function->body.front());
+src/semantic_checker.cpp:33389:      const auto root = state->second->expression_root_slots.find(
+src/semantic_checker.cpp:33395:          linked.front().semantic_callable_id == key_function->semantic_callable_id &&
+src/semantic_checker.cpp:33396:          linked.front().argument_type &&
+src/semantic_checker.cpp:33397:          linked.front().argument_type->to_canonical_string() == "int" &&
+src/semantic_checker.cpp:33398:          linked.front().result_type &&
+src/semantic_checker.cpp:33399:          linked.front().result_type->to_canonical_string() == "int" &&
+src/semantic_checker.cpp:33400:          linked.front().parameter_effect == Effect::Read &&
+src/semantic_checker.cpp:33401:          abi_v10_effects_pure(linked.front().observable_effects) &&
+src/semantic_checker.cpp:33402:          linked.front().reverse_order == reverse_order;

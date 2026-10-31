@@ -1,0 +1,80 @@
+[
+  {
+    "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "baseline_off": [
+      1,
+      false,
+      "RECOVERY_PATTERN_REQUIRES_VARIANT",
+      "recovery patterns must name a qualified enum variant",
+      57,
+      1,
+      null
+    ],
+    "candidate_off": [
+      1,
+      false,
+      "UNKNOWN_ERROR_TYPE",
+      "unknown error enum 'ndarray.NdArrayError'",
+      57,
+      1,
+      null
+    ],
+    "baseline_shadow": [
+      1,
+      false,
+      "RECOVERY_PATTERN_REQUIRES_VARIANT",
+      "recovery patterns must name a qualified enum variant",
+      57,
+      1,
+      null
+    ],
+    "candidate_shadow": [
+      1,
+      false,
+      "UNKNOWN_ERROR_TYPE",
+      "unknown error enum 'ndarray.NdArrayError'",
+      57,
+      1,
+      null
+    ]
+  },
+  {
+    "path": "tests/phase27/est/repro/unclosed_vector_expression.moss",
+    "baseline_off": [
+      0,
+      true,
+      null,
+      null,
+      null,
+      null,
+      []
+    ],
+    "candidate_off": [
+      1,
+      false,
+      "MOSS_COMPILE_ERROR",
+      "heterogeneous or unresolved collection element type",
+      2,
+      1,
+      null
+    ],
+    "baseline_shadow": [
+      0,
+      true,
+      null,
+      null,
+      null,
+      null,
+      []
+    ],
+    "candidate_shadow": [
+      1,
+      false,
+      "MOSS_COMPILE_ERROR",
+      "heterogeneous or unresolved collection element type",
+      2,
+      1,
+      null
+    ]
+  }
+]

@@ -1,0 +1,154 @@
+[
+  {
+    "case": "unsupported_exponent",
+    "path": "tests/phase27/est/repro/unsupported_exponent.moss",
+    "results": {
+      "baseline_off": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      }
+    }
+  },
+  {
+    "case": "unsupported_operator",
+    "path": "tests/phase27/est/repro/unsupported_operators.moss",
+    "results": {
+      "baseline_off": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "ok": false,
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      }
+    }
+  },
+  {
+    "case": "membership_operator",
+    "path": "tests/phase27/est/repro/membership_operator.moss",
+    "results": {
+      "baseline_off": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      }
+    }
+  },
+  {
+    "case": "symbolic_boolean",
+    "path": "tests/phase27/est/repro/symbolic_boolean.moss",
+    "results": {
+      "baseline_off": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary '&&' expression is not supported",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary '&&' expression is not supported",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary '&&' expression is not supported",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "ok": false,
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary '&&' expression is not supported",
+        "line": 2,
+        "column": 1,
+        "returncode": 1
+      }
+    }
+  }
+]

@@ -1,0 +1,50 @@
+consumer	path	line	classification	value/slot	code
+checker	src/semantic_checker.cpp	12796	dynamic binding comparison	a	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+checker	src/semantic_checker.cpp	12817	dynamic binding comparison	a	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+checker	src/semantic_checker.cpp	12854	literal NAME	push	(statement.b == "push" ||
+checker	src/semantic_checker.cpp	12855	literal NAME	insert	(staged_abi_v10() && statement.b == "insert")) &&
+checker	src/semantic_checker.cpp	12865	dynamic binding comparison	a	if (prior.a == statement.a &&
+checker	src/semantic_checker.cpp	13139	dynamic binding comparison	a	candidate.a != name ||
+checker	src/semantic_checker.cpp	14052	literal NAME	push	(statement.b == "push" ||
+checker	src/semantic_checker.cpp	14053	literal NAME	insert	(staged_abi_v10() && statement.b == "insert")) &&
+checker	src/semantic_checker.cpp	14332	literal NAME	invoke	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+checker	src/semantic_checker.cpp	14609	literal NAME	invoke	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+checker	src/semantic_checker.cpp	18467	literal NAME	consume	statement.b == "consume" ? Effect::Consume : Effect::Read);
+checker	src/semantic_checker.cpp	20025	dynamic binding comparison	a	if (statement.a == selected_binding) selected_binding.clear();
+checker	src/semantic_checker.cpp	20991	literal NAME	push	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+checker	src/semantic_checker.cpp	20991	literal NAME	pop	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+checker	src/semantic_checker.cpp	20991	literal NAME	pop_front	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+checker	src/semantic_checker.cpp	21159	literal NAME	push	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+checker	src/semantic_checker.cpp	21159	literal NAME	pop	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+checker	src/semantic_checker.cpp	21159	literal NAME	pop_front	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+checker	src/semantic_checker.cpp	21160	literal NAME	pop	if (statement.b == "pop" || statement.b == "pop_front") {
+checker	src/semantic_checker.cpp	21160	literal NAME	pop_front	if (statement.b == "pop" || statement.b == "pop_front") {
+checker	src/semantic_checker.cpp	22769	literal NAME	consume	bool consuming = s.b == "consume";
+checker	src/semantic_checker.cpp	23248	literal NAME	push	if (s.b == "push" && s.args.size() == 1) {
+checker	src/semantic_checker.cpp	24759	dynamic binding comparison	a	statement.b.empty() && statement.a == name &&
+checker	src/semantic_checker.cpp	28796	literal NAME	assert	const bool delayed_assert_check = statement.a == "assert" &&
+checker	src/semantic_checker.cpp	28841	literal NAME	sort	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+checker	src/semantic_checker.cpp	28878	literal NAME	assert	if (statement.b.empty() && statement.a == "assert" &&
+checker	src/semantic_checker.cpp	28963	literal NAME	pass	tree_plain_identifier(statement.text) && statement.text != "pass")
+checker	src/semantic_checker.cpp	29562	dynamic binding comparison	a	prior.a == name) {
+checker	src/fileio_semantics.inc	859	literal NAME	FileIO	(statement.a == "FileIO" ||
+checker	src/executor_invoke_lowering.inc	324	literal NAME	invoke	if (statement.b == "invoke") {
+checker	src/executor_invoke_lowering.inc	328	literal NAME	join	if (statement.b == "join") {
+checker	src/executor_invoke_lowering.inc	521	literal NAME	invoke	(statement.b == "invoke" || statement.b == "join")) {
+checker	src/executor_invoke_lowering.inc	521	literal NAME	join	(statement.b == "invoke" || statement.b == "join")) {
+checker	src/executor_invoke_lowering.inc	534	literal NAME	join	if (statement.b == "join")
+emitter	src/native_generator.cpp	5980	literal NAME	consume	if (s.b != "consume" && !recovery_slot) o << "&";
+emitter	src/native_generator.cpp	5982	literal NAME	consume	if (recovery_slot && s.b == "consume")
+emitter	src/native_generator.cpp	6026	literal NAME	consume	if (s.b != "consume") {
+emitter	src/native_generator.cpp	6335	literal NAME	_	if (s.a == "_") {
+emitter	src/native_generator.cpp	6600	literal NAME	delete	(s.b == "delete" && (statement_receiver_type == "map" ||
+emitter	src/native_generator.cpp	6612	literal NAME	assert	if (s.b.empty() && s.a == "assert") {
+emitter	src/native_generator.cpp	6625	literal NAME	assertEqual	if (s.b.empty() && s.a == "assertEqual") {
+emitter	src/native_generator.cpp	6655	literal NAME	sort	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+emitter	src/native_generator.cpp	6854	literal NAME	pop	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+emitter	src/file_chunk_codegen.inc	70	literal NAME	write	if (s.b == "write" && s.args.size() == 2) {
+emitter	src/file_chunk_codegen.inc	80	literal NAME	open	if (s.b == "open" && s.args.size() == 2) {
+emitter	src/file_chunk_codegen.inc	90	literal NAME	sync	if (s.b == "sync" && s.args.size() <= 1) {
+emitter	src/file_chunk_codegen.inc	101	literal NAME	close	if (s.b == "close" && s.args.empty()) {
+emitter	src/executor_invoke_codegen.inc	151	literal NAME	join	if (s.b == "join") {
+emitter	src/executor_invoke_codegen.inc	155	literal NAME	invoke	if (s.b != "invoke")

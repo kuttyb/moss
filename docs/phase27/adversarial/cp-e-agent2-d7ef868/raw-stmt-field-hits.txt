@@ -1,0 +1,808 @@
+src/interpreter_phase20.inc:29:      if (interp_executor_construction(statement.b, config_arguments)) {
+src/interpreter_phase20.inc:32:        frame.locals[statement.a] = Value::unit();
+src/interpreter_phase20.inc:33:        frame.local_types[statement.a] = "executor";
+src/interpreter_phase20.inc:34:        fast_debug_executors_[statement.a].clear();
+src/interpreter_phase20.inc:35:        emit("executor_start", frame, statement.line, statement.a);
+src/interpreter_phase20.inc:39:      if (interp_parse_fileio_open(statement.b, open_arguments)) {
+src/interpreter_phase20.inc:47:    auto receiver_type = frame.local_types.find(statement.a);
+src/interpreter_phase20.inc:50:    auto executor = fast_debug_executors_.find(statement.a);
+src/interpreter_phase20.inc:53:    if (statement.b == "invoke") {
+src/interpreter_phase20.inc:60:    if (statement.b == "join") {
+src/interpreter_phase20.inc:64:      emit("executor_join", frame, statement.line, statement.a);
+src/native_generator.cpp:347:        if (expression_uses(statement.a) || expression_uses(statement.b) ||
+src/native_generator.cpp:352:          string call = statement.a;
+src/native_generator.cpp:353:          if (!statement.b.empty()) call += "." + statement.b;
+src/native_generator.cpp:1382:          ? statement.a : statement.b;
+src/native_generator.cpp:2607:      const auto result_binding = tree_identifier_name(statement.a);
+src/native_generator.cpp:2614:          statement.b, &statement.expression_handles);
+src/native_generator.cpp:5082:        used.insert(s.a);
+src/native_generator.cpp:5462:      if (domain_construction(statement.b)) constructions.push_back(statement);
+src/native_generator.cpp:5476:                       return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp:5594:        locals.insert(s.a);
+src/native_generator.cpp:5595:        types[s.a] = direct_functional->output_type;
+src/native_generator.cpp:5652:                    recovered.b, binding);
+src/native_generator.cpp:5655:                      recovered.a, binding);
+src/native_generator.cpp:5888:          if (s.a.empty()) {
+src/native_generator.cpp:5903:            auto type = generated_expr_type(s.a, &types);
+src/native_generator.cpp:5908:            const string value = expr(s.a, d, locals, &types,
+src/native_generator.cpp:5959:          auto scrutinee_type = generated_expr_type(s.a, &types);
+src/native_generator.cpp:5981:          if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
+src/native_generator.cpp:5995:          const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+src/native_generator.cpp:5996:          if (s.b != "consume" && !recovery_slot) o << "&";
+src/native_generator.cpp:5998:          if (recovery_slot && s.b == "consume")
+src/native_generator.cpp:5999:            o << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp:6002:            o << expr(s.a, d, locals, &types);
+src/native_generator.cpp:6042:              if (s.b != "consume") {
+src/native_generator.cpp:6087:            << expr(s.a, d, locals, &types,
+src/native_generator.cpp:6119:            << expr(s.a, d, locals, &types,
+src/native_generator.cpp:6133:          string source = trim(s.b);
+src/native_generator.cpp:6158:              o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp:6162:              o << indent(level) << "for " << s.a << " in "
+src/native_generator.cpp:6167:            child_locals.insert(s.a);
+src/native_generator.cpp:6168:            child_types[s.a] = "int";
+src/native_generator.cpp:6183:            o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp:6187:            child_locals.insert(s.a);
+src/native_generator.cpp:6188:            child_types[s.a] = "Range";
+src/native_generator.cpp:6198:            o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp:6202:            child_locals.insert(s.a);
+src/native_generator.cpp:6203:            child_types[s.a] = "int";
+src/native_generator.cpp:6222:            o << indent(level) << "for " << s.a << " in " << traversal
+src/native_generator.cpp:6226:            child_locals.insert(s.a);
+src/native_generator.cpp:6227:            child_types[s.a] = element;
+src/native_generator.cpp:6260:          o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+src/native_generator.cpp:6263:          child_locals.insert(s.a);
+src/native_generator.cpp:6268:          child_types[s.a] = element;
+src/native_generator.cpp:6351:          if (s.a == "_") {
+src/native_generator.cpp:6353:              << expr(s.b, d, locals, &types,
+src/native_generator.cpp:6360:          if (phase21_option_slots_.count(s.a)) {
+src/native_generator.cpp:6361:            o << indent(level) << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp:6362:              << " = Some(" << expr(s.b, d, locals, &types,
+src/native_generator.cpp:6368:          if (auto sd = domain_construction(s.b)) {
+src/native_generator.cpp:6370:            construction_binding_ = s.a;
+src/native_generator.cpp:6371:            remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp:6372:            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp:6374:            bool existing_binding = locals.count(s.a);
+src/native_generator.cpp:6375:            o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+src/native_generator.cpp:6376:            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp:6377:            locals.insert(s.a);
+src/native_generator.cpp:6378:            types[s.a] = *sd;
+src/native_generator.cpp:6385:          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp:6407:          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp:6419:          else lhs = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp:6421:                                              [&](const Field& field) { return field.name == s.a; });
+src/native_generator.cpp:6422:          if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp:6427:            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp:6435:                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
+src/native_generator.cpp:6436:                    map_base != s.a) continue;
+src/native_generator.cpp:6438:                auto value_type = generated_expr_type(ss[next].b, &types);
+src/native_generator.cpp:6450:                     canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+src/native_generator.cpp:6452:            o << indent(level) << "let mut " << s.a;
+src/native_generator.cpp:6455:              << expr(s.b, d, locals, &types,
+src/native_generator.cpp:6459:            locals.insert(s.a);
+src/native_generator.cpp:6460:            auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp:6461:            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+src/native_generator.cpp:6466:                : tree_empty_constructor_named(s.b, "Map") ? "map"
+src/native_generator.cpp:6467:                : tree_empty_constructor_named(s.b, "Queue") ? "queue"
+src/native_generator.cpp:6468:                : staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
+src/native_generator.cpp:6469:                : (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+src/native_generator.cpp:6470:            const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp:6476:                  s.a, source_binding->second.source_domain,
+src/native_generator.cpp:6479:              forget_domain_instance_binding(s.a);
+src/native_generator.cpp:6482:            bool map_assignment = tree_parse_index(s.a, mb, mi);
+src/native_generator.cpp:6497:              string inserted = expr(s.b, d, locals, &types,
+src/native_generator.cpp:6499:              const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp:6517:            else if (is_object_view(s.a, d, locals, &types))
+src/native_generator.cpp:6518:              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+src/native_generator.cpp:6538:              collect_concat(s.b);
+src/native_generator.cpp:6539:              bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+src/native_generator.cpp:6540:                  locals.count(s.a) && concat_operands.size() > 1 &&
+src/native_generator.cpp:6541:                  tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp:6542:                  canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp:6547:                if (tree_expression_mentions_identifier(concat_operands[operand], s.a))
+src/native_generator.cpp:6562:                string place = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp:6581:                assigned = expr(s.b, d, locals, &types,
+src/native_generator.cpp:6584:              const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp:6593:            if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp:6602:          if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+src/native_generator.cpp:6603:            types[s.a] = checked_receiver->second;
+src/native_generator.cpp:6604:          string statement_receiver_type = !s.b.empty()
+src/native_generator.cpp:6605:              ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+src/native_generator.cpp:6606:          if (!s.b.empty() &&
+src/native_generator.cpp:6615:               (s.b == "delete" && (statement_receiver_type == "map" ||
+src/native_generator.cpp:6617:            string call = s.a + "." + s.b + "(";
+src/native_generator.cpp:6627:          if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp:6640:          if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp:6670:          if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp:6676:          string function_name = resolved_callable_identity(s.a, &types);
+src/native_generator.cpp:6685:          if (s.b.empty() && known_function && !benchmark_body_) {
+src/native_generator.cpp:6694:              s.b.empty() && !known_function;
+src/native_generator.cpp:6697:              : !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp:6700:          if (call_receiver_type && (!s.b.empty() || implicit_method))
+src/native_generator.cpp:6703:                implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp:6727:              if (!s.b.empty()) {
+src/native_generator.cpp:6733:                    tree_expressions_equal(nested_receiver, s.a);
+src/native_generator.cpp:6762:            (s.b.empty() && known_function
+src/native_generator.cpp:6764:                    : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp:6765:                    : expr(s.a, d, locals, &types));
+src/native_generator.cpp:6769:          if (!s.b.empty()) {
+src/native_generator.cpp:6770:            string method = s.b;
+src/native_generator.cpp:6771:            auto it = types.find(s.a);
+src/native_generator.cpp:6774:            call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp:6793:            } else if (!s.b.empty() || implicit_method) {
+src/native_generator.cpp:6867:          auto receiver_type = !s.b.empty()
+src/native_generator.cpp:6868:              ? generated_expr_type(s.a, &types) : std::optional<string>{};
+src/native_generator.cpp:6869:          if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp:6880:          bool joined_assignment = join_assignments.erase(s.a) != 0;
+src/native_generator.cpp:6881:          auto sd = domain_construction(s.b);
+src/native_generator.cpp:6884:            construction_binding_ = s.a;
+src/native_generator.cpp:6885:            remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp:6886:            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp:6891:            o << s.a << " = ";
+src/native_generator.cpp:6892:            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp:6893:            types[s.a] = *sd;
+src/native_generator.cpp:6895:            const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp:6899:            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp:6904:                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
+src/native_generator.cpp:6905:                    map_base != s.a) continue;
+src/native_generator.cpp:6907:                auto value_type = generated_expr_type(ss[next].b, &types);
+src/native_generator.cpp:6918:            o << s.a;
+src/native_generator.cpp:6921:                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+src/native_generator.cpp:6928:              << expr(s.b, d, locals, &types,
+src/native_generator.cpp:6933:            auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp:6938:            types[s.a] = domain_capability ? source->second
+src/native_generator.cpp:6950:                    s.a, source_binding->second.source_domain,
+src/native_generator.cpp:6953:                forget_domain_instance_binding(s.a);
+src/native_generator.cpp:6955:              forget_domain_instance_binding(s.a);
+src/native_generator.cpp:6958:          locals.insert(s.a);
+src/native_generator.cpp:6963:          string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp:6994:            const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+src/native_generator.cpp:6996:            types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp:7005:            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+src/native_generator.cpp:7017:          if (in_function && !s.a.empty()) {
+src/native_generator.cpp:7018:            string rendered = expr(s.a, d, locals, &types,
+src/native_generator.cpp:7021:            const auto returned_binding = tree_identifier_name(s.a);
+src/interpreter_domains.inc:186:      if (instance.concrete->binding != statement.a || instance.concrete->line != statement.line) continue;
+src/interpreter_domains.inc:189:      if (!expression_call(statement.b, name, arguments)) throw RuntimeError(statement.line, "internal error: missing domain constructor");
+src/interpreter_domains.inc:206:      frame.locals[statement.a] = handle;
+src/static_bounds.inc:142:        if (auto target = storage_location(statement.a, {}, false))
+src/static_bounds.inc:145:        static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc:146:        expression = statement.b;
+src/static_bounds.inc:159:        static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc:170:        expression = statement.a;
+src/static_bounds.inc:173:        expression = statement.b;
+src/static_bounds.inc:259:          element.bytes = static_payload_byte_bound(statement.b);
+src/static_bounds.inc:261:            auto batch = static_batch_entry_bounds(statement.b);
+src/static_bounds.inc:265:          body.erase(statement.a);
+src/static_bounds.inc:266:          body_owners.erase(statement.a);
+src/static_bounds.inc:267:          if (element.bytes) body[statement.a] = element;
+src/static_bounds.inc:309:            body.erase(statement.a);
+src/static_bounds.inc:310:            auto old = incoming.find(statement.a);
+src/static_bounds.inc:311:            if (old != incoming.end()) body[statement.a] = old->second;
+src/static_bounds.inc:323:          tree_simple_identifier(statement.a)) {
+src/static_bounds.inc:325:        string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+src/static_bounds.inc:363:          tree_simple_identifier(statement.a);
+src/static_bounds.inc:364:      if (binding) mutated.erase(statement.a);
+src/static_bounds.inc:374:      if (new_fact) facts[statement.a] = std::move(*new_fact);
+src/static_bounds.inc:378:          tree_simple_identifier(statement.a)) {
+src/static_bounds.inc:379:        fileio_owners.erase(statement.a);
+src/static_bounds.inc:380:        if (is_direct_fileio_open_initializer(statement.b))
+src/static_bounds.inc:381:          fileio_owners.insert(statement.a);
+src/handler_lowering.inc:355:    o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
+src/file_chunk_lowering.inc:102:      if (tree_root_identifier(statement.a) == parameter)
+src/file_chunk_lowering.inc:110:         tree_identifier_named(statement.a, parameter)) ||
+src/file_chunk_codegen.inc:36:    if (tree_parse_fileio_open(s.b, open_arguments)) {
+src/file_chunk_codegen.inc:43:      o << pad << "let mut " << s.a << " = " << opened << ";\n";
+src/file_chunk_codegen.inc:44:      locals.insert(s.a);
+src/file_chunk_codegen.inc:45:      types[s.a] = "FileIO";
+src/file_chunk_codegen.inc:50:    if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+src/file_chunk_codegen.inc:60:      o << pad << "let " << s.a << " = " << read << ";\n";
+src/file_chunk_codegen.inc:61:      locals.insert(s.a);
+src/file_chunk_codegen.inc:62:      types[s.a] = "Range";
+src/file_chunk_codegen.inc:67:  if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
+src/file_chunk_codegen.inc:69:      s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc:70:  if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc:80:  if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc:90:  if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc:101:  if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc:109:  throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");
+src/fileio_semantics.inc:575:        fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc:644:            s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc:649:            canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+src/fileio_semantics.inc:652:          const auto batch_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc:654:            branch.range_origin[s.a] = {
+src/fileio_semantics.inc:669:        if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
+src/fileio_semantics.inc:675:        fileio_lifecycle_expression(s.line, s.b, flow);
+src/fileio_semantics.inc:676:        auto type = inferred_expr_type(s.b, flow.types);
+src/fileio_semantics.inc:678:            storage_location(s.b, flow.types))
+src/fileio_semantics.inc:682:          ++flow.batch_generation[s.a];
+src/fileio_semantics.inc:684:        const auto source_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc:686:            tree_parse_index(trim(s.b), source, offset) &&
+src/fileio_semantics.inc:691:            flow.range_origin[s.a] = {
+src/fileio_semantics.inc:694:            flow.range_origin.erase(s.a);
+src/fileio_semantics.inc:697:          flow.range_origin[s.a] = flow.range_origin[*source_binding];
+src/fileio_semantics.inc:698:        else flow.range_origin.erase(s.a);
+src/fileio_semantics.inc:701:            is_direct_fileio_open_initializer(s.b, &open_args)) {
+src/fileio_semantics.inc:702:          flow.types[s.a] = "FileIO";
+src/fileio_semantics.inc:703:          flow.local_owners.insert(s.a);
+src/fileio_semantics.inc:704:          flow.state[s.a] = 1;
+src/fileio_semantics.inc:708:            flow.mode[s.a] = trim(open_args[1]);
+src/fileio_semantics.inc:709:            if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc:710:            else flow.may_be_read_only.erase(s.a);
+src/fileio_semantics.inc:712:        } else if (type && tree_simple_identifier(s.a)) {
+src/fileio_semantics.inc:713:          flow.types[s.a] = *type;
+src/fileio_semantics.inc:720:        auto call_name = tree_identifier_name(s.a);
+src/fileio_semantics.inc:721:        if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+src/fileio_semantics.inc:731:        fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc:765:    source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc:836:      return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc:848:      if (statement.b.empty()) {
+src/fileio_semantics.inc:851:                statement.a, visited, env, statement.args))
+src/fileio_semantics.inc:852:          return *nested + " via " + statement.a;
+src/fileio_semantics.inc:855:      if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+src/fileio_semantics.inc:858:      if (fileio_operation_effect(statement.b) &&
+src/fileio_semantics.inc:859:          (statement.a == "FileIO" ||
+src/fileio_semantics.inc:860:           canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+src/fileio_semantics.inc:862:        return statement.b;
+src/fileio_semantics.inc:873:            ? statement.a : statement.b;
+src/fileio_semantics.inc:902:        auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc:903:        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc:963:        auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc:964:        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc:1006:            auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc:1007:            if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/executor_invoke_lowering.inc:53:  plan.binding = statement.a;
+src/executor_invoke_lowering.inc:149:  plan.executor_binding = statement.a;
+src/executor_invoke_lowering.inc:245:      target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc:280:    if (tree_parse_executor_chain(statement.b, calls)) {
+src/executor_invoke_lowering.inc:307:    if (!functional_pipeline_from_est(statement.b) &&
+src/executor_invoke_lowering.inc:308:        tree_parse_member_call(statement.b, receiver, method, arguments) &&
+src/executor_invoke_lowering.inc:311:      check_expression(statement.line, statement.b, env);
+src/executor_invoke_lowering.inc:323:    if (executor_typed(env, statement.a)) {
+src/executor_invoke_lowering.inc:324:      if (statement.b == "invoke") {
+src/executor_invoke_lowering.inc:328:      if (statement.b == "join") {
+src/executor_invoke_lowering.inc:335:          "unknown Executor operation '" + statement.b + "'",
+src/executor_invoke_lowering.inc:509:        tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
+src/executor_invoke_lowering.inc:519:      state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
+src/executor_invoke_lowering.inc:521:               (statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc:522:      auto found = state.find(statement.a);
+src/executor_invoke_lowering.inc:527:              "Executor '" + statement.a +
+src/executor_invoke_lowering.inc:531:            "Executor '" + statement.a + "' is not active here",
+src/executor_invoke_lowering.inc:534:      if (statement.b == "join")
+src/executor_invoke_lowering.inc:584:  s.a = "executor";
+src/executor_invoke_lowering.inc:585:  s.b = "invoke";
+src/executor_invoke_codegen.inc:31:                  "EXECUTOR '" + s.a + "' -- ExecutorStartPlan: configuration "
+src/executor_invoke_codegen.inc:45:        rust_string_literal("moss executor: invalid " + what + " for Executor '" + s.a +
+src/executor_invoke_codegen.inc:65:  o << pad << "let mut " << s.a << " = MossExecutor::new()";
+src/executor_invoke_codegen.inc:69:  locals.insert(s.a);
+src/executor_invoke_codegen.inc:70:  types[s.a] = "executor";
+src/executor_invoke_codegen.inc:93:  o << pad << "    " << s.a << ".enqueue_root(MossRootDescriptor::with_target(next_root_id(), "
+src/executor_invoke_codegen.inc:127:                  "EXECUTOR '" + s.a + "'.join() -- drains admitted roots, "
+src/executor_invoke_codegen.inc:129:  o << string(spaces, ' ') << s.a << ".join();\n";
+src/executor_invoke_codegen.inc:138:    if (!parse_executor_chain(s.b, calls) || calls.empty() ||
+src/executor_invoke_codegen.inc:150:  if (s.kind != Stmt::Kind::Call || !executor_typed(types, s.a)) return false;
+src/executor_invoke_codegen.inc:151:  if (s.b == "join") {
+src/executor_invoke_codegen.inc:155:  if (s.b != "invoke")
+src/executor_invoke_codegen.inc:156:    throw std::runtime_error("internal error: unchecked Executor operation '" + s.b + "'");
+src/semantic_checker.cpp:1674:            tree_parse_simple_call(trim(function.body.front().a), target_name,
+src/semantic_checker.cpp:1744:                tree_parse_member_call(trim(leaf.body.front().a), receiver,
+src/semantic_checker.cpp:4178:          tree_simple_identifier(source_statement.a) &&
+src/semantic_checker.cpp:4249:          !tree_simple_identifier(source_statement.a)) continue;
+src/semantic_checker.cpp:5130:          if (tree_simple_identifier(source.a) &&
+src/semantic_checker.cpp:5156:          if (!tree_simple_identifier(source.a)) {
+src/semantic_checker.cpp:5415:          if (source.a.empty()) return std::nullopt;
+src/semantic_checker.cpp:5763:        expression = function.body[0].a;
+src/semantic_checker.cpp:6133:          tree_plain_identifier(trim(function.body.back().a)) &&
+src/semantic_checker.cpp:6137:          tree_expressions_structurally_equal(function.body.front().a, function.body.back().a) &&
+src/semantic_checker.cpp:6139:        local_result = std::make_pair(trim(function.body.front().b),
+src/semantic_checker.cpp:6145:        if (tree_parse_simple_call(trim(function.body.front().a), target, arguments)) {
+src/semantic_checker.cpp:6156:            local_result = std::make_pair(trim(function.body.front().a),
+src/semantic_checker.cpp:6336:                ? &function.body.back().a : nullptr;
+src/semantic_checker.cpp:6366:                  ? &function.body.back().a : nullptr;
+src/semantic_checker.cpp:6426:              ? &function.body.front().a : nullptr;
+src/semantic_checker.cpp:9299:          if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+src/semantic_checker.cpp:9300:            auto result = inferred_expr_type(s.a, inferred_env);
+src/semantic_checker.cpp:9325:              return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp:9905:          if (stmt.a == name) {
+src/semantic_checker.cpp:9915:              moss::est::incomplete_expression_syntax(statement.b);
+src/semantic_checker.cpp:9976:      auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp:9978:      if (!tree_plain_identifier(statement.a)) continue;
+src/semantic_checker.cpp:9979:      if (by_binding.count(statement.a))
+src/semantic_checker.cpp:9980:        fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+src/semantic_checker.cpp:9983:      instance.binding = statement.a;
+src/semantic_checker.cpp:9984:      instance.identity = "main::" + statement.a;
+src/semantic_checker.cpp:9991:            specialization.instance == statement.a) {
+src/semantic_checker.cpp:10000:        concrete.instance = statement.a;
+src/semantic_checker.cpp:10019:      by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+src/semantic_checker.cpp:10020:      binding_types[statement.a] = domain.name;
+src/semantic_checker.cpp:10025:      auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp:10026:      if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp:10032:              statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
+src/semantic_checker.cpp:10039:        if (!by_binding.count(statement.a))
+src/semantic_checker.cpp:10044:        if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
+src/semantic_checker.cpp:10052:        auto supplied = parse_bindings(statement.b);
+src/semantic_checker.cpp:10073:            edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
+src/semantic_checker.cpp:10121:      if (statement.indent > 0 && domain_constructor(statement.b))
+src/semantic_checker.cpp:10287:        return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp:10752:        if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
+src/semantic_checker.cpp:12290:        if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+src/semantic_checker.cpp:12291:            !include_result(statement.a))
+src/semantic_checker.cpp:12622:      if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp:12623:        auto existing = env.find(statement.a);
+src/semantic_checker.cpp:12627:        } else if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp:12628:          env[statement.a] = *constructed;
+src/semantic_checker.cpp:12629:        } else if (auto inferred = inferred_expr_type(statement.b, env)) {
+src/semantic_checker.cpp:12634:              ? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp:12639:            env[statement.a] = binding;
+src/semantic_checker.cpp:12646:              auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp:12656:              env[statement.a] = cinf;
+src/semantic_checker.cpp:12660:          env[statement.a] = "_value";
+src/semantic_checker.cpp:12663:          const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+src/semantic_checker.cpp:12666:        if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp:12675:                if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp:12680:                        0, prior.b, join_context,
+src/semantic_checker.cpp:12686:          auto value_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp:12696:                    if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp:12701:                            0, prior.b, join_context, *refined);
+src/semantic_checker.cpp:12717:      auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:12721:          if (const Handler* handler = find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp:12732:    if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+src/semantic_checker.cpp:12733:        (statement.b == "push" ||
+src/semantic_checker.cpp:12734:         (staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp:12736:      auto container = env.find(statement.a);
+src/semantic_checker.cpp:12738:          ? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp:12744:            if (prior.a == statement.a &&
+src/semantic_checker.cpp:12745:                (tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp:12746:                 tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp:12747:                 (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp:12748:                 tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp:12756:                    prior.b, join_context, canonical_type_name(retained));
+src/semantic_checker.cpp:12768:              if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp:12769:                  (tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp:12770:                   tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp:12771:                   (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp:12772:                   tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp:12780:                      prior.b, join_context, *refined);
+src/semantic_checker.cpp:12816:        auto scrutinee_type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp:12820:            (!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp:12829:              deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+src/semantic_checker.cpp:13018:                    candidate.a != name ||
+src/semantic_checker.cpp:13128:            statement.line, statement.b, incoming).value_or("_value");
+src/semantic_checker.cpp:13129:        body_env[statement.a] = element_type;
+src/semantic_checker.cpp:13134:            body_env.terms[statement.a] = binding->second;
+src/semantic_checker.cpp:13144:            auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp:13147:            scoped_types->scoped_locals[statement.a] = binding->second;
+src/semantic_checker.cpp:13154:          if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+src/semantic_checker.cpp:13155:          else scoped_types->scoped_locals.erase(statement.a);
+src/semantic_checker.cpp:13160:        if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp:13161:          body_env[statement.a] = shadowed->second;
+src/semantic_checker.cpp:13163:          body_env.erase(statement.a);
+src/semantic_checker.cpp:13164:        if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp:13166:          body_env.terms[statement.a] = shadowed->second;
+src/semantic_checker.cpp:13168:          body_env.terms.erase(statement.a);
+src/semantic_checker.cpp:13186:          tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp:13188:          env.terms[statement.a] = term;
+src/semantic_checker.cpp:13191:          !statement.b.empty()) {
+src/semantic_checker.cpp:13192:        if (auto receiver = inferred_expr_type(statement.a, env)) {
+src/semantic_checker.cpp:13195:              statement.a, join_context, canonical_type_name(*receiver));
+src/semantic_checker.cpp:13203:            ? statement.b : statement.text;
+src/semantic_checker.cpp:13705:        auto scrutinee_type = inferred_expr_type(statement.a, scan);
+src/semantic_checker.cpp:13724:              [&](const EnumCase& c) { return c.name == statement.a; });
+src/semantic_checker.cpp:13765:        constrain_map_lookup(statement.line, statement.b);
+src/semantic_checker.cpp:13768:        constrain_map_lookup(statement.line, statement.a);
+src/semantic_checker.cpp:13774:        if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp:13777:        } else if (auto source = term_for(statement.b)) {
+src/semantic_checker.cpp:13792:              statement.line, statement.b, scan).value_or("_value");
+src/semantic_checker.cpp:13805:              current_semantic_context_, statement.line) + ":" + statement.a;
+src/semantic_checker.cpp:13810:          locals[statement.a] = loop_term;
+src/semantic_checker.cpp:13812:          scan[statement.a] = resolved->is_closed()
+src/semantic_checker.cpp:13814:              : "_iterator_element:" + statement.a;
+src/semantic_checker.cpp:13816:          locals.erase(statement.a);
+src/semantic_checker.cpp:13817:          scan[statement.a] = "_value";
+src/semantic_checker.cpp:13821:      if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp:13822:        string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp:13828:        auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp:13832:            : find_handler(*domain->second, statement.b);
+src/semantic_checker.cpp:13868:          tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp:13869:        if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp:13870:          scan[statement.a] = *constructed;
+src/semantic_checker.cpp:13873:        auto inferred = inferred_expr_type(statement.b, scan);
+src/semantic_checker.cpp:13874:        constrain_call(statement.line, statement.b);
+src/semantic_checker.cpp:13875:        auto instantiated = instantiate_summary(statement.line, statement.b,
+src/semantic_checker.cpp:13877:        body_types.provider_origins.erase(statement.a);
+src/semantic_checker.cpp:13880:        if (tree_parse_simple_call(trim(statement.b), assigned_callee,
+src/semantic_checker.cpp:13887:            body_types.provider_origins.emplace(statement.a,
+src/semantic_checker.cpp:13897:        auto retained_source = body_types.known_expression(statement.b);
+src/semantic_checker.cpp:13902:          scan[statement.a] = *inferred;
+src/semantic_checker.cpp:13905:        auto prior = locals.find(statement.a);
+src/semantic_checker.cpp:13910:          scan[statement.a] = *inferred;
+src/semantic_checker.cpp:13922:              statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp:13924:          locals.emplace(statement.a, term);
+src/semantic_checker.cpp:13927:        scan[statement.a] = prior_open || !term->is_closed()
+src/semantic_checker.cpp:13928:            ? solver.resolve(locals.at(statement.a))->to_canonical_string()
+src/semantic_checker.cpp:13931:                 (statement.b == "push" ||
+src/semantic_checker.cpp:13932:                  (staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp:13934:        auto local = locals.find(statement.a);
+src/semantic_checker.cpp:13952:          const string message = statement.b +
+src/semantic_checker.cpp:13954:              statement.a + "'";
+src/semantic_checker.cpp:13955:          auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp:13970:        scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+src/semantic_checker.cpp:13972:                 tree_index_expression(statement.a)) {
+src/semantic_checker.cpp:13974:        if (!tree_parse_index(statement.a, base, index)) continue;
+src/semantic_checker.cpp:13977:        auto value = term_for(statement.b);
+src/semantic_checker.cpp:14017:                 tree_member_access(statement.a)) {
+src/semantic_checker.cpp:14018:        auto field = body_types.known_expression(statement.a);
+src/semantic_checker.cpp:14019:        auto rhs = term_for(statement.b);
+src/semantic_checker.cpp:14024:              statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp:14070:          if (closed.size() == 1 && !checked_statement.b.empty()) {
+src/semantic_checker.cpp:14078:                est::ExprSlot::RhsValue, 0, checked_statement.b,
+src/semantic_checker.cpp:14111:            est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+src/semantic_checker.cpp:14155:          constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp:14160:          constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp:14165:          constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp:14172:            const string& receiver_name = statement.a;
+src/semantic_checker.cpp:14173:            const string& handler_name = statement.b;
+src/semantic_checker.cpp:14211:          if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp:14212:              executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp:14235:          if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp:14236:            auto function = functions_.find(statement.a);
+src/semantic_checker.cpp:14264:          if (!statement.a.empty())
+src/semantic_checker.cpp:14265:            constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp:14462:      if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp:14465:          bindings[statement.a] = domain->second;
+src/semantic_checker.cpp:14466:          main_env[statement.a] = domain->second->name;
+src/semantic_checker.cpp:14479:            find_specialization(statement.a, domain->second->name);
+src/semantic_checker.cpp:14488:      if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp:14489:          statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp:14490:          tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp:14500:        const string& receiver = statement.a;
+src/semantic_checker.cpp:14504:          const string& handler_name = statement.b;
+src/semantic_checker.cpp:14621:              if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+src/semantic_checker.cpp:14806:            auto actual = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp:14809:            if (auto retained = body_types.known_expression(statement.a)) {
+src/semantic_checker.cpp:15146:            if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
+src/semantic_checker.cpp:15171:        reject_untyped_fields(statement.line, statement.a, env);
+src/semantic_checker.cpp:15172:        reject_untyped_fields(statement.line, statement.b, env);
+src/semantic_checker.cpp:15194:                    tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp:15261:        for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp:15274:            if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
+src/semantic_checker.cpp:15286:        derive_expression_constraints(function, s.a);
+src/semantic_checker.cpp:15287:        derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp:15290:          derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp:15291:        if (s.kind == Stmt::Kind::Return && !s.a.empty())
+src/semantic_checker.cpp:15292:          derive_expression_constraints(function, s.a, result_expectation());
+src/semantic_checker.cpp:15299:            tree_plain_identifier(statement.a))
+src/semantic_checker.cpp:15300:          local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp:15302:          const auto returned_binding = tree_identifier_name(statement.a);
+src/semantic_checker.cpp:15465:          if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+src/semantic_checker.cpp:15476:            include_typed_result(statement.line, statement.a, eval_env);
+src/semantic_checker.cpp:15516:            if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+src/semantic_checker.cpp:15517:            auto result = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp:15643:                      tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp:15671:              return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp:16244:        observable_expression_effects(branch.a, condition_env, domain_fields);
+src/semantic_checker.cpp:16285:            names.insert(statement.a);
+src/semantic_checker.cpp:16286:          else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+src/semantic_checker.cpp:16287:            names.insert(statement.a);
+src/semantic_checker.cpp:16300:          if (expression_uses(statement.a, name) ||
+src/semantic_checker.cpp:16301:              expression_uses(statement.b, name) ||
+src/semantic_checker.cpp:16330:        domain, source, branch.a, &specialization);
+src/semantic_checker.cpp:16420:        if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp:16421:          env[statement.a] = *type;
+src/semantic_checker.cpp:16479:            ? statement.b : statement.a;
+src/semantic_checker.cpp:16554:                domain, source, statement.b, &specialization, &locals));
+src/semantic_checker.cpp:16572:        if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp:16573:          locals[statement.a] = *type;
+src/semantic_checker.cpp:17193:        result.a = *function.result_expression;
+src/semantic_checker.cpp:17267:          forwarded.a = nested_name;
+src/semantic_checker.cpp:18344:        analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp:18346:                                  statement.b == "consume" ? Effect::Consume : Effect::Read);
+src/semantic_checker.cpp:18347:        auto type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp:18426:          auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp:18434:                                      ? statement.b : statement.a,
+src/semantic_checker.cpp:18446:          if (inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp:18447:            child_env[statement.a] =
+src/semantic_checker.cpp:18448:                iterator_element_type(statement.line, statement.b, env)
+src/semantic_checker.cpp:18451:            child_env[statement.a] = "_value";
+src/semantic_checker.cpp:18455:            !copy_type(child_env.at(statement.a))) {
+src/semantic_checker.cpp:18456:          if (auto location = storage_location(statement.b, env)) {
+src/semantic_checker.cpp:18459:            leaf_effect_capture_->aliases[statement.a] = *location;
+src/semantic_checker.cpp:18479:          auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp:18480:          if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp:18482:            analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp:18485:            analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp:18487:          if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp:18488:          else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp:18489:          else env[statement.a] = "_value";
+src/semantic_checker.cpp:18495:          if (tree_parse_index(statement.a, base, ignored))
+src/semantic_checker.cpp:18496:            analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp:18499:            if (tree_member_access(statement.a))
+src/semantic_checker.cpp:18500:              analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp:18503:            else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp:18504:              mark_effect_name(statement.a, Effect::Write, params, env,
+src/semantic_checker.cpp:18507:          auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp:18508:          if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp:18510:            analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp:18513:            analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp:18515:          if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp:18516:          refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp:18521:          if (!statement.b.empty())
+src/semantic_checker.cpp:18525:            analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp:18531:          analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp:18543:            auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:18545:            auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
+src/semantic_checker.cpp:18554:          analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp:18565:          if (!statement.a.empty())
+src/semantic_checker.cpp:18566:            analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp:18571:          if (!statement.a.empty())
+src/semantic_checker.cpp:18572:            analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp:18980:        expressions.push_back(statement.b);
+src/semantic_checker.cpp:18983:        expressions.push_back(statement.a);
+src/semantic_checker.cpp:18984:        expressions.push_back(statement.b);
+src/semantic_checker.cpp:18989:            : !statement.b.empty()
+src/semantic_checker.cpp:18990:                ? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp:18991:                : statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp:19002:        expressions.push_back(statement.a);
+src/semantic_checker.cpp:19007:        expressions.push_back(statement.b);
+src/semantic_checker.cpp:19012:        if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp:19035:        expressions.push_back(statement.b);
+src/semantic_checker.cpp:19046:        expressions.push_back(statement.a);
+src/semantic_checker.cpp:19051:        expressions.push_back(statement.b);
+src/semantic_checker.cpp:19056:        if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp:19137:        auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:19142:              ? nullptr : find_handler(*declared->second, statement.b);
+src/semantic_checker.cpp:19149:                source, "handler:" + domain + "." + statement.b,
+src/semantic_checker.cpp:19153:                "synchronous_message", statement.a, {}, {}};
+src/semantic_checker.cpp:19809:        if (statement.a.empty()) {
+src/semantic_checker.cpp:19816:              statement.line, statement.a, env);
+src/semantic_checker.cpp:19818:              statement.a == selected_binding) {
+src/semantic_checker.cpp:19828:              statement.a, env, {}, nullptr, {}, nullptr,
+src/semantic_checker.cpp:19843:            ? statement.b : statement.a;
+src/semantic_checker.cpp:19880:        auto receiver = env.find(statement.a);
+src/semantic_checker.cpp:19884:                  find_handler(*domains_.at(receiver_type), statement.b)) {
+src/semantic_checker.cpp:19905:        if (statement.a == selected_binding) selected_binding.clear();
+src/semantic_checker.cpp:19906:        if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp:19907:          env[statement.a] = *type;
+src/semantic_checker.cpp:19961:        const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp:19966:                  find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp:19972:        const auto type = inferred_expr_type(statement.a, current);
+src/semantic_checker.cpp:20004:      if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp:20005:      auto type = inferred_expr_type(statement.b, current);
+src/semantic_checker.cpp:20007:      auto [item, inserted] = candidates.emplace(statement.a, *type);
+src/semantic_checker.cpp:20023:            tree_plain_identifier(expression) && expression == statement.a)
+src/semantic_checker.cpp:20792:    string condition = trim(while_stmt.a);
+src/semantic_checker.cpp:20834:        auto root = tree_root_identifier(s.a);
+src/semantic_checker.cpp:20838:          if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
+src/semantic_checker.cpp:20841:            auto add = tree_split_binary(trim(s.b), {"+"});
+src/semantic_checker.cpp:20852:            auto sub = tree_split_binary(trim(s.b), {"-"});
+src/semantic_checker.cpp:20862:        const auto target = tree_identifier_name(s.a);
+src/semantic_checker.cpp:20866:      } else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+src/semantic_checker.cpp:20867:        const auto root = tree_identifier_name(s.a);
+src/semantic_checker.cpp:20868:        bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp:20898:    if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
+src/semantic_checker.cpp:20917:    const string induction = trim(loop.a);
+src/semantic_checker.cpp:20924:        const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp:20929:          (tree_identifier_named(statement.a, range_binding) ||
+src/semantic_checker.cpp:20930:           tree_identifier_named(statement.a, induction)))
+src/semantic_checker.cpp:20963:        if (auto type = inferred_expr_type(body[index].b, env))
+src/semantic_checker.cpp:20964:          env[body[index].a] = *type;
+src/semantic_checker.cpp:20992:        string iter_expr = trim(statement.b);
+src/semantic_checker.cpp:21023:        const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp:21034:      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+src/semantic_checker.cpp:21035:        const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp:21036:        bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp:21037:        if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp:21059:        if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp:21060:          env[statement.a] = *type;
+src/semantic_checker.cpp:21255:        if (auto domain = domain_constructor(statement.b))
+src/semantic_checker.cpp:21256:          env[statement.a] = *domain;
+src/semantic_checker.cpp:22563:      alternatives = statement.a.empty()
+src/semantic_checker.cpp:22565:          : phase21_raised_identities(statement.line, statement.a, types);
+src/semantic_checker.cpp:22567:      auto receiver = types.find(statement.a);
+src/semantic_checker.cpp:22572:                  find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp:22641:        auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp:22644:        bool consuming = s.b == "consume";
+src/semantic_checker.cpp:22646:          if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp:22650:          if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp:22651:            require_available(s.line, s.a, env);
+src/semantic_checker.cpp:22652:            consume_binding(s.line, s.a, env, "consuming match");
+src/semantic_checker.cpp:22654:            check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp:22657:          check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp:22660:        bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+src/semantic_checker.cpp:22661:        bool prior_read = env.active_read_traversals.count(s.a);
+src/semantic_checker.cpp:22676:          if (read_place) branch.active_read_traversals.insert(s.a);
+src/semantic_checker.cpp:22689:              branch.borrowed_enum_payloads[name] = s.a;
+src/semantic_checker.cpp:22708:          if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+src/semantic_checker.cpp:22845:        check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp:22892:        auto element = iterator_element_type(s.line, s.b, env.types);
+src/semantic_checker.cpp:22894:        if (auto location = storage_location(s.b, env.types))
+src/semantic_checker.cpp:22897:        auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp:22903:        check_ownership_expression(s.line, s.b, env, source_effect);
+src/semantic_checker.cpp:22906:        body.types[s.a] = element.value_or("_value");
+src/semantic_checker.cpp:22907:        body.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp:22914:        body.types.erase(s.a);
+src/semantic_checker.cpp:22915:        if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp:22917:          body.binding_identities[s.a] = prior->second;
+src/semantic_checker.cpp:22919:          body.binding_identities.erase(s.a);
+src/semantic_checker.cpp:22920:        body.moved.erase(s.a);
+src/semantic_checker.cpp:22943:          string source = trim(s.b);
+src/semantic_checker.cpp:22944:          auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp:22947:              storage_location(s.b, env.types))
+src/semantic_checker.cpp:22950:          bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp:22956:              consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp:22958:              check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp:22961:            check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp:22965:          if (auto constructed = domain_constructor(s.b)) type = *constructed;
+src/semantic_checker.cpp:22966:          else type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp:22977:          env.types[s.a] = type.value_or("_value");
+src/semantic_checker.cpp:22978:          env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp:22980:          if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+src/semantic_checker.cpp:22981:          else env.immutable_locals.erase(s.a);
+src/semantic_checker.cpp:22982:          env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+src/semantic_checker.cpp:22986:            fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp:22987:            fact.identity = env.binding_identities[s.a];
+src/semantic_checker.cpp:22995:          const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+src/semantic_checker.cpp:22996:          const bool targets_state_field = env.state_fields.count(s.a) != 0;
+src/semantic_checker.cpp:22997:          auto prior_type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp:22998:          auto new_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp:22999:          bool existing_owner = env.binding_identities.count(s.a) ||
+src/semantic_checker.cpp:23000:              env.state_fields.count(s.a);
+src/semantic_checker.cpp:23004:               !tree_is_fileio_open(s.b) &&
+src/semantic_checker.cpp:23005:               storage_location(s.b, env.types)))
+src/semantic_checker.cpp:23009:          if (tree_parse_index(s.a, lhs_base, lhs_index))
+src/semantic_checker.cpp:23010:            check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp:23012:            if (tree_member_access(s.a))
+src/semantic_checker.cpp:23013:              check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp:23014:            else if (tree_simple_identifier(s.a))
+src/semantic_checker.cpp:23015:              check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp:23017:          string source = trim(s.b);
+src/semantic_checker.cpp:23018:          auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp:23019:          bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp:23025:              consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp:23027:              check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp:23030:            check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp:23033:          if (auto constructed = domain_constructor(s.b)) {
+src/semantic_checker.cpp:23034:            env.types[s.a] = *constructed;
+src/semantic_checker.cpp:23035:            env.moved.erase(s.a);
+src/semantic_checker.cpp:23039:          if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp:23044:              env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+src/semantic_checker.cpp:23048:            else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp:23051:            if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp:23052:              env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp:23056:            env.moved.erase(s.a);
+src/semantic_checker.cpp:23060:              fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp:23061:              auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp:23065:                  current_semantic_context_, s.line) + ":" + s.a;
+src/semantic_checker.cpp:23070:          refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp:23076:          check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp:23077:          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp:23089:                           message_payload_materializes(s.a, env));
+src/semantic_checker.cpp:23114:          if (!s.b.empty())
+src/semantic_checker.cpp:23117:            check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp:23123:          if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp:23124:            auto container = env.types.find(s.a);
+src/semantic_checker.cpp:23126:                ? current_body_types_->resolved_local(s.a) : nullptr;
+src/semantic_checker.cpp:23141:          auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp:23145:          check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp:23148:            require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+src/semantic_checker.cpp:23165:          if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp:23171:          if (!s.a.empty())
+src/semantic_checker.cpp:23172:            check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp:24634:            statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp:24641:          direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp:24677:            if (requirements.size() == 1 && !statement.b.empty()) {
+src/semantic_checker.cpp:24685:                  est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp:24688:                  est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp:24728:            tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp:24735:              0, statement.b, current_check_body_context_,
+src/semantic_checker.cpp:27974:    synthetic_return.a = expression;
+src/semantic_checker.cpp:28232:        if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp:28238:                          return route.name == statement.a;
+src/semantic_checker.cpp:28240:          err(statement.line, "domain route '" + statement.a +
+src/semantic_checker.cpp:28242:        if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp:28250:        auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp:28252:          err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp:28253:        for (const auto& binding : functional_captures(statement.a, current_env))
+src/semantic_checker.cpp:28257:        FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
+src/semantic_checker.cpp:28258:        check_expression(statement.line, statement.b, current_env,
+src/semantic_checker.cpp:28261:            tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp:28262:          auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28263:          if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp:28267:            tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp:28268:          const auto prior_type = current_env.at(statement.a);
+src/semantic_checker.cpp:28269:          auto new_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28276:                "assignment to binding '" + statement.a + "' of type '" +
+src/semantic_checker.cpp:28282:          if (tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp:28283:            if (!current_env.count(statement.a)) {
+src/semantic_checker.cpp:28284:              auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28285:              if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp:28288:              auto bound_type = current_env.at(statement.a);
+src/semantic_checker.cpp:28289:              auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28290:              auto bound_term = checked_types.resolved_local(statement.a);
+src/semantic_checker.cpp:28293:                rhs_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp:28304:                    canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+src/semantic_checker.cpp:28310:            if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp:28319:              auto value_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28325:                  value_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp:28360:              check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp:28370:                  auto element_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp:28371:                  auto element_term = checked_term(statement.a, element_type);
+src/semantic_checker.cpp:28372:                  auto value_term = checked_term(statement.b, value_type);
+src/semantic_checker.cpp:28399:              if (tree_member_access(statement.a)) {
+src/semantic_checker.cpp:28400:                auto field_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp:28401:                auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp:28402:                auto field_term = checked_term(statement.a, field_type);
+src/semantic_checker.cpp:28404:                if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+src/semantic_checker.cpp:28412:                      statement.a + "' of type '" +
+src/semantic_checker.cpp:28424:        check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp:28430:        if (!statement.a.empty())
+src/semantic_checker.cpp:28431:          check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp:28437:        auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp:28439:          err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp:28440:        check_for_source(statement.line, statement.b, current_env,
+src/semantic_checker.cpp:28460:            statement.line, statement.a, current_env);
+src/semantic_checker.cpp:28462:            statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp:28465:            statement.line, statement.a, *target, current_env);
+src/semantic_checker.cpp:28472:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28477:                "handler '" + current->name + "." + statement.b +
+src/semantic_checker.cpp:28484:                 {"domain-instance", statement.a,
+src/semantic_checker.cpp:28485:                  domain_instance_semantic_identity(statement.a, current->name),
+src/semantic_checker.cpp:28486:                  statement.a, {}, 0},
+src/semantic_checker.cpp:28487:                 {"handler", current->name + "." + statement.b,
+src/semantic_checker.cpp:28522:            statement.b.empty()) {
+src/semantic_checker.cpp:28525:              statement.b.empty()
+src/semantic_checker.cpp:28528:              statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp:28545:        if (!statement.b.empty()) {
+src/semantic_checker.cpp:28546:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28549:              : inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp:28554:                statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp:28558:                "domain handler '" + domain + "." + statement.b +
+src/semantic_checker.cpp:28563:                {{"domain-instance", statement.a,
+src/semantic_checker.cpp:28564:                  domain_instance_semantic_identity(statement.a, domain),
+src/semantic_checker.cpp:28565:                  statement.a, {}, 0},
+src/semantic_checker.cpp:28566:                 {"handler", domain + "." + statement.b,
+src/semantic_checker.cpp:28570:                "write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp:28588:                  canonical_type_name(*receiver_type), statement.b,
+src/semantic_checker.cpp:28593:                    statement.b + "' for supplied arguments");
+src/semantic_checker.cpp:28601:                           constraint.subject == statement.a &&
+src/semantic_checker.cpp:28602:                           constraint.detail == statement.b &&
+src/semantic_checker.cpp:28607:                    statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp:28614:          const bool delayed_assert_check = statement.a == "assert" &&
+src/semantic_checker.cpp:28615:              !functions_.count(statement.a);
+src/semantic_checker.cpp:28617:            check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp:28630:              auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp:28634:                    "binding:pending:" + statement.a);
+src/semantic_checker.cpp:28637:                    call_occurrence_id, "builtin:" + statement.a);
+src/semantic_checker.cpp:28640:                  statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp:28645:        if (!statement.b.empty()) {
+src/semantic_checker.cpp:28659:        const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp:28660:            !functions_.count(statement.a);
+src/semantic_checker.cpp:28680:            const auto occurrence_slot = statement.b.empty()
+src/semantic_checker.cpp:28690:                     statement.b.empty()) {
+src/semantic_checker.cpp:28696:        if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp:28697:            !functions_.count(statement.a))
+src/semantic_checker.cpp:28698:          check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp:28702:          auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp:28707:          const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
+src/semantic_checker.cpp:28792:        check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp:28794:        auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp:28795:        if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+src/semantic_checker.cpp:28808:              "cannot infer the type of reply expression '" + statement.a + "'",
+src/semantic_checker.cpp:28812:              {{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp:28821:            statement.a, *actual, *current_handler->reply_type);
+src/semantic_checker.cpp:28830:          !statement.a.empty())
+src/semantic_checker.cpp:28833:          !current_function && !statement.a.empty())
+src/semantic_checker.cpp:28836:          !statement.a.empty()) {
+src/semantic_checker.cpp:28846:        check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp:28848:        auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp:28854:              {"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp:28862:              "cannot infer the type of return expression '" + statement.a +
+src/semantic_checker.cpp:28886:              !checked_types.known_expression(statement.a) &&
+src/semantic_checker.cpp:28888:            !checked_result_matches(statement.a, *actual,
+src/semantic_checker.cpp:29380:                prior.a == name) {
+src/semantic_checker.cpp:30859:          if (!tree_simple_identifier(statement.a))
+src/semantic_checker.cpp:30873:            if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp:30901:            if (!statement.b.empty()) {
+src/semantic_checker.cpp:30911:              const string role = statement.b.empty()
+src/semantic_checker.cpp:30930:          if (statement.a.empty()) {
+src/semantic_checker.cpp:30949:          if (!statement.a.empty()) require_root(statement, "reply-value");
+src/semantic_checker.cpp:30952:          if (!statement.a.empty()) require_root(statement, "return-value");

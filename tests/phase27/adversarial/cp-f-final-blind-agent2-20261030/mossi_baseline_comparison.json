@@ -1,0 +1,34 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/phase27-mossi-baseline/1793423234329994784/active-moss",
+    "moss_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/phase27-mossi-baseline/1793423234329994784/active-moss",
+    "moss_sha256": "33a002c0b10c3d0623d4c413f53c62d78e70690b7b5faf7d3408801f56d98e01",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "0060f52c1e82f2c38dd402fdd19f9aa0197a7505732d75383f02a437a8491415",
+      "baseline_raw_sha256": "bd4e6b97943d9ac462bd1c0dc15bd3f851cd4d2d8a4e7996ee05000d168edbf1",
+      "candidate_raw_sha256": "9198dbd32f131131e7728e3273a02b9627d2291ab0a6a7400ed0929f754bf469",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "3ee2dd8fb1666fa9b9a2625d421205daa40b2f0266582e737ee263de7393072a",
+      "recomputed_execution_body_hash": "0060f52c1e82f2c38dd402fdd19f9aa0197a7505732d75383f02a437a8491415"
+    },
+    "library": {
+      "baseline_execution_body_hash": "810434c46582e5c81dce99f1ab883e4897a8c849c0e4c68b6c914898375191b2",
+      "baseline_raw_sha256": "ce995dd1216e1609b3ad525ede006f619dffc77fe2725eb1a283789cc7624129",
+      "candidate_raw_sha256": "3640abb3a39141df8172c208fa501ca0229b6ec66264bc63fe021bba0b0ae220",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "548d69a992c5dab4cb18c1e40e125136f8b8b6e72d5db2d819e622ef04470190",
+      "recomputed_execution_body_hash": "810434c46582e5c81dce99f1ab883e4897a8c849c0e4c68b6c914898375191b2"
+    }
+  }
+}

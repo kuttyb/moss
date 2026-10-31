@@ -1,0 +1,5 @@
+fa728379ef7d87065eabaf254bd30526b0b13b4d5c1b5d94f3c6c851440bc533  tests/phase27/adversarial/cp-e-numeric-members-final/audit_corpus.py
+0233071241be7fc101da4c190c676d7d64a27c8c11dc2b79715503a1a79a8d20  tests/phase27/adversarial/cp-e-numeric-members-final/corpus_differential.json
+8047dd28684eafb4034fc2f142d9552f2b7e75c8f995ff9cdab7b5fa28fd3394  tests/phase27/adversarial/cp-e-numeric-members-final/lint_inventory_probe.py
+4d4b7601c1089b681d85a6816ec07fad3f8efbdf887fec915946eee5a101daa4  tests/phase27/adversarial/cp-e-numeric-members-final/reader_lint_checks.json
+f158cc6ed72395d54574c7c3045b4933948cd43164ecf2c683fcf6be2586b2eb  tests/phase27/adversarial/cp-e-numeric-members-final/review_summary.json

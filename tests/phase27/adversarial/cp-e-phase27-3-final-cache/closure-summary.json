@@ -1,0 +1,160 @@
+{
+  "baseline": {
+    "accepted_sources": 1394,
+    "declarations_by_kind": {
+      "benchmark": 24,
+      "domain": 366,
+      "enum": 139,
+      "enum_case": 484,
+      "function": 2275,
+      "handler": 616,
+      "main": 1017,
+      "method": 1139,
+      "module": 600,
+      "test": 401,
+      "trait": 34,
+      "type": 1030
+    },
+    "distinct_source_declarations": 8125,
+    "rejected_sources": 724,
+    "source_count": 2118
+  },
+  "baseline_symbol_query_exclusions": [
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/calc_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/env_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/eval_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/report_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/token_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/src/inventory.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/src/table.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/inventory_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/stats_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/table_test.moss",
+      "symbols_ok": false
+    }
+  ],
+  "candidate": {
+    "accepted_sources": 1406,
+    "declarations_by_kind": {
+      "benchmark": 24,
+      "domain": 371,
+      "enum": 142,
+      "enum_case": 491,
+      "function": 2290,
+      "handler": 621,
+      "main": 1028,
+      "method": 1139,
+      "module": 601,
+      "test": 401,
+      "trait": 34,
+      "type": 1031
+    },
+    "distinct_source_declarations": 8173,
+    "rejected_sources": 735,
+    "source_count": 2141
+  },
+  "candidate_symbol_query_exclusions": [
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/calc_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/env_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/eval_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/report_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "file": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/token_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/src/inventory.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/src/table.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/inventory_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/stats_test.moss",
+      "symbols_ok": false
+    },
+    {
+      "error": "UNSUPPORTED_STRING_ORDERING",
+      "file": "examples/swarm/modules/text_toolkit/toolkit/tests/table_test.moss",
+      "symbols_ok": false
+    }
+  ],
+  "changed_context_paths": [],
+  "common_accepted_source_contexts": 1394,
+  "common_declaration_contexts_changed": 0,
+  "exclusion_class": "Symbols API uses project-aware src/tests context for these paths; corpus_verdicts invokes moss check directly on each file. These 11 paths produce the same project-context diagnostic in baseline and candidate and are excluded from accepted-declaration closure census."
+}

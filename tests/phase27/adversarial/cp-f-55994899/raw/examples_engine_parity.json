@@ -1,0 +1,5635 @@
+{
+  "candidate_revision": "55994899539532c763d6489b16b859f419b12205",
+  "comparison": "baseline Fast Debug off, candidate Fast Debug shadow, baseline/candidate Rust default and -O, rustc default and -O",
+  "entries": [
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/checkout.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/checkout.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "charged: 75\norder completed\norder rejected: insufficient inventory\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/checkout.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/collections.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/collections.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "1\n180.5\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "1\n180.5\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "1\n180.5\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/collections.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/collections_and_methods.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/collections_and_methods.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "lead code: 106 12\ntest score: 12\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "lead code: 106 12\ntest score: 12\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "lead code: 106 12\ntest score: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/collections_and_methods.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/counter.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/counter.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "counter: 41\ncounter: 42\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "counter: 41\ncounter: 42\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "counter: 41\ncounter: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/counter.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/dogfood_index.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/dogfood_index.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "40 780\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "40 780\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "40 780\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/dogfood_index.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/dogfood_pipeline.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/dogfood_pipeline.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "46 3\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "46 3\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "46 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/dogfood_pipeline.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/domain_typing.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/domain_typing.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "total: 7\ntotal: 12\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "total: 7\ntotal: 12\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "total: 7\ntotal: 12\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/domain_typing.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/domains_and_messages.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/domains_and_messages.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "worker: 10\ncurrent: 10\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "worker: 10\ncurrent: 10\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "worker: 10\ncurrent: 10\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/domains_and_messages.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_basics.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_basics.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "transformed: 14 18\nsource still available: -3 4\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_basics.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_dataflow.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_dataflow.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "pipeline total: 42\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "pipeline total: 42\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "pipeline total: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_dataflow.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_domains.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_domains.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "domain-backed total: 14\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "domain-backed total: 14\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "domain-backed total: 14\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_domains.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_effect_order.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_effect_order.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_effect_order.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_materialization.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_materialization.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "materialized and shared: 12 3\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "materialized and shared: 12 3\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "materialized and shared: 12 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_materialization.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_objects.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_objects.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "accepted total: 20\nsensor ids: 101 103\nvalidity: true false true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_objects.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_reductions.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_reductions.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:19: interpreter error: invalid checked pipeline stage 'any'\n",
+          "stdout": ""
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:19: interpreter error: invalid checked pipeline stage 'any'\n",
+          "stdout": ""
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_reductions.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_scope_fusion.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_scope_fusion.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "scope-fused total: 28\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "scope-fused total: 28\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "scope-fused total: 28\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_scope_fusion.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_semantic_optimization.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_semantic_optimization.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "semantic space: 68 5 34 3 4 true\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "semantic space: 68 5 34 3 4 true\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "semantic space: 68 5 34 3 4 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_semantic_optimization.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_shared_traversal.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_shared_traversal.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "shared traversal: 6 4 3\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "shared traversal: 6 4 3\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared traversal: 6 4 3\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_shared_traversal.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_static_callables.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_static_callables.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:31: error: [FUNCTIONAL_SEMANTIC_ERROR] functional bound method 'scaler.apply' has no method named 'apply'\n",
+          "stdout": ""
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:31: error: [FUNCTIONAL_SEMANTIC_ERROR] functional bound method 'scaler.apply' has no method named 'apply'\n",
+          "stdout": ""
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "specializations: 6 4\nbound method: 24\nmethod placeholder: 21\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_static_callables.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_terminal_optimization.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/functional_terminal_optimization.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "terminal plans: 4 4 true true\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "terminal plans: 4 4 true true\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "terminal plans: 4 4 true true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/functional_terminal_optimization.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/hi.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/hi.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "hi\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "hi\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "hi\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/hi.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/message_payload_reply.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/message_payload_reply.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "7 7 9\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "7 7 9\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "7 7 9\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/message_payload_reply.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/mini_application.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/mini_application.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:88: interpreter error: unsupported checked pipeline stage 'schedule_score'\n",
+          "stdout": ""
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "moss:88: interpreter error: unsupported checked pipeline stage 'schedule_score'\n",
+          "stdout": ""
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/mini_application.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/object_pipeline.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/object_pipeline.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "created: widget 1 false\nobserved: widget 1 false\nrevised: widget 2 true\nverified: widget 2 true\narchive: widget 2 true\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/object_pipeline.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase106b_static_composition.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase106b_static_composition.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "42\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "42\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/phase106b_static_composition.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase26_immutable_payload.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase26_immutable_payload.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "sink: 21\nchecksum: 42\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "sink: 21\nchecksum: 42\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "sink: 21\nchecksum: 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/phase26_immutable_payload.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase2_safety.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/phase2_safety.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/phase2_safety.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/shared_memory.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/shared_memory.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "shared total: 10 42\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "shared total: 10 42\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "shared total: 10 42\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/shared_memory.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/static_duck_typing.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/static_duck_typing.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "112\n45\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "112\n45\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "112\n45\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/static_duck_typing.moss",
+      "status": "accepted"
+    },
+    {
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/traits.moss\", \"diagnostics\": []}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/traits.moss\", \"diagnostics\": []}\n}\n"
+        }
+      },
+      "fast_debug": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "27\n80\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "27\n80\n"
+        }
+      },
+      "native": {
+        "default:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "default:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:baseline:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:default": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        },
+        "optimized:candidate:optimized": {
+          "emit": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": ""
+          },
+          "run": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "27\n80\n"
+          },
+          "rustc": {
+            "kind": "process",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": ""
+          }
+        }
+      },
+      "source": "examples/traits.moss",
+      "status": "accepted"
+    },
+    {
+      "check_equal": true,
+      "checks": {
+        "baseline": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_USE_AFTER_CONSUME\", \"severity\": \"error\", \"message\": \"value 'original' was transferred to 'destination' at line 10 (the value was consumed). Reinitialize a mutable binding or construct a new owned value.\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/use_after_transfer.moss\", \"line\": 12, \"column\": 1, \"span\": {\"start_line\": 12, \"start_column\": 1, \"end_line\": 12, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/use_after_transfer.moss\", \"line\": 12, \"column\": 1, \"span\": {\"start_line\": 12, \"start_column\": 1, \"end_line\": 12, \"end_column\": 1}}, \"semantic_identity\": \"handler:OwnershipDemo.Trigger@8\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": \"AVAILABLE\", \"ownership_actual\": \"CONSUMED\", \"consume_line\": 10, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": [\"make the callee READ the value if that matches program intent\", \"keep the ownership transfer and stop using the old binding\", \"construct an explicit new owned value or explicit deep copy\"]}\n}\n"
+        },
+        "candidate": {
+          "kind": "process",
+          "returncode": 1,
+          "stderr": "",
+          "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_USE_AFTER_CONSUME\", \"severity\": \"error\", \"message\": \"value 'original' was transferred to 'destination' at line 10 (the value was consumed). Reinitialize a mutable binding or construct a new owned value.\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/use_after_transfer.moss\", \"line\": 12, \"column\": 1, \"span\": {\"start_line\": 12, \"start_column\": 1, \"end_line\": 12, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/examples/use_after_transfer.moss\", \"line\": 12, \"column\": 1, \"span\": {\"start_line\": 12, \"start_column\": 1, \"end_line\": 12, \"end_column\": 1}}, \"semantic_identity\": \"handler:OwnershipDemo.Trigger@8\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": \"AVAILABLE\", \"ownership_actual\": \"CONSUMED\", \"consume_line\": 10, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": [\"make the callee READ the value if that matches program intent\", \"keep the ownership transfer and stop using the old binding\", \"construct an explicit new owned value or explicit deep copy\"]}\n}\n"
+        }
+      },
+      "fast_debug": {},
+      "native": {},
+      "source": "examples/use_after_transfer.moss",
+      "status": "rejected"
+    }
+  ],
+  "excluded_for_paired_600s_probe": [
+    "examples/functional_pipeline.moss",
+    "examples/frontend_syntax.moss"
+  ],
+  "incomplete": [],
+  "incomplete_count": 0,
+  "mismatch_count": 0,
+  "mismatches": [],
+  "paired_fast_debug_nonzero": [
+    {
+      "returncode": 1,
+      "source": "examples/functional_reductions.moss",
+      "stderr": "moss:19: interpreter error: invalid checked pipeline stage 'any'\n"
+    },
+    {
+      "returncode": 1,
+      "source": "examples/functional_static_callables.moss",
+      "stderr": "moss:31: error: [FUNCTIONAL_SEMANTIC_ERROR] functional bound method 'scaler.apply' has no method named 'apply'\n"
+    },
+    {
+      "returncode": 1,
+      "source": "examples/mini_application.moss",
+      "stderr": "moss:88: interpreter error: unsupported checked pipeline stage 'schedule_score'\n"
+    }
+  ],
+  "paired_fast_debug_nonzero_count": 3,
+  "rejected_source_count": 1,
+  "source_count": 31
+}

@@ -1,0 +1,5 @@
+fn identity(value):
+  return value
+
+fn main():
+  value = identity(1,

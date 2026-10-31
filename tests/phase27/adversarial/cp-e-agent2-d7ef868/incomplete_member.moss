@@ -1,0 +1,4 @@
+fn main():
+  values = [1]
+  result = values.
+  echo result

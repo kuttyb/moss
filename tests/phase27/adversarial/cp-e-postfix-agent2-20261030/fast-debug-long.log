@@ -1,0 +1,4 @@
+{"fixture": "examples/functional_pipeline.moss", "compiler": "baseline", "mode": "off", "outcome": "TIMEOUT_600", "elapsed_seconds": 600.1}
+{"fixture": "examples/functional_pipeline.moss", "compiler": "candidate", "mode": "shadow", "outcome": "TIMEOUT_600", "elapsed_seconds": 600.1}
+{"fixture": "examples/frontend_syntax.moss", "compiler": "baseline", "mode": "off", "outcome": "TIMEOUT_600", "elapsed_seconds": 600.1}
+{"fixture": "examples/frontend_syntax.moss", "compiler": "candidate", "mode": "shadow", "outcome": "TIMEOUT_600", "elapsed_seconds": 600.1}

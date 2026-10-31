@@ -1,0 +1,426 @@
+{
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "cases": [
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.0"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0x'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0x'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.0x"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0e'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0e'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.0e"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0xff'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '0xff'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "expression": "p.0xff"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0_1'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0_1'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "expression": "p.0_1"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '00'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '00'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '00'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '00'",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.00"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1e3'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1e3'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "expression": "p.1e3"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '1'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '1'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "expression": "p.1."
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1foo'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1foo'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.1foo"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1_name'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "type 'P' has no field '1_name'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "MOSS_INTERNAL_OR_IO_ERROR",
+        "column": 1,
+        "line": 0,
+        "message": "EST invalid numeric literal",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.1_name"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_FIELD",
+        "column": 1,
+        "line": 6,
+        "message": "record 'P' has no field '0'",
+        "ok": false,
+        "returncode": 1
+      },
+      "expression": "p.0.n"
+    },
+    {
+      "baseline_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "baseline_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_off": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "candidate_shadow": {
+        "code": null,
+        "column": null,
+        "line": null,
+        "message": null,
+        "ok": true,
+        "returncode": 0
+      },
+      "expression": "p.n"
+    }
+  ],
+  "source_sha": "04f61b52ba410b1f542328fd878ce518fb25658f"
+}

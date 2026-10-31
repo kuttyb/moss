@@ -1,0 +1,4 @@
+fn dead() -> Int:
+  return never_bound_here
+fn main():
+  echo 0

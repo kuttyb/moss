@@ -1,0 +1,25 @@
+{
+  "entry_count": 3,
+  "baseline": "pass",
+  "checks": [
+    {
+      "function": "phase20_is_nontransferable_capability",
+      "api": "split_top_level",
+      "removal_rejected": true,
+      "duplicate_rejected": true
+    },
+    {
+      "function": "builtin_equality_type",
+      "api": "split_top_level",
+      "removal_rejected": true,
+      "duplicate_rejected": true
+    },
+    {
+      "function": "contains_float_type",
+      "api": "split_top_level",
+      "removal_rejected": true,
+      "duplicate_rejected": true
+    }
+  ],
+  "ok": true
+}

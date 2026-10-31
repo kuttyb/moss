@@ -1,0 +1,15 @@
+[package]
+name = "moss.advanced-data-acceptance"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.ndarray" = { path = "../ndarray" }
+"moss.datastructures" = { path = "../datastructures" }
+"moss.tables" = { path = "../tables" }
+"moss.binary" = { path = "../binary" }
+"moss.cbor" = { path = "../cbor" }
+"moss.csv" = { path = "../csv" }
+"moss.linalg" = { path = "../../packages/linalg" }

@@ -1,0 +1,11 @@
+{
+  "canonical_docs": {
+    "formal_language_design": "docs/MOSS_V0_1_LANGUAGE_DESIGN.md",
+    "practical_language_guide": "docs/GENTLE_INTRODUCTION_TO_MOSS.md",
+    "project_workflow": "docs/PROJECT_WORKFLOW.md",
+    "testing": "docs/TESTING.md"
+  },
+  "compiler_version": "0.1.0",
+  "language_version": "moss-0.1",
+  "schema_version": "moss-agent-1"
+}

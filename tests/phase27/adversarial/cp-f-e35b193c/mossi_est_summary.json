@@ -1,0 +1,11 @@
+{
+  "candidate_source_sha": "e35b193c4f8ffca14fd820f6c938f53e1c1a0744",
+  "imported_generic_body_dumps": 1,
+  "raw_off_shadow_hashes": {
+    "app": "cc6dcb36a8049687a9d70d7f7a36d66cd0b129a4a48d41202419cc17305b644f",
+    "library": "237ae9546c321e4739d17fcac88f4f600bb88e969edfcacc9f8ad9e2e750127"
+  },
+  "result": "PASS",
+  "section2_execution_body_dumps": 2,
+  "tool": "tests/tooling/check_phase27_est_mossi.py"
+}

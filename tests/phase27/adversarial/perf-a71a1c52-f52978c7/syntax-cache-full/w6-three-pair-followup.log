@@ -1,0 +1,6 @@
+w6_types_count_t050 rep1	baseline=33.379ms	candidate=43.367ms	delta=29.9%	+9.988ms
+w6_types_count_t050 rep2	baseline=40.360ms	candidate=39.638ms	delta=-1.8%	+-0.722ms
+w6_types_count_t050 rep3	baseline=32.815ms	candidate=38.244ms	delta=16.5%	+5.429ms
+w6_types_count_t100 rep1	baseline=91.993ms	candidate=105.086ms	delta=14.2%	+13.093ms
+w6_types_count_t100 rep2	baseline=86.341ms	candidate=87.673ms	delta=1.5%	+1.332ms
+w6_types_count_t100 rep3	baseline=88.084ms	candidate=91.028ms	delta=3.3%	+2.944ms

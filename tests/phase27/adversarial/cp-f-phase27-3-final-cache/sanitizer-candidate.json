@@ -1,0 +1,12 @@
+{
+  "revision": "2bdc2ea16cff57882dcfb45f99b5c2df39d6d98f",
+  "compiler_sha256": "cacf063b4ee8bc0d79e729a6933edfa8709fc67f3b7d9454876d738d75ea36fa",
+  "mode": "shadow",
+  "sanitizers": [
+    "ASan",
+    "UBSan"
+  ],
+  "source_count": 2141,
+  "finding_count": 0,
+  "findings": []
+}

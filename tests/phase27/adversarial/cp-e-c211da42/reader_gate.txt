@@ -1,0 +1,6 @@
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9
+checker_exit= 0
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9
+emitter_exit= 0

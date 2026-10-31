@@ -1,0 +1,769 @@
+{
+  "baseline_widened_call_sites": 635,
+  "bounded_direct_string_aliases": [
+    {
+      "line": 9300,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto result = inferred_expr_type(s.a, inferred_env);"
+    },
+    {
+      "line": 9905,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto expression_name = tree_identifier_name(stmt.a);"
+    },
+    {
+      "line": 9978,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto constructed = domain_constructor(statement.b);"
+    },
+    {
+      "line": 10027,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto constructed = domain_constructor(statement.b);"
+    },
+    {
+      "line": 10054,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto supplied = parse_bindings(statement.b);"
+    },
+    {
+      "line": 12659,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto existing = env.find(statement.a);"
+    },
+    {
+      "line": 12663,
+      "path": "src/semantic_checker.cpp",
+      "source": "} else if (auto constructed = domain_constructor(statement.b)) {"
+    },
+    {
+      "line": 12665,
+      "path": "src/semantic_checker.cpp",
+      "source": "} else if (auto inferred = inferred_expr_type(statement.b, env)) {"
+    },
+    {
+      "line": 12682,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto solved = solved_collections.find(statement.a);"
+    },
+    {
+      "line": 12722,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto value_type = inferred_expr_type(statement.b, env);"
+    },
+    {
+      "line": 12753,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = env.find(statement.a);"
+    },
+    {
+      "line": 12772,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto container = env.find(statement.a);"
+    },
+    {
+      "line": 12852,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto scrutinee_type = inferred_expr_type(statement.a, env);"
+    },
+    {
+      "line": 13180,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto previous = scoped_types->scoped_locals.find(statement.a);"
+    },
+    {
+      "line": 13196,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())"
+    },
+    {
+      "line": 13200,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto shadowed = incoming.terms.find(statement.a);"
+    },
+    {
+      "line": 13228,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto receiver = inferred_expr_type(statement.a, env)) {"
+    },
+    {
+      "line": 13741,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto scrutinee_type = inferred_expr_type(statement.a, scan);"
+    },
+    {
+      "line": 13813,
+      "path": "src/semantic_checker.cpp",
+      "source": "} else if (auto source = term_for(statement.b)) {"
+    },
+    {
+      "line": 13858,
+      "path": "src/semantic_checker.cpp",
+      "source": "string invocation = statement.a + \"(\" + join_arguments(statement.args) + \")\";"
+    },
+    {
+      "line": 13864,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = scan.find(statement.a);"
+    },
+    {
+      "line": 13905,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto constructed = domain_constructor(statement.b)) {"
+    },
+    {
+      "line": 13909,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto inferred = inferred_expr_type(statement.b, scan);"
+    },
+    {
+      "line": 13911,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto instantiated = instantiate_summary(statement.line, statement.b,"
+    },
+    {
+      "line": 13933,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto retained_source = body_types.known_expression(statement.b);"
+    },
+    {
+      "line": 13941,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto prior = locals.find(statement.a);"
+    },
+    {
+      "line": 13970,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto local = locals.find(statement.a);"
+    },
+    {
+      "line": 13988,
+      "path": "src/semantic_checker.cpp",
+      "source": "const string message = statement.b +"
+    },
+    {
+      "line": 13991,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto origin = body_types.provider_origins.find(statement.a);"
+    },
+    {
+      "line": 14013,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto value = term_for(statement.b);"
+    },
+    {
+      "line": 14054,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto field = body_types.known_expression(statement.a);"
+    },
+    {
+      "line": 14055,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto rhs = term_for(statement.b);"
+    },
+    {
+      "line": 14272,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto function = functions_.find(statement.a);"
+    },
+    {
+      "line": 14498,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto constructed = domain_constructor(statement.b)) {"
+    },
+    {
+      "line": 14842,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto actual = inferred_expr_type(statement.a, env);"
+    },
+    {
+      "line": 14845,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto retained = body_types.known_expression(statement.a)) {"
+    },
+    {
+      "line": 15338,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto returned_binding = tree_identifier_name(statement.a);"
+    },
+    {
+      "line": 15553,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto result = inferred_expr_type(statement.a, env);"
+    },
+    {
+      "line": 16456,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env))"
+    },
+    {
+      "line": 16608,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env))"
+    },
+    {
+      "line": 18383,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto type = inferred_expr_type(statement.a, env);"
+    },
+    {
+      "line": 18462,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(statement.b, env);"
+    },
+    {
+      "line": 18492,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto location = storage_location(statement.b, env)) {"
+    },
+    {
+      "line": 18515,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(statement.b, env);"
+    },
+    {
+      "line": 18523,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;"
+    },
+    {
+      "line": 18524,
+      "path": "src/semantic_checker.cpp",
+      "source": "else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;"
+    },
+    {
+      "line": 18543,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(statement.b, env);"
+    },
+    {
+      "line": 18551,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;"
+    },
+    {
+      "line": 18579,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = env.find(statement.a);"
+    },
+    {
+      "line": 18581,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);"
+    },
+    {
+      "line": 19171,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = current_env.find(statement.a);"
+    },
+    {
+      "line": 19851,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto raised_binding = tree_identifier_name(statement.a);"
+    },
+    {
+      "line": 19915,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = env.find(statement.a);"
+    },
+    {
+      "line": 19941,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env))"
+    },
+    {
+      "line": 19996,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto receiver = current.find(statement.a);"
+    },
+    {
+      "line": 20007,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto type = inferred_expr_type(statement.a, current);"
+    },
+    {
+      "line": 20040,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto type = inferred_expr_type(statement.b, current);"
+    },
+    {
+      "line": 20830,
+      "path": "src/semantic_checker.cpp",
+      "source": "string condition = trim(while_stmt.a);"
+    },
+    {
+      "line": 20872,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto root = tree_root_identifier(s.a);"
+    },
+    {
+      "line": 20879,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto add = tree_split_binary(trim(s.b), {\"+\"});"
+    },
+    {
+      "line": 20890,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto sub = tree_split_binary(trim(s.b), {\"-\"});"
+    },
+    {
+      "line": 20900,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto target = tree_identifier_name(s.a);"
+    },
+    {
+      "line": 20905,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto root = tree_identifier_name(s.a);"
+    },
+    {
+      "line": 20955,
+      "path": "src/semantic_checker.cpp",
+      "source": "const string induction = trim(loop.a);"
+    },
+    {
+      "line": 20962,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto root = tree_root_identifier(statement.a);"
+    },
+    {
+      "line": 21030,
+      "path": "src/semantic_checker.cpp",
+      "source": "string iter_expr = trim(statement.b);"
+    },
+    {
+      "line": 21061,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto root = tree_root_identifier(statement.a);"
+    },
+    {
+      "line": 21073,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto root = tree_root_identifier(statement.a);"
+    },
+    {
+      "line": 21097,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto type = inferred_expr_type(statement.b, env))"
+    },
+    {
+      "line": 21293,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto domain = domain_constructor(statement.b))"
+    },
+    {
+      "line": 22607,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = types.find(statement.a);"
+    },
+    {
+      "line": 22681,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto type = inferred_expr_type(s.a, env.types);"
+    },
+    {
+      "line": 22932,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto element = iterator_element_type(s.line, s.b, env.types);"
+    },
+    {
+      "line": 22934,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto location = storage_location(s.b, env.types))"
+    },
+    {
+      "line": 22937,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(s.b, env.types);"
+    },
+    {
+      "line": 22955,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto prior = env.binding_identities.find(s.a);"
+    },
+    {
+      "line": 22983,
+      "path": "src/semantic_checker.cpp",
+      "source": "string source = trim(s.b);"
+    },
+    {
+      "line": 22984,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(s.b, env.types);"
+    },
+    {
+      "line": 23005,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto constructed = domain_constructor(s.b)) type = *constructed;"
+    },
+    {
+      "line": 23037,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto prior_type = inferred_expr_type(s.a, env.types);"
+    },
+    {
+      "line": 23038,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto new_type = inferred_expr_type(s.b, env.types);"
+    },
+    {
+      "line": 23057,
+      "path": "src/semantic_checker.cpp",
+      "source": "string source = trim(s.b);"
+    },
+    {
+      "line": 23058,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto source_type = inferred_expr_type(s.b, env.types);"
+    },
+    {
+      "line": 23073,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto constructed = domain_constructor(s.b)) {"
+    },
+    {
+      "line": 23101,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto identity = env.binding_identities.find(s.a);"
+    },
+    {
+      "line": 23164,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto container = env.types.find(s.a);"
+    },
+    {
+      "line": 23181,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto type = inferred_expr_type(s.a, env.types);"
+    },
+    {
+      "line": 23302,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto expression = checker_est_view(statement.text);"
+    },
+    {
+      "line": 28336,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto constructed = domain_constructor(statement.b)) {"
+    },
+    {
+      "line": 28344,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto existing = current_env.find(statement.a);"
+    },
+    {
+      "line": 28356,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto inferred = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28362,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto prior_type = current_env.at(statement.a);"
+    },
+    {
+      "line": 28363,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto new_type = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28378,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto inferred = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28382,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto bound_type = current_env.at(statement.a);"
+    },
+    {
+      "line": 28383,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto rhs_type = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28384,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto bound_term = checked_types.resolved_local(statement.a);"
+    },
+    {
+      "line": 28413,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto value_type = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28464,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto element_type = inferred_expr_type(statement.a, current_env);"
+    },
+    {
+      "line": 28465,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto element_term = checked_term(statement.a, element_type);"
+    },
+    {
+      "line": 28466,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto value_term = checked_term(statement.b, value_type);"
+    },
+    {
+      "line": 28494,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto field_type = inferred_expr_type(statement.a, current_env);"
+    },
+    {
+      "line": 28495,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto rhs_type = inferred_expr_type(statement.b, current_env);"
+    },
+    {
+      "line": 28496,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto field_term = checked_term(statement.a, field_type);"
+    },
+    {
+      "line": 28531,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto prior = current_env.find(statement.a);"
+    },
+    {
+      "line": 28566,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = current_env.find(statement.a);"
+    },
+    {
+      "line": 28640,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = current_env.find(statement.a);"
+    },
+    {
+      "line": 28724,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto binding = current_env.find(statement.a);"
+    },
+    {
+      "line": 28796,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = current_env.find(statement.a);"
+    },
+    {
+      "line": 28888,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto actual = inferred_expr_type(statement.a, current_env);"
+    },
+    {
+      "line": 28889,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (auto pipeline = functional_pipeline_from_est(statement.a)) {"
+    },
+    {
+      "line": 28942,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto actual = inferred_expr_type(statement.a, current_env);"
+    },
+    {
+      "line": 416,
+      "path": "src/native_generator.cpp",
+      "source": "string call = statement.a;"
+    },
+    {
+      "line": 2717,
+      "path": "src/native_generator.cpp",
+      "source": "const auto result_binding = tree_identifier_name(statement.a);"
+    },
+    {
+      "line": 5887,
+      "path": "src/native_generator.cpp",
+      "source": "auto type = generated_expr_type(s.a, &types);"
+    },
+    {
+      "line": 5892,
+      "path": "src/native_generator.cpp",
+      "source": "const string value = expr(s.a, d, locals, &types,"
+    },
+    {
+      "line": 5943,
+      "path": "src/native_generator.cpp",
+      "source": "auto scrutinee_type = generated_expr_type(s.a, &types);"
+    },
+    {
+      "line": 6117,
+      "path": "src/native_generator.cpp",
+      "source": "string source = trim(s.b);"
+    },
+    {
+      "line": 6352,
+      "path": "src/native_generator.cpp",
+      "source": "if (auto sd = domain_construction(s.b)) {"
+    },
+    {
+      "line": 6356,
+      "path": "src/native_generator.cpp",
+      "source": "auto specialized = specialization_names_.find(*sd + \"\\n\" + s.a);"
+    },
+    {
+      "line": 6444,
+      "path": "src/native_generator.cpp",
+      "source": "auto generated_type = generated_expr_type(s.b, &types);"
+    },
+    {
+      "line": 6454,
+      "path": "src/native_generator.cpp",
+      "source": "const auto source_name = tree_identifier_name(s.b);"
+    },
+    {
+      "line": 6483,
+      "path": "src/native_generator.cpp",
+      "source": "string inserted = expr(s.b, d, locals, &types,"
+    },
+    {
+      "line": 6485,
+      "path": "src/native_generator.cpp",
+      "source": "const auto source_binding = tree_identifier_name(s.b);"
+    },
+    {
+      "line": 6548,
+      "path": "src/native_generator.cpp",
+      "source": "string place = write_call_place(s.a, d, locals, &types);"
+    },
+    {
+      "line": 6569,
+      "path": "src/native_generator.cpp",
+      "source": "const auto source_binding = tree_identifier_name(s.b);"
+    },
+    {
+      "line": 6602,
+      "path": "src/native_generator.cpp",
+      "source": "string call = s.a + \".\" + s.b + \"(\";"
+    },
+    {
+      "line": 6661,
+      "path": "src/native_generator.cpp",
+      "source": "string function_name = resolved_callable_identity(s.a, &types);"
+    },
+    {
+      "line": 6755,
+      "path": "src/native_generator.cpp",
+      "source": "string method = s.b;"
+    },
+    {
+      "line": 6756,
+      "path": "src/native_generator.cpp",
+      "source": "auto it = types.find(s.a);"
+    },
+    {
+      "line": 6866,
+      "path": "src/native_generator.cpp",
+      "source": "auto sd = domain_construction(s.b);"
+    },
+    {
+      "line": 6871,
+      "path": "src/native_generator.cpp",
+      "source": "auto specialized = specialization_names_.find(*sd + \"\\n\" + s.a);"
+    },
+    {
+      "line": 6880,
+      "path": "src/native_generator.cpp",
+      "source": "const auto source_name = tree_identifier_name(s.b);"
+    },
+    {
+      "line": 6918,
+      "path": "src/native_generator.cpp",
+      "source": "auto generated_type = generated_expr_type(s.b, &types);"
+    },
+    {
+      "line": 6948,
+      "path": "src/native_generator.cpp",
+      "source": "string call = \"message \" + s.a + \".\" + s.b + \"(\";"
+    },
+    {
+      "line": 7003,
+      "path": "src/native_generator.cpp",
+      "source": "string rendered = expr(s.a, d, locals, &types,"
+    },
+    {
+      "line": 7006,
+      "path": "src/native_generator.cpp",
+      "source": "const auto returned_binding = tree_identifier_name(s.a);"
+    }
+  ],
+  "candidate_required_zero_remaining": {
+    "checker": 0,
+    "emitter": 0
+  },
+  "raw_expression_shape_reads": [],
+  "raw_reversed_dynamic_expression_comparisons": [],
+  "raw_stmt_dynamic_binding_comparisons": [
+    {
+      "field": "a",
+      "line": 12711,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "field": "a",
+      "line": 12732,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "field": "a",
+      "line": 12780,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == statement.a &&"
+    },
+    {
+      "field": "a",
+      "line": 13054,
+      "path": "src/semantic_checker.cpp",
+      "source": "candidate.a != name ||"
+    },
+    {
+      "field": "a",
+      "line": 19940,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.a == selected_binding) selected_binding.clear();"
+    },
+    {
+      "field": "a",
+      "line": 24674,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty() && statement.a == name &&"
+    },
+    {
+      "field": "a",
+      "line": 29474,
+      "path": "src/semantic_checker.cpp",
+      "source": "prior.a == name) {"
+    }
+  ],
+  "raw_stmt_dynamic_binding_count": 7,
+  "raw_stmt_literal_comparison_counts": {
+    "checker:FileIO": 1,
+    "checker:assert": 2,
+    "checker:consume": 2,
+    "checker:insert": 2,
+    "checker:invoke": 4,
+    "checker:join": 3,
+    "checker:pass": 1,
+    "checker:pop": 3,
+    "checker:pop_front": 3,
+    "checker:push": 5,
+    "checker:sort": 1,
+    "emitter:_": 1,
+    "emitter:assert": 1,
+    "emitter:assertEqual": 1,
+    "emitter:close": 1,
+    "emitter:consume": 3,
+    "emitter:delete": 1,
+    "emitter:invoke": 1,
+    "emitter:join": 1,
+    "emitter:open": 1,
+    "emitter:pop": 1,
+    "emitter:sort": 1,
+    "emitter:sync": 1,
+    "emitter:write": 1
+  },
+  "raw_stmt_literal_comparison_total": 42,
+  "tree_expression_text_reads": []
+}

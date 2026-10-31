@@ -1,0 +1,3 @@
+w2_spec_distinct_n032 rep1	baseline=1865.298ms	candidate=1828.625ms	delta=-2.0%	+-36.673ms
+w2_spec_distinct_n032 rep2	baseline=1833.122ms	candidate=1826.341ms	delta=-0.4%	+-6.781ms
+w2_spec_distinct_n032 rep3	baseline=1816.861ms	candidate=1808.766ms	delta=-0.4%	+-8.095ms

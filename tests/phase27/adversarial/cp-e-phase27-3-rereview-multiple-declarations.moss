@@ -1,0 +1,4 @@
+fn dead() -> Int:
+  return absent_dead
+fn main():
+  echo absent_reachable

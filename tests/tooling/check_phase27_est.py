@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Focused EST expression dump and mode-independent tree checks."""
 import os
+import json
 import pathlib
 import re
 import resource
+import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPILER = pathlib.Path(sys.argv[1]).resolve()
@@ -25,7 +28,217 @@ def run(path, mode, **extra):
                           env=env, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
 
+def check_rejected_source_parity():
+    # These are Phase 27.1 REJECTED-SOURCE controls. Keep the baseline
+    # diagnostics stable in both EST modes while expression reads migrate.
+    expected = {
+        "numeric_member_field.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '0'", 6, 1),
+        "numeric_member_name.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0x'", 6, 1),
+        "numeric_member_zero_e.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0e'", 6, 1),
+        "numeric_member_hex.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0xff'", 6, 1),
+        "numeric_member_underscored.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '0_1'", 6, 1),
+        "numeric_member_exponent.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1e3'", 6, 1),
+        "numeric_member_word.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1foo'", 6, 1),
+        "numeric_member_named.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1_name'", 6, 1),
+        "numeric_member_trailing_dot.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '1'", 6, 1),
+        "unsupported_exponent.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "unsupported_operators.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "membership_operator.moss":
+            ("UNSUPPORTED_EXPRESSION_OPERATOR",
+             "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search", 2, 1),
+        "symbolic_boolean.moss":
+            ("UNSUPPORTED_EXPRESSION_OPERATOR",
+             "binary '&&' expression is not supported", 2, 1),
+        "split_fragment.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
+        "incomplete_expression.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "incomplete_unary_not.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'not'", 2, 1),
+        "unclosed_vector_expression.moss":
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
+        "invalid_operator_adjacency.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "trailing_member_expression.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'item'", 2, 1),
+        "unresolved_collection_result.moss":
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
+        "incomplete_vector.moss":
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
+        "trailing_member_after_empty_vector.moss":
+            ("TYPE_AMBIGUOUS_OPEN_RESULT", "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type", 3, 1),
+        "empty_call_argument.moss":
+            ("TYPE_MISMATCH", "argument 1 to function 'add' has type '', expected 'int'", 5, 1),
+        "empty_trailing_call_argument.moss":
+            ("TYPE_MISMATCH", "argument 2 to function 'add' has type '', expected 'int'", 5, 1),
+        "empty_vector_element.moss":
+            ("ECHO_DISPLAY_UNSUPPORTED", "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)", 2, 1),
+        "juxtaposed_operands.moss":
+            ("INVALID_EXPRESSION",
+             "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+             2, 1),
+        "domain_handle_map_escape.moss":
+            ("MOSS_COMPILE_ERROR",
+             "domain handle 'w' is not an ordinary value; use domainroutes and message targets only",
+             7, 1),
+        "failure_capture_bare_self_assignment.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'value'", 10, 1),
+        "unresolved_local_return_line.moss":
+            ("TYPE_AMBIGUOUS_OPEN_RESULT",
+             "static specialization of function 'make' has an unresolved result type",
+             6, 1),
+    }
+    for name, signature in expected.items():
+        path = ROOT / "tests/phase27/est/repro" / name
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} did not return JSON for {name}: {result.stdout}{result.stderr}") from error
+            diagnostic = payload.get("error", {})
+            actual = (diagnostic.get("code"), diagnostic.get("message"),
+                      diagnostic.get("line"), diagnostic.get("column"))
+            if result.returncode == 0 or payload.get("ok") or actual != signature:
+                raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
+
+    # These Phase 27.1 source fixtures put a comparison suffix after a
+    # pipeline without grouping. Moss parses that suffix as part of the final
+    # pipeline stage and rejects the unknown stage name. The legacy text
+    # splitter mistakes it for a top-level comparison; shadow mode must retain
+    # the baseline diagnostic instead of asserting on the known parse delta.
+    pipeline_precedence = {
+        "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss":
+            "unknown identifier 'count'",
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss":
+            "unknown local function 'count'",
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss":
+            "unknown local function 'count'",
+        "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss":
+            "unknown local function 'count'",
+        "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss":
+            "unknown identifier 'sum'",
+    }
+    for relative, message in pipeline_precedence.items():
+        path = ROOT / relative
+        payloads = []
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} pipeline diagnostic did not return JSON for {relative}: {result.stdout}{result.stderr}") from error
+            error = payload.get("error", {})
+            if result.returncode == 0 or payload.get("ok") or \
+                    error.get("code") != "UNKNOWN_SYMBOL_OR_TYPE" or \
+                    error.get("message") != message:
+                raise SystemExit(f"{mode} pipeline precedence diagnostic changed for {relative}: {error}")
+            payloads.append(payload)
+        if payloads[0] != payloads[1]:
+            raise SystemExit(f"off/shadow pipeline diagnostic payload differs for {relative}")
+
+    rejected_fragments = {
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 45, 1),
+        "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss":
+            ("UNTYPED_FIELD_ACCESS", "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait", 14, 1),
+        "examples/swarm/expression_surface_2026/parser_evaluator/failed_attempts/01_multiline_vector_literal.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 12, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/01_multiline_constructor.moss":
+            ("UNTYPED_FIELD_ACCESS", "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait", 27, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/02_multiline_vector.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 4, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/15_multiline_test_vector.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
+    }
+    for relative, signature in rejected_fragments.items():
+        path = ROOT / relative
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            payload = json.loads(result.stdout)
+            diagnostic = payload.get("error", {})
+            actual = (diagnostic.get("code"), diagnostic.get("message"),
+                      diagnostic.get("line"), diagnostic.get("column"))
+            if result.returncode == 0 or payload.get("ok") or actual != signature:
+                raise SystemExit(f"{mode} fragment rejection mismatch for {relative}: {actual}, expected {signature}")
+
+    # The inventory has && but no isolated || probe. Verify both the
+    # unsupported operator and a trailing arithmetic operator independently.
+    with tempfile.TemporaryDirectory(prefix="phase27-rejected-", dir=ROOT / "tmp") as scratch:
+        cases = {
+            "symbolic_or.moss": ("fn main():\n  echo true || false\n",
+                ("UNSUPPORTED_EXPRESSION_OPERATOR", "binary '||' expression is not supported", 2, 1)),
+            "incomplete_subtraction.moss": ("fn main():\n  echo 2 -\n",
+                ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1)),
+        }
+        for name, (source, signature) in cases.items():
+            path = pathlib.Path(scratch) / name
+            path.write_text(source, encoding="utf-8")
+            for mode in ("off", "shadow"):
+                result = run(path, mode)
+                payload = json.loads(result.stdout)
+                diagnostic = payload.get("error", {})
+                actual = (diagnostic.get("code"), diagnostic.get("message"),
+                          diagnostic.get("line"), diagnostic.get("column"))
+                if result.returncode == 0 or payload.get("ok") or actual != signature:
+                    raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
+
+    package_fixture = ROOT / "tests/phase27/adversarial/cp-e-rawshape-rerun/package_incomplete"
+    package_open_collection = ROOT / "tests/phase27/est/repro/package_open_collection"
+    with tempfile.TemporaryDirectory(prefix="phase27-incomplete-package-", dir=ROOT / "tmp") as scratch:
+        for fixture, error_message in (
+                (package_fixture, "invalid arithmetic expression"),
+                (package_open_collection,
+                 "heterogeneous or unresolved collection element type")):
+            package = pathlib.Path(scratch) / fixture.name
+            shutil.copytree(fixture, package)
+            for mode in ("off", "shadow"):
+                env = os.environ.copy()
+                env.update({"MOSS": str(COMPILER), "MOSS_EST": mode,
+                            "MARGO_HOME": str(pathlib.Path(scratch) / f"margo-{fixture.name}-{mode}")})
+                result = subprocess.run(
+                    [str(ROOT / "margo"), "build", "--check", "--json"],
+                    cwd=package, env=env, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False)
+                try:
+                    payload = json.loads(result.stdout)
+                except json.JSONDecodeError as error:
+                    raise SystemExit(f"package {mode} check did not return JSON: {result.stdout}{result.stderr}") from error
+                details = payload.get("error", "")
+                if result.returncode == 0 or payload.get("ok") or \
+                        '"code": "MOSS_COMPILE_ERROR"' not in details or \
+                        f'"message": "{error_message}"' not in details:
+                    raise SystemExit(f"package {mode} changed the baseline rejection for {fixture.name}: {payload}")
+
 def main():
+    check_rejected_source_parity()
+    for name in ("bare_recovery_reraise.moss",
+                 "grouped_recovery_reraise.moss",
+                 "failure_capture_grouped_self_assignment.moss"):
+        path = ROOT / "tests/phase27/est/repro" / name
+        payloads = []
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} returned no JSON for {name}: {result.stdout}{result.stderr}") from error
+            if result.returncode != 0 or not payload.get("ok"):
+                raise SystemExit(f"{mode} rejected {name}: {payload}")
+            payloads.append(payload)
+        if payloads[0] != payloads[1]:
+            raise SystemExit(f"off/shadow diagnostic payload differs for {name}")
     for name, pieces in CASES.items():
         path = ROOT / "tests/phase27/est" / name
         result = run(path, "shadow", MOSS_EST_DUMP="1",

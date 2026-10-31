@@ -1,0 +1,173 @@
+{
+  "intersection_files": 2218,
+  "mismatches": [
+    {
+      "baseline": {
+        "diagnostics": [
+          {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "column": 1,
+            "line": 57,
+            "message": "recovery patterns must name a qualified enum variant",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "mode": "off",
+        "parse_error": false,
+        "revision": "baseline",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "6f488f802ae9e7a3f6f848dca495807ef6c26766a2e634088945fa19364e0421",
+        "verdict": false
+      },
+      "candidate": {
+        "diagnostics": [
+          {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "column": 1,
+            "line": 57,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "mode": "off",
+        "parse_error": false,
+        "revision": "candidate",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "b5b78ddf6b33dce7aa08ad4597a1a48d4f85bd04b08ae0228dce61e4e557e57c",
+        "verdict": false
+      },
+      "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "mode": "off"
+    },
+    {
+      "baseline": {
+        "diagnostics": [
+          {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "column": 1,
+            "line": 57,
+            "message": "recovery patterns must name a qualified enum variant",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "mode": "shadow",
+        "parse_error": false,
+        "revision": "baseline",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "6f488f802ae9e7a3f6f848dca495807ef6c26766a2e634088945fa19364e0421",
+        "verdict": false
+      },
+      "candidate": {
+        "diagnostics": [
+          {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "column": 1,
+            "line": 57,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "mode": "shadow",
+        "parse_error": false,
+        "revision": "candidate",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "b5b78ddf6b33dce7aa08ad4597a1a48d4f85bd04b08ae0228dce61e4e557e57c",
+        "verdict": false
+      },
+      "file": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "mode": "shadow"
+    },
+    {
+      "baseline": {
+        "diagnostics": [
+          {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "column": 1,
+            "line": 57,
+            "message": "recovery patterns must name a qualified enum variant",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "mode": "off",
+        "parse_error": false,
+        "revision": "baseline",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "2806f6c74193dd32fe9fe14935953ff04bc722ac8dad841948877fc35e8d390a",
+        "verdict": false
+      },
+      "candidate": {
+        "diagnostics": [
+          {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "column": 1,
+            "line": 57,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "mode": "off",
+        "parse_error": false,
+        "revision": "candidate",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "924f6a6b21793d1d816f997f77c17ead8864d6e37b0de7d6f05fc5ea9d6a9426",
+        "verdict": false
+      },
+      "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+      "mode": "off"
+    },
+    {
+      "baseline": {
+        "diagnostics": [
+          {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "column": 1,
+            "line": 57,
+            "message": "recovery patterns must name a qualified enum variant",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "mode": "shadow",
+        "parse_error": false,
+        "revision": "baseline",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "2806f6c74193dd32fe9fe14935953ff04bc722ac8dad841948877fc35e8d390a",
+        "verdict": false
+      },
+      "candidate": {
+        "diagnostics": [
+          {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "column": 1,
+            "line": 57,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "severity": "error"
+          }
+        ],
+        "exit": 1,
+        "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "mode": "shadow",
+        "parse_error": false,
+        "revision": "candidate",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "924f6a6b21793d1d816f997f77c17ead8864d6e37b0de7d6f05fc5ea9d6a9426",
+        "verdict": false
+      },
+      "file": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+      "mode": "shadow"
+    }
+  ]
+}

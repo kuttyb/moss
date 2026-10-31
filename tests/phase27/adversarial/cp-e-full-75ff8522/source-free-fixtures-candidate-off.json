@@ -1,0 +1,47 @@
+{
+  "command": "check",
+  "compiler_version": "0.1.0",
+  "error": {
+    "cause": null,
+    "code": "UNKNOWN_ERROR_TYPE",
+    "column": 1,
+    "details": {
+      "consume_line": null,
+      "ownership_actual": null,
+      "ownership_expected": null,
+      "recursion_witness": null,
+      "resolution": null
+    },
+    "fixes": [],
+    "guidance": null,
+    "legal_alternatives": [],
+    "line": 57,
+    "message": "unknown error enum 'ndarray.NdArrayError'",
+    "related": [],
+    "rule": null,
+    "semantic_identity": "main@11",
+    "severity": "error",
+    "source": {
+      "column": 1,
+      "file": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "line": 57,
+      "span": {
+        "end_column": 1,
+        "end_line": 57,
+        "start_column": 1,
+        "start_line": 57
+      }
+    },
+    "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "span": {
+      "end_column": 1,
+      "end_line": 57,
+      "start_column": 1,
+      "start_line": 57
+    },
+    "symbol": null
+  },
+  "ok": false,
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1"
+}

@@ -33,7 +33,7 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
       s.kind == Stmt::Kind::Var) {
     vector<string> open_arguments;
-    if (parse_fileio_open(s.b, open_arguments)) {
+    if (tree_parse_fileio_open(s.b, open_arguments)) {
       string opened = "FileIO::" + string(phase21_result_context_
           ? "open_checked" : "open") + "(&(" +
           expr(open_arguments[0], d, locals, &types) + "), " +
@@ -47,7 +47,7 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     }
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(s.b, receiver, method, arguments) &&
+    if (tree_parse_member_call(s.b, receiver, method, arguments) &&
         fileio_typed(types, receiver) && method == "read" &&
         arguments.size() == 2) {
       string read = method_receiver_place(
@@ -88,7 +88,8 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     return true;
   }
   if (s.b == "sync" && s.args.size() <= 1) {
-    bool dataonly = !s.args.empty() && trim(s.args[0]) == "dataonly";
+    bool dataonly = !s.args.empty() &&
+        tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
     string call = receiver_expr + (phase21_result_context_
         ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
         : dataonly ? ".sync_dataonly()" : ".sync()");
@@ -319,7 +320,7 @@ std::optional<string> gen_fileio_chunk_pipeline(
     const std::set<string>& locals, const std::unordered_map<string,string>* types,
     size_t functional_pipeline_id) const {
   string fileio_receiver, size_expression;
-  if (!parse_fileio_chunks_source(pipeline.source, fileio_receiver, size_expression))
+  if (!tree_parse_fileio_chunks_source(pipeline.source, fileio_receiver, size_expression))
     return std::nullopt;
   if (!types || !fileio_typed(*types, fileio_receiver)) return std::nullopt;
   const FunctionalPipeline* planned = planned_functional_pipeline(functional_pipeline_id);

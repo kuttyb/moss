@@ -1,0 +1,34 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-agent2-e68b2155/tmp/phase27-mossi-baseline/1793435021118969867/active-moss",
+    "moss_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-agent2-e68b2155/tmp/phase27-mossi-baseline/1793435021118969867/active-moss",
+    "moss_sha256": "e00183916b1063e0acf2124a4dec5f7516a59a6d49d8316e2268a3f5fef3cc5d",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "ac68a87ae3b9c4e688f45a79151fa97d8e9881567e5d8064aae610ca5cd222da",
+      "baseline_raw_sha256": "c8d0414de888adf702bf17d8ca44e68a3846b5cc1ad6912c2769116760e291fd",
+      "candidate_raw_sha256": "4cbcd4763d563aa62496b8c62027fce0740c566aebbc817a08f22ee3fb38d410",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "9e1485330b5b30f115539fea74b40b972e0bee9449f7cd3571a34f91ab3c5f3f",
+      "recomputed_execution_body_hash": "ac68a87ae3b9c4e688f45a79151fa97d8e9881567e5d8064aae610ca5cd222da"
+    },
+    "library": {
+      "baseline_execution_body_hash": "196c39c8432669061e5607192e5162b2c45e67f5e207065bae8488bd5b67e4ed",
+      "baseline_raw_sha256": "7a3381925bdb15662d26d625a3405f5f5a92e6b66d58b3b9c271dcaf39006091",
+      "candidate_raw_sha256": "1a00fb5bd8a2e89cd6035cf0728e0a87a277839fc4b3d92a46b046fa33357ac1",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "1d975cd00c0d7fd4ad2e7fca2d92cc8e06d32127eb1b3dde8e81c1cd8272d461",
+      "recomputed_execution_body_hash": "196c39c8432669061e5607192e5162b2c45e67f5e207065bae8488bd5b67e4ed"
+    }
+  }
+}

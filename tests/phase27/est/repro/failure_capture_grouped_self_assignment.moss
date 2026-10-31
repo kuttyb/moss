@@ -1,0 +1,14 @@
+enum Failure:
+  Bad
+
+domain Worker:
+  fn Run():
+    value = 1
+    raise Failure.Bad
+
+  on_fail Failure.Bad:
+    value = (value)
+
+fn main():
+  worker = Worker()
+  message worker.Run()

@@ -1,0 +1,106 @@
+{
+  "baseline": {
+    "exit": 0,
+    "payload": {
+      "build_order": [
+        "closure_lib",
+        "closure_app"
+      ],
+      "check_only": true,
+      "checked": [
+        "closure_lib",
+        "closure_app"
+      ],
+      "ok": true,
+      "packages": [
+        {
+          "name": "closure_lib",
+          "source": {
+            "kind": "path",
+            "path": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tmp/cp-e-package-baseline/app/library"
+          }
+        },
+        {
+          "name": "closure_app",
+          "source": {
+            "kind": "root"
+          }
+        }
+      ],
+      "root_package": "closure_app",
+      "scheduling_events": [
+        {
+          "event": "start",
+          "package": "closure_lib"
+        },
+        {
+          "event": "finish",
+          "package": "closure_lib"
+        },
+        {
+          "event": "start",
+          "package": "closure_app"
+        },
+        {
+          "event": "finish",
+          "package": "closure_app"
+        }
+      ],
+      "schema_version": "margo-1",
+      "skipped": []
+    },
+    "stderr": ""
+  },
+  "candidate": {
+    "exit": 0,
+    "payload": {
+      "build_order": [
+        "closure_lib",
+        "closure_app"
+      ],
+      "check_only": true,
+      "checked": [
+        "closure_lib",
+        "closure_app"
+      ],
+      "ok": true,
+      "packages": [
+        {
+          "name": "closure_lib",
+          "source": {
+            "kind": "path",
+            "path": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tmp/cp-e-package-candidate/app/library"
+          }
+        },
+        {
+          "name": "closure_app",
+          "source": {
+            "kind": "root"
+          }
+        }
+      ],
+      "root_package": "closure_app",
+      "scheduling_events": [
+        {
+          "event": "start",
+          "package": "closure_lib"
+        },
+        {
+          "event": "finish",
+          "package": "closure_lib"
+        },
+        {
+          "event": "start",
+          "package": "closure_app"
+        },
+        {
+          "event": "finish",
+          "package": "closure_app"
+        }
+      ],
+      "schema_version": "margo-1",
+      "skipped": []
+    },
+    "stderr": ""
+  }
+}

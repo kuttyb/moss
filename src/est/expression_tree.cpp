@@ -117,6 +117,13 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   return result;
 }
 
+bool leading_dot_member_call_fragment(std::string_view source) {
+  while (!source.empty() &&
+         std::isspace(static_cast<unsigned char>(source.front())))
+    source.remove_prefix(1);
+  return !source.empty() && source.front() == '.';
+}
+
 void Arena::note(std::uint64_t owner, ExprSlot slot,
                  std::uint32_t argument_index, Outcome outcome) {
   auto& count = coverage_.at(static_cast<std::size_t>(slot));
@@ -160,7 +167,7 @@ ExprId Arena::duplicate(ExprId id) {
                             std::move(arguments)}, span(id));
     }
     else if constexpr (std::is_same_v<T, NamedArgument>)
-      return append(NamedArgument{value.name, duplicate(value.value)}, span(id));
+      return append(NamedArgument{value.name, duplicate(value.value), value.separator}, span(id));
     else if constexpr (std::is_same_v<T, Collection>) {
       std::vector<ExprId> elements;
       for (const auto element : value.elements) elements.push_back(duplicate(element));
@@ -269,7 +276,11 @@ Mode mode() {
 namespace {
 struct Token { std::string text; bool word = false; bool literal = false;
                std::uint32_t line = 1, column = 1;
-               std::uint32_t source_begin = 0, source_end = 0; };
+               std::uint32_t source_begin = 0, source_end = 0;
+               LiteralClass literal_class = LiteralClass::None;
+               NumericLiteral numeric;
+               bool decimal_integer_digits = false;
+               bool decimal_integer_separators = false; };
 
 std::vector<Token> lex(std::string_view source) {
   std::vector<Token> result;
@@ -280,26 +291,60 @@ std::vector<Token> lex(std::string_view source) {
       else ++column;
     }
   };
+  const auto ends_expression = [](const Token& token) {
+    return token.word || token.literal || token.text == ")" ||
+        token.text == "]" || token.text == "}";
+  };
   for (std::size_t i = 0; i < source.size();) {
     const unsigned char c = source[i];
     if (std::isspace(c)) { const auto begin = i++; advance(begin, i); continue; }
     const auto start = i;
     const auto start_line = line, start_column = column;
-    if (std::isalpha(c) || c == '_') {
+    const bool member_suffix = result.size() >= 2 &&
+        result.back().text == "." && ends_expression(result[result.size() - 2]) &&
+        (std::isalnum(c) || c == '_');
+    if (member_suffix) {
+      // A malformed numeric member suffix is still a name for the legacy
+      // field diagnostic (`record.0x` -> UNKNOWN_FIELD). Keep its characters
+      // together after the member delimiter instead of sending them to the
+      // numeric-literal scanner.
+      while (i < source.size() &&
+             (std::isalnum(static_cast<unsigned char>(source[i])) ||
+              source[i] == '_')) ++i;
+      result.push_back({std::string(source.substr(start, i-start)), true, false,
+                        start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
+    } else if (std::isalpha(c) || c == '_') {
       while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) ++i;
       result.push_back({std::string(source.substr(start, i-start)), true, false,
                         start_line, start_column,
                         static_cast<std::uint32_t>(start),
                         static_cast<std::uint32_t>(i)});
-    } else if (std::isdigit(c) || (c == '.' && i + 1 < source.size() &&
-                                    std::isdigit(static_cast<unsigned char>(source[i + 1])))) {
+    } else if (std::isdigit(c) ||
+               (c == '.' && i + 1 < source.size() &&
+                std::isdigit(static_cast<unsigned char>(source[i + 1])) &&
+                (result.empty() ||
+                 !ends_expression(result.back())))) {
       const auto literal = scan_numeric_literal(source, i);
       if (!literal.ok || literal.end <= i)
         throw std::invalid_argument("EST invalid numeric literal");
       i = literal.end;
+      const auto spelling = source.substr(start, i - start);
+      const bool decimal_digits = literal.kind == NumericLiteral::Kind::Int &&
+          std::all_of(spelling.begin(), spelling.end(), [](unsigned char ch) {
+            return moss::ascii_is_digit(ch);
+          });
+      const bool decimal_separators = literal.kind == NumericLiteral::Kind::Int &&
+          std::all_of(spelling.begin(), spelling.end(), [](unsigned char ch) {
+            return moss::ascii_is_digit(ch) || ch == '_';
+          });
       result.push_back({literal.spelling, false, true, start_line, start_column,
                         static_cast<std::uint32_t>(start),
-                        static_cast<std::uint32_t>(i)});
+                        static_cast<std::uint32_t>(i),
+                        literal.kind == NumericLiteral::Kind::Int
+                            ? LiteralClass::Integer : LiteralClass::Float,
+                        literal, decimal_digits, decimal_separators});
     } else if (c == '"' || c == '\'') {
       const char quote = c;
       ++i;
@@ -313,7 +358,9 @@ std::vector<Token> lex(std::string_view source) {
       result.push_back({std::string(source.substr(start, i-start)), false, true,
                         start_line, start_column,
                         static_cast<std::uint32_t>(start),
-                        static_cast<std::uint32_t>(i)});
+                        static_cast<std::uint32_t>(i),
+                        quote == '"' ? LiteralClass::String
+                                      : LiteralClass::Character});
     } else {
       ++i;
       if (i < source.size()) {
@@ -338,12 +385,18 @@ int precedence(const std::string& op) {
   if (op == "xor") return 2;
   if (op == "and") return 3;
   if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=") return 4;
+  // These operators are represented so checker projections can issue the
+  // established unsupported-operator diagnostics. Their presence here does
+  // not make them legal Moss operations.
+  if (op == "in" || op == "&&" || op == "||") return 4;
+  if (op == "not in") return 4;
   if (op == "|") return 5;
   if (op == "^") return 6;
   if (op == "&") return 7;
   if (op == "<<" || op == ">>") return 8;
   if (op == "+" || op == "-") return 9;
   if (op == "*" || op == "/" || op == "%") return 10;
+  if (op == "**") return 11;
   return -1;
 }
 
@@ -391,41 +444,101 @@ class Reader {
   void expect(const char* spelling) {
     if (!take(spelling)) throw std::invalid_argument(std::string("EST expected ") + spelling);
   }
+  ExprId missing_expression() {
+    if (position_ >= tokens_.size())
+      throw std::invalid_argument("EST missing expression position");
+    const auto& token = tokens_[position_];
+    SourceSpan span;
+    span.line = base_line_ + token.line - 1;
+    span.column = token.line == 1
+        ? base_column_ + token.column - 1 : token.column;
+    span.origin_id = origin_id_;
+    span.source_begin = span.source_end = token.source_begin;
+    return arena_.append(MissingExpression{}, span);
+  }
   std::vector<ExprId> call_arguments() {
     expect("(");
     std::vector<ExprId> args;
     if (!take(")")) {
-      do {
+      for (;;) {
+        if (position_ < tokens_.size() &&
+            (tokens_[position_].text == "," ||
+             tokens_[position_].text == ")")) {
+          args.push_back(missing_expression());
+        } else {
         if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
             (tokens_[position_ + 1].text == ":" ||
              tokens_[position_ + 1].text == "=")) {
           const auto argument_begin = tokens_[position_].source_begin;
           const auto name = tokens_[position_++].text;
-          ++position_;
-          args.push_back(append(NamedArgument{name, expression(0)},
+          const char separator = tokens_[position_++].text.front();
+          const auto value = position_ < tokens_.size() &&
+              (tokens_[position_].text == "," ||
+               tokens_[position_].text == ")")
+              ? missing_expression() : expression(0);
+          args.push_back(append(NamedArgument{name, value, separator},
                                 argument_begin));
         } else {
           args.push_back(expression(0));
         }
-      } while (take(","));
-      expect(")");
+        }
+        if (take(",")) continue;
+        expect(")");
+        break;
+      }
     }
     return args;
   }
   std::vector<ExprId> collection_items(char close) {
     std::vector<ExprId> items;
     if (take(close == ']' ? "]" : "}")) return items;
-    do {
+    for (;;) {
+      const char* close_spelling = close == ']' ? "]" : "}";
+      if (position_ < tokens_.size() &&
+          (tokens_[position_].text == "," ||
+           tokens_[position_].text == close_spelling)) {
+        items.push_back(missing_expression());
+      } else {
       if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
           (tokens_[position_ + 1].text == ":" ||
            tokens_[position_ + 1].text == "=")) {
         const auto item_begin = tokens_[position_].source_begin;
         const auto name = tokens_[position_++].text;
-        ++position_;
-        items.push_back(append(NamedArgument{name, expression(0)}, item_begin));
+        const char separator = tokens_[position_++].text.front();
+        const auto value = position_ < tokens_.size() &&
+            (tokens_[position_].text == "," ||
+             tokens_[position_].text == close_spelling)
+            ? missing_expression() : expression(0);
+        items.push_back(append(NamedArgument{name, value, separator}, item_begin));
       } else items.push_back(expression(0));
-    } while (take(","));
-    expect(close == ']' ? "]" : "}");
+      }
+      if (take(",")) continue;
+      expect(close_spelling);
+      break;
+    }
+    return items;
+  }
+  std::vector<ExprId> brace_items() {
+    std::vector<ExprId> items;
+    if (take("}")) return items;
+
+    // Brace literals are maps. Keep every key and value as a child in an
+    // ordered two-element Tuple so visitors see names in either position.
+    for (;;) {
+      const auto entry_begin = tokens_.at(position_).source_begin;
+      const auto key = expression(0);
+      expect(":");
+      const auto value = position_ < tokens_.size() &&
+          (tokens_[position_].text == "," || tokens_[position_].text == "}")
+          ? missing_expression() : expression(0);
+      items.push_back(append(Tuple{{key, value}}, entry_begin));
+      if (take(",")) {
+        if (take("}")) break;
+        continue;
+      }
+      expect("}");
+      break;
+    }
     return items;
   }
   ExprId message_primary(std::uint32_t message_begin) {
@@ -469,7 +582,7 @@ class Reader {
     } else if (position_ < tokens_.size() && tokens_[position_].text == "{") {
       const auto collection_begin = tokens_[position_].source_begin;
       ++position_;
-      id = append(Collection{'{', collection_items('}')},
+      id = append(Collection{'{', brace_items()},
                    collection_begin);
     } else if (take("(")) {
       const auto group_begin = tokens_[position_ - 1].source_begin;
@@ -488,14 +601,33 @@ class Reader {
       const auto token = tokens_[position_++];
       id = token.text == "_" ? append(Placeholder{}, token.source_begin)
           : token.literal || token.text == "true" || token.text == "false"
-          ? append(Literal{token.text}, token.source_begin)
+          ? append(Literal{token.text,
+                           token.literal_class == LiteralClass::None
+                               ? LiteralClass::Boolean : token.literal_class,
+                           token.numeric, token.decimal_integer_digits,
+                           token.decimal_integer_separators},
+                   token.source_begin)
           : token.word ? append(Identifier{token.text}, token.source_begin)
           : throw std::invalid_argument("EST unsupported expression token");
     }
     while (position_ < tokens_.size()) {
       if (take(".")) {
-        if (position_ == tokens_.size() || !tokens_[position_].word)
+        if (position_ == tokens_.size()) {
+          const auto* numeric_member = std::get_if<Member>(&arena_.at(id));
+          if (numeric_member && !numeric_member->name.empty() &&
+              moss::ascii_is_digit(
+                  static_cast<unsigned char>(numeric_member->name.front())))
+            break;
           throw std::invalid_argument("EST expected member name");
+        }
+        if (!tokens_[position_].word &&
+            !(tokens_[position_].literal_class == LiteralClass::Integer &&
+              tokens_[position_].decimal_integer_digits))
+          throw std::invalid_argument("EST expected member name");
+        // Preserve the legacy checker diagnostic for malformed numeric field
+        // spellings such as `record.0`: model the suffix as a member name so
+        // the normal field lookup reports UNKNOWN_FIELD instead of silently
+        // dropping the field projection when the EST parser rejects it.
         id = append(Member{id, tokens_[position_++].text}, source_begin(id));
       } else if (take("[")) {
         const auto* type_name = std::get_if<Identifier>(&arena_.at(id));
@@ -506,14 +638,17 @@ class Reader {
             do { type_arguments.push_back(expression(0)); } while (take(","));
             expect("]");
           }
+          const auto callee_begin = source_begin(id);
+          const auto callee_end = tokens_[position_ - 1].source_end;
           if (position_ < tokens_.size() && tokens_[position_].text == "(") {
             auto arguments = call_arguments();
             id = append(Constructor{id, std::move(type_arguments),
-                                           std::move(arguments)}, source_begin(id));
+                                    std::move(arguments), callee_begin,
+                                    callee_end}, callee_begin);
             continue;
           }
-          id = append(Constructor{id, std::move(type_arguments), {}},
-                      source_begin(id));
+          id = append(Constructor{id, std::move(type_arguments), {},
+                                 callee_begin, callee_end}, callee_begin);
           continue;
         }
         const auto index = expression(0);
@@ -521,6 +656,8 @@ class Reader {
         id = append(Index{id, index}, source_begin(id));
       } else if (take("(")) {
         --position_;
+        const auto callee_begin = source_begin(id);
+        const auto callee_end = tokens_[position_].source_begin;
         auto arguments = call_arguments();
         const auto* named = std::get_if<Identifier>(&arena_.at(id));
         const auto* member = std::get_if<Member>(&arena_.at(id));
@@ -531,8 +668,9 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        id = constructor ? append(Constructor{id, {}, std::move(arguments)},
-                                   source_begin(id))
+        id = constructor ? append(Constructor{id, {}, std::move(arguments),
+                                               callee_begin, callee_end},
+                                   callee_begin)
                          : append(Call{id, std::move(arguments)}, source_begin(id));
       } else break;
     }
@@ -541,10 +679,16 @@ class Reader {
   ExprId expression(int min_precedence) {
     auto left = primary();
     while (position_ < tokens_.size()) {
-      const auto op = tokens_[position_].text;
+      std::string op = tokens_[position_].text;
+      std::size_t operator_tokens = 1;
+      if (op == "not" && position_ + 1 < tokens_.size() &&
+          tokens_[position_ + 1].text == "in") {
+        op = "not in";
+        operator_tokens = 2;
+      }
       const auto level = precedence(op);
       if (level < min_precedence) break;
-      ++position_;
+      position_ += operator_tokens;
       const auto right = expression(level + 1);
       if (op == "|>") {
         const auto* existing = std::get_if<Pipeline>(&arena_.at(left));
@@ -639,6 +783,8 @@ Shape shape_of(const Arena& arena, ExprId id) {
       return result;
     } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name, {shape_of(arena, node.value)}};
     else if constexpr (std::is_same_v<T, Placeholder>) return {"placeholder", {}, {}};
+    else if constexpr (std::is_same_v<T, MissingExpression>)
+      return {"missing-expression", {}, {}};
     else if constexpr (std::is_same_v<T, Collection>) {
       Shape result{"collection", std::string(1, node.delimiter), {}};
       for (auto child : node.elements) result.children.push_back(shape_of(arena, child));
@@ -750,6 +896,21 @@ std::optional<Shape> string_shape(std::string source) {
       }
       return result;
     }
+  }
+  if (source.front() == '{' && source.back() == '}') {
+    const auto inside = trim(source.substr(1, source.size() - 2));
+    Shape result{"collection", "{", {}};
+    if (inside.empty()) return result;
+    for (const auto& entry : split_top_level(inside, ',')) {
+      const auto pair = split_top_level(entry, ':');
+      if (pair.size() != 2) return std::nullopt;
+      auto key = string_shape(pair.front());
+      auto value = string_shape(pair.back());
+      if (!key || !value) return std::nullopt;
+      result.children.push_back(
+          Shape{"tuple", {}, {std::move(*key), std::move(*value)}});
+    }
+    return result;
   }
   if (auto pipeline = legacy_operator(source, {"|>"})) {
     auto input = string_shape(pipeline->first), stage = string_shape(pipeline->second);
@@ -989,12 +1150,296 @@ void compare_string_shape(const Arena& arena, ExprId id, std::string_view source
 }
 }  // namespace
 
+std::optional<std::pair<std::string, std::string>> juxtaposed_operands(
+    std::string_view source) {
+  static const std::set<std::string> word_operators{
+      "and", "or", "xor", "not", "message", "in"};
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  std::string previous;
+  bool previous_operand = false;
+  bool separated_by_space = false;
+  std::size_t previous_end = 0;
+  int depth = 0;
+  for (const auto& token : tokens) {
+    if (token.source_begin > previous_end) {
+      const auto gap = source.substr(previous_end,
+                                     token.source_begin - previous_end);
+      separated_by_space = std::any_of(gap.begin(), gap.end(), [](unsigned char c) {
+        return moss::ascii_is_space(c);
+      });
+    }
+    const auto& spelling = token.text;
+    if (spelling == "(" || spelling == "[" || spelling == "{") {
+      ++depth;
+      previous_end = token.source_end;
+      continue;
+    }
+    if (spelling == ")" || spelling == "]" || spelling == "}") {
+      if (depth > 0) --depth;
+      previous_end = token.source_end;
+      if (depth == 0) {
+        previous = spelling;
+        previous_operand = true;
+        separated_by_space = false;
+      }
+      continue;
+    }
+    if (depth > 0) {
+      previous_end = token.source_end;
+      continue;
+    }
+    if (token.word) {
+      if (word_operators.count(spelling)) {
+        previous_operand = false;
+        separated_by_space = false;
+      } else {
+        if (previous_operand && separated_by_space)
+          return std::make_pair(previous, spelling);
+        previous = spelling;
+        previous_operand = true;
+        separated_by_space = false;
+      }
+    } else if (token.literal) {
+      if (previous_operand && separated_by_space)
+        return std::make_pair(previous, spelling);
+      previous = spelling;
+      previous_operand = true;
+      separated_by_space = false;
+    } else {
+      previous_operand = spelling == "." && previous_operand;
+      separated_by_space = false;
+    }
+    previous_end = token.source_end;
+  }
+  return std::nullopt;
+}
+
+bool begins_with_keyword(std::string_view source, std::string_view keyword) {
+  try {
+    const auto prefix_length = std::min(source.size(), keyword.size() + 1);
+    const auto prefix = source.substr(0, prefix_length);
+    const auto tokens = lex(prefix);
+    return !tokens.empty() && tokens.front().word &&
+        tokens.front().text == keyword &&
+        tokens.front().source_end == keyword.size() &&
+        source.size() > keyword.size() && source[keyword.size()] == ' ';
+  } catch (...) {
+    return false;
+  }
+}
+
+bool has_rejected_if_else_fragment_shape(std::string_view source) {
+  try {
+    const auto normalized = trim(std::string(source));
+    if (!begins_with_keyword(normalized, "if")) return false;
+    const auto tokens = lex(normalized);
+    bool has_colon = false;
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+      has_colon |= tokens[index].text == ":";
+      if (tokens[index].text == "else" && index + 1 < tokens.size() &&
+          tokens[index + 1].text == ":" &&
+          tokens[index].source_end == tokens[index + 1].source_begin)
+        return has_colon;
+    }
+  } catch (...) {
+  }
+  return false;
+}
+
+std::optional<std::string> outer_grouping_fragment(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  if (tokens.size() < 2 || tokens.front().text != "(" ||
+      tokens.back().text != ")") return std::nullopt;
+  std::size_t depth = 0;
+  for (std::size_t index = 0; index < tokens.size(); ++index) {
+    if (tokens[index].text == "(") ++depth;
+    else if (tokens[index].text == ")") {
+      if (depth == 0) return std::nullopt;
+      --depth;
+      if (depth == 0 && index + 1 != tokens.size()) return std::nullopt;
+    }
+  }
+  if (depth != 0) return std::nullopt;
+  const auto begin = tokens.front().source_end;
+  const auto end = tokens.back().source_begin;
+  if (begin > end || end > source.size()) return std::nullopt;
+  return std::string(source.substr(begin, end - begin));
+}
+
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {
   const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
   if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
   return id;
+}
+
+bool incomplete_trailing_operator(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
+  if (tokens.empty()) return false;
+  static const std::set<std::string_view> operators = {
+      "+", "-", "*", "/", "%", "**", "==", "!=", "<", "<=", ">", ">=",
+      "&", "|", "^", "<<", ">>", "&&", "||"};
+  return operators.count(tokens.back().text) != 0;
+}
+
+bool incomplete_collection_initializer_syntax(std::string_view source);
+
+SourceSyntaxIssue source_syntax_issue(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return SourceSyntaxIssue::None;
+  }
+  if (tokens.size() == 1 && tokens.front().text == "not")
+    return SourceSyntaxIssue::BareNot;
+  if (tokens.size() >= 2 && tokens.front().text == "[") {
+    std::vector<std::string_view> delimiters;
+    for (const auto& token : tokens) {
+      if (token.text == "(" || token.text == "[" || token.text == "{")
+        delimiters.push_back(token.text);
+      else if (token.text == ")" || token.text == "]" || token.text == "}") {
+        if (delimiters.empty()) break;
+        const auto open = delimiters.back();
+        if ((open == "(" && token.text != ")") ||
+            (open == "[" && token.text != "]") ||
+            (open == "{" && token.text != "}")) break;
+        delimiters.pop_back();
+      }
+    }
+    if (!delimiters.empty())
+      return SourceSyntaxIssue::UnclosedCollection;
+  }
+  if (!tokens.empty() && tokens.back().text == "." &&
+      incomplete_collection_initializer_syntax(source))
+    return SourceSyntaxIssue::UnclosedCollection;
+  if (!tokens.empty() && tokens.back().text == ".") {
+    const bool follows_numeric_member = tokens.size() >= 4 &&
+        tokens[tokens.size() - 3].text == "." &&
+        tokens[tokens.size() - 2].word &&
+        !tokens[tokens.size() - 2].text.empty() &&
+        moss::ascii_is_digit(static_cast<unsigned char>(
+            tokens[tokens.size() - 2].text.front())) &&
+        (tokens[tokens.size() - 4].word ||
+         tokens[tokens.size() - 4].literal ||
+         tokens[tokens.size() - 4].text == ")" ||
+         tokens[tokens.size() - 4].text == "]" ||
+         tokens[tokens.size() - 4].text == "}");
+    if (!follows_numeric_member) return SourceSyntaxIssue::TrailingMember;
+  }
+
+  static const std::set<std::string_view> binary_operators = {
+      "+", "-", "*", "/", "%", "**", "==", "!=", "<", "<=",
+      ">", ">=", "&", "|", "^", "<<", ">>", "&&", "||"};
+  for (std::size_t i = 1; i < tokens.size(); ++i) {
+    if (binary_operators.count(tokens[i - 1].text) &&
+        binary_operators.count(tokens[i].text) &&
+        tokens[i].text != "+" && tokens[i].text != "-")
+      return SourceSyntaxIssue::InvalidOperatorAdjacency;
+  }
+  return SourceSyntaxIssue::None;
+}
+
+std::optional<std::string> trailing_member_base(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  if (tokens.size() != 2 || !tokens.front().word ||
+      tokens.back().text != ".")
+    return std::nullopt;
+  return tokens.front().text;
+}
+
+bool incomplete_collection_initializer_syntax(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
+  if (tokens.empty()) return false;
+  if (tokens.front().text != "[" && tokens.front().text != "{")
+    return false;
+  if (incomplete_trailing_operator(source)) return true;
+  std::vector<std::string_view> delimiters;
+  for (const auto& token : tokens) {
+    if (token.text == "(" || token.text == "[" || token.text == "{") {
+      delimiters.push_back(token.text);
+      continue;
+    }
+    if (token.text != ")" && token.text != "]" && token.text != "}")
+      continue;
+    if (delimiters.empty()) return false;
+    const auto open = delimiters.back();
+    if ((open == "(" && token.text != ")") ||
+        (open == "[" && token.text != "]") ||
+        (open == "{" && token.text != "}")) return false;
+    delimiters.pop_back();
+  }
+  if (!delimiters.empty()) return true;
+  if (tokens.back().text != ".") return false;
+  const auto prefix = source.substr(0, tokens.back().source_begin);
+  const auto parsed = parse_view(prefix);
+  return parsed &&
+      std::holds_alternative<Collection>(parsed->arena->at(parsed->root));
+}
+
+std::optional<std::vector<std::string>> parse_vector_literal_children(
+    std::string_view source) {
+  const auto tokens = lex(source);
+  if (tokens.size() < 2 || tokens.front().text != "[" ||
+      tokens.back().text != "]") return std::nullopt;
+  std::vector<std::string> children;
+  std::size_t segment_begin = tokens.front().source_end;
+  int depth = 0;
+  for (std::size_t i = 1; i + 1 < tokens.size(); ++i) {
+    const auto& token = tokens[i].text;
+    if (token == "(" || token == "[" || token == "{") ++depth;
+    else if (token == ")" || token == "]" || token == "}") {
+      if (depth == 0) return std::nullopt;
+      --depth;
+    } else if (token == "," && depth == 0) {
+      const auto begin = std::min<std::size_t>(segment_begin, source.size());
+      const auto end = std::min<std::size_t>(tokens[i].source_begin, source.size());
+      const auto part = source.substr(begin, end - begin);
+      const auto first = part.find_first_not_of(" \t\r\n");
+      if (first == std::string_view::npos) return std::nullopt;
+      const auto last = part.find_last_not_of(" \t\r\n");
+      children.emplace_back(part.substr(first, last - first + 1));
+      segment_begin = tokens[i].source_end;
+    }
+  }
+  if (depth != 0) return std::nullopt;
+  const auto content_end = tokens.back().source_begin;
+  const auto begin = std::min<std::size_t>(segment_begin, source.size());
+  const auto end = std::min<std::size_t>(content_end, source.size());
+  const auto part = source.substr(begin, end - begin);
+  const auto first = part.find_first_not_of(" \t\r\n");
+  if (first == std::string_view::npos)
+    return children.empty() ? std::optional<std::vector<std::string>>(children)
+                            : std::nullopt;
+  const auto last = part.find_last_not_of(" \t\r\n");
+  children.emplace_back(part.substr(first, last - first + 1));
+  return children;
 }
 
 namespace {
@@ -1161,6 +1606,8 @@ std::string dump_node(const Arena& arena, ExprId id) {
           << dump_node(arena, value.value) << ')';
     else if constexpr (std::is_same_v<T, Placeholder>)
       out << "(placeholder#" << id << ')';
+    else if constexpr (std::is_same_v<T, MissingExpression>)
+      out << "(missing-expression#" << id << ')';
     else if constexpr (std::is_same_v<T, Collection>) {
       out << "(collection#" << id << ' ' << value.delimiter;
       for (const auto element : value.elements) out << ' ' << dump_node(arena, element);
@@ -1341,6 +1788,13 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     const auto owner = next_owner++;
     if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)
       s.est_binding_name = trim(s.a);
+    if (s.kind == Stmt::Kind::Case) {
+      s.est_pattern = match_pattern(s.a, s.args);
+      arena.note(owner, ExprSlot::Pattern, 0, Outcome::Built);
+    } else if (s.kind == Stmt::Kind::Recover) {
+      s.est_pattern = recovery_pattern(s.a);
+      arena.note(owner, ExprSlot::Pattern, 0, Outcome::Built);
+    }
     switch (s.kind) {
       case Stmt::Kind::If: case Stmt::Kind::While:
         bind(s.expression_handles, owner, ExprSlot::Condition, 0, s.a); break;
@@ -1357,8 +1811,13 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
             std::string_view("+-*/%&|^").find(target.back()) !=
                 std::string_view::npos;
         s.est_raw_form = compound ? RawForm::CompoundAssign : RawForm::Assign;
-        bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
+        const auto lhs = bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
              compound ? target.substr(0, target.size() - 1) : target);
+        if (lhs) {
+          if (const auto* identifier =
+                  std::get_if<Identifier>(&arena.at(*lhs)))
+            s.est_binding_name = identifier->name;
+        }
         bind(s.expression_handles, owner, ExprSlot::RhsValue, 0, s.b);
         if (dump_enabled)
           std::cerr << "MOSS_EST_RAW owner=" << owner << " form="
@@ -1438,6 +1897,35 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     if (dump_enabled)
       std::cerr << "MOSS_EST_FAILURE_ARMS count=" << arms.size() << '\n';
     for (auto& arm : arms) {
+      arm.est_patterns.clear();
+      arm.est_pattern.reset();
+      const auto pattern_owner = next_owner++;
+      if (!arm.binding.empty()) {
+        PatternNode binding;
+        binding.kind = PatternNode::Kind::RecoveryBinding;
+        binding.binding = arm.binding;
+        arm.est_patterns.push_back(std::move(binding));
+        arena.note(pattern_owner, ExprSlot::Pattern, 0, Outcome::Built);
+      }
+      for (std::uint32_t index = 0; index < arm.patterns.size(); ++index) {
+        arm.est_patterns.push_back(qualified_recovery_pattern(arm.patterns[index]));
+        arena.note(pattern_owner, ExprSlot::Pattern,
+                   index + (arm.binding.empty() ? 0U : 1U), Outcome::Built);
+      }
+      if (arm.binding.empty() && arm.patterns.empty()) {
+        PatternNode catchall;
+        catchall.kind = PatternNode::Kind::RecoveryCatchall;
+        arm.est_patterns.push_back(std::move(catchall));
+        arena.note(pattern_owner, ExprSlot::Pattern, 0, Outcome::Built);
+      }
+      if (arm.est_patterns.size() > 1 && arm.binding.empty()) {
+        PatternNode grouped;
+        grouped.kind = PatternNode::Kind::GroupedAlternatives;
+        grouped.alternatives = arm.est_patterns;
+        arm.est_pattern = std::move(grouped);
+      } else if (!arm.est_patterns.empty()) {
+        arm.est_pattern = arm.est_patterns.front();
+      }
       if (dump_enabled)
         std::cerr << "MOSS_EST_FAILURE_ARM line=" << arm.line
                   << " body=" << arm.body.size() << '\n';
@@ -1445,7 +1933,19 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       if (arm.execution_body) body(*arm.execution_body);
     }
   };
-  if (additional) body(*additional);
+  if (additional) {
+    body(*additional);
+    for (auto& domain : program.domains)
+      for (auto& handler : domain.handlers) {
+        if (&handler.body == additional) {
+          failure_arms(handler.failure_arms);
+        }
+        if (handler.execution_body &&
+            &*handler.execution_body == additional &&
+            handler.execution_failure_arms)
+          failure_arms(*handler.execution_failure_arms);
+      }
+  }
   else if (program.main) body(program.main->body);
   if (!additional) {
   for (auto& function : program.functions) {

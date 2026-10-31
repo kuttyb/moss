@@ -1,0 +1,618 @@
+{
+  "baseline_compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "candidate_compiler_sha256": "3ac3846a09e8af85b22aef2e84f1f9c5f6ff4f19b922579675fa5738691c9ea7",
+  "repeats_per_profile": 8,
+  "results": [
+    {
+      "all_expected": true,
+      "compiler": "baseline",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "default",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "3003\n2001\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-znwq1589/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 2
+    },
+    {
+      "all_expected": true,
+      "compiler": "baseline",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "optimized",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n4065\n3003\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-sxv93gzv/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 2
+    },
+    {
+      "all_expected": true,
+      "compiler": "candidate_off",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "default",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n4065\n3003\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "3003\n4065\n2001\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "1260\n2001\n4065\n3003\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n4065\n3003\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "3003\n2001\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-3w4bd4v7/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 5
+    },
+    {
+      "all_expected": true,
+      "compiler": "candidate_off",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "optimized",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n1260\n4065\n3003\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "3003\n2001\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lyaf4y9j/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 3
+    },
+    {
+      "all_expected": true,
+      "compiler": "candidate_shadow",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "default",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n4065\n3003\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "1260\n2001\n4065\n3003\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "3003\n2001\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-1u31y0i5/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 4
+    },
+    {
+      "all_expected": true,
+      "compiler": "candidate_shadow",
+      "emit": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program.rs"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program.mossmap\n"
+      },
+      "expected_sorted": [
+        1260,
+        2001,
+        3003,
+        4065
+      ],
+      "profile": "optimized",
+      "runs": [
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n4065\n3003\n1260\n"
+        },
+        {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "2001\n3003\n4065\n1260\n"
+        }
+      ],
+      "rustc": {
+        "command": [
+          "rustc",
+          "--edition=2021",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/cpf-phase27-3/evidence/cpf-concurrent-roots-lze9nv2b/program"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "unique_schedules": 2
+    }
+  ],
+  "source": "tests/tooling/fixtures/phase21c_concurrent_roots.moss",
+  "source_sha256": "ebf0a16d89239b9796a0450cb8cb5f32289069d33ee6547976cf18dfee54e132"
+}

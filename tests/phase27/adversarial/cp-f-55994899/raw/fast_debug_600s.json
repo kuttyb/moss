@@ -1,0 +1,70 @@
+{
+  "baseline_compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "baseline_mode": "MOSS_EST=off",
+  "candidate_compiler_sha256": "e9ffab899862087e007730320c409e2fa31ab6a8b1b871fe03ab962567cb62f9",
+  "candidate_mode": "MOSS_EST=shadow",
+  "fixtures": [
+    {
+      "baseline": {
+        "elapsed_seconds": 600.002,
+        "kind": "timeout",
+        "label": "baseline",
+        "mode": "off",
+        "returncode": null,
+        "stderr_bytes": 0,
+        "stderr_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/functional_pipeline-baseline.stderr",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 0,
+        "stdout_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/functional_pipeline-baseline.stdout",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate": {
+        "elapsed_seconds": 600.002,
+        "kind": "timeout",
+        "label": "candidate",
+        "mode": "shadow",
+        "returncode": null,
+        "stderr_bytes": 0,
+        "stderr_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/functional_pipeline-candidate.stderr",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 0,
+        "stdout_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/functional_pipeline-candidate.stdout",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "classification": "BOTH-TIMEOUT; excluded from output comparison",
+      "source": "examples/functional_pipeline.moss"
+    },
+    {
+      "baseline": {
+        "elapsed_seconds": 600.001,
+        "kind": "timeout",
+        "label": "baseline",
+        "mode": "off",
+        "returncode": null,
+        "stderr_bytes": 0,
+        "stderr_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/frontend_syntax-baseline.stderr",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 0,
+        "stdout_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/frontend_syntax-baseline.stdout",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate": {
+        "elapsed_seconds": 600.001,
+        "kind": "timeout",
+        "label": "candidate",
+        "mode": "shadow",
+        "returncode": null,
+        "stderr_bytes": 0,
+        "stderr_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/frontend_syntax-candidate.stderr",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_bytes": 0,
+        "stdout_path": "tests/phase27/adversarial/cp-f-55994899/raw/fast-debug-logs/frontend_syntax-candidate.stdout",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "classification": "BOTH-TIMEOUT; excluded from output comparison",
+      "source": "examples/frontend_syntax.moss"
+    }
+  ],
+  "invocation": "moss debug <fixture> --trace",
+  "timeout_seconds": 600
+}

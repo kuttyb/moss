@@ -15,8 +15,9 @@
   // generic access parameter. This is representation selection, not effects.
   std::optional<string> view_place(const string& path, const Domain* d,
       const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
-    auto parts = split_top_level(trim(path), '.');
-    if (parts.empty() || !std::all_of(parts.begin(), parts.end(), plain_identifier)) return std::nullopt;
+    auto parsed_parts = tree_member_path(path);
+    if (!parsed_parts || parsed_parts->empty()) return std::nullopt;
+    const auto& parts = *parsed_parts;
     string root = parts.front(), type, rendered;
     bool access = false;
     size_t next = 1;
@@ -73,7 +74,9 @@
       const std::unordered_map<string,string>* types) const {
     if (view_place(expression, d, locals, types)) return true;
     string base, index;
-    return parse_index(trim(expression), base, index) && borrowed_view_expression(base, d, locals, types);
+    auto syntax = est::parse_view(trim(expression));
+    return syntax && est::project_index(*syntax, base, index) &&
+        borrowed_view_expression(base, d, locals, types);
   }
 
   string viewed_function_name(const string& name, const vector<string>& args, const Domain* d,

@@ -1,0 +1,6 @@
+fn make():
+  value = Map()
+  return value
+
+fn main():
+  ignored = make()

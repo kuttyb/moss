@@ -1,0 +1,5 @@
+fn unreachable_bad(value: Int) -> Int:
+  return unknown_name + value
+
+fn main():
+  echo 1

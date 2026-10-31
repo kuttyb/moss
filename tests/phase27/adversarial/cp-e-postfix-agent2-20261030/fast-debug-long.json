@@ -1,0 +1,46 @@
+[
+  {
+    "fixture": "examples/functional_pipeline.moss",
+    "content_sha256": "feb1a3b7523559803db563775be4a23ccf475a5ffed164cf01d709b7605b8951",
+    "compiler": "baseline",
+    "mode": "off",
+    "outcome": "TIMEOUT_600",
+    "elapsed_seconds": 600.1,
+    "stdout_tail": "",
+    "stderr_tail": "",
+    "classification": "BOTH-TIMEOUT; excluded; no completed output on either side"
+  },
+  {
+    "fixture": "examples/functional_pipeline.moss",
+    "content_sha256": "feb1a3b7523559803db563775be4a23ccf475a5ffed164cf01d709b7605b8951",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "outcome": "TIMEOUT_600",
+    "elapsed_seconds": 600.1,
+    "stdout_tail": "",
+    "stderr_tail": "",
+    "classification": "BOTH-TIMEOUT; excluded; no completed output on either side"
+  },
+  {
+    "fixture": "examples/frontend_syntax.moss",
+    "content_sha256": "40e54bb8f07b5d65fd1cf197ab3e1b2096a7f2a1c24ffde19c2dd39ea28163fb",
+    "compiler": "baseline",
+    "mode": "off",
+    "outcome": "TIMEOUT_600",
+    "elapsed_seconds": 600.1,
+    "stdout_tail": "",
+    "stderr_tail": "",
+    "classification": "BOTH-TIMEOUT; excluded; no completed output on either side"
+  },
+  {
+    "fixture": "examples/frontend_syntax.moss",
+    "content_sha256": "40e54bb8f07b5d65fd1cf197ab3e1b2096a7f2a1c24ffde19c2dd39ea28163fb",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "outcome": "TIMEOUT_600",
+    "elapsed_seconds": 600.1,
+    "stdout_tail": "",
+    "stderr_tail": "",
+    "classification": "BOTH-TIMEOUT; excluded; no completed output on either side"
+  }
+]

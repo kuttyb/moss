@@ -1,0 +1,8 @@
+MOSS_EST_DUMP owner=1 slot=LhsPlace arg=0 origin=0 span=14:3 (identifier#0 "configured_limit")
+MOSS_EST_DUMP owner=1 slot=RhsValue arg=0 origin=0 span=14:55 (call#7 (member#2 (identifier#1 "limits") "get") (member#4 (identifier#3 "rule") "key") (member#6 (identifier#5 "rule") "maximum"))
+MOSS_EST_RAW owner=1 form=Assign
+MOSS_EST_DUMP owner=2 slot=ReturnValue arg=0 origin=0 span=15:145 (constructor#25 (identifier#8 "Evaluation") (named-argument#11 "key" (member#10 (identifier#9 "rule") "key")) (named-argument#15 "normalized" (call#14 (member#13 (identifier#12 "rule") "normalized"))) (named-argument#19 "penalty" (call#18 (member#17 (identifier#16 "rule") "penalty_points"))) (named-argument#24 "accepted" (call#23 (identifier#20 "within_limit") (identifier#21 "rule") (identifier#22 "configured_limit"))))
+MOSS_EST_DUMP owner=3 slot=ReturnValue arg=0 origin=0 span=8:56 (binary#36 "/" (binary#31 "*" (paren#29 (binary#28 "-" (identifier#26 "value") (identifier#27 "minimum"))) (literal#30 "100")) (paren#35 (binary#34 "-" (identifier#32 "maximum") (identifier#33 "minimum"))))
+MOSS_EST_DUMP owner=4 slot=ReturnValue arg=0 origin=0 span=11:32 (binary#42 "*" (paren#40 (binary#39 "-" (identifier#37 "value") (identifier#38 "maximum"))) (literal#41 "2"))
+EST identifier-use mismatch <key: rule.key> name=<rule> tree=0 legacy=1
+moss-dev: src/semantic_checker.cpp:10756: static bool moss::Checker::expression_uses(const string &, const string &): Assertion `tree == legacy' failed.

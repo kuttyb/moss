@@ -1,0 +1,274 @@
+{
+  "classification": "LEGACY MISPARSE",
+  "reviewer_agent2_verdict": "NO-GO",
+  "reviewer_report_sha256": "6d05ec35780ae991b6f5ec61beb91f8f11fa7dec2052d9d7faea3c282f7b49e3",
+  "finding": "Legacy reach text drops the module prefix from order.key_of and same-leaf matches heap.Entry.key_of@9. EST correctly resolves order__key_of; the method is not a callee of the checked order_by_key closure.",
+  "independent_oracle": {
+    "source": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+    "local_declaration": "module order defines fn key_of(item: Keyed) at line 9",
+    "use_site": "order_by_key calls key_of(item) at line 18",
+    "foreign_method": "heap.Entry.key_of is a distinct receiver method at heap.moss:9; heap.key_of wrapper is defined at heap.moss:100 and calls that receiver method at line 101",
+    "semantic_api_probe": "tests/phase27/adversarial/cp-e-final-blind-agent2-20261030/same_leaf_resolution_oracle.moss",
+    "semantic_api_result": {
+      "query": "moss calls lookup --source same_leaf_resolution_oracle.moss --json",
+      "resolved_target": "fn:key_of",
+      "target_source_line": 6,
+      "receiver_method_not_selected": true
+    }
+  },
+  "two_path_reproducer": {
+    "candidate_off_and_legacy_checked_declaration": [
+      "method",
+      "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+      "method:heap__Entry.key_of@9"
+    ],
+    "candidate_shadow_omits_same_declaration": true,
+    "verdict_both_modes": "INVALID_BARE_IDENTIFIER_STATEMENT at examples/swarm/modules/algo_chain/heapkit/src/heap.moss:35",
+    "review_evidence": "tests/phase27/adversarial/cp-e-final-blind-agent2-20261030/evidence/checked-declaration-closure.json",
+    "candidate_off_vs_shadow": {
+      "candidate_off_and_legacy_checked_declaration": "method:heap__Entry.key_of@9",
+      "candidate_shadow_omits_declaration": true,
+      "diagnostics": "identical INVALID_BARE_IDENTIFIER_STATEMENT at heap.moss:35",
+      "four_closure_rows": [
+        {
+          "source": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+          "candidate_off_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          },
+          "candidate_shadow_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          }
+        },
+        {
+          "source": "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+          "candidate_off_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          },
+          "candidate_shadow_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          }
+        },
+        {
+          "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss",
+          "candidate_off_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          },
+          "candidate_shadow_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          }
+        },
+        {
+          "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/tests/order_test.moss",
+          "candidate_off_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          },
+          "candidate_shadow_vs_legacy": {
+            "checked_missing": [
+              [
+                "method",
+                "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+                "method:heap__Entry.key_of@9"
+              ]
+            ],
+            "edge_missing": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "key_of"
+              ]
+            ],
+            "edge_added": [
+              [
+                "function:examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss:order__order_by_key",
+                "method",
+                "order__key_of"
+              ]
+            ],
+            "verdict": [
+              false,
+              "INVALID_BARE_IDENTIFIER_STATEMENT",
+              35
+            ]
+          }
+        }
+      ]
+    },
+    "raw_four_mode_diagnostics": "tests/phase27/adversarial/cp-e-final-blind-agent2-20261030/closure_diagnostic_four_modes.json"
+  },
+  "no_source_change_required": true
+}

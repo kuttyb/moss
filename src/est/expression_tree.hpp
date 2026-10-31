@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@
 
 #include "../constraints.hpp"
 #include "../functional_source_pipeline.hpp"
+#include "../numeric_literal.hpp"
 #include "../type_ir.hpp"
 
 namespace moss { struct Program; struct Stmt; }
@@ -64,8 +66,20 @@ struct SemanticFacts {
   std::optional<Effect> inferred_effect;
 };
 
+enum class LiteralClass : std::uint8_t {
+  None, Integer, Float, String, Character, Boolean
+};
+
 // Child IDs always denote distinct occurrences. The arena never interns text.
-struct Literal { std::string spelling; };
+// Lexical facts are captured by the EST lexer so semantic consumers do not
+// have to classify a rendered expression or re-read the token spelling.
+struct Literal {
+  std::string spelling;
+  LiteralClass literal_class = LiteralClass::None;
+  NumericLiteral numeric;
+  bool decimal_integer_digits = false;
+  bool decimal_integer_separators = false;
+};
 struct Identifier { std::string name; };
 struct Unary { std::string op; ExprId operand; };
 struct Binary { std::string op; ExprId left, right; };
@@ -74,16 +88,30 @@ struct Member { ExprId base; std::string name; };
 struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
 struct Message { ExprId target; std::string handler; std::vector<ExprId> arguments; };
-struct NamedArgument { std::string name; ExprId value; };
+struct MessageCall {
+  std::string target, handler;
+  std::vector<std::string> arguments;
+};
+struct MemberAccess {
+  std::string receiver;
+  std::string member;
+  bool invoked = false;
+  std::uint32_t source_begin = 0;
+};
+struct NamedArgument { std::string name; ExprId value; char separator = '='; };
 struct Placeholder {};
+struct MissingExpression {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
 struct Tuple { std::vector<ExprId> elements; };
 struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
-                     std::vector<ExprId> arguments; };
+                     std::vector<ExprId> arguments;
+                     std::uint32_t callee_source_begin = 0;
+                     std::uint32_t callee_source_end = 0; };
 struct Pipeline { ExprId input; std::vector<ExprId> stages; };
 using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
                           Index, Parenthesized, Message, NamedArgument,
-                          Placeholder, Collection, Tuple, Constructor, Pipeline>;
+                          Placeholder, Collection, Tuple, Constructor, Pipeline,
+                          MissingExpression>;
 
 enum class Outcome : std::uint8_t { Built, Deferred27_1b, RejectedSource, Failed };
 
@@ -123,6 +151,123 @@ class Arena {
   std::set<std::tuple<std::uint64_t, std::uint8_t, std::uint32_t>> seen_;
 };
 
+// A query view keeps the exact source buffer paired with an immutable EST
+// occurrence. `owned_arena` is populated only for on-demand queries that do
+// not have a retained handle; existing checker/emitter paths should bind their
+// retained arena and ExprId whenever one is available.
+struct ExpressionView {
+  std::shared_ptr<Arena> owned_arena;
+  const Arena* arena = nullptr;
+  ExprId root = 0;
+  std::string source;
+
+  std::optional<std::string> source_text(ExprId expression) const;
+};
+
+// Pattern syntax is represented separately from expression syntax. These
+// nodes are immutable value records attached to the owning statement/arm;
+// their child order is source order and no expression-text re-splitting is
+// needed by checker or emitter consumers.
+struct PatternNode {
+  enum class Kind : std::uint8_t {
+    Unknown, EnumTag, EnumCase, QualifiedRecoveryCase,
+    GroupedAlternatives, RecoveryCatchall, RecoveryBinding
+  } kind = Kind::Unknown;
+  std::string type_name, case_name, binding;
+  std::vector<std::string> payload_bindings;
+  std::vector<PatternNode> alternatives;
+  bool payload_pattern = false;
+};
+PatternNode match_pattern(std::string_view tag,
+                          const std::vector<std::string>& bindings);
+PatternNode recovery_pattern(std::string_view selector);
+PatternNode qualified_recovery_pattern(std::string_view source);
+ExpressionView view(const Arena& arena, ExprId root,
+                    std::string_view source);
+std::optional<ExpressionView> parse_view(std::string_view source);
+std::optional<ExpressionView> parse_named_argument_view(std::string_view source);
+std::optional<std::string> outer_grouping_fragment(std::string_view source);
+ExprId unparenthesized(const Arena& arena, ExprId expression);
+bool project_simple_call(const ExpressionView& view, std::string& callee,
+                         std::vector<std::string>& arguments);
+bool project_member_call(const ExpressionView& view, std::string& receiver,
+                         std::string& member,
+                         std::vector<std::string>& arguments,
+                         bool* outputs_written = nullptr);
+bool project_bound_method(const ExpressionView& view, std::string& receiver,
+                          std::string& method);
+bool project_member_access(const ExpressionView& view, std::string& base,
+                           std::string& member);
+bool project_unary(const ExpressionView& view, std::string& operation,
+                   std::string& operand);
+bool project_message(const ExpressionView& view, std::string& target,
+                     std::string& handler, std::vector<std::string>& arguments);
+std::vector<MessageCall> message_calls(const ExpressionView& view);
+std::optional<std::uint64_t> string_literal_source_payload_bytes(
+    const ExpressionView& view);
+bool contains_message(const ExpressionView& view);
+std::string strip_grouping(const ExpressionView& view);
+std::string normalize_pipeline_tree(const ExpressionView& view);
+bool project_fileio_open(const ExpressionView& view,
+                         std::vector<std::string>& arguments);
+bool project_fileio_chunks_source(const ExpressionView& view,
+                                  std::string& receiver,
+                                  std::string& size_expression);
+bool project_executor_chain(
+    const ExpressionView& view,
+    std::vector<std::pair<std::string, std::vector<std::string>>>& calls);
+bool project_named_argument(const ExpressionView& view, std::string& name,
+                            std::string& value);
+std::optional<char> project_named_argument_separator(const ExpressionView& view);
+bool project_index(const ExpressionView& view, std::string& base,
+                   std::string& index);
+std::optional<std::vector<std::string>> project_vector_literal(
+    const ExpressionView& view);
+std::optional<std::vector<std::string>> parse_vector_literal_children(
+    std::string_view source);
+bool project_enum_case(const ExpressionView& view, std::string& enum_name,
+                       std::string& case_name,
+                       std::vector<std::string>& fields,
+                       bool* called = nullptr);
+bool project_binary(const ExpressionView& view,
+                    const std::vector<std::string>& operators,
+                    std::pair<std::string, std::string>& operands,
+                    std::string& operation);
+std::optional<std::vector<std::string>> project_delimited_children(
+    const ExpressionView& view, char delimiter);
+std::optional<std::vector<std::string>> project_tuple_elements(
+    const ExpressionView& view);
+std::vector<MemberAccess> member_accesses(const ExpressionView& view);
+std::optional<std::vector<std::string>> parse_delimited_children(
+    std::string_view source, char delimiter);
+void assert_delimited_parity(const ExpressionView& view, char delimiter,
+                             const std::optional<std::vector<std::string>>& tree);
+bool project_identifier(const ExpressionView& view, std::string& name);
+bool project_root_identifier(const ExpressionView& view, std::string& name);
+bool is_identifier(const ExpressionView& view);
+bool identifier_named(const ExpressionView& view, std::string_view name);
+bool expressions_equal(const ExpressionView& left, const ExpressionView& right);
+bool contains_member_call(const ExpressionView& expression,
+                          std::string_view receiver,
+                          std::string_view member);
+bool empty_vector_literal(const ExpressionView& view);
+bool member_expression(const ExpressionView& view);
+bool empty_constructor_named(const ExpressionView& view, std::string_view name);
+std::optional<std::string> project_empty_constructor_type(
+    const ExpressionView& view);
+LiteralClass root_literal_class(const ExpressionView& view);
+std::optional<std::string> root_literal_spelling(const ExpressionView& view);
+bool decimal_integer_literal(const ExpressionView& view, bool allow_sign,
+                             bool allow_underscores);
+bool positive_decimal_integer_literal(const ExpressionView& view);
+std::optional<DecodedNumber> numeric_literal_value(
+    const ExpressionView& view);
+bool placeholder_expression(const ExpressionView& view);
+bool contains_identifier(const ExpressionView& view, std::string_view name);
+bool expression_mentions(const ExpressionView& view, std::string_view name);
+bool structurally_equal(const ExpressionView& left,
+                        const ExpressionView& right);
+
 std::uint64_t fingerprint(const std::string& source);
 void assert_fresh(const Handle& handle, const std::string& source);
 const Handle* lookup(const std::vector<Handle>& handles, const Arena& arena,
@@ -135,14 +280,31 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
 
 enum class Mode { Off, Shadow };
 Mode mode();  // Rejects the reserved MOSS_EST=on setting.
+bool begins_with_keyword(std::string_view source, std::string_view keyword);
+bool leading_dot_member_call_fragment(std::string_view source);
+std::optional<std::pair<std::string, std::string>> juxtaposed_operands(
+    std::string_view source);
+bool has_rejected_if_else_fragment_shape(std::string_view source);
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id = 0,
                         std::uint32_t base_line = 1,
                         std::uint32_t base_column = 1);
+bool incomplete_trailing_operator(std::string_view source);
+enum class SourceSyntaxIssue : std::uint8_t {
+  None, BareNot, UnclosedCollection, InvalidOperatorAdjacency, TrailingMember
+};
+SourceSyntaxIssue source_syntax_issue(std::string_view source);
+std::optional<std::string> trailing_member_base(std::string_view source);
+bool incomplete_collection_initializer_syntax(std::string_view source);
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
     const Arena& arena, ExprId expression, std::string_view source,
     const std::function<std::optional<FunctionalNodeKind>(
         std::string_view)>& resolve_stage);
+// Cheap lexical candidate rejection belongs to EST. A positive result is only
+// evidence to parse; the Pipeline node remains the syntax oracle.
+inline bool functional_pipeline_candidate(std::string_view source) {
+  return source.find("|>") != std::string_view::npos;
+}
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);

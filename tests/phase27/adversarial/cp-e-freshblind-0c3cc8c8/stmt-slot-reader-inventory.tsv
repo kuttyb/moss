@@ -1,0 +1,869 @@
+path	line	base	field	classification	source
+src/semantic_checker.cpp	4178	source_statement	a	tree_or_semantic_consumer	tree_simple_identifier(source_statement.a) &&
+src/semantic_checker.cpp	4249	source_statement	a	tree_or_semantic_consumer	!tree_simple_identifier(source_statement.a)) continue;
+src/semantic_checker.cpp	5130	source	a	tree_or_semantic_consumer	if (tree_simple_identifier(source.a) &&
+src/semantic_checker.cpp	5156	source	a	tree_or_semantic_consumer	if (!tree_simple_identifier(source.a)) {
+src/semantic_checker.cpp	5415	source	a	Stmt-kind name/presence/flow/forwarding	if (source.a.empty()) return std::nullopt;
+src/semantic_checker.cpp	9299	s	a	Stmt-kind name/presence/flow/forwarding	if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+src/semantic_checker.cpp	9300	s	a	tree_or_semantic_consumer	auto result = inferred_expr_type(s.a, inferred_env);
+src/semantic_checker.cpp	9325	statement	a	Stmt-kind name/presence/flow/forwarding	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	9527	source	text	Stmt-kind name/presence/flow/forwarding	const string code = source_code_only(source.text);
+src/semantic_checker.cpp	9905	stmt	a	Stmt-kind name/presence/flow/forwarding	if (stmt.a == name) {
+src/semantic_checker.cpp	9916	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b);
+src/semantic_checker.cpp	9977	statement	b	Stmt-kind name/presence/flow/forwarding	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	9979	statement	a	tree_or_semantic_consumer	if (!tree_plain_identifier(statement.a)) continue;
+src/semantic_checker.cpp	9980	statement	a	Stmt-kind name/presence/flow/forwarding	if (by_binding.count(statement.a))
+src/semantic_checker.cpp	9981	statement	a	Stmt-kind name/presence/flow/forwarding	fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+src/semantic_checker.cpp	9984	statement	a	Stmt-kind name/presence/flow/forwarding	instance.binding = statement.a;
+src/semantic_checker.cpp	9985	statement	a	Stmt-kind name/presence/flow/forwarding	instance.identity = "main::" + statement.a;
+src/semantic_checker.cpp	9992	statement	a	Stmt-kind name/presence/flow/forwarding	specialization.instance == statement.a) {
+src/semantic_checker.cpp	10001	statement	a	Stmt-kind name/presence/flow/forwarding	concrete.instance = statement.a;
+src/semantic_checker.cpp	10020	statement	a	Stmt-kind name/presence/flow/forwarding	by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+src/semantic_checker.cpp	10021	statement	a	Stmt-kind name/presence/flow/forwarding	binding_types[statement.a] = domain.name;
+src/semantic_checker.cpp	10026	statement	b	Stmt-kind name/presence/flow/forwarding	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	10027	statement	b	Stmt-kind name/presence/flow/forwarding	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	10033	statement	a	tree_or_semantic_consumer	statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	10040	statement	a	Stmt-kind name/presence/flow/forwarding	if (!by_binding.count(statement.a))
+src/semantic_checker.cpp	10045	statement	b	tree_or_semantic_consumer	if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
+src/semantic_checker.cpp	10053	statement	b	Stmt-kind name/presence/flow/forwarding	auto supplied = parse_bindings(statement.b);
+src/semantic_checker.cpp	10074	statement	a	Stmt-kind name/presence/flow/forwarding	edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
+src/semantic_checker.cpp	10122	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.indent > 0 && domain_constructor(statement.b))
+src/semantic_checker.cpp	10288	statement	a	tree_or_semantic_consumer	return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	10753	statement	b	tree_or_semantic_consumer	if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
+src/semantic_checker.cpp	12291	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+src/semantic_checker.cpp	12292	statement	a	Stmt-kind name/presence/flow/forwarding	!include_result(statement.a))
+src/semantic_checker.cpp	12623	statement	a	tree_or_semantic_consumer	if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	12624	statement	a	Stmt-kind name/presence/flow/forwarding	auto existing = env.find(statement.a);
+src/semantic_checker.cpp	12628	statement	b	Stmt-kind name/presence/flow/forwarding	} else if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	12629	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = *constructed;
+src/semantic_checker.cpp	12630	statement	b	tree_or_semantic_consumer	} else if (auto inferred = inferred_expr_type(statement.b, env)) {
+src/semantic_checker.cpp	12635	statement	a	Stmt-kind name/presence/flow/forwarding	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12640	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = binding;
+src/semantic_checker.cpp	12647	statement	a	Stmt-kind name/presence/flow/forwarding	auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp	12657	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = cinf;
+src/semantic_checker.cpp	12661	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = "_value";
+src/semantic_checker.cpp	12664	statement	a	Stmt-kind name/presence/flow/forwarding	const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+src/semantic_checker.cpp	12667	statement	a	tree_or_semantic_consumer	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	12676	prior	a	tree_or_semantic_consumer	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12676	prior	b	tree_or_semantic_consumer	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12681	prior	b	Stmt-kind name/presence/flow/forwarding	0, prior.b, join_context,
+src/semantic_checker.cpp	12687	statement	b	tree_or_semantic_consumer	auto value_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	12697	prior	a	tree_or_semantic_consumer	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12697	prior	b	tree_or_semantic_consumer	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12702	prior	b	Stmt-kind name/presence/flow/forwarding	0, prior.b, join_context, *refined);
+src/semantic_checker.cpp	12718	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	12722	statement	b	Stmt-kind name/presence/flow/forwarding	if (const Handler* handler = find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	12733	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+src/semantic_checker.cpp	12734	statement	b	Stmt-kind name/presence/flow/forwarding	(statement.b == "push" ||
+src/semantic_checker.cpp	12735	statement	b	Stmt-kind name/presence/flow/forwarding	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	12737	statement	a	Stmt-kind name/presence/flow/forwarding	auto container = env.find(statement.a);
+src/semantic_checker.cpp	12739	statement	a	Stmt-kind name/presence/flow/forwarding	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12745	prior	a	Stmt-kind name/presence/flow/forwarding	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12745	statement	a	Stmt-kind name/presence/flow/forwarding	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12746	prior	b	tree_or_semantic_consumer	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12747	prior	b	tree_or_semantic_consumer	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12748	prior	b	tree_or_semantic_consumer	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12749	prior	b	tree_or_semantic_consumer	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12757	prior	b	Stmt-kind name/presence/flow/forwarding	prior.b, join_context, canonical_type_name(retained));
+src/semantic_checker.cpp	12769	prior	a	tree_or_semantic_consumer	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12769	statement	a	tree_or_semantic_consumer	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12770	prior	b	tree_or_semantic_consumer	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12771	prior	b	tree_or_semantic_consumer	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12772	prior	b	tree_or_semantic_consumer	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12773	prior	b	tree_or_semantic_consumer	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12781	prior	b	Stmt-kind name/presence/flow/forwarding	prior.b, join_context, *refined);
+src/semantic_checker.cpp	12817	statement	a	tree_or_semantic_consumer	auto scrutinee_type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	12821	statement	a	Stmt-kind name/presence/flow/forwarding	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12821	statement	a	Stmt-kind name/presence/flow/forwarding	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12830	statement	a	Stmt-kind name/presence/flow/forwarding	deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+src/semantic_checker.cpp	13019	candidate	a	Stmt-kind name/presence/flow/forwarding	candidate.a != name ||
+src/semantic_checker.cpp	13129	statement	b	Stmt-kind name/presence/flow/forwarding	statement.line, statement.b, incoming).value_or("_value");
+src/semantic_checker.cpp	13130	statement	a	Stmt-kind name/presence/flow/forwarding	body_env[statement.a] = element_type;
+src/semantic_checker.cpp	13135	statement	a	Stmt-kind name/presence/flow/forwarding	body_env.terms[statement.a] = binding->second;
+src/semantic_checker.cpp	13145	statement	a	Stmt-kind name/presence/flow/forwarding	auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp	13148	statement	a	Stmt-kind name/presence/flow/forwarding	scoped_types->scoped_locals[statement.a] = binding->second;
+src/semantic_checker.cpp	13155	statement	a	Stmt-kind name/presence/flow/forwarding	if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+src/semantic_checker.cpp	13156	statement	a	Stmt-kind name/presence/flow/forwarding	else scoped_types->scoped_locals.erase(statement.a);
+src/semantic_checker.cpp	13161	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp	13162	statement	a	Stmt-kind name/presence/flow/forwarding	body_env[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13164	statement	a	Stmt-kind name/presence/flow/forwarding	body_env.erase(statement.a);
+src/semantic_checker.cpp	13165	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp	13167	statement	a	Stmt-kind name/presence/flow/forwarding	body_env.terms[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13169	statement	a	Stmt-kind name/presence/flow/forwarding	body_env.terms.erase(statement.a);
+src/semantic_checker.cpp	13187	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13189	statement	a	Stmt-kind name/presence/flow/forwarding	env.terms[statement.a] = term;
+src/semantic_checker.cpp	13192	statement	b	Stmt-kind name/presence/flow/forwarding	!statement.b.empty()) {
+src/semantic_checker.cpp	13193	statement	a	tree_or_semantic_consumer	if (auto receiver = inferred_expr_type(statement.a, env)) {
+src/semantic_checker.cpp	13196	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, join_context, canonical_type_name(*receiver));
+src/semantic_checker.cpp	13204	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.text;
+src/semantic_checker.cpp	13204	statement	text	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.text;
+src/semantic_checker.cpp	13706	statement	a	tree_or_semantic_consumer	auto scrutinee_type = inferred_expr_type(statement.a, scan);
+src/semantic_checker.cpp	13725	statement	a	Stmt-kind name/presence/flow/forwarding	[&](const EnumCase& c) { return c.name == statement.a; });
+src/semantic_checker.cpp	13766	statement	b	Stmt-kind name/presence/flow/forwarding	constrain_map_lookup(statement.line, statement.b);
+src/semantic_checker.cpp	13769	statement	a	Stmt-kind name/presence/flow/forwarding	constrain_map_lookup(statement.line, statement.a);
+src/semantic_checker.cpp	13775	statement	b	tree_or_semantic_consumer	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	13778	statement	b	Stmt-kind name/presence/flow/forwarding	} else if (auto source = term_for(statement.b)) {
+src/semantic_checker.cpp	13793	statement	b	Stmt-kind name/presence/flow/forwarding	statement.line, statement.b, scan).value_or("_value");
+src/semantic_checker.cpp	13806	statement	a	Stmt-kind name/presence/flow/forwarding	current_semantic_context_, statement.line) + ":" + statement.a;
+src/semantic_checker.cpp	13811	statement	a	Stmt-kind name/presence/flow/forwarding	locals[statement.a] = loop_term;
+src/semantic_checker.cpp	13813	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = resolved->is_closed()
+src/semantic_checker.cpp	13815	statement	a	Stmt-kind name/presence/flow/forwarding	: "_iterator_element:" + statement.a;
+src/semantic_checker.cpp	13817	statement	a	Stmt-kind name/presence/flow/forwarding	locals.erase(statement.a);
+src/semantic_checker.cpp	13818	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = "_value";
+src/semantic_checker.cpp	13822	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	13823	statement	a	Stmt-kind name/presence/flow/forwarding	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13829	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp	13833	statement	b	Stmt-kind name/presence/flow/forwarding	: find_handler(*domain->second, statement.b);
+src/semantic_checker.cpp	13869	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13870	statement	b	Stmt-kind name/presence/flow/forwarding	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	13871	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = *constructed;
+src/semantic_checker.cpp	13874	statement	b	tree_or_semantic_consumer	auto inferred = inferred_expr_type(statement.b, scan);
+src/semantic_checker.cpp	13875	statement	b	Stmt-kind name/presence/flow/forwarding	constrain_call(statement.line, statement.b);
+src/semantic_checker.cpp	13876	statement	b	Stmt-kind name/presence/flow/forwarding	auto instantiated = instantiate_summary(statement.line, statement.b,
+src/semantic_checker.cpp	13878	statement	a	Stmt-kind name/presence/flow/forwarding	body_types.provider_origins.erase(statement.a);
+src/semantic_checker.cpp	13881	statement	b	tree_or_semantic_consumer	if (tree_parse_simple_call(trim(statement.b), assigned_callee,
+src/semantic_checker.cpp	13888	statement	a	Stmt-kind name/presence/flow/forwarding	body_types.provider_origins.emplace(statement.a,
+src/semantic_checker.cpp	13898	statement	b	Stmt-kind name/presence/flow/forwarding	auto retained_source = body_types.known_expression(statement.b);
+src/semantic_checker.cpp	13903	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13906	statement	a	Stmt-kind name/presence/flow/forwarding	auto prior = locals.find(statement.a);
+src/semantic_checker.cpp	13911	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13923	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	13925	statement	a	Stmt-kind name/presence/flow/forwarding	locals.emplace(statement.a, term);
+src/semantic_checker.cpp	13928	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = prior_open || !term->is_closed()
+src/semantic_checker.cpp	13929	statement	a	Stmt-kind name/presence/flow/forwarding	? solver.resolve(locals.at(statement.a))->to_canonical_string()
+src/semantic_checker.cpp	13932	statement	b	Stmt-kind name/presence/flow/forwarding	(statement.b == "push" ||
+src/semantic_checker.cpp	13933	statement	b	Stmt-kind name/presence/flow/forwarding	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	13935	statement	a	Stmt-kind name/presence/flow/forwarding	auto local = locals.find(statement.a);
+src/semantic_checker.cpp	13953	statement	b	Stmt-kind name/presence/flow/forwarding	const string message = statement.b +
+src/semantic_checker.cpp	13955	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a + "'";
+src/semantic_checker.cpp	13956	statement	a	Stmt-kind name/presence/flow/forwarding	auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp	13971	statement	a	Stmt-kind name/presence/flow/forwarding	scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+src/semantic_checker.cpp	13973	statement	a	tree_or_semantic_consumer	tree_index_expression(statement.a)) {
+src/semantic_checker.cpp	13975	statement	a	tree_or_semantic_consumer	if (!tree_parse_index(statement.a, base, index)) continue;
+src/semantic_checker.cpp	13978	statement	b	Stmt-kind name/presence/flow/forwarding	auto value = term_for(statement.b);
+src/semantic_checker.cpp	14018	statement	a	tree_or_semantic_consumer	tree_member_access(statement.a)) {
+src/semantic_checker.cpp	14019	statement	a	Stmt-kind name/presence/flow/forwarding	auto field = body_types.known_expression(statement.a);
+src/semantic_checker.cpp	14020	statement	b	Stmt-kind name/presence/flow/forwarding	auto rhs = term_for(statement.b);
+src/semantic_checker.cpp	14025	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	14071	checked_statement	b	Stmt-kind name/presence/flow/forwarding	if (closed.size() == 1 && !checked_statement.b.empty()) {
+src/semantic_checker.cpp	14079	checked_statement	b	tree_or_semantic_consumer	est::ExprSlot::RhsValue, 0, checked_statement.b,
+src/semantic_checker.cpp	14112	checked_statement	b	tree_or_semantic_consumer	est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+src/semantic_checker.cpp	14156	statement	a	Stmt-kind name/presence/flow/forwarding	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14161	statement	b	Stmt-kind name/presence/flow/forwarding	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14166	statement	b	Stmt-kind name/presence/flow/forwarding	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14173	statement	a	Stmt-kind name/presence/flow/forwarding	const string& receiver_name = statement.a;
+src/semantic_checker.cpp	14174	statement	b	Stmt-kind name/presence/flow/forwarding	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14212	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14213	statement	a	Stmt-kind name/presence/flow/forwarding	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	14236	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	14237	statement	a	Stmt-kind name/presence/flow/forwarding	auto function = functions_.find(statement.a);
+src/semantic_checker.cpp	14265	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty())
+src/semantic_checker.cpp	14266	statement	a	Stmt-kind name/presence/flow/forwarding	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14269	statement	text	Stmt-kind name/presence/flow/forwarding	constrain_constructor_fields(statement.line, statement.text, current_env);
+src/semantic_checker.cpp	14463	statement	b	Stmt-kind name/presence/flow/forwarding	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	14466	statement	a	Stmt-kind name/presence/flow/forwarding	bindings[statement.a] = domain->second;
+src/semantic_checker.cpp	14467	statement	a	Stmt-kind name/presence/flow/forwarding	main_env[statement.a] = domain->second->name;
+src/semantic_checker.cpp	14480	statement	a	Stmt-kind name/presence/flow/forwarding	find_specialization(statement.a, domain->second->name);
+src/semantic_checker.cpp	14489	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14490	statement	a	Stmt-kind name/presence/flow/forwarding	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14491	invoke_view	a	tree_or_semantic_consumer	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14491	invoke_view	b	tree_or_semantic_consumer	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14501	statement	a	Stmt-kind name/presence/flow/forwarding	const string& receiver = statement.a;
+src/semantic_checker.cpp	14505	statement	b	Stmt-kind name/presence/flow/forwarding	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14622	body_statement	a	tree_or_semantic_consumer	if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+src/semantic_checker.cpp	14807	statement	a	tree_or_semantic_consumer	auto actual = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	14810	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto retained = body_types.known_expression(statement.a)) {
+src/semantic_checker.cpp	15147	statement	a	tree_or_semantic_consumer	if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
+src/semantic_checker.cpp	15172	statement	a	Stmt-kind name/presence/flow/forwarding	reject_untyped_fields(statement.line, statement.a, env);
+src/semantic_checker.cpp	15173	statement	b	Stmt-kind name/presence/flow/forwarding	reject_untyped_fields(statement.line, statement.b, env);
+src/semantic_checker.cpp	15177	statement	text	Stmt-kind name/presence/flow/forwarding	reject_untyped_fields(statement.line, statement.text, env);
+src/semantic_checker.cpp	15195	statement	a	tree_or_semantic_consumer	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15262	s	a	Stmt-kind name/presence/flow/forwarding	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15262	s	a	Stmt-kind name/presence/flow/forwarding	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15275	s	b	tree_or_semantic_consumer	if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
+src/semantic_checker.cpp	15287	s	a	Stmt-kind name/presence/flow/forwarding	derive_expression_constraints(function, s.a);
+src/semantic_checker.cpp	15288	s	b	Stmt-kind name/presence/flow/forwarding	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15291	s	b	Stmt-kind name/presence/flow/forwarding	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15292	s	a	Stmt-kind name/presence/flow/forwarding	if (s.kind == Stmt::Kind::Return && !s.a.empty())
+src/semantic_checker.cpp	15293	s	a	Stmt-kind name/presence/flow/forwarding	derive_expression_constraints(function, s.a, result_expectation());
+src/semantic_checker.cpp	15300	statement	a	tree_or_semantic_consumer	tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	15301	statement	a	Stmt-kind name/presence/flow/forwarding	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15301	statement	b	Stmt-kind name/presence/flow/forwarding	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15303	statement	a	tree_or_semantic_consumer	const auto returned_binding = tree_identifier_name(statement.a);
+src/semantic_checker.cpp	15466	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+src/semantic_checker.cpp	15477	statement	a	Stmt-kind name/presence/flow/forwarding	include_typed_result(statement.line, statement.a, eval_env);
+src/semantic_checker.cpp	15517	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+src/semantic_checker.cpp	15518	statement	a	tree_or_semantic_consumer	auto result = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	15644	statement	a	tree_or_semantic_consumer	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15672	statement	a	Stmt-kind name/presence/flow/forwarding	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	16245	branch	a	Stmt-kind name/presence/flow/forwarding	observable_expression_effects(branch.a, condition_env, domain_fields);
+src/semantic_checker.cpp	16286	statement	a	Stmt-kind name/presence/flow/forwarding	names.insert(statement.a);
+src/semantic_checker.cpp	16287	statement	a	Stmt-kind name/presence/flow/forwarding	else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+src/semantic_checker.cpp	16288	statement	a	Stmt-kind name/presence/flow/forwarding	names.insert(statement.a);
+src/semantic_checker.cpp	16301	statement	a	tree_or_semantic_consumer	if (expression_uses(statement.a, name) ||
+src/semantic_checker.cpp	16302	statement	b	tree_or_semantic_consumer	expression_uses(statement.b, name) ||
+src/semantic_checker.cpp	16331	branch	a	Stmt-kind name/presence/flow/forwarding	domain, source, branch.a, &specialization);
+src/semantic_checker.cpp	16421	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16422	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = *type;
+src/semantic_checker.cpp	16480	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a;
+src/semantic_checker.cpp	16480	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a;
+src/semantic_checker.cpp	16555	statement	b	Stmt-kind name/presence/flow/forwarding	domain, source, statement.b, &specialization, &locals));
+src/semantic_checker.cpp	16573	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16574	statement	a	Stmt-kind name/presence/flow/forwarding	locals[statement.a] = *type;
+src/semantic_checker.cpp	16659	result	text	Stmt-kind name/presence/flow/forwarding	result.text = *result_expression;
+src/semantic_checker.cpp	17194	result	a	Stmt-kind name/presence/flow/forwarding	result.a = *function.result_expression;
+src/semantic_checker.cpp	17268	forwarded	a	Stmt-kind name/presence/flow/forwarding	forwarded.a = nested_name;
+src/semantic_checker.cpp	18345	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18347	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b == "consume" ? Effect::Consume : Effect::Read);
+src/semantic_checker.cpp	18348	statement	a	tree_or_semantic_consumer	auto type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	18427	statement	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18435	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a,
+src/semantic_checker.cpp	18435	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a,
+src/semantic_checker.cpp	18447	statement	b	tree_or_semantic_consumer	if (inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	18448	statement	a	Stmt-kind name/presence/flow/forwarding	child_env[statement.a] =
+src/semantic_checker.cpp	18449	statement	b	Stmt-kind name/presence/flow/forwarding	iterator_element_type(statement.line, statement.b, env)
+src/semantic_checker.cpp	18452	statement	a	Stmt-kind name/presence/flow/forwarding	child_env[statement.a] = "_value";
+src/semantic_checker.cpp	18456	statement	a	Stmt-kind name/presence/flow/forwarding	!copy_type(child_env.at(statement.a))) {
+src/semantic_checker.cpp	18457	statement	b	Stmt-kind name/presence/flow/forwarding	if (auto location = storage_location(statement.b, env)) {
+src/semantic_checker.cpp	18460	statement	a	Stmt-kind name/presence/flow/forwarding	leaf_effect_capture_->aliases[statement.a] = *location;
+src/semantic_checker.cpp	18480	statement	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18481	statement	b	Stmt-kind name/presence/flow/forwarding	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18483	statement	b	tree_or_semantic_consumer	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18486	statement	b	tree_or_semantic_consumer	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18488	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18488	statement	a	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18489	statement	b	Stmt-kind name/presence/flow/forwarding	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18489	statement	a	Stmt-kind name/presence/flow/forwarding	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18490	statement	a	Stmt-kind name/presence/flow/forwarding	else env[statement.a] = "_value";
+src/semantic_checker.cpp	18496	statement	a	tree_or_semantic_consumer	if (tree_parse_index(statement.a, base, ignored))
+src/semantic_checker.cpp	18497	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18500	statement	a	tree_or_semantic_consumer	if (tree_member_access(statement.a))
+src/semantic_checker.cpp	18501	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18504	statement	a	Stmt-kind name/presence/flow/forwarding	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18504	statement	a	Stmt-kind name/presence/flow/forwarding	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18505	statement	a	Stmt-kind name/presence/flow/forwarding	mark_effect_name(statement.a, Effect::Write, params, env,
+src/semantic_checker.cpp	18508	statement	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18509	statement	b	Stmt-kind name/presence/flow/forwarding	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18511	statement	b	tree_or_semantic_consumer	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18514	statement	b	tree_or_semantic_consumer	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18516	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18516	statement	a	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18517	statement	a	Stmt-kind name/presence/flow/forwarding	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18517	statement	b	Stmt-kind name/presence/flow/forwarding	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18522	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty())
+src/semantic_checker.cpp	18523	statement	text	tree_or_semantic_consumer	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18526	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18532	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18544	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	18546	statement	b	Stmt-kind name/presence/flow/forwarding	auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
+src/semantic_checker.cpp	18555	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18566	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty())
+src/semantic_checker.cpp	18567	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18572	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty())
+src/semantic_checker.cpp	18573	statement	a	tree_or_semantic_consumer	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18579	statement	text	tree_or_semantic_consumer	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18981	statement	b	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18984	statement	a	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18985	statement	b	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18988	statement	text	Stmt-kind name/presence/flow/forwarding	expressions.push_back(!statement.text.empty()
+src/semantic_checker.cpp	18989	statement	text	Stmt-kind name/presence/flow/forwarding	? statement.text
+src/semantic_checker.cpp	18990	statement	b	Stmt-kind name/presence/flow/forwarding	: !statement.b.empty()
+src/semantic_checker.cpp	18991	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18991	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18992	statement	a	Stmt-kind name/presence/flow/forwarding	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	19003	statement	a	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.a);
+src/semantic_checker.cpp	19008	statement	b	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19013	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19013	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19016	statement	text	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19036	statement	b	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19047	statement	a	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.a);
+src/semantic_checker.cpp	19052	statement	b	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19057	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19057	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19060	statement	text	Stmt-kind name/presence/flow/forwarding	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19138	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	19143	statement	b	Stmt-kind name/presence/flow/forwarding	? nullptr : find_handler(*declared->second, statement.b);
+src/semantic_checker.cpp	19150	statement	b	Stmt-kind name/presence/flow/forwarding	source, "handler:" + domain + "." + statement.b,
+src/semantic_checker.cpp	19154	statement	a	Stmt-kind name/presence/flow/forwarding	"synchronous_message", statement.a, {}, {}};
+src/semantic_checker.cpp	19810	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.a.empty()) {
+src/semantic_checker.cpp	19817	statement	a	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, env);
+src/semantic_checker.cpp	19819	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a == selected_binding) {
+src/semantic_checker.cpp	19829	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, env, {}, nullptr, {}, nullptr,
+src/semantic_checker.cpp	19844	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a;
+src/semantic_checker.cpp	19844	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.b : statement.a;
+src/semantic_checker.cpp	19881	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	19885	statement	b	Stmt-kind name/presence/flow/forwarding	find_handler(*domains_.at(receiver_type), statement.b)) {
+src/semantic_checker.cpp	19906	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.a == selected_binding) selected_binding.clear();
+src/semantic_checker.cpp	19907	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	19908	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = *type;
+src/semantic_checker.cpp	19962	statement	a	Stmt-kind name/presence/flow/forwarding	const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp	19967	statement	b	Stmt-kind name/presence/flow/forwarding	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	19973	statement	a	tree_or_semantic_consumer	const auto type = inferred_expr_type(statement.a, current);
+src/semantic_checker.cpp	20005	statement	a	tree_or_semantic_consumer	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	20005	statement	a	tree_or_semantic_consumer	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	20006	statement	b	tree_or_semantic_consumer	auto type = inferred_expr_type(statement.b, current);
+src/semantic_checker.cpp	20008	statement	a	Stmt-kind name/presence/flow/forwarding	auto [item, inserted] = candidates.emplace(statement.a, *type);
+src/semantic_checker.cpp	20024	statement	a	tree_or_semantic_consumer	tree_plain_identifier(expression) && expression == statement.a)
+src/semantic_checker.cpp	20793	while_stmt	a	Stmt-kind name/presence/flow/forwarding	string condition = trim(while_stmt.a);
+src/semantic_checker.cpp	20835	s	a	tree_or_semantic_consumer	auto root = tree_root_identifier(s.a);
+src/semantic_checker.cpp	20839	s	a	tree_or_semantic_consumer	if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
+src/semantic_checker.cpp	20842	s	b	tree_or_semantic_consumer	auto add = tree_split_binary(trim(s.b), {"+"});
+src/semantic_checker.cpp	20853	s	b	tree_or_semantic_consumer	auto sub = tree_split_binary(trim(s.b), {"-"});
+src/semantic_checker.cpp	20863	s	a	tree_or_semantic_consumer	const auto target = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20867	s	b	Stmt-kind name/presence/flow/forwarding	} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+src/semantic_checker.cpp	20868	s	a	tree_or_semantic_consumer	const auto root = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20869	s	b	Stmt-kind name/presence/flow/forwarding	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20869	s	b	Stmt-kind name/presence/flow/forwarding	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20869	s	b	Stmt-kind name/presence/flow/forwarding	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20899	loop	b	tree_or_semantic_consumer	if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
+src/semantic_checker.cpp	20918	loop	a	Stmt-kind name/presence/flow/forwarding	const string induction = trim(loop.a);
+src/semantic_checker.cpp	20925	statement	a	tree_or_semantic_consumer	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	20930	statement	a	tree_or_semantic_consumer	(tree_identifier_named(statement.a, range_binding) ||
+src/semantic_checker.cpp	20931	statement	a	tree_or_semantic_consumer	tree_identifier_named(statement.a, induction)))
+src/semantic_checker.cpp	20993	statement	b	Stmt-kind name/presence/flow/forwarding	string iter_expr = trim(statement.b);
+src/semantic_checker.cpp	21024	statement	a	tree_or_semantic_consumer	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21035	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+src/semantic_checker.cpp	21036	statement	a	tree_or_semantic_consumer	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21037	statement	b	Stmt-kind name/presence/flow/forwarding	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21037	statement	b	Stmt-kind name/presence/flow/forwarding	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21037	statement	b	Stmt-kind name/presence/flow/forwarding	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21038	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21038	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21060	statement	b	tree_or_semantic_consumer	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	21061	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = *type;
+src/semantic_checker.cpp	21256	statement	b	Stmt-kind name/presence/flow/forwarding	if (auto domain = domain_constructor(statement.b))
+src/semantic_checker.cpp	21257	statement	a	Stmt-kind name/presence/flow/forwarding	env[statement.a] = *domain;
+src/semantic_checker.cpp	22564	statement	a	Stmt-kind name/presence/flow/forwarding	alternatives = statement.a.empty()
+src/semantic_checker.cpp	22566	statement	a	Stmt-kind name/presence/flow/forwarding	: phase21_raised_identities(statement.line, statement.a, types);
+src/semantic_checker.cpp	22568	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = types.find(statement.a);
+src/semantic_checker.cpp	22573	statement	b	Stmt-kind name/presence/flow/forwarding	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	22642	s	a	tree_or_semantic_consumer	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22645	s	b	Stmt-kind name/presence/flow/forwarding	bool consuming = s.b == "consume";
+src/semantic_checker.cpp	22647	s	a	tree_or_semantic_consumer	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22647	s	a	tree_or_semantic_consumer	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22651	s	a	tree_or_semantic_consumer	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	22652	s	a	Stmt-kind name/presence/flow/forwarding	require_available(s.line, s.a, env);
+src/semantic_checker.cpp	22653	s	a	Stmt-kind name/presence/flow/forwarding	consume_binding(s.line, s.a, env, "consuming match");
+src/semantic_checker.cpp	22655	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22658	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22661	s	a	Stmt-kind name/presence/flow/forwarding	bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+src/semantic_checker.cpp	22662	s	a	Stmt-kind name/presence/flow/forwarding	bool prior_read = env.active_read_traversals.count(s.a);
+src/semantic_checker.cpp	22677	s	a	Stmt-kind name/presence/flow/forwarding	if (read_place) branch.active_read_traversals.insert(s.a);
+src/semantic_checker.cpp	22690	s	a	Stmt-kind name/presence/flow/forwarding	branch.borrowed_enum_payloads[name] = s.a;
+src/semantic_checker.cpp	22709	s	a	Stmt-kind name/presence/flow/forwarding	if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+src/semantic_checker.cpp	22846	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22893	s	b	Stmt-kind name/presence/flow/forwarding	auto element = iterator_element_type(s.line, s.b, env.types);
+src/semantic_checker.cpp	22895	s	b	Stmt-kind name/presence/flow/forwarding	if (auto location = storage_location(s.b, env.types))
+src/semantic_checker.cpp	22898	s	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22904	s	b	tree_or_semantic_consumer	check_ownership_expression(s.line, s.b, env, source_effect);
+src/semantic_checker.cpp	22907	s	a	Stmt-kind name/presence/flow/forwarding	body.types[s.a] = element.value_or("_value");
+src/semantic_checker.cpp	22908	s	a	Stmt-kind name/presence/flow/forwarding	body.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22915	s	a	Stmt-kind name/presence/flow/forwarding	body.types.erase(s.a);
+src/semantic_checker.cpp	22916	s	a	Stmt-kind name/presence/flow/forwarding	if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	22918	s	a	Stmt-kind name/presence/flow/forwarding	body.binding_identities[s.a] = prior->second;
+src/semantic_checker.cpp	22920	s	a	Stmt-kind name/presence/flow/forwarding	body.binding_identities.erase(s.a);
+src/semantic_checker.cpp	22921	s	a	Stmt-kind name/presence/flow/forwarding	body.moved.erase(s.a);
+src/semantic_checker.cpp	22944	s	b	Stmt-kind name/presence/flow/forwarding	string source = trim(s.b);
+src/semantic_checker.cpp	22945	s	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22948	s	b	Stmt-kind name/presence/flow/forwarding	storage_location(s.b, env.types))
+src/semantic_checker.cpp	22951	s	b	Stmt-kind name/presence/flow/forwarding	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22957	s	a	Stmt-kind name/presence/flow/forwarding	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22959	s	b	tree_or_semantic_consumer	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22962	s	b	tree_or_semantic_consumer	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	22966	s	b	Stmt-kind name/presence/flow/forwarding	if (auto constructed = domain_constructor(s.b)) type = *constructed;
+src/semantic_checker.cpp	22967	s	b	tree_or_semantic_consumer	else type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22978	s	a	Stmt-kind name/presence/flow/forwarding	env.types[s.a] = type.value_or("_value");
+src/semantic_checker.cpp	22979	s	a	Stmt-kind name/presence/flow/forwarding	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22981	s	a	Stmt-kind name/presence/flow/forwarding	if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+src/semantic_checker.cpp	22982	s	a	Stmt-kind name/presence/flow/forwarding	else env.immutable_locals.erase(s.a);
+src/semantic_checker.cpp	22983	s	a	Stmt-kind name/presence/flow/forwarding	env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+src/semantic_checker.cpp	22987	s	a	Stmt-kind name/presence/flow/forwarding	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	22988	s	a	Stmt-kind name/presence/flow/forwarding	fact.identity = env.binding_identities[s.a];
+src/semantic_checker.cpp	22996	s	a	Stmt-kind name/presence/flow/forwarding	const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+src/semantic_checker.cpp	22997	s	a	Stmt-kind name/presence/flow/forwarding	const bool targets_state_field = env.state_fields.count(s.a) != 0;
+src/semantic_checker.cpp	22998	s	a	tree_or_semantic_consumer	auto prior_type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22999	s	b	tree_or_semantic_consumer	auto new_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	23000	s	a	Stmt-kind name/presence/flow/forwarding	bool existing_owner = env.binding_identities.count(s.a) ||
+src/semantic_checker.cpp	23001	s	a	Stmt-kind name/presence/flow/forwarding	env.state_fields.count(s.a);
+src/semantic_checker.cpp	23005	s	b	tree_or_semantic_consumer	!tree_is_fileio_open(s.b) &&
+src/semantic_checker.cpp	23006	s	b	Stmt-kind name/presence/flow/forwarding	storage_location(s.b, env.types)))
+src/semantic_checker.cpp	23010	s	a	tree_or_semantic_consumer	if (tree_parse_index(s.a, lhs_base, lhs_index))
+src/semantic_checker.cpp	23011	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	23013	s	a	tree_or_semantic_consumer	if (tree_member_access(s.a))
+src/semantic_checker.cpp	23014	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	23015	s	a	tree_or_semantic_consumer	else if (tree_simple_identifier(s.a))
+src/semantic_checker.cpp	23016	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	23018	s	b	Stmt-kind name/presence/flow/forwarding	string source = trim(s.b);
+src/semantic_checker.cpp	23019	s	b	tree_or_semantic_consumer	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	23020	s	b	Stmt-kind name/presence/flow/forwarding	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	23026	s	a	Stmt-kind name/presence/flow/forwarding	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	23028	s	b	tree_or_semantic_consumer	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	23031	s	b	tree_or_semantic_consumer	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	23034	s	b	Stmt-kind name/presence/flow/forwarding	if (auto constructed = domain_constructor(s.b)) {
+src/semantic_checker.cpp	23035	s	a	Stmt-kind name/presence/flow/forwarding	env.types[s.a] = *constructed;
+src/semantic_checker.cpp	23036	s	a	Stmt-kind name/presence/flow/forwarding	env.moved.erase(s.a);
+src/semantic_checker.cpp	23040	s	a	tree_or_semantic_consumer	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	23045	s	a	Stmt-kind name/presence/flow/forwarding	env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+src/semantic_checker.cpp	23049	s	a	Stmt-kind name/presence/flow/forwarding	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23049	s	a	Stmt-kind name/presence/flow/forwarding	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23052	s	a	Stmt-kind name/presence/flow/forwarding	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23052	s	a	Stmt-kind name/presence/flow/forwarding	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23053	s	a	Stmt-kind name/presence/flow/forwarding	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	23057	s	a	Stmt-kind name/presence/flow/forwarding	env.moved.erase(s.a);
+src/semantic_checker.cpp	23061	s	a	Stmt-kind name/presence/flow/forwarding	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	23062	s	a	Stmt-kind name/presence/flow/forwarding	auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	23066	s	a	Stmt-kind name/presence/flow/forwarding	current_semantic_context_, s.line) + ":" + s.a;
+src/semantic_checker.cpp	23071	s	a	Stmt-kind name/presence/flow/forwarding	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23071	s	b	Stmt-kind name/presence/flow/forwarding	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23077	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23078	s	a	Stmt-kind name/presence/flow/forwarding	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23078	s	b	Stmt-kind name/presence/flow/forwarding	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23090	s	a	Stmt-kind name/presence/flow/forwarding	message_payload_materializes(s.a, env));
+src/semantic_checker.cpp	23115	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty())
+src/semantic_checker.cpp	23116	s	text	tree_or_semantic_consumer	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23118	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	23124	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	23125	s	a	Stmt-kind name/presence/flow/forwarding	auto container = env.types.find(s.a);
+src/semantic_checker.cpp	23127	s	a	Stmt-kind name/presence/flow/forwarding	? current_body_types_->resolved_local(s.a) : nullptr;
+src/semantic_checker.cpp	23142	s	a	tree_or_semantic_consumer	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	23146	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23149	s	a	Stmt-kind name/presence/flow/forwarding	require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+src/semantic_checker.cpp	23158	s	text	tree_or_semantic_consumer	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23166	s	a	tree_or_semantic_consumer	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23166	s	a	tree_or_semantic_consumer	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23172	s	a	Stmt-kind name/presence/flow/forwarding	if (!s.a.empty())
+src/semantic_checker.cpp	23173	s	a	tree_or_semantic_consumer	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23263	statement	text	Stmt-kind name/presence/flow/forwarding	if (auto expression = checker_est_view(statement.text);
+src/semantic_checker.cpp	24635	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24635	statement	a	Stmt-kind name/presence/flow/forwarding	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24642	statement	b	tree_or_semantic_consumer	direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24678	statement	b	Stmt-kind name/presence/flow/forwarding	if (requirements.size() == 1 && !statement.b.empty()) {
+src/semantic_checker.cpp	24686	statement	b	tree_or_semantic_consumer	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24689	statement	b	tree_or_semantic_consumer	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24729	statement	b	tree_or_semantic_consumer	tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24736	statement	b	Stmt-kind name/presence/flow/forwarding	0, statement.b, current_check_body_context_,
+src/semantic_checker.cpp	27975	synthetic_return	a	Stmt-kind name/presence/flow/forwarding	synthetic_return.a = expression;
+src/semantic_checker.cpp	27976	synthetic_return	text	Stmt-kind name/presence/flow/forwarding	synthetic_return.text = "return " + expression;
+src/semantic_checker.cpp	28233	statement	b	Stmt-kind name/presence/flow/forwarding	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	28239	statement	a	Stmt-kind name/presence/flow/forwarding	return route.name == statement.a;
+src/semantic_checker.cpp	28241	statement	a	Stmt-kind name/presence/flow/forwarding	err(statement.line, "domain route '" + statement.a +
+src/semantic_checker.cpp	28243	statement	b	Stmt-kind name/presence/flow/forwarding	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	28251	statement	a	Stmt-kind name/presence/flow/forwarding	auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp	28253	statement	a	Stmt-kind name/presence/flow/forwarding	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28254	statement	a	Stmt-kind name/presence/flow/forwarding	for (const auto& binding : functional_captures(statement.a, current_env))
+src/semantic_checker.cpp	28258	statement	b	Stmt-kind name/presence/flow/forwarding	FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
+src/semantic_checker.cpp	28259	statement	b	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28262	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28262	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28263	statement	b	tree_or_semantic_consumer	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28264	statement	b	tree_or_semantic_consumer	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28268	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28268	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28269	statement	a	Stmt-kind name/presence/flow/forwarding	const auto prior_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28270	statement	b	tree_or_semantic_consumer	auto new_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28277	statement	a	Stmt-kind name/presence/flow/forwarding	"assignment to binding '" + statement.a + "' of type '" +
+src/semantic_checker.cpp	28283	statement	a	tree_or_semantic_consumer	if (tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	28284	statement	a	Stmt-kind name/presence/flow/forwarding	if (!current_env.count(statement.a)) {
+src/semantic_checker.cpp	28285	statement	b	tree_or_semantic_consumer	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28286	statement	b	tree_or_semantic_consumer	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28289	statement	a	Stmt-kind name/presence/flow/forwarding	auto bound_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28290	statement	b	tree_or_semantic_consumer	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28291	statement	a	Stmt-kind name/presence/flow/forwarding	auto bound_term = checked_types.resolved_local(statement.a);
+src/semantic_checker.cpp	28294	statement	b	Stmt-kind name/presence/flow/forwarding	rhs_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28305	statement	a	Stmt-kind name/presence/flow/forwarding	canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+src/semantic_checker.cpp	28311	statement	a	tree_or_semantic_consumer	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	28320	statement	b	tree_or_semantic_consumer	auto value_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28326	statement	b	Stmt-kind name/presence/flow/forwarding	value_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28361	statement	a	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28371	statement	a	tree_or_semantic_consumer	auto element_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28372	statement	a	Stmt-kind name/presence/flow/forwarding	auto element_term = checked_term(statement.a, element_type);
+src/semantic_checker.cpp	28373	statement	b	Stmt-kind name/presence/flow/forwarding	auto value_term = checked_term(statement.b, value_type);
+src/semantic_checker.cpp	28400	statement	a	tree_or_semantic_consumer	if (tree_member_access(statement.a)) {
+src/semantic_checker.cpp	28401	statement	a	tree_or_semantic_consumer	auto field_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28402	statement	b	tree_or_semantic_consumer	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28403	statement	a	Stmt-kind name/presence/flow/forwarding	auto field_term = checked_term(statement.a, field_type);
+src/semantic_checker.cpp	28405	statement	b	Stmt-kind name/presence/flow/forwarding	if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+src/semantic_checker.cpp	28413	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a + "' of type '" +
+src/semantic_checker.cpp	28425	statement	a	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28431	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty())
+src/semantic_checker.cpp	28432	statement	a	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28438	statement	a	Stmt-kind name/presence/flow/forwarding	auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp	28440	statement	a	Stmt-kind name/presence/flow/forwarding	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28441	statement	b	Stmt-kind name/presence/flow/forwarding	check_for_source(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28461	statement	a	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, current_env);
+src/semantic_checker.cpp	28463	statement	a	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28463	statement	b	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28466	statement	a	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, *target, current_env);
+src/semantic_checker.cpp	28473	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28478	statement	b	Stmt-kind name/presence/flow/forwarding	"handler '" + current->name + "." + statement.b +
+src/semantic_checker.cpp	28485	statement	a	Stmt-kind name/presence/flow/forwarding	{"domain-instance", statement.a,
+src/semantic_checker.cpp	28486	statement	a	Stmt-kind name/presence/flow/forwarding	domain_instance_semantic_identity(statement.a, current->name),
+src/semantic_checker.cpp	28487	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, {}, 0},
+src/semantic_checker.cpp	28488	statement	b	Stmt-kind name/presence/flow/forwarding	{"handler", current->name + "." + statement.b,
+src/semantic_checker.cpp	28520	statement	text	Stmt-kind name/presence/flow/forwarding	// Member calls are captured by check_expression(statement.text) below;
+src/semantic_checker.cpp	28523	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b.empty()) {
+src/semantic_checker.cpp	28526	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b.empty()
+src/semantic_checker.cpp	28529	statement	text	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28529	statement	a	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28529	statement	text	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28546	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28547	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28550	statement	a	tree_or_semantic_consumer	: inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28555	statement	a	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28555	statement	b	Stmt-kind name/presence/flow/forwarding	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28559	statement	b	Stmt-kind name/presence/flow/forwarding	"domain handler '" + domain + "." + statement.b +
+src/semantic_checker.cpp	28564	statement	a	Stmt-kind name/presence/flow/forwarding	{{"domain-instance", statement.a,
+src/semantic_checker.cpp	28565	statement	a	Stmt-kind name/presence/flow/forwarding	domain_instance_semantic_identity(statement.a, domain),
+src/semantic_checker.cpp	28566	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, {}, 0},
+src/semantic_checker.cpp	28567	statement	b	Stmt-kind name/presence/flow/forwarding	{"handler", domain + "." + statement.b,
+src/semantic_checker.cpp	28571	statement	a	Stmt-kind name/presence/flow/forwarding	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28571	statement	b	Stmt-kind name/presence/flow/forwarding	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28589	statement	b	Stmt-kind name/presence/flow/forwarding	canonical_type_name(*receiver_type), statement.b,
+src/semantic_checker.cpp	28594	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b + "' for supplied arguments");
+src/semantic_checker.cpp	28602	statement	a	Stmt-kind name/presence/flow/forwarding	constraint.subject == statement.a &&
+src/semantic_checker.cpp	28603	statement	b	Stmt-kind name/presence/flow/forwarding	constraint.detail == statement.b &&
+src/semantic_checker.cpp	28608	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28608	statement	b	Stmt-kind name/presence/flow/forwarding	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28615	statement	a	Stmt-kind name/presence/flow/forwarding	const bool delayed_assert_check = statement.a == "assert" &&
+src/semantic_checker.cpp	28616	statement	a	Stmt-kind name/presence/flow/forwarding	!functions_.count(statement.a);
+src/semantic_checker.cpp	28618	statement	a	Stmt-kind name/presence/flow/forwarding	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28631	statement	a	Stmt-kind name/presence/flow/forwarding	auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp	28635	statement	a	Stmt-kind name/presence/flow/forwarding	"binding:pending:" + statement.a);
+src/semantic_checker.cpp	28638	statement	a	Stmt-kind name/presence/flow/forwarding	call_occurrence_id, "builtin:" + statement.a);
+src/semantic_checker.cpp	28641	statement	text	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28641	statement	a	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28641	statement	text	Stmt-kind name/presence/flow/forwarding	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28646	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28647	statement	text	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.text, current_env,
+src/semantic_checker.cpp	28660	statement	b	Stmt-kind name/presence/flow/forwarding	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28660	statement	a	Stmt-kind name/presence/flow/forwarding	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28661	statement	a	Stmt-kind name/presence/flow/forwarding	!functions_.count(statement.a);
+src/semantic_checker.cpp	28681	statement	b	Stmt-kind name/presence/flow/forwarding	const auto occurrence_slot = statement.b.empty()
+src/semantic_checker.cpp	28691	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b.empty()) {
+src/semantic_checker.cpp	28697	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28697	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28698	statement	a	Stmt-kind name/presence/flow/forwarding	!functions_.count(statement.a))
+src/semantic_checker.cpp	28699	statement	a	Stmt-kind name/presence/flow/forwarding	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28703	statement	a	Stmt-kind name/presence/flow/forwarding	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28708	statement	b	Stmt-kind name/presence/flow/forwarding	const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
+src/semantic_checker.cpp	28782	statement	text	tree_or_semantic_consumer	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28782	statement	text	tree_or_semantic_consumer	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28793	statement	a	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28795	statement	a	tree_or_semantic_consumer	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28796	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+src/semantic_checker.cpp	28809	statement	a	Stmt-kind name/presence/flow/forwarding	"cannot infer the type of reply expression '" + statement.a + "'",
+src/semantic_checker.cpp	28813	statement	a	Stmt-kind name/presence/flow/forwarding	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28813	statement	a	Stmt-kind name/presence/flow/forwarding	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28822	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, *actual, *current_handler->reply_type);
+src/semantic_checker.cpp	28831	statement	a	Stmt-kind name/presence/flow/forwarding	!statement.a.empty())
+src/semantic_checker.cpp	28834	statement	a	Stmt-kind name/presence/flow/forwarding	!current_function && !statement.a.empty())
+src/semantic_checker.cpp	28837	statement	a	Stmt-kind name/presence/flow/forwarding	!statement.a.empty()) {
+src/semantic_checker.cpp	28847	statement	a	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28849	statement	a	tree_or_semantic_consumer	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28855	statement	a	Stmt-kind name/presence/flow/forwarding	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28855	statement	a	Stmt-kind name/presence/flow/forwarding	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28863	statement	a	Stmt-kind name/presence/flow/forwarding	"cannot infer the type of return expression '" + statement.a +
+src/semantic_checker.cpp	28887	statement	a	Stmt-kind name/presence/flow/forwarding	!checked_types.known_expression(statement.a) &&
+src/semantic_checker.cpp	28889	statement	a	Stmt-kind name/presence/flow/forwarding	!checked_result_matches(statement.a, *actual,
+src/semantic_checker.cpp	29381	prior	a	Stmt-kind name/presence/flow/forwarding	prior.a == name) {
+src/semantic_checker.cpp	30860	statement	a	tree_or_semantic_consumer	if (!tree_simple_identifier(statement.a))
+src/semantic_checker.cpp	30874	statement	b	tree_or_semantic_consumer	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	30902	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty()) {
+src/semantic_checker.cpp	30912	statement	b	Stmt-kind name/presence/flow/forwarding	const string role = statement.b.empty()
+src/semantic_checker.cpp	30931	statement	a	Stmt-kind name/presence/flow/forwarding	if (statement.a.empty()) {
+src/semantic_checker.cpp	30950	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) require_root(statement, "reply-value");
+src/semantic_checker.cpp	30953	statement	a	Stmt-kind name/presence/flow/forwarding	if (!statement.a.empty()) require_root(statement, "return-value");
+src/native_generator.cpp	347	statement	a	tree_or_semantic_consumer	if (expression_uses(statement.a) || expression_uses(statement.b) ||
+src/native_generator.cpp	347	statement	b	tree_or_semantic_consumer	if (expression_uses(statement.a) || expression_uses(statement.b) ||
+src/native_generator.cpp	348	statement	text	tree_or_semantic_consumer	expression_uses(statement.text)) return true;
+src/native_generator.cpp	351	statement	text	Stmt-kind name/presence/flow/forwarding	if (statement.kind == Stmt::Kind::Call && statement.text.empty()) {
+src/native_generator.cpp	352	statement	a	Stmt-kind name/presence/flow/forwarding	string call = statement.a;
+src/native_generator.cpp	353	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty()) call += "." + statement.b;
+src/native_generator.cpp	353	statement	b	Stmt-kind name/presence/flow/forwarding	if (!statement.b.empty()) call += "." + statement.b;
+src/native_generator.cpp	1382	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.a : statement.b;
+src/native_generator.cpp	1382	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.a : statement.b;
+src/native_generator.cpp	2607	statement	a	tree_or_semantic_consumer	const auto result_binding = tree_identifier_name(statement.a);
+src/native_generator.cpp	2614	statement	b	Stmt-kind name/presence/flow/forwarding	statement.b, &statement.expression_handles);
+src/native_generator.cpp	5082	s	a	Stmt-kind name/presence/flow/forwarding	used.insert(s.a);
+src/native_generator.cpp	5462	statement	b	Stmt-kind name/presence/flow/forwarding	if (domain_construction(statement.b)) constructions.push_back(statement);
+src/native_generator.cpp	5476	left	a	Stmt-kind name/presence/flow/forwarding	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5476	right	a	Stmt-kind name/presence/flow/forwarding	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5557	s	text	Stmt-kind name/presence/flow/forwarding	source_comment(o, (base + level) * 4, s.line, s.text);
+src/native_generator.cpp	5594	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/native_generator.cpp	5595	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = direct_functional->output_type;
+src/native_generator.cpp	5652	recovered	b	Stmt-kind name/presence/flow/forwarding	recovered.b, binding);
+src/native_generator.cpp	5655	recovered	a	Stmt-kind name/presence/flow/forwarding	recovered.a, binding);
+src/native_generator.cpp	5888	s	a	Stmt-kind name/presence/flow/forwarding	if (s.a.empty()) {
+src/native_generator.cpp	5903	s	a	tree_or_semantic_consumer	auto type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5908	s	a	Stmt-kind name/presence/flow/forwarding	const string value = expr(s.a, d, locals, &types,
+src/native_generator.cpp	5959	s	a	tree_or_semantic_consumer	auto scrutinee_type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5981	s	a	tree_or_semantic_consumer	if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
+src/native_generator.cpp	5995	s	a	Stmt-kind name/presence/flow/forwarding	const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+src/native_generator.cpp	5996	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b != "consume" && !recovery_slot) o << "&";
+src/native_generator.cpp	5998	s	b	Stmt-kind name/presence/flow/forwarding	if (recovery_slot && s.b == "consume")
+src/native_generator.cpp	5999	s	a	Stmt-kind name/presence/flow/forwarding	o << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	6002	s	a	Stmt-kind name/presence/flow/forwarding	o << expr(s.a, d, locals, &types);
+src/native_generator.cpp	6042	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b != "consume") {
+src/native_generator.cpp	6087	s	a	Stmt-kind name/presence/flow/forwarding	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6119	s	a	Stmt-kind name/presence/flow/forwarding	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6133	s	b	Stmt-kind name/presence/flow/forwarding	string source = trim(s.b);
+src/native_generator.cpp	6158	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6162	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "for " << s.a << " in "
+src/native_generator.cpp	6167	s	a	Stmt-kind name/presence/flow/forwarding	child_locals.insert(s.a);
+src/native_generator.cpp	6168	s	a	Stmt-kind name/presence/flow/forwarding	child_types[s.a] = "int";
+src/native_generator.cpp	6183	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6187	s	a	Stmt-kind name/presence/flow/forwarding	child_locals.insert(s.a);
+src/native_generator.cpp	6188	s	a	Stmt-kind name/presence/flow/forwarding	child_types[s.a] = "Range";
+src/native_generator.cpp	6198	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6202	s	a	Stmt-kind name/presence/flow/forwarding	child_locals.insert(s.a);
+src/native_generator.cpp	6203	s	a	Stmt-kind name/presence/flow/forwarding	child_types[s.a] = "int";
+src/native_generator.cpp	6222	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "for " << s.a << " in " << traversal
+src/native_generator.cpp	6226	s	a	Stmt-kind name/presence/flow/forwarding	child_locals.insert(s.a);
+src/native_generator.cpp	6227	s	a	Stmt-kind name/presence/flow/forwarding	child_types[s.a] = element;
+src/native_generator.cpp	6260	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+src/native_generator.cpp	6263	s	a	Stmt-kind name/presence/flow/forwarding	child_locals.insert(s.a);
+src/native_generator.cpp	6268	s	a	Stmt-kind name/presence/flow/forwarding	child_types[s.a] = element;
+src/native_generator.cpp	6351	s	a	Stmt-kind name/presence/flow/forwarding	if (s.a == "_") {
+src/native_generator.cpp	6353	s	b	Stmt-kind name/presence/flow/forwarding	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6360	s	a	Stmt-kind name/presence/flow/forwarding	if (phase21_option_slots_.count(s.a)) {
+src/native_generator.cpp	6361	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	6362	s	b	Stmt-kind name/presence/flow/forwarding	<< " = Some(" << expr(s.b, d, locals, &types,
+src/native_generator.cpp	6368	s	b	Stmt-kind name/presence/flow/forwarding	if (auto sd = domain_construction(s.b)) {
+src/native_generator.cpp	6370	s	a	Stmt-kind name/presence/flow/forwarding	construction_binding_ = s.a;
+src/native_generator.cpp	6371	s	a	Stmt-kind name/presence/flow/forwarding	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6371	s	a	Stmt-kind name/presence/flow/forwarding	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6372	s	a	Stmt-kind name/presence/flow/forwarding	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6374	s	a	Stmt-kind name/presence/flow/forwarding	bool existing_binding = locals.count(s.a);
+src/native_generator.cpp	6375	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+src/native_generator.cpp	6376	s	b	Stmt-kind name/presence/flow/forwarding	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6377	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/native_generator.cpp	6378	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = *sd;
+src/native_generator.cpp	6385	s	a	tree_or_semantic_consumer	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6407	s	a	tree_or_semantic_consumer	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6419	s	a	Stmt-kind name/presence/flow/forwarding	else lhs = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6421	s	a	Stmt-kind name/presence/flow/forwarding	[&](const Field& field) { return field.name == s.a; });
+src/native_generator.cpp	6422	s	a	tree_or_semantic_consumer	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6422	s	a	tree_or_semantic_consumer	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6427	s	b	tree_or_semantic_consumer	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6436	s	a	Stmt-kind name/presence/flow/forwarding	map_base != s.a) continue;
+src/native_generator.cpp	6450	s	b	tree_or_semantic_consumer	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+src/native_generator.cpp	6452	s	a	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "let mut " << s.a;
+src/native_generator.cpp	6455	s	b	Stmt-kind name/presence/flow/forwarding	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6459	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/native_generator.cpp	6460	s	b	tree_or_semantic_consumer	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6461	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+src/native_generator.cpp	6466	s	b	tree_or_semantic_consumer	: tree_empty_constructor_named(s.b, "Map") ? "map"
+src/native_generator.cpp	6467	s	b	tree_or_semantic_consumer	: tree_empty_constructor_named(s.b, "Queue") ? "queue"
+src/native_generator.cpp	6468	s	b	tree_or_semantic_consumer	: staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
+src/native_generator.cpp	6469	s	b	tree_or_semantic_consumer	: (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+src/native_generator.cpp	6470	s	b	tree_or_semantic_consumer	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6476	s	a	Stmt-kind name/presence/flow/forwarding	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6479	s	a	Stmt-kind name/presence/flow/forwarding	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6482	s	a	tree_or_semantic_consumer	bool map_assignment = tree_parse_index(s.a, mb, mi);
+src/native_generator.cpp	6497	s	b	Stmt-kind name/presence/flow/forwarding	string inserted = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6499	s	b	tree_or_semantic_consumer	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6517	s	a	Stmt-kind name/presence/flow/forwarding	else if (is_object_view(s.a, d, locals, &types))
+src/native_generator.cpp	6518	s	b	Stmt-kind name/presence/flow/forwarding	o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+src/native_generator.cpp	6538	s	b	Stmt-kind name/presence/flow/forwarding	collect_concat(s.b);
+src/native_generator.cpp	6539	s	a	tree_or_semantic_consumer	bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+src/native_generator.cpp	6540	s	a	Stmt-kind name/presence/flow/forwarding	locals.count(s.a) && concat_operands.size() > 1 &&
+src/native_generator.cpp	6541	s	a	tree_or_semantic_consumer	tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp	6542	s	a	Stmt-kind name/presence/flow/forwarding	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6542	s	a	Stmt-kind name/presence/flow/forwarding	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6547	s	a	tree_or_semantic_consumer	if (tree_expression_mentions_identifier(concat_operands[operand], s.a))
+src/native_generator.cpp	6562	s	a	Stmt-kind name/presence/flow/forwarding	string place = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6581	s	b	Stmt-kind name/presence/flow/forwarding	assigned = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6584	s	b	tree_or_semantic_consumer	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6593	s	a	tree_or_semantic_consumer	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6593	s	a	tree_or_semantic_consumer	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6602	s	a	Stmt-kind name/presence/flow/forwarding	if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+src/native_generator.cpp	6603	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = checked_receiver->second;
+src/native_generator.cpp	6604	s	b	Stmt-kind name/presence/flow/forwarding	string statement_receiver_type = !s.b.empty()
+src/native_generator.cpp	6605	s	a	tree_or_semantic_consumer	? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+src/native_generator.cpp	6606	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty() &&
+src/native_generator.cpp	6615	s	b	Stmt-kind name/presence/flow/forwarding	(s.b == "delete" && (statement_receiver_type == "map" ||
+src/native_generator.cpp	6617	s	a	Stmt-kind name/presence/flow/forwarding	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6617	s	b	Stmt-kind name/presence/flow/forwarding	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6627	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6627	s	a	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6635	s	text	Stmt-kind name/presence/flow/forwarding	std::to_string(s.line) + ": " + s.text)
+src/native_generator.cpp	6640	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6640	s	a	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6655	s	text	Stmt-kind name/presence/flow/forwarding	for (char ch : s.text) {
+src/native_generator.cpp	6670	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6670	s	a	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6670	s	a	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6676	s	a	Stmt-kind name/presence/flow/forwarding	string function_name = resolved_callable_identity(s.a, &types);
+src/native_generator.cpp	6685	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b.empty() && known_function && !benchmark_body_) {
+src/native_generator.cpp	6694	s	b	Stmt-kind name/presence/flow/forwarding	s.b.empty() && !known_function;
+src/native_generator.cpp	6697	s	b	tree_or_semantic_consumer	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6697	s	a	tree_or_semantic_consumer	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6700	s	b	Stmt-kind name/presence/flow/forwarding	if (call_receiver_type && (!s.b.empty() || implicit_method))
+src/native_generator.cpp	6703	s	a	Stmt-kind name/presence/flow/forwarding	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6703	s	b	Stmt-kind name/presence/flow/forwarding	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6727	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty()) {
+src/native_generator.cpp	6733	s	a	tree_or_semantic_consumer	tree_expressions_equal(nested_receiver, s.a);
+src/native_generator.cpp	6762	s	b	Stmt-kind name/presence/flow/forwarding	(s.b.empty() && known_function
+src/native_generator.cpp	6764	s	b	Stmt-kind name/presence/flow/forwarding	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6764	s	a	Stmt-kind name/presence/flow/forwarding	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6764	s	b	Stmt-kind name/presence/flow/forwarding	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6765	s	a	Stmt-kind name/presence/flow/forwarding	: expr(s.a, d, locals, &types));
+src/native_generator.cpp	6769	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty()) {
+src/native_generator.cpp	6770	s	b	Stmt-kind name/presence/flow/forwarding	string method = s.b;
+src/native_generator.cpp	6771	s	a	Stmt-kind name/presence/flow/forwarding	auto it = types.find(s.a);
+src/native_generator.cpp	6774	s	a	Stmt-kind name/presence/flow/forwarding	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6793	s	b	Stmt-kind name/presence/flow/forwarding	} else if (!s.b.empty() || implicit_method) {
+src/native_generator.cpp	6867	s	b	Stmt-kind name/presence/flow/forwarding	auto receiver_type = !s.b.empty()
+src/native_generator.cpp	6868	s	a	tree_or_semantic_consumer	? generated_expr_type(s.a, &types) : std::optional<string>{};
+src/native_generator.cpp	6869	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6869	s	b	Stmt-kind name/presence/flow/forwarding	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6880	s	a	Stmt-kind name/presence/flow/forwarding	bool joined_assignment = join_assignments.erase(s.a) != 0;
+src/native_generator.cpp	6881	s	b	Stmt-kind name/presence/flow/forwarding	auto sd = domain_construction(s.b);
+src/native_generator.cpp	6884	s	a	Stmt-kind name/presence/flow/forwarding	construction_binding_ = s.a;
+src/native_generator.cpp	6885	s	a	Stmt-kind name/presence/flow/forwarding	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6885	s	a	Stmt-kind name/presence/flow/forwarding	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6886	s	a	Stmt-kind name/presence/flow/forwarding	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6891	s	a	Stmt-kind name/presence/flow/forwarding	o << s.a << " = ";
+src/native_generator.cpp	6892	s	b	Stmt-kind name/presence/flow/forwarding	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6893	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = *sd;
+src/native_generator.cpp	6895	s	b	tree_or_semantic_consumer	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6899	s	b	tree_or_semantic_consumer	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6905	s	a	Stmt-kind name/presence/flow/forwarding	map_base != s.a) continue;
+src/native_generator.cpp	6918	s	a	Stmt-kind name/presence/flow/forwarding	o << s.a;
+src/native_generator.cpp	6921	s	b	tree_or_semantic_consumer	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+src/native_generator.cpp	6928	s	b	Stmt-kind name/presence/flow/forwarding	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6933	s	b	tree_or_semantic_consumer	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6938	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = domain_capability ? source->second
+src/native_generator.cpp	6950	s	a	Stmt-kind name/presence/flow/forwarding	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6953	s	a	Stmt-kind name/presence/flow/forwarding	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6955	s	a	Stmt-kind name/presence/flow/forwarding	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6958	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/native_generator.cpp	6963	s	a	Stmt-kind name/presence/flow/forwarding	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6963	s	b	Stmt-kind name/presence/flow/forwarding	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6994	s	a	Stmt-kind name/presence/flow/forwarding	const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+src/native_generator.cpp	6996	s	b	Stmt-kind name/presence/flow/forwarding	types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp	7005	s	a	Stmt-kind name/presence/flow/forwarding	<< message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+src/native_generator.cpp	7017	s	a	Stmt-kind name/presence/flow/forwarding	if (in_function && !s.a.empty()) {
+src/native_generator.cpp	7018	s	a	Stmt-kind name/presence/flow/forwarding	string rendered = expr(s.a, d, locals, &types,
+src/native_generator.cpp	7021	s	a	tree_or_semantic_consumer	const auto returned_binding = tree_identifier_name(s.a);
+src/native_generator.cpp	7050	s	text	Stmt-kind name/presence/flow/forwarding	o << expr(s.text, d, locals, &types,
+src/fileio_semantics.inc	575	s	a	Stmt-kind name/presence/flow/forwarding	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	644	s	b	Stmt-kind name/presence/flow/forwarding	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	644	s	a	Stmt-kind name/presence/flow/forwarding	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	649	s	b	tree_or_semantic_consumer	canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+src/fileio_semantics.inc	652	s	b	tree_or_semantic_consumer	const auto batch_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	654	s	a	Stmt-kind name/presence/flow/forwarding	branch.range_origin[s.a] = {
+src/fileio_semantics.inc	669	s	a	Stmt-kind name/presence/flow/forwarding	if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	675	s	b	Stmt-kind name/presence/flow/forwarding	fileio_lifecycle_expression(s.line, s.b, flow);
+src/fileio_semantics.inc	676	s	b	tree_or_semantic_consumer	auto type = inferred_expr_type(s.b, flow.types);
+src/fileio_semantics.inc	678	s	b	Stmt-kind name/presence/flow/forwarding	storage_location(s.b, flow.types))
+src/fileio_semantics.inc	682	s	a	Stmt-kind name/presence/flow/forwarding	++flow.batch_generation[s.a];
+src/fileio_semantics.inc	684	s	b	tree_or_semantic_consumer	const auto source_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	686	s	b	tree_or_semantic_consumer	tree_parse_index(trim(s.b), source, offset) &&
+src/fileio_semantics.inc	691	s	a	Stmt-kind name/presence/flow/forwarding	flow.range_origin[s.a] = {
+src/fileio_semantics.inc	694	s	a	Stmt-kind name/presence/flow/forwarding	flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	697	s	a	Stmt-kind name/presence/flow/forwarding	flow.range_origin[s.a] = flow.range_origin[*source_binding];
+src/fileio_semantics.inc	698	s	a	Stmt-kind name/presence/flow/forwarding	else flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	701	s	b	Stmt-kind name/presence/flow/forwarding	is_direct_fileio_open_initializer(s.b, &open_args)) {
+src/fileio_semantics.inc	702	s	a	Stmt-kind name/presence/flow/forwarding	flow.types[s.a] = "FileIO";
+src/fileio_semantics.inc	703	s	a	Stmt-kind name/presence/flow/forwarding	flow.local_owners.insert(s.a);
+src/fileio_semantics.inc	704	s	a	Stmt-kind name/presence/flow/forwarding	flow.state[s.a] = 1;
+src/fileio_semantics.inc	708	s	a	Stmt-kind name/presence/flow/forwarding	flow.mode[s.a] = trim(open_args[1]);
+src/fileio_semantics.inc	709	s	a	Stmt-kind name/presence/flow/forwarding	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	709	s	a	Stmt-kind name/presence/flow/forwarding	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	710	s	a	Stmt-kind name/presence/flow/forwarding	else flow.may_be_read_only.erase(s.a);
+src/fileio_semantics.inc	712	s	a	tree_or_semantic_consumer	} else if (type && tree_simple_identifier(s.a)) {
+src/fileio_semantics.inc	713	s	a	Stmt-kind name/presence/flow/forwarding	flow.types[s.a] = *type;
+src/fileio_semantics.inc	719	s	text	Stmt-kind name/presence/flow/forwarding	string call_text = s.text;
+src/fileio_semantics.inc	720	s	a	tree_or_semantic_consumer	auto call_name = tree_identifier_name(s.a);
+src/fileio_semantics.inc	721	s	b	Stmt-kind name/presence/flow/forwarding	if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+src/fileio_semantics.inc	731	s	a	Stmt-kind name/presence/flow/forwarding	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	765	statement	a	Stmt-kind name/presence/flow/forwarding	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	765	statement	b	Stmt-kind name/presence/flow/forwarding	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	836	statement	a	Stmt-kind name/presence/flow/forwarding	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	836	statement	b	Stmt-kind name/presence/flow/forwarding	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	848	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b.empty()) {
+src/fileio_semantics.inc	851	statement	a	Stmt-kind name/presence/flow/forwarding	statement.a, visited, env, statement.args))
+src/fileio_semantics.inc	852	statement	a	Stmt-kind name/presence/flow/forwarding	return *nested + " via " + statement.a;
+src/fileio_semantics.inc	855	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+src/fileio_semantics.inc	858	statement	b	Stmt-kind name/presence/flow/forwarding	if (fileio_operation_effect(statement.b) &&
+src/fileio_semantics.inc	859	statement	a	Stmt-kind name/presence/flow/forwarding	(statement.a == "FileIO" ||
+src/fileio_semantics.inc	860	statement	a	tree_or_semantic_consumer	canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+src/fileio_semantics.inc	862	statement	b	Stmt-kind name/presence/flow/forwarding	return statement.b;
+src/fileio_semantics.inc	866	statement	text	Stmt-kind name/presence/flow/forwarding	return fileio_blocking_expression(statement.text, env, visited);
+src/fileio_semantics.inc	873	statement	a	Stmt-kind name/presence/flow/forwarding	? statement.a : statement.b;
+src/fileio_semantics.inc	873	statement	b	Stmt-kind name/presence/flow/forwarding	? statement.a : statement.b;
+src/fileio_semantics.inc	902	statement	b	tree_or_semantic_consumer	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	903	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	903	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	963	statement	b	tree_or_semantic_consumer	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	964	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	964	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1006	statement	b	tree_or_semantic_consumer	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	1007	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1007	statement	a	tree_or_semantic_consumer	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/file_chunk_codegen.inc	36	s	b	tree_or_semantic_consumer	if (tree_parse_fileio_open(s.b, open_arguments)) {
+src/file_chunk_codegen.inc	43	s	a	Stmt-kind name/presence/flow/forwarding	o << pad << "let mut " << s.a << " = " << opened << ";\n";
+src/file_chunk_codegen.inc	44	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/file_chunk_codegen.inc	45	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = "FileIO";
+src/file_chunk_codegen.inc	50	s	b	tree_or_semantic_consumer	if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+src/file_chunk_codegen.inc	60	s	a	Stmt-kind name/presence/flow/forwarding	o << pad << "let " << s.a << " = " << read << ";\n";
+src/file_chunk_codegen.inc	61	s	a	Stmt-kind name/presence/flow/forwarding	locals.insert(s.a);
+src/file_chunk_codegen.inc	62	s	a	Stmt-kind name/presence/flow/forwarding	types[s.a] = "Range";
+src/file_chunk_codegen.inc	67	s	a	Stmt-kind name/presence/flow/forwarding	if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
+src/file_chunk_codegen.inc	69	s	a	Stmt-kind name/presence/flow/forwarding	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s	b	Stmt-kind name/presence/flow/forwarding	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	70	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	80	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	90	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	101	s	b	Stmt-kind name/presence/flow/forwarding	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	109	s	b	Stmt-kind name/presence/flow/forwarding	throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");
+src/file_chunk_lowering.inc	102	statement	a	tree_or_semantic_consumer	if (tree_root_identifier(statement.a) == parameter)
+src/file_chunk_lowering.inc	110	statement	a	tree_or_semantic_consumer	tree_identifier_named(statement.a, parameter)) ||
+src/executor_invoke_lowering.inc	53	statement	a	Stmt-kind name/presence/flow/forwarding	plan.binding = statement.a;
+src/executor_invoke_lowering.inc	149	statement	a	Stmt-kind name/presence/flow/forwarding	plan.executor_binding = statement.a;
+src/executor_invoke_lowering.inc	245	statement	a	Stmt-kind name/presence/flow/forwarding	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	245	statement	b	Stmt-kind name/presence/flow/forwarding	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	280	statement	b	tree_or_semantic_consumer	if (tree_parse_executor_chain(statement.b, calls)) {
+src/executor_invoke_lowering.inc	307	statement	b	Stmt-kind name/presence/flow/forwarding	if (!functional_pipeline_from_est(statement.b) &&
+src/executor_invoke_lowering.inc	308	statement	b	tree_or_semantic_consumer	tree_parse_member_call(statement.b, receiver, method, arguments) &&
+src/executor_invoke_lowering.inc	311	statement	b	Stmt-kind name/presence/flow/forwarding	check_expression(statement.line, statement.b, env);
+src/executor_invoke_lowering.inc	323	statement	a	Stmt-kind name/presence/flow/forwarding	if (executor_typed(env, statement.a)) {
+src/executor_invoke_lowering.inc	324	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b == "invoke") {
+src/executor_invoke_lowering.inc	328	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b == "join") {
+src/executor_invoke_lowering.inc	335	statement	b	Stmt-kind name/presence/flow/forwarding	"unknown Executor operation '" + statement.b + "'",
+src/executor_invoke_lowering.inc	509	statement	b	tree_or_semantic_consumer	tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
+src/executor_invoke_lowering.inc	519	statement	a	Stmt-kind name/presence/flow/forwarding	state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
+src/executor_invoke_lowering.inc	521	statement	b	Stmt-kind name/presence/flow/forwarding	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	521	statement	b	Stmt-kind name/presence/flow/forwarding	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	522	statement	a	Stmt-kind name/presence/flow/forwarding	auto found = state.find(statement.a);
+src/executor_invoke_lowering.inc	527	statement	a	Stmt-kind name/presence/flow/forwarding	"Executor '" + statement.a +
+src/executor_invoke_lowering.inc	531	statement	a	Stmt-kind name/presence/flow/forwarding	"Executor '" + statement.a + "' is not active here",
+src/executor_invoke_lowering.inc	534	statement	b	Stmt-kind name/presence/flow/forwarding	if (statement.b == "join")
+src/executor_invoke_lowering.inc	584	s	a	Stmt-kind name/presence/flow/forwarding	s.a = "executor";
+src/executor_invoke_lowering.inc	585	s	b	Stmt-kind name/presence/flow/forwarding	s.b = "invoke";
+src/static_bounds.inc	142	statement	a	Stmt-kind name/presence/flow/forwarding	if (auto target = storage_location(statement.a, {}, false))
+src/static_bounds.inc	145	statement	a	Stmt-kind name/presence/flow/forwarding	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	146	statement	b	Stmt-kind name/presence/flow/forwarding	expression = statement.b;
+src/static_bounds.inc	150	statement	text	Stmt-kind name/presence/flow/forwarding	expression = statement.text;
+src/static_bounds.inc	159	statement	a	Stmt-kind name/presence/flow/forwarding	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	170	statement	a	Stmt-kind name/presence/flow/forwarding	expression = statement.a;
+src/static_bounds.inc	173	statement	b	Stmt-kind name/presence/flow/forwarding	expression = statement.b;
+src/static_bounds.inc	259	statement	b	Stmt-kind name/presence/flow/forwarding	element.bytes = static_payload_byte_bound(statement.b);
+src/static_bounds.inc	261	statement	b	Stmt-kind name/presence/flow/forwarding	auto batch = static_batch_entry_bounds(statement.b);
+src/static_bounds.inc	265	statement	a	Stmt-kind name/presence/flow/forwarding	body.erase(statement.a);
+src/static_bounds.inc	266	statement	a	Stmt-kind name/presence/flow/forwarding	body_owners.erase(statement.a);
+src/static_bounds.inc	267	statement	a	Stmt-kind name/presence/flow/forwarding	if (element.bytes) body[statement.a] = element;
+src/static_bounds.inc	309	statement	a	Stmt-kind name/presence/flow/forwarding	body.erase(statement.a);
+src/static_bounds.inc	310	statement	a	Stmt-kind name/presence/flow/forwarding	auto old = incoming.find(statement.a);
+src/static_bounds.inc	311	statement	a	Stmt-kind name/presence/flow/forwarding	if (old != incoming.end()) body[statement.a] = old->second;
+src/static_bounds.inc	323	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	325	statement	b	tree_or_semantic_consumer	string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+src/static_bounds.inc	363	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a);
+src/static_bounds.inc	364	statement	a	Stmt-kind name/presence/flow/forwarding	if (binding) mutated.erase(statement.a);
+src/static_bounds.inc	374	statement	a	Stmt-kind name/presence/flow/forwarding	if (new_fact) facts[statement.a] = std::move(*new_fact);
+src/static_bounds.inc	378	statement	a	tree_or_semantic_consumer	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	379	statement	a	Stmt-kind name/presence/flow/forwarding	fileio_owners.erase(statement.a);
+src/static_bounds.inc	380	statement	b	Stmt-kind name/presence/flow/forwarding	if (is_direct_fileio_open_initializer(statement.b))
+src/static_bounds.inc	381	statement	a	Stmt-kind name/presence/flow/forwarding	fileio_owners.insert(statement.a);

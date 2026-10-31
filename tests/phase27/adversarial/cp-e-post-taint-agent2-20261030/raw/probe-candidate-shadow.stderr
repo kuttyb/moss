@@ -1,0 +1,2 @@
+EST capture mismatch <{"primary": w}> tree=0 legacy=1
+moss-dev: src/semantic_checker.cpp:21330: static vector<string> moss::Checker::functional_captures(const string &, const TypeEnv &): Assertion `captures == legacy_captures' failed.

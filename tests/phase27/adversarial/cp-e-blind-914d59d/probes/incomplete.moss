@@ -1,0 +1,23 @@
+fn empty_call():
+  consume(1,,2)
+
+fn repeated_collection():
+  values = [1,,2]
+
+fn empty_first_argument():
+  consume(,2)
+
+fn trailing_call_slot():
+  consume(1,)
+
+fn incomplete_binary():
+  value = 1 +
+
+fn incomplete_unary():
+  value = not
+
+fn unclosed_collection():
+  values = [1, 2
+
+fn doubled_operator():
+  value = 1 + * 2

@@ -1,0 +1,535 @@
+{
+  "candidate_sha": "68a61a7b927b6ae9e651de9866d8a034405f95f9",
+  "expression_reader_api_counts": {},
+  "checker_reader_sites": 0,
+  "emitter_reader_sites": 0,
+  "tree_expression_text_uses_in_src": [],
+  "raw_stmt_classifications": [
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/executor_invoke_codegen.inc",
+      "line": 151,
+      "field": "s.b == \"join\"",
+      "literal": "join",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/executor_invoke_codegen.inc",
+      "line": 155,
+      "field": "s.b != \"invoke\"",
+      "literal": "invoke",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 9905,
+      "field": "stmt.a == name",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 12687,
+      "field": "prior.a == base",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 12708,
+      "field": "prior.a == base",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 12745,
+      "field": "statement.b == \"push\"",
+      "literal": "push",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 12746,
+      "field": "statement.b == \"insert\"",
+      "literal": "insert",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 12756,
+      "field": "prior.a == statement.a",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 13030,
+      "field": "candidate.a != name",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 13943,
+      "field": "statement.b == \"push\"",
+      "literal": "push",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 13944,
+      "field": "statement.b == \"insert\"",
+      "literal": "insert",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 14223,
+      "field": "statement.b == \"invoke\"",
+      "literal": "invoke",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 14500,
+      "field": "statement.b == \"invoke\"",
+      "literal": "invoke",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 18358,
+      "field": "statement.b == \"consume\"",
+      "literal": "consume",
+      "classification": "NAME",
+      "reason": "effect keyword"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 19830,
+      "field": "statement.a == selected_binding",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 19917,
+      "field": "statement.a == selected_binding",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 20880,
+      "field": "s.b == \"push\"",
+      "literal": "push",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 20880,
+      "field": "s.b == \"pop\"",
+      "literal": "pop",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 20880,
+      "field": "s.b == \"pop_front\"",
+      "literal": "pop_front",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 21048,
+      "field": "statement.b == \"push\"",
+      "literal": "push",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 21048,
+      "field": "statement.b == \"pop\"",
+      "literal": "pop",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 21048,
+      "field": "statement.b == \"pop_front\"",
+      "literal": "pop_front",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 21049,
+      "field": "statement.b == \"pop\"",
+      "literal": "pop",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 21049,
+      "field": "statement.b == \"pop_front\"",
+      "literal": "pop_front",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 22656,
+      "field": "s.b == \"consume\"",
+      "literal": "consume",
+      "classification": "NAME",
+      "reason": "effect keyword"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 23135,
+      "field": "s.b == \"push\"",
+      "literal": "push",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 24646,
+      "field": "statement.a == name",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 28657,
+      "field": "statement.a == \"assert\"",
+      "literal": "assert",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 28702,
+      "field": "statement.a == \"sort\"",
+      "literal": "sort",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 28739,
+      "field": "statement.a == \"assert\"",
+      "literal": "assert",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 28824,
+      "field": "statement.text != \"pass\"",
+      "literal": "pass",
+      "classification": "NAME",
+      "reason": "no-op keyword"
+    },
+    {
+      "kind": "Stmt-binding-name",
+      "consumer": "checker",
+      "path": "src/semantic_checker.cpp",
+      "line": 29423,
+      "field": "prior.a == name",
+      "slot": "a",
+      "reason": "assignment/loop binding slot; separately audited by widened lint"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/fileio_semantics.inc",
+      "line": 859,
+      "field": "statement.a == \"FileIO\"",
+      "literal": "FileIO",
+      "classification": "NAME",
+      "reason": "static FileIO receiver binding name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 324,
+      "field": "statement.b == \"invoke\"",
+      "literal": "invoke",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 328,
+      "field": "statement.b == \"join\"",
+      "literal": "join",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 521,
+      "field": "statement.b == \"invoke\"",
+      "literal": "invoke",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 521,
+      "field": "statement.b == \"join\"",
+      "literal": "join",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "checker",
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 534,
+      "field": "statement.b == \"join\"",
+      "literal": "join",
+      "classification": "NAME",
+      "reason": "executor method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6003,
+      "field": "s.b != \"consume\"",
+      "literal": "consume",
+      "classification": "NAME",
+      "reason": "effect keyword"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6005,
+      "field": "s.b == \"consume\"",
+      "literal": "consume",
+      "classification": "NAME",
+      "reason": "effect keyword"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6049,
+      "field": "s.b != \"consume\"",
+      "literal": "consume",
+      "classification": "NAME",
+      "reason": "effect keyword"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6358,
+      "field": "s.a == \"_\"",
+      "literal": "_",
+      "classification": "NAME",
+      "reason": "assignment binding placeholder"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6622,
+      "field": "s.b == \"delete\"",
+      "literal": "delete",
+      "classification": "NAME",
+      "reason": "Map method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6634,
+      "field": "s.a == \"assert\"",
+      "literal": "assert",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6647,
+      "field": "s.a == \"assertEqual\"",
+      "literal": "assertEqual",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6677,
+      "field": "s.a == \"sort\"",
+      "literal": "sort",
+      "classification": "NAME",
+      "reason": "builtin call name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/native_generator.cpp",
+      "line": 6876,
+      "field": "s.b == \"pop\"",
+      "literal": "pop",
+      "classification": "NAME",
+      "reason": "collection method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/file_chunk_codegen.inc",
+      "line": 70,
+      "field": "s.b == \"write\"",
+      "literal": "write",
+      "classification": "NAME",
+      "reason": "FileIO method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/file_chunk_codegen.inc",
+      "line": 80,
+      "field": "s.b == \"open\"",
+      "literal": "open",
+      "classification": "NAME",
+      "reason": "FileIO method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/file_chunk_codegen.inc",
+      "line": 90,
+      "field": "s.b == \"sync\"",
+      "literal": "sync",
+      "classification": "NAME",
+      "reason": "FileIO method name"
+    },
+    {
+      "kind": "Stmt-name-literal",
+      "consumer": "emitter",
+      "path": "src/file_chunk_codegen.inc",
+      "line": 101,
+      "field": "s.b == \"close\"",
+      "literal": "close",
+      "classification": "NAME",
+      "reason": "FileIO method name"
+    }
+  ],
+  "raw_stmt_counts": {
+    "NAME comparisons": 42,
+    "binding comparisons": 9
+  },
+  "type_argument_exemptions": [
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "builtin_equality_type",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "contains_float_type",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "phase20_is_nontransferable_capability",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    }
+  ],
+  "lint_exemption_validation": "tests/tooling/check_phase27_string_debt.py exited 0; function_ranges fails closed on missing/ambiguous function; sites() fails on stale exemption or count != 1"
+}

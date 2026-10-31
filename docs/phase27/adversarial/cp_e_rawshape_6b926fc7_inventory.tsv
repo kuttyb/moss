@@ -1,0 +1,1193 @@
+path	line	base	field	classification	source
+src/semantic_checker.cpp	752	source	a	EST-or-expression-reader-call	!tree_simple_identifier(occurrence.source->a)) {
+src/semantic_checker.cpp	772	source	a	mixed-name-or-expression-field-review	binding.name = occurrence.source->a;
+src/semantic_checker.cpp	794	source	a	raw-string-operation-review	occurrence.bindings.front().name != occurrence.source->a ||
+src/semantic_checker.cpp	2454	source_statement	b	expression-value-use-review	!source_statement->b.empty() || source_statement->a != target.name))
+src/semantic_checker.cpp	2454	source_statement	a	mixed-name-or-expression-field-review	!source_statement->b.empty() || source_statement->a != target.name))
+src/semantic_checker.cpp	2561	statement	a	literal-comparison-review	statement->a != "assert" || !statement->b.empty() ||
+src/semantic_checker.cpp	2561	statement	b	literal-comparison-review	statement->a != "assert" || !statement->b.empty() ||
+src/semantic_checker.cpp	2562	statement	args	expression-value-use-review	statement->args.size() != 1 ||
+src/semantic_checker.cpp	2585	statement	args	raw-string-operation-review	!tree_expressions_structurally_equal(statement->args.front(),
+src/semantic_checker.cpp	3970	source_statement	a	EST-or-expression-reader-call	tree_simple_identifier(source_statement.a) &&
+src/semantic_checker.cpp	4041	source_statement	a	EST-or-expression-reader-call	!tree_simple_identifier(source_statement.a)) continue;
+src/semantic_checker.cpp	4898	source	a	EST-or-expression-reader-call	if (tree_simple_identifier(source.a) &&
+src/semantic_checker.cpp	4924	source	a	EST-or-expression-reader-call	if (!tree_simple_identifier(source.a)) {
+src/semantic_checker.cpp	5152	source	a	mixed-name-or-expression-field-review	candidate.source->a;
+src/semantic_checker.cpp	5161	source	a	mixed-name-or-expression-field-review	branch.variant_tag = candidate.source->a;
+src/semantic_checker.cpp	5183	source	a	mixed-name-or-expression-field-review	if (source.a.empty()) return std::nullopt;
+src/semantic_checker.cpp	5527	function	result_expression	expression-value-use-review	if (function.body.empty() && function.result_expression)
+src/semantic_checker.cpp	5528	function	result_expression	expression-value-use-review	expression = *function.result_expression;
+src/semantic_checker.cpp	5610	function	result_expression	expression-value-use-review	const int return_line = function.result_expression
+src/semantic_checker.cpp	6089	function	result_expression	expression-value-use-review	const string* returned = function.result_expression
+src/semantic_checker.cpp	6090	function	result_expression	expression-value-use-review	? &*function.result_expression
+src/semantic_checker.cpp	6119	function	result_expression	expression-value-use-review	const string* returned = function.result_expression
+src/semantic_checker.cpp	6120	function	result_expression	expression-value-use-review	? &*function.result_expression :
+src/semantic_checker.cpp	6179	function	result_expression	expression-value-use-review	const string* single_result_expression = function.result_expression
+src/semantic_checker.cpp	6180	function	result_expression	expression-value-use-review	? &*function.result_expression :
+src/semantic_checker.cpp	7390	loop	b	raw-string-operation-review	!tree_identifier_named(loop->b, function.params.front().name) ||
+src/semantic_checker.cpp	7403	loop	a	raw-string-operation-review	loop_occurrence.bindings.front().name != loop->a ||
+src/semantic_checker.cpp	9046	s	a	mixed-name-or-expression-field-review	if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+src/semantic_checker.cpp	9047	s	a	mixed-name-or-expression-field-review	auto result = inferred_expr_type(s.a, inferred_env);
+src/semantic_checker.cpp	9059	method	result_expression	expression-value-use-review	if (method.result_expression) {
+src/semantic_checker.cpp	9060	method	result_expression	expression-value-use-review	auto result = inferred_expr_type(*method.result_expression, inferred_env);
+src/semantic_checker.cpp	9070	method	result_expression	expression-value-use-review	bool has_value_return = method.result_expression.has_value() ||
+src/semantic_checker.cpp	9072	statement	a	mixed-name-or-expression-field-review	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	9079	method	result_expression	expression-value-use-review	if (method.result_expression)
+src/semantic_checker.cpp	9082	method	result_expression	expression-value-use-review	*method.result_expression, final_env, "return-value");
+src/semantic_checker.cpp	9274	source	text	expression-value-use-review	const string code = source_code_only(source.text);
+src/semantic_checker.cpp	9652	stmt	a	mixed-name-or-expression-field-review	if (stmt.a == name) {
+src/semantic_checker.cpp	9712	statement	b	expression-value-use-review	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	9714	statement	a	EST-or-expression-reader-call	if (!tree_plain_identifier(statement.a)) continue;
+src/semantic_checker.cpp	9715	statement	a	mixed-name-or-expression-field-review	if (by_binding.count(statement.a))
+src/semantic_checker.cpp	9716	statement	a	mixed-name-or-expression-field-review	fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+src/semantic_checker.cpp	9719	statement	a	mixed-name-or-expression-field-review	instance.binding = statement.a;
+src/semantic_checker.cpp	9720	statement	a	mixed-name-or-expression-field-review	instance.identity = "main::" + statement.a;
+src/semantic_checker.cpp	9727	statement	a	mixed-name-or-expression-field-review	specialization.instance == statement.a) {
+src/semantic_checker.cpp	9736	statement	a	mixed-name-or-expression-field-review	concrete.instance = statement.a;
+src/semantic_checker.cpp	9755	statement	a	mixed-name-or-expression-field-review	by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+src/semantic_checker.cpp	9756	statement	a	mixed-name-or-expression-field-review	binding_types[statement.a] = domain.name;
+src/semantic_checker.cpp	9761	statement	b	expression-value-use-review	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	9762	statement	b	expression-value-use-review	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	9768	statement	a	EST-or-expression-reader-call	statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	9775	statement	a	mixed-name-or-expression-field-review	if (!by_binding.count(statement.a))
+src/semantic_checker.cpp	9780	statement	b	EST-or-expression-reader-call	if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
+src/semantic_checker.cpp	9788	statement	b	EST-or-expression-reader-call	auto supplied = parse_bindings(statement.b);
+src/semantic_checker.cpp	9807	statement	a	mixed-name-or-expression-field-review	edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
+src/semantic_checker.cpp	9854	statement	b	expression-value-use-review	if (statement.indent > 0 && domain_constructor(statement.b))
+src/semantic_checker.cpp	10020	statement	a	EST-or-expression-reader-call	return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	10031	f	result_expression	expression-value-use-review	f.result_expression);
+src/semantic_checker.cpp	10032	f	result_expression	expression-value-use-review	if (f.result_expression) {
+src/semantic_checker.cpp	10034	f	result_expression	expression-value-use-review	*f.result_expression, final_ownership,
+src/semantic_checker.cpp	10038	f	result_expression	expression-value-use-review	*f.result_expression, env, "return-value");
+src/semantic_checker.cpp	10039	f	result_expression	expression-value-use-review	auto actual = inferred_expr_type(*f.result_expression, env);
+src/semantic_checker.cpp	10482	statement	b	EST-or-expression-reader-call	if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
+src/semantic_checker.cpp	11833	function	result_expression	expression-value-use-review	if (function.result_expression && !include_result(*function.result_expression))
+src/semantic_checker.cpp	11833	function	result_expression	expression-value-use-review	if (function.result_expression && !include_result(*function.result_expression))
+src/semantic_checker.cpp	11836	statement	a	mixed-name-or-expression-field-review	if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+src/semantic_checker.cpp	11837	statement	a	mixed-name-or-expression-field-review	!include_result(statement.a))
+src/semantic_checker.cpp	12168	statement	a	EST-or-expression-reader-call	if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	12169	statement	a	raw-string-operation-review	auto existing = env.find(statement.a);
+src/semantic_checker.cpp	12173	statement	b	expression-value-use-review	} else if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	12174	statement	a	mixed-name-or-expression-field-review	env[statement.a] = *constructed;
+src/semantic_checker.cpp	12175	statement	b	expression-value-use-review	} else if (auto inferred = inferred_expr_type(statement.b, env)) {
+src/semantic_checker.cpp	12180	statement	a	mixed-name-or-expression-field-review	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12185	statement	a	mixed-name-or-expression-field-review	env[statement.a] = binding;
+src/semantic_checker.cpp	12192	statement	a	raw-string-operation-review	auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp	12202	statement	a	mixed-name-or-expression-field-review	env[statement.a] = cinf;
+src/semantic_checker.cpp	12206	statement	a	mixed-name-or-expression-field-review	env[statement.a] = "_value";
+src/semantic_checker.cpp	12209	statement	a	mixed-name-or-expression-field-review	const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+src/semantic_checker.cpp	12212	statement	a	EST-or-expression-reader-call	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	12221	prior	a	EST-or-expression-reader-call	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12221	prior	b	EST-or-expression-reader-call	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12226	prior	b	expression-value-use-review	0, prior.b, join_context,
+src/semantic_checker.cpp	12232	statement	b	expression-value-use-review	auto value_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	12242	prior	a	EST-or-expression-reader-call	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12242	prior	b	EST-or-expression-reader-call	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12247	prior	b	expression-value-use-review	0, prior.b, join_context, *refined);
+src/semantic_checker.cpp	12263	statement	a	raw-string-operation-review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	12267	statement	b	expression-value-use-review	if (const Handler* handler = find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	12278	statement	b	expression-value-use-review	if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+src/semantic_checker.cpp	12279	statement	b	literal-comparison-review	(statement.b == "push" ||
+src/semantic_checker.cpp	12280	statement	b	literal-comparison-review	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	12281	statement	args	expression-value-use-review	statement.args.size() == 1) {
+src/semantic_checker.cpp	12282	statement	a	raw-string-operation-review	auto container = env.find(statement.a);
+src/semantic_checker.cpp	12284	statement	a	mixed-name-or-expression-field-review	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12290	prior	a	mixed-name-or-expression-field-review	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12290	statement	a	mixed-name-or-expression-field-review	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12291	prior	b	EST-or-expression-reader-call	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12292	prior	b	EST-or-expression-reader-call	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12293	prior	b	EST-or-expression-reader-call	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12294	prior	b	EST-or-expression-reader-call	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12302	prior	b	expression-value-use-review	prior.b, join_context, canonical_type_name(retained));
+src/semantic_checker.cpp	12307	statement	args	raw-string-operation-review	auto argument = inferred_expr_type(statement.args.front(), env);
+src/semantic_checker.cpp	12314	prior	a	EST-or-expression-reader-call	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12314	statement	a	EST-or-expression-reader-call	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12315	prior	b	EST-or-expression-reader-call	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12316	prior	b	EST-or-expression-reader-call	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12317	prior	b	EST-or-expression-reader-call	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12318	prior	b	EST-or-expression-reader-call	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12326	prior	b	expression-value-use-review	prior.b, join_context, *refined);
+src/semantic_checker.cpp	12362	statement	a	mixed-name-or-expression-field-review	auto scrutinee_type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	12366	statement	a	mixed-name-or-expression-field-review	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12366	statement	a	mixed-name-or-expression-field-review	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12375	statement	a	mixed-name-or-expression-field-review	deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+src/semantic_checker.cpp	12387	arm	a	mixed-name-or-expression-field-review	[&](const EnumCase& candidate) { return candidate.name == arm.a; }) :
+src/semantic_checker.cpp	12394	arm	a	mixed-name-or-expression-field-review	other_enum |= candidate_case.name == arm.a;
+src/semantic_checker.cpp	12396	arm	a	mixed-name-or-expression-field-review	"unknown enum case: ") + arm.a,
+src/semantic_checker.cpp	12399	arm	a	mixed-name-or-expression-field-review	if (!seen.insert(arm.a).second)
+src/semantic_checker.cpp	12400	arm	a	mixed-name-or-expression-field-review	err(arm.line, "duplicate match case '" + arm.a + "'", "DUPLICATE_MATCH_CASE");
+src/semantic_checker.cpp	12401	arm	args	expression-value-use-review	if (declaration && arm.args.size() != item->fields.size())
+src/semantic_checker.cpp	12402	arm	a	mixed-name-or-expression-field-review	err(arm.line, "case '" + arm.a + "' must bind all " +
+src/semantic_checker.cpp	12406	arm	args	expression-value-use-review	for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+src/semantic_checker.cpp	12407	arm	args	expression-value-use-review	if (declaration && arm.args[field_index] != item->fields[field_index].name)
+src/semantic_checker.cpp	12408	arm	a	mixed-name-or-expression-field-review	err(arm.line, "case '" + arm.a + "' requires payload field '" +
+src/semantic_checker.cpp	12411	arm	args	expression-value-use-review	if (!pattern_names.insert(arm.args[field_index]).second)
+src/semantic_checker.cpp	12413	arm	args	expression-value-use-review	arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
+src/semantic_checker.cpp	12415	arm	args	expression-value-use-review	? item->fields[field_index].type : "_generic:" + arm.args[field_index];
+src/semantic_checker.cpp	12416	arm	args	expression-value-use-review	branch[arm.args[field_index]] = field_type;
+src/semantic_checker.cpp	12419	arm	args	expression-value-use-review	branch.terms[arm.args[field_index]] = *parsed;
+src/semantic_checker.cpp	12421	arm	args	expression-value-use-review	branch.terms[arm.args[field_index]] = moss::Type::primitive(field_type);
+src/semantic_checker.cpp	12430	arm	args	expression-value-use-review	for (const auto& name : arm.args) {
+src/semantic_checker.cpp	12490	arm	a	mixed-name-or-expression-field-review	recovered[arm.a] = selected_types.size() == 1
+src/semantic_checker.cpp	12493	arm	a	mixed-name-or-expression-field-review	else if (!arm.a.empty()) {
+src/semantic_checker.cpp	12558	candidate	a	mixed-name-or-expression-field-review	candidate.a != name ||
+src/semantic_checker.cpp	12668	statement	b	expression-value-use-review	statement.line, statement.b, incoming).value_or("_value");
+src/semantic_checker.cpp	12669	statement	a	mixed-name-or-expression-field-review	body_env[statement.a] = element_type;
+src/semantic_checker.cpp	12674	statement	a	mixed-name-or-expression-field-review	body_env.terms[statement.a] = binding->second;
+src/semantic_checker.cpp	12684	statement	a	raw-string-operation-review	auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp	12687	statement	a	mixed-name-or-expression-field-review	scoped_types->scoped_locals[statement.a] = binding->second;
+src/semantic_checker.cpp	12694	statement	a	mixed-name-or-expression-field-review	if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+src/semantic_checker.cpp	12695	statement	a	mixed-name-or-expression-field-review	else scoped_types->scoped_locals.erase(statement.a);
+src/semantic_checker.cpp	12700	statement	a	raw-string-operation-review	if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp	12701	statement	a	mixed-name-or-expression-field-review	body_env[statement.a] = shadowed->second;
+src/semantic_checker.cpp	12703	statement	a	mixed-name-or-expression-field-review	body_env.erase(statement.a);
+src/semantic_checker.cpp	12704	statement	a	raw-string-operation-review	if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp	12706	statement	a	mixed-name-or-expression-field-review	body_env.terms[statement.a] = shadowed->second;
+src/semantic_checker.cpp	12708	statement	a	mixed-name-or-expression-field-review	body_env.terms.erase(statement.a);
+src/semantic_checker.cpp	12726	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	12728	statement	a	mixed-name-or-expression-field-review	env.terms[statement.a] = term;
+src/semantic_checker.cpp	12731	statement	b	expression-value-use-review	!statement.b.empty()) {
+src/semantic_checker.cpp	12732	statement	a	mixed-name-or-expression-field-review	if (auto receiver = inferred_expr_type(statement.a, env)) {
+src/semantic_checker.cpp	12735	statement	a	mixed-name-or-expression-field-review	statement.a, join_context, canonical_type_name(*receiver));
+src/semantic_checker.cpp	12743	statement	b	expression-value-use-review	? statement.b : statement.text;
+src/semantic_checker.cpp	12743	statement	text	expression-value-use-review	? statement.b : statement.text;
+src/semantic_checker.cpp	13245	statement	a	mixed-name-or-expression-field-review	auto scrutinee_type = inferred_expr_type(statement.a, scan);
+src/semantic_checker.cpp	13264	statement	a	mixed-name-or-expression-field-review	[&](const EnumCase& c) { return c.name == statement.a; });
+src/semantic_checker.cpp	13276	statement	args	expression-value-use-review	for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
+src/semantic_checker.cpp	13277	statement	args	expression-value-use-review	const string& field_name = statement.args[i];
+src/semantic_checker.cpp	13293	statement	args	expression-value-use-review	if (statement.args.size() == case_it->fields.size())
+src/semantic_checker.cpp	13300	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	13305	statement	b	expression-value-use-review	constrain_map_lookup(statement.line, statement.b);
+src/semantic_checker.cpp	13308	statement	a	mixed-name-or-expression-field-review	constrain_map_lookup(statement.line, statement.a);
+src/semantic_checker.cpp	13314	statement	b	raw-string-operation-review	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	13317	statement	b	expression-value-use-review	} else if (auto source = term_for(statement.b)) {
+src/semantic_checker.cpp	13332	statement	b	expression-value-use-review	statement.line, statement.b, scan).value_or("_value");
+src/semantic_checker.cpp	13345	statement	a	mixed-name-or-expression-field-review	current_semantic_context_, statement.line) + ":" + statement.a;
+src/semantic_checker.cpp	13350	statement	a	mixed-name-or-expression-field-review	locals[statement.a] = loop_term;
+src/semantic_checker.cpp	13352	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = resolved->is_closed()
+src/semantic_checker.cpp	13354	statement	a	mixed-name-or-expression-field-review	: "_iterator_element:" + statement.a;
+src/semantic_checker.cpp	13356	statement	a	mixed-name-or-expression-field-review	locals.erase(statement.a);
+src/semantic_checker.cpp	13357	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = "_value";
+src/semantic_checker.cpp	13361	statement	b	expression-value-use-review	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	13362	statement	a	mixed-name-or-expression-field-review	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13362	statement	args	expression-value-use-review	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13368	statement	a	raw-string-operation-review	auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp	13372	statement	b	expression-value-use-review	: find_handler(*domain->second, statement.b);
+src/semantic_checker.cpp	13408	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13409	statement	b	expression-value-use-review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	13410	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = *constructed;
+src/semantic_checker.cpp	13413	statement	b	expression-value-use-review	auto inferred = inferred_expr_type(statement.b, scan);
+src/semantic_checker.cpp	13414	statement	b	expression-value-use-review	constrain_call(statement.line, statement.b);
+src/semantic_checker.cpp	13415	statement	b	expression-value-use-review	auto instantiated = instantiate_summary(statement.line, statement.b,
+src/semantic_checker.cpp	13417	statement	a	mixed-name-or-expression-field-review	body_types.provider_origins.erase(statement.a);
+src/semantic_checker.cpp	13420	statement	b	raw-string-operation-review	if (tree_parse_simple_call(trim(statement.b), assigned_callee,
+src/semantic_checker.cpp	13427	statement	a	mixed-name-or-expression-field-review	body_types.provider_origins.emplace(statement.a,
+src/semantic_checker.cpp	13437	statement	b	expression-value-use-review	auto retained_source = body_types.known_expression(statement.b);
+src/semantic_checker.cpp	13442	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13445	statement	a	raw-string-operation-review	auto prior = locals.find(statement.a);
+src/semantic_checker.cpp	13450	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13462	statement	a	mixed-name-or-expression-field-review	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	13464	statement	a	mixed-name-or-expression-field-review	locals.emplace(statement.a, term);
+src/semantic_checker.cpp	13467	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = prior_open || !term->is_closed()
+src/semantic_checker.cpp	13468	statement	a	mixed-name-or-expression-field-review	? solver.resolve(locals.at(statement.a))->to_canonical_string()
+src/semantic_checker.cpp	13471	statement	b	literal-comparison-review	(statement.b == "push" ||
+src/semantic_checker.cpp	13472	statement	b	literal-comparison-review	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	13473	statement	args	expression-value-use-review	statement.args.size() == 1) {
+src/semantic_checker.cpp	13474	statement	a	raw-string-operation-review	auto local = locals.find(statement.a);
+src/semantic_checker.cpp	13476	statement	args	raw-string-operation-review	auto argument = term_for(statement.args.front());
+src/semantic_checker.cpp	13492	statement	b	expression-value-use-review	const string message = statement.b +
+src/semantic_checker.cpp	13494	statement	a	mixed-name-or-expression-field-review	statement.a + "'";
+src/semantic_checker.cpp	13495	statement	a	raw-string-operation-review	auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp	13510	statement	a	mixed-name-or-expression-field-review	scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+src/semantic_checker.cpp	13512	statement	a	EST-or-expression-reader-call	tree_index_expression(statement.a)) {
+src/semantic_checker.cpp	13514	statement	a	EST-or-expression-reader-call	if (!tree_parse_index(statement.a, base, index)) continue;
+src/semantic_checker.cpp	13517	statement	b	expression-value-use-review	auto value = term_for(statement.b);
+src/semantic_checker.cpp	13557	statement	a	EST-or-expression-reader-call	tree_member_access(statement.a)) {
+src/semantic_checker.cpp	13558	statement	a	mixed-name-or-expression-field-review	auto field = body_types.known_expression(statement.a);
+src/semantic_checker.cpp	13559	statement	b	expression-value-use-review	auto rhs = term_for(statement.b);
+src/semantic_checker.cpp	13564	statement	a	mixed-name-or-expression-field-review	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	13610	checked_statement	b	expression-value-use-review	if (closed.size() == 1 && !checked_statement.b.empty()) {
+src/semantic_checker.cpp	13618	checked_statement	b	EST-or-expression-reader-call	est::ExprSlot::RhsValue, 0, checked_statement.b,
+src/semantic_checker.cpp	13629	statement	b	raw-string-operation-review	if (!tree_parse_simple_call(trim(statement->b), callee, arguments)) continue;
+src/semantic_checker.cpp	13651	checked_statement	b	EST-or-expression-reader-call	est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+src/semantic_checker.cpp	13695	statement	a	mixed-name-or-expression-field-review	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	13700	statement	b	expression-value-use-review	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	13705	statement	b	expression-value-use-review	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	13709	statement	args	expression-value-use-review	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	13712	statement	a	mixed-name-or-expression-field-review	const string& receiver_name = statement.a;
+src/semantic_checker.cpp	13713	statement	b	expression-value-use-review	const string& handler_name = statement.b;
+src/semantic_checker.cpp	13719	statement	args	expression-value-use-review	index < statement.args.size() && index < handler->params.size(); ++index) {
+src/semantic_checker.cpp	13721	statement	args	expression-value-use-review	functional_pipeline_from_est(statement.args[index]);
+src/semantic_checker.cpp	13727	statement	args	expression-value-use-review	auto inferred = inferred_expr(statement.args[index], current_env);
+src/semantic_checker.cpp	13751	statement	b	literal-comparison-review	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	13752	statement	a	mixed-name-or-expression-field-review	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	13752	statement	args	expression-value-use-review	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	13755	statement	args	raw-string-operation-review	auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
+src/semantic_checker.cpp	13775	statement	b	expression-value-use-review	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	13776	statement	a	raw-string-operation-review	auto function = functions_.find(statement.a);
+src/semantic_checker.cpp	13778	statement	args	expression-value-use-review	for (size_t i = 0; i < statement.args.size() && i < function->second->params.size(); ++i) {
+src/semantic_checker.cpp	13779	statement	args	expression-value-use-review	auto actual = inferred_expr_type(statement.args[i], current_env);
+src/semantic_checker.cpp	13798	statement	args	expression-value-use-review	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	13804	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty())
+src/semantic_checker.cpp	13805	statement	a	mixed-name-or-expression-field-review	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	13808	statement	text	expression-value-use-review	constrain_constructor_fields(statement.line, statement.text, current_env);
+src/semantic_checker.cpp	13838	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	13839	function	result_expression	expression-value-use-review	constrain_constructor_fields(function.result_line, *function.result_expression, env);
+src/semantic_checker.cpp	14002	statement	b	expression-value-use-review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	14005	statement	a	mixed-name-or-expression-field-review	bindings[statement.a] = domain->second;
+src/semantic_checker.cpp	14006	statement	a	mixed-name-or-expression-field-review	main_env[statement.a] = domain->second->name;
+src/semantic_checker.cpp	14019	statement	a	mixed-name-or-expression-field-review	find_specialization(statement.a, domain->second->name);
+src/semantic_checker.cpp	14028	statement	b	literal-comparison-review	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14029	statement	args	expression-value-use-review	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14029	statement	a	mixed-name-or-expression-field-review	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14030	statement	args	raw-string-operation-review	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14030	invoke_view	a	raw-string-operation-review	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14030	invoke_view	b	raw-string-operation-review	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14031	invoke_view	args	expression-value-use-review	invoke_view.args)) {
+src/semantic_checker.cpp	14040	statement	a	mixed-name-or-expression-field-review	const string& receiver = statement.a;
+src/semantic_checker.cpp	14044	statement	b	expression-value-use-review	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14064	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	14161	body_statement	a	mixed-name-or-expression-field-review	if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+src/semantic_checker.cpp	14346	statement	a	mixed-name-or-expression-field-review	auto actual = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	14349	statement	a	mixed-name-or-expression-field-review	if (auto retained = body_types.known_expression(statement.a)) {
+src/semantic_checker.cpp	14686	statement	a	EST-or-expression-reader-call	if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
+src/semantic_checker.cpp	14744	statement	a	mixed-name-or-expression-field-review	reject_untyped_fields(statement.line, statement.a, env);
+src/semantic_checker.cpp	14745	statement	b	expression-value-use-review	reject_untyped_fields(statement.line, statement.b, env);
+src/semantic_checker.cpp	14746	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	14749	statement	text	expression-value-use-review	reject_untyped_fields(statement.line, statement.text, env);
+src/semantic_checker.cpp	14752	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	14754	function	result_expression	expression-value-use-review	*function.result_expression, field_env);
+src/semantic_checker.cpp	14760	function	result_expression	expression-value-use-review	bool identity_result = function.result_expression &&
+src/semantic_checker.cpp	14761	function	result_expression	EST-or-expression-reader-call	tree_identifier_named(*function.result_expression, parameter.name);
+src/semantic_checker.cpp	14767	statement	a	EST-or-expression-reader-call	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	14833	function	result_expression	expression-value-use-review	if (function.result_expression) mark(*function.result_expression);
+src/semantic_checker.cpp	14833	function	result_expression	expression-value-use-review	if (function.result_expression) mark(*function.result_expression);
+src/semantic_checker.cpp	14834	s	a	mixed-name-or-expression-field-review	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	14834	s	a	mixed-name-or-expression-field-review	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	14841	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	14842	function	result_expression	expression-value-use-review	derive_expression_constraints(function, *function.result_expression,
+src/semantic_checker.cpp	14847	s	b	EST-or-expression-reader-call	if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
+src/semantic_checker.cpp	14859	s	a	mixed-name-or-expression-field-review	derive_expression_constraints(function, s.a);
+src/semantic_checker.cpp	14860	s	b	expression-value-use-review	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	14861	s	args	expression-value-use-review	for (const auto& arg : s.args) derive_expression_constraints(function, arg);
+src/semantic_checker.cpp	14863	s	b	expression-value-use-review	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	14864	s	a	mixed-name-or-expression-field-review	if (s.kind == Stmt::Kind::Return && !s.a.empty())
+src/semantic_checker.cpp	14865	s	a	mixed-name-or-expression-field-review	derive_expression_constraints(function, s.a, result_expectation());
+src/semantic_checker.cpp	14872	statement	a	EST-or-expression-reader-call	tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	14873	statement	a	mixed-name-or-expression-field-review	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	14873	statement	b	expression-value-use-review	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	14875	statement	a	raw-string-operation-review	auto source = local_sources.find(trim(statement.a));
+src/semantic_checker.cpp	14881	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	14882	function	result_expression	raw-string-operation-review	auto source = local_sources.find(trim(*function.result_expression));
+src/semantic_checker.cpp	14963	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	14965	function	result_expression	expression-value-use-review	function.result_line, *function.result_expression, env);
+src/semantic_checker.cpp	15030	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	15031	function	result_expression	expression-value-use-review	include_typed_result(function.result_line, *function.result_expression, env);
+src/semantic_checker.cpp	15033	statement	a	mixed-name-or-expression-field-review	if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+src/semantic_checker.cpp	15044	statement	a	mixed-name-or-expression-field-review	include_typed_result(statement.line, statement.a, eval_env);
+src/semantic_checker.cpp	15059	function	result_expression	expression-value-use-review	if (function.return_type && contains_internal_placeholder(*function.return_type) && function.result_expression) {
+src/semantic_checker.cpp	15060	function	result_expression	expression-value-use-review	if (auto resolved = inferred_expr_type(*function.result_expression, env)) {
+src/semantic_checker.cpp	15065	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	15066	function	result_expression	expression-value-use-review	constrain_constructor_fields(function.result_line, *function.result_expression, env);
+src/semantic_checker.cpp	15068	function	result_expression	expression-value-use-review	if (auto result = inferred_expr_type(*function.result_expression, env)) {
+src/semantic_checker.cpp	15084	statement	a	mixed-name-or-expression-field-review	if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+src/semantic_checker.cpp	15085	statement	a	mixed-name-or-expression-field-review	auto result = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	15177	function	result_expression	expression-value-use-review	if (!function.generic && function.result_expression) {
+src/semantic_checker.cpp	15178	function	result_expression	raw-string-operation-review	auto binary = tree_split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
+src/semantic_checker.cpp	15190	function	result_expression	raw-string-operation-review	string be = trim(*function.result_expression);
+src/semantic_checker.cpp	15204	function	result_expression	expression-value-use-review	bool identity_result = function.result_expression &&
+src/semantic_checker.cpp	15205	function	result_expression	EST-or-expression-reader-call	tree_identifier_named(*function.result_expression, parameter.name);
+src/semantic_checker.cpp	15211	statement	a	EST-or-expression-reader-call	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15239	statement	a	mixed-name-or-expression-field-review	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	15241	function	result_expression	expression-value-use-review	if ((has_value_return || function.result_expression) && function.static_dispatch) {
+src/semantic_checker.cpp	15318	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	15319	function	result_expression	expression-value-use-review	analyze_effect_expression(*function.result_expression, env, concrete_params,
+src/semantic_checker.cpp	15796	branch	a	mixed-name-or-expression-field-review	observable_expression_effects(branch.a, condition_env, domain_fields);
+src/semantic_checker.cpp	15837	statement	a	mixed-name-or-expression-field-review	names.insert(statement.a);
+src/semantic_checker.cpp	15838	statement	a	mixed-name-or-expression-field-review	else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+src/semantic_checker.cpp	15839	statement	a	mixed-name-or-expression-field-review	names.insert(statement.a);
+src/semantic_checker.cpp	15852	statement	a	mixed-name-or-expression-field-review	if (expression_uses(statement.a, name) ||
+src/semantic_checker.cpp	15853	statement	b	expression-value-use-review	expression_uses(statement.b, name) ||
+src/semantic_checker.cpp	15856	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	15882	branch	a	mixed-name-or-expression-field-review	domain, source, branch.a, &specialization);
+src/semantic_checker.cpp	15972	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	15973	statement	a	mixed-name-or-expression-field-review	env[statement.a] = *type;
+src/semantic_checker.cpp	16031	statement	b	expression-value-use-review	? statement.b : statement.a;
+src/semantic_checker.cpp	16031	statement	a	mixed-name-or-expression-field-review	? statement.b : statement.a;
+src/semantic_checker.cpp	16106	statement	b	expression-value-use-review	domain, source, statement.b, &specialization, &locals));
+src/semantic_checker.cpp	16124	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16125	statement	a	mixed-name-or-expression-field-review	locals[statement.a] = *type;
+src/semantic_checker.cpp	16210	result	text	expression-value-use-review	result.text = *result_expression;
+src/semantic_checker.cpp	16319	function	result_expression	expression-value-use-review	changed |= forward(function.body, function.result_expression,
+src/semantic_checker.cpp	16335	method	result_expression	expression-value-use-review	changed |= forward(method.body, method.result_expression,
+src/semantic_checker.cpp	16742	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	16745	result	a	mixed-name-or-expression-field-review	result.a = *function.result_expression;
+src/semantic_checker.cpp	16745	function	result_expression	expression-value-use-review	result.a = *function.result_expression;
+src/semantic_checker.cpp	16809	second	result_expression	expression-value-use-review	!nested->second->result_expression)) continue;
+src/semantic_checker.cpp	16819	forwarded	a	mixed-name-or-expression-field-review	forwarded.a = nested_name;
+src/semantic_checker.cpp	16820	forwarded	args	expression-value-use-review	forwarded.args = mapped;
+src/semantic_checker.cpp	16844	second	result_expression	expression-value-use-review	function->second->result_expression))
+src/semantic_checker.cpp	16901	arm	a	raw-string-operation-review	if (!arm.a.empty() && tree_plain_identifier(trim(arm.a))) {
+src/semantic_checker.cpp	16901	arm	a	raw-string-operation-review	if (!arm.a.empty() && tree_plain_identifier(trim(arm.a))) {
+src/semantic_checker.cpp	16906	arm	a	raw-string-operation-review	local_types[trim(arm.a)] = *selected_types.begin();
+src/semantic_checker.cpp	17063	function	result_expression	expression-value-use-review	(function.body.empty() && !function.result_expression)) continue;
+src/semantic_checker.cpp	17079	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	17080	function	result_expression	expression-value-use-review	analyze_effect_expression(*function.result_expression, env, function.params, unused,
+src/semantic_checker.cpp	17644	object_method	result_expression	expression-value-use-review	object_method->body.empty() && !object_method->result_expression
+src/semantic_checker.cpp	17646	object_method	result_expression	expression-value-use-review	capture_callable_effects(object_method->body, object_method->result_expression,
+src/semantic_checker.cpp	17740	target	result_expression	expression-value-use-review	if (target.body.empty() && !target.result_expression) {
+src/semantic_checker.cpp	17745	target	result_expression	expression-value-use-review	capture_callable_effects(target.body, target.result_expression,
+src/semantic_checker.cpp	17770	object_method	result_expression	expression-value-use-review	object_method->body.empty() && !object_method->result_expression
+src/semantic_checker.cpp	17772	object_method	result_expression	expression-value-use-review	capture_callable_effects(object_method->body, object_method->result_expression,
+src/semantic_checker.cpp	17880	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	17882	statement	b	literal-comparison-review	statement.b == "consume" ? Effect::Consume : Effect::Read);
+src/semantic_checker.cpp	17883	statement	a	mixed-name-or-expression-field-review	auto type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	17893	arm	a	mixed-name-or-expression-field-review	[&](const EnumCase& candidate) { return candidate.name == arm.a; });
+src/semantic_checker.cpp	17896	arm	args	expression-value-use-review	field_index < arm.args.size() && field_index < item->fields.size();
+src/semantic_checker.cpp	17898	arm	args	expression-value-use-review	branch[arm.args[field_index]] = item->fields[field_index].type;
+src/semantic_checker.cpp	17903	arm	args	expression-value-use-review	for (const auto& binding : arm.args) branch.erase(binding);
+src/semantic_checker.cpp	17930	arm	a	mixed-name-or-expression-field-review	recovered[arm.a] = selected_types.size() == 1
+src/semantic_checker.cpp	17933	arm	a	mixed-name-or-expression-field-review	else if (!arm.a.empty()) {
+src/semantic_checker.cpp	17962	statement	b	expression-value-use-review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	17970	statement	b	expression-value-use-review	? statement.b : statement.a,
+src/semantic_checker.cpp	17970	statement	a	mixed-name-or-expression-field-review	? statement.b : statement.a,
+src/semantic_checker.cpp	17982	statement	b	expression-value-use-review	if (inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	17983	statement	a	mixed-name-or-expression-field-review	child_env[statement.a] =
+src/semantic_checker.cpp	17984	statement	b	expression-value-use-review	iterator_element_type(statement.line, statement.b, env)
+src/semantic_checker.cpp	17987	statement	a	mixed-name-or-expression-field-review	child_env[statement.a] = "_value";
+src/semantic_checker.cpp	17991	statement	a	mixed-name-or-expression-field-review	!copy_type(child_env.at(statement.a))) {
+src/semantic_checker.cpp	17992	statement	b	expression-value-use-review	if (auto location = storage_location(statement.b, env)) {
+src/semantic_checker.cpp	17995	statement	a	mixed-name-or-expression-field-review	leaf_effect_capture_->aliases[statement.a] = *location;
+src/semantic_checker.cpp	18015	statement	b	expression-value-use-review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18016	statement	b	expression-value-use-review	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18018	statement	b	expression-value-use-review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18021	statement	b	expression-value-use-review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18023	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18023	statement	a	mixed-name-or-expression-field-review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18024	statement	b	expression-value-use-review	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18024	statement	a	mixed-name-or-expression-field-review	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18025	statement	a	mixed-name-or-expression-field-review	else env[statement.a] = "_value";
+src/semantic_checker.cpp	18031	statement	a	EST-or-expression-reader-call	if (tree_parse_index(statement.a, base, ignored))
+src/semantic_checker.cpp	18032	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18035	statement	a	EST-or-expression-reader-call	if (tree_member_access(statement.a))
+src/semantic_checker.cpp	18036	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18039	statement	a	mixed-name-or-expression-field-review	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18039	statement	a	mixed-name-or-expression-field-review	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18040	statement	a	mixed-name-or-expression-field-review	mark_effect_name(statement.a, Effect::Write, params, env,
+src/semantic_checker.cpp	18043	statement	b	expression-value-use-review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18044	statement	b	expression-value-use-review	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18046	statement	b	expression-value-use-review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18049	statement	b	expression-value-use-review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18051	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18051	statement	a	mixed-name-or-expression-field-review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18052	statement	a	mixed-name-or-expression-field-review	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18052	statement	b	expression-value-use-review	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18057	statement	b	expression-value-use-review	if (!statement.b.empty())
+src/semantic_checker.cpp	18058	statement	text	expression-value-use-review	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18061	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18061	statement	args	expression-value-use-review	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18067	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18069	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18079	statement	a	raw-string-operation-review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	18081	statement	b	expression-value-use-review	auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
+src/semantic_checker.cpp	18090	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18095	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18101	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty())
+src/semantic_checker.cpp	18102	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18107	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty())
+src/semantic_checker.cpp	18108	statement	a	mixed-name-or-expression-field-review	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18114	statement	text	expression-value-use-review	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18522	statement	b	expression-value-use-review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18525	statement	a	mixed-name-or-expression-field-review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18526	statement	b	expression-value-use-review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18529	statement	text	expression-value-use-review	expressions.push_back(!statement.text.empty()
+src/semantic_checker.cpp	18530	statement	text	expression-value-use-review	? statement.text
+src/semantic_checker.cpp	18531	statement	b	expression-value-use-review	: !statement.b.empty()
+src/semantic_checker.cpp	18532	statement	a	mixed-name-or-expression-field-review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18532	statement	b	expression-value-use-review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18532	statement	args	expression-value-use-review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18533	statement	a	mixed-name-or-expression-field-review	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18533	statement	args	expression-value-use-review	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18536	statement	args	expression-value-use-review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18536	statement	args	expression-value-use-review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18539	statement	args	expression-value-use-review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18539	statement	args	expression-value-use-review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18544	statement	a	mixed-name-or-expression-field-review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18549	statement	b	expression-value-use-review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18554	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18554	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18557	statement	text	expression-value-use-review	expressions.push_back(statement.text);
+src/semantic_checker.cpp	18577	statement	b	expression-value-use-review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18582	statement	args	expression-value-use-review	expressions.insert(expressions.end(), statement.args.begin(),
+src/semantic_checker.cpp	18583	statement	args	expression-value-use-review	statement.args.end());
+src/semantic_checker.cpp	18588	statement	a	mixed-name-or-expression-field-review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18593	statement	b	expression-value-use-review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18598	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18598	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18601	statement	text	expression-value-use-review	expressions.push_back(statement.text);
+src/semantic_checker.cpp	18681	statement	a	raw-string-operation-review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	18686	statement	b	expression-value-use-review	? nullptr : find_handler(*declared->second, statement.b);
+src/semantic_checker.cpp	18689	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18693	statement	b	expression-value-use-review	source, "handler:" + domain + "." + statement.b,
+src/semantic_checker.cpp	18697	statement	a	mixed-name-or-expression-field-review	"synchronous_message", statement.a, {}, {}};
+src/semantic_checker.cpp	18815	function	result_expression	expression-value-use-review	collect_callable_edges(function.body, function.result_expression,
+src/semantic_checker.cpp	18827	method	result_expression	expression-value-use-review	collect_callable_edges(method.body, method.result_expression,
+src/semantic_checker.cpp	18963	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	18966	function	result_expression	expression-value-use-review	analyze_effect_expression(*function.result_expression, result_env,
+src/semantic_checker.cpp	19005	method	result_expression	expression-value-use-review	if (method.result_expression) {
+src/semantic_checker.cpp	19008	method	result_expression	expression-value-use-review	analyze_effect_expression(*method.result_expression, result_env,
+src/semantic_checker.cpp	19277	arm	a	EST-or-expression-reader-call	? *arm.est_pattern : moss::est::recovery_pattern(arm.a);
+src/semantic_checker.cpp	19353	statement	a	mixed-name-or-expression-field-review	if (statement.a.empty()) {
+src/semantic_checker.cpp	19360	statement	a	mixed-name-or-expression-field-review	statement.line, statement.a, env);
+src/semantic_checker.cpp	19362	statement	a	mixed-name-or-expression-field-review	statement.a == selected_binding) {
+src/semantic_checker.cpp	19372	statement	a	mixed-name-or-expression-field-review	statement.a, env, {}, nullptr, {}, nullptr,
+src/semantic_checker.cpp	19387	statement	b	expression-value-use-review	? statement.b : statement.a;
+src/semantic_checker.cpp	19387	statement	a	mixed-name-or-expression-field-review	? statement.b : statement.a;
+src/semantic_checker.cpp	19424	statement	a	raw-string-operation-review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	19428	statement	b	expression-value-use-review	find_handler(*domains_.at(receiver_type), statement.b)) {
+src/semantic_checker.cpp	19449	statement	a	mixed-name-or-expression-field-review	if (statement.a == selected_binding) selected_binding.clear();
+src/semantic_checker.cpp	19450	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	19451	statement	a	mixed-name-or-expression-field-review	env[statement.a] = *type;
+src/semantic_checker.cpp	19505	statement	a	raw-string-operation-review	const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp	19510	statement	b	expression-value-use-review	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	19516	statement	a	mixed-name-or-expression-field-review	const auto type = inferred_expr_type(statement.a, current);
+src/semantic_checker.cpp	19529	arm	a	mixed-name-or-expression-field-review	[&](const EnumCase& item) { return item.name == arm.a; });
+src/semantic_checker.cpp	19532	arm	args	expression-value-use-review	field < arm.args.size() && field < variant->fields.size();
+src/semantic_checker.cpp	19534	arm	args	expression-value-use-review	if (!entry.count(arm.args[field]))
+src/semantic_checker.cpp	19535	arm	args	expression-value-use-review	candidates.emplace(arm.args[field],
+src/semantic_checker.cpp	19547	statement	a	EST-or-expression-reader-call	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19547	statement	a	EST-or-expression-reader-call	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19548	statement	b	expression-value-use-review	auto type = inferred_expr_type(statement.b, current);
+src/semantic_checker.cpp	19550	statement	a	mixed-name-or-expression-field-review	auto [item, inserted] = candidates.emplace(statement.a, *type);
+src/semantic_checker.cpp	19566	statement	a	EST-or-expression-reader-call	tree_plain_identifier(expression) && expression == statement.a)
+src/semantic_checker.cpp	19675	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	19677	function	result_expression	expression-value-use-review	*function.result_expression,
+src/semantic_checker.cpp	20367	while_stmt	a	raw-string-operation-review	string condition = trim(while_stmt.a);
+src/semantic_checker.cpp	20408	s	a	mixed-name-or-expression-field-review	string root = extract_root_identifier(s.a);
+src/semantic_checker.cpp	20411	s	a	EST-or-expression-reader-call	if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
+src/semantic_checker.cpp	20414	s	b	raw-string-operation-review	auto add = tree_split_binary(trim(s.b), {"+"});
+src/semantic_checker.cpp	20425	s	b	raw-string-operation-review	auto sub = tree_split_binary(trim(s.b), {"-"});
+src/semantic_checker.cpp	20435	s	a	raw-string-operation-review	string target = trim(s.a);
+src/semantic_checker.cpp	20437	s	b	expression-value-use-review	} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+src/semantic_checker.cpp	20438	s	a	raw-string-operation-review	string root = trim(s.a);
+src/semantic_checker.cpp	20439	s	b	literal-comparison-review	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20439	s	b	literal-comparison-review	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20439	s	b	literal-comparison-review	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20467	loop	b	raw-string-operation-review	if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
+src/semantic_checker.cpp	20486	loop	a	raw-string-operation-review	const string induction = trim(loop.a);
+src/semantic_checker.cpp	20493	statement	a	mixed-name-or-expression-field-review	const string root = extract_root_identifier(statement.a);
+src/semantic_checker.cpp	20497	statement	a	EST-or-expression-reader-call	(tree_identifier_named(statement.a, range_binding) ||
+src/semantic_checker.cpp	20498	statement	a	EST-or-expression-reader-call	tree_identifier_named(statement.a, induction)))
+src/semantic_checker.cpp	20501	statement	args	raw-string-operation-review	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20501	statement	args	raw-string-operation-review	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20502	statement	args	expression-value-use-review	range_binding) != statement.args.end() ||
+src/semantic_checker.cpp	20503	statement	args	raw-string-operation-review	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20503	statement	args	raw-string-operation-review	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20504	statement	args	expression-value-use-review	induction) != statement.args.end()))
+src/semantic_checker.cpp	20561	statement	b	raw-string-operation-review	string iter_expr = trim(statement.b);
+src/semantic_checker.cpp	20589	statement	a	raw-string-operation-review	string root = trim(statement.a);
+src/semantic_checker.cpp	20604	statement	a	mixed-name-or-expression-field-review	locals.insert(statement.a);
+src/semantic_checker.cpp	20606	statement	b	expression-value-use-review	if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+src/semantic_checker.cpp	20607	statement	a	raw-string-operation-review	string root = trim(statement.a);
+src/semantic_checker.cpp	20608	statement	b	literal-comparison-review	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	20608	statement	b	literal-comparison-review	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	20608	statement	b	literal-comparison-review	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	20609	statement	b	literal-comparison-review	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	20609	statement	b	literal-comparison-review	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	20631	statement	b	expression-value-use-review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	20632	statement	a	mixed-name-or-expression-field-review	env[statement.a] = *type;
+src/semantic_checker.cpp	20694	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	20697	function	result_expression	expression-value-use-review	*function.result_expression,
+src/semantic_checker.cpp	20722	method	result_expression	expression-value-use-review	if (method.result_expression)
+src/semantic_checker.cpp	20724	method	result_expression	expression-value-use-review	*method.result_expression,
+src/semantic_checker.cpp	20827	statement	b	expression-value-use-review	if (auto domain = domain_constructor(statement.b))
+src/semantic_checker.cpp	20828	statement	a	mixed-name-or-expression-field-review	env[statement.a] = *domain;
+src/semantic_checker.cpp	21224	function	result_expression	expression-value-use-review	function.body, function.result_expression, function.result_line,
+src/semantic_checker.cpp	21235	function	result_expression	expression-value-use-review	function.body, function.result_expression, function.result_line,
+src/semantic_checker.cpp	21251	method	result_expression	expression-value-use-review	method.body, method.result_expression, method.result_line,
+src/semantic_checker.cpp	21306	method	result_expression	expression-value-use-review	if (method.result_expression)
+src/semantic_checker.cpp	21309	method	result_expression	expression-value-use-review	*method.result_expression, final_ownership, Effect::Consume);
+src/semantic_checker.cpp	22134	statement	a	mixed-name-or-expression-field-review	alternatives = statement.a.empty()
+src/semantic_checker.cpp	22136	statement	a	mixed-name-or-expression-field-review	: phase21_raised_identities(statement.line, statement.a, types);
+src/semantic_checker.cpp	22138	statement	a	raw-string-operation-review	auto receiver = types.find(statement.a);
+src/semantic_checker.cpp	22143	statement	b	expression-value-use-review	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	22212	s	a	mixed-name-or-expression-field-review	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22215	s	b	literal-comparison-review	bool consuming = s.b == "consume";
+src/semantic_checker.cpp	22217	s	a	EST-or-expression-reader-call	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22217	s	a	EST-or-expression-reader-call	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22221	s	a	EST-or-expression-reader-call	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	22222	s	a	mixed-name-or-expression-field-review	require_available(s.line, s.a, env);
+src/semantic_checker.cpp	22223	s	a	mixed-name-or-expression-field-review	consume_binding(s.line, s.a, env, "consuming match");
+src/semantic_checker.cpp	22225	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22228	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22231	s	a	mixed-name-or-expression-field-review	bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+src/semantic_checker.cpp	22232	s	a	mixed-name-or-expression-field-review	bool prior_read = env.active_read_traversals.count(s.a);
+src/semantic_checker.cpp	22242	arm	a	mixed-name-or-expression-field-review	[&](const EnumCase& candidate) { return candidate.name == arm.a; });
+src/semantic_checker.cpp	22244	arm	a	mixed-name-or-expression-field-review	err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
+src/semantic_checker.cpp	22246	s	a	mixed-name-or-expression-field-review	if (read_place) branch.active_read_traversals.insert(s.a);
+src/semantic_checker.cpp	22247	arm	args	expression-value-use-review	for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+src/semantic_checker.cpp	22248	arm	args	expression-value-use-review	const string& name = arm.args[field_index];
+src/semantic_checker.cpp	22259	s	a	mixed-name-or-expression-field-review	branch.borrowed_enum_payloads[name] = s.a;
+src/semantic_checker.cpp	22264	arm	args	expression-value-use-review	for (const auto& name : arm.args) {
+src/semantic_checker.cpp	22278	s	a	mixed-name-or-expression-field-review	if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+src/semantic_checker.cpp	22356	arm	a	mixed-name-or-expression-field-review	recovered.types[arm.a] = selected_types.size() == 1
+src/semantic_checker.cpp	22358	arm	a	mixed-name-or-expression-field-review	recovered.immutable_locals.insert(arm.a);
+src/semantic_checker.cpp	22359	arm	a	mixed-name-or-expression-field-review	recovered.moved.erase(arm.a);
+src/semantic_checker.cpp	22360	arm	a	mixed-name-or-expression-field-review	} else if (!arm.a.empty()) {
+src/semantic_checker.cpp	22415	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22462	s	b	expression-value-use-review	auto element = iterator_element_type(s.line, s.b, env.types);
+src/semantic_checker.cpp	22464	s	b	expression-value-use-review	if (auto location = storage_location(s.b, env.types))
+src/semantic_checker.cpp	22467	s	b	expression-value-use-review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22473	s	b	expression-value-use-review	check_ownership_expression(s.line, s.b, env, source_effect);
+src/semantic_checker.cpp	22476	s	a	mixed-name-or-expression-field-review	body.types[s.a] = element.value_or("_value");
+src/semantic_checker.cpp	22477	s	a	mixed-name-or-expression-field-review	body.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22484	s	a	mixed-name-or-expression-field-review	body.types.erase(s.a);
+src/semantic_checker.cpp	22485	s	a	raw-string-operation-review	if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	22487	s	a	mixed-name-or-expression-field-review	body.binding_identities[s.a] = prior->second;
+src/semantic_checker.cpp	22489	s	a	mixed-name-or-expression-field-review	body.binding_identities.erase(s.a);
+src/semantic_checker.cpp	22490	s	a	mixed-name-or-expression-field-review	body.moved.erase(s.a);
+src/semantic_checker.cpp	22513	s	b	raw-string-operation-review	string source = trim(s.b);
+src/semantic_checker.cpp	22514	s	b	expression-value-use-review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22517	s	b	expression-value-use-review	storage_location(s.b, env.types))
+src/semantic_checker.cpp	22520	s	b	expression-value-use-review	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22526	s	a	mixed-name-or-expression-field-review	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22528	s	b	expression-value-use-review	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22531	s	b	expression-value-use-review	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	22535	s	b	expression-value-use-review	if (auto constructed = domain_constructor(s.b)) type = *constructed;
+src/semantic_checker.cpp	22536	s	b	expression-value-use-review	else type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22547	s	a	mixed-name-or-expression-field-review	env.types[s.a] = type.value_or("_value");
+src/semantic_checker.cpp	22548	s	a	mixed-name-or-expression-field-review	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22550	s	a	mixed-name-or-expression-field-review	if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+src/semantic_checker.cpp	22551	s	a	mixed-name-or-expression-field-review	else env.immutable_locals.erase(s.a);
+src/semantic_checker.cpp	22552	s	a	mixed-name-or-expression-field-review	env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+src/semantic_checker.cpp	22556	s	a	mixed-name-or-expression-field-review	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	22557	s	a	mixed-name-or-expression-field-review	fact.identity = env.binding_identities[s.a];
+src/semantic_checker.cpp	22565	s	a	mixed-name-or-expression-field-review	const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+src/semantic_checker.cpp	22566	s	a	mixed-name-or-expression-field-review	const bool targets_state_field = env.state_fields.count(s.a) != 0;
+src/semantic_checker.cpp	22567	s	a	mixed-name-or-expression-field-review	auto prior_type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22568	s	b	expression-value-use-review	auto new_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22569	s	a	mixed-name-or-expression-field-review	bool existing_owner = env.binding_identities.count(s.a) ||
+src/semantic_checker.cpp	22570	s	a	mixed-name-or-expression-field-review	env.state_fields.count(s.a);
+src/semantic_checker.cpp	22574	s	b	EST-or-expression-reader-call	!tree_is_fileio_open(s.b) &&
+src/semantic_checker.cpp	22575	s	b	expression-value-use-review	storage_location(s.b, env.types)))
+src/semantic_checker.cpp	22579	s	a	EST-or-expression-reader-call	if (tree_parse_index(s.a, lhs_base, lhs_index))
+src/semantic_checker.cpp	22580	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22582	s	a	EST-or-expression-reader-call	if (tree_member_access(s.a))
+src/semantic_checker.cpp	22583	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22584	s	a	EST-or-expression-reader-call	else if (tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22585	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22587	s	b	raw-string-operation-review	string source = trim(s.b);
+src/semantic_checker.cpp	22588	s	b	expression-value-use-review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22589	s	b	expression-value-use-review	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22595	s	a	mixed-name-or-expression-field-review	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22597	s	b	expression-value-use-review	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22600	s	b	expression-value-use-review	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	22603	s	b	expression-value-use-review	if (auto constructed = domain_constructor(s.b)) {
+src/semantic_checker.cpp	22604	s	a	mixed-name-or-expression-field-review	env.types[s.a] = *constructed;
+src/semantic_checker.cpp	22605	s	a	mixed-name-or-expression-field-review	env.moved.erase(s.a);
+src/semantic_checker.cpp	22609	s	a	EST-or-expression-reader-call	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	22614	s	a	literal-comparison-review	env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+src/semantic_checker.cpp	22618	s	a	mixed-name-or-expression-field-review	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	22618	s	a	mixed-name-or-expression-field-review	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	22621	s	a	mixed-name-or-expression-field-review	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	22621	s	a	mixed-name-or-expression-field-review	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	22622	s	a	mixed-name-or-expression-field-review	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22626	s	a	mixed-name-or-expression-field-review	env.moved.erase(s.a);
+src/semantic_checker.cpp	22630	s	a	mixed-name-or-expression-field-review	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	22631	s	a	raw-string-operation-review	auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	22635	s	a	mixed-name-or-expression-field-review	current_semantic_context_, s.line) + ":" + s.a;
+src/semantic_checker.cpp	22640	s	a	mixed-name-or-expression-field-review	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	22640	s	b	expression-value-use-review	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	22646	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22647	s	a	mixed-name-or-expression-field-review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	22647	s	b	expression-value-use-review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	22647	s	args	expression-value-use-review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	22648	s	args	expression-value-use-review	for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+src/semantic_checker.cpp	22649	s	args	expression-value-use-review	const auto& arg = s.args[arg_index];
+src/semantic_checker.cpp	22659	s	a	mixed-name-or-expression-field-review	message_payload_materializes(s.a, env));
+src/semantic_checker.cpp	22679	s	args	expression-value-use-review	for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
+src/semantic_checker.cpp	22684	s	b	expression-value-use-review	if (!s.b.empty())
+src/semantic_checker.cpp	22685	s	text	expression-value-use-review	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	22687	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	22687	s	args	expression-value-use-review	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	22693	s	b	literal-comparison-review	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	22693	s	args	literal-comparison-review	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	22694	s	a	raw-string-operation-review	auto container = env.types.find(s.a);
+src/semantic_checker.cpp	22696	s	a	mixed-name-or-expression-field-review	? current_body_types_->resolved_local(s.a) : nullptr;
+src/semantic_checker.cpp	22702	s	args	raw-string-operation-review	auto element = inferred_expr_type(s.args.front(), env.types);
+src/semantic_checker.cpp	22711	s	a	mixed-name-or-expression-field-review	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22715	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22718	s	a	mixed-name-or-expression-field-review	require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+src/semantic_checker.cpp	22727	s	text	expression-value-use-review	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	22735	s	a	mixed-name-or-expression-field-review	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22735	s	a	mixed-name-or-expression-field-review	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22741	s	a	mixed-name-or-expression-field-review	if (!s.a.empty())
+src/semantic_checker.cpp	22742	s	a	mixed-name-or-expression-field-review	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22832	statement	text	EST-or-expression-reader-call	if (auto expression = moss::est::parse_view(statement.text);
+src/semantic_checker.cpp	23417	function	result_expression	expression-value-use-review	if (function.result_expression)
+src/semantic_checker.cpp	23419	function	result_expression	expression-value-use-review	*function.result_expression, final_ownership, Effect::Consume);
+src/semantic_checker.cpp	23421	function	result_expression	expression-value-use-review	if (function.result_expression) {
+src/semantic_checker.cpp	23430	function	result_expression	expression-value-use-review	*function.result_expression, specialized_env);
+src/semantic_checker.cpp	24211	statement	b	expression-value-use-review	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24211	statement	a	mixed-name-or-expression-field-review	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24212	statement	args	expression-value-use-review	statement.args == args;
+src/semantic_checker.cpp	24218	statement	b	raw-string-operation-review	direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24254	statement	b	expression-value-use-review	if (requirements.size() == 1 && !statement.b.empty()) {
+src/semantic_checker.cpp	24262	statement	b	EST-or-expression-reader-call	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24265	statement	b	EST-or-expression-reader-call	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24305	statement	b	raw-string-operation-review	tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24312	statement	b	expression-value-use-review	0, statement.b, current_check_body_context_,
+src/semantic_checker.cpp	24322	current_check_statement_	a	mixed-name-or-expression-field-review	? &current_check_statement_->a
+src/semantic_checker.cpp	24323	current_check_result_function_	result_expression	expression-value-use-review	: current_check_result_function_->result_expression
+src/semantic_checker.cpp	24324	current_check_result_function_	result_expression	expression-value-use-review	? &*current_check_result_function_->result_expression
+src/semantic_checker.cpp	25794	current_check_result_function_	result_expression	expression-value-use-review	current_check_result_function_->result_expression &&
+src/semantic_checker.cpp	25795	current_check_result_function_	result_expression	EST-or-expression-reader-call	est::fingerprint(*current_check_result_function_->result_expression) ==
+src/semantic_checker.cpp	27630	synthetic_return	a	mixed-name-or-expression-field-review	synthetic_return.a = expression;
+src/semantic_checker.cpp	27631	synthetic_return	text	expression-value-use-review	synthetic_return.text = "return " + expression;
+src/semantic_checker.cpp	27887	statement	b	expression-value-use-review	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	27893	statement	a	mixed-name-or-expression-field-review	return route.name == statement.a;
+src/semantic_checker.cpp	27895	statement	a	mixed-name-or-expression-field-review	err(statement.line, "domain route '" + statement.a +
+src/semantic_checker.cpp	27897	statement	b	expression-value-use-review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	27905	statement	a	raw-string-operation-review	auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp	27907	statement	a	mixed-name-or-expression-field-review	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	27908	statement	a	mixed-name-or-expression-field-review	for (const auto& binding : functional_captures(statement.a, current_env))
+src/semantic_checker.cpp	27912	statement	b	expression-value-use-review	FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
+src/semantic_checker.cpp	27913	statement	b	expression-value-use-review	check_expression(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	27916	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	27916	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	27917	statement	b	expression-value-use-review	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	27918	statement	b	EST-or-expression-reader-call	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	27922	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	27922	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	27923	statement	a	mixed-name-or-expression-field-review	const auto prior_type = current_env.at(statement.a);
+src/semantic_checker.cpp	27924	statement	b	expression-value-use-review	auto new_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	27931	statement	a	mixed-name-or-expression-field-review	"assignment to binding '" + statement.a + "' of type '" +
+src/semantic_checker.cpp	27937	statement	a	EST-or-expression-reader-call	if (tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	27938	statement	a	mixed-name-or-expression-field-review	if (!current_env.count(statement.a)) {
+src/semantic_checker.cpp	27939	statement	b	expression-value-use-review	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	27940	statement	b	EST-or-expression-reader-call	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	27943	statement	a	mixed-name-or-expression-field-review	auto bound_type = current_env.at(statement.a);
+src/semantic_checker.cpp	27944	statement	b	expression-value-use-review	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	27945	statement	a	mixed-name-or-expression-field-review	auto bound_term = checked_types.resolved_local(statement.a);
+src/semantic_checker.cpp	27948	statement	b	expression-value-use-review	rhs_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	27959	statement	a	mixed-name-or-expression-field-review	canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+src/semantic_checker.cpp	27965	statement	a	EST-or-expression-reader-call	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	27974	statement	b	expression-value-use-review	auto value_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	27980	statement	b	expression-value-use-review	value_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28015	statement	a	mixed-name-or-expression-field-review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28025	statement	a	mixed-name-or-expression-field-review	auto element_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28026	statement	a	mixed-name-or-expression-field-review	auto element_term = checked_term(statement.a, element_type);
+src/semantic_checker.cpp	28027	statement	b	expression-value-use-review	auto value_term = checked_term(statement.b, value_type);
+src/semantic_checker.cpp	28054	statement	a	EST-or-expression-reader-call	if (tree_member_access(statement.a)) {
+src/semantic_checker.cpp	28055	statement	a	mixed-name-or-expression-field-review	auto field_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28056	statement	b	expression-value-use-review	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28057	statement	a	mixed-name-or-expression-field-review	auto field_term = checked_term(statement.a, field_type);
+src/semantic_checker.cpp	28059	statement	b	expression-value-use-review	if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+src/semantic_checker.cpp	28067	statement	a	mixed-name-or-expression-field-review	statement.a + "' of type '" +
+src/semantic_checker.cpp	28079	statement	a	mixed-name-or-expression-field-review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28085	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty())
+src/semantic_checker.cpp	28086	statement	a	mixed-name-or-expression-field-review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28092	statement	a	raw-string-operation-review	auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp	28094	statement	a	mixed-name-or-expression-field-review	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28095	statement	b	expression-value-use-review	check_for_source(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28104	statement	args	expression-value-use-review	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28115	statement	a	mixed-name-or-expression-field-review	statement.line, statement.a, current_env);
+src/semantic_checker.cpp	28117	statement	a	mixed-name-or-expression-field-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28117	statement	b	expression-value-use-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28117	statement	args	expression-value-use-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28120	statement	a	mixed-name-or-expression-field-review	statement.line, statement.a, *target, current_env);
+src/semantic_checker.cpp	28127	statement	a	raw-string-operation-review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28132	statement	b	expression-value-use-review	"handler '" + current->name + "." + statement.b +
+src/semantic_checker.cpp	28139	statement	a	mixed-name-or-expression-field-review	{"domain-instance", statement.a,
+src/semantic_checker.cpp	28140	statement	a	mixed-name-or-expression-field-review	domain_instance_semantic_identity(statement.a, current->name),
+src/semantic_checker.cpp	28141	statement	a	mixed-name-or-expression-field-review	statement.a, {}, 0},
+src/semantic_checker.cpp	28142	statement	b	expression-value-use-review	{"handler", current->name + "." + statement.b,
+src/semantic_checker.cpp	28148	statement	args	expression-value-use-review	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28159	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28161	statement	args	expression-value-use-review	check_expression(statement.line, statement.args[index], current_env,
+src/semantic_checker.cpp	28174	statement	text	expression-value-use-review	// Member calls are captured by check_expression(statement.text) below;
+src/semantic_checker.cpp	28177	statement	b	expression-value-use-review	statement.b.empty()) {
+src/semantic_checker.cpp	28180	statement	b	expression-value-use-review	statement.b.empty()
+src/semantic_checker.cpp	28183	statement	text	expression-value-use-review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28183	statement	a	mixed-name-or-expression-field-review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28183	statement	text	expression-value-use-review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28185	statement	args	expression-value-use-review	call_occurrence_id).source_operands = statement.args;
+src/semantic_checker.cpp	28200	statement	b	expression-value-use-review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28201	statement	a	raw-string-operation-review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28204	statement	a	mixed-name-or-expression-field-review	: inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28209	statement	a	mixed-name-or-expression-field-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28209	statement	b	expression-value-use-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28209	statement	args	expression-value-use-review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28213	statement	b	expression-value-use-review	"domain handler '" + domain + "." + statement.b +
+src/semantic_checker.cpp	28218	statement	a	mixed-name-or-expression-field-review	{{"domain-instance", statement.a,
+src/semantic_checker.cpp	28219	statement	a	mixed-name-or-expression-field-review	domain_instance_semantic_identity(statement.a, domain),
+src/semantic_checker.cpp	28220	statement	a	mixed-name-or-expression-field-review	statement.a, {}, 0},
+src/semantic_checker.cpp	28221	statement	b	expression-value-use-review	{"handler", domain + "." + statement.b,
+src/semantic_checker.cpp	28225	statement	a	mixed-name-or-expression-field-review	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28225	statement	b	expression-value-use-review	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28238	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	28243	statement	b	expression-value-use-review	canonical_type_name(*receiver_type), statement.b,
+src/semantic_checker.cpp	28248	statement	b	expression-value-use-review	statement.b + "' for supplied arguments");
+src/semantic_checker.cpp	28256	statement	a	mixed-name-or-expression-field-review	constraint.subject == statement.a &&
+src/semantic_checker.cpp	28257	statement	b	expression-value-use-review	constraint.detail == statement.b &&
+src/semantic_checker.cpp	28258	statement	args	expression-value-use-review	constraint.arity == statement.args.size();
+src/semantic_checker.cpp	28262	statement	a	mixed-name-or-expression-field-review	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28262	statement	b	expression-value-use-review	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28269	statement	a	literal-comparison-review	const bool delayed_assert_check = statement.a == "assert" &&
+src/semantic_checker.cpp	28270	statement	a	mixed-name-or-expression-field-review	!functions_.count(statement.a);
+src/semantic_checker.cpp	28272	statement	a	mixed-name-or-expression-field-review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28272	statement	args	expression-value-use-review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28285	statement	a	raw-string-operation-review	auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp	28289	statement	a	mixed-name-or-expression-field-review	"binding:pending:" + statement.a);
+src/semantic_checker.cpp	28292	statement	a	mixed-name-or-expression-field-review	call_occurrence_id, "builtin:" + statement.a);
+src/semantic_checker.cpp	28295	statement	text	expression-value-use-review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28295	statement	a	mixed-name-or-expression-field-review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28295	statement	text	expression-value-use-review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28300	statement	b	expression-value-use-review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28301	statement	text	expression-value-use-review	check_expression(statement.line, statement.text, current_env,
+src/semantic_checker.cpp	28314	statement	b	literal-comparison-review	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28314	statement	a	literal-comparison-review	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28315	statement	a	mixed-name-or-expression-field-review	!functions_.count(statement.a);
+src/semantic_checker.cpp	28319	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28320	statement	args	expression-value-use-review	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28335	statement	b	expression-value-use-review	const auto occurrence_slot = statement.b.empty()
+src/semantic_checker.cpp	28345	statement	b	expression-value-use-review	statement.b.empty()) {
+src/semantic_checker.cpp	28351	statement	b	literal-comparison-review	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28351	statement	a	literal-comparison-review	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28352	statement	a	mixed-name-or-expression-field-review	!functions_.count(statement.a))
+src/semantic_checker.cpp	28353	statement	a	mixed-name-or-expression-field-review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28353	statement	args	expression-value-use-review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28357	statement	a	raw-string-operation-review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28362	statement	b	expression-value-use-review	const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
+src/semantic_checker.cpp	28388	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28390	statement	args	expression-value-use-review	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28424	statement	args	expression-value-use-review	static_cast<std::uint32_t>(index), statement.args[index],
+src/semantic_checker.cpp	28434	statement	text	EST-or-expression-reader-call	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28434	statement	text	EST-or-expression-reader-call	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28445	statement	a	mixed-name-or-expression-field-review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28447	statement	a	mixed-name-or-expression-field-review	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28448	statement	a	mixed-name-or-expression-field-review	if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+src/semantic_checker.cpp	28461	statement	a	mixed-name-or-expression-field-review	"cannot infer the type of reply expression '" + statement.a + "'",
+src/semantic_checker.cpp	28465	statement	a	mixed-name-or-expression-field-review	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28465	statement	a	mixed-name-or-expression-field-review	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28474	statement	a	mixed-name-or-expression-field-review	statement.a, *actual, *current_handler->reply_type);
+src/semantic_checker.cpp	28483	statement	a	mixed-name-or-expression-field-review	!statement.a.empty())
+src/semantic_checker.cpp	28486	statement	a	mixed-name-or-expression-field-review	!current_function && !statement.a.empty())
+src/semantic_checker.cpp	28489	statement	a	mixed-name-or-expression-field-review	!statement.a.empty()) {
+src/semantic_checker.cpp	28499	statement	a	mixed-name-or-expression-field-review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28501	statement	a	mixed-name-or-expression-field-review	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28507	statement	a	mixed-name-or-expression-field-review	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28507	statement	a	mixed-name-or-expression-field-review	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28515	statement	a	mixed-name-or-expression-field-review	"cannot infer the type of return expression '" + statement.a +
+src/semantic_checker.cpp	28539	statement	a	mixed-name-or-expression-field-review	!checked_types.known_expression(statement.a) &&
+src/semantic_checker.cpp	28541	statement	a	mixed-name-or-expression-field-review	!checked_result_matches(statement.a, *actual,
+src/semantic_checker.cpp	28707	statement	a	mixed-name-or-expression-field-review	? "case:" + statement->a : "recover";
+src/semantic_checker.cpp	28736	statement	a	mixed-name-or-expression-field-review	current_semantic_context_, statement->line) + ":" + statement->a;
+src/semantic_checker.cpp	28741	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement->a)) {
+src/semantic_checker.cpp	28743	statement	a	mixed-name-or-expression-field-review	current_semantic_context_, statement->line) + ":" + statement->a;
+src/semantic_checker.cpp	28770	statement	a	mixed-name-or-expression-field-review	binding.name = statement->a;
+src/semantic_checker.cpp	29033	prior	a	mixed-name-or-expression-field-review	prior.a == name) {
+src/semantic_checker.cpp	29104	source	a	mixed-name-or-expression-field-review	binding.name = statement.source->a;
+src/semantic_checker.cpp	29269	source	a	mixed-name-or-expression-field-review	binding.name = statement.source->a;
+src/semantic_checker.cpp	29418	source	a	raw-string-operation-review	occurrence.bindings.front().name != occurrence.source->a ||
+src/semantic_checker.cpp	29427	source	args	expression-value-use-review	occurrence.bindings.size() != occurrence.source->args.size())
+src/semantic_checker.cpp	29432	source	args	expression-value-use-review	if (binding >= occurrence.source->args.size() ||
+src/semantic_checker.cpp	29433	source	args	expression-value-use-review	payload.name != occurrence.source->args[binding] ||
+src/semantic_checker.cpp	30512	statement	a	EST-or-expression-reader-call	if (!tree_simple_identifier(statement.a))
+src/semantic_checker.cpp	30526	statement	b	raw-string-operation-review	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	30537	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30554	statement	b	expression-value-use-review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	30563	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	30564	statement	b	expression-value-use-review	const string role = statement.b.empty()
+src/semantic_checker.cpp	30583	statement	a	mixed-name-or-expression-field-review	if (statement.a.empty()) {
+src/semantic_checker.cpp	30597	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30602	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) require_root(statement, "reply-value");
+src/semantic_checker.cpp	30605	statement	a	mixed-name-or-expression-field-review	if (!statement.a.empty()) require_root(statement, "return-value");
+src/semantic_checker.cpp	32298	source	a	literal-comparison-review	declaration.source && declaration.source->a == "local")
+src/fileio_semantics.inc	492	second	result_expression	expression-value-use-review	if (function->second->result_expression)
+src/fileio_semantics.inc	495	second	result_expression	expression-value-use-review	*function->second->result_expression, helper);
+src/fileio_semantics.inc	569	s	text	expression-value-use-review	? s.text : s.b.empty() ? s.a : s.b;
+src/fileio_semantics.inc	569	s	b	expression-value-use-review	? s.text : s.b.empty() ? s.a : s.b;
+src/fileio_semantics.inc	569	s	a	mixed-name-or-expression-field-review	? s.text : s.b.empty() ? s.a : s.b;
+src/fileio_semantics.inc	569	s	b	expression-value-use-review	? s.text : s.b.empty() ? s.a : s.b;
+src/fileio_semantics.inc	576	s	a	mixed-name-or-expression-field-review	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	645	s	b	expression-value-use-review	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	645	s	a	mixed-name-or-expression-field-review	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	650	s	b	expression-value-use-review	canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+src/fileio_semantics.inc	653	s	a	raw-string-operation-review	branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
+src/fileio_semantics.inc	653	s	b	raw-string-operation-review	branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
+src/fileio_semantics.inc	653	s	b	raw-string-operation-review	branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
+src/fileio_semantics.inc	666	s	a	mixed-name-or-expression-field-review	if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	672	s	b	expression-value-use-review	fileio_lifecycle_expression(s.line, s.b, flow);
+src/fileio_semantics.inc	673	s	b	expression-value-use-review	auto type = inferred_expr_type(s.b, flow.types);
+src/fileio_semantics.inc	675	s	b	expression-value-use-review	storage_location(s.b, flow.types))
+src/fileio_semantics.inc	679	s	a	mixed-name-or-expression-field-review	++flow.batch_generation[s.a];
+src/fileio_semantics.inc	682	s	b	raw-string-operation-review	tree_parse_index(trim(s.b), source, offset) &&
+src/fileio_semantics.inc	685	s	a	mixed-name-or-expression-field-review	flow.range_origin[s.a] = {source, flow.batch_generation[source]};
+src/fileio_semantics.inc	687	s	b	raw-string-operation-review	tree_simple_identifier(trim(s.b)) &&
+src/fileio_semantics.inc	688	s	b	raw-string-operation-review	flow.range_origin.count(trim(s.b)))
+src/fileio_semantics.inc	689	s	a	raw-string-operation-review	flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
+src/fileio_semantics.inc	689	s	b	raw-string-operation-review	flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
+src/fileio_semantics.inc	690	s	a	mixed-name-or-expression-field-review	else flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	693	s	b	expression-value-use-review	is_direct_fileio_open_initializer(s.b, &open_args)) {
+src/fileio_semantics.inc	694	s	a	mixed-name-or-expression-field-review	flow.types[s.a] = "FileIO";
+src/fileio_semantics.inc	695	s	a	mixed-name-or-expression-field-review	flow.local_owners.insert(s.a);
+src/fileio_semantics.inc	696	s	a	mixed-name-or-expression-field-review	flow.state[s.a] = 1;
+src/fileio_semantics.inc	700	s	a	raw-string-operation-review	flow.mode[s.a] = trim(open_args[1]);
+src/fileio_semantics.inc	701	s	a	literal-comparison-review	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	701	s	a	literal-comparison-review	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	702	s	a	mixed-name-or-expression-field-review	else flow.may_be_read_only.erase(s.a);
+src/fileio_semantics.inc	704	s	a	EST-or-expression-reader-call	} else if (type && tree_simple_identifier(s.a)) {
+src/fileio_semantics.inc	705	s	a	mixed-name-or-expression-field-review	flow.types[s.a] = *type;
+src/fileio_semantics.inc	708	s	args	expression-value-use-review	for (const auto& argument : s.args)
+src/fileio_semantics.inc	711	s	text	expression-value-use-review	string call_text = s.text;
+src/fileio_semantics.inc	712	s	a	EST-or-expression-reader-call	auto call_name = tree_identifier_name(s.a);
+src/fileio_semantics.inc	713	s	b	expression-value-use-review	if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+src/fileio_semantics.inc	715	s	args	expression-value-use-review	for (size_t i = 0; i < s.args.size(); ++i) {
+src/fileio_semantics.inc	717	s	args	expression-value-use-review	call_text += s.args[i];
+src/fileio_semantics.inc	723	s	a	mixed-name-or-expression-field-review	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	757	statement	a	mixed-name-or-expression-field-review	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	757	statement	b	expression-value-use-review	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	758	statement	args	expression-value-use-review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/fileio_semantics.inc	760	statement	args	expression-value-use-review	source << statement.args[index];
+src/fileio_semantics.inc	853	statement	text	expression-value-use-review	statement.kind == Stmt::Kind::Echo ? statement.text :
+src/fileio_semantics.inc	858	statement	a	mixed-name-or-expression-field-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	858	statement	b	expression-value-use-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	860	statement	a	mixed-name-or-expression-field-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	860	statement	b	expression-value-use-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	861	statement	args	expression-value-use-review	statement.args, visited)
+src/fileio_semantics.inc	868	statement	b	expression-value-use-review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	869	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	869	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	872	second	result_expression	expression-value-use-review	if (function->second->result_expression)
+src/fileio_semantics.inc	873	second	result_expression	expression-value-use-review	return fileio_blocking_expression(*function->second->result_expression,
+src/fileio_semantics.inc	927	statement	text	expression-value-use-review	statement.kind == Stmt::Kind::Echo ? statement.text :
+src/fileio_semantics.inc	932	statement	a	mixed-name-or-expression-field-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	932	statement	b	expression-value-use-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	934	statement	a	mixed-name-or-expression-field-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	934	statement	b	expression-value-use-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	935	statement	args	expression-value-use-review	statement.args, visited)
+src/fileio_semantics.inc	942	statement	b	expression-value-use-review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	943	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	943	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	974	statement	text	expression-value-use-review	statement.kind == Stmt::Kind::Echo ? statement.text :
+src/fileio_semantics.inc	979	statement	a	mixed-name-or-expression-field-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	979	statement	b	expression-value-use-review	statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+src/fileio_semantics.inc	982	statement	a	mixed-name-or-expression-field-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	982	statement	b	expression-value-use-review	? fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	983	statement	args	expression-value-use-review	statement.args, visited)
+src/fileio_semantics.inc	998	statement	b	expression-value-use-review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	999	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	999	statement	a	EST-or-expression-reader-call	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/file_chunk_lowering.inc	102	statement	a	mixed-name-or-expression-field-review	if (extract_root_identifier(statement.a) == parameter)
+src/file_chunk_lowering.inc	110	statement	a	EST-or-expression-reader-call	tree_identifier_named(statement.a, parameter)) ||
+src/file_chunk_lowering.inc	112	statement	args	raw-string-operation-review	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	112	statement	args	raw-string-operation-review	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	113	statement	args	expression-value-use-review	statement.args.end()))
+src/file_chunk_lowering.inc	131	mapper	result_expression	expression-value-use-review	if (mapper.result_expression)
+src/file_chunk_lowering.inc	133	mapper	result_expression	expression-value-use-review	*mapper.result_expression, env, {}, nullptr, parameters, &proven));
+src/executor_invoke_lowering.inc	53	statement	a	mixed-name-or-expression-field-review	plan.binding = statement.a;
+src/executor_invoke_lowering.inc	109	statement	args	expression-value-use-review	if (statement.args.size() != 1)
+src/executor_invoke_lowering.inc	116	statement	args	raw-string-operation-review	if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
+src/executor_invoke_lowering.inc	149	statement	a	mixed-name-or-expression-field-review	plan.executor_binding = statement.a;
+src/executor_invoke_lowering.inc	245	statement	a	mixed-name-or-expression-field-review	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	245	statement	b	expression-value-use-review	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	338	statement	b	EST-or-expression-reader-call	if (tree_parse_executor_chain(statement.b, calls)) {
+src/executor_invoke_lowering.inc	365	statement	b	expression-value-use-review	if (!functional_pipeline_from_est(statement.b) &&
+src/executor_invoke_lowering.inc	366	statement	b	EST-or-expression-reader-call	tree_parse_member_call(statement.b, receiver, method, arguments) &&
+src/executor_invoke_lowering.inc	369	statement	b	expression-value-use-review	check_expression(statement.line, statement.b, env);
+src/executor_invoke_lowering.inc	381	statement	a	mixed-name-or-expression-field-review	if (executor_typed(env, statement.a)) {
+src/executor_invoke_lowering.inc	382	statement	b	literal-comparison-review	if (statement.b == "invoke") {
+src/executor_invoke_lowering.inc	386	statement	b	literal-comparison-review	if (statement.b == "join") {
+src/executor_invoke_lowering.inc	387	statement	args	expression-value-use-review	if (!statement.args.empty())
+src/executor_invoke_lowering.inc	393	statement	b	expression-value-use-review	"unknown Executor operation '" + statement.b + "'",
+src/executor_invoke_lowering.inc	567	statement	b	EST-or-expression-reader-call	tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
+src/executor_invoke_lowering.inc	577	statement	a	mixed-name-or-expression-field-review	state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
+src/executor_invoke_lowering.inc	579	statement	b	literal-comparison-review	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	579	statement	b	literal-comparison-review	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	580	statement	a	raw-string-operation-review	auto found = state.find(statement.a);
+src/executor_invoke_lowering.inc	585	statement	a	mixed-name-or-expression-field-review	"Executor '" + statement.a +
+src/executor_invoke_lowering.inc	589	statement	a	mixed-name-or-expression-field-review	"Executor '" + statement.a + "' is not active here",
+src/executor_invoke_lowering.inc	592	statement	b	literal-comparison-review	if (statement.b == "join")
+src/executor_invoke_lowering.inc	642	s	a	mixed-name-or-expression-field-review	s.a = "executor";
+src/executor_invoke_lowering.inc	643	s	b	expression-value-use-review	s.b = "invoke";
+src/static_bounds.inc	148	statement	a	mixed-name-or-expression-field-review	if (auto target = storage_location(statement.a, {}, false))
+src/static_bounds.inc	151	statement	a	mixed-name-or-expression-field-review	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	152	statement	b	expression-value-use-review	expression = statement.b;
+src/static_bounds.inc	158	statement	text	expression-value-use-review	expression = statement.text;
+src/static_bounds.inc	167	statement	a	mixed-name-or-expression-field-review	expression = statement.a;
+src/static_bounds.inc	170	statement	b	expression-value-use-review	expression = statement.b;
+src/static_bounds.inc	256	statement	b	expression-value-use-review	element.bytes = static_payload_byte_bound(statement.b);
+src/static_bounds.inc	258	statement	b	expression-value-use-review	auto batch = static_batch_entry_bounds(statement.b);
+src/static_bounds.inc	262	statement	a	mixed-name-or-expression-field-review	body.erase(statement.a);
+src/static_bounds.inc	263	statement	a	mixed-name-or-expression-field-review	body_owners.erase(statement.a);
+src/static_bounds.inc	264	statement	a	mixed-name-or-expression-field-review	if (element.bytes) body[statement.a] = element;
+src/static_bounds.inc	279	arm	args	expression-value-use-review	for (const auto& name : arm.args) branch.erase(name);
+src/static_bounds.inc	280	arm	args	expression-value-use-review	for (const auto& name : arm.args) branch_owners.erase(name);
+src/static_bounds.inc	283	arm	args	expression-value-use-review	for (const auto& name : arm.args) {
+src/static_bounds.inc	306	statement	a	mixed-name-or-expression-field-review	body.erase(statement.a);
+src/static_bounds.inc	307	statement	a	raw-string-operation-review	auto old = incoming.find(statement.a);
+src/static_bounds.inc	308	statement	a	mixed-name-or-expression-field-review	if (old != incoming.end()) body[statement.a] = old->second;
+src/static_bounds.inc	320	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	322	statement	b	raw-string-operation-review	string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+src/static_bounds.inc	360	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a);
+src/static_bounds.inc	361	statement	a	mixed-name-or-expression-field-review	if (binding) mutated.erase(statement.a);
+src/static_bounds.inc	371	statement	a	mixed-name-or-expression-field-review	if (new_fact) facts[statement.a] = std::move(*new_fact);
+src/static_bounds.inc	375	statement	a	EST-or-expression-reader-call	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	376	statement	a	mixed-name-or-expression-field-review	fileio_owners.erase(statement.a);
+src/static_bounds.inc	377	statement	b	expression-value-use-review	if (is_direct_fileio_open_initializer(statement.b))
+src/static_bounds.inc	378	statement	a	mixed-name-or-expression-field-review	fileio_owners.insert(statement.a);
+src/native_generator.cpp	334	statement	a	mixed-name-or-expression-field-review	if (contains(statement.a) || contains(statement.b) ||
+src/native_generator.cpp	334	statement	b	expression-value-use-review	if (contains(statement.a) || contains(statement.b) ||
+src/native_generator.cpp	335	statement	text	expression-value-use-review	contains(statement.text)) return true;
+src/native_generator.cpp	336	statement	args	expression-value-use-review	for (const auto& argument : statement.args)
+src/native_generator.cpp	343	function	result_expression	expression-value-use-review	(function.result_expression && contains(*function.result_expression)))
+src/native_generator.cpp	343	function	result_expression	expression-value-use-review	(function.result_expression && contains(*function.result_expression)))
+src/native_generator.cpp	348	method	result_expression	expression-value-use-review	(method.result_expression && contains(*method.result_expression)))
+src/native_generator.cpp	348	method	result_expression	expression-value-use-review	(method.result_expression && contains(*method.result_expression)))
+src/native_generator.cpp	1298	statement	a	mixed-name-or-expression-field-review	? statement.a : statement.b;
+src/native_generator.cpp	1298	statement	b	expression-value-use-review	? statement.a : statement.b;
+src/native_generator.cpp	2514	statement	a	EST-or-expression-reader-call	const auto result_binding = tree_identifier_name(statement.a);
+src/native_generator.cpp	2521	statement	b	expression-value-use-review	statement.b, &statement.expression_handles);
+src/native_generator.cpp	4686	method	result_expression	expression-value-use-review	if (method.result_expression) {
+src/native_generator.cpp	4694	method	result_expression	expression-value-use-review	*method.result_expression);
+src/native_generator.cpp	4697	method	result_expression	expression-value-use-review	o << expr(*method.result_expression, &receiver, locals, &types,
+src/native_generator.cpp	4745	g	a	mixed-name-or-expression-field-review	// specialization (e.g. a consumer's `Provider.fresh()`): each Moss call
+src/native_generator.cpp	4883	f	result_expression	expression-value-use-review	if (f.result_expression) {
+src/native_generator.cpp	4903	f	result_expression	expression-value-use-review	*f.result_expression);
+src/native_generator.cpp	4906	f	result_expression	expression-value-use-review	source_comment(o, 4, f.result_line, *f.result_expression);
+src/native_generator.cpp	4908	f	result_expression	expression-value-use-review	string rendered = expr(*f.result_expression, nullptr, locals, &types,
+src/native_generator.cpp	4912	f	result_expression	raw-string-operation-review	string expr_trimmed = trim(*f.result_expression);
+src/native_generator.cpp	4972	s	a	mixed-name-or-expression-field-review	used.insert(s.a);
+src/native_generator.cpp	5352	statement	b	expression-value-use-review	if (domain_construction(statement.b)) constructions.push_back(statement);
+src/native_generator.cpp	5366	left	a	mixed-name-or-expression-field-review	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5366	right	a	mixed-name-or-expression-field-review	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5447	s	text	expression-value-use-review	source_comment(o, (base + level) * 4, s.line, s.text);
+src/native_generator.cpp	5484	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/native_generator.cpp	5485	s	a	mixed-name-or-expression-field-review	types[s.a] = direct_functional->output_type;
+src/native_generator.cpp	5542	recovered	b	expression-value-use-review	recovered.b, binding);
+src/native_generator.cpp	5545	recovered	a	mixed-name-or-expression-field-review	recovered.a, binding);
+src/native_generator.cpp	5546	recovered	args	expression-value-use-review	for (const auto& argument : recovered.args)
+src/native_generator.cpp	5778	s	a	mixed-name-or-expression-field-review	if (s.a.empty()) {
+src/native_generator.cpp	5793	s	a	mixed-name-or-expression-field-review	auto type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5798	s	a	mixed-name-or-expression-field-review	const string value = expr(s.a, d, locals, &types,
+src/native_generator.cpp	5849	s	a	mixed-name-or-expression-field-review	auto scrutinee_type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5871	s	a	EST-or-expression-reader-call	if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
+src/native_generator.cpp	5885	s	a	mixed-name-or-expression-field-review	const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+src/native_generator.cpp	5886	s	b	literal-comparison-review	if (s.b != "consume" && !recovery_slot) o << "&";
+src/native_generator.cpp	5888	s	b	literal-comparison-review	if (recovery_slot && s.b == "consume")
+src/native_generator.cpp	5889	s	a	mixed-name-or-expression-field-review	o << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	5892	s	a	mixed-name-or-expression-field-review	o << expr(s.a, d, locals, &types);
+src/native_generator.cpp	5899	arm	a	mixed-name-or-expression-field-review	[&](const EnumCase& candidate) { return candidate.name == arm.a; });
+src/native_generator.cpp	5903	arm	a	mixed-name-or-expression-field-review	<< rust_identifier(arm.a);
+src/native_generator.cpp	5906	arm	args	expression-value-use-review	for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+src/native_generator.cpp	5909	arm	args	expression-value-use-review	if (field_name == arm.args[field_index])
+src/native_generator.cpp	5912	arm	args	expression-value-use-review	o << field_name << ": " << arm.args[field_index];
+src/native_generator.cpp	5920	arm	args	expression-value-use-review	for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+src/native_generator.cpp	5921	arm	args	expression-value-use-review	const string& name = arm.args[field_index];
+src/native_generator.cpp	5925	s	b	literal-comparison-review	if (s.b != "consume") {
+src/native_generator.cpp	5970	s	a	mixed-name-or-expression-field-review	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6002	s	a	mixed-name-or-expression-field-review	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6016	s	b	raw-string-operation-review	string source = trim(s.b);
+src/native_generator.cpp	6041	s	a	mixed-name-or-expression-field-review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6045	s	a	mixed-name-or-expression-field-review	o << indent(level) << "for " << s.a << " in "
+src/native_generator.cpp	6050	s	a	mixed-name-or-expression-field-review	child_locals.insert(s.a);
+src/native_generator.cpp	6051	s	a	mixed-name-or-expression-field-review	child_types[s.a] = "int";
+src/native_generator.cpp	6066	s	a	mixed-name-or-expression-field-review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6070	s	a	mixed-name-or-expression-field-review	child_locals.insert(s.a);
+src/native_generator.cpp	6071	s	a	mixed-name-or-expression-field-review	child_types[s.a] = "Range";
+src/native_generator.cpp	6081	s	a	mixed-name-or-expression-field-review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6085	s	a	mixed-name-or-expression-field-review	child_locals.insert(s.a);
+src/native_generator.cpp	6086	s	a	mixed-name-or-expression-field-review	child_types[s.a] = "int";
+src/native_generator.cpp	6105	s	a	mixed-name-or-expression-field-review	o << indent(level) << "for " << s.a << " in " << traversal
+src/native_generator.cpp	6109	s	a	mixed-name-or-expression-field-review	child_locals.insert(s.a);
+src/native_generator.cpp	6110	s	a	mixed-name-or-expression-field-review	child_types[s.a] = element;
+src/native_generator.cpp	6143	s	a	mixed-name-or-expression-field-review	o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+src/native_generator.cpp	6146	s	a	mixed-name-or-expression-field-review	child_locals.insert(s.a);
+src/native_generator.cpp	6151	s	a	mixed-name-or-expression-field-review	child_types[s.a] = element;
+src/native_generator.cpp	6164	s	args	expression-value-use-review	if (s.args.empty()) o << "println!();\n";
+src/native_generator.cpp	6167	s	args	expression-value-use-review	for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
+src/native_generator.cpp	6169	s	args	expression-value-use-review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6171	s	args	expression-value-use-review	s.args[argument], d, locals, &types,
+src/native_generator.cpp	6174	s	args	expression-value-use-review	auto type = generated_expr_type(s.args[argument], &types);
+src/native_generator.cpp	6234	s	a	literal-comparison-review	if (s.a == "_") {
+src/native_generator.cpp	6236	s	b	expression-value-use-review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6243	s	a	mixed-name-or-expression-field-review	if (phase21_option_slots_.count(s.a)) {
+src/native_generator.cpp	6244	s	a	mixed-name-or-expression-field-review	o << indent(level) << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	6245	s	b	expression-value-use-review	<< " = Some(" << expr(s.b, d, locals, &types,
+src/native_generator.cpp	6251	s	b	expression-value-use-review	if (auto sd = domain_construction(s.b)) {
+src/native_generator.cpp	6253	s	a	mixed-name-or-expression-field-review	construction_binding_ = s.a;
+src/native_generator.cpp	6254	s	a	mixed-name-or-expression-field-review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6254	s	a	mixed-name-or-expression-field-review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6255	s	a	raw-string-operation-review	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6257	s	a	mixed-name-or-expression-field-review	bool existing_binding = locals.count(s.a);
+src/native_generator.cpp	6258	s	a	mixed-name-or-expression-field-review	o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+src/native_generator.cpp	6259	s	b	expression-value-use-review	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6260	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/native_generator.cpp	6261	s	a	mixed-name-or-expression-field-review	types[s.a] = *sd;
+src/native_generator.cpp	6268	s	a	EST-or-expression-reader-call	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6290	s	a	EST-or-expression-reader-call	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6302	s	a	mixed-name-or-expression-field-review	else lhs = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6304	s	a	mixed-name-or-expression-field-review	[&](const Field& field) { return field.name == s.a; });
+src/native_generator.cpp	6305	s	a	EST-or-expression-reader-call	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6305	s	a	EST-or-expression-reader-call	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6310	s	b	EST-or-expression-reader-call	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6319	s	a	mixed-name-or-expression-field-review	map_base != s.a) continue;
+src/native_generator.cpp	6333	s	b	literal-comparison-review	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+src/native_generator.cpp	6335	s	a	mixed-name-or-expression-field-review	o << indent(level) << "let mut " << s.a;
+src/native_generator.cpp	6338	s	b	expression-value-use-review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6342	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/native_generator.cpp	6343	s	b	expression-value-use-review	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6344	s	a	mixed-name-or-expression-field-review	types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+src/native_generator.cpp	6349	s	b	EST-or-expression-reader-call	: tree_empty_constructor_named(s.b, "Map") ? "map"
+src/native_generator.cpp	6350	s	b	EST-or-expression-reader-call	: tree_empty_constructor_named(s.b, "Queue") ? "queue"
+src/native_generator.cpp	6351	s	b	EST-or-expression-reader-call	: staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
+src/native_generator.cpp	6352	s	b	EST-or-expression-reader-call	: (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+src/native_generator.cpp	6353	s	b	raw-string-operation-review	auto source_binding = domain_instance_bindings_.find(trim(s.b));
+src/native_generator.cpp	6356	s	a	mixed-name-or-expression-field-review	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6359	s	a	mixed-name-or-expression-field-review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6362	s	a	EST-or-expression-reader-call	bool map_assignment = tree_parse_index(s.a, mb, mi);
+src/native_generator.cpp	6377	s	b	expression-value-use-review	string inserted = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6379	s	b	raw-string-operation-review	if (borrowed_function_parameters_.count(trim(s.b)))
+src/native_generator.cpp	6395	s	a	mixed-name-or-expression-field-review	else if (is_object_view(s.a, d, locals, &types))
+src/native_generator.cpp	6396	s	b	expression-value-use-review	o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+src/native_generator.cpp	6416	s	b	expression-value-use-review	collect_concat(s.b);
+src/native_generator.cpp	6417	s	a	EST-or-expression-reader-call	bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+src/native_generator.cpp	6418	s	a	mixed-name-or-expression-field-review	locals.count(s.a) && concat_operands.size() > 1 &&
+src/native_generator.cpp	6419	s	a	raw-string-operation-review	tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp	6420	s	a	mixed-name-or-expression-field-review	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6420	s	a	mixed-name-or-expression-field-review	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6425	s	a	EST-or-expression-reader-call	if (tree_expression_mentions_identifier(concat_operands[operand], s.a))
+src/native_generator.cpp	6440	s	a	mixed-name-or-expression-field-review	string place = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6459	s	b	expression-value-use-review	assigned = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6462	s	b	raw-string-operation-review	if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
+src/native_generator.cpp	6469	s	a	EST-or-expression-reader-call	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6469	s	a	EST-or-expression-reader-call	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6478	s	a	mixed-name-or-expression-field-review	if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+src/native_generator.cpp	6479	s	a	mixed-name-or-expression-field-review	types[s.a] = checked_receiver->second;
+src/native_generator.cpp	6480	s	b	expression-value-use-review	string statement_receiver_type = !s.b.empty()
+src/native_generator.cpp	6481	s	a	mixed-name-or-expression-field-review	? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+src/native_generator.cpp	6482	s	b	expression-value-use-review	if (!s.b.empty() &&
+src/native_generator.cpp	6491	s	b	literal-comparison-review	(s.b == "delete" && (statement_receiver_type == "map" ||
+src/native_generator.cpp	6493	s	a	mixed-name-or-expression-field-review	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6493	s	b	expression-value-use-review	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6494	s	args	expression-value-use-review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6496	s	args	expression-value-use-review	call += s.args[argument];
+src/native_generator.cpp	6503	s	b	literal-comparison-review	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6503	s	a	literal-comparison-review	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6505	s	args	raw-string-operation-review	<< expr(s.args.front(), d, locals, &types,
+src/native_generator.cpp	6511	s	text	expression-value-use-review	std::to_string(s.line) + ": " + s.text)
+src/native_generator.cpp	6516	s	b	literal-comparison-review	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6516	s	a	literal-comparison-review	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6521	s	args	expression-value-use-review	<< expr(s.args[0], d, locals, &types,
+src/native_generator.cpp	6526	s	args	expression-value-use-review	<< expr(s.args[1], d, locals, &types,
+src/native_generator.cpp	6531	s	text	expression-value-use-review	for (char ch : s.text) {
+src/native_generator.cpp	6546	s	b	literal-comparison-review	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6546	s	a	literal-comparison-review	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6546	s	a	literal-comparison-review	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6547	s	args	expression-value-use-review	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6547	s	args	expression-value-use-review	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6548	s	args	expression-value-use-review	o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
+src/native_generator.cpp	6552	s	a	mixed-name-or-expression-field-review	string function_name = resolved_callable_identity(s.a, &types);
+src/native_generator.cpp	6561	s	b	expression-value-use-review	if (s.b.empty() && known_function && !benchmark_body_) {
+src/native_generator.cpp	6563	s	args	expression-value-use-review	<< render_known_function_call(*function_target, function_target->name, s.args,
+src/native_generator.cpp	6570	s	b	expression-value-use-review	s.b.empty() && !known_function;
+src/native_generator.cpp	6573	s	b	expression-value-use-review	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6573	s	a	mixed-name-or-expression-field-review	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6576	s	b	expression-value-use-review	if (call_receiver_type && (!s.b.empty() || implicit_method))
+src/native_generator.cpp	6579	s	a	mixed-name-or-expression-field-review	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6579	s	b	expression-value-use-review	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6581	s	args	expression-value-use-review	for (const auto& argument : s.args)
+src/native_generator.cpp	6599	s	args	expression-value-use-review	vector<string> argument_temporaries(s.args.size());
+src/native_generator.cpp	6601	s	args	expression-value-use-review	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6603	s	b	expression-value-use-review	if (!s.b.empty()) {
+src/native_generator.cpp	6607	s	args	EST-or-expression-reader-call	tree_parse_member_call(s.args[k], nested_receiver, nested_method,
+src/native_generator.cpp	6609	s	a	EST-or-expression-reader-call	tree_expressions_equal(nested_receiver, s.a);
+src/native_generator.cpp	6613	s	args	EST-or-expression-reader-call	if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
+src/native_generator.cpp	6627	s	args	expression-value-use-review	generated_expr_type(s.args[k], &types).value_or("_value");
+src/native_generator.cpp	6629	s	args	expression-value-use-review	<< expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6638	s	b	expression-value-use-review	(s.b.empty() && known_function
+src/native_generator.cpp	6639	s	args	expression-value-use-review	? viewed_function_name(function_target->name, s.args, d, locals, &types)
+src/native_generator.cpp	6640	s	b	expression-value-use-review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6640	s	a	mixed-name-or-expression-field-review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6640	s	b	expression-value-use-review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6640	s	args	expression-value-use-review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6641	s	a	mixed-name-or-expression-field-review	: expr(s.a, d, locals, &types));
+src/native_generator.cpp	6645	s	b	expression-value-use-review	if (!s.b.empty()) {
+src/native_generator.cpp	6646	s	b	expression-value-use-review	string method = s.b;
+src/native_generator.cpp	6647	s	a	raw-string-operation-review	auto it = types.find(s.a);
+src/native_generator.cpp	6650	s	a	mixed-name-or-expression-field-review	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6650	s	args	expression-value-use-review	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6654	s	args	expression-value-use-review	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6656	s	args	expression-value-use-review	is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
+src/native_generator.cpp	6661	s	args	expression-value-use-review	? s.args[k] : argument_temporaries[k];
+src/native_generator.cpp	6668	s	args	expression-value-use-review	s.args, &types));
+src/native_generator.cpp	6669	s	b	expression-value-use-review	} else if (!s.b.empty() || implicit_method) {
+src/native_generator.cpp	6716	s	args	expression-value-use-review	call_output << expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6743	s	b	expression-value-use-review	auto receiver_type = !s.b.empty()
+src/native_generator.cpp	6744	s	a	mixed-name-or-expression-field-review	? generated_expr_type(s.a, &types) : std::optional<string>{};
+src/native_generator.cpp	6745	s	b	literal-comparison-review	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6745	s	b	literal-comparison-review	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6756	s	a	mixed-name-or-expression-field-review	bool joined_assignment = join_assignments.erase(s.a) != 0;
+src/native_generator.cpp	6757	s	b	expression-value-use-review	auto sd = domain_construction(s.b);
+src/native_generator.cpp	6760	s	a	mixed-name-or-expression-field-review	construction_binding_ = s.a;
+src/native_generator.cpp	6761	s	a	mixed-name-or-expression-field-review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6761	s	a	mixed-name-or-expression-field-review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6762	s	a	raw-string-operation-review	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6767	s	a	mixed-name-or-expression-field-review	o << s.a << " = ";
+src/native_generator.cpp	6768	s	b	expression-value-use-review	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6769	s	a	mixed-name-or-expression-field-review	types[s.a] = *sd;
+src/native_generator.cpp	6771	s	b	raw-string-operation-review	auto source = types.find(trim(s.b));
+src/native_generator.cpp	6774	s	b	EST-or-expression-reader-call	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6780	s	a	mixed-name-or-expression-field-review	map_base != s.a) continue;
+src/native_generator.cpp	6793	s	a	mixed-name-or-expression-field-review	o << s.a;
+src/native_generator.cpp	6796	s	b	literal-comparison-review	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+src/native_generator.cpp	6803	s	b	expression-value-use-review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6808	s	b	expression-value-use-review	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6813	s	a	mixed-name-or-expression-field-review	types[s.a] = domain_capability ? source->second
+src/native_generator.cpp	6820	s	b	raw-string-operation-review	auto source_binding = domain_instance_bindings_.find(trim(s.b));
+src/native_generator.cpp	6823	s	a	mixed-name-or-expression-field-review	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6826	s	a	mixed-name-or-expression-field-review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6828	s	a	mixed-name-or-expression-field-review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6831	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/native_generator.cpp	6836	s	a	mixed-name-or-expression-field-review	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6836	s	b	expression-value-use-review	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6837	s	args	expression-value-use-review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6839	s	args	expression-value-use-review	call += s.args[argument];
+src/native_generator.cpp	6862	s	args	expression-value-use-review	for (size_t argument = 0; argument < s.args.size(); ++argument)
+src/native_generator.cpp	6867	s	a	mixed-name-or-expression-field-review	const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+src/native_generator.cpp	6869	s	b	expression-value-use-review	types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp	6878	s	a	mixed-name-or-expression-field-review	<< message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+src/native_generator.cpp	6890	s	a	mixed-name-or-expression-field-review	if (in_function && !s.a.empty()) {
+src/native_generator.cpp	6891	s	a	mixed-name-or-expression-field-review	string rendered = expr(s.a, d, locals, &types,
+src/native_generator.cpp	6894	s	a	raw-string-operation-review	string expr_trimmed = trim(s.a);
+src/native_generator.cpp	6922	s	text	expression-value-use-review	o << expr(s.text, d, locals, &types,
+src/file_chunk_codegen.inc	36	s	b	EST-or-expression-reader-call	if (tree_parse_fileio_open(s.b, open_arguments)) {
+src/file_chunk_codegen.inc	43	s	a	mixed-name-or-expression-field-review	o << pad << "let mut " << s.a << " = " << opened << ";\n";
+src/file_chunk_codegen.inc	44	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/file_chunk_codegen.inc	45	s	a	mixed-name-or-expression-field-review	types[s.a] = "FileIO";
+src/file_chunk_codegen.inc	50	s	b	EST-or-expression-reader-call	if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+src/file_chunk_codegen.inc	60	s	a	mixed-name-or-expression-field-review	o << pad << "let " << s.a << " = " << read << ";\n";
+src/file_chunk_codegen.inc	61	s	a	mixed-name-or-expression-field-review	locals.insert(s.a);
+src/file_chunk_codegen.inc	62	s	a	mixed-name-or-expression-field-review	types[s.a] = "Range";
+src/file_chunk_codegen.inc	67	s	a	mixed-name-or-expression-field-review	if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
+src/file_chunk_codegen.inc	69	s	a	mixed-name-or-expression-field-review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s	b	expression-value-use-review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s	args	expression-value-use-review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	70	s	b	literal-comparison-review	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	70	s	args	literal-comparison-review	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	73	s	args	expression-value-use-review	expr(s.args[0], d, locals, &types) + ", &( " +
+src/file_chunk_codegen.inc	74	s	args	expression-value-use-review	expr(s.args[1], d, locals, &types) + " ))";
+src/file_chunk_codegen.inc	80	s	b	literal-comparison-review	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	80	s	args	literal-comparison-review	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	83	s	args	expression-value-use-review	expr(s.args[0], d, locals, &types) + " ), " +
+src/file_chunk_codegen.inc	84	s	args	raw-string-operation-review	rust_string_literal(trim(s.args[1])) + ")";
+src/file_chunk_codegen.inc	90	s	b	literal-comparison-review	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	90	s	args	literal-comparison-review	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	91	s	args	expression-value-use-review	bool dataonly = !s.args.empty() &&
+src/file_chunk_codegen.inc	92	s	args	EST-or-expression-reader-call	tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
+src/file_chunk_codegen.inc	101	s	b	literal-comparison-review	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	101	s	args	literal-comparison-review	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	109	s	b	expression-value-use-review	throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");
+src/borrowed_views.inc	186	method	result_expression	expression-value-use-review	if (method.result_expression) {
+src/borrowed_views.inc	191	method	result_expression	expression-value-use-review	o << expr(*method.result_expression, &receiver, locals, &types,

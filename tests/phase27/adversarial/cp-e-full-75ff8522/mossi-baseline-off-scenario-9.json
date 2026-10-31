@@ -1,0 +1,52 @@
+{
+  "abi_mode": "production-default",
+  "backend": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "compiler": {
+    "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-baseline/moss",
+    "sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286"
+  },
+  "dirty": true,
+  "evidence_sha": "75ff852287f9f845af89175607b512af38f8fdc0",
+  "profile": "debug",
+  "results": [
+    {
+      "blocker_reason": "BLOCKED: Team G G2 ABI-v10 source-free compiler support (compiler still produces and accepts ABI-v9 artifacts; ABI-v10 rebuild requirement pending)",
+      "command": [
+        "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-baseline/moss",
+        "check",
+        "src/main.moss",
+        "--json"
+      ],
+      "details": {
+        "executions": [
+          {
+            "command": [
+              "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-baseline/moss",
+              "check",
+              "src/main.moss",
+              "--json"
+            ],
+            "cwd": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/moss-sc9-k0rcbtxe/consumer",
+            "profile": "debug",
+            "returncode": 1,
+            "stderr": "",
+            "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH\", \"severity\": \"error\", \"message\": \"ABI-v9 provider metadata does not match its declared contract digest\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/moss-sc9-k0rcbtxe/consumer/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/moss-sc9-k0rcbtxe/consumer/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+          }
+        ]
+      },
+      "duration_ms": 2.66,
+      "name": "ABI-v9 artifacts are rejected under v10 with rebuild guidance",
+      "returncode": 1,
+      "scenario": 9,
+      "status": "BLOCKED",
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH\", \"severity\": \"error\", \"message\": \"ABI-v9 provider metadata does not match its declared contract digest\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/moss-sc9-k0rcbtxe/consumer/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/moss-sc9-k0rcbtxe/consumer/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+    }
+  ],
+  "summary": {
+    "blocked": 1,
+    "failed": 0,
+    "passed": 0,
+    "total": 1
+  }
+}

@@ -1,0 +1,6 @@
+rw_phase46_semantic_barriers	baseline=8.711ms	candidate=7.711ms	delta=-11.5%	+-1.000ms
+rw_sdk_datastructures	baseline=241.616ms	candidate=247.966ms	delta=2.6%	+6.350ms
+w5_infer_wide_w025	baseline=32.802ms	candidate=30.045ms	delta=-8.4%	+-2.757ms
+w2_spec_distinct_n008	baseline=93.651ms	candidate=86.262ms	delta=-7.9%	+-7.389ms
+w6_types_count_t050	baseline=36.562ms	candidate=39.227ms	delta=7.3%	+2.665ms
+w6_types_count_t100	baseline=84.788ms	candidate=99.865ms	delta=17.8%	+15.077ms

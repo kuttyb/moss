@@ -1,0 +1,22 @@
+{
+  "fixture": "examples/functional_pipeline.moss",
+  "command": "moss debug examples/functional_pipeline.moss --trace",
+  "results": [
+    {
+      "label": "baseline",
+      "timeout_s": 600,
+      "stdout": "",
+      "stderr": "",
+      "elapsed_s": 600.101
+    },
+    {
+      "label": "candidate",
+      "timeout_s": 600,
+      "stdout": "",
+      "stderr": "",
+      "elapsed_s": 600.101
+    }
+  ],
+  "both_completed": false,
+  "outputs_equal": true
+}

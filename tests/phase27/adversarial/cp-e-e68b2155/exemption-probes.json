@@ -1,0 +1,55 @@
+{
+  "exemptions": [
+    [
+      "phase20_is_nontransferable_capability",
+      "split_top_level"
+    ],
+    [
+      "builtin_equality_type",
+      "split_top_level"
+    ],
+    [
+      "contains_float_type",
+      "split_top_level"
+    ]
+  ],
+  "probes": [
+    {
+      "function": "phase20_is_nontransferable_capability",
+      "api": "split_top_level",
+      "mutation": "replace API name with split_top_level_typo",
+      "result": "rejected as stale expression-reader exemption"
+    },
+    {
+      "function": "phase20_is_nontransferable_capability",
+      "api": "split_top_level",
+      "mutation": "replace function name with nonexistent_phase20_is_nontransferable_capability",
+      "result": "rejected as missing exemption function"
+    },
+    {
+      "function": "builtin_equality_type",
+      "api": "split_top_level",
+      "mutation": "replace API name with split_top_level_typo",
+      "result": "rejected as stale expression-reader exemption"
+    },
+    {
+      "function": "builtin_equality_type",
+      "api": "split_top_level",
+      "mutation": "replace function name with nonexistent_builtin_equality_type",
+      "result": "rejected as missing exemption function"
+    },
+    {
+      "function": "contains_float_type",
+      "api": "split_top_level",
+      "mutation": "replace API name with split_top_level_typo",
+      "result": "rejected as stale expression-reader exemption"
+    },
+    {
+      "function": "contains_float_type",
+      "api": "split_top_level",
+      "mutation": "replace function name with nonexistent_contains_float_type",
+      "result": "rejected as missing exemption function"
+    }
+  ],
+  "all_rejected": true
+}

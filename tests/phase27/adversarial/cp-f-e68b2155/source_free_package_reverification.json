@@ -1,0 +1,47 @@
+{
+  "classification": "BENIGN",
+  "expected_execution_stdout": "advanced data source-free consumer ok\n",
+  "fixture": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+  "fixture_sha256": "a00e3da194b0068677fd7840d3b9f86343af2cff1803d464c410f92c5036cfad",
+  "runs": [
+    {
+      "command": "python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+      "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+      "exit": 0,
+      "mode": "off",
+      "ok": true,
+      "revision": "phase27-2",
+      "stdout": "Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces\n"
+    },
+    {
+      "command": "python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+      "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+      "exit": 0,
+      "mode": "shadow",
+      "ok": true,
+      "revision": "phase27-2",
+      "stdout": "Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces\n"
+    },
+    {
+      "command": "python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+      "compiler_sha256": "e00183916b1063e0acf2124a4dec5f7516a59a6d49d8316e2268a3f5fef3cc5d",
+      "exit": 0,
+      "mode": "off",
+      "ok": true,
+      "revision": "phase27-3",
+      "stdout": "Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces\n"
+    },
+    {
+      "command": "python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+      "compiler_sha256": "e00183916b1063e0acf2124a4dec5f7516a59a6d49d8316e2268a3f5fef3cc5d",
+      "exit": 0,
+      "mode": "shadow",
+      "ok": true,
+      "revision": "phase27-3",
+      "stdout": "Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces\n"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug; each run rebuilt 14 source-backed provider interfaces, checked/formatted/compiled the copied fixture as a consumer and executed it.",
+  "source_tree_sha": "e68b21557e675cc4697c391a083ead5add7ad76a"
+}

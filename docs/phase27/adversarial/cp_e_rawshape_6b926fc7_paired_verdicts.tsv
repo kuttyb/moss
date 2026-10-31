@@ -1,0 +1,4 @@
+source	baseline_off	candidate_off	candidate_shadow
+benchmarks/agent/phase22_3_ab/tasks/P223017_simple_arithmetic/starter/main.moss	False:MOSS_COMPILE_ERROR:2	True:-:-	NOJSON:-6:-
+sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss	False:RECOVERY_PATTERN_REQUIRES_VARIANT:57	False:UNKNOWN_ERROR_TYPE:57	False:UNKNOWN_ERROR_TYPE:57
+tests/phase27/est/repro/incomplete_expression.moss	False:MOSS_COMPILE_ERROR:2	True:-:-	NOJSON:-6:-

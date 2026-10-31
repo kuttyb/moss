@@ -43,7 +43,7 @@ bool build_fileio_chunk_parallel_plan(
     FunctionalPipeline::ChunkParallelPlan& plan,
     const ParsedFunctionalPipeline& parsed, const TypeEnv& env) const {
   string fileio_receiver, size_expression;
-  if (!parse_fileio_chunks_source(parsed.source, fileio_receiver, size_expression) ||
+  if (!tree_parse_fileio_chunks_source(parsed.source, fileio_receiver, size_expression) ||
       !fileio_typed(env, fileio_receiver))
     return false;
   plan.is_chunk_pipeline = true;
@@ -99,7 +99,7 @@ ObservableEffects chunk_mapper_invocation_effects(
     if (statement.kind == Stmt::Kind::Assign ||
         statement.kind == Stmt::Kind::Let ||
         statement.kind == Stmt::Kind::Var) {
-      if (extract_root_identifier(statement.a) == parameter)
+      if (tree_root_identifier(statement.a) == parameter)
         return map_node.effects;
     }
     // A `for` target and a `case` payload are fresh lexical bindings. The
@@ -107,7 +107,7 @@ ObservableEffects chunk_mapper_invocation_effects(
     // later binding that happens to have the same spelling. Conservatively
     // decline the contextual proof if any such shadow can reach the mapper.
     if ((statement.kind == Stmt::Kind::For &&
-         trim(statement.a) == parameter) ||
+         tree_identifier_named(statement.a, parameter)) ||
         (statement.kind == Stmt::Kind::Case &&
          std::find(statement.args.begin(), statement.args.end(), parameter) !=
              statement.args.end()))
@@ -115,9 +115,9 @@ ObservableEffects chunk_mapper_invocation_effects(
     for (const auto& expression : statement_expressions(statement)) {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(expression, callee, arguments) &&
+      if (tree_parse_simple_call(expression, callee, arguments) &&
           callee == "replace" && !arguments.empty() &&
-          extract_root_identifier(arguments.front()) == parameter)
+          tree_root_identifier(arguments.front()) == parameter)
         return map_node.effects;
     }
   }

@@ -1,0 +1,1 @@
+Initial closure scan, generated in this review: 2,218 entries because recursive glob included three directories named `.moss`. Superseded by checked_closure.py filtering p.is_file(), which scanned the exact 2,215 tracked Moss source files. No conclusions rely on the initial scan.

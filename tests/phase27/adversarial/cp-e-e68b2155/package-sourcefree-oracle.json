@@ -1,0 +1,30 @@
+[
+  {
+    "revision": "baseline",
+    "mode": "off",
+    "exit": 1,
+    "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"RECOVERY_PATTERN_REQUIRES_VARIANT\", \"severity\": \"error\", \"message\": \"recovery patterns must name a qualified enum variant\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}}, \"semantic_identity\": \"main@11\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+    "stderr": ""
+  },
+  {
+    "revision": "baseline",
+    "mode": "shadow",
+    "exit": 1,
+    "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"RECOVERY_PATTERN_REQUIRES_VARIANT\", \"severity\": \"error\", \"message\": \"recovery patterns must name a qualified enum variant\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}}, \"semantic_identity\": \"main@11\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+    "stderr": ""
+  },
+  {
+    "revision": "candidate",
+    "mode": "off",
+    "exit": 1,
+    "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'ndarray.NdArrayError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}}, \"semantic_identity\": \"main@11\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+    "stderr": ""
+  },
+  {
+    "revision": "candidate",
+    "mode": "shadow",
+    "exit": 1,
+    "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'ndarray.NdArrayError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-e68b2155/sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss\", \"line\": 57, \"column\": 1, \"span\": {\"start_line\": 57, \"start_column\": 1, \"end_line\": 57, \"end_column\": 1}}, \"semantic_identity\": \"main@11\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+    "stderr": ""
+  }
+]

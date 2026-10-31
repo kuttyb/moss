@@ -1,0 +1,214 @@
+[
+  {
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 1,
+    "result": {
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1",
+      "compiler_version": "0.1.0",
+      "command": "test",
+      "ok": false,
+      "error": {
+        "code": "TYPE_MISMATCH",
+        "severity": "error",
+        "message": "assignment type mismatch for binding 'ignored'",
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-baseline/sdk/tables/tests/tables_test.moss",
+        "line": 151,
+        "column": 1,
+        "span": {
+          "start_line": 151,
+          "start_column": 1,
+          "end_line": 151,
+          "end_column": 1
+        },
+        "source": {
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-baseline/sdk/tables/tests/tables_test.moss",
+          "line": 151,
+          "column": 1,
+          "span": {
+            "start_line": 151,
+            "start_column": 1,
+            "end_line": 151,
+            "end_column": 1
+          }
+        },
+        "semantic_identity": "test:tests/tables_test.moss:constructor and schema errors are typed",
+        "symbol": null,
+        "rule": null,
+        "cause": null,
+        "related": [],
+        "guidance": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "legal_alternatives": []
+      }
+    },
+    "stderr": ""
+  },
+  {
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 1,
+    "result": {
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1",
+      "compiler_version": "0.1.0",
+      "command": "test",
+      "ok": false,
+      "error": {
+        "code": "TYPE_MISMATCH",
+        "severity": "error",
+        "message": "assignment type mismatch for binding 'ignored'",
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-baseline/sdk/tables/tests/tables_test.moss",
+        "line": 151,
+        "column": 1,
+        "span": {
+          "start_line": 151,
+          "start_column": 1,
+          "end_line": 151,
+          "end_column": 1
+        },
+        "source": {
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-baseline/sdk/tables/tests/tables_test.moss",
+          "line": 151,
+          "column": 1,
+          "span": {
+            "start_line": 151,
+            "start_column": 1,
+            "end_line": 151,
+            "end_column": 1
+          }
+        },
+        "semantic_identity": "test:tests/tables_test.moss:constructor and schema errors are typed",
+        "symbol": null,
+        "rule": null,
+        "cause": null,
+        "related": [],
+        "guidance": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "legal_alternatives": []
+      }
+    },
+    "stderr": ""
+  },
+  {
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 1,
+    "result": {
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1",
+      "compiler_version": "0.1.0",
+      "command": "test",
+      "ok": false,
+      "error": {
+        "code": "TYPE_MISMATCH",
+        "severity": "error",
+        "message": "assignment type mismatch for binding 'ignored'",
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-blind-81dc92d7/sdk/tables/tests/tables_test.moss",
+        "line": 151,
+        "column": 1,
+        "span": {
+          "start_line": 151,
+          "start_column": 1,
+          "end_line": 151,
+          "end_column": 1
+        },
+        "source": {
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-blind-81dc92d7/sdk/tables/tests/tables_test.moss",
+          "line": 151,
+          "column": 1,
+          "span": {
+            "start_line": 151,
+            "start_column": 1,
+            "end_line": 151,
+            "end_column": 1
+          }
+        },
+        "semantic_identity": "test:tests/tables_test.moss:constructor and schema errors are typed",
+        "symbol": null,
+        "rule": null,
+        "cause": null,
+        "related": [],
+        "guidance": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "legal_alternatives": []
+      }
+    },
+    "stderr": ""
+  },
+  {
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 1,
+    "result": {
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1",
+      "compiler_version": "0.1.0",
+      "command": "test",
+      "ok": false,
+      "error": {
+        "code": "TYPE_MISMATCH",
+        "severity": "error",
+        "message": "assignment type mismatch for binding 'ignored'",
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-blind-81dc92d7/sdk/tables/tests/tables_test.moss",
+        "line": 151,
+        "column": 1,
+        "span": {
+          "start_line": 151,
+          "start_column": 1,
+          "end_line": 151,
+          "end_column": 1
+        },
+        "source": {
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-blind-81dc92d7/sdk/tables/tests/tables_test.moss",
+          "line": 151,
+          "column": 1,
+          "span": {
+            "start_line": 151,
+            "start_column": 1,
+            "end_line": 151,
+            "end_column": 1
+          }
+        },
+        "semantic_identity": "test:tests/tables_test.moss:constructor and schema errors are typed",
+        "symbol": null,
+        "rule": null,
+        "cause": null,
+        "related": [],
+        "guidance": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "legal_alternatives": []
+      }
+    },
+    "stderr": ""
+  }
+]
