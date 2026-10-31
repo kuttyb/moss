@@ -1,0 +1,14 @@
+enum Err:
+  Case(code: Int)
+
+domain Worker:
+  fn H() -> Int:
+    try:
+      raise Err.Case(code: 7)
+    recover Err.Case(code):
+      echo code
+    reply 0
+
+fn main():
+  worker = Worker()
+  message worker.H()

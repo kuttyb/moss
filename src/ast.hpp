@@ -932,6 +932,69 @@ struct Program {
   }
 };
 
+enum class CheckedCallEdgeSelectionKind { None, Unique, Ambiguous };
+
+struct CheckedCallEdgeSpecialization {
+  CheckedCallEdgeSelectionKind kind = CheckedCallEdgeSelectionKind::None;
+  const FunctionSpecialization* unique = nullptr;
+  vector<const FunctionSpecialization*> candidates;
+};
+
+// Consumers select only the specialization attached to a checker-recorded
+// call edge. They must not infer argument types from generated/runtime values.
+inline CheckedCallEdgeSpecialization checked_call_edge_specialization(
+    const Program& program, const string& context, const string& callee,
+    int line) {
+  CheckedCallEdgeSpecialization result;
+  const string target = "fn:" + callee;
+  vector<string> edge_sources{context};
+  if (context.rfind("fn:", 0) == 0) {
+    const auto specialization = context.find('<');
+    if (specialization != string::npos)
+      edge_sources.push_back(context.substr(0, specialization));
+  } else if (context.rfind("handler:", 0) == 0) {
+    const auto owner_begin = string("handler:").size();
+    const auto owner_end = context.find('.', owner_begin);
+    if (owner_end != string::npos) {
+      const string owner = context.substr(owner_begin, owner_end - owner_begin);
+      const string handler = context.substr(owner_end + 1);
+      for (const auto& domain : program.domains)
+        if (domain.name == owner && !domain.declaration_name.empty())
+          edge_sources.push_back("handler:" + domain.declaration_name + "." +
+                                 handler);
+    }
+  }
+  bool exact_context_has_edge = false;
+  for (const auto& edge : program.semantic_call_edges)
+    exact_context_has_edge |= edge.source == context &&
+        edge.target == target && edge.line == line;
+  for (const auto& edge : program.semantic_call_edges) {
+    const bool source_matches = exact_context_has_edge
+        ? edge.source == context
+        : std::find(edge_sources.begin() + 1, edge_sources.end(), edge.source) !=
+              edge_sources.end();
+    if (!source_matches || edge.target != target || edge.line != line)
+      continue;
+    for (const auto& specialization : program.functions) {
+      if (specialization.name != callee || !specialization.static_dispatch)
+        continue;
+      for (const auto& candidate : specialization.specializations) {
+        if (candidate.parameter_types != edge.argument_types) continue;
+        if (std::find(result.candidates.begin(), result.candidates.end(),
+                      &candidate) == result.candidates.end())
+          result.candidates.push_back(&candidate);
+      }
+    }
+  }
+  if (result.candidates.size() == 1) {
+    result.kind = CheckedCallEdgeSelectionKind::Unique;
+    result.unique = result.candidates.front();
+  } else if (result.candidates.size() > 1) {
+    result.kind = CheckedCallEdgeSelectionKind::Ambiguous;
+  }
+  return result;
+}
+
 inline string functional_function_context(
     const Function& function,
     const FunctionSpecialization* specialization = nullptr) {

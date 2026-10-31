@@ -1,0 +1,17 @@
+enum Choice:
+  A
+  B
+
+domain Worker:
+  fn H() -> Int:
+    reply 5
+
+fn main():
+  worker = Worker()
+  choice = Choice.A
+  match choice:
+    case A:
+      x = message worker.H()
+    case B:
+      x = message worker.H()
+  echo x

@@ -1,0 +1,4 @@
+module pkg
+
+export enum Err:
+  Case(code: Int)

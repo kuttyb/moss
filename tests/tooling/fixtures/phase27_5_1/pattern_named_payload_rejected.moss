@@ -1,0 +1,8 @@
+enum Err:
+  Case(code: Int)
+
+fn main():
+  try:
+    raise Err.Case(code: 7)
+  recover Err.Case(code: x):
+    echo x

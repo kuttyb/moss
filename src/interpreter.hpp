@@ -457,7 +457,6 @@ class FastInterpreter {
   const Program& program_;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
   Options options_;
-  std::unordered_map<const Stmt*, std::set<std::string>> joined_cache_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
   std::vector<int> call_stack_;
@@ -467,53 +466,56 @@ class FastInterpreter {
   std::vector<RaisedSignal> selected_errors_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
 
-  bool recovery_matches(const std::string& selector,
-                        const RaisedIdentity& identity) const {
-    if (selector.empty() || selector.find('.') == std::string::npos)
-      return true;
-    for (const auto& alternative : expression_alternatives(selector)) {
-      const auto dot = alternative.find('.');
-      const auto payload = alternative.find('(', dot);
-      if (dot != std::string::npos &&
-          trim_copy(alternative.substr(0, dot)) == identity.type &&
-          trim_copy(alternative.substr(dot + 1,
-              payload == std::string::npos ? std::string::npos :
-              payload - dot - 1)) == identity.variant)
-        return true;
+  bool recovery_pattern_matches(const est::PatternNode& pattern,
+                                const RaisedIdentity& identity) const {
+    using Kind = est::PatternNode::Kind;
+    if (pattern.kind == Kind::RecoveryBinding ||
+        pattern.kind == Kind::RecoveryCatchall) return true;
+    if (pattern.kind == Kind::GroupedAlternatives) {
+      for (const auto& alternative : pattern.alternatives)
+        if (recovery_pattern_matches(alternative, identity)) return true;
+      return false;
     }
-    return false;
+    return pattern.kind == Kind::QualifiedRecoveryCase &&
+        pattern.type_name == identity.type &&
+        pattern.case_name == identity.variant;
+  }
+
+  bool recovery_matches(const Stmt& recovery,
+                        const RaisedIdentity& identity) const {
+    return recovery.est_pattern &&
+        recovery_pattern_matches(*recovery.est_pattern, identity);
   }
 
   std::vector<std::pair<std::string, std::pair<Value, std::string>>>
-  error_pattern_payloads(const std::string& selector,
+  error_pattern_payloads(const est::PatternNode& root,
                          const RaisedSignal& raised, int line) const {
-    for (const auto& alternative : expression_alternatives(selector)) {
-      if (!recovery_matches(alternative, raised.identity)) continue;
-      const auto open = alternative.find('(');
-      if (open == std::string::npos) return {};
-      const auto close = alternative.rfind(')');
-      if (close == std::string::npos || close <= open ||
-          !raised.value.object)
+    std::vector<const est::PatternNode*> patterns;
+    if (root.kind == est::PatternNode::Kind::GroupedAlternatives) {
+      for (const auto& pattern : root.alternatives) patterns.push_back(&pattern);
+    } else {
+      patterns.push_back(&root);
+    }
+    for (const auto* pattern : patterns) {
+      if (!recovery_pattern_matches(*pattern, raised.identity) ||
+          !pattern->payload_pattern) continue;
+      if (!raised.value.object)
         throw RuntimeError(line, "checked error payload is absent");
-      const auto names = expression_elements(
-          alternative.substr(open + 1, close - open - 1));
       const EnumCase* variant = nullptr;
       for (const auto& declaration : program_.enums)
         if (declaration.name == raised.identity.type)
           for (const auto& item : declaration.cases)
             if (item.name == raised.identity.variant) variant = &item;
-      if (!variant || names.size() != variant->fields.size())
+      if (!variant || pattern->payload_bindings.size() != variant->fields.size())
         throw RuntimeError(line, "checked error payload shape is invalid");
-      std::vector<std::pair<std::string, std::pair<Value, std::string>>>
-          bindings;
-      for (size_t index = 0; index < names.size(); ++index) {
-        const auto& name = names[index];
+      std::vector<std::pair<std::string, std::pair<Value, std::string>>> bindings;
+      for (size_t index = 0; index < pattern->payload_bindings.size(); ++index) {
+        const auto& name = pattern->payload_bindings[index];
         const auto& field = variant->fields[index];
         auto value = raised.value.object->fields.find(field.name);
         if (value == raised.value.object->fields.end())
           throw RuntimeError(line,
-              "checked error payload field '" + field.name +
-              "' is absent");
+              "checked error payload field '" + field.name + "' is absent");
         bindings.push_back({name, {independent(value->second), field.type}});
       }
       return bindings;
@@ -1087,37 +1089,18 @@ class FastInterpreter {
   const FunctionSpecialization* specialization_for_call(
       const Function& target, const Frame& caller, int line) const {
     if (!target.static_dispatch) return nullptr;
-    const FunctionSpecialization* selected = nullptr;
-    for (const auto& edge : program_.semantic_call_edges) {
-      if (edge.source != caller.functional_context || edge.target != "fn:" + target.name ||
-          edge.line != line)
-        continue;
-      auto specialization = std::find_if(
-          target.specializations.begin(), target.specializations.end(),
-          [&](const FunctionSpecialization& candidate) {
-            return candidate.parameter_types == edge.argument_types;
-          });
-      if (specialization == target.specializations.end()) continue;
-      if (selected && selected != &*specialization) return nullptr;
-      selected = &*specialization;
-    }
-    return selected;
+    const auto checked = checked_call_edge_specialization(
+        program_, caller.functional_context, target.name, line);
+    return checked.kind == CheckedCallEdgeSelectionKind::Unique
+        ? checked.unique : nullptr;
   }
 
   bool checked_call_requires_specialization(
       const Function& target, const Frame& caller, int line) const {
     if (!target.static_dispatch) return false;
-    for (const auto& edge : program_.semantic_call_edges) {
-      if (edge.source != caller.functional_context ||
-          edge.target != "fn:" + target.name || edge.line != line)
-        continue;
-      if (std::any_of(target.specializations.begin(), target.specializations.end(),
-              [&](const FunctionSpecialization& candidate) {
-                return candidate.parameter_types == edge.argument_types;
-              }))
-        return true;
-    }
-    return false;
+    return checked_call_edge_specialization(
+        program_, caller.functional_context, target.name, line).kind !=
+        CheckedCallEdgeSelectionKind::None;
   }
 
   const ObjectType* object_type(const std::string& name) const {
@@ -2678,84 +2661,22 @@ class FastInterpreter {
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
-  // Static candidates for names a block binds at its own level, including the
-  // joins of nested if/else, match, and try/recover statements.
-  std::set<std::string> block_binders(const std::vector<Stmt>& statements,
-                                      size_t begin, size_t end) {
-    std::set<std::string> out;
-    if (begin >= end) return out;
-    const int level = statements[begin].indent;
-    for (size_t i = begin; i < end;) {
-      const Stmt& statement = statements[i];
-      if (statement.indent != level) { ++i; continue; }
-      if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-           (statement.kind == Stmt::Kind::Assign && binding_identifier(statement.a))) &&
-          statement.a != "_")
-        out.insert(statement.a);
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
-          statement.kind == Stmt::Kind::Try) {
-        const auto& joined = joined_binders(statements, i, end);
-        out.insert(joined.begin(), joined.end());
-      }
-      ++i;
-    }
-    return out;
-  }
-
-  // Names bound by every alternative of the compound statement at `index`.
-  const std::set<std::string>& joined_binders(const std::vector<Stmt>& statements,
-                                              size_t index, size_t end) {
-    auto cached = joined_cache_.find(&statements[index]);
-    if (cached != joined_cache_.end()) return cached->second;
-    const Stmt& statement = statements[index];
-    const auto block_end = [&](size_t from, int indent) {
-      while (from < end && statements[from].indent > indent) ++from;
-      return from;
-    };
-    std::vector<std::set<std::string>> alternatives;
-    if (statement.kind == Stmt::Kind::If) {
-      size_t body_end = block_end(index + 1, statement.indent);
-      alternatives.push_back(block_binders(statements, index + 1, body_end));
-      if (body_end < end && statements[body_end].kind == Stmt::Kind::Else &&
-          statements[body_end].indent == statement.indent)
-        alternatives.push_back(block_binders(statements, body_end + 1,
-                                             block_end(body_end + 1, statement.indent)));
-      else
-        alternatives.emplace_back();
-    } else if (statement.kind == Stmt::Kind::Match) {
-      size_t cursor = index + 1;
-      while (cursor < end && statements[cursor].indent == statement.indent + 1) {
-        size_t arm_end = block_end(cursor + 1, statements[cursor].indent);
-        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
-        cursor = arm_end;
-      }
-    } else if (statement.kind == Stmt::Kind::Try) {
-      size_t try_end = block_end(index + 1, statement.indent);
-      alternatives.push_back(block_binders(statements, index + 1, try_end));
-      size_t cursor = try_end;
-      while (cursor < end && statements[cursor].kind == Stmt::Kind::Recover &&
-             statements[cursor].indent == statement.indent) {
-        size_t arm_end = block_end(cursor + 1, statement.indent);
-        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
-        cursor = arm_end;
-      }
-    }
-    std::set<std::string> joined;
-    if (!alternatives.empty()) {
-      joined = alternatives.front();
-      for (size_t k = 1; k < alternatives.size(); ++k) {
-        std::set<std::string> next;
-        for (const auto& name : joined) if (alternatives[k].count(name)) next.insert(name);
-        joined = std::move(next);
-      }
-    }
-    return joined_cache_.emplace(&statements[index], std::move(joined)).first->second;
+  static const std::unordered_map<std::string, std::string>&
+  checked_joined_types(const Stmt& statement, const Frame& frame) {
+    auto exact = statement.joined_types_by_context.find(frame.functional_context);
+    return exact == statement.joined_types_by_context.end()
+        ? statement.joined_types : exact->second;
   }
 
   Flow execute_block(const std::vector<Stmt>& statements, Frame& frame,
                      std::ostream& output, size_t begin, size_t end,
-                     const std::set<std::string>* joined = nullptr) {
-    BlockScope scope(frame, joined);
+                     const Stmt* join_statement = nullptr) {
+    std::set<std::string> joined_names;
+    if (join_statement) {
+      const auto& joined_types = checked_joined_types(*join_statement, frame);
+      for (const auto& [name, _] : joined_types) joined_names.insert(name);
+    }
+    BlockScope scope(frame, joined_names.empty() ? nullptr : &joined_names);
     try {
       return execute(statements, frame, output, begin, end);
     } catch (RaisedSignal& raised) {
@@ -2797,7 +2718,7 @@ class FastInterpreter {
         }
         try {
           Flow flow = execute_block(statements, frame, output, index + 1, try_end,
-                                    &joined_binders(statements, index, end));
+                                    &statement);
           if (flow.returned) return flow;
         } catch (const RaisedSignal& raised) {
           size_t arm = try_end;
@@ -2808,12 +2729,13 @@ class FastInterpreter {
             while (arm_end < after &&
                    statements[arm_end].indent > recovery.indent)
               ++arm_end;
-            if (!handled && recovery_matches(recovery.a, raised.identity)) {
+            if (!handled && recovery_matches(recovery, raised.identity)) {
               handled = true;
               emit("recover", frame, recovery.line,
                    raised.identity.canonical());
               const bool bound = !recovery.a.empty() &&
-                  recovery.a.find('.') == std::string::npos;
+                  recovery.est_pattern &&
+                  recovery.est_pattern->kind == est::PatternNode::Kind::RecoveryBinding;
               struct SavedBinding {
                 std::string name;
                 std::optional<Value> value;
@@ -2834,8 +2756,10 @@ class FastInterpreter {
                 frame.locals[name] = std::move(value);
                 frame.local_types[name] = type;
               };
-              const auto restore = [&] {
+              const auto restore = [&](bool preserve_joined = false) {
+                const auto& joined_types = checked_joined_types(statement, frame);
                 for (auto item = saved.rbegin(); item != saved.rend(); ++item) {
+                  if (preserve_joined && joined_types.count(item->name)) continue;
                   if (item->value) frame.locals[item->name] = *item->value;
                   else frame.locals.erase(item->name);
                   if (item->type) frame.local_types[item->name] = *item->type;
@@ -2843,19 +2767,18 @@ class FastInterpreter {
                 }
               };
               if (bound) {
-                bind(recovery.a, independent(raised.value),
+                bind(recovery.est_pattern->binding, independent(raised.value),
                      raised.identity.type);
               }
-              for (const auto& item : error_pattern_payloads(
-                       recovery.a, raised, recovery.line))
+              for (const auto& item : error_pattern_payloads(*recovery.est_pattern, raised, recovery.line))
                 bind(item.first, item.second.first, item.second.second);
               selected_errors_.push_back(raised);
               try {
                 Flow flow = execute_block(
                     statements, frame, output, arm + 1, arm_end,
-                    &joined_binders(statements, index, end));
+                    &statement);
                 selected_errors_.pop_back();
-                restore();
+                restore(!flow.returned);
                 if (flow.returned) return flow;
               } catch (...) {
                 selected_errors_.pop_back();
@@ -2890,18 +2813,22 @@ class FastInterpreter {
           const Stmt& arm = statements[cursor];
           size_t arm_end = cursor + 1;
           while (arm_end < end && statements[arm_end].indent > arm.indent) ++arm_end;
-          if (arm.a == selected.object->case_name) {
+          const auto* pattern = arm.est_pattern ? &*arm.est_pattern : nullptr;
+          if (!pattern || (pattern->kind != est::PatternNode::Kind::EnumTag &&
+                           pattern->kind != est::PatternNode::Kind::EnumCase))
+            throw RuntimeError(arm.line, "checked enum pattern is absent");
+          if (pattern->case_name == selected.object->case_name) {
             taken = true;
-            emit("BranchTaken", frame, arm.line, arm.a);
+            emit("BranchTaken", frame, arm.line, pattern->case_name);
             std::unordered_map<std::string,std::optional<Value>> saved_locals;
             std::unordered_map<std::string,std::optional<std::string>> saved_local_types;
             std::unordered_map<std::string,std::optional<Place>> saved_aliases;
             const EnumCase* item = nullptr;
             for (const auto& candidate : declaration->cases)
-              if (candidate.name == arm.a) item = &candidate;
+              if (candidate.name == pattern->case_name) item = &candidate;
             if (!item) throw RuntimeError(arm.line, "unknown enum case");
-            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-              const auto& binding = arm.args[field_index];
+            for (size_t field_index = 0; field_index < pattern->payload_bindings.size(); ++field_index) {
+              const auto& binding = pattern->payload_bindings[field_index];
               auto prior_local = frame.locals.find(binding);
               saved_locals[binding] = prior_local == frame.locals.end()
                   ? std::nullopt : std::optional<Value>(prior_local->second);
@@ -2919,14 +2846,14 @@ class FastInterpreter {
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||
                   copy_type_name(item->fields[field_index].type))
-                frame.locals[arm.args[field_index]] = field->second;
+                frame.locals[binding] = field->second;
               else
-                frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
+                frame.aliases[binding] = Place{&field->second, nullptr, {}};
               frame.local_types[binding] = item->fields[field_index].type;
             }
             flow = execute_block(statements, frame, output, cursor + 1, arm_end,
-                                 &joined_binders(statements, index, end));
-            for (const auto& binding : arm.args) {
+                                 &statement);
+            for (const auto& binding : pattern->payload_bindings) {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
               frame.aliases.erase(binding);
@@ -2963,9 +2890,9 @@ class FastInterpreter {
           EventScope branch_scope(*this, branch_id, false, false, true);
           flow = condition
               ? execute_block(statements, frame, output, index + 1, body_end,
-                              &joined_binders(statements, index, end))
+                              &statement)
               : (after != body_end ? execute_block(statements, frame, output, body_end + 1, else_end,
-                                                   &joined_binders(statements, index, end))
+                                                   &statement)
                                    : Flow{});
         }
         if (flow.returned) return flow;

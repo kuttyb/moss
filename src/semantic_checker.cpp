@@ -19766,6 +19766,14 @@ class Checker {
     return unique_name && !ambiguous_name ? unique_name->name : canonical;
   }
 
+  void phase21_resolve_pattern_types(moss::est::PatternNode& pattern) const {
+    using Kind = moss::est::PatternNode::Kind;
+    if (pattern.kind == Kind::QualifiedRecoveryCase)
+      pattern.type_name = phase21_pattern_enum_name(pattern.type_name);
+    for (auto& alternative : pattern.alternatives)
+      phase21_resolve_pattern_types(alternative);
+  }
+
   RaiseSet phase21_raised_identities(int line, const string& expression,
                                     const TypeEnv& env) const {
     string enum_name, case_name;
@@ -19878,6 +19886,8 @@ class Checker {
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
               arm.line, pattern, remaining, &binding_type);
+          if (auto& checked_arm = const_cast<Stmt&>(arm).est_pattern)
+            phase21_resolve_pattern_types(*checked_arm);
           RaiseSet reachable_matched;
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
@@ -20417,6 +20427,10 @@ class Checker {
       string binding_type;
       RaiseSet matched = phase21_recovery_pattern(
           arm.line, pattern, remaining, &binding_type);
+      if (arm.est_pattern)
+        phase21_resolve_pattern_types(*arm.est_pattern);
+      for (auto& checked_pattern : arm.est_patterns)
+        phase21_resolve_pattern_types(checked_pattern);
       RaiseSet reachable;
       for (const auto& identity : matched)
         if (remaining.count(identity)) reachable.insert(identity);

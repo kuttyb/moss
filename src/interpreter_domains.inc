@@ -165,6 +165,7 @@
     if (type == "Int" || type == "int") return Value::int_value(0);
     if (type == "Float" || type == "float") return Value::float_value(0);
     if (type == "Bool" || type == "bool") return Value::boolean_value(false);
+    if (type == "Char" || type == "char") return Value::char_value(0);
     if (type == "String" || type == "string") return Value::string_value("");
     if (type.rfind("vector", 0) == 0 || type.rfind("Vector", 0) == 0) {
       auto open = type.find('[');
@@ -340,7 +341,7 @@
           failure.locals[selected->binding] = independent(raised.value);
           failure.local_types[selected->binding] = raised.identity.type;
         }
-        for (const auto& pattern : selected->patterns)
+        for (const auto& pattern : selected->est_patterns)
           for (const auto& binding :
                error_pattern_payloads(pattern, raised, selected->line)) {
             failure.locals[binding.first] = binding.second.first;
