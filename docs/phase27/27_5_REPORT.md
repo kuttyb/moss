@@ -23,3 +23,22 @@ Guard code/report checkpoint: commit `42e934bf` pushed to `origin/phase27-5-work
 - G3 firing samples: `tests/phase27/est/pipeline_shape.moss`, `tests/phase27/adversarial/cp-ca9e8ca/assoc-grouped.moss`, and `examples/swarm/Surface/repros/swarm_049a_fast_debug_map_in_method.moss`.
 - G4 firing samples: `tests/phase47_iteration.moss` and `examples/swarm/Surface/repros/swarm_059_untyped_for_param_write.moss` (two firings total).
 - Bulk counts include unrelated failures: corpus check 464/1032, emit 96/568, Fast Debug 73/462; examples check 225/776, emit 74/551, Fast Debug 6/292; packages build 95/336, Fast Debug 111/336. These are measurement results, not final suite results.
+
+## Final branch gates — frozen implementation `20aaef22`
+
+- `MOSS_EST=off make --jobs="$(nproc)" check` — PASS, 163/163 jobs. `MOSS_EST=shadow make --jobs="$(nproc)" check` — PASS, 163/163 jobs. Both include D1, D2, and G2 removal coverage.
+- Explicit D1 and D2 fixture drivers passed again after the suites. `check_phase27_three_engine.py build/compiler/moss-dev` passed with identical output and callback count 3.
+- First-parent compiler performance used the phase base / expected merge first parent `293bb6c53988c099974b04a0a21c5df77e9ef77e`, 77 fixtures, three interleaved repetitions, and one separate profiling sample. Aggregate median: 5.671 s → 5.726 s (+1.0%). No `rw_*` workload crossed the alert threshold. One torture fixture, `w6_types_count_t050`, crossed the report's beyond-noise threshold (+8.4%, +3.32 ms); other torture fixtures are report-only under the Phase 27 standing ruling. Full report and raw files: `tmp/compiler-perf/20261031-131846/LOCAL_REPORT.md` and adjacent CSVs. A preliminary run against `HEAD^` resolved to the intermediate guard checkpoint `42e934bf`; it is not used as first-parent evidence.
+- Agent 2 returned **GO** on frozen SHA `20aaef22bb5c6ad2c38a42b58331307dfcb13997`. It confirmed G2 fallback deletion, original G1/G3/G4 behavior, D1/D2 invariants and registrations, and the hook-off removal test failed as expected. Review record: `docs/phase27/adversarial/phase27-5-agent2-audit.md`.
+
+## Agent 2 adversarial review
+
+**GO — reviewed implementation `20aaef22bb5c6ad2c38a42b58331307dfcb13997`.** The reviewer inspected that exact `HEAD` with a clean worktree. G2's Assign and Let/Var binding paths fail with `MOSS_INTERNAL_INVARIANT` and the type reconstruction fallbacks are deleted; the `g2` hook drops the checked type. The required `MOSS_TEST_DISABLE_GUARD_HOOKS=1` spot-check exited 1 with `G2 dropped fact did not fail closed`, as expected. G1, G3, and G4 retain their original fallback behavior with only counters and the G4 detection helper. D1's single handler, scoping, traces, fixture and registrations, and D2's shared Copy classification and fixtures were confirmed. No review blocker was found. The reviewer did not rerun the full suites.
+
+## Delivery
+
+- Implementation: `20aaef22bb5c6ad2c38a42b58331307dfcb13997` on `phase27-5-work`.
+- Full off/shadow checks: 163/163 jobs each. D1/D2 native and Fast Debug parity, generated Rust compilation, trace assertion, and three-engine check passed.
+- Agent 2: GO on the frozen implementation SHA above.
+- First-parent performance: baseline `293bb6c53988c099974b04a0a21c5df77e9ef77e`; aggregate +1.0%; no real-world alert; one report-only torture alert `w6_types_count_t050` (+8.4%, +3.32 ms). See the full report path above.
+- Merge and tag are being completed after fetching current `origin/main`; the merge commit and tag target are recorded below when created.
