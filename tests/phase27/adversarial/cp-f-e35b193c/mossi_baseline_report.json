@@ -1,0 +1,34 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-agent2-e35b193c/tmp/phase27-mossi-baseline/1793456763178782617/active-moss",
+    "moss_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-agent2-e35b193c/tmp/phase27-mossi-baseline/1793456763178782617/active-moss",
+    "moss_sha256": "7e12d81c73b66fe245f8a9ea13fb539db135d8d28ca89b9c21fc3ec5c4267319",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "0a7f21f079c0e53f72fd1ce9a1e6609c7fe437e10bb2fe4a54e49d7802cb1baf",
+      "baseline_raw_sha256": "c931e072475dc405285058e879fbfcf6737e2cba20a6c2efaf191e1bae80a745",
+      "candidate_raw_sha256": "4e6ba411f328379637d7bc3fbfbd111b111a893cf9b0904531d9a59dceae446a",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "dadc5618dd0f821ab5aa69c35da5c47118c419cec19d55119ed1a5b1e639a5ee",
+      "recomputed_execution_body_hash": "0a7f21f079c0e53f72fd1ce9a1e6609c7fe437e10bb2fe4a54e49d7802cb1baf"
+    },
+    "library": {
+      "baseline_execution_body_hash": "6bd36fd109fa95f0a28de020c6304e677c5903e7710ea6abde5c7580922ce330",
+      "baseline_raw_sha256": "9235326a834f6b9798681a895ee8d80aa720a90f4aba110f01e4291d69e5aea7",
+      "candidate_raw_sha256": "44c65b156ef5bdc914c3619100d4e8b3d3c2dec038cd17f8a0efe79011984096",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "13b593a8ba8a2db87027f52d9380656c71654ba6c7852a379dbbca0ea1b5cefd",
+      "recomputed_execution_body_hash": "6bd36fd109fa95f0a28de020c6304e677c5903e7710ea6abde5c7580922ce330"
+    }
+  }
+}

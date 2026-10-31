@@ -1,0 +1,3 @@
+audited raw Stmt NAME comparisons: 42
+audited raw Stmt binding comparisons: 7
+phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off builds expression arena; stale guard)
