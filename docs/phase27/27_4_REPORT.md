@@ -18,7 +18,7 @@ Base: `phase27-3-m1`, merge `ce5f836e06ce93909c358e6e6455402417d14991`. The opti
 
 Raw results and command logs: `tests/phase27/adversarial/phase27-4-iteration-1/`. The bulk harness reused the committed Phase 27.3 corpus, Rust emission, and examples parity scripts against the exact `phase27-3-m1` baseline.
 
-## Gates before Agent 2
+## Initial gates and review before the L7 follow-up (superseded)
 
 - `MOSS_EST=off make --jobs="$(nproc)" check` — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/check-off.log`.
 - `MOSS_EST=shadow make --jobs="$(nproc)" check` — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/check-shadow.log`.
@@ -31,7 +31,7 @@ Raw results and command logs: `tests/phase27/adversarial/phase27-4-iteration-1/`
 
 ## L7 review follow-up
 
-L7 approved the `7dd04685` review and requested two additions. `statement_expression_roots` now reports missing expected EST handles as internal-invariant diagnostics in debug/test builds; incomplete dependencies conservatively block fusion. A new conformance fixture checks that `p.total` does not count as a use of a pipeline binding named `total`; it asserts the materialization reason and compares Fast Debug/native/`-O` output and callback counts. Focused build and regression passed (callback count 3). Full bulk parity and merge-commit gates must be rerun after this source change. Agent 2 has been asked whether it requires another audit.
+L7 approved the `7dd04685` review and requested two additions. `statement_expression_roots` now reports missing expected EST handles as internal-invariant diagnostics in debug/test builds; incomplete dependencies conservatively block fusion. A new conformance fixture checks that `p.total` does not count as a use of a pipeline binding named `total`; it asserts the materialization reason and compares Fast Debug/native/`-O` output and callback counts. Focused build and regression passed (callback count 3). These additions were independently reviewed on the new frozen SHA below.
 
 Peer follow-up iteration 1 at source candidate before the bare-return completeness correction:
 
@@ -45,4 +45,10 @@ Peer follow-up iteration 2 — final bulk rerun after expected-slot correction a
 - Rust emission: 1,424 accepted sources, 2,848 default/`-O` comparisons; zero mismatches, 22 identical paired emitter failures, zero unpaired failures. Examples: 31, zero mismatches.
 - Semantic decision parity ran `-O --dump-functional-ir` on 2,232 source paths; 1,419 were accepted in all three modes. Decision/materialization output was identical except one adjudicated delta: `field_name_not_binding_use.moss`, LEGACY MISPARSE, with matching baseline/candidate three-engine output and callback count 3. Candidate off/shadow decisions were identical. Normalization is limited to transient `%<integer>` IR IDs, excluding generated `ExpressionPlan` probe lines and `DataflowGroup Source` expression-formatting lines; all other dump lines compare exactly. The incomplete-index adversarial probe emitted the expected debug invariant and remained transformation-blocked.
 - Baseline/candidate three-engine conformance passed. All six targeted cases passed their decision assertion and Fast Debug/native/`-O` comparison: identical same-statement pipelines (distinct pipeline/ExprId pairs), field-name `total`, rebound binding, message argument use, callback reading the binding, and an injected missing root on the consumer pipeline. The field-name two-path case also has byte-identical output and callback counts on both paths.
-- Raw logs and complete decision matrix: `tests/phase27/adversarial/phase27-4-followup-iteration-2/`. This corrected bulk pass has one explicitly adjudicated field-name LEGACY MISPARSE and zero unadjudicated differences; source SHA is not yet frozen for Agent 2 because full gates and a merge-commit perf check remain.
+- Raw logs and complete decision matrix: `tests/phase27/adversarial/phase27-4-followup-iteration-2/`. This corrected bulk pass has one explicitly adjudicated field-name LEGACY MISPARSE and zero unadjudicated differences.
+
+## Final Agent 2 review
+
+**GO — frozen SHA `e80812291c32454fece6c840f0369acb61c87b7e`.** Review record SHA `4b872fd3c4074bf329397e13f24ca1a254146e25` is included unchanged at `docs/phase27/adversarial/phase27-4-agent2-final-audit.md`; independent raw probes are in `tests/phase27/adversarial/phase27-4-agent2-final/`. The audit confirmed exact slot/index/arena/ExprId plan binding, fail-closed dependency handling including Message fallback, the one adjudicated `p.total` LEGACY MISPARSE, all six targeted regression cases, and matching corpus/emission/examples/three-engine results.
+
+Post-review merge-commit off/shadow checks, `.mossi` and package gates, and first-parent perf remain pending.
