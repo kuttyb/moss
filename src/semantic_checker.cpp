@@ -323,6 +323,11 @@ bool fileio_typed(const TypeEnv& env, const string& name) {
 namespace {
 struct CheckerEstViewCache {
   static constexpr size_t limit = 8192;
+  // On-demand expression views share one append-only arena for the lifetime
+  // of this check. Per-expression arenas repeat several heap allocations in
+  // specialization-heavy programs even when their views are cached.
+  std::shared_ptr<moss::est::Arena> view_arena =
+      std::make_shared<moss::est::Arena>();
   struct Entry {
     struct EnumCaseProjection {
       string enum_name;
@@ -368,6 +373,7 @@ std::string_view checker_est_view_key(
 
 void reset_checker_est_view_cache() {
   checker_est_view_cache.views.clear();
+  checker_est_view_cache.view_arena = std::make_shared<moss::est::Arena>();
   checker_est_view_cache.entries = 0;
   checker_est_view_cache.hits = 0;
   checker_est_view_cache.misses = 0;
@@ -431,9 +437,15 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
     }
   }
   ++checker_est_view_cache.misses;
-  auto parsed = moss::est::parse_view(source);
   std::shared_ptr<const moss::est::ExpressionView> view;
-  if (parsed) view = std::make_shared<moss::est::ExpressionView>(std::move(*parsed));
+  try {
+    const auto root = moss::est::parse_expression(
+        *checker_est_view_cache.view_arena, source);
+    view = std::make_shared<moss::est::ExpressionView>(
+        moss::est::ExpressionView{checker_est_view_cache.view_arena,
+            checker_est_view_cache.view_arena.get(), root, string(source)});
+  } catch (const std::invalid_argument&) {
+  }
   if (checker_est_view_cache.entries < CheckerEstViewCache::limit) {
     auto entry = std::make_shared<CheckerEstViewCache::Entry>();
     if (!view) entry->failed_source = string(source);
