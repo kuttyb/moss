@@ -75,7 +75,7 @@ def main():
     self_test()
     work = ROOT / "tmp" / "phase27-three-engine" / str(time.time_ns())
     work.mkdir(parents=True)
-    env = os.environ.copy(); env["MOSS_EST"] = "off"
+    env = os.environ.copy(); env.pop("MOSS_EST", None)
     fast = output([str(COMPILER), "run", "--interp", str(SOURCE)], env=env)
     rust = work / "program.rs"
     emitted = run([str(COMPILER), str(SOURCE), "-o", str(rust)], env=env)

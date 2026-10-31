@@ -64,7 +64,7 @@ def main():
     for name, expected, callback_count, inject_missing in CASES:
         source = ROOT / "tests/phase27/conformance" / name
         env = os.environ.copy()
-        env["MOSS_EST"] = "off"
+        env.pop("MOSS_EST", None)
         if inject_missing:
             env["MOSS_TEST_MISSING_EXPRESSION_HANDLE"] = "11:7:0"
         else:

@@ -397,10 +397,8 @@ class Generator {
     if (p_.expression_arena && arena_uses(*p_.expression_arena)) return true;
     for (const auto& arena : p_.expression_arenas)
       if (arena && arena_uses(*arena)) return true;
-    // MOSS_EST=off deliberately leaves Program's persistent expression arenas
-    // null. The Rust emitter still needs to know whether its on-demand EST
-    // lowering will emit numeric helper calls. Rebuild node views for the
-    // parsed source bodies in that mode instead of searching their spellings.
+    // Some synthesized source bodies have no retained source handles. Rebuild
+    // node views for those bodies instead of searching their spellings.
     const auto expression_uses = [&](std::string_view source) {
       if (source.empty()) return false;
       const auto view = est::parse_view(source);

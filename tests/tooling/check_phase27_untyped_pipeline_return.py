@@ -27,11 +27,12 @@ SOURCES = (
 
 
 def main() -> int:
-    for mode in ("off", "shadow"):
+    for mode in ("default", "shadow"):
         cases = SOURCES if mode == "shadow" else SOURCES[:1]
         for source, expected_ok in cases:
             env = os.environ.copy()
-            env["MOSS_EST"] = mode
+            if mode == "default": env.pop("MOSS_EST", None)
+            else: env["MOSS_EST"] = mode
             env["MOSS_PHASE26_C1_SCOPE_TRACE"] = "1"
             result = subprocess.run(
                 [str(COMPILER), "check", str(ROOT / source), "--json"],
@@ -47,7 +48,7 @@ def main() -> int:
                 raise SystemExit(
                     f"{mode} changed the accepted result for {source}: "
                     f"{result.stdout}{result.stderr}")
-    print("PASS deferred pipeline crash regressions in EST off and shadow")
+    print("PASS deferred pipeline crash regressions in EST default and shadow")
     return 0
 
 

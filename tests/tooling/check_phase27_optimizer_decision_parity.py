@@ -36,7 +36,8 @@ def decision_text(output):
 
 def run(binary, path, mode, dump_output):
     env = os.environ.copy()
-    env["MOSS_EST"] = mode
+    if mode == "default": env.pop("MOSS_EST", None)
+    else: env["MOSS_EST"] = mode
     result = subprocess.run(
         [str(binary), str(ROOT / path), "-O", "--dump-functional-ir",
          "-o", str(dump_output)],
@@ -70,8 +71,8 @@ def main():
     def compare(path):
         output_name = hashlib.sha256(path.encode()).hexdigest() + ".rs"
         dump_output = OUTPUT.parent / "decision-parity-output" / output_name
-        baseline = run(BASELINE, path, "off", dump_output)
-        candidate_off = run(CANDIDATE, path, "off", dump_output)
+        baseline = run(BASELINE, path, "default", dump_output)
+        candidate_off = run(CANDIDATE, path, "default", dump_output)
         candidate_shadow = run(CANDIDATE, path, "shadow", dump_output)
         all_success = baseline[0] == candidate_off[0] == candidate_shadow[0] == 0
         comparisons = {

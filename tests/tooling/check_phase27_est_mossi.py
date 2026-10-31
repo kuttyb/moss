@@ -55,11 +55,13 @@ def main():
         "  echo est_est_library.generic(3)\n"
         "  echo est_est_library.concrete(4)\n", encoding="utf-8")
     mossi_by_mode = {}
-    for mode in ("off", "shadow"):
+    for mode in ("default", "shadow"):
         for root in (LIB, APP):
             shutil.rmtree(root / "build", ignore_errors=True)
         build_env = os.environ.copy()
-        build_env.update({"MOSS": str(MOSS), "MOSS_EST": mode})
+        build_env["MOSS"] = str(MOSS)
+        if mode == "default": build_env.pop("MOSS_EST", None)
+        else: build_env["MOSS_EST"] = mode
         report = run_margo(build_env)
         if not report.get("ok"):
             raise SystemExit(f"provider/app .mossi check failed in {mode} mode")
@@ -70,14 +72,14 @@ def main():
                    "est_est_app.mossi").read_bytes(),
         }
     for package in ("library", "app"):
-        off_bytes = mossi_by_mode["off"][package]
+        default_bytes = mossi_by_mode["default"][package]
         shadow_bytes = mossi_by_mode["shadow"][package]
-        if off_bytes != shadow_bytes:
-            off_hash = hashlib.sha256(off_bytes).hexdigest()
+        if default_bytes != shadow_bytes:
+            default_hash = hashlib.sha256(default_bytes).hexdigest()
             shadow_hash = hashlib.sha256(shadow_bytes).hexdigest()
             raise SystemExit(
                 f"same-binary raw .mossi mismatch for {package}: "
-                f"off={off_hash} shadow={shadow_hash}")
+                f"default={default_hash} shadow={shadow_hash}")
 
     provider_path = LIB / "build" / "check-debug"
     dump_path = WORK / "est-dump.log"
@@ -99,9 +101,9 @@ def main():
                        if line.startswith("MOSS_EST_DUMP ") and "origin=0 " not in line]
     if not execution_dumps or not any("binary#" in line for line in execution_dumps):
         raise SystemExit("Section 2 execution body did not build with the EST grammar")
-    parity_hashes = {package: hashlib.sha256(mossi_by_mode["off"][package]).hexdigest()
+    parity_hashes = {package: hashlib.sha256(mossi_by_mode["default"][package]).hexdigest()
                      for package in ("library", "app")}
-    print(f"phase27 .mossi EST passed (raw off/shadow hashes={parity_hashes}, "
+    print(f"phase27 .mossi EST passed (raw default/shadow hashes={parity_hashes}, "
           f"generic={len(generic_dumps)}, Section2={len(execution_dumps)} imported dumps)")
 
 

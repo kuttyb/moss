@@ -268,9 +268,9 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
 
 Mode mode() {
   const char* raw = std::getenv("MOSS_EST");
-  if (!raw || std::string_view(raw) == "off") return Mode::Off;
+  if (!raw || std::string_view(raw) == "on") return Mode::On;
   if (std::string_view(raw) == "shadow") return Mode::Shadow;
-  throw std::invalid_argument("MOSS_EST must be off or shadow (on is reserved)");
+  throw std::invalid_argument("MOSS_EST must be on or shadow");
 }
 
 namespace {

@@ -92,7 +92,7 @@ def main():
         "  echo fp_library.concrete(4)\n", encoding="utf-8")
 
     env = os.environ.copy()
-    env.update({"MOSS": str(ACTIVE), "MOSS_EST": "off",
+    env.update({"MOSS": str(ACTIVE),
                 "MOSS_RUNTIME_SOURCE_DIR": str(RUNTIME)})
     artifact_paths = {
         "library": LIB / "build" / "debug" / "fp_library.mossi",
@@ -119,7 +119,7 @@ def main():
     if identities["baseline"]["moss_sha256"] == identities["candidate"]["moss_sha256"]:
         raise AssertionError("expected distinct compiler binary identities")
 
-    os.environ.update({"MOSS": str(ACTIVE), "MOSS_EST": "off",
+    os.environ.update({"MOSS": str(ACTIVE),
                        "MOSS_RUNTIME_SOURCE_DIR": str(RUNTIME)})
     margo = load_margo()
     root, ordered = margo.resolve_graph(APP)

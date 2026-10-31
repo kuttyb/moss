@@ -26075,9 +26075,8 @@ class Checker {
       if (auto parsed = convert(cursor->arena_index, cursor->expr))
         return parsed;
 
-    // MOSS_EST=off intentionally omits persistent arenas. Build a temporary
-    // syntax tree for this expression; the Pipeline node is the only positive
-    // syntax oracle.
+    // Expressions without a retained source handle use a temporary syntax
+    // tree; the Pipeline node is the only positive syntax oracle.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);

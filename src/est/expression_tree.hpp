@@ -278,8 +278,8 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint64_t owner, ExprSlot slot,
                   std::uint32_t argument_index, const std::string& new_text);
 
-enum class Mode { Off, Shadow };
-Mode mode();  // Rejects the reserved MOSS_EST=on setting.
+enum class Mode { On, Shadow };
+Mode mode();  // Defaults to On; Shadow enables test-only parser cross-checks.
 bool begins_with_keyword(std::string_view source, std::string_view keyword);
 bool leading_dot_member_call_fragment(std::string_view source);
 std::optional<std::pair<std::string, std::string>> juxtaposed_operands(
