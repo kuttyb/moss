@@ -41,4 +41,6 @@ Guard code/report checkpoint: commit `42e934bf` pushed to `origin/phase27-5-work
 - Full off/shadow checks: 163/163 jobs each. D1/D2 native and Fast Debug parity, generated Rust compilation, trace assertion, and three-engine check passed.
 - Agent 2: GO on the frozen implementation SHA above.
 - First-parent performance: measured compiler/fixture baseline `293bb6c53988c099974b04a0a21c5df77e9ef77e`, source-equivalent to fetched merge first parent `394e32d41ceb6a3034a5b8e7bde1bf10a84dcb4d`; aggregate +1.0%; no real-world alert; one report-only torture alert `w6_types_count_t050` (+8.4%, +3.32 ms). See the full report path above.
-- Merge and tag are being completed after fetching current `origin/main`; the merge commit and tag target are recorded below when created.
+- Merge: `aa694ac074678cafe7a052a8af186e69303eb435`; first parent: `394e32d41ceb6a3034a5b8e7bde1bf10a84dcb4d`; second parent: `46c12c969c271672fe2a58670b237fbe67751f81`.
+- Annotated tag: `phase27-5-m1` targets merge commit `aa694ac074678cafe7a052a8af186e69303eb435`.
+- The merge tree includes the reviewed implementation, the Agent 2 audit, the phase report, and the team closeout. Its compiler and fixture inputs match the frozen implementation SHA; documentation records the fetched-main baseline equivalence and performance disposition.
