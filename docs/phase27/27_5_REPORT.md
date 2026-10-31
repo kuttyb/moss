@@ -9,7 +9,8 @@
 
 ## D2 — match payload Copy classification
 
-- Both interpreter and emitter now use `copy_type_name()` for non-consuming payloads. The fixture and native checks pass, but this item remains open until its own commit/checkpoint.
+- Both interpreter and emitter now use `copy_type_name()` for non-consuming payloads. The fixture covers Char, `option[Int]`, `option[Char]`, and String control payloads. Fast Debug and native output match; generated Rust compiles; the three Copy cases lower as dereferences and String is not cloned.
+- `python3 tests/tooling/check_phase27_5_match_copy.py ./moss` passed. Registered separately in `tests/run_parallel.py` for off/shadow `make check`. D2 commit/push is pending.
 
 ## Guards G1–G4
 

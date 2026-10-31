@@ -2885,9 +2885,7 @@ class FastInterpreter {
               if (field == selected.object->fields.end())
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||
-                  field->second.kind == Value::Kind::Int ||
-                  field->second.kind == Value::Kind::Bool ||
-                  field->second.kind == Value::Kind::Float)
+                  copy_type_name(item->fields[field_index].type))
                 frame.locals[arm.args[field_index]] = field->second;
               else
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};

@@ -6024,7 +6024,7 @@ class Generator {
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
-                if (type == "int" || type == "bool" || type == "float")
+                if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
               }

@@ -1,0 +1,22 @@
+enum CharPayload:
+  Value(value: Char)
+enum IntOptionPayload:
+  Value(value: option[Int])
+enum CharOptionPayload:
+  Value(value: option[Char])
+enum StringPayload:
+  Value(value: String)
+
+fn main():
+  match CharPayload.Value(value: 'x'):
+    case Value(value):
+      echo value
+  match IntOptionPayload.Value(value: Some(42)):
+    case Value(value):
+      pass
+  match CharOptionPayload.Value(value: Some('y')):
+    case Value(value):
+      pass
+  match StringPayload.Value(value: "copy-control"):
+    case Value(value):
+      echo value
