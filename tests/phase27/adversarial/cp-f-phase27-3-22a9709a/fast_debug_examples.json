@@ -1,0 +1,86 @@
+[
+  {
+    "source": "examples/hi.moss",
+    "baseline": {
+      "returncode": 0,
+      "stdout": "hi\n",
+      "stderr": ""
+    },
+    "candidate": {
+      "returncode": 0,
+      "stdout": "hi\n",
+      "stderr": ""
+    },
+    "equal": true
+  },
+  {
+    "source": "examples/collections.moss",
+    "baseline": {
+      "returncode": 0,
+      "stdout": "1\n180.5\n",
+      "stderr": ""
+    },
+    "candidate": {
+      "returncode": 0,
+      "stdout": "1\n180.5\n",
+      "stderr": ""
+    },
+    "equal": true
+  },
+  {
+    "source": "examples/domains_and_messages.moss",
+    "baseline": {
+      "returncode": 0,
+      "stdout": "worker: 10\ncurrent: 10\n",
+      "stderr": ""
+    },
+    "candidate": {
+      "returncode": 0,
+      "stdout": "worker: 10\ncurrent: 10\n",
+      "stderr": ""
+    },
+    "equal": true
+  },
+  {
+    "source": "examples/mini_application.moss",
+    "baseline": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "moss:88: interpreter error: unsupported checked pipeline stage 'schedule_score'\n"
+    },
+    "candidate": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "moss:88: interpreter error: unsupported checked pipeline stage 'schedule_score'\n"
+    },
+    "equal": true
+  },
+  {
+    "source": "examples/phase2_safety.moss",
+    "baseline": {
+      "returncode": 0,
+      "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n",
+      "stderr": ""
+    },
+    "candidate": {
+      "returncode": 0,
+      "stdout": "read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original\n",
+      "stderr": ""
+    },
+    "equal": true
+  },
+  {
+    "source": "examples/functional_pipeline.moss",
+    "baseline": {
+      "timeout_seconds": 15,
+      "stdout": null,
+      "stderr": null
+    },
+    "candidate": {
+      "timeout_seconds": 15,
+      "stdout": null,
+      "stderr": null
+    },
+    "equal": true
+  }
+]

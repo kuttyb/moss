@@ -1,0 +1,14 @@
+[
+  {
+    "engine": "baseline",
+    "returncode": 0,
+    "stdout": "999999\n999999\n999999\n9\n",
+    "stderr": ""
+  },
+  {
+    "engine": "candidate",
+    "returncode": 0,
+    "stdout": "999999\n999999\n999999\n9\n",
+    "stderr": ""
+  }
+]

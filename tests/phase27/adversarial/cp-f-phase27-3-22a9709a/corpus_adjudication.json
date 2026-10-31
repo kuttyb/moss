@@ -1,0 +1,25 @@
+{
+  "source_count_checked": 2058,
+  "standalone_diagnostic_signatures_equal": 2057,
+  "diagnostic_context_mismatch": {
+    "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "class": "BENIGN counted",
+    "baseline": "RECOVERY_PATTERN_REQUIRES_VARIANT when invoked as a standalone file without provider interfaces",
+    "candidate": "UNKNOWN_ERROR_TYPE for ndarray.NdArrayError under the same contextless invocation",
+    "oracle": "The actual compiled-only Margo source-free gate passed baseline and candidate in both off and shadow modes (ABI-9 debug; 5 Team A modules; 14 provider interfaces)."
+  },
+  "rust_emission": {
+    "profiles": {
+      "default": {"complete_sources": 1332, "baseline_candidate_raw_hash_equal": 1332, "baseline_candidate_normalized_hash_equal": 1332},
+      "O0": {"complete_sources": 1332, "baseline_candidate_raw_hash_equal": 1332, "baseline_candidate_normalized_hash_equal": 1332},
+      "optimized": {"complete_sources": 1332, "baseline_candidate_raw_hash_equal": 1332, "baseline_candidate_normalized_hash_equal": 1332}
+    },
+    "common_incomplete_emission_sources": 11,
+    "class": "BENIGN counted"
+  },
+  "common_emitter_failures": [
+    {"paths": ["examples/swarm/modules/calc_interpreter/repro/natural_full/tests/calc_test.moss", "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/env_test.moss", "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/eval_test.moss", "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss", "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/report_test.moss", "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/token_test.moss"], "diagnostic": "cannot infer assertEqual operand types at parser_test.moss:15; common baseline/candidate standalone emitter failure in default, O0, optimized; Margo package test reports missing report provider", "class": "BENIGN counted"},
+    {"paths": ["examples/swarm/modules/text_toolkit/toolkit/src/inventory.moss", "examples/swarm/modules/text_toolkit/toolkit/src/table.moss", "examples/swarm/modules/text_toolkit/toolkit/tests/inventory_test.moss", "examples/swarm/modules/text_toolkit/toolkit/tests/stats_test.moss", "examples/swarm/modules/text_toolkit/toolkit/tests/table_test.moss"], "diagnostic": "UNSUPPORTED_STRING_ORDERING at src/strings.moss:106; common baseline/candidate standalone emitter failure in default, O0, optimized; Margo package test fails identically", "class": "BENIGN counted"}
+  ],
+  "unclassified_semantic_differences": 0
+}
