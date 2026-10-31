@@ -1,0 +1,44 @@
+[
+  {
+    "function": "phase20_is_nontransferable_capability",
+    "api": "split_top_level",
+    "mutation": "remove_function",
+    "rejected": true,
+    "reason": "missing exemption function(s): phase20_is_nontransferable_capability"
+  },
+  {
+    "function": "phase20_is_nontransferable_capability",
+    "api": "split_top_level",
+    "mutation": "duplicate_site",
+    "rejected": true,
+    "reason": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'phase20_is_nontransferable_capability', 'split_top_level') (2)"
+  },
+  {
+    "function": "builtin_equality_type",
+    "api": "split_top_level",
+    "mutation": "remove_function",
+    "rejected": true,
+    "reason": "missing exemption function(s): builtin_equality_type"
+  },
+  {
+    "function": "builtin_equality_type",
+    "api": "split_top_level",
+    "mutation": "duplicate_site",
+    "rejected": true,
+    "reason": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'builtin_equality_type', 'split_top_level') (2)"
+  },
+  {
+    "function": "contains_float_type",
+    "api": "split_top_level",
+    "mutation": "remove_function",
+    "rejected": true,
+    "reason": "missing exemption function(s): contains_float_type"
+  },
+  {
+    "function": "contains_float_type",
+    "api": "split_top_level",
+    "mutation": "duplicate_site",
+    "rejected": true,
+    "reason": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'contains_float_type', 'split_top_level') (2)"
+  }
+]

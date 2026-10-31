@@ -1,0 +1,74 @@
+[
+  {
+    "mode": "off",
+    "payload": {
+      "build_order": [
+        "cp-e-valid-package"
+      ],
+      "check_only": true,
+      "checked": [
+        "cp-e-valid-package"
+      ],
+      "ok": true,
+      "packages": [
+        {
+          "name": "cp-e-valid-package",
+          "source": {
+            "kind": "root"
+          }
+        }
+      ],
+      "root_package": "cp-e-valid-package",
+      "scheduling_events": [
+        {
+          "event": "start",
+          "package": "cp-e-valid-package"
+        },
+        {
+          "event": "finish",
+          "package": "cp-e-valid-package"
+        }
+      ],
+      "schema_version": "margo-1",
+      "skipped": []
+    },
+    "returncode": 0,
+    "stderr": ""
+  },
+  {
+    "mode": "shadow",
+    "payload": {
+      "build_order": [
+        "cp-e-valid-package"
+      ],
+      "check_only": true,
+      "checked": [],
+      "ok": true,
+      "packages": [
+        {
+          "name": "cp-e-valid-package",
+          "source": {
+            "kind": "root"
+          }
+        }
+      ],
+      "root_package": "cp-e-valid-package",
+      "scheduling_events": [
+        {
+          "event": "start",
+          "package": "cp-e-valid-package"
+        },
+        {
+          "event": "finish",
+          "package": "cp-e-valid-package"
+        }
+      ],
+      "schema_version": "margo-1",
+      "skipped": [
+        "cp-e-valid-package"
+      ]
+    },
+    "returncode": 0,
+    "stderr": ""
+  }
+]

@@ -1,0 +1,497 @@
+{
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "checker_emitter_legacy_reader_calls": {},
+  "inventory_pattern_checker": 454,
+  "inventory_pattern_emitter": 124,
+  "limitations": "Temporary expression views are used only through tree projections; direct generation still passes source strings to EST lowering. Inventory reader counts and raw-name allowlist are gated by tests/tooling/check_phase27_string_debt.py.",
+  "raw_binding_name_comparisons": {
+    "checker_a": 9
+  },
+  "raw_name_literal_comparisons": {
+    "checker": {
+      "FileIO": 1,
+      "assert": 2,
+      "consume": 2,
+      "insert": 2,
+      "invoke": 4,
+      "join": 3,
+      "pass": 1,
+      "pop": 3,
+      "pop_front": 3,
+      "push": 5,
+      "sort": 1
+    },
+    "emitter": {
+      "_": 1,
+      "assert": 1,
+      "assertEqual": 1,
+      "close": 1,
+      "consume": 3,
+      "delete": 1,
+      "invoke": 1,
+      "join": 1,
+      "open": 1,
+      "pop": 1,
+      "sort": 1,
+      "sync": 1,
+      "write": 1
+    }
+  },
+  "raw_name_sites": [
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 151,
+      "path": "src/executor_invoke_codegen.inc",
+      "value": "join"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b != \"invoke\"",
+      "line": 155,
+      "path": "src/executor_invoke_codegen.inc",
+      "value": "invoke"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 12768,
+      "path": "src/semantic_checker.cpp",
+      "value": "push"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 12769,
+      "path": "src/semantic_checker.cpp",
+      "value": "insert"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 13966,
+      "path": "src/semantic_checker.cpp",
+      "value": "push"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 13967,
+      "path": "src/semantic_checker.cpp",
+      "value": "insert"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 14246,
+      "path": "src/semantic_checker.cpp",
+      "value": "invoke"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 14523,
+      "path": "src/semantic_checker.cpp",
+      "value": "invoke"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 18381,
+      "path": "src/semantic_checker.cpp",
+      "value": "consume"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 20901,
+      "path": "src/semantic_checker.cpp",
+      "value": "push"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 20901,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 20901,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop_front"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 21069,
+      "path": "src/semantic_checker.cpp",
+      "value": "push"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 21069,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 21069,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop_front"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 21070,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 21070,
+      "path": "src/semantic_checker.cpp",
+      "value": "pop_front"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 22679,
+      "path": "src/semantic_checker.cpp",
+      "value": "consume"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 23158,
+      "path": "src/semantic_checker.cpp",
+      "value": "push"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "a",
+      "line": 28703,
+      "path": "src/semantic_checker.cpp",
+      "value": "assert"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "a",
+      "line": 28748,
+      "path": "src/semantic_checker.cpp",
+      "value": "sort"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "a",
+      "line": 28785,
+      "path": "src/semantic_checker.cpp",
+      "value": "assert"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "text != \"pass\"",
+      "line": 28870,
+      "path": "src/semantic_checker.cpp",
+      "value": "pass"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "a",
+      "line": 859,
+      "path": "src/fileio_semantics.inc",
+      "value": "FileIO"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 324,
+      "path": "src/executor_invoke_lowering.inc",
+      "value": "invoke"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 328,
+      "path": "src/executor_invoke_lowering.inc",
+      "value": "join"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 521,
+      "path": "src/executor_invoke_lowering.inc",
+      "value": "invoke"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 521,
+      "path": "src/executor_invoke_lowering.inc",
+      "value": "join"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "checker",
+      "field_object": "b",
+      "line": 534,
+      "path": "src/executor_invoke_lowering.inc",
+      "value": "join"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b != \"consume\"",
+      "line": 5980,
+      "path": "src/native_generator.cpp",
+      "value": "consume"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 5982,
+      "path": "src/native_generator.cpp",
+      "value": "consume"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b != \"consume\"",
+      "line": 6026,
+      "path": "src/native_generator.cpp",
+      "value": "consume"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "a",
+      "line": 6335,
+      "path": "src/native_generator.cpp",
+      "value": "_"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 6600,
+      "path": "src/native_generator.cpp",
+      "value": "delete"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "a",
+      "line": 6612,
+      "path": "src/native_generator.cpp",
+      "value": "assert"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "a",
+      "line": 6625,
+      "path": "src/native_generator.cpp",
+      "value": "assertEqual"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "a",
+      "line": 6655,
+      "path": "src/native_generator.cpp",
+      "value": "sort"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 6854,
+      "path": "src/native_generator.cpp",
+      "value": "pop"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 70,
+      "path": "src/file_chunk_codegen.inc",
+      "value": "write"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 80,
+      "path": "src/file_chunk_codegen.inc",
+      "value": "open"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 90,
+      "path": "src/file_chunk_codegen.inc",
+      "value": "sync"
+    },
+    {
+      "classification": "allowlisted syntactic name/keyword",
+      "consumer": "emitter",
+      "field_object": "b",
+      "line": 101,
+      "path": "src/file_chunk_codegen.inc",
+      "value": "close"
+    }
+  ],
+  "retained_temp_est_projection_call_sites": [
+    {
+      "line": 10045,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))"
+    },
+    {
+      "line": 10753,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;"
+    },
+    {
+      "line": 12701,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_index(statement.a, base, index_expression)) {"
+    },
+    {
+      "line": 13809,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&"
+    },
+    {
+      "line": 13915,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_simple_call(trim(statement.b), assigned_callee,"
+    },
+    {
+      "line": 14009,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!tree_parse_index(statement.a, base, index)) continue;"
+    },
+    {
+      "line": 14250,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)"
+    },
+    {
+      "line": 14525,
+      "path": "src/semantic_checker.cpp",
+      "source": "tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,"
+    },
+    {
+      "line": 18530,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_index(statement.a, base, ignored))"
+    },
+    {
+      "line": 23044,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_index(s.a, lhs_base, lhs_index))"
+    },
+    {
+      "line": 24676,
+      "path": "src/semantic_checker.cpp",
+      "source": "direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,"
+    },
+    {
+      "line": 24763,
+      "path": "src/semantic_checker.cpp",
+      "source": "tree_parse_simple_call(trim(statement.b), direct_callee,"
+    },
+    {
+      "line": 28352,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!inferred && tree_parse_vector_literal(statement.b))"
+    },
+    {
+      "line": 28374,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!inferred && tree_parse_vector_literal(statement.b))"
+    },
+    {
+      "line": 28399,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_index(statement.a, base, index_expression)) {"
+    },
+    {
+      "line": 30962,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&"
+    },
+    {
+      "line": 5965,
+      "path": "src/native_generator.cpp",
+      "source": "if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {"
+    },
+    {
+      "line": 6369,
+      "path": "src/native_generator.cpp",
+      "source": "if (tree_parse_index(s.a, lhs_base, lhs_index)) {"
+    },
+    {
+      "line": 6391,
+      "path": "src/native_generator.cpp",
+      "source": "if (tree_parse_index(s.a, lhs_base, lhs_index)) {"
+    },
+    {
+      "line": 6453,
+      "path": "src/native_generator.cpp",
+      "source": ": (tree_parse_vector_literal(s.b) ? \"vector\" : \"_value\");"
+    },
+    {
+      "line": 6466,
+      "path": "src/native_generator.cpp",
+      "source": "bool map_assignment = tree_parse_index(s.a, mb, mi);"
+    },
+    {
+      "line": 6716,
+      "path": "src/native_generator.cpp",
+      "source": "tree_parse_member_call(s.args[k], nested_receiver, nested_method,"
+    },
+    {
+      "line": 6722,
+      "path": "src/native_generator.cpp",
+      "source": "if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {"
+    }
+  ],
+  "source_sha": "75ff852287f9f845af89175607b512af38f8fdc0",
+  "tree_expression_text_calls_in_src": 0
+}

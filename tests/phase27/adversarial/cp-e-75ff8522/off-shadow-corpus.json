@@ -1,0 +1,3584 @@
+{
+  "cases": 42,
+  "corpus_root": "tests/phase27/est",
+  "parity_failures": [],
+  "rows": [
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/bitwise_shift.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/bitwise_shift.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/bitwise_shift.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/message_expression.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/message_expression.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/message_expression.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/numeric_member.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/numeric_member.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/numeric_member.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/pipeline_shape.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/pipeline_shape.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/pipeline_shape.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'x'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/raw_places.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/raw_places.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'x'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/raw_places.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/raw_places.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/raw_places.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/bitwise_shift.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/bitwise_shift.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/bitwise_shift.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/collection_constructor.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/collection_constructor.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/collection_constructor.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/collection_literal.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/collection_literal.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/collection_literal.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/constructor.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/constructor.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/constructor.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 7,
+            "message": "domain handle 'w' is not an ordinary value; use domainroutes and message targets only",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@5",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/domain_handle_map_escape.moss",
+              "line": 7,
+              "span": {
+                "end_column": 1,
+                "end_line": 7,
+                "start_column": 1,
+                "start_line": 7
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/domain_handle_map_escape.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 7,
+              "start_column": 1,
+              "start_line": 7
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 7,
+            "message": "domain handle 'w' is not an ordinary value; use domainroutes and message targets only",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@5",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/domain_handle_map_escape.moss",
+              "line": 7,
+              "span": {
+                "end_column": 1,
+                "end_line": 7,
+                "start_column": 1,
+                "start_line": 7
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/domain_handle_map_escape.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 7,
+              "start_column": 1,
+              "start_line": 7
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/domain_handle_map_escape.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_MISMATCH",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 5,
+            "message": "argument 1 to function 'add' has type '', expected 'int'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_call_argument.moss",
+              "line": 5,
+              "span": {
+                "end_column": 1,
+                "end_line": 5,
+                "start_column": 1,
+                "start_line": 5
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_call_argument.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 5,
+              "start_column": 1,
+              "start_line": 5
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_MISMATCH",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 5,
+            "message": "argument 1 to function 'add' has type '', expected 'int'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_call_argument.moss",
+              "line": 5,
+              "span": {
+                "end_column": 1,
+                "end_line": 5,
+                "start_column": 1,
+                "start_line": 5
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_call_argument.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 5,
+              "start_column": 1,
+              "start_line": 5
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/empty_call_argument.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_MISMATCH",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 5,
+            "message": "argument 2 to function 'add' has type '', expected 'int'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_trailing_call_argument.moss",
+              "line": 5,
+              "span": {
+                "end_column": 1,
+                "end_line": 5,
+                "start_column": 1,
+                "start_line": 5
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_trailing_call_argument.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 5,
+              "start_column": 1,
+              "start_line": 5
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_MISMATCH",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 5,
+            "message": "argument 2 to function 'add' has type '', expected 'int'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_trailing_call_argument.moss",
+              "line": 5,
+              "span": {
+                "end_column": 1,
+                "end_line": 5,
+                "start_column": 1,
+                "start_line": 5
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_trailing_call_argument.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 5,
+              "start_column": 1,
+              "start_line": 5
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/empty_trailing_call_argument.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "ECHO_DISPLAY_UNSUPPORTED",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_vector_element.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_vector_element.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "ECHO_DISPLAY_UNSUPPORTED",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/empty_vector_element.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/empty_vector_element.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/empty_vector_element.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/incomplete_expression.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'not'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_unary_not.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'not'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_unary_not.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/incomplete_unary_not.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_vector.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/incomplete_vector.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/incomplete_vector.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/invalid_operator_adjacency.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "INVALID_EXPRESSION",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/juxtaposed_operands.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "INVALID_EXPRESSION",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/juxtaposed_operands.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/juxtaposed_operands.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:contains@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/membership_operator.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:contains@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/membership_operator.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/membership_operator.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/message_expression.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/message_expression.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/message_expression.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_literal_member.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_literal_member.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_literal_member.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1e3'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_exponent.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_exponent.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1e3'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_exponent.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_exponent.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_exponent.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '0'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_field.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_field.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '0'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_field.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_field.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_field.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0xff'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_hex.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_hex.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0xff'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_hex.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_hex.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_hex.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0x'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_name.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_name.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0x'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_name.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_name.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_name.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1_name'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_named.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_named.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1_name'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_named.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_named.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_named.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '1'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '1'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '0_1'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_underscored.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_underscored.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "record 'P' has no field '0_1'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_underscored.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_underscored.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_underscored.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1foo'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_word.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_word.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '1foo'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_word.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_word.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_word.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0e'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_zero_e.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_zero_e.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_FIELD",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 6,
+            "message": "type 'P' has no field '0e'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@4",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/numeric_member_zero_e.moss",
+              "line": 6,
+              "span": {
+                "end_column": 1,
+                "end_line": 6,
+                "start_column": 1,
+                "start_line": 6
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/numeric_member_zero_e.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 6,
+              "start_column": 1,
+              "start_line": 6
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/numeric_member_zero_e.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/package_open_collection/src/main.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/package_open_collection/src/main.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/package_open_collection/src/main.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/package_open_collection/src/main.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/package_open_collection/src/main.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/pipeline.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/repro/pipeline.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/pipeline.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 3,
+            "message": "indentation jumps more than one block level",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "span": {
+                "end_column": 1,
+                "end_line": 3,
+                "start_column": 1,
+                "start_line": 3
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/split_fragment.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 3,
+              "start_column": 1,
+              "start_line": 3
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 3,
+            "message": "indentation jumps more than one block level",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "span": {
+                "end_column": 1,
+                "end_line": 3,
+                "start_column": 1,
+                "start_line": 3
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/split_fragment.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 3,
+              "start_column": 1,
+              "start_line": 3
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/split_fragment.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "binary '&&' expression is not supported",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/symbolic_boolean.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "binary '&&' expression is not supported",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/symbolic_boolean.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/symbolic_boolean.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 3,
+            "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/trailing_member_after_empty_vector.moss",
+              "line": 3,
+              "span": {
+                "end_column": 1,
+                "end_line": 3,
+                "start_column": 1,
+                "start_line": 3
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/trailing_member_after_empty_vector.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 3,
+              "start_column": 1,
+              "start_line": 3
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 3,
+            "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/trailing_member_after_empty_vector.moss",
+              "line": 3,
+              "span": {
+                "end_column": 1,
+                "end_line": 3,
+                "start_column": 1,
+                "start_line": 3
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/trailing_member_after_empty_vector.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 3,
+              "start_column": 1,
+              "start_line": 3
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/trailing_member_after_empty_vector.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'item'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/trailing_member_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/trailing_member_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "UNKNOWN_SYMBOL_OR_TYPE",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [
+              "rename the reference to an existing static symbol",
+              "declare the missing symbol or concrete type"
+            ],
+            "line": 2,
+            "message": "unknown identifier 'item'",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/trailing_member_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/trailing_member_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/trailing_member_expression.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unclosed_vector_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unclosed_vector_expression.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/unclosed_vector_expression.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unresolved_collection_result.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unresolved_collection_result.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "heterogeneous or unresolved collection element type",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "main@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unresolved_collection_result.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unresolved_collection_result.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/unresolved_collection_result.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:pow@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unsupported_exponent.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:pow@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unsupported_exponent.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/unsupported_exponent.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:pow@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unsupported_operators.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "error": {
+            "cause": null,
+            "code": "MOSS_COMPILE_ERROR",
+            "column": 1,
+            "details": {
+              "consume_line": null,
+              "ownership_actual": null,
+              "ownership_expected": null,
+              "recursion_witness": null,
+              "resolution": null
+            },
+            "fixes": [],
+            "guidance": null,
+            "legal_alternatives": [],
+            "line": 2,
+            "message": "invalid arithmetic expression",
+            "related": [],
+            "rule": null,
+            "semantic_identity": "fn:pow@1",
+            "severity": "error",
+            "source": {
+              "column": 1,
+              "file": "$ROOT/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "span": {
+                "end_column": 1,
+                "end_line": 2,
+                "start_column": 1,
+                "start_line": 2
+              }
+            },
+            "source_file": "$ROOT/tests/phase27/est/repro/unsupported_operators.moss",
+            "span": {
+              "end_column": 1,
+              "end_line": 2,
+              "start_column": 1,
+              "start_line": 2
+            },
+            "symbol": null
+          },
+          "ok": false,
+          "protocol_version": 1,
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 1,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/repro/unsupported_operators.moss",
+      "verdict": false
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/side_facts.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/side_facts.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/side_facts.moss",
+      "verdict": true
+    },
+    {
+      "off": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/syntax_27_1b.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "parity": true,
+      "shadow": {
+        "payload": {
+          "command": "check",
+          "compiler_version": "0.1.0",
+          "ok": true,
+          "protocol_version": 1,
+          "result": {
+            "diagnostics": [],
+            "source_file": "$ROOT/tests/phase27/est/syntax_27_1b.moss"
+          },
+          "schema_version": "moss-agent-1"
+        },
+        "returncode": 0,
+        "stderr": ""
+      },
+      "source": "tests/phase27/est/syntax_27_1b.moss",
+      "verdict": true
+    }
+  ],
+  "source_sha": "75ff852287f9f845af89175607b512af38f8fdc0"
+}
