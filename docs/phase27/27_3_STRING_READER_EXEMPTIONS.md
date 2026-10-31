@@ -54,8 +54,11 @@ The assignment-place index/member classifiers, vector-literal prefix checks,
 and source-free member-call origin search found by fresh CP-E were converted
 to EST projections. No raw expression-shape exemption remains.
 
-The checker has nine additional raw `Stmt.a` comparisons against binding
-names (`name`, `base`, `statement.a`, or `selected_binding`). In each site the
-statement kind makes `a` the assignment/loop binding slot. The lint counts
-these separately and rejects comparisons from `.b` or `.text` against a
-dynamic string.
+The checker has seven remaining raw `Stmt.a` comparisons against binding or
+callee names (`name`, `base`, `statement.a`, or `selected_binding`). Each is
+restricted by its statement kind or operation shape to a NAME slot. The lint
+counts these separately, rejects comparisons from `.b` or `.text` against a
+dynamic string, and rejects a raw `expression`/`expr` comparison against an
+expression-bearing field on the right. The three former expression reads
+found by full CP-E were moved to EST identifier projections or the EST
+`est_binding_name` fact.

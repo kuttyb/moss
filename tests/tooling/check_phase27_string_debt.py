@@ -53,7 +53,11 @@ RAW_FIELD_VARIABLE_COMPARE = re.compile(
     r"\b[A-Za-z_]\w*(?:\([^()]*\))?(?:\.[A-Za-z_]\w*|\[[^]]+\])*"
     r"\.(a|b|text)\s*(?:==|!=)\s*[A-Za-z_]\w*"
     r"(?:\.[A-Za-z_]\w*|\[[^]]+\])*\b")
-RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 9}
+RAW_REVERSED_FIELD_VARIABLE_COMPARE = re.compile(
+    r"\b(?:expression|expr)\s*(?:==|!=)\s*"
+    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*"
+    r"\.(a|b|text)\b")
+RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 7}
 # Shape tests on expression-bearing Stmt fields are readers even when they do
 # not call one of the legacy parser APIs. Keep this fail-closed for direct
 # punctuation searches, first-character dispatch, and trimmed-prefix tests.
@@ -424,6 +428,7 @@ def main():
     unclassified = []
     raw_field_variables = collections.Counter()
     raw_field_shapes = []
+    raw_reversed_field_variables = []
     for relative in paths():
         consumer = consumer_for(relative)
         if consumer not in ("checker", "emitter"):
@@ -434,6 +439,9 @@ def main():
                 raw_field_shapes.append(f"{relative}:{line_no}: {line.strip()}")
             for variable_match in RAW_FIELD_VARIABLE_COMPARE.finditer(line):
                 raw_field_variables[(consumer, variable_match[1])] += 1
+            if RAW_REVERSED_FIELD_VARIABLE_COMPARE.search(line):
+                raw_reversed_field_variables.append(
+                    f"{relative}:{line_no}: {line.strip()}")
             for match in RAW_NAME_COMPARE.finditer(line):
                 key = (consumer, match[1])
                 if key not in RAW_NAME_COUNTS:
@@ -446,6 +454,9 @@ def main():
     if raw_field_shapes:
         raise SystemExit("raw expression-shape test on Stmt field(s):\n" +
                          "\n".join(raw_field_shapes))
+    if raw_reversed_field_variables:
+        raise SystemExit("raw comparison to expression-bearing Stmt field on right:\n" +
+                         "\n".join(raw_reversed_field_variables))
     if raw_field_variables != collections.Counter(RAW_BINDING_COMPARE_COUNTS):
         raise SystemExit("audited raw Stmt binding comparison counts changed: " +
                          repr(dict(sorted(raw_field_variables.items()))))

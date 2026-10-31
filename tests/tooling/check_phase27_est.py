@@ -92,6 +92,12 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR",
              "domain handle 'w' is not an ordinary value; use domainroutes and message targets only",
              7, 1),
+        "failure_capture_bare_self_assignment.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'value'", 10, 1),
+        "unresolved_local_return_line.moss":
+            ("TYPE_AMBIGUOUS_OPEN_RESULT",
+             "static specialization of function 'make' has an unresolved result type",
+             6, 1),
     }
     for name, signature in expected.items():
         path = ROOT / "tests/phase27/est/repro" / name
@@ -217,6 +223,22 @@ def check_rejected_source_parity():
 
 def main():
     check_rejected_source_parity()
+    for name in ("bare_recovery_reraise.moss",
+                 "grouped_recovery_reraise.moss",
+                 "failure_capture_grouped_self_assignment.moss"):
+        path = ROOT / "tests/phase27/est/repro" / name
+        payloads = []
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} returned no JSON for {name}: {result.stdout}{result.stderr}") from error
+            if result.returncode != 0 or not payload.get("ok"):
+                raise SystemExit(f"{mode} rejected {name}: {payload}")
+            payloads.append(payload)
+        if payloads[0] != payloads[1]:
+            raise SystemExit(f"off/shadow diagnostic payload differs for {name}")
     for name, pieces in CASES.items():
         path = ROOT / "tests/phase27/est" / name
         result = run(path, "shadow", MOSS_EST_DUMP="1",

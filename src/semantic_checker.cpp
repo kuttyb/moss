@@ -9902,7 +9902,8 @@ class Checker {
       if (!parsed || !(*parsed)->is_closed() || contains_internal_placeholder(type)) {
         int err_line = fallback_line;
         for (const auto& stmt : body) {
-          if (stmt.a == name) {
+          const auto expression_name = tree_identifier_name(stmt.a);
+          if (expression_name && *expression_name == name) {
             err_line = stmt.line;
             break;
           }
@@ -19847,8 +19848,9 @@ class Checker {
         } else {
           alternatives = phase21_raised_identities(
               statement.line, statement.a, env);
-          if (!selected_binding.empty() &&
-              statement.a == selected_binding) {
+          const auto raised_binding = tree_identifier_name(statement.a);
+          if (!selected_binding.empty() && raised_binding &&
+              *raised_binding == selected_binding) {
             std::set<string> selected_types;
             for (const auto& identity : selected)
               selected_types.insert(identity.type);
@@ -20052,9 +20054,12 @@ class Checker {
     const TypeEnvVisitor visit = [&](const Stmt& statement,
                                      const TypeEnv& current) {
       for (const auto& expression : statement_expressions(statement)) {
-        if (statement.kind == Stmt::Kind::Assign &&
-            tree_plain_identifier(expression) && expression == statement.a)
-          continue;
+        if (statement.kind == Stmt::Kind::Assign) {
+          const auto expression_binding = tree_identifier_name(expression);
+          if (expression_binding &&
+              *expression_binding == statement.est_binding_name)
+            continue;
+        }
         for (const auto& name : functional_captures(expression, candidates))
           if (!current.count(name)) result.insert(name);
       }

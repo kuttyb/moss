@@ -1,0 +1,11 @@
+enum Fault:
+  Bad
+
+fn main():
+  try:
+    try:
+      raise Fault.Bad
+    recover err:
+      raise (err)
+  recover Fault.Bad:
+    echo "handled"
