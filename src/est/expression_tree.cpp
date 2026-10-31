@@ -1213,6 +1213,31 @@ bool has_rejected_if_else_fragment_shape(std::string_view source) {
   return false;
 }
 
+std::optional<std::string> outer_grouping_fragment(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  if (tokens.size() < 2 || tokens.front().text != "(" ||
+      tokens.back().text != ")") return std::nullopt;
+  std::size_t depth = 0;
+  for (std::size_t index = 0; index < tokens.size(); ++index) {
+    if (tokens[index].text == "(") ++depth;
+    else if (tokens[index].text == ")") {
+      if (depth == 0) return std::nullopt;
+      --depth;
+      if (depth == 0 && index + 1 != tokens.size()) return std::nullopt;
+    }
+  }
+  if (depth != 0) return std::nullopt;
+  const auto begin = tokens.front().source_end;
+  const auto end = tokens.back().source_begin;
+  if (begin > end || end > source.size()) return std::nullopt;
+  return std::string(source.substr(begin, end - begin));
+}
+
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {

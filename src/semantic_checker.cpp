@@ -11300,7 +11300,11 @@ class Checker {
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     auto syntax = checker_est_view(text);
-    auto result = syntax ? moss::est::strip_grouping(*syntax) : trim(text);
+    string result;
+    if (syntax) result = moss::est::strip_grouping(*syntax);
+    else if (auto fragment = moss::est::outer_grouping_fragment(text))
+      result = std::move(*fragment);
+    else result = trim(text);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -11313,11 +11317,14 @@ class Checker {
 
   static bool tree_outer_grouping(const string& text) {
     auto syntax = checker_est_view(text);
-    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
-      return false;
-    const auto& node = syntax->arena->at(syntax->root);
-    const bool result = std::holds_alternative<moss::est::Parenthesized>(node) ||
-        std::holds_alternative<moss::est::Tuple>(node);
+    bool result = false;
+    if (syntax && syntax->arena && syntax->root < syntax->arena->size()) {
+      const auto& node = syntax->arena->at(syntax->root);
+      result = std::holds_alternative<moss::est::Parenthesized>(node) ||
+          std::holds_alternative<moss::est::Tuple>(node);
+    } else {
+      result = moss::est::outer_grouping_fragment(text).has_value();
+    }
     if (moss::est::mode() == moss::est::Mode::Shadow) {
       const string source = trim(text);
       const bool legacy = source.size() >= 2 && source.front() == '(' &&
@@ -21292,6 +21299,20 @@ class Checker {
                                             const TypeEnv& env) {
     std::set<string> captures;
     auto syntax = checker_est_view(expression);
+    if (!syntax) {
+      auto children = moss::est::parse_delimited_children(expression, ',');
+      if (children && children->size() > 1) {
+        for (const auto& child : *children) {
+          auto child_syntax = checker_est_view(child);
+          if (!child_syntax) continue;
+          for (const auto& [name, _] : env)
+            if (name != "_" &&
+                moss::est::contains_identifier(*child_syntax, name))
+              captures.insert(name);
+        }
+      } else if (auto base = moss::est::trailing_member_base(expression))
+        syntax = checker_est_view(*base);
+    }
     if (syntax) {
       for (const auto& [name, _] : env)
         if (name != "_" && moss::est::contains_identifier(*syntax, name))
@@ -21302,6 +21323,10 @@ class Checker {
       for (const auto& [name, _] : env)
         if (name != "_" && legacy_expression_uses(expression, name))
           legacy_captures.insert(name);
+      if (captures != legacy_captures)
+        std::fprintf(stderr,
+            "EST capture mismatch <%s> tree=%zu legacy=%zu\n",
+            expression.c_str(), captures.size(), legacy_captures.size());
       assert(captures == legacy_captures);
     }
     return vector<string>(captures.begin(), captures.end());

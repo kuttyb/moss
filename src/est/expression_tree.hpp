@@ -186,6 +186,7 @@ ExpressionView view(const Arena& arena, ExprId root,
                     std::string_view source);
 std::optional<ExpressionView> parse_view(std::string_view source);
 std::optional<ExpressionView> parse_named_argument_view(std::string_view source);
+std::optional<std::string> outer_grouping_fragment(std::string_view source);
 ExprId unparenthesized(const Arena& arena, ExprId expression);
 bool project_simple_call(const ExpressionView& view, std::string& callee,
                          std::vector<std::string>& arguments);
