@@ -16467,3 +16467,32 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   the remaining source-specific lowering work may still exist outside that
   sample. No full suite, whole-corpus counters, parity aggregate, perf, Agent 2,
   merge, or tag has run.
+
+## C2 paired counter checkpoint (2026-11-01; after `d29f7d31`)
+
+- Paired like-for-like measurement ran pinned C1 parent `c96bca78` with
+  matching test counters and candidate `d29f7d31` over 1,824 tracked sources,
+  default and `-O` (3,648 commands each). Parent: 14,606,057 text-node
+  lookups, 9,735,229 native expression-view reparses, 7,362 pipeline reparses,
+  1,406 emission failures. Candidate: 7,344 lookups, 7,295 expression-view
+  reparses, 1 pipeline reparse, 1,412 failures.
+- A per-source paired locator found candidate-only failures in
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`,
+  `tests/implicit_domain_specialization.moss`, and
+  `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`
+  (each default and `-O`). No parent-only failures. The formatter and malformed
+  incomplete-index source were previously identified as baseline-invalid Rust /
+  fail-closed cases; `implicit_domain_specialization` still needs comparison.
+- Most remaining reparses are concentrated in chunk-pipeline lowering. A node
+  migration attempt was reverted after the focused Phase 21 harness showed
+  `_` emitted as a Rust value inside the placeholder callback. No incomplete
+  code remains from that experiment. Evidence and the blocker are in the
+  developer-feedback record.
+- Paired source locator is at
+  `tmp/phase2754-emitter-counts-locations.json`; primary paired counters are at
+  `tmp/phase2754-emitter-counts/1793573346983017897/summary.json`.
+  Both files are disposable; these numbers are summarized here for handoff.
+- The checked-fact perturb/drop script passes: call targets 8 fixtures,
+  specializations 4, joins 4, patterns 3, known debt unchanged at 38/38.
+  No full `make check`, three-engine/parity aggregate, performance suite,
+  Agent 2 audit, merge, or tag has run.
