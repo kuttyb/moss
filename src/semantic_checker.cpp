@@ -27418,9 +27418,10 @@ class Checker {
           if (!value_text) continue;
           auto value_type = inferred_expr_type(*value_text, env);
           if (value_type && contains_domain_handle(*value_type)) {
-            const auto identifier = checker_identifier_name(*value_text);
-            const string binding = identifier ? string(*identifier)
-                                              : *value_text;
+            string binding = *value_text;
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &syntax->arena->at(entry->elements[1])))
+              binding = identifier->name;
             err(line, "domain handle '" + binding +
                 "' is not an ordinary value; use domainroutes and message targets only",
                 "MOSS_COMPILE_ERROR");

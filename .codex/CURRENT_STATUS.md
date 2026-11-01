@@ -13876,3 +13876,11 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Default/shadow message and typed-vector checks, shadow parenthesized-enum,
   and six three-engine expression-use fixtures pass. specialized_call_facts
   cache consultations are 25,118 (down 12), checker reparses remain 44.
+
+## Phase 27.5.4 map-entry identifier projection checkpoint (2026-10-31)
+
+- Domain-handle escape checking in map literals now reads the value Identifier
+  node directly instead of querying checker identifier projection by its source
+  text. The `domain-handle-map.moss` adversarial fixture still rejects with
+  `MOSS_COMPILE_ERROR` in default and shadow. functional_basics counters are
+  unchanged because it has no map domain-handle entry.
