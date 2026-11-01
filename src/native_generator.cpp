@@ -6113,6 +6113,19 @@ class Generator {
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
         const auto member_receiver = expression.child(member->base);
+        if (target == "builtin-fileio:slice" &&
+            member->name == "slice" && call->arguments.size() == 2) {
+          const auto receiver_type = generated_expr_type(member_receiver,
+                                                          types);
+          if (!receiver_type || canonical_type_name(*receiver_type) != "Range")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked range slice receiver type is missing");
+          return "(" + expr(member_receiver, d, locals, types) + ").slice(" +
+              expr(expression.child(call->arguments[0]), d, locals, types) +
+              ", " +
+              expr(expression.child(call->arguments[1]), d, locals, types) +
+              ")";
+        }
         if (target == "builtin-fileio:read" &&
             member->name == "read" && call->arguments.size() == 2) {
           const string rendered = expr(member_receiver, d, locals, types) +
