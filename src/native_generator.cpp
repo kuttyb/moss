@@ -3343,6 +3343,40 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<EmitterExpr> checked_functional_pipeline_node(
+      size_t pipeline_id) const {
+    if (!phase21_codegen_statement_ || pipeline_id == 0) return std::nullopt;
+    std::optional<std::uint32_t> selected_arena;
+    std::optional<est::ExprId> selected_expression;
+    vector<string> contexts{codegen_body_context_};
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    contexts.push_back("");
+    for (const auto& context : contexts) {
+      const auto found = phase21_codegen_statement_
+          ->functional_expression_plans_by_context.find(context);
+      if (found == phase21_codegen_statement_
+              ->functional_expression_plans_by_context.end()) continue;
+      for (const auto& plan : found->second) {
+        if (plan.pipeline_id != pipeline_id ||
+            plan.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[plan.arena_index]) continue;
+        if (selected_expression &&
+            (*selected_expression != plan.expression ||
+             *selected_arena != plan.arena_index))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline id");
+        selected_expression = plan.expression;
+        selected_arena = plan.arena_index;
+      }
+      if (selected_expression)
+        return EmitterExpr{p_.expression_arenas[*selected_arena].get(),
+            *selected_expression, phase21_codegen_statement_->b};
+    }
+    return std::nullopt;
+  }
+
   const FunctionalTraversalGroup* functional_traversal_group(
       size_t group_id) const {
     if (!group_id) return nullptr;
@@ -3605,8 +3639,16 @@ class Generator {
         throw std::runtime_error(
             "internal error: stale shared functional traversal region");
       const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
-      auto parsed = functional_pipeline_from_est(
-          statement.b, &statement.expression_handles);
+      const auto checked_expression = checked_expression_ref(
+          statement.b, est::ExprSlot::RhsValue);
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      auto parsed = functional_pipeline_from_node(checked_expression,
+                                                  resolve_stage);
       if (!plan || !parsed || parsed->stages.empty() ||
           !functional_terminal_kind(parsed->stages.back().kind))
         throw std::runtime_error(
@@ -4184,8 +4226,17 @@ class Generator {
     if (planned->virtual_upstream_pipeline_id) {
       const FunctionalPipeline* upstream = planned_functional_pipeline(
           planned->virtual_upstream_pipeline_id);
-      auto upstream_parsed = upstream
-          ? functional_pipeline_from_est(upstream->expression) : std::nullopt;
+      auto upstream_node = checked_functional_pipeline_node(
+          planned->virtual_upstream_pipeline_id);
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      auto upstream_parsed = upstream_node
+          ? functional_pipeline_from_node(*upstream_node, resolve_stage)
+          : std::nullopt;
       if (!upstream_parsed || upstream_parsed->stages.empty() ||
           functional_terminal_kind(upstream_parsed->stages.back().kind))
         throw std::runtime_error(

@@ -15307,3 +15307,13 @@ fails closed on missing checked RhsValue handle. Current one-fixture paired
 counts for map-method after fix are 1,521/1,173 -> 434/338 (lookups/reparses)
 in default; generated Rust is identical to C1 in default and `-O`, and both
 compile and print 2. Rerun full paired counts after further node migrations.
+
+### C2 retained functional-plan node routing
+
+Working tree adds checked pipeline-node resolution by `FunctionalExpressionPlan`
+ID for virtual upstream stages, and shared traversal reads the statement's
+checked RHS ExprId. This eliminates those two `functional_pipeline_from_est`
+sites. Targeted functional-tree test, mini_application and GraphKit emission
+pass. Mini application remains byte-identical to C1; paired default counts
+9,497 -> 3,031 text lookups, 6,090 -> 1,610 total emitter reparses, and
+functional pipeline reparses 2 -> 0. This slice is not yet committed/pushed.

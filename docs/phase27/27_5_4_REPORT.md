@@ -346,3 +346,14 @@ missing checked `RhsValue` handle instead of emitting the invalid artifact.
 Remaining full-suite parity must confirm this malformed-source diagnostic
 change is outside behavioral coverage. The corpus figures above precede the
 map-method fix and are not the final paired count.
+
+## C2 progress — semantic pipeline consumers use planned ExprIds
+
+The shared traversal emitter now reads the checked RHS handle and traverses its
+Pipeline/Call nodes. Virtual upstream stages resolve their retained expression
+plan by pipeline ID and lower from that node, rather than reparsing the plan's
+source string. Targeted functional-tree tests pass; mini_application and
+GraphKit emit successfully. Mini-application default Rust remains byte-identical
+to C1; its paired counts remain 9,497 -> 3,031 lookups and 6,090 -> 1,610 total
+reparses (native functional reparses 2 -> 0). The full corpus recount remains
+pending until the remaining consumer paths are migrated.
