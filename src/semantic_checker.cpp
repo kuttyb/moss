@@ -12356,7 +12356,7 @@ class Checker {
           string source = pos == string::npos ? key : key.substr(0, pos);
           for (size_t ai = 0; ai < args.size() && ai < function_target->params.size(); ++ai)
             if (function_target->params[ai].name == source) {
-              auto at = inferred_expr_type(args[ai], env);
+              auto at = argument_type(ai);
               if (at) {
                 auto object = objects_.find(*at);
                 if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)

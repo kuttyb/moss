@@ -1,8 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `6d5d966c`. Result-expression handle routing is uncommitted. Moss bootstrap
-  confirms `moss-0.1`.
+  `b042f983`. A checked call-argument type projection is uncommitted. Moss
+  bootstrap confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -44,6 +44,10 @@
   fingerprint. The accepted `swarm_065_pipeline_return.moss` checks in
   default/shadow; focused counters remain 64 checker parses / 24 pipeline
   parses. No delta is claimed for that fixture.
+- Generic field-result inference now reuses the already checked argument-type
+  projection instead of launching a second string-based type query. The
+  specialized-call fact harness and fixture pass in default/shadow; their
+  focused counters are unchanged because this case is absent from that sample.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
