@@ -400,7 +400,7 @@ void reset_checker_est_view_cache() {
 CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   const size_t hash = std::hash<std::string_view>{}(source);
 #ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup();
+  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::EstViewEntry);
 #endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found == checker_est_view_cache.views.end()) return nullptr;
@@ -459,7 +459,7 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
 #endif
   const size_t hash = std::hash<std::string_view>{}(source);
 #ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup();
+  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::EstView);
 #endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found != checker_est_view_cache.views.end()) {
@@ -516,7 +516,7 @@ std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
   };
   const size_t hash = std::hash<std::string_view>{}(wrapped_text);
 #ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup();
+  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::NamedArgumentView);
 #endif
   auto bucket = checker_est_view_cache.views.find(hash);
   if (bucket == checker_est_view_cache.views.end()) return make_named_view();
@@ -11227,7 +11227,7 @@ class Checker {
   bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::SimpleCall);
 #endif
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
@@ -11280,7 +11280,7 @@ class Checker {
   bool tree_parse_member_call(const string& text, string& receiver, string& member,
                          vector<string>& args) const {
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::MemberCall);
 #endif
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
@@ -11361,7 +11361,7 @@ class Checker {
 
   vector<string> tree_split_top_level(const string& text, char delimiter) const {
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::TopLevelSplit);
 #endif
     auto found = top_level_parse_cache_.find(text);
     if (found != top_level_parse_cache_.end()) {
@@ -11392,7 +11392,7 @@ class Checker {
 
   string tree_strip_redundant_outer_parentheses(const string& text) const {
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::OuterParentheses);
 #endif
     auto found = outer_parentheses_parse_cache_.find(text);
     if (found != outer_parentheses_parse_cache_.end()) {
@@ -11439,7 +11439,7 @@ class Checker {
   std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::BinarySplit);
 #endif
     auto found = binary_parse_cache_.find(expression);
     if (found != binary_parse_cache_.end()) {
@@ -11451,7 +11451,7 @@ class Checker {
       }
     }
 #ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup();
+    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::BinaryOverflow);
 #endif
     auto overflow = binary_parse_cache_overflow_.find(expression);
     if (overflow != binary_parse_cache_overflow_.end()) {
@@ -26116,7 +26116,7 @@ class Checker {
         return std::nullopt;
       }
 #ifdef MOSS_TEST_BUILD
-      est::record_expression_text_cache_lookup();
+      est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::PipelineHandle);
 #endif
       const auto source_fingerprint = est::fingerprint(std::string(source));
       for (const auto& handle : *handles)

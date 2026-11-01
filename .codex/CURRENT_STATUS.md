@@ -13785,3 +13785,15 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   consultations are 25,216 (baseline 26,775), checker parses remain 44.
   `functional_basics.moss` remains at 15,486 consultations / 121 checker parses.
   Full suites and performance remain pending.
+
+## Phase 27.5.4 cache-site breakdown checkpoint (2026-10-31)
+
+- The opt-in test-build cache counter now reports consultations by site, in
+  addition to a total. `functional_basics.moss`: total 15,486, split as
+  EST-view-entry=4,565, EST-view=3,960, named-argument-view=326, simple-call=916,
+  member-call=631, top-level-split=12, outer-parentheses=1,040,
+  binary-split=3,710, binary-overflow=326, pipeline-handle=0. This narrows the
+  next migration targets to text-based EST query helpers and inference's binary
+  and grouping calls. The text-cache K2 target remains zero.
+- `check_phase27_est_coverage.py` passes with test/dev and optimized binaries;
+  it confirms counters are opt-in/test-only/output-neutral. No full suite/perf.

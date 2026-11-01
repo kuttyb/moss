@@ -287,6 +287,9 @@ std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
 std::uint64_t expression_text_lookup_count = 0;
 std::uint64_t expression_text_cache_lookup_count = 0;
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionTextCacheSite::Count)>
+    expression_text_cache_lookup_counts{};
 std::array<std::uint64_t, 6> expression_text_parse_counts{};
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
@@ -347,11 +350,12 @@ ExpressionParseSiteScope::~ExpressionParseSiteScope() {
   active_expression_parse_site = previous_;
 }
 
-void record_expression_text_cache_lookup() noexcept {
+void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept {
   if (!test_coverage_counters_enabled()) return;
   try {
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_text_cache_lookup_count;
+    ++expression_text_cache_lookup_counts[static_cast<std::size_t>(site)];
   } catch (...) {
   }
 }
@@ -384,6 +388,16 @@ void report_test_coverage_counters() {
             << expression_text_lookup_count << '\n';
   std::cerr << "MOSS_EST_TEXT_CACHE_LOOKUPS="
             << expression_text_cache_lookup_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_CACHE_LOOKUPS_BY_SITE";
+  static constexpr std::array<std::string_view,
+      static_cast<std::size_t>(ExpressionTextCacheSite::Count)> cache_site_names{
+      "est_view_entry", "est_view", "named_argument_view", "simple_call",
+      "member_call", "top_level_split", "outer_parentheses", "binary_split",
+      "binary_overflow", "pipeline_handle"};
+  for (std::size_t index = 0; index < cache_site_names.size(); ++index)
+    std::cerr << ' ' << cache_site_names[index] << '='
+              << expression_text_cache_lookup_counts[index];
+  std::cerr << '\n';
   const auto checker_body_parses = expression_text_parse_counts[
       static_cast<std::size_t>(ExpressionParseSite::Checker)];
   const auto checker_view_parses = expression_text_parse_counts[

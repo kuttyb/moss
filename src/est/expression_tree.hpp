@@ -290,6 +290,11 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
 enum class ExpressionParseSite : std::uint8_t {
   InitialSource, Checker, CheckerView, CheckerPipeline, Consumer, Other
 };
+enum class ExpressionTextCacheSite : std::uint8_t {
+  EstViewEntry, EstView, NamedArgumentView, SimpleCall, MemberCall,
+  TopLevelSplit, OuterParentheses, BinarySplit, BinaryOverflow, PipelineHandle,
+  Count
+};
 class ExpressionParseSiteScope {
  public:
   explicit ExpressionParseSiteScope(ExpressionParseSite site) noexcept;
@@ -300,7 +305,7 @@ class ExpressionParseSiteScope {
   ExpressionParseSite previous_;
 };
 void record_expression_text_parse() noexcept;
-void record_expression_text_cache_lookup() noexcept;
+void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept;
 void record_expression_tree_rebuild() noexcept;
 void record_expression_text_lookup() noexcept;
 #endif
