@@ -1423,6 +1423,30 @@ class Generator {
     return syntax && est::expression_mentions(*syntax, identifier);
   }
 
+  bool tree_expression_mentions_identifier(
+      const EmitterExpr& expression, const string& identifier) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::expression_mentions(view, identifier);
+  }
+
+  bool tree_expressions_equal(const EmitterExpr& left,
+                              const EmitterExpr& right) const {
+    if (!left.arena || !right.arena) return false;
+    est::ExpressionView left_view{nullptr, left.arena, left.id, left.text()};
+    est::ExpressionView right_view{nullptr, right.arena, right.id,
+                                   right.text()};
+    return est::expressions_equal(left_view, right_view);
+  }
+
+  bool is_pure_state_read_expression(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    return !std::holds_alternative<est::Call>(expression.arena->at(root)) &&
+        !std::holds_alternative<est::Message>(expression.arena->at(root));
+  }
+
   std::optional<vector<string>> parsed_type_arguments(
       const string& type) const {
     auto parsed = Type::parse_canonical(type);
@@ -1638,6 +1662,28 @@ class Generator {
     return rendered;
   }
 
+  string nominal_domain_handle_argument(
+      const EmitterExpr& expression, const string& type, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      size_t functional_pipeline_id = 0) const {
+    string rendered = expr(expression, d, locals, types,
+                           functional_pipeline_id);
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    const string nominal = canonical_type_name(type);
+    if (identifier && types && domains_.count(nominal)) {
+      auto identity = domain_instance_bindings_.find(identifier->name);
+      if (identity != domain_instance_bindings_.end() &&
+          identity->second.source_domain == nominal &&
+          is_domain_specialization_instance(nominal,
+                                            identity->second.instance))
+        rendered = nominal + "Handle::from(" + rendered + ")";
+    }
+    return rendered;
+  }
+
   // key-protocol-v1 scalar operations lowered to the exact Moss operation
   // for the statically known type; no Rust trait or adapter is involved.
   static string scalar_protocol_rust(const string& op, const string& type,
@@ -1793,31 +1839,56 @@ class Generator {
                                 const std::set<string>& locals,
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0,
-                                const FunctionSpecialization* specialization = nullptr) const {
+                                const FunctionSpecialization* specialization = nullptr,
+                                const EmitterExpr* checked_expression = nullptr) const {
     if (index >= function.params.size())
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
-    string actual_type = generated_expr_type(argument, types).value_or("");
+    string actual_type = (checked_expression
+        ? generated_expr_type(*checked_expression, types)
+        : generated_expr_type(argument, types)).value_or("");
     auto abi = function_parameter_abi(function, index, actual_type, specialization);
     Effect effect = abi.effect;
-    const auto argument_binding = tree_identifier_name(argument);
+    auto argument_binding = checked_expression && checked_expression->arena
+        ? [&]() -> std::optional<string> {
+            const auto root = est::unparenthesized(*checked_expression->arena,
+                                                    checked_expression->id);
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &checked_expression->arena->at(root)))
+              return identifier->name;
+            return std::nullopt;
+          }()
+        : tree_identifier_name(argument);
+    const bool checked_identifier = checked_expression &&
+        checked_expression->arena && argument_binding.has_value();
     if (effect == Effect::Consume &&
         argument_binding && phase21_option_slots_.count(*argument_binding))
       return "__moss_recovery_slot_" + *argument_binding +
           ".take().unwrap_or_else(|| std::process::abort())";
-    string rendered = nominal_domain_handle_argument(
-        argument, function.params[index].type, d, locals, types,
-        functional_pipeline_id);
+    string rendered = checked_expression
+        ? nominal_domain_handle_argument(*checked_expression,
+              function.params[index].type, d, locals, types,
+              functional_pipeline_id)
+        : nominal_domain_handle_argument(argument, function.params[index].type,
+              d, locals, types, functional_pipeline_id);
     if (abi.passing == ParameterPassingMode::Value) return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
     // Preserve that borrow when handing it to a READ helper. Object payloads
     // retain the extra reference below because view helpers take
     // `&impl MossAccess_T`.
-    if (effect == Effect::Read && borrowed_message_parameter(argument) &&
+    if (effect == Effect::Read &&
+        (argument_binding
+             ? borrowed_message_parameters_.count(*argument_binding) != 0
+             : borrowed_message_parameter(argument)) &&
         !view_object_type(actual_type))
       return rendered;
-    if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
-    return "&(" + read_call_place(argument, d, locals, types) + ")";
+    if (effect == Effect::Write)
+      return "&mut (" + (checked_identifier
+          ? place_expr(*checked_expression, d, locals, types)
+          : write_call_place(argument, d, locals, types)) + ")";
+    return "&(" + (checked_identifier
+        ? expr(*checked_expression, d, locals, types)
+        : read_call_place(argument, d, locals, types)) + ")";
   }
 
   string method_call_argument(const Method& method, size_t index,
@@ -2699,7 +2770,14 @@ class Generator {
         if (function_effect(function, write_index,
                 argument_type(write_index).value_or(""), specialization)
             != Effect::Write) continue;
-        string written = trim(arguments[write_index]);
+        const auto* written_identifier = argument_nodes &&
+                write_index < argument_nodes->size()
+            ? std::get_if<est::Identifier>(&argument_nodes->at(write_index).arena->at(
+                  est::unparenthesized(*argument_nodes->at(write_index).arena,
+                                       argument_nodes->at(write_index).id)))
+            : nullptr;
+        string written = written_identifier ? written_identifier->name
+                                             : trim(arguments[write_index]);
         bool writes_direct_field = !locals.count(written) &&
             std::any_of(domain->state.begin(), domain->state.end(),
                         [&](const Field& field) { return field.name == written; });
@@ -2707,7 +2785,10 @@ class Generator {
         for (size_t read_index = write_index + 1;
              read_index < arguments.size() && read_index < function.params.size();
              ++read_index) {
-          if (!is_pure_state_read_expression(arguments[read_index]))
+          if (argument_nodes && read_index < argument_nodes->size()
+                  ? !is_pure_state_read_expression(
+                        argument_nodes->at(read_index))
+                  : !is_pure_state_read_expression(arguments[read_index]))
             continue;
           auto checked_argument_type = argument_type(read_index);
           if (!checked_argument_type || !copy_type(*checked_argument_type))
@@ -2715,7 +2796,11 @@ class Generator {
           bool reads_sibling = false;
           for (const auto& field : domain->state) {
             if (field.name != written &&
-                tree_expression_mentions_identifier(arguments[read_index], field.name)) {
+                (argument_nodes && read_index < argument_nodes->size()
+                    ? tree_expression_mentions_identifier(
+                          argument_nodes->at(read_index), field.name)
+                    : tree_expression_mentions_identifier(
+                          arguments[read_index], field.name))) {
               reads_sibling = true;
               break;
             }
@@ -2732,7 +2817,12 @@ class Generator {
     auto nested_occurrence = [&](size_t index) {
       uint32_t occurrence = 0;
       for (size_t prior = 0; prior < index; ++prior)
-        if (tree_expressions_equal(arguments[prior], arguments[index])) ++occurrence;
+        if (argument_nodes && prior < argument_nodes->size() &&
+            index < argument_nodes->size()
+                ? tree_expressions_equal(argument_nodes->at(prior),
+                                         argument_nodes->at(index))
+                : tree_expressions_equal(arguments[prior], arguments[index]))
+          ++occurrence;
       return occurrence;
     };
     struct NestedArgumentScope {
@@ -2753,7 +2843,9 @@ class Generator {
       {
         string rendered = temporaries[index].empty()
             ? function_call_argument(function, index, arguments[index], domain,
-                                     locals, types, 0, specialization)
+                                     locals, types, 0, specialization,
+                                     argument_nodes && index < argument_nodes->size()
+                                         ? &argument_nodes->at(index) : nullptr)
             : temporaries[index];
         if (cross_crate && index < function.params.size() &&
             !standard_error_variants(
@@ -2840,7 +2932,10 @@ class Generator {
         NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                          nested_occurrence(index));
         lowered << "let " << temporaries[index] << " = "
-                << expr(arguments[index], domain, locals, types) << "; ";
+                << (argument_nodes && index < argument_nodes->size()
+                        ? expr(argument_nodes->at(index), domain, locals, types)
+                        : expr(arguments[index], domain, locals, types))
+                << "; ";
       }
     lowered << call.str() << " }";
     return lowered.str();

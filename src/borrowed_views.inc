@@ -64,6 +64,15 @@
     return result;
   }
 
+  string place_expr(const EmitterExpr& expression, const Domain* d,
+                    const std::set<string>& locals,
+                    const std::unordered_map<string,string>* types) const {
+    bool saved = mutable_projection_; mutable_projection_ = true;
+    string result = expr(expression, d, locals, types);
+    mutable_projection_ = saved;
+    return result;
+  }
+
   bool is_object_view(const string& expression, const Domain* d, const std::set<string>& locals,
                       const std::unordered_map<string,string>* types) const {
     return view_object_type(generated_expr_type(expression, types).value_or("")) &&

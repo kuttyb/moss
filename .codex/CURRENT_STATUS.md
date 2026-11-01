@@ -14795,3 +14795,16 @@ object pipeline `5844/3060/0 -> 2622/2078/0`. Both binaries succeeded for all
 commands. Four targeted fixtures remain parent-identical in Rust, compile, and
 match Fast Debug/native. The four-class hook harness passes all three engines.
 Counts remain nonzero; no full/perf suites yet.
+
+### Phase 27.5.4 C2 checkpoint — typed argument place lowering (2026-11-01)
+
+Known-function argument lowering now uses retained ExprIds for state-read
+classification, sibling-field references, nested-call occurrence equality,
+domain-handle adaptation, and simple identifier read/write places. Four
+targeted sources (Phase 4, Phase 5, functional objects, object pipeline) still
+check, produce byte-identical Rust versus c96, compile, and match Fast
+Debug/native. Paired default/`-O` counts (lookups / expression-view reparses /
+pipeline reparses): Phase 5 `4312/2164/0 -> 2126/1076/0`; Phase 4
+`1686/882/0 -> 726/338/0`; functional objects `5287/2941/0 -> 3145/1929/0`;
+object pipeline `5844/3060/0 -> 2622/2078/0`. Full consumer counts and suites
+remain pending; no performance run.
