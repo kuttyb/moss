@@ -4139,6 +4139,84 @@ class Generator {
                 expression.arena->at(call->arguments.front())))
           return "Some(" + expr(expression.child(call->arguments.front()),
                                   d, locals, types) + ")";
+        vector<EmitterExpr> builtin_arguments;
+        for (const auto argument_id : call->arguments) {
+          if (std::holds_alternative<est::NamedArgument>(
+                  expression.arena->at(argument_id))) {
+            builtin_arguments.clear();
+            break;
+          }
+          builtin_arguments.push_back(expression.child(argument_id));
+        }
+        if (!functions_.count(callee->name)) {
+          auto builtin_arg = [&](size_t index) {
+            return expr(builtin_arguments.at(index), d, locals, types);
+          };
+          if (callee->name == "sqrt" && builtin_arguments.size() == 1)
+            return "{ let __moss_sqrt_value: f64 = " + builtin_arg(0) +
+                "; __moss_sqrt_value.sqrt() }";
+          if ((callee->name == "is_nan" || callee->name == "is_finite") &&
+              builtin_arguments.size() == 1)
+            return "{ let __moss_float_value: f64 = " + builtin_arg(0) +
+                "; __moss_float_value." + callee->name + "() }";
+          const std::string_view numeric_name =
+              numeric_builtin_base(callee->name);
+          if (!numeric_name.empty() && builtin_arguments.size() == 1) {
+            if (!phase21_result_context_)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT numeric raise lacks outcome context");
+            const string error_type = numeric_builtin_error_type(callee->name);
+            const string invalid = numeric_name == "to_int" ? "NonFinite" : "Invalid";
+            const string overflow = "Overflow";
+            const string first_variant = phase21_rust_variant(
+                RaisedIdentity::enum_variant(error_type, invalid));
+            const string second_variant = phase21_rust_variant(
+                RaisedIdentity::enum_variant(error_type, overflow));
+            const string call_expression = "__moss_" + string(numeric_name) +
+                "(" + builtin_arg(0) +
+                (numeric_name == "to_int" ? "" : ".as_str()") + ")";
+            string mapping = call_expression +
+                ".map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { "
+                "__MossRaised::" + first_variant + "(" + error_type + "::" +
+                invalid + ") } else { __MossRaised::" + second_variant + "(" +
+                error_type + "::" + overflow + ") })";
+            if (numeric_name == "parse_float")
+              mapping = call_expression + ".map_err(|_| __MossRaised::" +
+                  first_variant + "(" + error_type + "::" + invalid + "))";
+            return phase21_propagate(mapping);
+          }
+          if (callee->name == "sum" && builtin_arguments.size() == 1) {
+            auto argument_type = generated_expr_type(builtin_arguments.front(),
+                                                      types);
+            string element_type;
+            if (argument_type && starts_with(*argument_type, "vector[") &&
+                ends_with(*argument_type, "]"))
+              element_type = canonical_type_name(argument_type->substr(
+                  7, argument_type->size() - 8));
+            else if (argument_type && starts_with(*argument_type, "seq[") &&
+                     ends_with(*argument_type, "]"))
+              element_type = canonical_type_name(argument_type->substr(
+                  4, argument_type->size() - 5));
+            const string result = builtin_arg(0) + ".iter().copied()";
+            if (element_type == "int")
+              return result +
+                  ".fold(0_i64, |__moss_sum, __moss_value| "
+                  "__moss_sum.wrapping_add(__moss_value))";
+            return element_type.empty() ? result + ".sum()"
+                : result + ".sum::<" + rust_type(element_type) + ">()";
+          }
+          if (callee->name == "Char" && builtin_arguments.size() == 1)
+            return "__moss_char_from_codepoint(" + builtin_arg(0) + ")";
+          if ((callee->name == "less" || callee->name == "isequal") &&
+              builtin_arguments.size() == 2)
+            return scalar_protocol_rust(callee->name,
+                generated_expr_type(builtin_arguments[0], types).value_or(""),
+                builtin_arg(0), builtin_arg(1));
+          if (callee->name == "hash" && builtin_arguments.size() == 1)
+            return scalar_protocol_rust("hash",
+                generated_expr_type(builtin_arguments.front(), types).value_or(""),
+                builtin_arg(0));
+        }
         const string checker_context =
             !codegen_active_specialization_key_.empty()
                 ? "specialization:" + codegen_active_specialization_key_

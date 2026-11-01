@@ -142,3 +142,11 @@ selection uses node argument facts. A mini-application parity comparison
 caught an operator-precedence difference for a borrowed object receiver; the
 emitted receiver is now parenthesized and the focused default/`-O` parity
 comparison passes. These remain targeted samples, not the final workload.
+
+Common global builtins (`sqrt`, `is_nan`, `is_finite`, numeric conversions,
+`sum`, `Char`, and scalar less/equality/hash) now lower directly from retained
+Call argument nodes. On a temporary accepted `to_int`/`sum` probe, the parent
+measured 702 text lookups / 557 expression reparses in each profile; the
+candidate measured 132 / 125. Default and `-O` generated Rust is byte-identical
+to c96, compiles, and runs with output `3`. The temporary source is under
+`tmp/`, not registered as a suite fixture.

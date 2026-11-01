@@ -15056,3 +15056,14 @@ index, and mini application; default plus `-O`) are parent 23,204 text lookups
 Rust is byte-identical for all four in both modes. The three-engine gate passes.
 The to_int helper-discovery probe also remains accepted, compiles, and runs with
 identical generated Rust. Full C2 suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — common global builtins lower from Call nodes (2026-11-01)
+
+The retained Call path now lowers `sqrt`, `is_nan`, `is_finite`, numeric
+conversions, `sum`, `Char`, and scalar `less`/`isequal`/`hash` directly from
+argument ExprIds. A temporary accepted fixture with `to_int` and `sum` passes
+`moss check`, generates Rust byte-identical to c96 in default and `-O`,
+compiles, and prints `3`. Its counters fall from 702 text lookups / 557
+expression-view reparses on c96 to 132 / 125 on the candidate, in both modes.
+The registered hook matrix and three-engine conformance gate pass. Full suites
+and performance remain pending.
