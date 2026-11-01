@@ -1263,6 +1263,18 @@ class Generator {
         ? std::optional<string>(std::move(canonical)) : std::nullopt;
   }
 
+  std::optional<string> tree_empty_typed_vector_constructor(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    auto type = est::project_empty_constructor_type(view);
+    if (!type) return std::nullopt;
+    string canonical = canonical_type_name(*type);
+    return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+        ? std::optional<string>(std::move(canonical)) : std::nullopt;
+  }
+
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
@@ -6669,7 +6681,8 @@ class Generator {
         return *functional;
     e = tree_normalize_pipeline(std::move(e));
     // Minimal surface rewrites.
-    const auto literal = tree_literal_class(e);
+    const auto literal = checked_node ? tree_literal_class(*checked_node)
+                                      : tree_literal_class(e);
     if (literal == est::LiteralClass::Boolean) return e;
     if (tree_identifier_name(e) == std::optional<string>("None")) return "None";
     // Numeric literals are emitted from the shared decoder's value as a
@@ -6681,7 +6694,10 @@ class Generator {
       throw std::runtime_error("internal error: numeric literal '" + e +
                                "' was not validated by the lexer");
     }
-    if (auto typed_vector = tree_empty_typed_vector_constructor(e)) {
+    auto typed_vector = checked_node
+        ? tree_empty_typed_vector_constructor(*checked_node)
+        : tree_empty_typed_vector_constructor(e);
+    if (typed_vector) {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
@@ -6918,9 +6934,11 @@ class Generator {
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
-    if (tree_literal_class(e) == est::LiteralClass::String)
+    if ((checked_node ? tree_literal_class(*checked_node)
+                      : tree_literal_class(e)) == est::LiteralClass::String)
       return "MossStr::from(" + e + ")";
-    if (tree_literal_class(e) == est::LiteralClass::Character)
+    if ((checked_node ? tree_literal_class(*checked_node)
+                      : tree_literal_class(e)) == est::LiteralClass::Character)
       return e;
     if (auto parts = parse_root_vector()) {
       std::ostringstream r; r << "vec![";
