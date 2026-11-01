@@ -15005,3 +15005,17 @@ perturb/drop harness pass. Paired seven-source counters did not change from the
 prior measurement (parent 44,723 / 24,163; candidate 24,139 / 14,227), so this
 slice is recorded as parity-preserving but not yet demonstrated to reduce the
 measured reparse workload. Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked function arguments stay as ExprIds (2026-11-01)
+
+Known-function call rendering now selects view wrappers and checks argument
+parameter effects from the retained argument nodes. Static specialization
+selection still consults the checked call edge first; only ambiguous/no-edge
+cases use the existing compatibility derivation. This removes repeated source
+lookups for the normal unique-edge argument path.
+
+On the same seven-source/default-plus-`-O` sample, parent remains 44,723 text
+lookups / 24,163 expression-view reparses. Candidate fell from 24,139 / 14,227
+to 22,951 / 13,885. Generated Rust stayed byte-identical on all seven
+fixtures in both modes. The three-engine gate and four-class perturb/drop
+harness pass. Full workload counts, suites and performance remain pending.

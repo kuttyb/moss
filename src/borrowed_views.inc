@@ -183,6 +183,27 @@
     return emitted;
   }
 
+  string viewed_function_name(const Function& function,
+      const vector<EmitterExpr>& args, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    vector<string> source_args;
+    source_args.reserve(args.size());
+    for (const auto& argument : args) source_args.push_back(argument.text());
+    const auto* specialization = function.static_dispatch
+        ? call_specialization(function, source_args, types) : nullptr;
+    string emitted = specialization ? specialization->generated_name
+                                    : function.name;
+    for (size_t index = 0; index < args.size(); ++index) {
+      const string type = generated_expr_type(args[index], types).value_or("");
+      if (function_effect(function, index, type, specialization) !=
+              Effect::Consume &&
+          is_object_view(args[index], d, locals, types))
+        return "__moss_view_" + emitted;
+    }
+    return emitted;
+  }
+
   string method_receiver_place(const string& receiver, const string& name, const vector<string>& args,
       const Domain* d, const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
     auto type = generated_expr_type(receiver, types);

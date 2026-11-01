@@ -2896,7 +2896,11 @@ class Generator {
     }
 
     std::ostringstream call;
-    call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    const string emitted_name = argument_nodes &&
+            argument_nodes->size() == arguments.size()
+        ? viewed_function_name(function, *argument_nodes, domain, locals, types)
+        : viewed_function_name(name, arguments, domain, locals, types);
+    call << emitted_name << "(";
     auto nested_occurrence = [&](size_t index) {
       uint32_t occurrence = 0;
       for (size_t prior = 0; prior < index; ++prior)
