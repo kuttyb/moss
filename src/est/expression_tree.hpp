@@ -288,7 +288,7 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint32_t argument_index, const std::string& new_text);
 #ifdef MOSS_TEST_BUILD
 enum class ExpressionParseSite : std::uint8_t {
-  InitialSource, Checker, Consumer, Other
+  InitialSource, Checker, CheckerView, CheckerPipeline, Consumer, Other
 };
 class ExpressionParseSiteScope {
  public:

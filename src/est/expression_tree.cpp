@@ -286,7 +286,7 @@ std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
 std::uint64_t expression_text_lookup_count = 0;
-std::array<std::uint64_t, 4> expression_text_parse_counts{};
+std::array<std::uint64_t, 6> expression_text_parse_counts{};
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
@@ -372,8 +372,14 @@ void report_test_coverage_counters() {
             << expression_tree_rebuild_count << '\n';
   std::cerr << "MOSS_EST_TEXT_NODE_LOOKUPS="
             << expression_text_lookup_count << '\n';
-  const auto checker_parses = expression_text_parse_counts[
+  const auto checker_body_parses = expression_text_parse_counts[
       static_cast<std::size_t>(ExpressionParseSite::Checker)];
+  const auto checker_view_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::CheckerView)];
+  const auto checker_pipeline_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::CheckerPipeline)];
+  const auto checker_parses = checker_body_parses + checker_view_parses +
+      checker_pipeline_parses;
   const auto consumer_parses = expression_text_parse_counts[
       static_cast<std::size_t>(ExpressionParseSite::Consumer)];
   const auto other_parses = expression_text_parse_counts[
@@ -382,6 +388,9 @@ void report_test_coverage_counters() {
             << expression_text_parse_counts[static_cast<std::size_t>(
                    ExpressionParseSite::InitialSource)]
             << " checker=" << checker_parses
+            << " checker_body=" << checker_body_parses
+            << " checker_view=" << checker_view_parses
+            << " checker_pipeline=" << checker_pipeline_parses
             << " consumer=" << consumer_parses
             << " other=" << other_parses
             << " post_initial=" << checker_parses + consumer_parses + other_parses

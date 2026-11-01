@@ -452,7 +452,7 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
     std::string_view source) {
 #ifdef MOSS_TEST_BUILD
   moss::est::ExpressionParseSiteScope parse_site(
-      moss::est::ExpressionParseSite::Checker);
+      moss::est::ExpressionParseSite::CheckerView);
 #endif
   const size_t hash = std::hash<std::string_view>{}(source);
   auto found = checker_est_view_cache.views.find(hash);
@@ -26041,7 +26041,7 @@ class Checker {
       const std::vector<est::Handle>* handles = nullptr,
       std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) const {
 #ifdef MOSS_TEST_BUILD
-    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Checker);
+    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::CheckerPipeline);
 #endif
     if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
