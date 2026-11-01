@@ -1114,10 +1114,24 @@ class Generator {
     return est::project_identifier(*syntax, name);
   }
 
+  bool tree_plain_identifier(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    return std::holds_alternative<est::Identifier>(expression.arena->at(
+        est::unparenthesized(*expression.arena, expression.id)));
+  }
+
   bool tree_empty_constructor_named(std::string_view expression,
                                     std::string_view name) const {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::empty_constructor_named(*syntax, name);
+  }
+
+  bool tree_empty_constructor_named(const EmitterExpr& expression,
+                                    std::string_view name) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::empty_constructor_named(view, name);
   }
 
   bool tree_empty_vector_literal(std::string_view expression) const {
@@ -1196,6 +1210,13 @@ class Generator {
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
   }
 
+  est::LiteralClass tree_literal_class(const EmitterExpr& expression) const {
+    if (!expression.arena) return est::LiteralClass::None;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::root_literal_class(view);
+  }
+
   bool tree_decimal_integer_literal(std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::decimal_integer_literal(*syntax, true, false);
@@ -1226,6 +1247,16 @@ class Generator {
     string name;
     return est::project_identifier(*syntax, name)
         ? std::optional<string>(std::move(name)) : std::nullopt;
+  }
+
+  std::optional<string> tree_identifier_name(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(root)))
+      return identifier->name;
+    return std::nullopt;
   }
 
   bool tree_expressions_equal(std::string_view left,
@@ -1353,6 +1384,17 @@ class Generator {
                         string& index) const {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::project_index(*syntax, base, index);
+  }
+
+  bool tree_parse_index(const EmitterExpr& expression, EmitterExpr& base,
+                        EmitterExpr& index) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* node = std::get_if<est::Index>(&expression.arena->at(root));
+    if (!node) return false;
+    base = expression.child(node->base);
+    index = expression.child(node->index);
+    return true;
   }
 
   bool tree_parse_named_argument(const string& expression, string& name,
@@ -8659,10 +8701,11 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          const EmitterExpr checked_rhs = checked_expression_ref(
+              s, s.b, est::ExprSlot::RhsValue);
           if (s.a == "_") {
             o << indent(level) << "let _ = "
-              << expr(checked_expression_ref(s.b, est::ExprSlot::RhsValue),
-                      d, locals, &types,
+              << expr(checked_rhs, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
@@ -8671,8 +8714,7 @@ class Generator {
           }
           if (phase21_option_slots_.count(s.a)) {
             o << indent(level) << "__moss_recovery_slot_" << s.a
-              << " = Some(" << expr(checked_expression_ref(
-                     s.b, est::ExprSlot::RhsValue), d, locals, &types,
+              << " = Some(" << expr(checked_rhs, d, locals, &types,
                      statement_functional_pipeline_id(
                          s, functional_context, 0)) << ");\n";
             ++i;
@@ -8741,7 +8783,7 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
             string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+            if (staged_abi_v10() && tree_empty_constructor_named(checked_rhs, "Map") &&
                 !starts_with(statement_type, "map[")) {
               // A bare Map constructor has no intrinsic element types. The
               // checked body may close it at a later indexed assignment;
@@ -8768,15 +8810,14 @@ class Generator {
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
-              << expr(checked_expression_ref(s.b, est::ExprSlot::RhsValue),
-                      d, locals, &types,
+              << expr(checked_rhs, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
             locals.insert(s.a);
             types[s.a] = !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
-            const auto source_name = tree_identifier_name(s.b);
+            const auto source_name = tree_identifier_name(checked_rhs);
             auto source_binding = source_name
                 ? domain_instance_bindings_.find(*source_name)
                 : domain_instance_bindings_.end();
@@ -8805,10 +8846,9 @@ class Generator {
               else if (key_type && !copy_type(*key_type) &&
                   !string_key)
                 key = "(" + key + ").clone()";
-              string inserted = expr(checked_expression_ref(
-                  s.b, est::ExprSlot::RhsValue), d, locals, &types,
+              string inserted = expr(checked_rhs, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
-              const auto source_binding = tree_identifier_name(s.b);
+              const auto source_binding = tree_identifier_name(checked_rhs);
               if (source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 inserted = "(" + inserted + ").clone()";
@@ -8828,8 +8868,7 @@ class Generator {
             }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(
-                  checked_expression_ref(s.b, est::ExprSlot::RhsValue),
-                  d, locals, &types,
+                  checked_rhs, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0))
                   << ");\n";
             else {

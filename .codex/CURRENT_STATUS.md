@@ -15355,6 +15355,19 @@ suite, paired corpus recount, parity gate, performance run or Agent 2 review
 has run for this state. Next continue C2 consumer migrations and fact hooks,
 then repeat the paired corpus measurement before final gates.
 
+### C2 assignment RHS handle checkpoint (2026-11-01)
+
+Added node overloads for identifier, literal, empty-constructor and index
+shape queries, and routed assignment RHS lowering through its statement-owned
+checked handle. On `examples/functional_semantic_optimization.moss -O`, this
+reduced lookups 991 -> 986 but expression-view reparses remained 758, so the
+change does not materially reduce the broad reparse debt. Six targeted
+assignment/collection fixtures compiled in default and `-O`; the 30-fixture
+optimized functional set, four-class perturb/drop hook harness, and three-
+engine check all pass. This slice is uncommitted. Next migrate expression
+consumers that still receive child fragments as strings, then rerun paired
+corpus counts near completion.
+
 Validation after this correction: build passed; `check_phase27_est_functional_tree.py`,
 `check_phase27_5_4_fact_hooks.py` (targets 5, specializations 4, joins 4,
 patterns 3), and `check_phase27_three_engine.py` passed. The earlier first

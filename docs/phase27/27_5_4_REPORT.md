@@ -391,3 +391,12 @@ lowering. On the same GraphKit default command, text lookups/reparses fell
 38,180/9,580 -> 37,596/8,996 with unchanged runtime output and no node fallback
 events. This remains a targeted improvement only; the corpus still has
 unmigrated emitter type/string consumers.
+
+Assignment RHS shape queries now have direct retained-node overloads for
+identifier, literal, empty-constructor and index nodes. A targeted
+`functional_semantic_optimization.moss -O` command decreased text lookups
+991 -> 986 while reparses remained 758, showing that other string-fragment
+consumers dominate this fixture's reparse count. Six assignment/collection
+fixtures compiled in default and `-O`; the optimized functional 30-fixture
+set, fact-hook matrix and three-engine fixture passed. Full C2 gates remain
+pending.
