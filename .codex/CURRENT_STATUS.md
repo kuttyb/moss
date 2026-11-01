@@ -15,6 +15,11 @@
   before removing Fast Debug reparsing fallbacks.
 - No Phase 27.5.4 tests, corpus measurements, full suites, perf runs, or Agent 2
   audits have run. Do not treat earlier phase results as current validation.
+- Focused baseline emit on `tests/phase27/est/specialized_call_facts.moss`
+  succeeded. With `MOSS_EST_COVERAGE_STATS=1`, it reported 2,681 native
+  expression-view reparses, 0 native pipeline reparses, and generated type
+  facts: calls 2 PRESENT/16 ABSENT, constructors 0/10, identifiers 0/68,
+  literals 0/44. This is a single-fixture baseline, not a corpus KPI result.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 
