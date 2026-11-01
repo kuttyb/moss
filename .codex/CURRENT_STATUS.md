@@ -14425,3 +14425,23 @@ string-debt `--require-zero fast_debug`, targeted three-engine parity, and
 all perturb/drop hooks pass. The five-job cluster is therefore resolved in
 focused tests. The first full run did not reach the shadow suite. A fresh
 full default+shadow gate is still required before C1 audit/merge.
+
+### Phase 27.5.4 C1 full-suite checkpoint
+
+Fixed candidate `6a7d24ba` passes `make --jobs="$(nproc)" check` in both
+modes. The final log is `tmp/phase2754-c1-final-check.log`: pre-suite EST,
+coverage, Fast Debug checked-tree/parity, string-debt and fact-hook checks
+pass; default suite is 165/165; shadow suite is 165/165. The 165-job suites
+include `check_phase27_three_engine`, Phase 26 package/semantic gates, Phase
+25/SDK tests, the Fast Debug shard and performance-baseline regression gate.
+The separate targeted Fast Debug/native/optimized parity harness, three
+accepted-fixture perturb/drop checks per class in both modes, and non-test
+compiler hook-ignore checks also pass. The first failed post-hook run was
+160/165; its five Fast Debug Identifier failures were fixed and all five
+corresponding jobs pass in this full run.
+
+Next: Agent 2 selects and tests one additional fixture per required fact class,
+audits C1's Fast Debug no-reparse/text-lookup boundary and fallback deletion,
+and spot-checks three parity results. If GO, fetch current `origin/main`,
+merge C1 with first parent at that tip, tag `phase27-5-4-c1`, and add the
+Phase 27.5.4 C1 delivery entry. C2 has not started.
