@@ -14165,3 +14165,22 @@ scoped `MOSS_EST_EFFECT_FACT` for `tests/phase27/est/side_facts.moss` and passes
 empty-slot source selection while effect analysis still requested that slot.
 The root slot is now derived from the active statement kind, and the targeted
 harness passes on `48a00319`.
+
+### Phase 27.5.4 ASan checkpoint (2026-10-31)
+
+Ran `make --jobs="$(nproc)"` `check` once with the dev build compiled and linked
+using Clang AddressSanitizer + UndefinedBehaviorSanitizer. The gate failed; do
+not count it as suite PASS. The run emitted no `ERROR: AddressSanitizer`,
+UBSan `runtime error`, or ASan deadly-signal marker. It did expose current
+branch fail-closed errors in existing fixtures: the generic helper source
+`tests/tooling/phase20_review/probes/guard_generic_string_native.moss` fails
+checking with `MOSS_INTERNAL_INVARIANT checked binary child source missing
+line=2`, and `tests/swarm_044_typed_string_map_index.moss` fails Fast Debug
+with `MOSS_INTERNAL_INVARIANT missing checked expression node` for
+`lookup.read("alpha")`. These reproduce with the regular `./moss` too, so they
+are not sanitizer-only findings and require diagnosis. The run also had
+sanitizer-overhead performance trips/timeouts and nested Rust build jobserver
+warnings due inherited MAKEFLAGS; those do not establish compiler semantic or
+memory-safety defects. No changes were made in response yet. The earlier
+numeric-member ASan/UBSan diagnosis remains stack overflow at the old malformed
+member recursion site, not a vector-reference use-after-free.
