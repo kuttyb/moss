@@ -6126,6 +6126,12 @@ class Generator {
               expr(expression.child(call->arguments[1]), d, locals, types) +
               ")";
         }
+        if (target == "builtin-fileio:chunks" &&
+            member->name == "chunks" && call->arguments.size() == 1) {
+          return "(" + expr(member_receiver, d, locals, types) + ").chunks(" +
+              expr(expression.child(call->arguments.front()), d, locals,
+                   types) + ")";
+        }
         if (target == "builtin-fileio:read" &&
             member->name == "read" && call->arguments.size() == 2) {
           const string rendered = expr(member_receiver, d, locals, types) +
