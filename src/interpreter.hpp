@@ -806,7 +806,12 @@ class FastInterpreter {
       std::string_view source) const {
     auto tree = expression_tree(source, "expression_member");
     if (!tree) return std::nullopt;
-    const auto& root = tree->arena->at(tree->root);
+    return expression_member(*tree, tree->root);
+  }
+
+  std::optional<std::pair<std::string, std::string>> expression_member(
+      const ExpressionTreeView& tree, est::ExprId root_id) const {
+    const auto& root = tree.arena->at(root_id);
     const est::Member* member = std::get_if<est::Member>(&root);
     const est::Call* call = std::get_if<est::Call>(&root);
     const est::Constructor* constructor =
@@ -821,20 +826,20 @@ class FastInterpreter {
       arguments = &constructor->arguments;
     }
     if (!member && (call || constructor))
-      member = std::get_if<est::Member>(&tree->arena->at(member_callee));
+      member = std::get_if<est::Member>(&tree.arena->at(member_callee));
     if (!member) return std::nullopt;
     std::string suffix = member->name;
     if (arguments && member == std::get_if<est::Member>(&
-                                   tree->arena->at(member_callee))) {
+                                   tree.arena->at(member_callee))) {
       suffix += "(";
       for (std::size_t index = 0; index < arguments->size(); ++index) {
         if (index) suffix += ", ";
-        suffix += expression_node_text(*tree, arguments->at(index));
+        suffix += expression_node_text(tree, arguments->at(index));
       }
       suffix += ")";
     }
     return std::make_pair(
-        std::string(expression_node_text(*tree, member->base)),
+        std::string(expression_node_text(tree, member->base)),
         std::move(suffix));
   }
 
@@ -2049,7 +2054,7 @@ class FastInterpreter {
       }
     }
 
-    if (auto member = expression_member(e)) {
+    if (auto member = expression_member(*tree, current_root)) {
       const est::Member* member_node = nullptr;
       const std::vector<est::ExprId>* member_argument_nodes = nullptr;
       if (tree) {
@@ -3006,7 +3011,9 @@ class FastInterpreter {
         continue;
       }
       if (statement.kind == Stmt::Kind::Match) {
-        Value selected = evaluate_expression_source(statement.a, frame, statement.line, output);
+        Value selected = evaluate_expression_source(statement.a, frame,
+            statement.line, output,
+            std::pair{est::ExprSlot::Scrutinee, 0u});
         if (selected.kind != Value::Kind::Struct || !selected.object ||
             selected.object->case_name.empty())
           throw RuntimeError(statement.line, "match requires an enum value");
@@ -3094,7 +3101,9 @@ class FastInterpreter {
           while (else_end < end && statements[else_end].indent > statement.indent) ++else_end;
           after = else_end;
         }
-        bool condition = evaluate_expression_source(statement.a, frame, statement.line, output).truthy();
+        bool condition = evaluate_expression_source(statement.a, frame,
+            statement.line, output,
+            std::pair{est::ExprSlot::Condition, 0u}).truthy();
         int branch_id = emit("BranchTaken", frame, statement.line,
                              condition ? "then" : "else");
         Flow flow;
@@ -3118,7 +3127,8 @@ class FastInterpreter {
         // No interpreter-only iteration cap: a checked program must run the
         // same number of iterations as native code.
         uint64_t iterations = 0;
-        while (evaluate_expression_source(statement.a, frame, statement.line, output).truthy()) {
+        while (evaluate_expression_source(statement.a, frame, statement.line,
+                   output, std::pair{est::ExprSlot::Condition, 0u}).truthy()) {
           ++iterations;
           int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
           Flow flow;
@@ -3134,7 +3144,8 @@ class FastInterpreter {
       if (statement.kind == Stmt::Kind::For) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
-        auto iterable_tree = expression_tree(statement.b, "for_iterable");
+        auto iterable_tree = expression_tree(statement.b, "for_iterable",
+            std::pair{est::ExprSlot::Iterable, 0u});
         if (!iterable_tree)
           throw RuntimeError(statement.line,
               "MOSS_INTERNAL_INVARIANT missing checked for-iterable node");
@@ -3263,7 +3274,8 @@ class FastInterpreter {
           break;
         }
         case Stmt::Kind::Assign: {
-          auto target_tree = expression_tree(statement.a, "assignment_target");
+          auto target_tree = expression_tree(statement.a, "assignment_target",
+              std::pair{est::ExprSlot::LhsPlace, 0u});
           Value assigned = evaluate_expression_source(
               statement.b, frame, statement.line, output,
               std::pair{est::ExprSlot::RhsValue, 0u});
@@ -3278,7 +3290,10 @@ class FastInterpreter {
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
             if (i) output << " ";
-            output << echo_text(evaluate_expression_source(statement.args[i], frame, statement.line, output),
+            output << echo_text(evaluate_expression_source(statement.args[i],
+                                frame, statement.line, output,
+                                std::pair{est::ExprSlot::Argument,
+                                          static_cast<std::uint32_t>(i)}),
                                 statement.line);
           }
           output << "\n";
@@ -3286,13 +3301,16 @@ class FastInterpreter {
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
           if (!statement.text.empty())
-            evaluate_expression_source(statement.text, frame, statement.line, output);
+            evaluate_expression_source(statement.text, frame, statement.line,
+                output, std::pair{est::ExprSlot::Expression, 0u});
           break;
         case Stmt::Kind::Pass:
           break;
         case Stmt::Kind::Return:
           flow.returned = true;
-          flow.value = statement.a.empty() ? Value::unit() : evaluate_expression_source(statement.a, frame, statement.line, output);
+          flow.value = statement.a.empty() ? Value::unit()
+              : evaluate_expression_source(statement.a, frame, statement.line,
+                    output, std::pair{est::ExprSlot::ReturnValue, 0u});
           emit("Return", frame, statement.line, flow.value.display());
           return flow;
         case Stmt::Kind::Message: {
@@ -3331,7 +3349,9 @@ class FastInterpreter {
         }
         case Stmt::Kind::Reply:
           flow.returned = true;
-          flow.value = independent(evaluate_expression_source(statement.a, frame, statement.line, output));
+          flow.value = independent(evaluate_expression_source(statement.a,
+              frame, statement.line, output,
+              std::pair{est::ExprSlot::ReturnValue, 0u}));
           emit("reply", frame, statement.line, summary(flow.value));
           return flow;
         case Stmt::Kind::Raise: {
@@ -3344,7 +3364,8 @@ class FastInterpreter {
             throw selected_errors_.back();
           }
           Value value = independent(evaluate_expression_source(statement.a, frame,
-                                         statement.line, output));
+              statement.line, output,
+              std::pair{est::ExprSlot::RaisedValue, 0u}));
           RaisedIdentity identity;
           if (value.kind == Value::Kind::Struct && value.object &&
               !value.object->case_name.empty()) {

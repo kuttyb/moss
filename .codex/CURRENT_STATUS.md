@@ -1,7 +1,7 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed checkpoint is `b52466a9`; local Fast Debug node-handoff edits
-  are pending. Function constraint derivation receives exact handles for
+- Branch: `phase27-5-4-work`; latest pushed checkpoint is `d8002391`; local Fast Debug Phase 20 node-handoff
+  edits are pending. Function constraint derivation receives exact handles for
   function results, statement initializers/assignment values/iterables, and
   call/message arguments.
   `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
@@ -24,6 +24,16 @@
   remains accepted, and the domain-boundary negative remains rejected. Message argument validation
   now uses exact handles in all three checker passes. This focused route is not covered by the `functional_basics` counter, which stays
   at 15,160 cache consultations / 121 checker reparses.
+- Current uncommitted interpreter slice routes Phase 20 Executor/FileIO probes
+  through the statement ExprId, invokes executor messages from their checked
+  Message node, and evaluates executor configuration child nodes directly.
+  `functional_basics` Fast Debug node-text lookups are now **0** (were 6 after
+  the prior pushed initializer slice); consumer reparses remain 0. The checked
+  tree three-engine harness, six optimizer expression-use parity fixtures, and
+  `swarm_023_pipeline_context_identity` Fast Debug/native/-O output parity
+  pass. `tests/phase20_executor_basic.moss` still fails at line 12 with an
+  unchecked Executor callable both on pushed `d8002391` and on the release
+  binary, so this is recorded baseline debt.
 - Baseline evidence for the new Fast Debug fix: at pushed `b52466a9`,
   `tests/swarm_023_pipeline_context_identity.moss` failed at line 27 with
   `MOSS_INTERNAL_INVARIANT missing checked expression node source=Vector[Int]()`
