@@ -13774,3 +13774,14 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   16,593 baseline; checker reparses remain 121. K8 remains unchanged: the
   phase10 module fixture reports two expression-tree rebuilds. The previously
   measured corpus baseline is 10,095; corpus current count is not yet rerun.
+
+## Phase 27.5.4 named-argument node checkpoint (2026-10-31)
+
+- Enum payload field names, separators and values now come from the indexed
+  `NamedArgument` child node; enum value recursion selects that child by its
+  field role. Call-argument open-term extraction also reads the named node.
+- Shadow checks pass for `cp-e-phase27-3-rereview-parenthesized-enum.moss` and
+  `cp-e-rawshape-rerun/probe_vector_index.moss`. Specialized-call focused cache
+  consultations are 25,216 (baseline 26,775), checker parses remain 44.
+  `functional_basics.moss` remains at 15,486 consultations / 121 checker parses.
+  Full suites and performance remain pending.

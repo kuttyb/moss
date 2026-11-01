@@ -26625,6 +26625,36 @@ class Checker {
     return view;
   }
 
+  std::optional<est::ExpressionView> checked_expression_view(
+      const string& source) const {
+    if (auto active = active_expression_view()) return active;
+    auto parsed = checker_est_view(source);
+    return parsed ? std::optional<est::ExpressionView>(*parsed) : std::nullopt;
+  }
+
+  bool checked_expression_child_parse_index(std::string_view role,
+      const string& source, string& base, string& index) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& parent = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(parent.arena_index);
+      if (!arena) return false;
+      const auto child = expression_child_node(*arena, parent.expr, role);
+      if (!child) return false;
+      auto child_source = expression_child_source(parent, *child);
+      if (!child_source)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT checked index child source missing line=" +
+            std::to_string(arena->span(parent.expr).line));
+      est::ExpressionView view;
+      view.arena = arena;
+      view.root = *child;
+      view.source = std::move(*child_source);
+      return est::project_index(view, base, index);
+    }
+    return tree_parse_index(source, base, index);
+  }
+
   std::optional<std::vector<string>> checked_expression_vector_literal(
       const string& source) const {
     if (auto view = active_expression_view())
@@ -26644,6 +26674,35 @@ class Checker {
     if (auto view = active_expression_view())
       return est::project_member_access(*view, base, member);
     return tree_parse_member_access(source, base, member);
+  }
+
+  bool checked_expression_named_argument(std::size_t index,
+      string& name, string& value, char& separator) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return false;
+    const auto& cursor = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(cursor.arena_index);
+    if (!arena) return false;
+    const std::vector<est::ExprId>* arguments = nullptr;
+    if (const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr)))
+      arguments = &call->arguments;
+    else if (const auto* constructor =
+                 std::get_if<est::Constructor>(&arena->at(cursor.expr)))
+      arguments = &constructor->arguments;
+    if (!arguments || index >= arguments->size()) return false;
+    const auto* named = std::get_if<est::NamedArgument>(
+        &arena->at(arguments->at(index)));
+    if (!named) return false;
+    auto text = expression_child_source(cursor, named->value);
+    if (!text)
+      throw std::logic_error(
+          "MOSS_INTERNAL_INVARIANT checked named argument value missing line=" +
+          std::to_string(arena->span(cursor.expr).line));
+    name = named->name;
+    value = std::move(*text);
+    separator = named->separator;
+    return true;
   }
 
   bool checked_expression_parse_enum_case(const string& source,
@@ -27118,9 +27177,14 @@ class Checker {
           occurrence.semantic_target_id = "nominal-enum-variant-v1:" +
               enum_identity + ":case:" + case_name;
           occurrence.source_operands = arguments;
-          for (const auto& argument : arguments) {
+          for (std::size_t argument_index = 0;
+               argument_index < arguments.size(); ++argument_index) {
+            const auto& argument = arguments[argument_index];
             string field_name, field_value;
-            if (!tree_parse_named_argument(argument, field_name, field_value)) {
+            char separator = ':';
+            if (!checked_expression_named_argument(argument_index, field_name,
+                    field_value, separator) &&
+                !tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -27142,12 +27206,21 @@ class Checker {
         if (!item->fields.empty() && !called)
           err(line, "enum case '" + case_name + "' requires named fields", "MISSING_ENUM_FIELD");
         std::set<string> supplied;
-        for (const auto& argument : arguments) {
+        for (std::size_t argument_index = 0;
+             argument_index < arguments.size(); ++argument_index) {
+          const auto& argument = arguments[argument_index];
           string name, value;
-          if (tree_named_argument_separator(argument) == '=')
+          char separator = 0;
+          const bool checked_named = checked_expression_named_argument(
+              argument_index, name, value, separator);
+          if (!checked_named) {
+            separator = tree_named_argument_separator(argument).value_or(0);
+            (void)tree_parse_named_argument(argument, name, value);
+          }
+          if (separator == '=')
             err(line, "enum constructor fields use ':' rather than '='",
                 "ENUM_FIELD_REQUIRES_COLON");
-          if (!tree_parse_named_argument(argument, name, value))
+          if (name.empty())
             err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
           if (!supplied.insert(name).second)
             err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
@@ -27155,7 +27228,8 @@ class Checker {
               [&](const Field& candidate) { return candidate.name == name; });
           if (field == item->fields.end())
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
-          check_expression(line, value, env, {}, "field:" + name);
+          if (!check_expression_child_node(line, env, "field:" + name))
+            check_expression(line, value, env, {}, "field:" + name);
           if (!checked_matches_declared(value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
@@ -27212,7 +27286,7 @@ class Checker {
                            "argument:" + std::to_string(index));
       return;
     }
-    if (auto syntax = active_expression_view(); syntax &&
+    if (auto syntax = checked_expression_view(original); syntax &&
         std::holds_alternative<moss::est::Collection>(
             syntax->arena->at(syntax->root))) {
       const auto& collection = std::get<moss::est::Collection>(
@@ -27506,8 +27580,8 @@ class Checker {
               (!resolved_left->is_closed() || !resolved_right->is_closed())) {
             string indexed_base, indexed_key;
             const bool compares_index =
-                tree_parse_index(binary->first, indexed_base, indexed_key) ||
-                tree_parse_index(binary->second, indexed_base, indexed_key);
+                checked_expression_child_parse_index("left", binary->first, indexed_base, indexed_key) ||
+                checked_expression_child_parse_index("right", binary->second, indexed_base, indexed_key);
             if (compares_index && !resolved_left->is_closed() &&
                 !resolved_right->is_closed() &&
                 !current_body_types_->solver.unify(left, right))
@@ -28201,9 +28275,14 @@ class Checker {
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
         bool has_open_argument = false;
-        for (const auto& argument : args) {
+        for (std::size_t argument_index = 0;
+             argument_index < args.size(); ++argument_index) {
+          const auto& argument = args[argument_index];
           string field_name, value = argument;
-          (void)tree_parse_named_argument(argument, field_name, value);
+          char separator = 0;
+          if (!checked_expression_named_argument(argument_index, field_name,
+                  value, separator))
+            (void)tree_parse_named_argument(argument, field_name, value);
           auto term = current_body_types_->known_expression(value);
           if (!term) term = inferred_expr_term(value, env);
           auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
