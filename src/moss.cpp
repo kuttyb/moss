@@ -17461,17 +17461,36 @@ static ParsedModuleUnit load_module_interface(
   if (load_execution_bodies) {
     parse_execution_body_payload(execution_bodies, provider, file);
     for (auto& function : provider.functions) {
+      if (function.execution_result_expression)
+        est::populate_loaded_expression(provider, function.expression_handles,
+            *function.execution_result_expression, est::ExprSlot::ReturnValue,
+            function.result_line, est::stable_origin_id(
+                file.string() + "\nfunction-result:" + function.name));
       if (function.execution_body)
         build_loaded_body(*function.execution_body, "function:" + function.name);
     }
     for (auto& object : provider.objects)
       for (auto& method : object.methods) {
+        if (method.execution_result_expression)
+          est::populate_loaded_expression(provider,
+              method.expression_handles,
+              *method.execution_result_expression,
+              est::ExprSlot::ReturnValue, method.result_line,
+              est::stable_origin_id(file.string() + "\nmethod-result:" +
+                  object.name + "::" + method.name));
         if (method.execution_body)
           build_loaded_body(*method.execution_body,
                             "method:" + object.name + "::" + method.name);
       }
     for (auto& domain : provider.domains)
       for (auto& handler : domain.handlers) {
+        if (handler.execution_result_expression)
+          est::populate_loaded_expression(provider,
+              handler.expression_handles,
+              *handler.execution_result_expression,
+              est::ExprSlot::ReturnValue, handler.line,
+              est::stable_origin_id(file.string() + "\nhandler-result:" +
+                  domain.name + "::" + handler.name));
         if (handler.execution_body)
           build_loaded_body(*handler.execution_body,
                             "handler:" + domain.name + "::" + handler.name);

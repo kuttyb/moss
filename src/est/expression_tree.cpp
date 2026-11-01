@@ -2129,6 +2129,11 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
            *function.result_expression);
     }
+    if (function.execution_result_expression) {
+      set_location(function.result_line, *function.execution_result_expression);
+      bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
+           *function.execution_result_expression);
+    }
   }
   for (auto& domain : program.domains) {
     for (auto& field : domain.state) {
@@ -2342,6 +2347,38 @@ void populate(Program& program) { populate_impl(program, nullptr, 0); }
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
+}
+
+void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
+                                std::string_view source, ExprSlot slot,
+                                int line, std::uint64_t origin_id) {
+  if (source.empty()) return;
+  for (const auto& handle : handles)
+    if (handle.slot == slot && handle.argument_index == 0 &&
+        handle.source_fingerprint == fingerprint(std::string(source)) &&
+        handle.arena_index < program.expression_arenas.size() &&
+        program.expression_arenas[handle.arena_index])
+      return;
+  auto arena_owner = program.expression_arena;
+  if (!arena_owner) {
+    arena_owner = std::make_shared<Arena>();
+    program.expression_arena = arena_owner;
+  }
+  auto arena_position = std::find(program.expression_arenas.begin(),
+                                  program.expression_arenas.end(), arena_owner);
+  if (arena_position == program.expression_arenas.end()) {
+    program.expression_arenas.push_back(arena_owner);
+    arena_position = std::prev(program.expression_arenas.end());
+  }
+  const auto owner = stable_origin_id("loaded-expression:" +
+      std::to_string(origin_id) + ":" + std::to_string(line) + ":" +
+      std::to_string(static_cast<unsigned>(slot)));
+  const auto expression = parse_expression(*arena_owner, source, owner,
+      static_cast<std::uint32_t>(std::max(line, 1)), 1);
+  handles.push_back({owner, slot, 0, expression,
+      fingerprint(std::string(source)), owner,
+      static_cast<std::uint32_t>(std::distance(
+          program.expression_arenas.begin(), arena_position))});
 }
 
 void adopt_program_arenas(Program& destination, Program& source) {

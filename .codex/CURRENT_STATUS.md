@@ -1,3 +1,11 @@
+### Phase 27.5.4 C1 checkpoint (2026-11-01, continued)
+
+Branch `phase27-5-4-work`, pushed checkpoint `d52e112a`. C1 remains in progress; no merge/tag. The initial default `make check` before fixes had 18 failed jobs; see `tmp/phase2754-c1-default-first.log` for the exact list.
+
+Additional targeted fixes after d52e112a: imported `.mossi` execution-result expressions now retain an EST handle on initial load; implicit-self method calls forward the call's argument ExprIds into parameter binding. Latest targeted greens: phase25 S3 key-protocol (28 cases, including path dependency and source-free provider), Fast Debug shard, enum module shard (60 EXPRESS-005 cases), sdk text-encoding acceptance, advanced-data Fast Debug oracle, plus prior phase25 conformance 11/11, phase21 root totality, ABI-v10 X1, G3 ordering, indexed String, S2, S1, safe arithmetic, L7 repairs, Team A semantics, generic typing (128), and Executor/FileIO.
+
+Remaining C1 work: rerun the initial 18-job default `make check` at the final C1 gate after perturb/drop tests are implemented and registered; run shadow then; implement requested test-build perturb/drop coverage for call targets, specializations, joins, patterns, and document known debt for expression types, pipeline types, ownership. No C2 emitter/optimizer count work or perf suite has started. Full suite not yet rerun after fixes.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01)
 
 Branch: `phase27-5-4-work`; current pushed base `0003aeee`. C1 is still in progress; no merge/tag yet. The first requested default `make check` ran before C1 fixes and had 18 failed jobs (full list and log: `tmp/phase2754-c1-default-first.log`). Targeted fixes so far include retained-node evaluation in Fast Debug, checked H3 projected-body node/fact attachment, and consumption of checked Executor RootSubmissionPlan for Fast Debug.

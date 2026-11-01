@@ -2147,7 +2147,8 @@ class FastInterpreter {
         if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
           if (auto target = method(self_it->second.object->type, callee)) {
             return call_method(*target, self_it->second, args, frame, line, output,
-                               locate("self", frame, line, output));
+                               locate("self", frame, line, output), tree,
+                               call_argument_nodes);
           }
         }
         throw RuntimeError(line, program_.file_check_scope
