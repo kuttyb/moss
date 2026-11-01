@@ -48,33 +48,47 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
       types[s.a] = "FileIO";
       return true;
     }
+    EmitterExpr receiver_node;
     string receiver, method;
-    vector<string> arguments;
-    if (tree_parse_member_call(checked_source, receiver, method, arguments) &&
-        fileio_typed(types, receiver) && method == "read" &&
-        arguments.size() == 2) {
-      string read = method_receiver_place(
-          receiver, "read", arguments, d, locals, &types) +
-          (phase21_result_context_ ? ".read_checked(" : ".read(") +
-          expr(arguments[0], d, locals, &types) + ", " +
-          expr(arguments[1], d, locals, &types) + ")";
-      if (phase21_result_context_)
-        read = phase21_propagate(read + ".map_err(__moss_raise_fileio)");
-      o << pad << "let " << s.a << " = " << read << ";\n";
-      locals.insert(s.a);
-      types[s.a] = "Range";
-      return true;
+    vector<EmitterExpr> arguments;
+    if (tree_parse_member_call_nodes(checked_source, receiver_node, method,
+                                     arguments)) {
+      receiver = tree_identifier_name(receiver_node).value_or("");
+      if (fileio_typed(types, receiver) && method == "read" &&
+          arguments.size() == 2) {
+        string read = method_receiver_place(receiver_node, method, arguments,
+                                             d, locals, &types) +
+            (phase21_result_context_ ? ".read_checked(" : ".read(") +
+            expr(arguments[0], d, locals, &types) + ", " +
+            expr(arguments[1], d, locals, &types) + ")";
+        if (phase21_result_context_)
+          read = phase21_propagate(read + ".map_err(__moss_raise_fileio)");
+        o << pad << "let " << s.a << " = " << read << ";\n";
+        locals.insert(s.a);
+        types[s.a] = "Range";
+        return true;
+      }
     }
     return false;
   }
   if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
-  string receiver_expr = method_receiver_place(
-      s.a, s.b, s.args, d, locals, &types);
+  const EmitterExpr checked_call = checked_expression_ref(
+      s, s.text, est::ExprSlot::Expression);
+  EmitterExpr call_receiver;
+  string call_method;
+  vector<EmitterExpr> checked_arguments;
+  if (!tree_parse_member_call_nodes(checked_call, call_receiver,
+                                    call_method, checked_arguments) ||
+      call_method != s.b)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked FileIO call node");
+  const string receiver_expr = method_receiver_place(
+      call_receiver, s.b, checked_arguments, d, locals, &types);
   if (s.b == "write" && s.args.size() == 2) {
     string call = receiver_expr + (phase21_result_context_
         ? ".write_checked(" : ".write(") +
-        expr(s.args[0], d, locals, &types) + ", &( " +
-        expr(s.args[1], d, locals, &types) + " ))";
+        expr(checked_arguments[0], d, locals, &types) + ", &( " +
+        expr(checked_arguments[1], d, locals, &types) + " ))";
     if (phase21_result_context_)
       call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
     o << pad << call << ";\n";
@@ -83,16 +97,18 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   if (s.b == "open" && s.args.size() == 2) {
     string call = receiver_expr + (phase21_result_context_
         ? ".open_in_place_checked(&( " : ".open_in_place(&( ") +
-        expr(s.args[0], d, locals, &types) + " ), " +
-        rust_string_literal(trim(s.args[1])) + ")";
+        expr(checked_arguments[0], d, locals, &types) + " ), " +
+        rust_string_literal(tree_identifier_name(checked_arguments[1])
+                                .value_or(checked_arguments[1].text())) + ")";
     if (phase21_result_context_)
       call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
     o << pad << call << ";\n";
     return true;
   }
   if (s.b == "sync" && s.args.size() <= 1) {
-    bool dataonly = !s.args.empty() &&
-        tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
+    bool dataonly = !checked_arguments.empty() &&
+        tree_identifier_name(checked_arguments[0]) ==
+            std::optional<string>("dataonly");
     string call = receiver_expr + (phase21_result_context_
         ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
         : dataonly ? ".sync_dataonly()" : ".sync()");

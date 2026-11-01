@@ -1366,6 +1366,34 @@ class Generator {
                                     outputs_written);
   }
 
+  bool tree_parse_member_call_nodes(const EmitterExpr& expression,
+                                   EmitterExpr& receiver, string& member,
+                                   vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* call = std::get_if<est::Call>(&expression.arena->at(root));
+    if (!call) return false;
+    const auto callee_id = est::unparenthesized(*expression.arena,
+                                                 call->callee);
+    const auto* selected = std::get_if<est::Member>(
+        &expression.arena->at(callee_id));
+    if (!selected) return false;
+    receiver = expression.child(selected->base);
+    member = selected->name;
+    arguments.clear();
+    for (const auto argument : call->arguments)
+      arguments.push_back(expression.child(argument));
+    return true;
+  }
+
+  bool tree_parse_fileio_open(const EmitterExpr& expression,
+                              vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_fileio_open(view, arguments);
+  }
+
   bool tree_parse_member_access(const string& expression, string& base,
                                string& member) const {
     auto syntax = expression_view_from_est(expression);
@@ -1383,20 +1411,6 @@ class Generator {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::project_message(
         *syntax, target, handler, arguments);
-  }
-
-  bool tree_parse_fileio_open(const string& expression,
-                              vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax && est::project_fileio_open(*syntax, arguments);
-  }
-
-  bool tree_parse_fileio_open(const EmitterExpr& expression,
-                              vector<string>& arguments) const {
-    if (!expression.arena) return false;
-    est::ExpressionView view{nullptr, expression.arena, expression.id,
-                             expression.text()};
-    return est::project_fileio_open(view, arguments);
   }
 
   bool tree_parse_fileio_chunks_source(const string& expression,

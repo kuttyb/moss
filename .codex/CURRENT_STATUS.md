@@ -15555,3 +15555,14 @@ with warnings denied; native and Fast Debug print `string/map ok`. The
 `examples/counter.moss` generated Rust also compiles and prints `counter: 41` /`counter: 42`. The focused executor/FileIO harness passes. A targeted optimized
 FileIO runtime integration fixture remains at 500 lookups / 289 reparses; the
 C2 corpus workload target remains open. Temporary stack tracing was removed.
+
+### C2 FileIO call-node checkpoint (2026-11-01)
+
+FileIO read/write statement emission now passes checked receiver and argument
+ExprIds through its call paths, including mutable receiver-place selection.
+The optimized FileIO runtime fixture declined from 500 text lookups / 289
+reparses to 369 / 230. `check_phase20_executor_fileio.py` passes. The optimized
+string-map fixture remains at 0 / 0. An attempted direct FileIO.open node
+projection changed generated Rust incorrectly (failed native compile); that
+specific edit was reverted, restoring the passing harness. No full suite or
+perf run has occurred; current residual FileIO counts remain open.

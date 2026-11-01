@@ -528,3 +528,11 @@ reparses (from 40 / 8). Its Rust compiles with warnings denied and prints
 `counter: 42`. The focused Phase 20 executor/FileIO harness passes. A separate
 optimized FileIO runtime fixture still records 500 lookups / 289 reparses, so
 this does not establish the C2 workload target.
+
+The FileIO statement emitter now passes retained receiver and argument nodes
+through the read/write call paths and uses node shape for their statement
+routing. On the optimized FileIO runtime fixture this reduced candidate
+counters from 500 lookups / 289 reparses to 369 / 230; the Phase 20
+executor/FileIO harness passes. The string-map fixture remains at 0 / 0. The
+larger FileIO residual shows these are focused migrations, not completion of
+C2's zero-count requirement.
