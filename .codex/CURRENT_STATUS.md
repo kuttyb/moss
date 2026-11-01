@@ -14026,3 +14026,30 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - functional_basics counters are unchanged at 15,160 cache consultations and
   121 checker reparses because its guard queries happen before first-pass facts
   are available. No full suite/perf run.
+
+### Phase 27.5.4 current uncommitted checkpoint (2026-10-31)
+
+- Pushed handover remains `bb5bde84` on `phase27-5-4-work`. The one default
+  full-suite attempt remains failed at the numeric-member fixture segfault;
+  bisect localized the first bad commit to `1b7c5ccc`. A separate diagnostic
+  regression bisected to `9490a8a7`.
+- Current local edits contain: a guarded checker cursor path for direct leaf
+  facts, pipeline operator matching against normalized EST operator spelling,
+  traversal of binary pipeline stages through their checked child node, and a
+  narrow compatibility diagnostic preserving the established unknown-`count`
+  result. `docs/phase27/27_5_4_CONFLICTS.md` records that observable pipeline
+  conflict. The temporary trace hook and an ineffective result-handle lookup
+  experiment were removed.
+- Targeted validation after these edits: `make moss-dev --jobs="$(nproc)"`
+  built successfully; `check_phase27_est_functional_tree.py` passed;
+  `check_phase27_5_3_fastdebug_checked_tree.py` passed; direct JSON checks
+  returned the expected UNKNOWN_FIELD, UNSUPPORTED_EXPRESSION_OPERATOR,
+  unknown local function `count`, and TYPE_AMBIGUOUS_OPEN_RESULT diagnostics
+  for their four reproducers. `check_phase27_est.py` still fails at its
+  context-scoped effect-fact assertion; this was also reproduced at earlier
+  commit `745c6176`, so it predates the current local changes. No second full
+  suite, corpus pass, or performance run has occurred.
+- Current exact working tree and commit state must be inspected before another
+  handover: the fixes above are not yet committed or pushed. Next steps are to
+  rebuild after cleanup, review the patch for scope, checkpoint it, and resume
+  checker recursion and rewrite-side K8 migration.

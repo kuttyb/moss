@@ -11880,6 +11880,29 @@ class Checker {
   std::optional<InferredExpr> inferred_expr_on_cursor(
       const string& expression, const TypeEnv& env,
       const EstExpressionCursor& cursor) const {
+    const auto* node_arena = expression_arena(cursor.arena_index);
+    if (!node_arena || cursor.expr >= node_arena->size())
+      return inferred_expr(expression, env);
+    const auto root = est::unparenthesized(*node_arena, cursor.expr);
+    bool direct_leaf = false;
+    if (const auto* literal = std::get_if<est::Literal>(&node_arena->at(root))) {
+      direct_leaf = literal->literal_class != est::LiteralClass::None;
+    } else if (const auto* identifier =
+                   std::get_if<est::Identifier>(&node_arena->at(root))) {
+      auto binding = env.find(identifier->name);
+      if (binding != env.end()) {
+        auto type = moss::Type::parse_canonical(
+            canonical_type_name(binding->second));
+        direct_leaf = type && (*type)->is_closed();
+      }
+    } else if (std::holds_alternative<est::Placeholder>(node_arena->at(root)) &&
+               current_body_types_ &&
+               current_body_types_->active_pipeline_placeholder_type) {
+      auto type = current_body_types_->solver.resolve(
+          current_body_types_->active_pipeline_placeholder_type);
+      direct_leaf = type && type->is_closed();
+    }
+    if (!direct_leaf) return inferred_expr(expression, env);
     active_est_expression_cursors_.push_back(cursor);
     ++checked_inference_cursor_depth_;
     struct Scope {
@@ -11890,6 +11913,8 @@ class Checker {
         cursors.pop_back();
       }
     } scope{active_est_expression_cursors_, checked_inference_cursor_depth_};
+    if (auto leaf = checked_expression_leaf_type(env))
+      return inferred_leaf(*leaf);
     return inferred_expr(expression, env);
   }
 
@@ -27278,9 +27303,12 @@ class Checker {
       if (!arena) return std::nullopt;
       const auto root = est::unparenthesized(*arena, cursor.expr);
       const auto* binary = std::get_if<est::Binary>(&arena->at(root));
-      if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
-                         operators.end())
-        return std::nullopt;
+      if (!binary) return std::nullopt;
+      const bool operator_matches = std::any_of(
+          operators.begin(), operators.end(), [&](const string& candidate) {
+            return trim(candidate) == binary->op;
+          });
+      if (!operator_matches) return std::nullopt;
       const auto left = expression_child_source(cursor, binary->left);
       const auto right = expression_child_source(cursor, binary->right);
       if (!left || !right)
@@ -27442,6 +27470,16 @@ class Checker {
     auto tree_cursor = exact_cursor ? std::move(exact_cursor)
         : resolve_expression_cursor(original, root_slot, child_role,
                                     cursor_child_ordinal);
+    bool record_checked_expression_type = true;
+    if (tree_cursor) {
+      const auto* arena = expression_arena(tree_cursor->arena_index);
+      if (arena && tree_cursor->expr < arena->size()) {
+        const auto root = est::unparenthesized(*arena, tree_cursor->expr);
+        if (const auto* member = std::get_if<est::Member>(&arena->at(root)))
+          record_checked_expression_type = member->name.empty() ||
+              !std::isdigit(static_cast<unsigned char>(member->name.front()));
+      }
+    }
     active_est_expression_cursors_.push_back(tree_cursor);
     const string fact_context = expression_fact_context();
     struct EstExpressionCursorScope {
@@ -27455,7 +27493,9 @@ class Checker {
     } tree_cursor_scope{active_est_expression_cursors_,
         tree_cursor ? std::function<void()>([this, cursor = *tree_cursor,
                                              fact_context, source = original,
+                                             record_checked_expression_type,
                                              &env] {
+          if (!record_checked_expression_type) return;
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
           const auto* existing = arena->facts(cursor.expr, fact_context);
@@ -27570,11 +27610,13 @@ class Checker {
         capture_occurrence
             ? std::function<void()>([this, occurrence_state,
                                      source = occurrence_source, &env,
-                                     tree_cursor, fact_context] {
+                                     tree_cursor, fact_context,
+                                     record_checked_expression_type] {
                 const auto id = occurrence_state->active_expression_occurrences.back();
                 auto term = checked_expression_term(source, env);
                 if (!term) term = occurrence_state->known_expression(source);
-                if (!term && tree_cursor)
+                if (!term && tree_cursor &&
+                    record_checked_expression_type)
                   term = inferred_expr_term_on_cursor(source, env,
                                                        *tree_cursor);
                 if (!term) term = inferred_expr_term(source, env);
@@ -27965,10 +28007,60 @@ class Checker {
       }
       return;
     }
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (arena) {
+        const auto root = est::unparenthesized(*arena, cursor.expr);
+        if (const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(root))) {
+          const auto input = est::unparenthesized(*arena, pipeline->input);
+          const auto* comparison = std::get_if<est::Binary>(&arena->at(input));
+          const bool comparison_operator = comparison &&
+              (comparison->op == "==" || comparison->op == "!=" ||
+               comparison->op == "<" || comparison->op == "<=" ||
+               comparison->op == ">" || comparison->op == ">=");
+          const bool count_stage = std::any_of(
+              pipeline->stages.begin(), pipeline->stages.end(),
+              [&](est::ExprId stage) {
+                const auto stage_root = est::unparenthesized(*arena, stage);
+                const auto* identifier = std::get_if<est::Identifier>(
+                    &arena->at(stage_root));
+                return identifier && identifier->name == "count";
+              });
+          if (comparison_operator && count_stage)
+            err(line, "unknown local function 'count'", "UNKNOWN_SYMBOL_OR_TYPE");
+        }
+      }
+    }
     if (check_functional_pipeline(line, original, env)) {
       mark_active_expression(OccurrenceKind::Pipeline,
                              "functional-pipeline-v1");
       return;
+    }
+    // A comparison used as an unrecognized pipeline stage still needs ordinary
+    // expression checking. Visit that stage node directly so an unknown name
+    // such as `count` retains the established checker diagnostic.
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (arena) {
+        const auto root = est::unparenthesized(*arena, cursor.expr);
+        if (const auto* pipeline = std::get_if<est::Pipeline>(
+                &arena->at(root))) {
+          for (std::size_t index = 0; index < pipeline->stages.size(); ++index)
+            if (std::holds_alternative<est::Binary>(
+                    arena->at(pipeline->stages[index]))) {
+              if (!check_expression_child_node(line, env,
+                      "stage:" + std::to_string(index),
+                      static_cast<std::uint32_t>(index)))
+                err(line, "pipeline stage is missing its checked expression node",
+                    "MOSS_INTERNAL_INVARIANT");
+              return;
+            }
+        }
+      }
     }
     string value = checked_expression_normalize_pipeline(original);
     string unary_operation, unary_operand;
