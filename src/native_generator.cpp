@@ -6655,6 +6655,38 @@ class Generator {
             &expression.arena->at(root))) {
       const auto type_id = est::unparenthesized(*expression.arena,
                                                   constructor->type);
+      if (const auto* facts = checked_expression_facts(expression);
+          facts && (!facts->resolved_target.empty()) &&
+          (starts_with(facts->resolved_target, "fn:") ||
+           starts_with(facts->resolved_target, "callable-v1:"))) {
+        const Function* function =
+            starts_with(facts->resolved_target, "callable-v1:")
+                ? find_function_by_callable_id(facts->resolved_target)
+                : nullptr;
+        if (!function && starts_with(facts->resolved_target, "fn:")) {
+          const auto found = functions_.find(
+              facts->resolved_target.substr(3));
+          if (found != functions_.end()) function = found->second;
+        }
+        if (!function)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked constructor-call target has no declaration");
+        vector<string> arguments;
+        vector<EmitterExpr> argument_nodes;
+        for (const auto argument_id : constructor->arguments) {
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &expression.arena->at(argument_id))) {
+            const auto value = expression.child(named->value);
+            arguments.push_back(named->name + " = " + value.text());
+            argument_nodes.push_back(value);
+          } else {
+            argument_nodes.push_back(expression.child(argument_id));
+            arguments.push_back(argument_nodes.back().text());
+          }
+        }
+        return render_known_function_call(*function, function->name,
+            arguments, d, locals, types, &argument_nodes);
+      }
       if (const auto* builtin = std::get_if<est::Identifier>(
               &expression.arena->at(type_id));
           builtin && constructor->arguments.empty()) {
