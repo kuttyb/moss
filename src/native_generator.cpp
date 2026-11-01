@@ -2197,73 +2197,10 @@ class Generator {
       const std::unordered_map<string,string>* types) const {
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
-      auto record_type_fact_coverage = [&] {
-#ifdef MOSS_TEST_BUILD
-        est::record_expression_text_lookup();
-#endif
-        const auto fingerprint = est::fingerprint(expression);
-        const vector<est::Handle>* handles =
-            active_functional_expression_handles_;
-        const est::Arena* arena = nullptr;
-        est::ExprId root = 0;
-        if (handles) {
-          for (const auto& handle : *handles) {
-            if (handle.source_fingerprint != fingerprint ||
-                handle.arena_index >= p_.expression_arenas.size() ||
-                !p_.expression_arenas[handle.arena_index]) continue;
-            const auto* candidate = p_.expression_arenas[handle.arena_index].get();
-            const auto span = candidate->span(handle.expr);
-            if (span.source_begin != 0 || span.source_end != expression.size())
-              continue;
-            arena = candidate;
-            root = handle.expr;
-            break;
-          }
-        }
-        est::Arena temporary;
-        if (!arena) {
-          try {
-            root = est::parse_expression(temporary, expression);
-            arena = &temporary;
-          } catch (const std::invalid_argument&) {
-            est::record_generated_type_fact_coverage("unparsed", false);
-            return;
-          }
-        }
-        std::string checker_context;
-        if (!codegen_active_specialization_key_.empty())
-          checker_context = "specialization:" + codegen_active_specialization_key_;
-        else
-          checker_context = codegen_body_context_;
-        const auto* facts = arena->facts(root, checker_context);
-        const bool present = facts && facts->type;
-        const auto& node = arena->at(root);
-        const char* kind = std::visit([](const auto& value) -> const char* {
-          using T = std::decay_t<decltype(value)>;
-          if constexpr (std::is_same_v<T, est::Literal>) return "literal";
-          else if constexpr (std::is_same_v<T, est::Identifier>) return "identifier";
-          else if constexpr (std::is_same_v<T, est::Unary>) return "unary";
-          else if constexpr (std::is_same_v<T, est::Binary>) return "binary";
-          else if constexpr (std::is_same_v<T, est::Call>) return "call";
-          else if constexpr (std::is_same_v<T, est::Member>) return "member";
-          else if constexpr (std::is_same_v<T, est::Index>) return "index";
-          else if constexpr (std::is_same_v<T, est::Parenthesized>) return "parenthesized";
-          else if constexpr (std::is_same_v<T, est::Message>) return "message";
-          else if constexpr (std::is_same_v<T, est::NamedArgument>) return "named_argument";
-          else if constexpr (std::is_same_v<T, est::Placeholder>) return "placeholder";
-          else if constexpr (std::is_same_v<T, est::Collection>) return "collection";
-          else if constexpr (std::is_same_v<T, est::Tuple>) return "tuple";
-          else if constexpr (std::is_same_v<T, est::Constructor>) return "constructor";
-          else if constexpr (std::is_same_v<T, est::Pipeline>) return "pipeline";
-          else return "missing";
-        }, node);
-        est::record_generated_type_fact_coverage(kind, present);
-      };
-      try {
-        record_type_fact_coverage();
-      } catch (...) {
-        // Test-only coverage accounting must not change emission behavior.
-      }
+      // A text-only type query has no node identity to inspect. Record it as
+      // unavailable rather than reparsing or consulting a text-keyed handle
+      // cache solely for test instrumentation.
+      est::record_generated_type_fact_coverage("text-query", false);
     }
 #endif
     string original = tree_strip_expression_grouping(expression);

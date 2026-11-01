@@ -170,3 +170,10 @@ pipeline stage on c96 (unsupported-stage error at line 88); current retained-tre
 Fast Debug reports a missing checked node for that stage. This remains recorded
 baseline Fast Debug debt and is outside the emitter changes. The full C2 suite
 has not run.
+
+The test-only type-fact coverage instrumentation no longer resolves a node by
+text fingerprint or reparses text just to classify a `generated_expr_type`
+query. Such text-only queries are counted as `text-query/ABSENT`. The opt-in
+coverage test remains output-neutral. On the ten-source paired workload, this
+reduces candidate text lookups from 41,205 to 40,133; expression-view reparses
+remain 25,257, against c96's 76,824 / 43,213.

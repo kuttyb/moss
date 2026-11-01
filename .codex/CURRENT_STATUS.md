@@ -15112,3 +15112,14 @@ and fails in the current retained-tree interpreter with missing checked node.
 This behavior gap is recorded as baseline debt; no pipeline acceptance or
 meaning was changed. The three-engine and default/shadow hook matrices pass.
 Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — coverage instrumentation no longer reparses type-query text (2026-11-01)
+
+The test-only coverage path for `generated_expr_type(string)` no longer
+fingerprints text, searches retained handles, or parses a temporary EST solely
+to classify a node. It records `text-query/ABSENT`, since a text-only consumer
+query has no node identity. The EST coverage harness passes and confirms
+counters remain opt-in/output-neutral; three-engine and fact-hook gates pass.
+On the same ten-source/default-plus-`-O` workload, paired lookups fell from
+41,205 to 40,133; expression-view reparses remain 25,257 (c96 parent remains
+76,824 / 43,213).
