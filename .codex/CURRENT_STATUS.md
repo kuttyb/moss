@@ -15413,3 +15413,10 @@ default and `-O`; the fact-hook matrix and three-engine check pass. The
 remaining parse count is still substantial and dominated by other string
 shape/type consumers. This checkpoint is not a paired parent report or a
 full-suite result.
+
+Like-for-like targeted C1/candidate `-O` counters (test builds, same compiler
+command and fixtures): `phase24_string_concat` 5,775 lookups / 2,138 reparses
+-> 1,624 / 356; `collections_and_methods` 2,607 / 1,247 -> 843 / 194;
+`phase45_cross_let_result` 641 / 467 total reparses -> 208 / 163. The three
+candidate functional reparses on the last fixture are zero. These are focused
+fixtures, not the required full corpus + examples + packages count.

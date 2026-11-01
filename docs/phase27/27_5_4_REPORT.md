@@ -229,6 +229,13 @@ remained 356. Six targeted fixtures compile in default and `-O`, and the
 fact-hook/three-engine checks pass. This is candidate-only instrumentation,
 not a paired corpus measurement.
 
+Focused like-for-like test-build measurements against the C1 binary on the
+same optimized commands show: `phase24_string_concat` 5,775 lookups / 2,138
+reparses -> 1,624 / 356; `collections_and_methods` 2,607 / 1,247 -> 843 / 194;
+`phase45_cross_let_result` 641 lookups / 467 total reparses -> 208 / 163,
+with candidate functional reparses zero. This is targeted evidence only; the
+required paired corpus + examples + packages measurement remains pending.
+
 ## C2 progress — emitter consumes checked call edges on nested nodes
 
 When nested call nodes lacked a retained resolved-target fact, the emitter now
