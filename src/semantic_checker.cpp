@@ -12378,7 +12378,8 @@ class Checker {
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
-    if (tree_parse_member_call(e, method_receiver, method_name, method_args)) {
+    if (checked_expression_parse_member_call(
+            e, method_receiver, method_name, method_args)) {
       if (staged_abi_v10() && tree_empty_constructor_named(method_receiver, "Map") &&
           method_name == "get" && method_args.size() == 2) {
         auto key = inferred_expr_type(method_args[0], env);
@@ -12497,7 +12498,7 @@ class Checker {
     }
 
     string mr, mh; vector<string> ma;
-    if (tree_parse_member_call(e, mr, mh, ma)) {
+    if (checked_expression_parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
         auto receiver = inferred_shape(inferred_leaf(bt->second));
@@ -27242,7 +27243,8 @@ class Checker {
   bool checked_expression_parse_member_call(const string& source,
       string& receiver, string& member, vector<string>& arguments) const {
     if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
+        active_est_expression_cursors_.back() &&
+        active_est_expression_cursors_.back()->source == source) {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return false;

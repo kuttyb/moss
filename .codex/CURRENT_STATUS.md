@@ -14086,3 +14086,10 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   lookups, and 203 tree-text rebuilds. There is no same-source pre-change
   measurement, so no K2/K8 delta is claimed. The member-call node experiment
   remains reverted because of the cursor/source mismatch described above.
+- Member-call projection was retried with an exact source-identity gate on the
+  active cursor. This prevents the prior cursor/source mismatch: functional
+  tree, Fast Debug/native/optimized parity, and regex package checks pass. On
+  `packages/regex/src/main.moss`, checker text-cache lookups moved from
+  4,933,254 to 4,933,110 (-144; member_call site 265,799 to 265,655), while
+  checker reparses remain 12,003 and tree rebuilds remain 203. This is measured
+  K2 progress, but the remaining target is zero. No full suite/performance run.
