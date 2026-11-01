@@ -2264,16 +2264,14 @@ class Generator {
       bound_receiver_node = std::nullopt;
     }
     if (!bound_method.empty()) {
-      auto receiver_type = bound_receiver_node
-          ? generated_expr_type(*bound_receiver_node, types)
-          : generated_expr_type(bound_receiver, types);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, input_types, false, nullptr)
-          : nullptr;
+      if (!checked_callable || !checked_callable->arena)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
+      const Method* method = checked_method_target(*checked_callable);
       if (method && method->return_type)
         return canonical_type_name(*method->return_type);
-      return std::nullopt;
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method target has no result");
     }
     string identity = resolved_callable_identity(callable, types);
     const Function* fn = nullptr;
@@ -2592,6 +2590,35 @@ class Generator {
     return nullptr;
   }
 
+  const Method* checked_method_target(const EmitterExpr& expression) const {
+    const auto* facts = checked_expression_facts(expression);
+    if (!facts || !starts_with(facts->resolved_target, "method:"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked bound-method target line=" +
+          std::to_string(expression.arena
+              ? expression.arena->span(expression.id).line : 0) +
+          " context=" + codegen_body_context_);
+    const string selected = facts->resolved_target.substr(7);
+    const auto separator = selected.rfind('.');
+    if (separator == string::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT malformed checked bound-method target");
+    const string owner = selected.substr(0, separator);
+    const string name = selected.substr(separator + 1);
+    const auto object = objects_.find(owner);
+    if (object == objects_.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method owner is unavailable");
+    const auto method = std::find_if(object->second->methods.begin(),
+        object->second->methods.end(), [&](const Method& candidate) {
+          return candidate.name == name;
+        });
+    if (method == object->second->methods.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method declaration is unavailable");
+    return &*method;
+  }
+
   std::optional<string> generated_functional_pipeline_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
@@ -2797,14 +2824,10 @@ class Generator {
         if (auto result = builtin_operation_result(concrete_receiver, method_name,
                                                     method_args.size()))
           return result;
-        vector<string> argument_types;
-        for (const auto& argument : method_args)
-          argument_types.push_back(nominalized_generated_argument_type(
-              argument, generated_expr_type(argument, types).value_or("")));
-        auto match = resolve_object_method(objects_, *receiver_type, method_name,
-                                           argument_types, false, nullptr);
-        if (match && match->return_type)
-          return canonical_type_name(*match->return_type);
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT emitter cannot infer a member-call result "
+            "from the receiver type; checked expression node required: " +
+            method_name);
       }
     }
 
@@ -4006,20 +4029,10 @@ class Generator {
       bound_receiver_node = std::nullopt;
     }
     if (!bound_method.empty()) {
-      auto receiver_type = bound_receiver_node
-          ? generated_expr_type(*bound_receiver_node, types)
-          : generated_expr_type(bound_receiver, types);
-      vector<string> argument_types;
-      for (const auto& argument : arguments)
-        argument_types.push_back(argument.type);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, argument_types, false, nullptr)
-          : nullptr;
-      if (!method)
+      if (!checked_callable || !checked_callable->arena)
         throw std::runtime_error(
-            "missing statically resolved functional bound method '" +
-            trim(callable) + "'");
+            "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
+      const Method* method = checked_method_target(*checked_callable);
       std::ostringstream rendered;
       rendered << (bound_receiver_node
           ? expr(*bound_receiver_node, domain, locals, types)

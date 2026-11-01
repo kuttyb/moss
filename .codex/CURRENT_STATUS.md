@@ -1,3 +1,45 @@
+# Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current
+  uncommitted `src/native_generator.cpp` edits also remove receiver-type method
+  re-resolution from functional bound-method result inference and rendering.
+  Both now require the retained callable node's checked `method:` target and
+  map that target to the declaration. The legacy string-only custom method
+  result-type path now fails closed instead of calling `resolve_object_method`.
+- After these edits, `make moss-dev`,
+  `check_phase27_5_4_fact_hooks.py` (all 4 required classes pass; known debt
+  38/38), `check_phase25_team_a_semantics.py` (PASS), and
+  `check_phase27_est_functional_tree.py` (PASS) succeed. The earlier Team A
+  and fact-hook checks also passed after the statement-call guard. A mistaken
+  test-script filename was corrected; it is not a test failure.
+- `check_phase25_conformance.py` at the prior checkpoint returned 9/11; gates
+  7 and 10 failed, with no parent comparison yet.
+- Remaining emitter `resolve_object_method` occurrences must be audited. The
+  clearly relevant C2 structural migration is still incomplete; calculator
+  profile remains 16,216 attributed reparses (default plus `-O`) and 32,432
+  before/after instrumentation total. No full suites/perf run or Agent 2 audit.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current
+  uncommitted `src/native_generator.cpp` edits also remove receiver-type method
+  re-resolution from functional bound-method result inference and rendering.
+  Both now require the retained callable node's checked `method:` target and
+  map that target to the declaration. The legacy string-only custom method
+  result-type path now fails closed instead of calling `resolve_object_method`.
+- After these edits, `make moss-dev`,
+  `check_phase27_5_4_fact_hooks.py` (all 4 required classes pass; known debt
+  38/38), `check_phase25_team_a_semantics.py` (PASS), and
+  `check_phase27_est_functional_tree.py` (PASS) succeed. The earlier Team A
+  and fact-hook checks also passed after the statement-call guard. A mistaken
+  test-script filename was corrected; it is not a test failure.
+- `check_phase25_conformance.py` at the prior checkpoint returned 9/11; gates
+  7 and 10 failed, with no parent comparison yet.
+- Remaining emitter `resolve_object_method` occurrences must be audited. The
+  clearly relevant C2 structural migration is still incomplete; calculator
+  profile remains 16,216 attributed reparses (default plus `-O`) and 32,432
+  before/after instrumentation total. No full suites/perf run or Agent 2 audit.
+
 # Phase 27.5.4 C2 handover (2026-11-01; emitter checked-method guard)
 
 - Branch `phase27-5-4-work`; pushed tip currently follows the profiling
