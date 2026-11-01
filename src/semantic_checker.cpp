@@ -26593,6 +26593,112 @@ class Checker {
     }, arena.at(parent));
   }
 
+  bool checked_expression_parse_unary(const string& source, string& operation,
+                                      string& operand) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena) return false;
+      const auto* unary = std::get_if<est::Unary>(&arena->at(cursor.expr));
+      if (!unary) return false;
+      auto child = expression_child_source(cursor, unary->operand);
+      if (!child)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT checked unary child source missing line=" +
+            std::to_string(arena->span(cursor.expr).line));
+      operation = unary->op;
+      operand = std::move(*child);
+      return true;
+    }
+    return tree_parse_unary(source, operation, operand);
+  }
+
+  bool checked_expression_parse_simple_call(const string& source,
+      string& callee, vector<string>& arguments) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena) return false;
+      const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+      if (!call) return false;
+      const auto* identifier = std::get_if<est::Identifier>(
+          &arena->at(call->callee));
+      if (!identifier) return false;
+      callee = identifier->name;
+      arguments.clear();
+      for (const auto argument : call->arguments) {
+        auto text = expression_child_source(cursor, argument);
+        if (!text)
+          throw std::logic_error(
+              "MOSS_INTERNAL_INVARIANT checked call argument source missing line=" +
+              std::to_string(arena->span(cursor.expr).line));
+        arguments.push_back(std::move(*text));
+      }
+      return true;
+    }
+    return tree_parse_simple_call(source, callee, arguments);
+  }
+
+  bool checked_expression_parse_member_call(const string& source,
+      string& receiver, string& member, vector<string>& arguments) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena) return false;
+      const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+      if (!call) return false;
+      const auto* access = std::get_if<est::Member>(&arena->at(call->callee));
+      if (!access) return false;
+      auto text = expression_child_source(cursor, access->base);
+      if (!text)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT checked member receiver source missing line=" +
+            std::to_string(arena->span(cursor.expr).line));
+      receiver = std::move(*text);
+      member = access->name;
+      arguments.clear();
+      for (const auto argument : call->arguments) {
+        auto argument_text = expression_child_source(cursor, argument);
+        if (!argument_text)
+          throw std::logic_error(
+              "MOSS_INTERNAL_INVARIANT checked member argument source missing line=" +
+              std::to_string(arena->span(cursor.expr).line));
+        arguments.push_back(std::move(*argument_text));
+      }
+      return true;
+    }
+    return tree_parse_member_call(source, receiver, member, arguments);
+  }
+
+  bool checked_expression_outer_grouping(const string& source) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      return arena && std::holds_alternative<est::Parenthesized>(
+                          arena->at(cursor.expr));
+    }
+    return tree_outer_grouping(source);
+  }
+
+  moss::est::LiteralClass checked_expression_literal_class(
+      const string& source) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena) return moss::est::LiteralClass::None;
+      if (const auto* literal = std::get_if<est::Literal>(
+              &arena->at(cursor.expr)))
+        return literal->literal_class;
+      return moss::est::LiteralClass::None;
+    }
+    return tree_literal_class(source);
+  }
+
   std::optional<std::pair<string, string>> checked_expression_split_binary(
       const string& source, const vector<string>& operators) const {
     if (!active_est_expression_cursors_.empty() &&
@@ -26889,8 +26995,8 @@ class Checker {
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",
           "INVALID_EXPRESSION");
-    if (tree_literal_class(original) == moss::est::LiteralClass::String ||
-        tree_literal_class(original) == moss::est::LiteralClass::Character) {
+    if (checked_expression_literal_class(original) == moss::est::LiteralClass::String ||
+        checked_expression_literal_class(original) == moss::est::LiteralClass::Character) {
       mark_active_expression(OccurrenceKind::Literal);
       return;
     }
@@ -27045,7 +27151,7 @@ class Checker {
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
     // from the ordinary-expression checker.
-    if (tree_outer_grouping(original)) {
+    if (checked_expression_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
       const bool checked_node = !active_est_expression_cursors_.empty() &&
           active_est_expression_cursors_.back() &&
@@ -27184,7 +27290,7 @@ class Checker {
     }
     string value = tree_normalize_pipeline(std::move(original));
     string unary_operation, unary_operand;
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
@@ -27222,7 +27328,7 @@ class Checker {
         return;
       }
     }
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
       string operand = unary_operand;
@@ -27396,7 +27502,7 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "-" &&
         !checked_expression_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
@@ -27495,7 +27601,7 @@ class Checker {
           return;
         }
     }
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "~") {
       string operand = unary_operand;
         if (!check_expression_child_node(line, env, "operand"))
@@ -27511,7 +27617,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(value, callee, arguments) &&
+      if (checked_expression_parse_simple_call(value, callee, arguments) &&
           callee == "assertEqual" && arguments.size() == 2) {
         for (const auto& argument : arguments) {
           auto type = inferred_expr_type(argument, env);
@@ -27523,7 +27629,7 @@ class Checker {
     }
     string receiver, handler;
     vector<string> args;
-    if (tree_parse_member_call(value, receiver, handler, args)) {
+    if (checked_expression_parse_member_call(value, receiver, handler, args)) {
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
@@ -27980,7 +28086,7 @@ class Checker {
       }
     }
     string callee;
-    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+    if (checked_expression_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||

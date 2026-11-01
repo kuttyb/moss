@@ -13722,3 +13722,17 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   15,887 (-706); on `specialized_call_facts.moss`, from 26,775 to 26,017
   (-758). Checker reparses did not change (121 and 44). This remains far from
   tightened K2 target zero and is not a completion claim.
+
+## Phase 27.5.4 unary/call node-recursion checkpoint (2026-10-31)
+
+- In `check_expression`, literal class, parenthesized grouping, unary shape,
+  simple calls, and member calls now read the active EST node and child spans
+  when available. Existing text helpers remain only for paths with no active
+  cursor; these helpers themselves are not yet eliminated.
+- Focused functional-tree default/shadow checks and all six
+  optimizer-expression three-engine fixtures pass. `functional_basics.moss`
+  also passes in EST shadow mode. The focused cache counter reads 15,675
+  consultations for this source (down from 16,593 at baseline); parse counts
+  remain initial=26, checker=121 (body=18, view=59, pipeline=44).
+- This is a further reduction, not K2 completion. All broad suites remain
+  pending for the phase checkpoint.
