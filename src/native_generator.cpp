@@ -1593,6 +1593,38 @@ class Generator {
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types,
       const vector<EmitterExpr>* argument_nodes = nullptr) const {
+    if (function.static_dispatch) {
+      auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function.name,
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      if (checked.test_fact_dropped || checked.test_fact_perturbed)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
+      bool dropped_checked_call_edge = false;
+      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
+          dropped && string(dropped) == "g1") {
+        checked = {};
+        dropped_checked_call_edge = true;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && string(count) == "g1")
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
+                    << (phase21_codegen_statement_
+                            ? phase21_codegen_statement_->line : 0)
+                    << "|context=" << codegen_body_context_
+                    << "|callee=" << function.name << "\n";
+        return checked.unique;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
+          dropped_checked_call_edge)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
+            function.name + " line=" +
+            std::to_string(phase21_codegen_statement_
+                               ? phase21_codegen_statement_->line : 0) +
+            " context=" + codegen_body_context_);
+    }
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
@@ -1671,38 +1703,6 @@ class Generator {
               "checked open-result specialization key is absent from native projection");
         return &*exact;
       }
-    }
-    if (function.static_dispatch) {
-      auto checked = checked_call_edge_specialization(
-          p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
-      if (checked.test_fact_dropped || checked.test_fact_perturbed)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
-      bool dropped_checked_call_edge = false;
-      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
-          dropped && string(dropped) == "g1") {
-        checked = {};
-        dropped_checked_call_edge = true;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
-        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1")
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
-                    << (phase21_codegen_statement_
-                            ? phase21_codegen_statement_->line : 0)
-                    << "|context=" << codegen_body_context_
-                    << "|callee=" << function.name << "\n";
-        return checked.unique;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
-          dropped_checked_call_edge)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
-            function.name + " line=" +
-            std::to_string(phase21_codegen_statement_
-                               ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
     for (size_t index = 0; index < arguments.size(); ++index)
@@ -5282,9 +5282,6 @@ class Generator {
                 matching.push_back(candidate);
             }
             if (matching.size() == 1) target = matching.front();
-            else if (matching.size() > 1)
-              throw std::runtime_error(
-                  "MOSS_INTERNAL_INVARIANT ambiguous checked member-call edge");
           }
         }
         if ((starts_with(target, "builtin:") ||

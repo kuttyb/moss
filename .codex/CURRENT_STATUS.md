@@ -15763,3 +15763,21 @@ Latest pushed checkpoint is `69df03c1`; the call-edge change is not yet
 committed. Next: checkpoint this fix and continue reducing the emitter's
 remaining 35k reparses on this source, then measure the same full workload
 against the baseline after the migration stabilizes.
+
+### C2 static-call specialization lookup moved ahead of text probing (2026-11-01)
+
+`call_specialization` now consumes a unique checker call-edge specialization
+before probing returned-call and nested-open-call expression strings. This
+retains the existing string-key path only for calls where no unique checked
+edge is available. On `tests/phase27/est/specialized_call_facts.moss`, candidate
+native reparses fell from 2,681 on the saved 27.5.3 binary to 90; candidate
+text-node lookups are 88 (the parent binary does not report that counter).
+Generated Rust is byte-identical to the parent, and Fast Debug output is also
+byte-identical. The specialized-facts test passes in default and shadow; the
+string-debt audit passes. A broader `specialized_call_facts` invocation also
+exposed that same-name checked targets can remain ambiguous on one line, so
+that case now retains the existing path rather than asserting.
+
+This is a targeted fixture result, not the required corpus measurement. No
+full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
+`658a7ff6`, with this specialization lookup change awaiting commit/push.
