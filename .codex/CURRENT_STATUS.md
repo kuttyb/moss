@@ -1,7 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed commit:
-  `8a3ae4d8`. Vector-child cursor routing is uncommitted. Moss bootstrap
+- Branch: `phase27-5-4-work`; latest pushed commit: `452e0a3e` (also the
+  current branch tip). Working tree is clean after reverting a binary-child
+  cursor experiment and a source-match validation experiment. Moss bootstrap
   confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
@@ -59,8 +60,11 @@
   `swarm_001_parenthesized_pipeline` checks complete normally; functional-tree
   and Fast Debug/native/optimized parity harnesses pass. A binary-child cursor
   experiment was reverted because the regex check exceeded a 15-second
-  targeted timeout; it caused no diagnostic or acceptance change. Continue
-  investigating binary child traversal separately.
+  targeted timeout; it caused no diagnostic or acceptance change. A follow-up
+  that only propagated binary ExprIds when child source matched the split text
+  also hit the 15-second regex timeout and was reverted. Vector-only cursor
+  propagation remains the last validated state. The experimental code changed
+  no diagnostics, acceptance, nor focused cache counters.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
