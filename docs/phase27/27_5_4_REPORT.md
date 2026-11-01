@@ -519,3 +519,12 @@ emitter now returns immediately for an empty expression before a text lookup or
 parse. On the same optimized fixture this reduced counts from 65 lookups / 33
 reparses to 40 / 8. Generated Rust compiled with warnings denied, and both the
 native binary and Fast Debug print `string/map ok`.
+
+Another zero-lookup slice replaced domain-construction, Executor-chain, and
+FileIO-open/member shape checks with checked-node projections. On optimized
+`tests/phase15_15_string_map.moss`, emitter counts reached 0 text lookups / 0
+reparses (from 40 / 8). Its Rust compiles with warnings denied and prints
+`string/map ok`; `examples/counter.moss` compiles and prints `counter: 41` and
+`counter: 42`. The focused Phase 20 executor/FileIO harness passes. A separate
+optimized FileIO runtime fixture still records 500 lookups / 289 reparses, so
+this does not establish the C2 workload target.

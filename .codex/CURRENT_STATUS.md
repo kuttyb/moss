@@ -15543,3 +15543,15 @@ same fixture. Generated Rust compiled with `rustc -D warnings`; native and Fast
 Debug both print `string/map ok`, and the focused Phase 15.15 API test passes.
 This remains a focused reduction; residual 8 reparses and full-workload counts
 remain open. No full suite or perf run yet.
+
+### C2 domain and subsystem shape queries (2026-11-01)
+
+The remaining 24 text lookups on the optimized string-map fixture came from
+Executor and FileIO shape probes run on every statement, plus the driver’s
+domain-construction scan. Those probes now use checked expression ExprIds;
+domain lowering consumes named-argument nodes. The same fixture reports 0
+emitter text lookups / 0 expression reparses (previously 40 / 8). Rust compiles
+with warnings denied; native and Fast Debug print `string/map ok`. The
+`examples/counter.moss` generated Rust also compiles and prints `counter: 41` /`counter: 42`. The focused executor/FileIO harness passes. A targeted optimized
+FileIO runtime integration fixture remains at 500 lookups / 289 reparses; the
+C2 corpus workload target remains open. Temporary stack tracing was removed.

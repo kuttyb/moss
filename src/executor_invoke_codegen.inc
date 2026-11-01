@@ -134,8 +134,11 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
                             std::unordered_map<string,string>& types) {
   if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
       s.kind == Stmt::Kind::Var) {
+    const auto slot = s.kind == Stmt::Kind::Assign
+        ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+    const auto checked_source = checked_expression_ref(s, s.b, slot);
     vector<std::pair<string, vector<string>>> calls;
-    if (!tree_parse_executor_chain(s.b, calls) || calls.empty() ||
+    if (!tree_parse_executor_chain(checked_source, calls) || calls.empty() ||
         calls.back().first != "start")
       return false;
     if (!s.executor_start_plan_id)

@@ -1352,6 +1352,20 @@ class Generator {
                                     outputs_written);
   }
 
+  bool tree_parse_member_call(const EmitterExpr& expression,
+                              string& receiver, string& member,
+                              vector<string>& arguments,
+                              bool* outputs_written = nullptr) const {
+    if (!expression.arena) {
+      if (outputs_written) *outputs_written = false;
+      return false;
+    }
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_member_call(view, receiver, member, arguments,
+                                    outputs_written);
+  }
+
   bool tree_parse_member_access(const string& expression, string& base,
                                string& member) const {
     auto syntax = expression_view_from_est(expression);
@@ -1375,6 +1389,14 @@ class Generator {
                               vector<string>& arguments) const {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::project_fileio_open(*syntax, arguments);
+  }
+
+  bool tree_parse_fileio_open(const EmitterExpr& expression,
+                              vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_fileio_open(view, arguments);
   }
 
   bool tree_parse_fileio_chunks_source(const string& expression,
@@ -1455,6 +1477,15 @@ class Generator {
       vector<std::pair<string, vector<string>>>& calls) const {
     auto syntax = expression_view_from_est(expression);
     return syntax && est::project_executor_chain(*syntax, calls);
+  }
+
+  bool tree_parse_executor_chain(
+      const EmitterExpr& expression,
+      vector<std::pair<string, vector<string>>>& calls) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_executor_chain(view, calls);
   }
 
   string tree_strip_expression_grouping(const string& expression) const {
@@ -8089,7 +8120,15 @@ class Generator {
     vector<Stmt> constructions;
     vector<Stmt> executable;
     for (const auto& statement : m.body) {
-      if (domain_construction(statement.b)) constructions.push_back(statement);
+      const bool has_initializer = statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign;
+      const auto slot = statement.kind == Stmt::Kind::Assign
+          ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+      if (has_initializer && !statement.b.empty() &&
+          domain_construction(checked_expression_ref(
+              statement, statement.b, slot)))
+        constructions.push_back(statement);
       else executable.push_back(statement);
     }
     std::unordered_map<string,int> domain_ranks;
@@ -9071,7 +9110,7 @@ class Generator {
             ++i;
             break;
           }
-          if (auto sd = domain_construction(s.b)) {
+          if (auto sd = domain_construction(checked_rhs)) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
             remember_domain_instance_binding(s.a, source_domain, s.a);
@@ -9079,7 +9118,7 @@ class Generator {
             if (specialized != specialization_names_.end()) *sd = specialized->second;
             bool existing_binding = locals.count(s.a);
             o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
-            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+            emit_domain_construction(o, *sd, checked_rhs, d, locals, &types);
             locals.insert(s.a);
             types[s.a] = *sd;
             ++i;
@@ -9683,7 +9722,9 @@ class Generator {
                 "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
                 std::to_string(s.line) + " context=" + functional_context);
           bool joined_assignment = join_assignments.erase(s.a) != 0;
-          auto sd = domain_construction(s.b);
+          const EmitterExpr checked_initializer = checked_expression_ref(
+              s, s.b, est::ExprSlot::Initializer);
+          auto sd = domain_construction(checked_initializer);
           if (sd) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
@@ -9694,11 +9735,10 @@ class Generator {
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
             o << s.a << " = ";
-            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+            emit_domain_construction(o, *sd, checked_initializer, d, locals,
+                                     &types);
             types[s.a] = *sd;
           } else {
-            const EmitterExpr checked_initializer = checked_expression_ref(
-                s, s.b, est::ExprSlot::Initializer);
             const auto source_name = tree_identifier_name(checked_initializer);
             auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
@@ -9867,15 +9907,27 @@ class Generator {
     }
   }
 
-  std::optional<string> domain_construction(const string& expr) const {
-    string e = trim(expr);
-    string callee; vector<string> args;
-    if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
-    return domains_.count(callee) ? std::optional<string>(callee) : std::nullopt;
+  std::optional<string> domain_construction(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root)))
+      callee_id = call->callee;
+    else if (const auto* constructor = std::get_if<est::Constructor>(
+                 &expression.arena->at(root)))
+      callee_id = constructor->type;
+    else return std::nullopt;
+    callee_id = est::unparenthesized(*expression.arena, callee_id);
+    const auto* callee = std::get_if<est::Identifier>(
+        &expression.arena->at(callee_id));
+    return callee && domains_.count(callee->name)
+        ? std::optional<string>(callee->name) : std::nullopt;
   }
 
   void emit_domain_construction(std::ostringstream& o, const string& domain,
-                       const string& expression, const Domain* context,
+                       const EmitterExpr& expression, const Domain* context,
                        const std::set<string>& locals,
                        const std::unordered_map<string,string>* types) const {
     auto found = domains_.find(domain);
@@ -9884,14 +9936,25 @@ class Generator {
     }
     const Domain& definition = *found->second;
     o << "construct_" << snake_case(domain) << "(";
-    string constructor = trim(expression);
-    string callee; vector<string> arguments;
-    std::unordered_map<string,string> named;
-    if (tree_parse_simple_call(constructor, callee, arguments)) {
-      for (const auto& argument : arguments) {
-        string name, value;
-        if (tree_parse_named_argument(argument, name, value)) named[name] = value;
-      }
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const std::vector<est::ExprId>* arguments = nullptr;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root)))
+      arguments = &call->arguments;
+    else if (const auto* constructor = std::get_if<est::Constructor>(
+                 &expression.arena->at(root)))
+      arguments = &constructor->arguments;
+    if (!arguments)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked domain constructor is not a call");
+    std::unordered_map<string, EmitterExpr> named;
+    for (const auto argument_id : *arguments) {
+      const auto* argument = std::get_if<est::NamedArgument>(
+          &expression.arena->at(argument_id));
+      if (!argument)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked domain constructor argument is not named");
+      named.emplace(argument->name, expression.child(argument->value));
     }
     bool constructor_argument = false;
     {
@@ -9912,7 +9975,7 @@ class Generator {
         constructor_argument = true;
         o << (value == named.end()
             ? (field.init.empty() ? default_value(field.type)
-                                  : expr(field.init, context, locals, types))
+            : expr(field.init, context, locals, types))
             : expr(value->second, context, locals, types));
       }
     }

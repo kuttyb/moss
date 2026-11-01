@@ -32,8 +32,11 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   const string pad(spaces, ' ');
   if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
       s.kind == Stmt::Kind::Var) {
+    const auto slot = s.kind == Stmt::Kind::Assign
+        ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+    const auto checked_source = checked_expression_ref(s, s.b, slot);
     vector<string> open_arguments;
-    if (tree_parse_fileio_open(s.b, open_arguments)) {
+    if (tree_parse_fileio_open(checked_source, open_arguments)) {
       string opened = "FileIO::" + string(phase21_result_context_
           ? "open_checked" : "open") + "(&(" +
           expr(open_arguments[0], d, locals, &types) + "), " +
@@ -47,7 +50,7 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     }
     string receiver, method;
     vector<string> arguments;
-    if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+    if (tree_parse_member_call(checked_source, receiver, method, arguments) &&
         fileio_typed(types, receiver) && method == "read" &&
         arguments.size() == 2) {
       string read = method_receiver_place(
