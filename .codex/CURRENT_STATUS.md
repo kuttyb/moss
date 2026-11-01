@@ -1,7 +1,9 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed checkpoint is `890f45a7`
-  (parent `7fcf119f`). The worktree is clean. The current implementation has
+  (parent `7fcf119f`). The latest local slice extends exact `Argument[index]` pipeline selection
+  to the message validation passes; it is validated but not yet committed. The
+  current implementation has
   `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
   and reply pipeline validation receives its exact `ReturnValue` handle. The
   explicit-handle path in `functional_pipeline_from_est` projects that ExprId
@@ -19,8 +21,8 @@
   functional candidate text scan in `functional_pipeline_from_est`; callers
   without an exact handle retain the legacy fallback while they are migrated.
   The functional-tree harness passes default/shadow, `phase4_terminal_boundary`
-  remains accepted, and the domain-boundary negative remains rejected. This
-  focused route is not covered by the `functional_basics` counter, which stays
+  remains accepted, and the domain-boundary negative remains rejected. Message argument validation
+  now uses exact handles in all three checker passes. This focused route is not covered by the `functional_basics` counter, which stays
   at 15,160 cache consultations / 121 checker reparses.
 - Tight K2 clarification is active: every checker EST cache lookup and every
   text-keyed parse-cache consultation is a lookup (hit or miss). The focused

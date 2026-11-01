@@ -14327,7 +14327,11 @@ class Checker {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
                   if (auto pipeline =
-                          functional_pipeline_from_est(statement.args[index]);
+                          functional_pipeline_from_est(
+                              statement.args[index],
+                              &statement.expression_handles,
+                              std::pair{est::ExprSlot::Argument,
+                                        static_cast<std::uint32_t>(index)});
                       pipeline &&
                           functional_pipeline_requires_materialization(*pipeline))
                     err(statement.line,
@@ -29486,8 +29490,12 @@ class Checker {
                 "move the shared logic into an ordinary non-domain helper and call it directly");
           }
         }
-        for (const auto& argument : statement.args) {
-          if (auto pipeline = functional_pipeline_from_est(argument)) {
+        for (std::size_t index = 0; index < statement.args.size(); ++index) {
+          const auto& argument = statement.args[index];
+          if (auto pipeline = functional_pipeline_from_est(
+                  argument, &statement.expression_handles,
+                  std::pair{est::ExprSlot::Argument,
+                            static_cast<std::uint32_t>(index)})) {
             auto source_type = inferred_expr_type(pipeline->source, current_env);
             if (source_type && functional_element_type(
                                    *source_type, pipeline->source) &&
