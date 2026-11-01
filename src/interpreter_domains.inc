@@ -384,16 +384,19 @@
     auto& instance = *call.instance;
     const Handler* target = call.target;
     int line = call.line;
+    const auto& specialization =
+        program_.domain_specializations.at(*instance.concrete->specialization_index);
     const bool root_ingress = caller.domain == nullptr;
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
-    frame.functional_context = functional_handler_context(*instance.definition, *target);
+    frame.functional_context = specialization.materialized_layout
+        ? functional_handler_instance_context(
+              *instance.definition, *target, specialization.instance)
+        : functional_handler_context(*instance.definition, *target);
     frame.source_file = target->execution_source_file.empty()
         ? instance.definition->source_file : target->execution_source_file;
     frame.semantic_identity = "handler:" + instance.definition->name + "." +
         target->name + "@" + std::to_string(target->line);
-    const auto& specialization =
-        program_.domain_specializations.at(*instance.concrete->specialization_index);
     auto parameter_types = specialization.handler_parameter_types.find(target->name);
     std::string payload;
     for (size_t i = 0; i < call.arguments.size(); ++i) {

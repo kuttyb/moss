@@ -1299,7 +1299,7 @@ class FastInterpreter {
 
   std::optional<std::string> checked_trait_method_target(
       const ExpressionTreeView& tree, est::ExprId call_id,
-      const Frame& frame, int line, const std::string& method_name) const {
+      const Frame& frame, const std::string& method_name) const {
     const auto* active_function = function(frame.function);
     if (!active_function) return std::nullopt;
     const FunctionSpecialization* selected_specialization = nullptr;
@@ -1332,8 +1332,6 @@ class FastInterpreter {
     std::vector<std::pair<std::size_t, std::string>> selected_targets;
     for (const auto& requirement : selected_specialization->member_requirements) {
       if (requirement.member_name != method_name ||
-          (requirement.origin.line != line &&
-           requirement.origin.line + 1 != line) ||
           !requirement.selected_callable_id)
         continue;
       const auto marker = requirement.requirement_id.rfind(":member:");
@@ -2347,9 +2345,10 @@ class FastInterpreter {
                 " found=" + (target_facts ? target_facts->resolved_target
                                            : std::string("<absent>")));
           }
-          if (checked_target.rfind("trait-method:", 0) == 0) {
+          if (checked_target.rfind("trait-method:", 0) == 0 ||
+              checked_target.rfind("parameter:", 0) == 0) {
             auto selected = tree
-                ? checked_trait_method_target(*tree, current_root, frame, line,
+                ? checked_trait_method_target(*tree, current_root, frame,
                                               method_name)
                 : std::nullopt;
             if (!selected)

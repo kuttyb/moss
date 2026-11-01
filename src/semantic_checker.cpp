@@ -9953,6 +9953,39 @@ class Checker {
         check_ownership(arm.body, std::move(arm_ownership), &d, &h);
         check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
       }
+      // A generic source handler can be instantiated with different concrete
+      // state and payload types. Record checked expression/call facts under a
+      // stable per-instance context for consumers executing the materialized
+      // handler body.
+      for (const auto& specialization : p_.domain_specializations) {
+        if (specialization.source_domain != d.name ||
+            !specialization.materialized_layout)
+          continue;
+        TypeEnv specialized_env;
+        specialized_env["self"] = d.name;
+        for (size_t parameter_index = 0;
+             parameter_index < h.params.size(); ++parameter_index) {
+          const auto& parameter = h.params[parameter_index];
+          auto parameters = specialization.handler_parameter_types.find(h.name);
+          specialized_env[parameter.name] =
+              parameters != specialization.handler_parameter_types.end() &&
+                      parameter_index < parameters->second.size() &&
+                      !parameters->second[parameter_index].empty()
+                  ? parameters->second[parameter_index]
+                  : parameter.type;
+        }
+        for (const auto& field : d.state) {
+          auto concrete = specialization.state_types.find(field.name);
+          specialized_env[field.name] = concrete == specialization.state_types.end()
+              ? field.type : concrete->second;
+        }
+        for (const auto& route : d.routes)
+          specialized_env[route.name] = route.type;
+        SourceFileScope instance_context(
+            current_semantic_context_,
+            functional_handler_instance_context(d, h, specialization.instance));
+        check_stmts(h.body, std::move(specialized_env), &d, &h);
+      }
       const bool has_captures = std::any_of(
           h.failure_arms.begin(), h.failure_arms.end(),
           [](const FailureArm& arm) { return !arm.captures.empty(); });
@@ -13355,9 +13388,14 @@ class Checker {
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env)) {
-          const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
+          const string& receiver_context = !join_context.empty()
+              ? join_context
+              : starts_with(current_semantic_context_, "handler:")
+                    ? current_semantic_context_ : join_context;
+          const_cast<Stmt&>(statement).receiver_types_by_context[
+              receiver_context] = *receiver;
           record_statement_type_fact(statement, est::ExprSlot::Receiver, 0,
-              statement.a, join_context, canonical_type_name(*receiver));
+              statement.a, receiver_context, canonical_type_name(*receiver));
         }
       }
       if (record_semantic_types && !join_context.empty() &&

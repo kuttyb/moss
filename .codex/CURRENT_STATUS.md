@@ -16380,3 +16380,46 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Startup bootstrap reports language version `moss-0.1`. The requested
   `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` path is absent on this branch; the
   current contract is `docs/MOSS_COMPILER_CONTRACT.md`.
+
+## C2 concrete handler facts (2026-11-01; working tree)
+
+- Checker now rechecks each materialized domain handler under
+  `handler:<source-domain>.<handler>@<instance>` with that instance's checked
+  state and parameter types. Fast Debug uses this context only for
+  materialized layouts; typed/non-materialized handlers retain the generic
+  context. The emitter maps generated domain aliases back to the same source
+  domain/instance context.
+- Focused validation passes: `phase106d_specializations` prints `11 22` in
+  Fast Debug and in freshly emitted/compiled native Rust; `phase106e_domains`
+  and `phase106d_nested` keep matching prior output. Fact-hook script passes
+  all required classes and known debt `38/38`. An initial attempt to reuse a
+  generic function's `parameter:0.method:add` placeholder in Fast Debug was
+  corrected to read the checked selected specialization member requirement;
+  `generic_method_effects` again prints `12 5`, and its known-debt perturb
+  behavior no longer expands the ignored-engine set.
+- Feedback observation recorded in
+  `agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`;
+  run `check_agent_feedback.py` before committing. No full gates, corpus-wide
+  counters, perf suite, Agent 2 audit, merge, or tag has run.
+
+## C2 context slice validation (2026-11-01; ready to checkpoint)
+
+- The first materialized-context implementation accidentally changed typed
+  handler context selection. Restricting the new context to
+  `DomainSpecialization.materialized_layout` restored `phase106e_domains`.
+  Also key statement receiver facts by the active handler context when no
+  function-specialization join context exists; ordinary function facts retain
+  the empty fallback key.
+- Fast Debug now handles the generic checked target placeholder
+  `parameter:<n>.method:<name>` by reading the active checked function
+  specialization's `MemberDispatchRequirement.selected_callable_id`. It no
+  longer rejects the specialization requirement due to the requirement's
+  origin being the outer call line. This restored unperturbed Fast Debug on
+  `generic_method_effects` (`12 5`); the ownership fact-hook matrix passes
+  without growing the ignored-engine debt set.
+- Tests at this checkpoint: phase 27.5.4 fact-hook script PASS (all required
+  classes; known debt `38/38`), `check_phase106e_domains.py` PASS,
+  `check_phase106f.py` PASS, generated Rust compiles and matches Fast Debug on
+  `phase106d_specializations` (`11 22`) and `phase106e_domains`; Team A and
+  functional-tree harnesses PASS. Feedback validation and `git diff --check`
+  PASS. No full C2 gates/corpus counters/perf/Agent 2/merge/tag.

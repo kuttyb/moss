@@ -1059,4 +1059,10 @@ inline string functional_handler_context(const Domain& domain,
   return "handler:" + domain.name + "." + handler.name;
 }
 
+inline string functional_handler_instance_context(const Domain& domain,
+                                                  const Handler& handler,
+                                                  const string& instance) {
+  return functional_handler_context(domain, handler) + "@" + instance;
+}
+
 } // namespace moss

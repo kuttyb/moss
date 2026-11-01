@@ -206,6 +206,8 @@ class Generator {
       }
       specialized_domains_.push_back(std::move(specialized));
       specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
+      specialization_instances_[specialized_domains_.back().name] =
+          specialization.instance;
       specialization_names_[specialization.source_domain + "\n" +
                             specialization.instance] =
           specialized_domains_.back().name;
@@ -445,6 +447,7 @@ class Generator {
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
   std::unordered_map<string,string> specialization_sources_;
+  std::unordered_map<string,string> specialization_instances_;
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const EnumType*> enums_;
@@ -950,6 +953,17 @@ class Generator {
                                           const Handler& handler) {
     return functional_handler_context(domain, handler) + "@" +
         std::to_string(handler.line);
+  }
+
+  string checked_handler_context(const Domain& domain,
+                                 const Handler& handler) const {
+    auto source = specialization_sources_.find(domain.name);
+    auto instance = specialization_instances_.find(domain.name);
+    if (source != specialization_sources_.end() &&
+        instance != specialization_instances_.end())
+      return "handler:" + source->second + "." + handler.name + "@" +
+          instance->second;
+    return functional_handler_context(domain, handler);
   }
 
   // Mirrors Checker::echo_display_class for an already-checked Vector type.
