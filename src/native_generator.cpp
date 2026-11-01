@@ -5095,7 +5095,15 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
-    auto source_type = generated_expr_type(pipeline.source, types);
+    const std::optional<EmitterExpr> checked_source =
+        pipeline.expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  pipeline.expression_arena, pipeline.source_node,
+                  pipeline.expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(pipeline.source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
