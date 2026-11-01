@@ -14601,3 +14601,25 @@ Fast Debug fails closed with a missing checked expression node at generated
 and `test score: 12`. This is a C1 Fast Debug regression outside current
 emitter edits, discovered by the C2 parity check; it must be resolved or
 classified before final C2 gates. No full suite has run.
+
+### Phase 27.5.4 C2 progress report 6 — checked calls and constructors
+
+The emitter's explicit node path now reads `resolved_target` from checked facts
+for direct known-function Call nodes and renders Object Constructor fields
+from their NamedArgument ExprIds. Other call forms continue through the legacy
+string path. This is a partial consumer migration; not a claim that call
+re-parsing or target reconstruction is eliminated globally.
+
+Targeted c96 parent -> candidate counters after this change:
+
+- `tests/phase5_tooling.moss`: text lookups 2,155 -> 1,590; expression-view
+  reparses 1,081 -> 890.
+- `tests/phase4_callable_specialization.moss`: 841 -> 583; 439 -> 303.
+- `examples/functional_objects.moss`: 2,596 -> 2,008; 1,426 -> 1,188.
+- `examples/object_pipeline.moss`: 2,922 -> 2,025; 1,530 -> 1,369.
+
+For all four, generated Rust remains byte-identical to the parent, compiles,
+and native output matches Fast Debug. The fact-hook test-build harness still
+passes (last run at report 4; no hook implementation changed since). C1
+Fast Debug fixture failure noted in report 5 remains unresolved. No full suite,
+three-engine bulk check, or performance gate has run.

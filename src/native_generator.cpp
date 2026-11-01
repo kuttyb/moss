@@ -3666,6 +3666,79 @@ class Generator {
         return "(" + left + ") " + op + " (" + right + ")";
       }
     }
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      const auto callee_id = est::unparenthesized(*expression.arena,
+                                                   call->callee);
+      if (const auto* callee = std::get_if<est::Identifier>(
+              &expression.arena->at(callee_id))) {
+        const string checker_context =
+            !codegen_active_specialization_key_.empty()
+                ? "specialization:" + codegen_active_specialization_key_
+                : codegen_body_context_;
+        const auto* facts = expression.arena->facts(root, checker_context);
+        const string checked_target = facts ? facts->resolved_target : string();
+        const Function* function = nullptr;
+        if (starts_with(checked_target, "callable-v1:"))
+          function = find_function_by_callable_id(checked_target);
+        else if (starts_with(checked_target, "fn:")) {
+          const string name = checked_target.substr(3);
+          auto found = functions_.find(name);
+          if (found != functions_.end()) function = found->second;
+        }
+        bool simple_arguments = true;
+        vector<string> arguments;
+        for (const auto argument_id : call->arguments) {
+          if (std::holds_alternative<est::NamedArgument>(
+                  expression.arena->at(argument_id))) {
+            simple_arguments = false;
+            break;
+          }
+          arguments.push_back(expression.child(argument_id).text());
+        }
+        if (function && simple_arguments)
+          return render_known_function_call(*function, function->name,
+              arguments, d, locals, types);
+        (void)callee;
+      }
+    }
+    if (const auto* constructor = std::get_if<est::Constructor>(
+            &expression.arena->at(root))) {
+      const auto type_id = est::unparenthesized(*expression.arena,
+                                                  constructor->type);
+      if (const auto* type_name = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id))) {
+        auto object = objects_.find(type_name->name);
+        if (object != objects_.end()) {
+          std::unordered_map<string, EmitterExpr> values;
+          bool named = true;
+          for (const auto argument_id : constructor->arguments) {
+            const auto* argument = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (!argument) { named = false; break; }
+            values[argument->name] = expression.child(argument->value);
+          }
+          if (named) {
+            std::ostringstream rendered;
+            rendered << type_name->name << " { ";
+            bool first = true;
+            for (const auto& field : object->second->fields) {
+              auto value = values.find(field.name);
+              if (value == values.end())
+                throw std::runtime_error(
+                    "missing object constructor field: " + type_name->name +
+                    "." + field.name);
+              if (!first) rendered << ", ";
+              first = false;
+              rendered << rust_identifier(field.name) << ": "
+                       << expr(value->second, d, locals, types);
+            }
+            rendered << " }";
+            return rendered.str();
+          }
+        }
+      }
+    }
     if (const auto* index = std::get_if<est::Index>(
             &expression.arena->at(root))) {
       const auto base_expr = expression.child(index->base);
