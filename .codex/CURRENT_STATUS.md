@@ -16670,3 +16670,24 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - This new slice occurred after the paired whole-corpus report at `698b1afe`;
   rerun the paired counters after the next focused migration set. C2 remains
   incomplete; full gates, perf and Agent 2 audit remain pending.
+
+## C2 checkpoint: last paired sweep and subsequent node routes (2026-11-01)
+
+- Latest like-for-like whole workload evidence remains
+  `tmp/phase2754-emitter-counts/1793575997014396873/summary.json`: on 1,824
+  tracked sources (3,648 emissions), C1 parent -> candidate was 9,735,229 -> 66
+  native reparses, 14,606,057 -> 114 text lookups, and 7,362 -> 0 functional
+  pipeline reparses. Emission failures were 1,406 -> 1,410; only the documented
+  formatter failed-attempt and malformed incomplete-index sources add failures.
+- Subsequent committed changes `34564b6e`, `12186d77`, and `c84213ba` removed
+  additional targeted debt: functional_reductions -O 14/14 -> 0/0; range copy
+  1/1 per mode -> 0/0; recovery/enum capture fixture 3/3 per mode -> 0/0.
+  Generated Rust remained byte-identical on each. The capture fixture compiles
+  and matches native/Fast Debug output. These changes make the 66/114 paired
+  candidate totals stale; rerun the paired whole workload after the next
+  targeted slice.
+- The old hotspot set has many now-zero sources: qualified-module examples,
+  validation-engine tests, natural validation and borrowed reads all report
+  0/0. Remaining known hotspots are small Phase 21/25 effect/ownership probes,
+  swap assignment and nested mutating calls. No full suite/perf or Agent 2 audit
+  has run.
