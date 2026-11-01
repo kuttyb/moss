@@ -27,6 +27,13 @@
   per command after receiver/query slices); optimizer remains zero by source
   audit. Continue node migration and like-for-like measurement before full
   gates. Run full suites once at the end, then Agent 2 once.
+- A fresh one-command calculator counter sample on the current pushed code
+  reports 15,360 native expression-view reparses, 22,836 text-node lookups,
+  171 text-to-tree rebuilds, and 19,991 total post-initial expression-text
+  parses across consumers plus other stages. Largest expression-view query
+  families: unary 635, simple-call 465, grouping 452, message 327, enum-case
+  285, identifier 222. This is a diagnostic sample, not the paired parent
+  comparison or a performance suite.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.
