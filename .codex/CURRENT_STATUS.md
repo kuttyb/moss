@@ -1,7 +1,7 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `d2eb491f`; current inference projections are
+  latest pushed commit is `fa4899b5`; named-argument classification is
   uncommitted. No full suite,
   corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
@@ -50,6 +50,12 @@
   `check_phase27_est_functional_tree.py` for regex and the pipeline fixture.
   The root cause is not isolated; do not reapply that slice without a safer
   cursor-lifetime investigation.
+- A narrowed ordinary Stmt::Call change now classifies an argument as named
+  from its retained `Argument[index]` node, while leaving recursive checking on
+  the established string path. The regex/pipeline, functional-basics,
+  specialized-call, and borrow fixtures pass; a temporary `f(a: 1)` probe
+  still rejects with `CALL_NAMED_ARGUMENT_UNSUPPORTED`. It did not move the
+  focused aggregate counters, so no K2 delta is claimed.
 - `fileio_result_type` now consumes the active checked member-call node and
   infers its receiver / first argument through child ExprIds. Targeted checks
   pass for `phase20_fileio_helper_parameter.moss`,

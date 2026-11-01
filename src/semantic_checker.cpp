@@ -26310,6 +26310,33 @@ class Checker {
     return nullptr;
   }
 
+  std::optional<bool> checked_named_argument(
+      const std::vector<est::Handle>& handles, est::ExprSlot slot,
+      std::uint32_t argument_index, std::string_view source,
+      string& name, string& value, char& separator) const {
+    for (const auto& handle : handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index)
+        continue;
+      const auto* arena = expression_arena(handle.arena_index);
+      if (!arena || handle.expr >= arena->size()) return std::nullopt;
+      const auto root = est::unparenthesized(*arena, handle.expr);
+      const auto* named = std::get_if<est::NamedArgument>(&arena->at(root));
+      if (!named) return false;
+      EstExpressionCursor cursor{handle.arena_index, handle.expr,
+                                 std::string(source)};
+      auto argument_value = expression_child_source(cursor, named->value);
+      if (!argument_value)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT named argument value span missing line=" +
+            std::to_string(arena->span(root).line));
+      name = named->name;
+      value = std::move(*argument_value);
+      separator = named->separator;
+      return true;
+    }
+    return std::nullopt;
+  }
+
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr,
@@ -29983,7 +30010,15 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (tree_parse_named_argument(argument, name, val))
+            char separator = ':';
+            const auto checked_named = checked_named_argument(
+                statement.expression_handles, est::ExprSlot::Argument,
+                static_cast<std::uint32_t>(index), argument, name, val,
+                separator);
+            const bool named = checked_named
+                ? *checked_named
+                : tree_parse_named_argument(argument, name, val);
+            if (named)
               check_expression(statement.line, val, current_env, occurrence_slot,
                                "call-argument:" + std::to_string(index));
             else
