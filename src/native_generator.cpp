@@ -2511,6 +2511,15 @@ class Generator {
       est::record_generated_type_fact_coverage("text-query", false);
     }
 #endif
+    // Backend-created temporary bindings and simple local-name queries already
+    // have their type in the lexical environment. Resolve that name directly;
+    // do not rebuild an expression tree just to rediscover the same binding.
+    if (types) {
+      const auto local = types->find(string(expression));
+      if (local != types->end() && !local->second.empty() &&
+          !contains_internal_placeholder(local->second))
+        return canonical_type_name(local->second);
+    }
     string original = tree_strip_expression_grouping(expression);
     {
       string callee;

@@ -15463,3 +15463,16 @@ lookups / 86 reparses; this is a structural migration, not a measured delta.
 The four-class perturb/drop harness (5/4/4/3 fixtures) and three-engine check
 pass. This checkpoint is committed and pushed as `051434d1`. Continue C2 consumer
 migration; do not run full suite/perf until near completion.
+
+### C2 local-name type query checkpoint (2026-11-01)
+
+A test-build input trace for optimized `functional_semantic_optimization.moss`
+showed repeated parser calls for names already present in the local type map.
+`generated_expr_type(string)` now directly reads a local's existing type before
+calling parser-backed structural helpers. This avoids parse/reparse for that
+exact name without any node lookup by expression text. Like-for-like C1 versus
+candidate optimized counters: 1,844 -> 649 text lookups, 1,166 -> 628 native
+expression reparses, and 1 -> 0 native functional-pipeline reparses. Rust is
+byte-identical; both outputs are `semantic space: 68 5 34 3 4 true`. This
+checkpoint's code is uncommitted after pushed `cae83799`; full suites, final
+paired workload, parity and perf remain pending.

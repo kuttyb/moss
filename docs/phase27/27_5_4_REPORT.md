@@ -476,3 +476,16 @@ optimized `collections_and_methods` Rust is byte-identical to C1 in default and
 this migration is not counted as a measured reduction on that fixture. The
 four-class perturb/drop harness (call targets 5, specializations 4, joins 4,
 patterns 3) and three-engine check pass. Full gates remain pending.
+
+### C2 local type-name fast path (2026-11-01)
+
+A trace of optimized `functional_semantic_optimization.moss` showed repeated
+legacy helper parses for local names and backend-generated temporary bindings.
+`generated_expr_type(string)` now checks its existing lexical type map for an
+exact binding key before invoking expression-tree helpers; this uses the
+consumer's already-known local type and does not look up an expression node by
+text. On the same optimized fixture, C1 -> candidate text lookups fell
+1,844 -> 649, expression-view reparses 1,166 -> 628, and native functional
+pipeline reparses 1 -> 0. Candidate Rust is byte-identical to C1 and both
+binaries print `semantic space: 68 5 34 3 4 true`. Full paired workload and
+final gates remain pending.
