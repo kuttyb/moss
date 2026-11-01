@@ -1,3 +1,30 @@
+# Phase 27.5.4 C2 handover (2026-11-01; primitive type-query slice)
+
+- Branch `phase27-5-4-work`; latest pushed tip before this slice is
+  `6ce8ffa9`. Current uncommitted changes are a primitive-type fast path in
+  `src/native_generator.cpp` and this status update. It uses the existing
+  numeric-literal decoder and recognizes exact primitive literal spellings
+  before expression-tree query helpers; complex expression inference is
+  unchanged.
+- `calc_interpreter` native debug build/run, `margo debug`, and release
+  build/run pass with identical expected output (`= 7`, `= -12`, `= 154`,
+  `= 0`, and four expected errors). `check_phase27_5_4_fact_hooks.py` passes;
+  known debt remains 38/38. `check_phase27_string_debt.py --require-zero
+  fast_debug` passes. No full suite or performance suite was run.
+- Paired `src/main.moss` emitter measurement, phase27-5-3-c1 parent vs
+  candidate, default and `-O`: parent 363,004 reparses (362,644 expression
+  view, 360 pipeline); candidate 32,432 (expression view, 0 pipeline), down
+  91.1%. Both had zero emission failures. Candidate text-node lookups: 52,124;
+  parent counter unavailable. This slice improved the immediately prior
+  candidate (70,292 reparses / 89,984 lookups). Optimizer expression parsing
+  and lookup count remains zero by source inspection but still needs explicit
+  final gate evidence.
+- Next: commit/push this slice, continue migrating expression-shaped
+  generated-type queries to retained ExprIds, and remeasure the exact same
+  source/commands at each C2 checkpoint. Corpus counters, final full suites,
+  three-engine/parity aggregate, performance gate, and Agent 2 audit remain
+  reserved for near completion.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checked member-edge slice)
 
 - Branch `phase27-5-4-work`; pushed through `f39cf47a`. A follow-up emitter

@@ -2648,6 +2648,17 @@ class Generator {
           !contains_internal_placeholder(local->second))
         return canonical_type_name(local->second);
     }
+    // Preserve the old primitive classification without routing these
+    // synthetic backend literals through the Moss expression parser.
+    if (expression == "true" || expression == "false") return string("bool");
+    if (expression == "None") return string("_none");
+    if (!expression.empty() && expression.front() == '"' &&
+        expression.back() == '"') return string("string");
+    if (!expression.empty() && expression.front() == '\'' &&
+        expression.back() == '\'') return string("char");
+    if (auto number = decode_numeric_literal_expression(expression))
+      return number->kind == NumericLiteral::Kind::Int
+          ? std::optional<string>("int") : std::optional<string>("float");
     string original = tree_strip_expression_grouping(expression);
     {
       string callee;
