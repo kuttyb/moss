@@ -1,9 +1,9 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `6108ed2d`; retained argument-node routing is
-  uncommitted. No full suite, corpus pass, or performance
-  run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
+  latest pushed commit is `f9197e1d`; retained argument-node routing is
+  committed. The one default full-suite run failed at a baseline-reproducible
+  EST fixture segfault; no corpus or performance run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Latest focused improvement removes a redundant `functional_pipeline_from_est`
   parse from `fileio_result_type`: the EST member-call projection already
   requires a root Call, so it cannot mistake a Pipeline root for its first
@@ -31,6 +31,11 @@
   (functional-basics checker=101 parses, text-cache=14,766;
   specialized-call checker=44, text-cache=24,405), so this is a node
   routing foundation, not measured K2 progress yet.
+- A follow-up mapping of `call-invocation` to `ExprSlot::Expression` was
+  tested and reverted: it made `packages/regex/src/main.moss` segfault.
+  The focused regex/pipeline harness and Fast Debug/native/optimized
+  parity harness pass again after the revert. Do not restore that mapping
+  without resolving the handle/context mismatch first.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
   Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses
