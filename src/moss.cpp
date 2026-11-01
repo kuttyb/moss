@@ -4334,9 +4334,18 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
   facts.resolved_target = std::move(target);
   const auto context = functional_function_context(function);
   arena_owner->record_facts(id, context, facts);
-  for (const auto& specialization : function.specializations)
+  for (const auto& specialization : function.specializations) {
+    auto specialized_facts = facts;
+    if (auto result = moss::Type::parse_canonical(
+            canonical_type_name(specialization.return_type)))
+      specialized_facts.type = std::move(*result);
     arena_owner->record_facts(id,
-        functional_function_context(function, &specialization), facts);
+        "specialization:" + specialization.stable_type_key,
+        specialized_facts);
+    arena_owner->record_facts(id,
+        functional_function_context(function, &specialization),
+        std::move(specialized_facts));
+  }
   return id;
 }
 
@@ -6670,6 +6679,9 @@ void project_imported_h3_checked_bodies(Program& program) {
     attach_imported_checked_body_expression(
         program, function, bind, est::ExprSlot::Initializer, expression,
         {});
+    if (!bind.expression_handles.empty())
+      function.imported_checked_body_result_handle =
+          bind.expression_handles.back();
     Stmt returned;
     returned.kind = Stmt::Kind::Return;
     returned.line = bind.line + 1;

@@ -1879,6 +1879,29 @@ class Checker {
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     {
       CompilerStageTimer timer("typed_semantics_export");
+      // Source-free H3 result nodes are projected before call closure creates
+      // concrete specializations. Carry the exact checked result type into
+      // those contexts without reconstructing it from the projected Stmt.
+      for (const auto& function : p_.functions) {
+        if (!function.imported_checked_body_result_handle) continue;
+        const auto& handle = *function.imported_checked_body_result_handle;
+        if (handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        auto& arena = *p_.expression_arenas[handle.arena_index];
+        const auto* generic_facts = arena.facts(
+            handle.expr, functional_function_context(function));
+        if (!generic_facts) continue;
+        for (const auto& specialization : function.specializations) {
+          const string context =
+              "specialization:" + specialization.stable_type_key;
+          auto result = moss::Type::parse_canonical(
+              canonical_type_name(specialization.return_type));
+          if (!result || !(*result)->is_closed()) continue;
+          auto facts = *generic_facts;
+          facts.type = std::move(*result);
+          arena.record_facts(handle.expr, context, std::move(facts));
+        }
+      }
       warn_fileio_blocking_with_shared_write();
       retain_checked_type_uses();
       std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),

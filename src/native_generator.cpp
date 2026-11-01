@@ -1593,38 +1593,6 @@ class Generator {
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types,
       const vector<EmitterExpr>* argument_nodes = nullptr) const {
-    if (function.static_dispatch) {
-      auto checked = checked_call_edge_specialization(
-          p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
-      if (checked.test_fact_dropped || checked.test_fact_perturbed)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
-      bool dropped_checked_call_edge = false;
-      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
-          dropped && string(dropped) == "g1") {
-        checked = {};
-        dropped_checked_call_edge = true;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
-        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1")
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
-                    << (phase21_codegen_statement_
-                            ? phase21_codegen_statement_->line : 0)
-                    << "|context=" << codegen_body_context_
-                    << "|callee=" << function.name << "\n";
-        return checked.unique;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
-          dropped_checked_call_edge)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
-            function.name + " line=" +
-            std::to_string(phase21_codegen_statement_
-                               ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
-    }
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
@@ -1703,6 +1671,38 @@ class Generator {
               "checked open-result specialization key is absent from native projection");
         return &*exact;
       }
+    }
+    if (function.static_dispatch) {
+      auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function.name,
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      if (checked.test_fact_dropped || checked.test_fact_perturbed)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
+      bool dropped_checked_call_edge = false;
+      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
+          dropped && string(dropped) == "g1") {
+        checked = {};
+        dropped_checked_call_edge = true;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && string(count) == "g1")
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
+                    << (phase21_codegen_statement_
+                            ? phase21_codegen_statement_->line : 0)
+                    << "|context=" << codegen_body_context_
+                    << "|callee=" << function.name << "\n";
+        return checked.unique;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
+          dropped_checked_call_edge)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
+            function.name + " line=" +
+            std::to_string(phase21_codegen_statement_
+                               ? phase21_codegen_statement_->line : 0) +
+            " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
     for (size_t index = 0; index < arguments.size(); ++index)
@@ -2551,6 +2551,18 @@ class Generator {
         std::find(contexts.begin(), contexts.end(), codegen_body_context_) ==
             contexts.end())
       contexts.push_back(codegen_body_context_);
+    // Imported checked bodies are projected with their generic function
+    // context before the consumer closes a concrete specialization. Preserve
+    // those checked targets as a fallback when no per-specialization fact was
+    // exported; generated_expr_type still rejects open types below.
+    const auto specialization_open = codegen_body_context_.find('<');
+    if (specialization_open != string::npos) {
+      const string generic_context =
+          codegen_body_context_.substr(0, specialization_open);
+      if (std::find(contexts.begin(), contexts.end(), generic_context) ==
+          contexts.end())
+        contexts.push_back(generic_context);
+    }
     if (phase21_codegen_statement_ &&
         !phase21_codegen_statement_->source_file.empty()) {
       const string source_context = "source:" +
@@ -2924,16 +2936,11 @@ class Generator {
     if (!expression.arena) return std::nullopt;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const est::Node& node = expression.arena->at(root);
-    const auto checker_context = !codegen_active_specialization_key_.empty()
-        ? "specialization:" + codegen_active_specialization_key_
-        : codegen_body_context_;
-    const auto* facts = expression.arena->facts(expression.id,
-                                                 checker_context);
-    if (!facts && root != expression.id)
-      facts = expression.arena->facts(root, checker_context);
-    if (!facts) facts = expression.arena->facts(expression.id, "");
-    if (!facts && root != expression.id)
-      facts = expression.arena->facts(root, "");
+    const auto* facts = checked_expression_facts(expression);
+    if (!facts && root != expression.id) {
+      auto root_expression = expression.child(root);
+      facts = checked_expression_facts(root_expression);
+    }
     const bool has_fact = facts && facts->type;
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
@@ -2955,7 +2962,8 @@ class Generator {
       est::record_generated_type_fact_coverage(kind, has_fact);
     }
 #endif
-    if (has_fact) return canonical_type_name(facts->type);
+    if (has_fact && facts->type->is_closed())
+      return canonical_type_name(facts->type);
     const auto legacy_type = []() -> std::optional<string> {
       return std::nullopt;
     };
@@ -2967,6 +2975,8 @@ class Generator {
         auto found = types->find(identifier->name);
         if (found != types->end()) return canonical_type_name(found->second);
       }
+      if (functions_.count(identifier->name))
+        return "callable:" + identifier->name;
       return legacy_type();
     }
     if (std::holds_alternative<est::Placeholder>(node) && types) {
@@ -3142,11 +3152,18 @@ class Generator {
         if (found != functions_.end() && found->second->static_dispatch) {
           checked_edge = checked_call_edge_specialization(
               p_, codegen_body_context_, found->second->name,
-              static_cast<int>(expression.arena->span(root).line));
+              static_cast<int>(expression.arena->span(root).line),
+              codegen_nested_argument_occurrence_);
           if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
             function = found->second;
         }
       }
+      if (function && checked_edge.kind == CheckedCallEdgeSelectionKind::None &&
+          !function->specializations.empty())
+        checked_edge = checked_call_edge_specialization(
+            p_, codegen_body_context_, function->name,
+            static_cast<int>(expression.arena->span(root).line),
+            codegen_nested_argument_occurrence_);
       if (!function) {
         if (callee->name == "range") return string("range[int]");
         if (callee->name == "Some" && call->arguments.size() == 1) {
@@ -5269,20 +5286,6 @@ class Generator {
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
-          if (target.empty()) {
-            // Several checked calls may share one source line. Correlate this
-            // call node with the checker's edge by its callee spelling; do not
-            // infer a receiver type or resolve a method in the emitter.
-            vector<string> matching;
-            for (const auto& candidate : targets) {
-              const auto separator = candidate.rfind('.');
-              if (starts_with(candidate, "method:") &&
-                  separator != string::npos &&
-                  candidate.substr(separator + 1) == member->name)
-                matching.push_back(candidate);
-            }
-            if (matching.size() == 1) target = matching.front();
-          }
         }
         if ((starts_with(target, "builtin:") ||
              starts_with(target, "builtin-method:"))) {
@@ -5298,6 +5301,49 @@ class Generator {
         if (call_target_fact_hooked)
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked member-call target");
+        const string member_requirement_prefix(
+            checked_ir::kMemberRequirementPrefix);
+        if (starts_with(target, member_requirement_prefix)) {
+          const string requirement_id =
+              target.substr(member_requirement_prefix.size());
+          bool matched_requirement = false;
+          for (const auto& function_entry : functions_)
+            for (const auto& specialization :
+                 function_entry.second->specializations) {
+              if (specialization.stable_type_key !=
+                  codegen_active_specialization_key_) continue;
+              for (const auto& requirement : specialization.member_requirements) {
+                if ((requirement.requirement_id != requirement_id &&
+                     !starts_with(requirement.requirement_id,
+                         requirement_id + ":call-v1:")) ||
+                    requirement.member_name != member->name) continue;
+                matched_requirement = true;
+                if (!requirement.selected_callable_id)
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT checked member requirement has no selected target");
+                const string& selected = *requirement.selected_callable_id;
+                if (starts_with(selected, "builtin:FileIO.")) {
+                  target = "builtin-fileio:" +
+                      selected.substr(string("builtin:FileIO.").size());
+                } else if (starts_with(selected, "builtin:")) {
+                  const string receiver_type = requirement.receiver
+                      ? canonical_type_name(requirement.receiver) : string();
+                  if (receiver_type.empty())
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT checked builtin member receiver type is missing");
+                  target = "builtin-method:" + receiver_type + "." +
+                      member->name;
+                } else {
+                  // The existing lowering below maps this selected callable
+                  // identity to its declaration; it does not resolve a method.
+                  target.clear();
+                }
+              }
+            }
+          if (!matched_requirement)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked member requirement");
+        }
         if (target.empty() && !codegen_active_specialization_key_.empty()) {
           const auto receiver_type = generated_expr_type(
               expression.child(member->base), types);
@@ -5938,6 +5984,19 @@ class Generator {
           }
         }
       }
+    }
+    if (const auto* collection = std::get_if<est::Collection>(
+            &expression.arena->at(root));
+        collection && collection->delimiter == '[' &&
+        collection->elements.empty() && expression.text().empty()) {
+      auto checked_type = generated_expr_type(expression, types);
+      if (!checked_type || !starts_with(canonical_type_name(*checked_type),
+                                        "vector["))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked empty-vector element type");
+      const string canonical = canonical_type_name(*checked_type);
+      return "std::vec::Vec::<" + rust_type(canonical.substr(
+          7, canonical.size() - 8)) + ">::new()";
     }
     if (const auto* collection = std::get_if<est::Collection>(
             &expression.arena->at(root));

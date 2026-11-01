@@ -1,3 +1,35 @@
+# Phase 27.5.4 C2 handover (2026-11-01; current candidate)
+
+- Branch `phase27-5-4-work`; pushed tip remains `eadc92ab`. Working tree has
+  an uncommitted emitter/source-free-fact slice in `src/ast.hpp`,
+  `src/moss.cpp`, `src/native_generator.cpp`, and `src/semantic_checker.cpp`.
+- The latest Team A run passes end to end, including the source-free ABI-v10
+  imported `Provider.size("abc")` case. Its prior `return ;` regression came
+  from the emitter looking up only the concrete `fn:...<...>` context after
+  source-free checked-body projection had recorded the call target under the
+  generic `fn:...` context. The emitter now tries that generic checked context
+  for checked targets; `generated_expr_type` still rejects open types. The
+  empty imported vector path and exact checked member-requirement mapping also
+  pass Team A. No temporary debug instrumentation remains.
+- Targeted checks after the current edits: `check_phase25_team_a_semantics.py`
+  PASS; `check_phase27_string_debt.py --require-zero fast_debug` PASS;
+  `check_phase27_5_4_fact_hooks.py build/compiler/moss-dev` PASS (classes 2–4
+  pass and known debt remains 38/38); `git diff --check` PASS.
+- Same-source, same-command emitter counters for
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`
+  together: phase27-5-3-c1 parent 363,004 reparses (362,644 expression view,
+  360 pipeline); candidate 73,172 (all expression view, 0 pipeline), a 79.8%
+  reparse reduction. Both had zero emission failures. Candidate text-node
+  lookups: 92,864; the parent binary predates this counter, so its lookup
+  delta is unavailable. This is a one-source targeted measurement, not the
+  required tracked corpus/examples/packages measurement. Optimizer consumer
+  parsing/lookups remain to be verified as zero.
+- No full suites, three-engine aggregate, parity aggregate, or performance
+  suite have run for the current slice. Agent 2 remains reserved for the one
+  audit after the final suite. Next: review and checkpoint this slice, continue
+  C2 emitter/optimizer consumer migration, then run required C2 counts and all
+  final gates near completion.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
 
 Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
