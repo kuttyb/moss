@@ -1591,7 +1591,8 @@ class Generator {
 
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const vector<EmitterExpr>* argument_nodes = nullptr) const {
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
@@ -1704,8 +1705,10 @@ class Generator {
             " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
-    for (const auto& argument : arguments)
-      concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
+    for (size_t index = 0; index < arguments.size(); ++index)
+      concrete_types.push_back(argument_nodes && index < argument_nodes->size()
+          ? generated_expr_type(argument_nodes->at(index), types).value_or("")
+          : generated_expr_type(arguments[index], types).value_or(""));
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
@@ -3365,7 +3368,8 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const vector<EmitterExpr>* argument_nodes = nullptr) const {
-    const auto* specialization = call_specialization(function, arguments, types);
+    const auto* specialization = call_specialization(
+        function, arguments, types, argument_nodes);
     auto argument_type = [&](size_t index) {
       return argument_nodes && index < argument_nodes->size()
           ? generated_expr_type(argument_nodes->at(index), types)
@@ -9496,6 +9500,10 @@ class Generator {
                 est::ExprSlot::Argument,
                 static_cast<std::uint32_t>(index));
           };
+          vector<EmitterExpr> checked_call_arguments;
+          checked_call_arguments.reserve(s.args.size());
+          for (size_t index = 0; index < s.args.size(); ++index)
+            checked_call_arguments.push_back(argument_node(index));
           const EmitterExpr receiver_expression = checked_expression_ref(
               s.a, est::ExprSlot::Receiver);
           auto checked_receiver = s.receiver_types_by_context.find(functional_context);
@@ -9615,14 +9623,10 @@ class Generator {
           }
           bool known_function = (function_target != nullptr);
           if (s.b.empty() && known_function && !benchmark_body_) {
-            vector<EmitterExpr> checked_arguments;
-            checked_arguments.reserve(s.args.size());
-            for (size_t index = 0; index < s.args.size(); ++index)
-              checked_arguments.push_back(argument_node(index));
             o << indent(level)
               << render_known_function_call(*function_target, function_target->name, s.args,
                                            d, locals, &types,
-                                           &checked_arguments)
+                                           &checked_call_arguments)
               << ";\n";
             ++i;
             break;
@@ -9752,7 +9756,8 @@ class Generator {
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
                                           call_specialization(*function_target,
-                                                              s.args, &types),
+                                                              s.args, &types,
+                                                              &checked_call_arguments),
                                           argument_temporaries[k].empty()
                                               ? &checked_argument : nullptr);
             } else if (!s.b.empty() || implicit_method) {

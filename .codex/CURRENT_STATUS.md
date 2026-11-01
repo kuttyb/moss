@@ -15588,3 +15588,13 @@ reports 0 emitter reparses (down from 204) and 15 text-node lookups (down from
 343); the full `check_phase20_executor_fileio.py` harness passes, including its
 computed-batch native compile/run. Remaining 15 lookups are not yet localized.
 No full suite, corpus count, or perf run has occurred.
+
+### C2 FileIO specialization arguments use checked nodes (2026-11-01)
+
+The last 15 text-node lookups on the optimized FileIO fixture came from
+`call_specialization` re-inferring each argument type from its rendered string.
+Its checked statement-call and known-function-call paths now pass the retained
+argument ExprIds and query their node types. The optimized fixture is now at 0
+emitter reparses / 0 text-node lookups (was 0 / 15), and
+`check_phase20_executor_fileio.py` passes. This targeted sample is not a corpus
+measurement; no full suite or perf run has occurred.
