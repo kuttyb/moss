@@ -463,6 +463,10 @@ std::optional<std::string_view> checker_identifier_name(
 
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
     std::string_view source) {
+#ifdef MOSS_TEST_BUILD
+  moss::est::ExpressionParseSiteScope parse_site(
+      moss::est::ExpressionParseSite::Checker);
+#endif
   const size_t hash = std::hash<std::string_view>{}(source);
   auto found = checker_est_view_cache.views.find(hash);
   if (found != checker_est_view_cache.views.end()) {
@@ -722,6 +726,10 @@ class Checker {
   }
 
   void run() {
+#ifdef MOSS_TEST_BUILD
+    est::ExpressionParseSiteScope parse_site(
+        est::ExpressionParseSite::Checker);
+#endif
     CompilerStageTimer semantic_timer("semantic_analysis");
     const auto imported_signatures = imported_function_signatures();
     {
@@ -26045,6 +26053,9 @@ class Checker {
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr,
       std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) const {
+#ifdef MOSS_TEST_BUILD
+    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Checker);
+#endif
     if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
@@ -26585,6 +26596,9 @@ class Checker {
                         std::string_view root_slot = {},
                         std::string_view child_role = {},
                         std::optional<EstExpressionCursor> exact_cursor = {}) {
+#ifdef MOSS_TEST_BUILD
+    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Checker);
+#endif
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
     const auto [source_issue, trailing_operator] =

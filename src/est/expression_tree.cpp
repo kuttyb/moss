@@ -286,6 +286,9 @@ std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
 std::uint64_t expression_text_lookup_count = 0;
+std::array<std::uint64_t, 4> expression_text_parse_counts{};
+thread_local ExpressionParseSite active_expression_parse_site =
+    ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
 
 struct TestCoverageReporter {
@@ -333,6 +336,25 @@ void record_expression_text_lookup() noexcept {
   }
 }
 
+ExpressionParseSiteScope::ExpressionParseSiteScope(
+    ExpressionParseSite site) noexcept
+    : previous_(active_expression_parse_site) {
+  active_expression_parse_site = site;
+}
+
+ExpressionParseSiteScope::~ExpressionParseSiteScope() {
+  active_expression_parse_site = previous_;
+}
+
+void record_expression_text_parse() noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_parse_counts[
+        static_cast<std::size_t>(active_expression_parse_site)];
+  } catch (...) {
+  }
+}
+
 void record_generated_type_fact_coverage(std::string_view node_kind,
                                          bool present) noexcept {
   if (!test_coverage_counters_enabled()) return;
@@ -349,6 +371,20 @@ void report_test_coverage_counters() {
             << expression_tree_rebuild_count << '\n';
   std::cerr << "MOSS_EST_TEXT_NODE_LOOKUPS="
             << expression_text_lookup_count << '\n';
+  const auto checker_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Checker)];
+  const auto consumer_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Consumer)];
+  const auto other_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Other)];
+  std::cerr << "MOSS_EST_EXPRESSION_TEXT_PARSES initial="
+            << expression_text_parse_counts[static_cast<std::size_t>(
+                   ExpressionParseSite::InitialSource)]
+            << " checker=" << checker_parses
+            << " consumer=" << consumer_parses
+            << " other=" << other_parses
+            << " post_initial=" << checker_parses + consumer_parses + other_parses
+            << '\n';
   std::cerr << "MOSS_EST_REPARSES native_expression_view="
             << consumer_reparse_counts[0]
             << " native_functional_pipeline=" << consumer_reparse_counts[1]
@@ -1368,6 +1404,9 @@ std::optional<std::string> outer_grouping_fragment(std::string_view source) {
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {
+#ifdef MOSS_TEST_BUILD
+  record_expression_text_parse();
+#endif
   const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
   if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
   return id;
@@ -1724,6 +1763,10 @@ std::string dump_node(const Arena& arena, ExprId id) {
 
 static void populate_impl(Program& program, std::vector<Stmt>* additional,
                           std::uint64_t origin_id) {
+#ifdef MOSS_TEST_BUILD
+  ExpressionParseSiteScope initial_parse_scope(
+      ExpressionParseSite::InitialSource);
+#endif
   const auto compare_attempts_before = shadow_attempts;
   const auto compare_matches_before = shadow_compared;
   const auto compare_unparsed_before = shadow_unparsed;

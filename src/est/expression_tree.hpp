@@ -287,6 +287,19 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint64_t owner, ExprSlot slot,
                   std::uint32_t argument_index, const std::string& new_text);
 #ifdef MOSS_TEST_BUILD
+enum class ExpressionParseSite : std::uint8_t {
+  InitialSource, Checker, Consumer, Other
+};
+class ExpressionParseSiteScope {
+ public:
+  explicit ExpressionParseSiteScope(ExpressionParseSite site) noexcept;
+  ~ExpressionParseSiteScope();
+  ExpressionParseSiteScope(const ExpressionParseSiteScope&) = delete;
+  ExpressionParseSiteScope& operator=(const ExpressionParseSiteScope&) = delete;
+ private:
+  ExpressionParseSite previous_;
+};
+void record_expression_text_parse() noexcept;
 void record_expression_tree_rebuild() noexcept;
 void record_expression_text_lookup() noexcept;
 #endif
