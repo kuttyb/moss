@@ -1,8 +1,8 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed checkpoint is `96f25fc8`; this local slice is not yet committed.
-  Function constraint derivation now receives exact handles for function result
-  expressions, statement initializers/assignment values/iterables, and
+- Branch: `phase27-5-4-work`; latest pushed checkpoint is `b52466a9`; local Fast Debug node-handoff edits
+  are pending. Function constraint derivation receives exact handles for
+  function results, statement initializers/assignment values/iterables, and
   call/message arguments.
   `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
   and reply pipeline validation receives its exact `ReturnValue` handle. The
@@ -24,6 +24,14 @@
   remains accepted, and the domain-boundary negative remains rejected. Message argument validation
   now uses exact handles in all three checker passes. This focused route is not covered by the `functional_basics` counter, which stays
   at 15,160 cache consultations / 121 checker reparses.
+- Baseline evidence for the new Fast Debug fix: at pushed `b52466a9`,
+  `tests/swarm_023_pipeline_context_identity.moss` failed at line 27 with
+  `MOSS_INTERNAL_INVARIANT missing checked expression node source=Vector[Int]()`
+  while `compose()` reevaluated the named state field from text. Current local
+  code preserves the nested value ExprId. The fixture now passes default and
+  shadow checks/runs and matches emitted Rust compiled with rustc at `-O` and
+  without it. `examples/phase2_safety.moss`, `examples/functional_basics.moss`,
+  and `tests/phase4_terminal_boundary.moss` also pass targeted Fast Debug runs.
 - Tight K2 clarification is active: every checker EST cache lookup and every
   text-keyed parse-cache consultation is a lookup (hit or miss). The focused
   `functional_basics.moss` measurement is still 15,160 text-cache lookups and

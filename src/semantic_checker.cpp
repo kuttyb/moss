@@ -15474,20 +15474,25 @@ class Checker {
               &s.expression_handles,
               std::pair{est::ExprSlot::ReturnValue, 0u});
       }
-      std::unordered_map<string,string> local_sources;
+      std::unordered_map<string,const Stmt*> local_sources;
       for (const auto& statement : function.body) {
         if ((statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
             tree_plain_identifier(statement.a))
-          local_sources[statement.a] = statement.b;
+          local_sources[statement.a] = &statement;
         if (statement.kind == Stmt::Kind::Return) {
           const auto returned_binding = tree_identifier_name(statement.a);
           auto source = returned_binding
               ? local_sources.find(*returned_binding) : local_sources.end();
-          if (source != local_sources.end())
-            derive_expression_constraints(function, source->second,
-                                          result_expectation());
+          if (source != local_sources.end()) {
+            const auto& defining = *source->second;
+            const auto slot = defining.kind == Stmt::Kind::Assign
+                ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+            derive_expression_constraints(function, defining.b,
+                result_expectation(), &defining.expression_handles,
+                std::pair{slot, 0u});
+          }
         }
       }
       if (function.result_expression) {
@@ -15495,9 +15500,14 @@ class Checker {
             *function.result_expression);
         auto source = returned_binding
             ? local_sources.find(*returned_binding) : local_sources.end();
-        if (source != local_sources.end())
-          derive_expression_constraints(function, source->second,
-                                        result_expectation());
+        if (source != local_sources.end()) {
+          const auto& defining = *source->second;
+          const auto slot = defining.kind == Stmt::Kind::Assign
+              ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+          derive_expression_constraints(function, defining.b,
+              result_expectation(), &defining.expression_handles,
+              std::pair{slot, 0u});
+        }
       }
       if (!function.return_type || contains_internal_placeholder(*function.return_type))
         for (const auto& kv : function.generic_results)

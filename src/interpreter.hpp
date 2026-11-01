@@ -628,8 +628,27 @@ class FastInterpreter {
   est::ExprId active_expression_node_ = 0;
 
   std::optional<ExpressionTreeView> expression_tree(
-      std::string_view source, std::string_view caller = {}) const {
+      std::string_view source, std::string_view caller = {},
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) const {
     ExpressionTreeView view;
+    if (handle_key) {
+      if (active_expression_handles_) {
+        for (const auto& handle : *active_expression_handles_) {
+          if (handle.slot != handle_key->first ||
+              handle.argument_index != handle_key->second ||
+              handle.arena_index >= program_.expression_arenas.size() ||
+              !program_.expression_arenas[handle.arena_index])
+            continue;
+          view.source.assign(source);
+          view.arena = program_.expression_arenas[handle.arena_index].get();
+          view.root = handle.expr;
+          return view;
+        }
+      }
+      throw RuntimeError(0,
+          "MOSS_INTERNAL_INVARIANT missing checked expression handle caller=" +
+          std::string(caller));
+    }
     if (active_expression_tree_ &&
         expression_node_text(*active_expression_tree_, active_expression_node_) == source) {
       view.source = active_expression_tree_->source;
@@ -1443,10 +1462,14 @@ class FastInterpreter {
 #include "interpreter_phase20.inc"
 
   Value evaluate_expression_source(const std::string& expression, Frame& frame, int line,
-             std::ostream& output) {
+             std::ostream& output,
+             std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) {
     const std::string e = trim_copy(expression);
     if (e.empty()) return Value::unit();
-    auto tree = expression_tree(expression, "evaluate_expression_source");
+    auto tree = expression_tree(expression,
+                                "evaluate_expression_source line=" +
+                                    std::to_string(line),
+                                handle_key);
     if (!tree) {
       if (e.rfind("assert ", 0) == 0) {
         const std::string condition = e.substr(7);
@@ -2680,8 +2703,13 @@ class FastInterpreter {
         else
           result.object->fields[field.name] = evaluate_expression_source(
               found->second, frame, line, output);
-      else if (!field.init.empty())
-        result.object->fields[field.name] = evaluate_expression_source(field.init, frame, field.line, output);
+      else if (!field.init.empty()) {
+        ExpressionHandlesScope field_handles_scope(
+            active_expression_handles_, &field.expression_handles);
+        result.object->fields[field.name] = evaluate_expression_source(
+            field.init, frame, field.line, output,
+            std::pair{est::ExprSlot::Initializer, 0u});
+      }
       else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
     }
     for (const auto& entry : supplied)
@@ -3224,7 +3252,9 @@ class FastInterpreter {
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
-          Value initial = evaluate_expression_source(statement.b, frame, statement.line, output);
+          Value initial = evaluate_expression_source(statement.b, frame,
+              statement.line, output,
+              std::pair{est::ExprSlot::Initializer, 0u});
           declare_local(frame, statement.a);
           frame.locals[statement.a] = std::move(initial);
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
@@ -3235,7 +3265,8 @@ class FastInterpreter {
         case Stmt::Kind::Assign: {
           auto target_tree = expression_tree(statement.a, "assignment_target");
           Value assigned = evaluate_expression_source(
-              statement.b, frame, statement.line, output);
+              statement.b, frame, statement.line, output,
+              std::pair{est::ExprSlot::RhsValue, 0u});
           assign(statement.a, std::move(assigned), frame, statement.line,
                  output, target_tree ? &*target_tree : nullptr,
                  target_tree ? std::optional<est::ExprId>(target_tree->root)

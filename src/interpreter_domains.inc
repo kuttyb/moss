@@ -214,21 +214,44 @@
       auto& instance = *entry.second;
       if (instance.concrete->binding != statement.a || instance.concrete->line != statement.line) continue;
       if (instance.initialized) throw RuntimeError(statement.line, "internal error: duplicate domain initialization");
-      std::string name; std::vector<std::string> arguments;
-      if (!expression_call(statement.b, name, arguments,
-                           "compose_domain_constructor")) throw RuntimeError(statement.line, "internal error: missing domain constructor");
+      const auto constructor_slot = statement.kind == Stmt::Kind::Assign
+          ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+      auto constructor_tree = expression_tree(statement.b,
+          "compose_domain_constructor",
+          std::pair{constructor_slot, 0u});
+      if (!constructor_tree)
+        throw RuntimeError(statement.line,
+                           "internal error: missing domain constructor");
       const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
-      std::unordered_map<std::string, std::string> initializers;
-      for (const auto& argument : arguments) {
-        auto colon = argument.find_first_of(":=");
-        if (colon == std::string::npos) throw RuntimeError(statement.line, "internal error: unnamed state initializer");
-        initializers.emplace(trim_copy(argument.substr(0, colon)), trim_copy(argument.substr(colon + 1)));
+      std::unordered_map<std::string, est::ExprId> initializers;
+      const auto& constructor_node =
+          constructor_tree->arena->at(constructor_tree->root);
+      const std::vector<est::ExprId>* argument_nodes = nullptr;
+      if (const auto* call = std::get_if<est::Call>(&constructor_node))
+        argument_nodes = &call->arguments;
+      else if (const auto* constructor =
+                   std::get_if<est::Constructor>(&constructor_node))
+        argument_nodes = &constructor->arguments;
+      if (!argument_nodes)
+        throw RuntimeError(statement.line,
+                           "MOSS_INTERNAL_INVARIANT missing checked domain constructor arguments");
+      for (const auto argument : *argument_nodes) {
+        const auto* named = std::get_if<est::NamedArgument>(
+            &constructor_tree->arena->at(argument));
+        if (!named)
+          throw RuntimeError(statement.line,
+                             "internal error: unnamed state initializer");
+        initializers.emplace(named->name, named->value);
       }
       for (const auto& field : instance.definition->state) {
         auto explicit_value = initializers.find(field.name);
         auto type = specialization.state_types.find(field.name);
-        instance.state[field.name] = explicit_value != initializers.end() ? evaluate_expression_source(explicit_value->second, frame, statement.line, output)
-            : !field.init.empty() ? evaluate_expression_source(field.init, frame, field.line, output)
+        ExpressionHandlesScope field_handles_scope(
+            active_expression_handles_, &field.expression_handles);
+        instance.state[field.name] = explicit_value != initializers.end() ? evaluate_tree_node(*constructor_tree, explicit_value->second, frame, statement.line, output)
+            : !field.init.empty() ? evaluate_expression_source(
+                  field.init, frame, field.line, output,
+                  std::pair{est::ExprSlot::Initializer, 0u})
             : default_semantic_value(type == specialization.state_types.end() ? field.type : type->second, frame, statement.line, output);
       }
       instance.initialized = true;
