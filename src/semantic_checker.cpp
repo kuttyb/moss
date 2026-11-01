@@ -26352,6 +26352,7 @@ class Checker {
       std::string_view source, std::string_view root_slot) const {
     if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
+    std::optional<std::uint32_t> expected_argument;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
@@ -26364,34 +26365,31 @@ class Checker {
       expected = est::ExprSlot::ReturnValue;
     else if (root_slot == "raise-value") expected = est::ExprSlot::RaisedValue;
     else if (root_slot.rfind("message-argument:", 0) == 0 ||
-             root_slot.rfind("echo-argument:", 0) == 0)
+             root_slot.rfind("echo-argument:", 0) == 0) {
       expected = est::ExprSlot::Argument;
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto source_fingerprint = est::fingerprint(std::string(source));
-    auto select = [&](const std::vector<est::Handle>& handles)
+      expected_argument = expression_role_index(root_slot,
+          {"message-argument:", "echo-argument:"});
+    }
+    auto select = [&](const std::vector<est::Handle>& handles,
+                      std::optional<est::ExprSlot> slot,
+                      std::optional<std::uint32_t> argument)
         -> std::optional<EstExpressionCursor> {
       for (const auto& handle : handles) {
-        if (expected && handle.slot != *expected) continue;
-        if (handle.source_fingerprint != source_fingerprint) continue;
+        if (slot && handle.slot != *slot) continue;
+        if (argument && handle.argument_index != *argument) continue;
         if (expression_arena(handle.arena_index))
           return EstExpressionCursor{handle.arena_index, handle.expr,
                                      std::string(source)};
       }
       return std::nullopt;
     };
-    if (auto found = select(statement.expression_handles)) return found;
-    if (!expected)
-      if (auto found = select(statement.expression_handles)) return found;
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
+    if (expected)
+      if (auto found = select(statement.expression_handles, expected,
+                              expected_argument)) return found;
     if (current_check_result_function_ &&
-        current_check_result_function_->result_expression &&
-        est::fingerprint(*current_check_result_function_->result_expression) ==
-            est::fingerprint(std::string(source)))
-      return select(current_check_result_function_->expression_handles);
+        current_check_result_function_->result_expression)
+      return select(current_check_result_function_->expression_handles,
+                    est::ExprSlot::ReturnValue, 0);
     return std::nullopt;
   }
 
