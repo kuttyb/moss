@@ -10443,7 +10443,12 @@ class Checker {
           pipeline && functional_pipeline_requires_materialization(*pipeline))
         err(line, "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
-      auto actual = inferred_expr_type(args[index], env);
+      auto inferred = inferred_expr_on_handle(args[index], env,
+          expression_handles, est::ExprSlot::Argument,
+          static_cast<std::uint32_t>(index));
+      auto actual = inferred
+          ? std::optional<string>(inferred->projection())
+          : inferred_expr_type(args[index], env);
       if (actual && !h->params[index].inferred &&
           !same_type(h->params[index].type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to message " +
@@ -11896,6 +11901,25 @@ class Checker {
     if (auto leaf = checked_expression_leaf_type(env))
       return inferred_leaf(*leaf);
     return inferred_expr(expression, env);
+  }
+
+  std::optional<InferredExpr> inferred_expr_on_handle(
+      const string& expression, const TypeEnv& env,
+      const std::vector<est::Handle>* handles, est::ExprSlot slot,
+      std::uint32_t argument_index = 0) const {
+    if (!handles) return std::nullopt;
+    for (const auto& handle : *handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index)
+        continue;
+      const auto* arena = expression_arena(handle.arena_index);
+      if (!arena || handle.expr >= arena->size()) return std::nullopt;
+      auto node = handle.expr;
+      if (const auto* named = std::get_if<est::NamedArgument>(&arena->at(node)))
+        node = named->value;
+      return inferred_expr_on_cursor(expression, env,
+          EstExpressionCursor{handle.arena_index, node, expression});
+    }
+    return std::nullopt;
   }
 
   std::optional<InferredExpr> inferred_child_expr(
@@ -23576,7 +23600,12 @@ class Checker {
                                               &s.expression_handles);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
-            auto type = inferred_expr_type(arg, env.types);
+            auto inferred = inferred_expr_on_handle(arg, env.types,
+                &s.expression_handles, est::ExprSlot::Argument,
+                static_cast<std::uint32_t>(arg_index));
+            auto type = inferred
+                ? std::optional<string>(inferred->projection())
+                : inferred_expr_type(arg, env.types);
             if (type && fileio_scoped_type(*type))
               err(s.line, "FileIO and ranges cannot cross a message boundary",
                   "FILEIO_BOUNDARY_ESCAPE");

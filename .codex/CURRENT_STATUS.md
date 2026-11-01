@@ -1,7 +1,7 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit before this slice:
-  `893ecdf0`. A checker inference edit is currently uncommitted. Moss bootstrap
+  `c464a73e`. A checker inference edit is currently uncommitted. Moss bootstrap
   confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
@@ -14,7 +14,11 @@
   checker parses and 24,399 text-cache consultations (24,459 before the
   composite-cursor change). K8 is unchanged. The open-Map fixtures inspected
   for the member inference path are checker-rejected, so they are not behavior
-  evidence. No full suite, corpus run, or performance run.
+  evidence. Message argument type queries now use the retained Argument ExprId
+  in both message checking passes. The focused message binding fixture remains
+  at 66 checker parses; checker text-cache consultations changed 8,638 ->
+  8,634, with default/shadow checks and Fast Debug output parity passing. This
+  is a small measured decrease. No full suite, corpus run, or performance run.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
