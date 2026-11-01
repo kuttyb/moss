@@ -635,6 +635,9 @@ class FastInterpreter {
       return view;
     }
     view.source.assign(source);
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(view.source);
     if (active_expression_handles_) {
       for (const auto& handle : *active_expression_handles_) {
@@ -1195,6 +1198,9 @@ class FastInterpreter {
                              active_expression_node_) == expression)
       return est::functional_pipeline(*active_expression_tree_->arena,
           active_expression_node_, expression, resolve_stage);
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(std::string(expression));
     auto convert = [&](std::uint32_t arena_index, est::ExprId root)
         -> std::optional<ParsedFunctionalPipeline> {
@@ -3259,6 +3265,9 @@ class FastInterpreter {
           std::string invocation = statement.a + "." + statement.b + "(";
           for (size_t i = 0; i < statement.args.size(); ++i) { if (i) invocation += ", "; invocation += statement.args[i]; }
           const std::string checked_source = "message " + invocation + ")";
+#ifdef MOSS_TEST_BUILD
+          est::record_expression_text_lookup();
+#endif
           const auto fingerprint = est::fingerprint(checked_source);
           const est::Handle* checked_handle = nullptr;
           for (const auto& handle : statement.expression_handles)

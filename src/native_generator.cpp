@@ -1101,6 +1101,9 @@ class Generator {
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(string(expression));
     const auto* selected = handles ? handles
         : active_functional_expression_handles_;
@@ -1942,6 +1945,9 @@ class Generator {
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(string(expression));
     auto convert = [&](std::uint32_t arena_index, est::ExprId root)
         -> std::optional<ParsedFunctionalPipeline> {
@@ -2027,6 +2033,9 @@ class Generator {
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
       auto record_type_fact_coverage = [&] {
+#ifdef MOSS_TEST_BUILD
+        est::record_expression_text_lookup();
+#endif
         const auto fingerprint = est::fingerprint(expression);
         const vector<est::Handle>* handles =
             active_functional_expression_handles_;

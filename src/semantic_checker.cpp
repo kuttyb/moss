@@ -21786,6 +21786,9 @@ class Checker {
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
         if (id) {
+#ifdef MOSS_TEST_BUILD
+          est::record_expression_text_lookup();
+#endif
           const auto fingerprint = est::fingerprint(occurrence.text);
           auto handle = std::find_if(statement.expression_handles.begin(),
               statement.expression_handles.end(), [&](const auto& candidate) {
@@ -21821,6 +21824,9 @@ class Checker {
         if (id) {
           (*result_pipeline_ids)[context] = *id;
           if (result_expression_handles) {
+#ifdef MOSS_TEST_BUILD
+            est::record_expression_text_lookup();
+#endif
             const auto fingerprint = est::fingerprint(*result);
             for (const auto& handle : *result_expression_handles) {
               if (handle.slot != est::ExprSlot::ReturnValue ||
@@ -26052,6 +26058,9 @@ class Checker {
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto source_fingerprint = est::fingerprint(std::string(source));
     auto convert = [&](std::uint32_t arena_index, est::ExprId expression)
         -> std::optional<ParsedFunctionalPipeline> {
@@ -26104,6 +26113,9 @@ class Checker {
       const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
       std::string_view source, std::string context,
       est::SemanticFacts facts, bool require_match = false) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(std::string(source));
     bool recorded = false;
     for (const auto& handle : statement.expression_handles) {
@@ -26163,6 +26175,9 @@ class Checker {
       const moss::TypeRef& expected_type,
       std::string_view expected_target = {}) const {
     if (est::mode() != est::Mode::Shadow) return;
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(std::string(source));
     for (const auto& handle : statement.expression_handles) {
       if (handle.slot != slot || handle.argument_index != argument_index ||
@@ -26351,6 +26366,9 @@ class Checker {
     else if (root_slot.rfind("message-argument:", 0) == 0 ||
              root_slot.rfind("echo-argument:", 0) == 0)
       expected = est::ExprSlot::Argument;
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto source_fingerprint = est::fingerprint(std::string(source));
     auto select = [&](const std::vector<est::Handle>& handles)
         -> std::optional<EstExpressionCursor> {
@@ -26366,6 +26384,9 @@ class Checker {
     if (auto found = select(statement.expression_handles)) return found;
     if (!expected)
       if (auto found = select(statement.expression_handles)) return found;
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     if (current_check_result_function_ &&
         current_check_result_function_->result_expression &&
         est::fingerprint(*current_check_result_function_->result_expression) ==
@@ -26382,6 +26403,9 @@ class Checker {
       const auto& parent = *active_est_expression_cursors_.back();
       auto* arena = expression_arena(parent.arena_index);
       if (!arena) return std::nullopt;
+#ifdef MOSS_TEST_BUILD
+      est::record_expression_text_lookup();
+#endif
       auto child = matching_expression_child(*arena, parent.expr, child_role,
           child_ordinal, parent.source, source);
       if (!child) return std::nullopt;
