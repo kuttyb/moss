@@ -14979,3 +14979,21 @@ Validation: default and `-O` generated Rust for `tests/swarm_010_map_views.moss`
 parent. The three-engine gate passes and the call-target/specialization/join/
 pattern perturb/drop harness passes. Full suites, corpus counters, and
 performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — binary operators lower recursively from ExprIds (2026-11-01)
+
+`expr(EmitterExpr)` now lowers boolean, comparison, bitwise, shift, arithmetic,
+and string-concatenation binary expressions by recursively passing child
+`EmitterExpr` values. Mixed Int/Float conversion, wrapping integer operations,
+borrowed message parameters, and string concatenation clone behavior are kept.
+Unary expressions also recurse through their operand node. The old string
+lowerer remains for shapes not yet migrated.
+
+Like-for-like targeted counters over seven sources (three-engine conformance,
+functional objects, object pipeline, string concatenation, two borrowed-view
+fixtures, and numeric-member projection), default plus `-O`: pinned parent
+44,723 text lookups / 24,163 expression-view reparses; candidate
+24,139 / 14,227. Generated Rust is byte-identical for all seven in both modes.
+The three-engine gate and four-class perturb/drop hook matrix pass. This is a
+focused sample, not the corpus workload; full suites and performance remain
+pending.
