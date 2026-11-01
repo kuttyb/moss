@@ -3501,6 +3501,138 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
     const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(root))) {
+      const string& name = identifier->name;
+      if (phase21_option_slots_.count(name))
+        return "__moss_recovery_slot_" + name +
+            (phase21_codegen_statement_ &&
+             phase21_codegen_statement_->ownership_consumed_bindings.count(name)
+                 ? ".take()" : ".as_ref()") +
+            ".unwrap_or_else(|| std::process::abort())";
+      if (write_through_parameters_.count(name) && types &&
+          types->count(name) && copy_type(types->at(name)))
+        return "*" + name;
+      if (locals.count(name) && !view_parameters_.count(name) &&
+          !(types && types->count(name) &&
+            view_object_type(types->at(name))) &&
+          !(types && types->count(name) &&
+            domains_.count(canonical_type_name(types->at(name)))))
+        return name;
+    }
+    if (const auto* literal = std::get_if<est::Literal>(
+            &expression.arena->at(root))) {
+      switch (literal->literal_class) {
+        case est::LiteralClass::Boolean:
+          return literal->spelling;
+        case est::LiteralClass::String:
+          return "MossStr::from(" + literal->spelling + ")";
+        case est::LiteralClass::Character:
+          return literal->spelling;
+        case est::LiteralClass::Integer:
+        case est::LiteralClass::Float: {
+          DecodedNumber decoded;
+          decoded.kind = literal->numeric.kind;
+          if (decoded.kind == NumericLiteral::Kind::Int) {
+            if (literal->numeric.magnitude_overflow ||
+                literal->numeric.magnitude > static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked integer literal is out of range");
+            decoded.integer = static_cast<std::int64_t>(
+                literal->numeric.magnitude);
+          } else {
+            decoded.floating = literal->numeric.floating;
+          }
+          return rust_numeric_literal(decoded);
+        }
+        case est::LiteralClass::None:
+          break;
+      }
+    }
+    if (const auto* binary = std::get_if<est::Binary>(
+            &expression.arena->at(root))) {
+      const auto left_expr = expression.child(binary->left);
+      const auto right_expr = expression.child(binary->right);
+      const string left_source = left_expr.text();
+      const string right_source = right_expr.text();
+      const string op = binary->op;
+      if (op == "and" || op == "or" || op == "xor")
+        return "(" + expr(left_expr, d, locals, types) + ") " +
+            (op == "and" ? "&&" : op == "or" ? "||" : "^") + " (" +
+            expr(right_expr, d, locals, types) + ")";
+      if (op == "==" || op == "!=" || op == "<" || op == ">" ||
+          op == "<=" || op == ">=") {
+        string left = expr(left_expr, d, locals, types);
+        string right = expr(right_expr, d, locals, types);
+        left = value_from_borrowed_message_parameter(left_source, left, types);
+        right = value_from_borrowed_message_parameter(right_source, right, types);
+        auto left_type = generated_expr_type(left_source, types);
+        auto right_type = generated_expr_type(right_source, types);
+        if (left_type && canonical_type_name(*left_type) == "string")
+          left = "(" + left + ").as_str()";
+        if (right_type && canonical_type_name(*right_type) == "string")
+          right = "(" + right + ").as_str()";
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          right = generated_integer_literal(right_source)
+              ? generated_integer_literal_as_float(right_source)
+              : "((" + right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          left = generated_integer_literal(left_source)
+              ? generated_integer_literal_as_float(left_source)
+              : "((" + left + ") as f64)";
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+      if (op == "|" || op == "^" || op == "&") {
+        string left = value_from_borrowed_message_parameter(
+            left_source, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_source, expr(right_expr, d, locals, types), types);
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+      if (op == "<<" || op == ">>") {
+        string left = value_from_borrowed_message_parameter(
+            left_source, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_source, expr(right_expr, d, locals, types), types);
+        return string(op == "<<" ? "__moss_shl(" : "__moss_shr(") +
+            left + ", " + right + ")";
+      }
+      if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
+        auto left_type = generated_expr_type(left_source, types);
+        auto right_type = generated_expr_type(right_source, types);
+        if (left_type && right_type && op == "+" &&
+            canonical_type_name(*left_type) == "string" &&
+            canonical_type_name(*right_type) == "string")
+          return expr(expression.text(), d, locals, types,
+                      functional_pipeline_id, message_argument_plans);
+        string left = value_from_borrowed_message_parameter(
+            left_source, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_source, expr(right_expr, d, locals, types), types);
+        if (left_type && right_type &&
+            canonical_type_name(*left_type) == "int" &&
+            canonical_type_name(*right_type) == "int") {
+          const string method = op == "+" ? "wrapping_add"
+              : op == "-" ? "wrapping_sub" : op == "*" ? "wrapping_mul"
+              : op == "/" ? "wrapping_div" : "wrapping_rem";
+          return "(" + left + ")." + method + "(" + right + ")";
+        }
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          right = generated_integer_literal(right_source)
+              ? generated_integer_literal_as_float(right_source)
+              : "((" + right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          left = generated_integer_literal(left_source)
+              ? generated_integer_literal_as_float(left_source)
+              : "((" + left + ") as f64)";
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+    }
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())

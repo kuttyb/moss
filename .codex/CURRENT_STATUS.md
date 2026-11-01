@@ -14533,3 +14533,29 @@ The same Fast Debug command times out after 3 seconds on both parent and
 candidate with no output, so it is baseline behavior for this fixture and is
 not used as parity evidence. The broader initial paired sweep also remains
 flat at checkpoint 1. No C2 full gates have run.
+
+### Phase 27.5.4 C2 progress report 3 — direct node lowering
+
+Extended the explicit `EmitterExpr` path so local identifiers and Boolean,
+string, character, numeric literals lower from retained nodes. Binary
+operators now recurse through child IDs (using the emitter's existing type
+logic only for Rust representation choices); string concatenation retains the
+original specialized path. Converted assignment, Let/Var, Return, method and
+function result, and Echo roots to slot/index-based handle selection.
+
+Paired c96 parent vs candidate results on three accepted fixtures:
+
+- `tests/phase5_tooling.moss`: lookups 2,155 -> 1,666; expression-view
+  reparses 1,081 -> 899; pipeline reparses 0 -> 0.
+- `tests/phase4_callable_specialization.moss`: lookups 841 -> 583;
+  expression-view reparses 439 -> 303; pipeline reparses 0 -> 0.
+- `tests/swarm_001_parenthesized_pipeline.moss`: lookups 881 -> 817;
+  expression-view reparses 614 -> 596; pipeline reparses 8 -> 6.
+
+For all three, generated Rust is byte-identical to the c96 parent, Rust
+compiles, and Fast Debug output equals native output. Outputs are respectively
+`6\n7\n5`, `6 8.0`, and `4 2`. Exact candidate counters were reproduced after
+the last edit. The bulk C2 counts remain unchanged because these root kinds
+are a small portion of consumer traffic; next, migrate call/constructor,
+member/index, unary and pipeline child traversals. No full suite or perf pass
+has run.
