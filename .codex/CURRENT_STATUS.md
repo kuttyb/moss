@@ -14934,3 +14934,14 @@ The registered harness passes: call targets 4 fixtures; specializations,
 joins, and patterns 3 each; Fast Debug/native/`-O` fail closed for perturb and
 drop. Three-engine runs for collections/methods, object pipeline, and
 functional objects pass. C2 full suites/perf remain pending.
+
+### Phase 27.5.4 C2 note — callback method requires an explicit checked target
+
+A second attempt to render `_.calibrated()` / `_.is_valid()` callbacks directly
+from stage argument ExprIds still emitted `_`. The functional checker records
+the stage callable identity as `placeholder:_.method()` rather than attaching a
+resolved method target to the callback call node, so the node emitter cannot
+select the method from a checked call fact. The experiment was reverted and
+`examples/functional_objects.moss` three-engine execution passes. A viable
+follow-up needs a separate checked callable target on functional stage facts;
+changing the existing placeholder identity risks optimizer behavior.
