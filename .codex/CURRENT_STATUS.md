@@ -16728,3 +16728,26 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - No full suite, paired whole-corpus counter run, performance run, or Agent 2
   audit has run. Continue with the residual static call lookup paths and update
   paired counts before final gates.
+
+## C2 checkpoint: specialization selection receives its call node (2026-11-01)
+
+- `render_known_function_call` now propagates the retained call node into
+  `call_specialization` from direct-call, qualified-call, constructor-call, and
+  compatibility call lowering. Open-result/result-specialization checks
+  project callee and arguments from that node when available; text-only source
+  remains a compatibility path when no call node exists.
+- On the same focused sources, emitter text lookups per emission changed:
+  `open_result_multihop` 6→3, `open_result_zero_iteration` 2→1,
+  `nested_write` 2→0, `range_fileio` 2→1, `trait_open_forwarding` 4→2,
+  and `probe_swap_assign` 2→1. Reparses remain zero for these samples.
+- Generated Rust is byte-identical to the prior pushed checkpoint for all six
+  sources. Native/Fast Debug output matches for multihop, zero-iteration,
+  trait-open-forwarding, and swap assignment. `nested_write` generated Rust
+  compiles, but Fast Debug reports a missing checked trait-method target on
+  this C2 branch; the immediately preceding pushed checkpoint reproduces it,
+  while the pinned C1 parent prints `1`. `range_fileio` uses FileIO, which Fast
+  Debug does not support. These parity limitations are not caused by this
+  emitter-only slice.
+- `check_phase27_5_4_fact_hooks.py` passes with known debt exactly 38/38;
+  `git diff --check` passes. No full suite, paired whole-workload count,
+  performance run, or Agent 2 audit has run.

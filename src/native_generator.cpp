@@ -528,7 +528,7 @@ class Generator {
   string codegen_body_context_;
   string codegen_active_specialization_key_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
-  string codegen_result_expression_;
+  const EmitterExpr* codegen_result_node_ = nullptr;
 
   static bool handler_has_failure_captures(const Handler& handler) {
     if (handler.provider_abi)
@@ -1805,13 +1805,22 @@ class Generator {
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types,
-      const vector<EmitterExpr>* argument_nodes = nullptr) const {
+      const vector<EmitterExpr>* argument_nodes = nullptr,
+      const EmitterExpr* call_node = nullptr) const {
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
       vector<string> direct_arguments;
-      if (tree_parse_simple_call(trim(codegen_result_expression_), direct_callee,
-                            direct_arguments) &&
+      const EmitterExpr* returned_call = call_node ? call_node
+                                                   : codegen_result_node_;
+      if (!returned_call || !returned_call->arena)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked returned-call node");
+      const bool parsed_call = call_node
+          ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
+          : tree_parse_simple_call(*returned_call, direct_callee,
+                                   direct_arguments);
+      if (parsed_call &&
           direct_callee == function.name && direct_arguments == arguments) {
         auto exact = std::find_if(function.specializations.begin(),
                                   function.specializations.end(),
@@ -1869,9 +1878,12 @@ class Generator {
       vector<string> direct_arguments;
       const string& call_expression = statement.kind == Stmt::Kind::Return
           ? statement.a : statement.b;
+      const bool parsed_call = call_node
+          ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
+          : tree_parse_simple_call(trim(call_expression), direct_callee,
+                                   direct_arguments);
       if (selected != statement.open_call_keys_by_context.end() &&
-          tree_parse_simple_call(trim(call_expression), direct_callee,
-                            direct_arguments) &&
+          parsed_call &&
           direct_callee == function.name &&
           direct_arguments == arguments) {
         auto exact = std::find_if(function.specializations.begin(),
@@ -3956,9 +3968,10 @@ class Generator {
       const Function& function, const string& name, const vector<string>& arguments,
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      const vector<EmitterExpr>* argument_nodes = nullptr) const {
+      const vector<EmitterExpr>* argument_nodes = nullptr,
+      const EmitterExpr* call_node = nullptr) const {
     const auto* specialization = call_specialization(
-        function, arguments, types, argument_nodes);
+        function, arguments, types, argument_nodes, call_node);
     auto argument_type = [&](size_t index) {
       return argument_nodes && index < argument_nodes->size()
           ? generated_expr_type(argument_nodes->at(index), types)
@@ -5901,7 +5914,7 @@ class Generator {
         }
         if (function && simple_arguments)
           return render_known_function_call(*function, function->name,
-              arguments, d, locals, types, &argument_nodes);
+              arguments, d, locals, types, &argument_nodes, &expression);
         // The checker retains the legacy `return(...)` spelling produced by
         // the formatter as a builtin-tagged call. Preserve the emitter's
         // established Rust projection for this already-accepted form.
@@ -6118,7 +6131,7 @@ class Generator {
             }
           }
           return render_known_function_call(*selected, selected->name,
-              arguments, d, locals, types, &argument_nodes);
+              arguments, d, locals, types, &argument_nodes, &expression);
         }
         if (target.empty()) {
           throw std::runtime_error(
@@ -6710,7 +6723,7 @@ class Generator {
           }
         }
         return render_known_function_call(*function, function->name,
-            arguments, d, locals, types, &argument_nodes);
+            arguments, d, locals, types, &argument_nodes, &expression);
       }
       if (const auto* builtin = std::get_if<est::Identifier>(
               &expression.arena->at(type_id));
@@ -8416,7 +8429,10 @@ class Generator {
         bool known_function = (function_target != nullptr);
         if (known_function)
           return render_known_function_call(*function_target, function_target->name, call_args,
-                                            d, locals, types);
+                                            d, locals, types,
+                                            call_argument_nodes.empty()
+                                                ? nullptr : &call_argument_nodes,
+                                            checked_node);
         const Method* sibling_method = nullptr;
         if (d && objects_.count(d->name) && !known_function) {
           const auto checked_methods = checked_method_targets(
@@ -9061,26 +9077,30 @@ class Generator {
     phase21_result_context_ = raises;
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
+      const EmitterExpr checked_result = checked_expression_ref(
+          f.expression_handles, *f.result_expression,
+          est::ExprSlot::ReturnValue);
       struct ResultCodegenScope {
         const FunctionSpecialization*& specialization_slot;
-        string& expression_slot;
+        const EmitterExpr*& expression_slot;
         const FunctionSpecialization* prior_specialization;
-        string prior_expression;
+        const EmitterExpr* prior_expression;
         ResultCodegenScope(const FunctionSpecialization*& selected,
-                           string& source, const FunctionSpecialization* current,
-                           const string& expression)
-            : specialization_slot(selected), expression_slot(source),
-              prior_specialization(selected), prior_expression(source) {
+                           const EmitterExpr*& node,
+                           const FunctionSpecialization* current,
+                           const EmitterExpr* expression)
+            : specialization_slot(selected), expression_slot(node),
+              prior_specialization(selected), prior_expression(node) {
           specialization_slot = current;
           expression_slot = expression;
         }
         ~ResultCodegenScope() {
           specialization_slot = prior_specialization;
-          expression_slot = std::move(prior_expression);
+          expression_slot = prior_expression;
         }
       } result_scope(codegen_result_specialization_,
-                     codegen_result_expression_, specialization,
-                     *f.result_expression);
+                     codegen_result_node_, specialization,
+                     &checked_result);
       FunctionalExpressionHandlesScope result_handles_scope(
           active_functional_expression_handles_, &f.expression_handles);
       struct ResultFactsContextScope {
@@ -9092,9 +9112,6 @@ class Generator {
       } result_facts_context_scope(codegen_body_context_, functional_context);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
-      const EmitterExpr checked_result = checked_expression_ref(
-          f.expression_handles, *f.result_expression,
-          est::ExprSlot::ReturnValue);
       string rendered = expr(checked_result,
                              nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
