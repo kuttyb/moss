@@ -231,10 +231,20 @@ not a paired corpus measurement.
 
 Focused like-for-like test-build measurements against the C1 binary on the
 same optimized commands show: `phase24_string_concat` 5,775 lookups / 2,138
-reparses -> 1,624 / 356; `collections_and_methods` 2,607 / 1,247 -> 843 / 194;
-`phase45_cross_let_result` 641 lookups / 467 total reparses -> 208 / 163,
-with candidate functional reparses zero. This is targeted evidence only; the
-required paired corpus + examples + packages measurement remains pending.
+reparses -> 1,452 / 356; `collections_and_methods` 2,607 / 1,247 -> 688 / 86;
+`phase45_cross_let_result` 641 lookups / 467 total reparses -> 201 / 163; and
+`phase15_15_string_map` 3,912 / 2,158 -> 870 / 572. Candidate functional
+reparses are zero on `phase45_cross_let_result`. This is targeted evidence
+only; the required paired corpus + examples + packages measurement remains
+pending.
+
+Assignment LHS indexing, key-type and write-place queries now operate on the
+checked `LhsPlace` node. Empty-map type closure looks ahead through each later
+assignment's checked LHS/RHS handles. The 30-fixture optimized functional
+sample, fact-hook matrix and three-engine check pass. For
+`tests/phase15_15_string_map.moss`, generated Rust has only redundant grouping
+differences from C1; both compile and print the same output. Updated focused
+paired counts appear above. The full corpus measurement is still pending.
 
 ## C2 progress — emitter consumes checked call edges on nested nodes
 

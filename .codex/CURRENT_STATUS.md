@@ -15416,7 +15416,19 @@ full-suite result.
 
 Like-for-like targeted C1/candidate `-O` counters (test builds, same compiler
 command and fixtures): `phase24_string_concat` 5,775 lookups / 2,138 reparses
--> 1,624 / 356; `collections_and_methods` 2,607 / 1,247 -> 843 / 194;
-`phase45_cross_let_result` 641 / 467 total reparses -> 208 / 163. The three
-candidate functional reparses on the last fixture are zero. These are focused
-fixtures, not the required full corpus + examples + packages count.
+-> 1,452 / 356; `collections_and_methods` 2,607 / 1,247 -> 688 / 86;
+`phase45_cross_let_result` 641 / 467 total reparses -> 201 / 163;
+`phase15_15_string_map` 3,912 / 2,158 -> 870 / 572. Candidate functional
+reparses are zero on `phase45_cross_let_result`. These are focused fixtures,
+not the required full corpus + examples + packages count.
+
+### C2 checked LHS node lowering (2026-11-01)
+
+Assignment LHS shape, index type, and write-place queries now traverse the
+statement's checked `LhsPlace` handle. Later assignments used to close empty
+Map element types are also inspected through their checked LHS/RHS handles.
+Build passed, 30/30 optimized functional fixtures pass, and the fact-hook and
+three-engine tests pass. Six representative outputs match C1 behavior; the
+String map fixture's generated Rust differs only in redundant grouping and
+both binaries compile and print the same output. Updated focused C1/candidate
+counts are listed above. No full suites, corpus pass, or perf run yet.

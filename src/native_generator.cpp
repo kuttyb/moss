@@ -1840,6 +1840,54 @@ class Generator {
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
+  string write_call_place(const EmitterExpr& expression, const Domain* d,
+                          const std::set<string>& locals,
+                          const std::unordered_map<string,string>* types) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked write-place node");
+    if (auto place = view_place(expression, d, locals, types)) return *place;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto& node = expression.arena->at(root);
+    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+      if (write_through_parameters_.count(identifier->name)) {
+        if (types && types->count(identifier->name) &&
+            copy_type(types->at(identifier->name)))
+          return "*" + identifier->name;
+        return "(*" + identifier->name + ")";
+      }
+      return place_expr(expression, d, locals, types);
+    }
+    if (const auto* member = std::get_if<est::Member>(&node))
+      return "(" + write_call_place(expression.child(member->base), d, locals,
+                                     types) + ")." +
+          rust_identifier(member->name);
+    if (const auto* index = std::get_if<est::Index>(&node)) {
+      const auto base = expression.child(index->base);
+      const auto key = expression.child(index->index);
+      const string storage = write_call_place(base, d, locals, types);
+      const string rendered_key = expr(key, d, locals, types);
+      auto type = generated_expr_type(base, types);
+      if (type && shared_protocol_map_key_from_type(*type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*type);
+        return "*({ let __moss_key = " + rendered_key + "; (" + storage +
+            ").get_mut_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", &__moss_key, |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\") })";
+      }
+      if (type && (starts_with(canonical_type_name(*type), "map[") ||
+                   canonical_type_name(*type) == "map"))
+        return "*(" + storage + ").get_mut(&(" + rendered_key +
+            ")).expect(\"Moss missing map key\")";
+      if (type && (canonical_type_name(*type) == "RangeBatch" ||
+                   canonical_type_name(*type) == "Range"))
+        return "(" + storage + ").get(" + rendered_key + ")";
+      return "(" + storage + ")[(" + rendered_key + ") as usize]";
+    }
+    return place_expr(expression, d, locals, types);
+  }
+
   string read_call_place(const string& argument, const Domain* d,
                          const std::set<string>& locals,
                          const std::unordered_map<string,string>* types) const {
@@ -8766,6 +8814,8 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          const EmitterExpr checked_lhs = checked_expression_ref(
+              s, s.a, est::ExprSlot::LhsPlace);
           const EmitterExpr checked_rhs = checked_expression_ref(
               s, s.b, est::ExprSlot::RhsValue);
           if (s.a == "_") {
@@ -8800,18 +8850,25 @@ class Generator {
             break;
           }
           string lhs;
-          string lhs_base, lhs_index;
+          EmitterExpr lhs_base_node, lhs_index_node;
+          const bool indexed_lhs = tree_parse_index(
+              checked_lhs, lhs_base_node, lhs_index_node);
+          const string lhs_base = indexed_lhs ? lhs_base_node.text() : string();
+          const string lhs_index = indexed_lhs ? lhs_index_node.text() : string();
           string index_temporary;
-          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+          if (indexed_lhs) {
             string root_id = lhs_base;
             auto dot_pos = root_id.find('.');
             if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
-            bool conflicts_with_base = !root_id.empty() && tree_expression_mentions_identifier(lhs_index, root_id);
+            bool conflicts_with_base = !root_id.empty() &&
+                tree_expression_mentions_identifier(lhs_index_node, root_id);
             bool reads_sibling = false;
-            if (view_method_ && d && is_pure_state_read_expression(lhs_index)) {
+            if (view_method_ && d &&
+                is_pure_state_read_expression(lhs_index_node)) {
               for (const auto& field : d->state) {
                 if (field.name != lhs_base &&
-                    tree_expression_mentions_identifier(lhs_index, field.name)) {
+                    tree_expression_mentions_identifier(lhs_index_node,
+                                                        field.name)) {
                   reads_sibling = true;
                   break;
                 }
@@ -8821,25 +8878,25 @@ class Generator {
               index_temporary = "__moss_index_" +
                   std::to_string(call_argument_temp_++);
               o << indent(level) << "let " << index_temporary << " = "
-                << expr(lhs_index, d, locals, &types) << ";\n";
+                << expr(lhs_index_node, d, locals, &types) << ";\n";
             }
           }
-          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
-            bool string_index = tree_literal_class(lhs_index) ==
+          if (indexed_lhs) {
+            bool string_index = tree_literal_class(lhs_index_node) ==
                 est::LiteralClass::String;
             string ir = !index_temporary.empty() ? index_temporary :
-                (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
-            auto base_type = generated_expr_type(lhs_base, &types);
+                (string_index ? lhs_index : expr(lhs_index_node, d, locals, &types));
+            auto base_type = generated_expr_type(lhs_base_node, &types);
             bool map_index = base_type &&
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-            lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
+            lhs = "(" + write_call_place(lhs_base_node, d, locals, &types) + ")[" + ir + "]";
           }
-          else lhs = write_call_place(s.a, d, locals, &types);
+          else lhs = write_call_place(checked_lhs, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
-          if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+          if (tree_plain_identifier(checked_lhs) && !locals.count(s.a) && !state_field) {
             if (statement_type.empty())
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
@@ -8854,12 +8911,16 @@ class Generator {
               // checked body may close it at a later indexed assignment;
               // preserve that evidence before emitting its Rust declaration.
               for (size_t next = i + 1; next < ss.size(); ++next) {
-                string map_base, index_expression;
-                if (ss[next].kind != Stmt::Kind::Assign ||
-                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
-                    map_base != s.a) continue;
+                if (ss[next].kind != Stmt::Kind::Assign) continue;
+                const auto next_lhs = checked_expression_ref(
+                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
+                EmitterExpr map_base, index_expression;
+                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
+                    tree_identifier_name(map_base) !=
+                        std::optional<string>(s.a)) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(ss[next].b, &types);
+                auto value_type = generated_expr_type(checked_expression_ref(
+                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
                 if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
@@ -8894,19 +8955,27 @@ class Generator {
               forget_domain_instance_binding(s.a);
           } else {
             string mb, mi;
-            bool map_assignment = tree_parse_index(s.a, mb, mi);
+            EmitterExpr map_base_node, map_index_node;
+            bool map_assignment = tree_parse_index(
+                checked_lhs, map_base_node, map_index_node);
+            if (map_assignment) {
+              mb = map_base_node.text();
+              mi = map_index_node.text();
+            }
             auto map_assignment_type = map_assignment
-                ? generated_expr_type(mb, &types) : std::optional<string>{};
+                ? generated_expr_type(map_base_node, &types)
+                : std::optional<string>{};
             if (map_assignment && map_assignment_type &&
                 (canonical_type_name(*map_assignment_type) == "map" ||
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
-              const bool string_key = tree_literal_class(mi) ==
+              const bool string_key = tree_literal_class(map_index_node) ==
                   est::LiteralClass::String;
               string key = string_key
-                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
-              auto key_type = generated_expr_type(mi, &types);
+                  ? "MossStr::from(" + mi + ")"
+                  : expr(map_index_node, d, locals, &types);
+              auto key_type = generated_expr_type(map_index_node, &types);
               if (key_type && shared_nominal_map_key(*key_type) &&
-                  is_object_view(mi, d, locals, &types))
+                  is_object_view(map_index_node, d, locals, &types))
                 key = "(" + key + ").__moss_value()";
               else if (key_type && !copy_type(*key_type) &&
                   !string_key)
@@ -8920,18 +8989,18 @@ class Generator {
               if (auto shared_key =
                       shared_protocol_map_key_from_type(*map_assignment_type)) {
                 o << indent(level) << "{ let __moss_key = " << key
-                  << "; (" << write_call_place(mb, d, locals, &types)
+                  << "; (" << write_call_place(map_base_node, d, locals, &types)
                   << ").insert_with(" << shared_map_hash(*shared_key, "__moss_key")
                   << ", __moss_key, " << inserted << ", |a, b| "
                   << shared_map_equal(*shared_key, "a", "b") << "); }\n";
               } else {
-                o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
+                o << indent(level) << "(" << write_call_place(map_base_node, d, locals, &types)
                   << ").insert(" << key << ", "
                   << inserted
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types))
+            else if (is_object_view(checked_lhs, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(
                   checked_rhs, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0))
@@ -8980,7 +9049,7 @@ class Generator {
                     reused << "&(" << expr(part, d, locals, &types)
                            << "); ";
                 }
-                string place = write_call_place(s.a, d, locals, &types);
+                string place = write_call_place(checked_lhs, d, locals, &types);
                 reused << "(" << place << ").reserve(";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
                   if (operand > 1) reused << ".saturating_add(";
@@ -9010,7 +9079,8 @@ class Generator {
               else
                 o << indent(level) << lhs << " = " << assigned << ";\n";
             }
-            if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+            if (tree_plain_identifier(checked_lhs))
+              forget_domain_instance_binding(s.a);
           }
           ++i;
           break;
@@ -9391,10 +9461,13 @@ class Generator {
             if (staged_abi_v10() && tree_empty_constructor_named(checked_initializer, "Map") &&
                 !starts_with(statement_type, "map[")) {
               for (size_t next = i + 1; next < ss.size(); ++next) {
-                string map_base, index_expression;
-                if (ss[next].kind != Stmt::Kind::Assign ||
-                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
-                    map_base != s.a) continue;
+                if (ss[next].kind != Stmt::Kind::Assign) continue;
+                const auto next_lhs = checked_expression_ref(
+                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
+                EmitterExpr map_base, index_expression;
+                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
+                    tree_identifier_name(map_base) !=
+                        std::optional<string>(s.a)) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
                 auto value_type = generated_expr_type(checked_expression_ref(
                     ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
