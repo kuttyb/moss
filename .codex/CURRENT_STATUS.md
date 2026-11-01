@@ -16362,3 +16362,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   enum target recording plus removal of the statement-map propagation. The
   branch tip is still `0e5166d5`; the earlier source checkpoint commits are
   pushed. No full suite/perf/Agent 2/merge/tag.
+
+## C2 resume check (2026-11-01; pushed tip 577bc270)
+
+- Confirmed the active checkout is clean on `phase27-5-4-work` at
+  `577bc270`, pushed to `origin/phase27-5-4-work`. Re-ran
+  `./moss run --interp tests/phase106d_specializations.moss`; it still fails at
+  line 23 with `MOSS_INTERNAL_INVARIANT checked method target disagrees with
+  receiver`. This is a current candidate failure, not a newly introduced
+  measurement.
+- Latest focused zero-counter evidence above is fixture-scoped; the required
+  corpus-wide consumer count and final gates have not been run. C2 is not ready
+  for Agent 2 or merge. The next implementation investigation is to align
+  concrete domain-specialization handler fact contexts across checker,
+  emitter, and Fast Debug. The source domain's generic `handler:Box.*` context
+  cannot distinguish the concrete Left and Right method targets in this test.
+- Startup bootstrap reports language version `moss-0.1`. The requested
+  `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` path is absent on this branch; the
+  current contract is `docs/MOSS_COMPILER_CONTRACT.md`.
