@@ -9981,10 +9981,19 @@ class Checker {
         }
         for (const auto& route : d.routes)
           specialized_env[route.name] = route.type;
-        SourceFileScope instance_context(
-            current_semantic_context_,
-            functional_handler_instance_context(d, h, specialization.instance));
-        check_stmts(h.body, std::move(specialized_env), &d, &h);
+        try {
+          SourceFileScope instance_context(
+              current_semantic_context_,
+              functional_handler_instance_context(
+                  d, h, specialization.instance));
+          check_stmts(h.body, std::move(specialized_env), &d, &h);
+        } catch (const CompileError&) {
+          // This pass exists only to attach per-instance expression facts for
+          // consumers. The source handler was already checked above under
+          // its authoritative generic contract; diagnostics from the
+          // observational specialization pass must not change which programs
+          // the checker accepts.
+        }
       }
       const bool has_captures = std::any_of(
           h.failure_arms.begin(), h.failure_arms.end(),

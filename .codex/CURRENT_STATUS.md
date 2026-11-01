@@ -16496,3 +16496,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   specializations 4, joins 4, patterns 3, known debt unchanged at 38/38.
   No full `make check`, three-engine/parity aggregate, performance suite,
   Agent 2 audit, merge, or tag has run.
+
+## C2 correction: specialized fact pass preserves acceptance (2026-11-01)
+
+- The per-instance handler recheck at `2de19e45` could reject an otherwise
+  accepted generic domain program when a concrete state type differed from the
+  source-level handler reply contract. `tests/implicit_domain_specialization.moss`
+  reproduced it: parent accepted; candidate rejected `reply value` as int vs
+  float.
+- The per-instance pass now discards `CompileError` diagnostics after recording
+  any facts reached before the diagnostic. The initial generic handler check
+  remains authoritative for source acceptance. The fixture now checks,
+  emits, compiles, and matches native/Fast Debug (`10`, `3.5`); focused emitter
+  reparses and text lookups are 0/0.
+- This removes the two mode failures for that source from the paired sweep's
+  candidate-only list. Remaining candidate-only failures are the formatter
+  return grouping probe and malformed incomplete-index probe (both modes);
+  the former emits invalid Rust on the parent and the latter is malformed
+  accepted syntax. Re-run final paired counters after further changes.
