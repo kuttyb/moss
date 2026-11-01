@@ -16174,11 +16174,11 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   can bind to that body's retained nodes. Targeted check now records
   `Countdown` for the `consume_typed` iterable node in its specialization
   context. No temporary debug hooks remain in source.
-- One pre-existing candidate regression remains: `tests/phase47_iteration.moss`
-  checks and Fast Debug runs, but generated Rust still fails to compile in
-  generic `consume<Countdown>` (emits `.iter()` for `Countdown`). The pinned C1
-  parent emits a direct `.next()` iterator loop and compiles. Do not claim parity;
-  this needs checker/context fact investigation before C2 gates.
+- The specialization fact mismatch is fixed: after body inference, concrete
+  specialization parameters now clear stale solver terms and retain their
+  selected argument types. `tests/phase47_iteration.moss` generated Rust now
+  compiles, and Fast Debug/native output matches (`12 1 20 6 9 3 3`). This is a
+  targeted parity result; the full parity suite remains pending.
 - Verified after resume: `make moss-dev` PASS;
   `check_phase27_5_4_fact_hooks.py build/compiler/moss-dev` PASS (7 call-target,
   4 specialization, 4 joins, 3 patterns; known-debt count 38 unchanged); vector
@@ -16190,8 +16190,9 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   181,562 / 273,688. Candidate emits 0 pipeline reparses; these are focused
   counters, not bulk suite/performance measurements. Candidate generated Rust
   for calculator compiles and output matches Fast Debug.
-- Current uncommitted code: (1) checker specialization cursor isolation;
-  (2) node-based emitter lowering for builtin vector/queue push/pop calls.
+- Checker specialization cursor isolation and restoration of concrete parameter
+  bindings are now committed; node-based emitter lowering for builtin
+  vector/queue push/pop calls is also committed.
   The latter reduces calculator counters from the previous 15,360/20,784 to
   10,246/10,822 and its valid vector/queue targets pass parity. No full suite,
   three-engine aggregate, perf suite, Agent 2 audit, merge, or tag has run.

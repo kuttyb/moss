@@ -24080,6 +24080,12 @@ class Checker {
     static_bound_bindings_.clear();
     infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
+    // A specialization's parameter arguments are authoritative after generic
+    // body inference has populated the solver-term side table.
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      specialized_env[function.params[index].name] = canonical_types[index];
+      specialized_env.terms.erase(function.params[index].name);
+    }
     Function concrete_function = function;
     concrete_function.set_return_type(specialization.return_type);
     for (size_t index = 0; index < concrete_function.params.size(); ++index)
