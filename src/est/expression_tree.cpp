@@ -286,6 +286,7 @@ std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
 std::uint64_t expression_text_lookup_count = 0;
+std::uint64_t expression_text_cache_lookup_count = 0;
 std::array<std::uint64_t, 6> expression_text_parse_counts{};
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
@@ -346,6 +347,15 @@ ExpressionParseSiteScope::~ExpressionParseSiteScope() {
   active_expression_parse_site = previous_;
 }
 
+void record_expression_text_cache_lookup() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_cache_lookup_count;
+  } catch (...) {
+  }
+}
+
 void record_expression_text_parse() noexcept {
   if (!test_coverage_counters_enabled()) return;
   try {
@@ -372,6 +382,8 @@ void report_test_coverage_counters() {
             << expression_tree_rebuild_count << '\n';
   std::cerr << "MOSS_EST_TEXT_NODE_LOOKUPS="
             << expression_text_lookup_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_CACHE_LOOKUPS="
+            << expression_text_cache_lookup_count << '\n';
   const auto checker_body_parses = expression_text_parse_counts[
       static_cast<std::size_t>(ExpressionParseSite::Checker)];
   const auto checker_view_parses = expression_text_parse_counts[

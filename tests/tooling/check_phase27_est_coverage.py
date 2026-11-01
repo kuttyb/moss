@@ -37,6 +37,8 @@ if "MOSS_EST_REPARSES " not in dev_stats:
     raise SystemExit("test compiler did not report consumer reparse counters")
 if "MOSS_EST_TEXT_NODE_LOOKUPS=" not in dev_stats:
     raise SystemExit("test compiler did not report expression-text node lookups")
+if "MOSS_EST_TEXT_CACHE_LOOKUPS=" not in dev_stats:
+    raise SystemExit("test compiler did not report text-keyed parse cache lookups")
 if "MOSS_EST_TREE_TEXT_REBUILDS=" not in dev_stats:
     raise SystemExit("test compiler did not report expression-tree rebuilds")
 if "MOSS_EST_EXPRESSION_TEXT_PARSES " not in dev_stats:
@@ -50,6 +52,7 @@ dev_plain_stats = emit(DEV, dev_without, False)
 if ("MOSS_EST_REPARSES " in dev_plain_stats or
         "MOSS_EST_GENERATED_TYPE_FACT" in dev_plain_stats or
         "MOSS_EST_TEXT_NODE_LOOKUPS=" in dev_plain_stats or
+        "MOSS_EST_TEXT_CACHE_LOOKUPS=" in dev_plain_stats or
         "MOSS_EST_TREE_TEXT_REBUILDS=" in dev_plain_stats or
         "MOSS_EST_EXPRESSION_TEXT_PARSES " in dev_plain_stats):
     raise SystemExit("coverage counters printed without the opt-in report environment")
@@ -61,6 +64,7 @@ opt_stats = emit(OPT, opt_output, True)
 if ("MOSS_EST_REPARSES " in opt_stats or
         "MOSS_EST_GENERATED_TYPE_FACT" in opt_stats or
         "MOSS_EST_TEXT_NODE_LOOKUPS=" in opt_stats or
+        "MOSS_EST_TEXT_CACHE_LOOKUPS=" in opt_stats or
         "MOSS_EST_TREE_TEXT_REBUILDS=" in opt_stats or
         "MOSS_EST_EXPRESSION_TEXT_PARSES " in opt_stats):
     raise SystemExit("optimized/release compiler contains test-only coverage counters")

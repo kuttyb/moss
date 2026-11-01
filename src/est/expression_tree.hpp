@@ -300,6 +300,7 @@ class ExpressionParseSiteScope {
   ExpressionParseSite previous_;
 };
 void record_expression_text_parse() noexcept;
+void record_expression_text_cache_lookup() noexcept;
 void record_expression_tree_rebuild() noexcept;
 void record_expression_text_lookup() noexcept;
 #endif

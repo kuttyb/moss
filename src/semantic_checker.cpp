@@ -399,6 +399,9 @@ void reset_checker_est_view_cache() {
 
 CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   const size_t hash = std::hash<std::string_view>{}(source);
+#ifdef MOSS_TEST_BUILD
+  moss::est::record_expression_text_cache_lookup();
+#endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found == checker_est_view_cache.views.end()) return nullptr;
   for (const auto& entry : found->second)
@@ -455,6 +458,9 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
       moss::est::ExpressionParseSite::CheckerView);
 #endif
   const size_t hash = std::hash<std::string_view>{}(source);
+#ifdef MOSS_TEST_BUILD
+  moss::est::record_expression_text_cache_lookup();
+#endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found != checker_est_view_cache.views.end()) {
     for (const auto& entry : found->second) {
@@ -509,6 +515,9 @@ std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
             call->arguments.front(), string(source)});
   };
   const size_t hash = std::hash<std::string_view>{}(wrapped_text);
+#ifdef MOSS_TEST_BUILD
+  moss::est::record_expression_text_cache_lookup();
+#endif
   auto bucket = checker_est_view_cache.views.find(hash);
   if (bucket == checker_est_view_cache.views.end()) return make_named_view();
   for (auto& entry : bucket->second) {
@@ -11217,6 +11226,9 @@ class Checker {
 
   bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11267,6 +11279,9 @@ class Checker {
 
   bool tree_parse_member_call(const string& text, string& receiver, string& member,
                          vector<string>& args) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11345,6 +11360,9 @@ class Checker {
   }
 
   vector<string> tree_split_top_level(const string& text, char delimiter) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto found = top_level_parse_cache_.find(text);
     if (found != top_level_parse_cache_.end()) {
       auto split = found->second.find(delimiter);
@@ -11373,6 +11391,9 @@ class Checker {
   }
 
   string tree_strip_redundant_outer_parentheses(const string& text) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto found = outer_parentheses_parse_cache_.find(text);
     if (found != outer_parentheses_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11417,6 +11438,9 @@ class Checker {
 
   std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto found = binary_parse_cache_.find(expression);
     if (found != binary_parse_cache_.end()) {
       for (const auto& entry : found->second) {
@@ -11426,6 +11450,9 @@ class Checker {
         }
       }
     }
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_cache_lookup();
+#endif
     auto overflow = binary_parse_cache_overflow_.find(expression);
     if (overflow != binary_parse_cache_overflow_.end()) {
       for (const auto& entry : overflow->second) {
@@ -26071,7 +26098,7 @@ class Checker {
         return std::nullopt;
       }
 #ifdef MOSS_TEST_BUILD
-      est::record_expression_text_lookup();
+      est::record_expression_text_cache_lookup();
 #endif
       const auto source_fingerprint = est::fingerprint(std::string(source));
       for (const auto& handle : *handles)
@@ -26083,8 +26110,10 @@ class Checker {
       if (auto parsed = convert(cursor->arena_index, cursor->expr))
         return parsed;
 
-    // Expressions without a retained source handle use a temporary syntax
-    // tree; the Pipeline node is the only positive syntax oracle.
+    // Some checker passes currently examine pipeline fragments without the
+    // owning statement cursor. Keep this parser path until those callers pass
+    // their checked ExprId directly; the test-build boundary counter records
+    // each such call as checker reparse debt.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);

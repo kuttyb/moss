@@ -13680,3 +13680,30 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Final parity passed: 1,822 source checks, 1,130 default Rust emissions, 1,130 `-O` emissions, and 763 Fast Debug runs with no differences; same two paired Fast Debug timeouts. All 337 package builds and generated Rust matched; twelve raw package Fast Debug errors differ only by compiler executable path, with zero normalized residuals. `.mossi` baseline-identity comparison and three-engine parity passed.
 - Final first-parent performance against `origin/main=32a80a46220f49ac69f6ec68a7bd676b5941f27e`: aggregate 5.585s→5.698s (+2.0%), no `rw_*` beyond noise; `w2_spec_distinct_n032` +2.4% time, +1.9% RSS. Sum of per-fixture peak RSS maxima +1.13% across 77 fixtures. Full report and every fixture's peak RSS are in `tmp/compiler-perf/20261031-155208/LOCAL_REPORT.md` and CSV. The phase performance tripwire passes.
 - Agent 2 reviewed implementation SHA `9aa85e8877987155e6fd4f50bd734150e4665a7a` and returned GO. The phase merged as `a2b308fd804d0d3b9970a292b2f4de076bf20f2d`, first parent `32a80a46220f49ac69f6ec68a7bd676b5941f27e`; annotated tag `phase27-5-2-m1` targets it. Merge and tag were pushed to origin. Delivery report and Team closeout: `docs/phase27/27_5_2_REPORT.md`, `docs/phase27/agent-patterns/phase27-5-2.md`.
+
+## Phase 27.5.4 tightened-K2 cache-lookup checkpoint (2026-10-31)
+
+- User clarification: every lookup in the checker's EST-view cache and every
+  text-keyed parse cache counts as a text lookup, including hits and misses;
+  target requires these caches not to be consulted. Larger text-keyed caches
+  are not an acceptable K2 solution.
+- Added an opt-in, test-build-only `MOSS_EST_TEXT_CACHE_LOOKUPS` counter at
+  checker EST-view map lookups and the `simple_call_parse_cache_`,
+  `member_call_parse_cache_`, `top_level_parse_cache_`,
+  `outer_parentheses_parse_cache_`, and binary split cache lookups. Functional
+  pipeline handle-fingerprint consultation is included. Keyed identifier-name
+  projection lookups are not expression-text keyed and are excluded.
+- Corrected focused baseline: `functional_basics.moss` reports 16,593 text-cache
+  consultations and 121 checker reparses (body 18, EST view 59, pipeline 44);
+  `specialized_call_facts.moss` reports 26,775 consultations and 44 checker
+  reparses (body 2, EST view 42, pipeline 0). The old node-text lookup counter
+  reports zero for both and therefore does not measure this K2 requirement.
+- `make --jobs="$(nproc)" moss-dev`, both focused checks, and
+  `check_phase27_est_coverage.py` pass with instrumentation. This is baseline
+  instrumentation only; no checker cache has yet been removed. No full suite
+  or performance run has occurred.
+- Worktree has uncommitted edits to `src/est/expression_tree.{hpp,cpp}`,
+  `src/semantic_checker.cpp`, and `tests/tooling/check_phase27_est_coverage.py`
+  implementing the above counter. Next: checkpoint these edits, then continue
+  replacing checker string recursion/cache consultations with ExprId recursion
+  and facts. Keep branch `phase27-5-4-work`.
