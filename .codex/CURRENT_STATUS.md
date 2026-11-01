@@ -1,10 +1,11 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed checkpoint before this slice was
-  `bacb5c73`. The worktree now has a targeted checker change in
-  `src/semantic_checker.cpp`: message-call pipeline validation receives its
-  exact `Argument[index]` handle, and return pipeline validation receives its
-  exact `ReturnValue` handle. Exact-handle misses return no pipeline parse. The
+- Branch: `phase27-5-4-work`; latest pushed checkpoint is `890f45a7`
+  (parent `7fcf119f`). The worktree is clean. The current implementation has
+  `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
+  and reply pipeline validation receives its exact `ReturnValue` handle. The
+  explicit-handle path in `functional_pipeline_from_est` projects that ExprId
+  before scanning source text. Exact-handle misses return no pipeline parse. The
   temporary `MOSS_EST_PIPELINE_FALLBACK_TRACE` diagnostic was removed.
 - Targeted validation after the edit: `make --jobs="$(nproc)" moss-dev` passed;
   `check_phase27_est_functional_tree.py build/compiler/moss-dev` passed;
