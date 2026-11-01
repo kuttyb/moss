@@ -14093,3 +14093,9 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   4,933,254 to 4,933,110 (-144; member_call site 265,799 to 265,655), while
   checker reparses remain 12,003 and tree rebuilds remain 203. This is measured
   K2 progress, but the remaining target is zero. No full suite/performance run.
+- Added exact source identity checks before the checked simple-call and binary
+  split helpers use an active cursor; a mismatch falls back to the established
+  parser path. Focused regex, pipeline diagnostic, functional-tree and parity
+  checks pass. Regex counters did not change from the `a4552fb2` sample
+  (4,933,110 text-cache lookups; 12,003 checker reparses), so this guard is
+  recorded as cursor-context safety only, with no K2 progress claim.

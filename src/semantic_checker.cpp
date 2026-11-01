@@ -27215,7 +27215,8 @@ class Checker {
   bool checked_expression_parse_simple_call(const string& source,
       string& callee, vector<string>& arguments) const {
     if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
+        active_est_expression_cursors_.back() &&
+        active_est_expression_cursors_.back()->source == source) {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return false;
@@ -27303,7 +27304,8 @@ class Checker {
   std::optional<std::pair<string, string>> checked_expression_split_binary(
       const string& source, const vector<string>& operators) const {
     if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
+        active_est_expression_cursors_.back() &&
+        active_est_expression_cursors_.back()->source == source) {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return std::nullopt;
