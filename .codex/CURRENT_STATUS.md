@@ -28,11 +28,13 @@
   Fast Debug/native/optimized parity script passed. This does not yet change
   most recursive string paths or consumer K1/K2 totals. Full suites and perf
   remain unrun.
-- A follow-up uncommitted slice routes retained binary `left` and `right`
-  recursive checks through the AST node's child IDs. Development rebuild and
-  the focused for fixture plus three-engine parity script pass on this slice.
-  It has not yet been committed or pushed; remaining binary typing and numerous
-  call, constructor, pipeline, and checker paths still use source fragments.
+- The second checker slice is committed and pushed as `74a8bdb8`; it routes
+  retained binary `left` and `right` recursive checks through AST child IDs.
+  A further local slice routes unary operands and indexed call arguments
+  through the AST child lookup. Its development rebuild, two join fixtures,
+  and focused three-engine parity script pass. This further slice is not yet
+  committed; call, constructor, pipeline, and many checker paths still use
+  source fragments.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 

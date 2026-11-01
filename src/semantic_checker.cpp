@@ -26946,8 +26946,11 @@ class Checker {
             "move the shared logic into an ordinary non-domain helper and call it directly");
       }
       for (size_t index = 0; index < args.size(); ++index)
-        check_expression(line, args[index], env, {},
-                         "argument:" + std::to_string(index));
+        if (!check_expression_child_node(line, env,
+                "argument:" + std::to_string(index),
+                static_cast<std::uint32_t>(index)))
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
       return;
     }
     if (auto syntax = checker_est_view(original); syntax &&
@@ -27162,7 +27165,8 @@ class Checker {
         unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
       string operand = unary_operand;
-      check_expression(line, operand, env, {}, "operand");
+      if (!check_expression_child_node(line, env, "operand"))
+        check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
       if (!operand_type || canonical_type_name(*operand_type) != "bool")
@@ -27341,7 +27345,8 @@ class Checker {
       string nested_operation, nested_operand;
       if (!tree_parse_unary(operand, nested_operation, nested_operand) ||
           nested_operation != "-") {
-        check_expression(line, operand, env, {}, "operand");
+        if (!check_expression_child_node(line, env, "operand"))
+          check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
         auto operand_type = inferred_expr_type(operand, env);
@@ -27432,7 +27437,8 @@ class Checker {
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "~") {
       string operand = unary_operand;
-      check_expression(line, operand, env, {}, "operand");
+        if (!check_expression_child_node(line, env, "operand"))
+          check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
@@ -27518,8 +27524,11 @@ class Checker {
                   .non_expression_operand_ordinals.push_back(
                       static_cast<std::uint32_t>(index));
           } else {
-            check_expression(line, args[index], env, {},
-                             "argument:" + std::to_string(index));
+            if (!check_expression_child_node(line, env,
+                    "argument:" + std::to_string(index),
+                    static_cast<std::uint32_t>(index)))
+              check_expression(line, args[index], env, {},
+                               "argument:" + std::to_string(index));
           }
         }
         return;
@@ -27554,8 +27563,11 @@ class Checker {
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           for (size_t index = 0; index < args.size(); ++index)
-            check_expression(line, args[index], env, {},
-                             "argument:" + std::to_string(index));
+            if (!check_expression_child_node(line, env,
+                    "argument:" + std::to_string(index),
+                    static_cast<std::uint32_t>(index)))
+              check_expression(line, args[index], env, {},
+                               "argument:" + std::to_string(index));
           vector<string> argument_types;
           for (const auto& arg : args)
             argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -27639,8 +27651,11 @@ class Checker {
             err(line, "argument " + std::to_string(index + 1) +
                 " to trait method '" + handler + "' has type '" + *actual +
                 "', expected '" + method->params[index].type + "'");
-          check_expression(line, args[index], env, {},
-                           "argument:" + std::to_string(index));
+          if (!check_expression_child_node(line, env,
+                  "argument:" + std::to_string(index),
+                  static_cast<std::uint32_t>(index)))
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
         }
         return;
       }
@@ -27665,8 +27680,11 @@ class Checker {
         retain_active_expression_target(
             "builtin-method:" + canon_recv + "." + handler);
         for (size_t index = 0; index < args.size(); ++index)
-          check_expression(line, args[index], env, {},
-                           "argument:" + std::to_string(index));
+          if (!check_expression_child_node(line, env,
+                  "argument:" + std::to_string(index),
+                  static_cast<std::uint32_t>(index)))
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
         return;
       }
       if (it != env.end() && open_generic(it->second)) {
@@ -27702,8 +27720,11 @@ class Checker {
           current_body_types_->expression_occurrence_ledger_complete = false;
       }
       for (size_t index = 0; index < args.size(); ++index)
-        check_expression(line, args[index], env, {},
-                         "argument:" + std::to_string(index));
+        if (!check_expression_child_node(line, env,
+                "argument:" + std::to_string(index),
+                static_cast<std::uint32_t>(index)))
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
       return;
     }
     string ib, ii;
