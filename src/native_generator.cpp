@@ -4042,12 +4042,16 @@ class Generator {
       if (write_through_parameters_.count(name) && types &&
           types->count(name) && copy_type(types->at(name)))
         return "*" + name;
-      if (locals.count(name) && !view_parameters_.count(name) &&
-          !(types && types->count(name) &&
-            view_object_type(types->at(name))) &&
-          !(types && types->count(name) &&
-            domains_.count(canonical_type_name(types->at(name)))))
-        return name;
+      // `view_place` above has already handled representation-sensitive
+      // borrowed views. Any remaining local identifier is emitted as its
+      // checked local binding; the old text rewriter left these unchanged.
+      if (locals.count(name)) return name;
+      if (d && !view_domain_ && !view_method_ &&
+          (std::any_of(d->state.begin(), d->state.end(),
+                       [&](const Field& field) { return field.name == name; }) ||
+           std::any_of(d->routes.begin(), d->routes.end(),
+                       [&](const DomainRoute& route) { return route.name == name; })))
+        return (objects_.count(d->name) ? "self." : "state.") + name;
     }
     if (const auto* literal = std::get_if<est::Literal>(
             &expression.arena->at(root))) {
@@ -4880,10 +4884,16 @@ class Generator {
     if (std::getenv("MOSS_EST_COVERAGE_STATS")) {
       const char* kind = std::holds_alternative<est::NamedArgument>(
                              expression.arena->at(root)) ? "named_argument"
+          : std::holds_alternative<est::Identifier>(
+                expression.arena->at(root)) ? "identifier"
+          : std::holds_alternative<est::Message>(expression.arena->at(root))
+                ? "message"
           : std::holds_alternative<est::Placeholder>(
                 expression.arena->at(root)) ? "placeholder"
           : std::holds_alternative<est::Tuple>(expression.arena->at(root))
                 ? "tuple"
+          : std::holds_alternative<est::MissingExpression>(
+                expression.arena->at(root)) ? "missing"
           : std::holds_alternative<est::Collection>(expression.arena->at(root))
                 ? "collection"
           : std::holds_alternative<est::Constructor>(expression.arena->at(root))

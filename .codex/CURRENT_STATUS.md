@@ -15222,3 +15222,22 @@ perturb/drop probes all hit `MOSS_INTERNAL_INVARIANT`. The no-parser scan found
 no parser calls in `functional_optimizer.cpp`. C2 still has nonzero emitter
 reparses; no full suites or performance run yet. Evidence is also recorded in
 `agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`.
+
+### Phase 27.5.4 C2 checkpoint — node identifiers (2026-11-01)
+
+Latest work is on `phase27-5-4-work`. Emitter `EmitterExpr` identifiers now
+lower checked local names and non-view domain state/route names directly from
+the node. Mini application output is byte-identical to c96 in default and
+`-O`; paired test-build counts per invocation are 9,497 -> 3,031 text lookups
+and 6,122 -> 1,610 expression reparses (−68% / −74%). Its node fallback
+counter is now empty. Three-engine and the call-target/specialization/join/
+pattern perturb/drop matrix pass.
+
+A direct lowering experiment for `jobs[1].weighted(3)` changed emitted Rust
+by adding a clone. That affects ownership and was reverted; the collections
+fixture's member-call remains a residual fallback. The remaining uncommitted
+slice adds only the node identifier path and fallback-kind test counter labels.
+Targeted native Rust byte comparisons pass; no final suites, bulk corpus count,
+or performance suite has run yet. Next work: continue only with tree paths that
+preserve ownership lowering, then run the corpus count and final C2 gates when
+migration is near completion.

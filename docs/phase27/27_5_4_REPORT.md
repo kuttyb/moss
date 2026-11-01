@@ -259,3 +259,23 @@ fell 2 -> 0. The four-class hook matrix passes, and direct drop/perturb probes
 for call targets and specializations on this fixture all fail with
 `MOSS_INTERNAL_INVARIANT`. Other emitter reparses remain; C2 full gates are
 pending.
+
+## C2 progress — local and state identifiers lower directly from nodes
+
+`EmitterExpr` identifier lowering now emits checked local bindings directly
+once view-aware projection has had its chance, and maps non-view domain state
+and route names to their existing Rust representation without re-parsing the
+identifier text. On `examples/mini_application.moss`, both default and `-O`
+generated Rust remain byte-identical to c96. Paired test-build counts per
+command are parent 9,497 text-node lookups / 6,122 expression reparses and
+candidate 3,031 / 1,610 (−68% / −74%). The emitter node-fallback counter has
+no remaining expression shapes on this fixture. Three-engine and the
+four-class perturb/drop hook matrix pass.
+
+A direct member-call lowering experiment was reverted: on
+`examples/collections_and_methods.moss`, lowering `jobs[1].weighted(3)` from
+its node changed generated Rust by introducing a clone on the indexed
+receiver. That is an ownership decision and outside this phase's allowed
+scope. This fixture therefore remains evidence of a member-call fallback,
+not a completed migration. Full suites, corpus consumer counts, and
+performance gates remain pending.
