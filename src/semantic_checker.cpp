@@ -27446,10 +27446,6 @@ class Checker {
           checked_elements.emplace_back(element, std::nullopt);
       for (std::size_t index = 0; index < checked_elements.size(); ++index) {
         const auto& [element, node] = checked_elements[index];
-        auto type = inferred_expr_type(element, env);
-        if (type && fileio_scoped_type(*type))
-          err(line, "FileIO and ranges cannot enter ordinary collections",
-              "FILEIO_COLLECTION_ESCAPE");
         const auto role = "element:" + std::to_string(index);
         if (node && !active_est_expression_cursors_.empty() &&
             active_est_expression_cursors_.back())
@@ -27458,6 +27454,10 @@ class Checker {
               role);
         else
           check_expression(line, element, env, {}, role);
+        auto type = checked_child_or_inferred_type(role, element, env);
+        if (type && fileio_scoped_type(*type))
+          err(line, "FileIO and ranges cannot enter ordinary collections",
+              "FILEIO_COLLECTION_ESCAPE");
       }
       if (current_body_types_) {
         if (elements->empty()) {

@@ -13849,3 +13849,12 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Default/shadow message and enum fixtures and all six focused three-engine
   expression-use fixtures pass. `specialized_call_facts.moss` is at 25,130
   cache consultations (down from 25,216), checker reparses remain 44.
+
+## Phase 27.5.4 vector child facts checkpoint (2026-10-31)
+
+- Vector literal elements are checked by ExprId before the FileIO/range escape
+  type decision; the decision now prefers the recorded child type fact and
+  falls back to inference only if that fact is absent. Default/shadow checks
+  pass for `swarm_020_typed_vector_factory.moss` and `functional_basics.moss`.
+- functional_basics cache consultations are 15,360 (down 76 from 15,436),
+  checker reparses remain 121 (body=18, view=59, pipeline=44). No full suite.
