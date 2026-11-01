@@ -16632,3 +16632,25 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   0/0, and domain chunks 12/12 -> 0/0. Full whole-workload paired counters are
   due again after more changes. Full suites, perf and Agent 2 audit remain
   pending.
+
+## C2 paired consumer-count checkpoint (2026-11-01, after `b3b2be47`)
+
+- Like-for-like run: `measure_phase27_5_4_emitter_consumers.py` against the
+  pinned Phase 27.5.3 C1 parent, 1,824 tracked Moss sources and 3,648 commands
+  (default and `-O` each). Evidence: `tmp/phase2754-emitter-counts/1793575559375297262/summary.json`.
+- C1 parent -> candidate: text-node lookups 14,606,057 -> 1,836 (-99.9874%);
+  native expression-view reparses 9,735,229 -> 1,787 (-99.9816%);
+  functional-pipeline reparses 7,362 -> 1. Consumer expression parses total
+  0 -> 1,788 in the counter's reporting scheme (candidate total is the two
+  reparsers above). These counters remain nonzero and C2 is incomplete.
+- Emission failures 1,406 -> 1,410. The only added failures are
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`,
+  each default and optimized. These are the known baseline-invalid Rust and
+  malformed accepted syntax cases recorded above. The valid imported initializer,
+  domain positive control, and effects loop helper are no longer added failures.
+- The latest targeted slices after the last paired run reduced five additional
+  fixture groups to 0/0: `swarm_034b` 26, numeric member 35, vector replace 32,
+  phase21 Range slice 34, and domain FileIO chunks 12. No full suite or perf run
+  has occurred. Continue with optimized functional callbacks and package test
+  sources, then remeasure before final gates.
