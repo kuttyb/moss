@@ -1605,6 +1605,7 @@ class Generator {
     return syntax ? est::strip_grouping(*syntax) : expression;
   }
 
+
   string tree_normalize_pipeline(const string& expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::normalize_pipeline_tree(*syntax) : expression;
@@ -6714,11 +6715,33 @@ class Generator {
         rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
     }
-    if (auto pipeline = functional_pipeline_from_est(e))
-      if (auto functional = functional_expr(
-              *pipeline, d, locals, types, functional_pipeline_id))
-        return *functional;
-    e = tree_normalize_pipeline(std::move(e));
+    if (checked_node && checked_node->arena) {
+      const auto checked_root = est::unparenthesized(
+          *checked_node->arena, checked_node->id);
+      if (std::holds_alternative<est::Pipeline>(
+              checked_node->arena->at(checked_root))) {
+        const auto resolve_stage = [](std::string_view name)
+            -> std::optional<FunctionalNodeKind> {
+          for (const auto& operation : functional_operations())
+            if (name == operation.name) return operation.kind;
+          return std::nullopt;
+        };
+        auto pipeline = functional_pipeline_from_node(*checked_node,
+                                                       resolve_stage);
+        if (pipeline)
+          if (auto functional = functional_expr(*pipeline, d, locals, types,
+                                                 functional_pipeline_id))
+            return *functional;
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked pipeline lacks a native lowering");
+      }
+      e = trim(std::move(e));
+    } else {
+      // Source-backed expressions must retain a node. Text-only expressions
+      // reaching this point are backend temporaries and are not pipeline
+      // source; pipeline lowering is never rediscovered from their spelling.
+      e = trim(std::move(e));
+    }
     // Minimal surface rewrites.
     const auto literal = checked_node ? tree_literal_class(*checked_node)
                                       : tree_literal_class(e);

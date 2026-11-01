@@ -16198,3 +16198,27 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   three-engine aggregate, perf suite, Agent 2 audit, merge, or tag has run.
 - User's closing round (shadow demotion, runtime ratchet, contract status) stays
   queued until C2 merges.
+
+
+## C2 node-pipeline checkpoint (2026-11-01)
+
+- In `expr(string, ..., checked_node)`, retained nodes now decide whether the
+  expression is a pipeline. Non-pipeline nodes skip the redundant text parse;
+  checked pipeline nodes use `functional_pipeline_from_node` and fail closed if
+  no lowering is available. Text-only backend expressions are trimmed without
+  pipeline reconstruction. The type-query compatibility helper still parses
+  and remains a separate debt.
+- On the same calculator emission command, emitter reparses fell from 10,246
+  to 9,926 and text-node lookups from 10,822 to 10,486. Compared with the
+  pinned C1 counter build (181,562 reparses / 273,688 lookups), the current
+  candidate is down 94.54% / 96.17%. This remains a focused one-source measure.
+- Targeted checks: generated calculator Rust is byte-identical to the prior
+  candidate, compiles, and has Fast Debug/native stdout parity;
+  `check_phase27_est_functional_tree.py build/compiler/moss-dev` PASS;
+  `tests/phase47_iteration.moss` checks, compiles, and has Fast Debug/native
+  output parity. No full suite, three-engine aggregate, performance suite, or
+  Agent 2 audit has run.
+- Remaining major work: eliminate all emitter reparse/text-lookup paths, including
+  string-based generated type inference and compatibility helper recursion;
+  then run the end-of-phase gates once, Agent 2 once, and merge/tag C2. The
+  queued shadow/runtime-ratchet closing round stays deferred until after C2.
