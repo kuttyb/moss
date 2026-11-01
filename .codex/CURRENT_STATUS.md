@@ -15373,3 +15373,14 @@ Validation after this correction: build passed; `check_phase27_est_functional_tr
 patterns 3), and `check_phase27_three_engine.py` passed. The earlier first
 attempt omitted the required compiler argument and exited before running; the
 correct invocations above passed. This is not a full-suite run.
+
+### C2 string-concatenation node traversal checkpoint (2026-11-01)
+
+Assignment string-concatenation collection now walks the checked RHS Binary
+nodes and carries operand ExprIds through type checks, equality/mention checks,
+literal selection and emission. The target fixture `tests/phase24_string_concat.moss`
+emits byte-identical Rust to C1 in default and `-O`; rustc compilation and
+native output (`string concat ok`) match in both modes. Its current optimized
+counter sample is 2,161 text lookups and 715 expression-view reparses. No
+paired parent count has been run for this slice. Full suites and perf remain
+deferred until C2 migration is near completion.

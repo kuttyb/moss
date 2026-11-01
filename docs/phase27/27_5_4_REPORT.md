@@ -199,6 +199,14 @@ instrumentation omitted these same direct parser sites, this is not a strict
 paired delta. C2 full suites, corpus measurement and performance gates remain
 pending.
 
+Assignment string-concatenation collection now walks the checked RHS Binary
+nodes and retains ExprIds for operands during type, equality/mention, literal
+and emission queries. `tests/phase24_string_concat.moss` produces byte-identical
+Rust to C1 in default and `-O`; rustc and native output (`string concat ok`)
+match in both modes. Its current optimized candidate sample is 2,161 text
+lookups and 715 expression-view reparses; a paired parent count remains
+pending.
+
 ## C2 progress — emitter consumes checked call edges on nested nodes
 
 When nested call nodes lacked a retained resolved-target fact, the emitter now

@@ -1985,6 +1985,12 @@ class Generator {
     string right;
   };
 
+  struct GeneratedBinaryNode {
+    EmitterExpr left;
+    string op;
+    EmitterExpr right;
+  };
+
   bool generated_integer_literal(const string& expression) const {
     return tree_decimal_integer_literal(expression);
   }
@@ -2039,6 +2045,20 @@ class Generator {
     return GeneratedBinaryExpression{std::move(operands.first),
                                      std::move(operation),
                                      std::move(operands.second)};
+  }
+
+  std::optional<GeneratedBinaryNode> tree_generated_binary(
+      const EmitterExpr& expression,
+      const vector<string>& operators) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* binary = std::get_if<est::Binary>(
+        &expression.arena->at(root));
+    if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
+                       operators.end())
+      return std::nullopt;
+    return GeneratedBinaryNode{expression.child(binary->left), binary->op,
+                                expression.child(binary->right)};
   }
 
   static std::optional<string> generated_functional_element_type(
@@ -8873,9 +8893,9 @@ class Generator {
                   << ");\n";
             else {
               string assigned;
-              vector<string> concat_operands;
-              std::function<void(string)> collect_concat = [&](string source) {
-                source = tree_strip_expression_grouping(std::move(source));
+              vector<EmitterExpr> concat_operands;
+              std::function<void(EmitterExpr)> collect_concat =
+                  [&](EmitterExpr source) {
                 auto binary = tree_generated_binary(source, {"+"});
                 auto left_type = binary
                     ? generated_expr_type(binary->left, &types) : std::nullopt;
@@ -8884,16 +8904,17 @@ class Generator {
                 if (binary && left_type && right_type &&
                     canonical_type_name(*left_type) == "string" &&
                     canonical_type_name(*right_type) == "string") {
-                  collect_concat(binary->left);
-                  collect_concat(binary->right);
+                  collect_concat(std::move(binary->left));
+                  collect_concat(std::move(binary->right));
                 } else {
                   concat_operands.push_back(std::move(source));
                 }
               };
-              collect_concat(s.b);
-              bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+              collect_concat(checked_rhs);
+              bool reuse_string_buffer =
                   locals.count(s.a) && concat_operands.size() > 1 &&
-                  tree_expressions_equal(concat_operands.front(), s.a) &&
+                  tree_identifier_name(concat_operands.front()) ==
+                      std::optional<string>(s.a) &&
                   canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
                       "string";
               for (size_t operand = 1;
@@ -8905,13 +8926,13 @@ class Generator {
                 std::ostringstream reused;
                 reused << "{ ";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
-                  const string part = trim(concat_operands[operand]);
+                  const auto& part = concat_operands[operand];
                   const bool literal = tree_literal_class(part) ==
                       est::LiteralClass::String;
                   reused << "let __moss_append_" << operand << " = ";
-                  if (literal) reused << part << "; ";
+                  if (literal) reused << part.text() << "; ";
                   else
-                    reused << "&(" << expr(concat_operands[operand], d, locals, &types)
+                    reused << "&(" << expr(part, d, locals, &types)
                            << "); ";
                 }
                 string place = write_call_place(s.a, d, locals, &types);
@@ -8932,11 +8953,10 @@ class Generator {
                 reused << "}";
                 assigned = reused.str();
               } else {
-                assigned = expr(checked_expression_ref(
-                    s.b, est::ExprSlot::RhsValue), d, locals, &types,
+                assigned = expr(checked_rhs, d, locals, &types,
                     statement_functional_pipeline_id(s, functional_context, 0));
               }
-              const auto source_binding = tree_identifier_name(s.b);
+              const auto source_binding = tree_identifier_name(checked_rhs);
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
