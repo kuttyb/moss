@@ -16715,3 +16715,16 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - No full suite, paired whole-corpus counter run, performance run, or Agent 2
   audit has run. C2 remains incomplete. Current pushed base was `aef8c957`;
   this slice is being checkpointed next.
+
+## C2 checkpoint: return identifier checks use retained result nodes (2026-11-01)
+
+- Function return lowering now reuses its retained `ReturnValue` node both for
+  rendering and for the object-view parameter identity check. This removes the
+  emitter's text-to-node lookup on inferred generic constructor returns.
+- `constructor_expression.moss` and `constructor_multiple.moss` are both 0
+  reparses / 0 text lookups per emission. Their generated Rust is byte-identical
+  to the immediately preceding checkpoint, compiles, and produces output equal
+  to Fast Debug. Fact hooks pass; known debt remains exactly 38/38.
+- No full suite, paired whole-corpus counter run, performance run, or Agent 2
+  audit has run. Continue with the residual static call lookup paths and update
+  paired counts before final gates.

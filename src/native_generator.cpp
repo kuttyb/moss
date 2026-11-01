@@ -9092,14 +9092,15 @@ class Generator {
       } result_facts_context_scope(codegen_body_context_, functional_context);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
-      string rendered = expr(checked_expression_ref(
-                                  *f.result_expression,
-                                  est::ExprSlot::ReturnValue),
+      const EmitterExpr checked_result = checked_expression_ref(
+          f.expression_handles, *f.result_expression,
+          est::ExprSlot::ReturnValue);
+      string rendered = expr(checked_result,
                              nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
                                 ? 0 : plan->second);
       if (view_object_type(return_type)) {
-        const auto expr_binding = tree_identifier_name(*f.result_expression);
+        const auto expr_binding = tree_identifier_name(checked_result);
         auto param_it = std::find_if(f.params.begin(), f.params.end(),
                                      [&](const Param& p) {
           return expr_binding && p.name == *expr_binding;
