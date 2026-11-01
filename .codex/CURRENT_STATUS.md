@@ -35,6 +35,14 @@
   and focused three-engine parity script pass. This further slice is not yet
   committed; call, constructor, pipeline, and many checker paths still use
   source fragments.
+- Focused remeasurement on the same specialized-call fixture shows no consumer
+  KPI change yet: generated Rust still reports 2,681 native expression-view
+  reparses and type-fact coverage calls 2/18, constructors 0/10, identifiers
+  0/68, literals 0/44. Fast Debug execution reports 16 expression-tree
+  reparses and 0 pipeline reparses. The checker fact dump shows facts on
+  retained node IDs, but the emitter still parses generated-expression strings
+  into temporary arenas, so its fact counter looks up different node IDs.
+  These are focused measurements, not the corpus K1/K2 progress report.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 
