@@ -1408,9 +1408,27 @@ class FastInterpreter {
       } else if (callee == "any" || callee == "all") {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
+        if (stage_index - 1 >= pipeline_node.stages.size())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
+        const auto* stage_call = std::get_if<est::Call>(
+            &tree.arena->at(pipeline_node.stages[stage_index - 1]));
+        if (!stage_call || stage_call->arguments.size() != 1)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline predicate node");
+        const auto predicate_node = stage_call->arguments.front();
         bool result = callee == "all";
         for (const auto& value : *current.vector) {
-          bool predicate = invoke_pipeline_callable(args.front(), {value}, frame, line, output).truthy();
+          Value predicate_value;
+          if (const auto* identifier = std::get_if<est::Identifier>(
+                  &tree.arena->at(predicate_node))) {
+            predicate_value = invoke_pipeline_callable(identifier->name,
+                {value}, frame, line, output);
+          } else {
+            predicate_value = invoke_pipeline_expression(
+                tree, predicate_node, value, frame, line, output);
+          }
+          const bool predicate = predicate_value.truthy();
           if (callee == "any" && predicate) result = true;
           if (callee == "all" && !predicate) result = false;
         }

@@ -1,5 +1,31 @@
 # Phase 27.5.4 — current handover (2026-11-01)
 
+## Current scoped status (latest checkpoint)
+
+- Re-scope: only Fast Debug, emitter, and optimizer consumer parsing/text
+  lookups count toward K2. Checker parsing and text-cache consultations are
+  permitted; K1 is report-only. C1 is still open; C2 has not started.
+- Branch remains `phase27-5-4-work`. Latest pushed tip is `2ef7e8cf`.
+- The C1 full `make check` attempt failed in default mode (therefore shadow was
+  not reached). Failures included checker diagnostic/acceptance regressions,
+  cross-package specialization, Fast Debug pipeline predicate nodes, enum
+  module diagnostics, and the Phase 25.4 performance-baseline gate. The branch
+  checker recursive-node migration was outside the new scope and is currently
+  being rolled back to the C1 base behavior (`c96bca78`) in
+  `src/semantic_checker.cpp` and `src/fileio_semantics.inc`.
+- Following the rollback, `make --jobs="$(nproc)"` succeeds. Targeted checks
+  pass for `guard_generic_string_native.moss` (`4`, `abab`),
+  `swarm_044_typed_string_map_index.moss` (`7`), the pipeline fixture
+  `swarm_023_fast_debug_pipelines.moss` (`12`, `3`, `6`, `true`, `true`), and
+  `check_phase15_9_cross_package_specialization.py`. The Fast Debug checked
+  tree and functional-tree harnesses pass. The new any/all path reads the
+  checked predicate ExprId directly; it invokes identifiers by node name and
+  evaluates other predicates as tree nodes, without text-based node lookup.
+- These rollback and predicate changes are not yet committed/pushed. Next:
+  inspect/resolve remaining targeted C1 failures, update this record, then run
+  default and shadow `make check` once the C1 candidate is stable. No C2 bulk
+  consumer-count or performance run has started.
+
 - Branch: `phase27-5-4-work`; code checkpoint in progress. Latest pushed tip
   before this slice: `976291b2`. Moss bootstrap confirms `moss-0.1`.
 - User re-scoped the phase: checker string work is out of K2; C1 is Fast Debug

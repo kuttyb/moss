@@ -399,9 +399,6 @@ void reset_checker_est_view_cache() {
 
 CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   const size_t hash = std::hash<std::string_view>{}(source);
-#ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::EstViewEntry);
-#endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found == checker_est_view_cache.views.end()) return nullptr;
   for (const auto& entry : found->second)
@@ -411,8 +408,21 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
 
 std::pair<moss::est::SourceSyntaxIssue, bool> checker_source_syntax_facts(
     std::string_view source) {
+  auto* cached = checker_est_view_entry(source);
+  if (cached && cached->source_syntax_facts_attempted)
+    return {cached->source_syntax_issue,
+            cached->incomplete_trailing_operator};
+  if (!cached) {
+    (void)checker_est_view(source);
+    cached = checker_est_view_entry(source);
+  }
   const auto issue = moss::est::source_syntax_issue(source);
   const bool incomplete = moss::est::incomplete_trailing_operator(source);
+  if (cached) {
+    cached->source_syntax_facts_attempted = true;
+    cached->source_syntax_issue = issue;
+    cached->incomplete_trailing_operator = incomplete;
+  }
   return {issue, incomplete};
 }
 
@@ -453,14 +463,7 @@ std::optional<std::string_view> checker_identifier_name(
 
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
     std::string_view source) {
-#ifdef MOSS_TEST_BUILD
-  moss::est::ExpressionParseSiteScope parse_site(
-      moss::est::ExpressionParseSite::CheckerView);
-#endif
   const size_t hash = std::hash<std::string_view>{}(source);
-#ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::EstView);
-#endif
   auto found = checker_est_view_cache.views.find(hash);
   if (found != checker_est_view_cache.views.end()) {
     for (const auto& entry : found->second) {
@@ -515,9 +518,6 @@ std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
             call->arguments.front(), string(source)});
   };
   const size_t hash = std::hash<std::string_view>{}(wrapped_text);
-#ifdef MOSS_TEST_BUILD
-  moss::est::record_expression_text_cache_lookup(moss::est::ExpressionTextCacheSite::NamedArgumentView);
-#endif
   auto bucket = checker_est_view_cache.views.find(hash);
   if (bucket == checker_est_view_cache.views.end()) return make_named_view();
   for (auto& entry : bucket->second) {
@@ -722,10 +722,6 @@ class Checker {
   }
 
   void run() {
-#ifdef MOSS_TEST_BUILD
-    est::ExpressionParseSiteScope parse_site(
-        est::ExpressionParseSite::Checker);
-#endif
     CompilerStageTimer semantic_timer("semantic_analysis");
     const auto imported_signatures = imported_function_signatures();
     {
@@ -2148,7 +2144,6 @@ class Checker {
   mutable std::unordered_set<string> parse_cache_distinct_failed_member_inputs_;
   mutable bool parse_cache_distinct_failed_simple_saturated_ = false;
   mutable bool parse_cache_distinct_failed_member_saturated_ = false;
-  mutable std::unordered_set<string> active_functional_pipeline_inference_;
 
   Program& p_;
   bool legacy_signature_inference_ = false;
@@ -2228,7 +2223,6 @@ class Checker {
   uint64_t specialization_requests_ = 0;
   uint64_t specialization_body_checking_ns_ = 0;
   std::set<string> specialization_keys_seen_;
-  mutable std::set<string> specialized_return_inference_active_;
   std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
@@ -2242,8 +2236,7 @@ class Checker {
     string source;
     std::uint32_t child_count = 0;
   };
-  mutable vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
-  mutable std::size_t checked_inference_cursor_depth_ = 0;
+  vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
   mutable vector<std::optional<EstExpressionCursor>> active_effect_cursors_;
   bool suppress_expression_occurrence_capture_ = false;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
@@ -8841,13 +8834,9 @@ class Checker {
   }
 
   void derive_expression_constraints(Function& function, const string& expression,
-                                     const string& expected_result = "",
-                                     const vector<est::Handle>* handles = nullptr,
-                                     std::optional<std::pair<est::ExprSlot,
-                                         std::uint32_t>> handle_key = {}) {
+                                     const string& expected_result = "") {
     string original = trim(expression);
-    if (auto pipeline = functional_pipeline_from_est(
-            original, handles, handle_key)) {
+    if (auto pipeline = functional_pipeline_from_est(original)) {
       for (const auto& parameter : function.params) {
         if (tree_identifier_named(pipeline->source, parameter.name) &&
             (parameter.type.empty() || parameter.type == "vector")) {
@@ -10411,8 +10400,7 @@ class Checker {
 
   const Handler* check_call(int line, const string& receiver, const string& message,
                             const vector<string>& args,
-                            const TypeEnv& env,
-                            const vector<est::Handle>* expression_handles = nullptr) const {
+                            const TypeEnv& env) const {
     auto it = env.find(receiver);
     if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
     auto dit = domains_.find(canonical_type_name(it->second));
@@ -10436,21 +10424,11 @@ class Checker {
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
-      if (auto pipeline = functional_pipeline_from_est(
-              args[index], expression_handles,
-              expression_handles
-                  ? std::optional(std::pair{est::ExprSlot::Argument,
-                                            static_cast<std::uint32_t>(index)})
-                  : std::nullopt);
+      if (auto pipeline = functional_pipeline_from_est(args[index]);
           pipeline && functional_pipeline_requires_materialization(*pipeline))
         err(line, "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
-      auto inferred = inferred_expr_on_handle(args[index], env,
-          expression_handles, est::ExprSlot::Argument,
-          static_cast<std::uint32_t>(index));
-      auto actual = inferred
-          ? std::optional<string>(inferred->projection())
-          : inferred_expr_type(args[index], env);
+      auto actual = inferred_expr_type(args[index], env);
       if (actual && !h->params[index].inferred &&
           !same_type(h->params[index].type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to message " +
@@ -10460,29 +10438,22 @@ class Checker {
     return h;
   }
 
-  std::optional<string> obvious_expr_type(const string& expression,
-                                           const TypeEnv& env) const {
+  static std::optional<string> obvious_expr_type(const string& expression,
+                                                  const TypeEnv& env) {
     string e = trim(expression);
-    const bool checked = checked_inference_cursor_depth_ != 0;
-    auto identifier = checked ? checked_expression_identifier_name(e)
-                              : tree_identifier_name(e);
-    if (identifier && *identifier == "None") return "_none";
-    const auto literal = checked ? checked_expression_literal_class(e)
-                                 : tree_literal_class(e);
+    if (tree_identifier_named(e, "None")) return "_none";
+    const auto literal = tree_literal_class(e);
     if (literal == moss::est::LiteralClass::Boolean) return "bool";
     if (literal == moss::est::LiteralClass::String) return "string";
     if (literal == moss::est::LiteralClass::Character) return "char";
-    if (!identifier && (checked ? checked_expression_placeholder(e)
-                                : tree_placeholder_expression(e)))
-      identifier = "_";
+    auto identifier = tree_identifier_name(e);
+    if (!identifier && tree_placeholder_expression(e)) identifier = "_";
     if (identifier) {
       auto local = env.find(*identifier);
       if (local != env.end() && local->second && local->second->name != "_value")
         return local->second->to_canonical_string();
     }
-    if (checked ? checked_expression_decimal_integer(e, true, false)
-                : tree_decimal_integer_literal(e, true, false))
-      return "int";
+    if (tree_decimal_integer_literal(e, true, false)) return "int";
     if (literal == moss::est::LiteralClass::Float) return "float";
     return std::nullopt;
   }
@@ -10581,24 +10552,6 @@ class Checker {
   std::optional<FunctionalPipelineState> inferred_functional_pipeline_state(
       const string& expression, const TypeEnv& env,
       bool accept_bare_source = false) const {
-    string inference_key = current_semantic_context_ + "|" + expression + "|";
-    vector<std::pair<string, string>> environment_types;
-    environment_types.reserve(env.bindings.size());
-    for (const auto& [name, type] : env.bindings)
-      environment_types.emplace_back(name,
-          type ? type->to_canonical_string() : string{});
-    std::sort(environment_types.begin(), environment_types.end());
-    for (const auto& [name, type] : environment_types) {
-      inference_key += std::to_string(name.size()) + ":" + name +
-          std::to_string(type.size()) + ":" + type + ";";
-    }
-    if (!active_functional_pipeline_inference_.insert(inference_key).second)
-      return std::nullopt;
-    struct FunctionalPipelineInferenceScope {
-      std::unordered_set<string>& active;
-      const string& key;
-      ~FunctionalPipelineInferenceScope() { active.erase(key); }
-    } inference_scope{active_functional_pipeline_inference_, inference_key};
     auto parsed = functional_pipeline_from_est(expression);
     string source = parsed ? parsed->source : trim(expression);
     if (!parsed && !accept_bare_source) return std::nullopt;
@@ -11269,9 +11222,6 @@ class Checker {
 
   bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::SimpleCall);
-#endif
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11322,9 +11272,6 @@ class Checker {
 
   bool tree_parse_member_call(const string& text, string& receiver, string& member,
                          vector<string>& args) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::MemberCall);
-#endif
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11403,9 +11350,6 @@ class Checker {
   }
 
   vector<string> tree_split_top_level(const string& text, char delimiter) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::TopLevelSplit);
-#endif
     auto found = top_level_parse_cache_.find(text);
     if (found != top_level_parse_cache_.end()) {
       auto split = found->second.find(delimiter);
@@ -11434,9 +11378,6 @@ class Checker {
   }
 
   string tree_strip_redundant_outer_parentheses(const string& text) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::OuterParentheses);
-#endif
     auto found = outer_parentheses_parse_cache_.find(text);
     if (found != outer_parentheses_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -11481,9 +11422,6 @@ class Checker {
 
   std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::BinarySplit);
-#endif
     auto found = binary_parse_cache_.find(expression);
     if (found != binary_parse_cache_.end()) {
       for (const auto& entry : found->second) {
@@ -11493,9 +11431,6 @@ class Checker {
         }
       }
     }
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::BinaryOverflow);
-#endif
     auto overflow = binary_parse_cache_overflow_.find(expression);
     if (overflow != binary_parse_cache_overflow_.end()) {
       for (const auto& entry : overflow->second) {
@@ -11698,35 +11633,16 @@ class Checker {
   std::optional<BuiltinCallSemantics> builtin_call_semantics(
       const string& callee, const vector<string>& args,
       const TypeEnv& env) const {
-    auto argument_inference = [&](std::size_t index)
-        -> std::optional<InferredExpr> {
-      if (index >= args.size()) return std::nullopt;
-      return inferred_child_expr(args[index], env, "call-argument",
-          static_cast<std::uint32_t>(index));
-    };
-    auto argument_type = [&](std::size_t index) -> std::optional<string> {
-      auto inferred = argument_inference(index);
-      if (!inferred) return std::nullopt;
-      auto type = inferred->projection();
-      return type.empty() || starts_with(type, "_typevar_")
-          ? std::nullopt : std::optional<string>(std::move(type));
-    };
     if (objects_.count(callee)) {
       const ObjectType* obj = objects_.at(callee);
       bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
           [](const Field& f) { return f.inferred || f.type.empty(); });
       if (!has_generic_field) return BuiltinCallSemantics{callee, false};
       std::map<string, string> supplied_types;
-      for (std::size_t index = 0; index < args.size(); ++index) {
-        const auto& arg = args[index];
+      for (const auto& arg : args) {
         string fn, fv;
-        char separator = ':';
-        const bool named = checked_inference_cursor_depth_ != 0
-            ? checked_expression_named_argument(index, fn, fv, separator)
-            : tree_parse_named_argument(arg, fn, fv);
-        if (named) {
-          auto ft = checked_inference_cursor_depth_ != 0
-              ? argument_type(index) : inferred_expr_type(fv, env);
+        if (tree_parse_named_argument(arg, fn, fv)) {
+          auto ft = inferred_expr_type(fv, env);
           if (ft) supplied_types[fn] = canonical_type_name(*ft);
         }
       }
@@ -11774,12 +11690,12 @@ class Checker {
       return result;
     }
     if (callee == "Some" && args.size() == 1) {
-      auto element = argument_type(0);
+      auto element = inferred_expr_type(args.front(), env);
       return BuiltinCallSemantics{
           "option[" + element.value_or("_") + "]", false};
     }
     if (callee == "sum" && args.size() == 1) {
-      auto argument = argument_inference(0);
+      auto argument = inferred_expr(args.front(), env);
       if (!argument) return std::nullopt;
       const auto collection = inferred_shape(*argument);
       if (applied_builtin(collection, {"seq", "vector"}) && collection->type_args.size() == 1)
@@ -11882,13 +11798,6 @@ class Checker {
     return inferred ? inferred->term : nullptr;
   }
 
-  moss::TypeRef inferred_expr_term_on_cursor(
-      const string& expression, const TypeEnv& env,
-      const EstExpressionCursor& cursor) const {
-    auto inferred = inferred_expr_on_cursor(expression, env, cursor);
-    return inferred ? inferred->term : nullptr;
-  }
-
   // A placeholder primitive (`_generic:x`) counts as closed in the algebra
   // but is still open here; it stays legacy until variables replace it.
   std::optional<InferredExpr> inferred_expr(const string& expression,
@@ -11902,163 +11811,25 @@ class Checker {
     return inferred;
   }
 
-  std::optional<InferredExpr> inferred_expr_on_cursor(
-      const string& expression, const TypeEnv& env,
-      const EstExpressionCursor& cursor) const {
-    const auto* node_arena = expression_arena(cursor.arena_index);
-    if (!node_arena || cursor.expr >= node_arena->size())
-      return inferred_expr(expression, env);
-    active_est_expression_cursors_.push_back(cursor);
-    ++checked_inference_cursor_depth_;
-    struct Scope {
-      vector<std::optional<EstExpressionCursor>>& cursors;
-      std::size_t& depth;
-      ~Scope() {
-        --depth;
-        cursors.pop_back();
-      }
-    } scope{active_est_expression_cursors_, checked_inference_cursor_depth_};
-    if (auto leaf = checked_expression_leaf_type(env))
-      return inferred_leaf(*leaf);
-    return inferred_expr(expression, env);
-  }
-
-  std::optional<InferredExpr> inferred_expr_on_handle(
-      const string& expression, const TypeEnv& env,
-      const std::vector<est::Handle>* handles, est::ExprSlot slot,
-      std::uint32_t argument_index = 0) const {
-    if (!handles) return std::nullopt;
-    for (const auto& handle : *handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index)
-        continue;
-      const auto* arena = expression_arena(handle.arena_index);
-      if (!arena || handle.expr >= arena->size()) return std::nullopt;
-      auto node = handle.expr;
-      if (const auto* named = std::get_if<est::NamedArgument>(&arena->at(node)))
-        node = named->value;
-      return inferred_expr_on_cursor(expression, env,
-          EstExpressionCursor{handle.arena_index, node, expression});
-    }
-    return std::nullopt;
-  }
-
-  std::optional<InferredExpr> inferred_child_expr(
-      const string& fallback, const TypeEnv& env, std::string_view role,
-      std::uint32_t ordinal = 0) const {
-    if (checked_inference_cursor_depth_ != 0 &&
-        !active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& parent = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(parent.arena_index);
-      if (!arena) return std::nullopt;
-      const auto ungrouped_parent = est::unparenthesized(*arena, parent.expr);
-      const auto child = expression_child_node(*arena, ungrouped_parent, role,
-                                               ordinal);
-      if (!child) return std::nullopt;
-      auto source = expression_child_source(parent, *child);
-      if (!source)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT inferred child source missing line=" +
-            std::to_string(arena->span(parent.expr).line));
-      EstExpressionCursor child_cursor{parent.arena_index, *child, *source};
-      return inferred_expr_on_cursor(*source, env, child_cursor);
-    }
-    return inferred_expr(fallback, env);
-  }
-
-  bool inferred_child_empty_vector(const string& fallback,
-                                   std::uint32_t ordinal) const {
-    if (checked_inference_cursor_depth_ != 0 &&
-        !active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& parent = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(parent.arena_index);
-      if (!arena) return false;
-      const auto root = est::unparenthesized(*arena, parent.expr);
-      const auto child = expression_child_node(*arena, root, "element",
-                                               ordinal);
-      if (!child) return false;
-      auto source = expression_child_source(parent, *child);
-      if (!source)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT inferred vector child source missing line=" +
-            std::to_string(arena->span(parent.expr).line));
-      est::ExpressionView view;
-      view.arena = arena;
-      view.root = *child;
-      view.source = std::move(*source);
-      return est::empty_vector_literal(view);
-    }
-    return tree_empty_vector_literal(fallback);
-  }
-
   std::optional<InferredExpr> inferred_expr_core(const string& expression,
                                                  const TypeEnv& env) const {
     using R = std::optional<InferredExpr>;
-    const bool checked_node = checked_inference_cursor_depth_ != 0;
-    auto strip_grouping = [&](const string& value) {
-      return checked_node ? checked_expression_strip_grouping(value)
-                          : tree_strip_redundant_outer_parentheses(value);
-    };
-    auto parse_simple_call = [&](const string& value, string& callee,
-                                 vector<string>& args) {
-      return checked_node
-          ? checked_expression_parse_simple_call(value, callee, args)
-          : tree_parse_simple_call(value, callee, args);
-    };
-    auto parse_enum_case = [&](const string& value, string& enum_name,
-                               string& case_name, vector<string>& fields,
-                               bool& called) {
-      return checked_node
-          ? checked_expression_parse_enum_case(value, enum_name, case_name,
-                                               fields, called)
-          : tree_parse_enum_case_expression(value, enum_name, case_name,
-                                            fields, called);
-    };
-    auto parse_message = [&](const string& value, string& target,
-                             string& handler, vector<string>& args) {
-      return checked_node
-          ? checked_expression_parse_message(value, target, handler, args)
-          : tree_parse_message(value, target, handler, args);
-    };
-    auto split_binary = [&](const string& value,
-                            const vector<string>& operators) {
-      return checked_node ? checked_expression_split_binary(value, operators)
-                          : tree_split_binary(value, operators);
-    };
-    auto parse_unary = [&](const string& value, string& operation,
-                           string& operand) {
-      return checked_node
-          ? checked_expression_parse_unary(value, operation, operand)
-          : tree_parse_unary(value, operation, operand);
-    };
-    auto parse_vector = [&](const string& value) {
-      return checked_node ? checked_expression_vector_literal(value)
-                          : tree_parse_vector_literal(value);
-    };
-    auto parse_index = [&](const string& value, string& base, string& index) {
-      return checked_node ? checked_expression_parse_index(value, base, index)
-                          : tree_parse_index(value, base, index);
-    };
     auto primitive = [](const char* name) -> R {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
-    string original = strip_grouping(expression);
-    if ((checked_node ? checked_expression_placeholder(original)
-                      : tree_placeholder_expression(original)) && current_body_types_ &&
+    string original = tree_strip_redundant_outer_parentheses(expression);
+    if (tree_placeholder_expression(original) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
       return InferredExpr{
           current_body_types_->solver.resolve(
               current_body_types_->active_pipeline_placeholder_type), {}, {}};
-    auto operand_term = [&](const string& operand,
-                            std::string_view role) -> moss::TypeRef {
+    auto operand_term = [&](const string& operand) -> moss::TypeRef {
       if (current_body_types_) {
         auto retained = current_body_types_->known_expression(operand);
         if (retained) return current_body_types_->solver.resolve(retained);
       }
-      auto inferred = inferred_child_expr(operand, env, role);
-      return inferred ? inferred->term : nullptr;
+      return inferred_expr_term(operand, env);
     };
     // Checked bodies retain one solver-owned term per local. A field or index
     // read composes from that term instead of re-inferring from display text.
@@ -12073,28 +11844,25 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
+      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
-        return inferred_child_expr(arguments[0], env, "call-argument", 0);
+        return inferred_expr(arguments[0], env);
     }
     {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case(original, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
         return inferred_leaf(enum_name);
     }
     string message_target, message_handler;
     vector<string> message_args;
-    if (parse_message(original, message_target, message_handler,
+    if (tree_parse_message(original, message_target, message_handler,
                            message_args)) {
       string receiver = message_target;
       string handler = message_handler;
-      if (!(checked_node
-                ? checked_message_identifiers(receiver, handler)
-                : tree_plain_identifier(receiver) &&
-                      tree_plain_identifier(handler)))
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         return std::nullopt;
       auto binding = env.find(receiver);
       if (binding == env.end()) return std::nullopt;
@@ -12106,26 +11874,22 @@ class Checker {
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return inferred_leaf(*functional);
-    string normalized = checked_node
-        ? checked_expression_normalize_pipeline(original)
-        : tree_normalize_pipeline(std::move(original));
-    string e = strip_grouping(normalized);
+    string e = tree_strip_redundant_outer_parentheses(tree_normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(e, {op})) {
-        return primitive_term(operand_term(binary->first, "left"), "bool") &&
-                primitive_term(operand_term(binary->second, "right"), "bool")
+      if (auto binary = tree_split_binary(e, {op})) {
+        return primitive_term(operand_term(binary->first), "bool") &&
+                primitive_term(operand_term(binary->second), "bool")
             ? primitive("bool") : std::nullopt;
       }
     }
     string unary_operation, unary_operand;
-    if (parse_unary(e, unary_operation, unary_operand) &&
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "not")
-      return primitive_term(operand_term(unary_operand, "operand"), "bool")
+      return primitive_term(operand_term(unary_operand), "bool")
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
-    if (checked_node ? checked_expression_identifier(e)
-                     : tree_plain_identifier(e)) {
+    if (tree_plain_identifier(e)) {
       auto fn_it = functions_.find(e);
       if (fn_it != functions_.end() && fn_it->second) {
         const string& cid = !fn_it->second->semantic_callable_id.empty()
@@ -12134,42 +11898,29 @@ class Checker {
         return InferredExpr{nullptr, "callable:" + e, cid};
       }
     }
-    auto typed_vector = checked_node
-        ? checked_expression_empty_typed_vector_constructor(e)
-        : tree_empty_typed_vector_constructor(e);
-    if (typed_vector)
+    if (auto typed_vector = tree_empty_typed_vector_constructor(e))
       return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
     if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if ((checked_node ? checked_expression_parse_fileio_open(e, open_arguments)
-                        : tree_parse_fileio_open(e, open_arguments)))
-        return primitive("FileIO");
+      if (tree_parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
-    if (auto parts = parse_vector(e)) {
+    if (auto parts = tree_parse_vector_literal(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
       vector<InferredExpr> elements;
       // Preserve S's contextual empty-vector siblings using checked terms.
-      bool has_typed_vector_sibling = false;
-      for (std::size_t ordinal = 0; ordinal < parts->size(); ++ordinal) {
-        const auto& part = parts->at(ordinal);
-        if (inferred_child_empty_vector(part,
-                static_cast<std::uint32_t>(ordinal))) continue;
-        auto item = inferred_child_expr(part, env, "element",
-            static_cast<std::uint32_t>(ordinal));
-        if (item && item->term && applied_builtin(item->term, {"vector"})) {
-          has_typed_vector_sibling = true;
-          break;
-        }
-      }
-      for (std::size_t ordinal = 0; ordinal < parts->size(); ++ordinal) {
-        const auto& part = parts->at(ordinal);
-        if (has_typed_vector_sibling && inferred_child_empty_vector(part,
-                static_cast<std::uint32_t>(ordinal))) continue;
-        auto element = inferred_child_expr(part, env, "element",
-            static_cast<std::uint32_t>(ordinal));
+      const bool has_typed_vector_sibling = std::any_of(
+          parts->begin(), parts->end(), [&](const string& part) {
+            if (tree_empty_vector_literal(part)) return false;
+            auto item = inferred_expr(part, env);
+            return item && item->term &&
+                applied_builtin(item->term, {"vector"});
+          });
+      for (const auto& part : *parts) {
+        if (has_typed_vector_sibling && tree_empty_vector_literal(part)) continue;
+        auto element = inferred_expr(part, env);
         if (!element) return std::nullopt;
         elements.push_back(std::move(*element));
       }
@@ -12188,25 +11939,25 @@ class Checker {
           return std::nullopt;
       return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
-    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+    if (auto comparison = tree_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
-      if (auto binary = split_binary(e, ops)) {
-        return primitive_term(operand_term(binary->first, "left"), "int") &&
-                primitive_term(operand_term(binary->second, "right"), "int")
+      if (auto binary = tree_split_binary(e, ops)) {
+        return primitive_term(operand_term(binary->first), "int") &&
+                primitive_term(operand_term(binary->second), "int")
             ? primitive("int") : std::nullopt;
       }
     }
-    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
-      auto left = operand_term(arithmetic->first, "left");
-      auto right = operand_term(arithmetic->second, "right");
+    if (auto arithmetic = tree_split_binary(e, {"+", "-", "*", "/", "%"})) {
+      auto left = operand_term(arithmetic->first);
+      auto right = operand_term(arithmetic->second);
       if (left && right && left->kind == moss::TypeKind::Primitive &&
           right->kind == moss::TypeKind::Primitive) {
         if (left->name == "string" && right->name == "string" &&
-            split_binary(e, {"+"}))
+            tree_split_binary(e, {"+"}))
           return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (split_binary(e, {"%"}) &&
+        if (tree_split_binary(e, {"%"}) &&
             (left->name != "int" || right->name != "int"))
           return std::nullopt;
         if ((left->name == "int" || left->name == "float") &&
@@ -12216,40 +11967,36 @@ class Checker {
       }
       // An open source declaration keeps an operator requirement. Concrete
       // specializations re-enter this branch with bound TypeRefs.
-      auto left_open = inferred_child_expr(arithmetic->first, env, "left");
-      auto right_open = inferred_child_expr(arithmetic->second, env, "right");
+      auto left_open = inferred_expr(arithmetic->first, env);
+      auto right_open = inferred_expr(arithmetic->second, env);
       if (left_open && right_open && !left_open->term && !right_open->term &&
           left_open->legacy == right_open->legacy &&
           open_generic(left_open->legacy))
         return left_open;
     }
-    if (parse_unary(e, unary_operation, unary_operand) &&
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "~")
-      return primitive_term(operand_term(unary_operand, "operand"), "int")
+      return primitive_term(operand_term(unary_operand), "int")
           ? primitive("int") : std::nullopt;
-    if (parse_unary(e, unary_operation, unary_operand) &&
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "-") {
-      auto operand = operand_term(unary_operand, "operand");
+      auto operand = operand_term(unary_operand);
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
       // Unary minus keeps its numeric operand's type (`return -x`).
-      auto inferred_operand = inferred_child_expr(unary_operand, env,
-                                                  "operand");
-      auto operand_type = inferred_operand
-          ? std::optional<string>(inferred_operand->projection())
-          : std::nullopt;
+      auto operand_type = inferred_expr_type(unary_operand, env);
       if (operand_type && (canonical_type_name(*operand_type) == "int" ||
                            canonical_type_name(*operand_type) == "float"))
         return inferred_leaf(canonical_type_name(*operand_type));
     }
     string index_base, index_expr;
-    if (parse_index(e, index_base, index_expr)) {
-      auto base = inferred_child_expr(index_base, env, "base");
+    if (tree_parse_index(e, index_base, index_expr)) {
+      auto base = inferred_expr(index_base, env);
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
       if (primitive_term(base->term, "Range")) return primitive("int");
       if (current_body_types_) {
-        auto base_term = operand_term(index_base, "base");
+        auto base_term = operand_term(index_base);
         if (base_term && base_term->kind == moss::TypeKind::InferenceVar) {
           auto elem = current_body_types_->solver.fresh(0);
           current_body_types_->solver.unify(
@@ -12283,18 +12030,9 @@ class Checker {
     auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
-      if (!parse_simple_call(e, callee, args)) return std::nullopt;
+      if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
         return inferred_leaf(builtin->result_type);
-      auto argument_type = [&](std::size_t index) -> std::optional<string> {
-        if (index >= args.size()) return std::nullopt;
-        auto inferred = inferred_child_expr(args[index], env, "call-argument",
-            static_cast<std::uint32_t>(index));
-        if (!inferred) return std::nullopt;
-        auto type = inferred->projection();
-        return type.empty() || starts_with(type, "_typevar_")
-            ? std::nullopt : std::optional<string>(std::move(type));
-      };
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
@@ -12314,8 +12052,8 @@ class Checker {
       }
       if (!function_target && current_object_) {
         vector<string> argument_types;
-        for (std::size_t index = 0; index < args.size(); ++index)
-          argument_types.push_back(argument_type(index).value_or(""));
+        for (const auto& argument : args)
+          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
         auto method = resolve_method(current_object_->name, callee, argument_types);
         if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
@@ -12323,8 +12061,8 @@ class Checker {
         string r = canonical_type_name(*function_target->return_type);
         if (function_target->static_dispatch) {
           vector<string> actual_types;
-          for (std::size_t index = 0; index < args.size(); ++index)
-            actual_types.push_back(argument_type(index).value_or(""));
+          for (const auto& arg : args)
+            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
           bool concrete = actual_types.size() == function_target->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
@@ -12338,8 +12076,8 @@ class Checker {
         }
         if (starts_with(r, "_method_result:")) {
           vector<string> actual_types;
-          for (std::size_t index = 0; index < args.size(); ++index)
-            actual_types.push_back(argument_type(index).value_or(""));
+          for (const auto& arg : args)
+            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
           auto specialized = specialized_function_return_type(*function_target, actual_types);
           if (!specialized) return std::nullopt;
           return inferred_leaf(*specialized);
@@ -12376,7 +12114,7 @@ class Checker {
           string source = pos == string::npos ? key : key.substr(0, pos);
           for (size_t ai = 0; ai < args.size() && ai < function_target->params.size(); ++ai)
             if (function_target->params[ai].name == source) {
-              auto at = argument_type(ai);
+              auto at = inferred_expr_type(args[ai], env);
               if (at) {
                 auto object = objects_.find(*at);
                 if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
@@ -12401,22 +12139,11 @@ class Checker {
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
-    if (checked_expression_parse_member_call(
-            e, method_receiver, method_name, method_args)) {
-      if (staged_abi_v10() &&
-          (checked_node
-               ? checked_expression_child_empty_constructor_named(
-                     "receiver", method_receiver, "Map")
-               : tree_empty_constructor_named(method_receiver, "Map")) &&
+    if (tree_parse_member_call(e, method_receiver, method_name, method_args)) {
+      if (staged_abi_v10() && tree_empty_constructor_named(method_receiver, "Map") &&
           method_name == "get" && method_args.size() == 2) {
-        auto key_expr = inferred_child_expr(method_args[0], env,
-                                            "call-argument", 0);
-        auto value_expr = inferred_child_expr(method_args[1], env,
-                                              "call-argument", 1);
-        auto key = key_expr
-            ? std::optional<string>(key_expr->projection()) : std::nullopt;
-        auto value = value_expr
-            ? std::optional<string>(value_expr->projection()) : std::nullopt;
+        auto key = inferred_expr_type(method_args[0], env);
+        auto value = inferred_expr_type(method_args[1], env);
         if (key && value) {
           auto key_term = parsed_type(*key);
           auto value_term = parsed_type(*value);
@@ -12437,7 +12164,7 @@ class Checker {
         if (canon_recv == "char" && method_name == "codepoint" && method_args.size() == 1)
           return primitive("int");
       }
-      auto base = inferred_child_expr(method_receiver, env, "receiver");
+      auto base = inferred_expr(method_receiver, env);
       if (base) {
         auto receiver_ir = current_body_types_
             ? current_body_types_->known_expression(method_receiver) : nullptr;
@@ -12512,10 +12239,10 @@ class Checker {
     }
 
     string member_base, field;
-    auto member_access = checked_expression_view(e);
+    auto member_access = checker_est_view(e);
     if (member_access && moss::est::project_member_access(
             *member_access, member_base, field)) {
-      auto base = inferred_child_expr(member_base, env, "base");
+      auto base = inferred_expr(member_base, env);
       const auto receiver = base ? inferred_shape(*base) : nullptr;
       if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
           receiver->declaration)
@@ -12531,7 +12258,7 @@ class Checker {
     }
 
     string mr, mh; vector<string> ma;
-    if (checked_expression_parse_member_call(e, mr, mh, ma)) {
+    if (tree_parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
         auto receiver = inferred_shape(inferred_leaf(bt->second));
@@ -12660,24 +12387,6 @@ class Checker {
 
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
-    string inference_key = function.semantic_callable_id.empty()
-        ? function.source_file + ":" + function.name + ":" +
-              std::to_string(function.line)
-        : function.semantic_callable_id;
-    inference_key += "|";
-    for (const auto& type : parameter_types) {
-      inference_key += std::to_string(type.size());
-      inference_key += ":";
-      inference_key += type;
-      inference_key += ";";
-    }
-    if (!specialized_return_inference_active_.insert(inference_key).second)
-      return std::nullopt;
-    struct SpecializedReturnInferenceScope {
-      std::set<string>& active;
-      const string& key;
-      ~SpecializedReturnInferenceScope() { active.erase(key); }
-    } inference_scope{specialized_return_inference_active_, inference_key};
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
     auto parsed_result = result.empty() ? std::nullopt : moss::Type::parse_canonical(result);
     bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) ||
@@ -14590,11 +14299,7 @@ class Checker {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
                   if (auto pipeline =
-                          functional_pipeline_from_est(
-                              statement.args[index],
-                              &statement.expression_handles,
-                              std::pair{est::ExprSlot::Argument,
-                                        static_cast<std::uint32_t>(index)});
+                          functional_pipeline_from_est(statement.args[index]);
                       pipeline &&
                           functional_pipeline_requires_materialization(*pipeline))
                     err(statement.line,
@@ -14692,8 +14397,7 @@ class Checker {
       if (signature_caller) {
         for (const auto& expression : statement_expressions(statement))
           record_signature_call_dependencies(*signature_caller, statement.line,
-                                             expression, current_env,
-                                             &statement);
+                                             expression, current_env);
       }
     };
     env = walk_type_environment(statements, env, infer_statement, false);
@@ -15684,9 +15388,7 @@ class Checker {
       };
       if (function.result_expression)
         derive_expression_constraints(function, *function.result_expression,
-                                      result_expectation(),
-                                      &function.expression_handles,
-                                      std::pair{est::ExprSlot::ReturnValue, 0u});
+                                      result_expectation());
       for (const auto& s : function.body) {
         if (s.kind == Stmt::Kind::For) {
           for (const auto& parameter : function.params) {
@@ -15703,56 +15405,27 @@ class Checker {
           }
         }
         derive_expression_constraints(function, s.a);
-        std::optional<std::pair<est::ExprSlot, std::uint32_t>> value_slot;
-        if (s.kind == Stmt::Kind::Assign)
-          value_slot = std::pair{est::ExprSlot::RhsValue, 0u};
-        else if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
-          value_slot = std::pair{est::ExprSlot::Initializer, 0u};
-        else if (s.kind == Stmt::Kind::For)
-          value_slot = std::pair{est::ExprSlot::Iterable, 0u};
-        if (value_slot)
-          derive_expression_constraints(function, s.b, "",
-                                        &s.expression_handles, value_slot);
-        else
+        derive_expression_constraints(function, s.b);
+        for (const auto& arg : s.args) derive_expression_constraints(function, arg);
+        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
           derive_expression_constraints(function, s.b);
-        for (std::size_t argument = 0; argument < s.args.size(); ++argument) {
-          if (s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Message ||
-              s.kind == Stmt::Kind::Echo)
-            derive_expression_constraints(function, s.args[argument], "",
-                &s.expression_handles,
-                std::pair{est::ExprSlot::Argument,
-                          static_cast<std::uint32_t>(argument)});
-          else
-            derive_expression_constraints(function, s.args[argument]);
-        }
-        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
-            s.kind == Stmt::Kind::Var)
-          derive_expression_constraints(function, s.b, "",
-                                        &s.expression_handles, value_slot);
         if (s.kind == Stmt::Kind::Return && !s.a.empty())
-          derive_expression_constraints(function, s.a, result_expectation(),
-              &s.expression_handles,
-              std::pair{est::ExprSlot::ReturnValue, 0u});
+          derive_expression_constraints(function, s.a, result_expectation());
       }
-      std::unordered_map<string,const Stmt*> local_sources;
+      std::unordered_map<string,string> local_sources;
       for (const auto& statement : function.body) {
         if ((statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
             tree_plain_identifier(statement.a))
-          local_sources[statement.a] = &statement;
+          local_sources[statement.a] = statement.b;
         if (statement.kind == Stmt::Kind::Return) {
           const auto returned_binding = tree_identifier_name(statement.a);
           auto source = returned_binding
               ? local_sources.find(*returned_binding) : local_sources.end();
-          if (source != local_sources.end()) {
-            const auto& defining = *source->second;
-            const auto slot = defining.kind == Stmt::Kind::Assign
-                ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
-            derive_expression_constraints(function, defining.b,
-                result_expectation(), &defining.expression_handles,
-                std::pair{slot, 0u});
-          }
+          if (source != local_sources.end())
+            derive_expression_constraints(function, source->second,
+                                          result_expectation());
         }
       }
       if (function.result_expression) {
@@ -15760,14 +15433,9 @@ class Checker {
             *function.result_expression);
         auto source = returned_binding
             ? local_sources.find(*returned_binding) : local_sources.end();
-        if (source != local_sources.end()) {
-          const auto& defining = *source->second;
-          const auto slot = defining.kind == Stmt::Kind::Assign
-              ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
-          derive_expression_constraints(function, defining.b,
-              result_expectation(), &defining.expression_handles,
-              std::pair{slot, 0u});
-        }
+        if (source != local_sources.end())
+          derive_expression_constraints(function, source->second,
+                                        result_expectation());
       }
       if (!function.return_type || contains_internal_placeholder(*function.return_type))
         for (const auto& kv : function.generic_results)
@@ -17135,7 +16803,7 @@ class Checker {
         vector<LocalCallSite> calls;
         for (const auto& expression : statement_expressions(statement))
           collect_local_call_sites(statement.line, expression, env,
-                                   nullptr, calls, &statement);
+                                   nullptr, calls);
         for (const auto& site : calls) {
           const Function* target_function = nullptr;
           const Method* target_method = nullptr;
@@ -17489,7 +17157,7 @@ class Checker {
       vector<LocalCallSite> call_sites;
       for (const auto& expression : statement_expressions(call))
         collect_local_call_sites(call.line, expression, caller_types,
-                                 nullptr, call_sites, &call);
+                                 nullptr, call_sites);
       for (const auto& site : call_sites) {
       if (starts_with(site.target, "method:")) {
         phase21_warn_method_catch_alls(domain, source, planned, site,
@@ -17671,7 +17339,7 @@ class Checker {
         vector<LocalCallSite> calls;
         for (const auto& expression : statement_expressions(statement))
           collect_local_call_sites(statement.line, expression, formal_env,
-                                   nullptr, calls, &statement);
+                                   nullptr, calls);
         for (const auto& call : calls) {
           auto map_to_handler = [&](const string& expression) {
             string actual = expression;
@@ -17736,7 +17404,7 @@ class Checker {
       vector<LocalCallSite> calls;
       for (const auto& expression : statement_expressions(statement))
         collect_local_call_sites(statement.line, expression, handler_env,
-                                 nullptr, calls, &statement);
+                                 nullptr, calls);
       for (const auto& call : calls) {
         if (!starts_with(call.target, "fn:")) continue;
         auto function = functions_.find(call.target.substr(3));
@@ -18264,21 +17932,7 @@ class Checker {
           effect_cursor = EstExpressionCursor{parent.arena_index, *child,
                                               effect_source};
     } else {
-      std::string_view root_slot;
-      if (current_check_statement_) {
-        switch (current_check_statement_->kind) {
-          case Stmt::Kind::Assign: root_slot = "initializer"; break;
-          case Stmt::Kind::If:
-          case Stmt::Kind::While: root_slot = "condition"; break;
-          case Stmt::Kind::For: root_slot = "for-iterable"; break;
-          case Stmt::Kind::Match: root_slot = "match-subject"; break;
-          case Stmt::Kind::Return: root_slot = "return-value"; break;
-          case Stmt::Kind::Reply: root_slot = "reply-value"; break;
-          case Stmt::Kind::Raise: root_slot = "raise-value"; break;
-          default: break;
-        }
-      }
-      effect_cursor = root_expression_cursor(effect_source, root_slot);
+      effect_cursor = root_expression_cursor(effect_source, {});
     }
     active_effect_cursors_.push_back(effect_cursor);
     Effect expression_effect = requested;
@@ -19097,15 +18751,11 @@ class Checker {
       int line, const string& expression,
       const TypeEnv& env,
       const ObjectType* implicit_owner,
-      vector<LocalCallSite>& calls, const Stmt* statement_context = nullptr,
-      const std::vector<est::Handle>* checked_handles = nullptr,
-      std::optional<std::pair<est::ExprSlot, std::uint32_t>> checked_key = {}) const {
+      vector<LocalCallSite>& calls) const {
     (void)line;
     string original = trim(expression);
-    if (auto pipeline = functional_pipeline_from_est(
-            original, checked_handles, checked_key, statement_context)) {
-      collect_local_call_sites(line, pipeline->source, env, implicit_owner,
-                               calls, statement_context);
+    if (auto pipeline = functional_pipeline_from_est(original)) {
+      collect_local_call_sites(line, pipeline->source, env, implicit_owner, calls);
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
           ? functional_element_type(*source_type, pipeline->source).value_or("")
@@ -19114,7 +18764,7 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Reduce &&
             !stage.arguments.empty())
           collect_local_call_sites(line, stage.arguments.front(), env,
-                                   implicit_owner, calls, statement_context);
+                                   implicit_owner, calls);
         string callable;
         vector<string> argument_types;
         if ((stage.kind == FunctionalNodeKind::Map ||
@@ -19136,7 +18786,7 @@ class Checker {
           TypeEnv placeholder_env = env;
           placeholder_env["_"] = element;
           collect_local_call_sites(line, callable, placeholder_env,
-                                   implicit_owner, calls, statement_context);
+                                   implicit_owner, calls);
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
@@ -19183,15 +18833,14 @@ class Checker {
     // expression lowering already recurse through these forms.
     if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
-        collect_local_call_sites(line, element, env, implicit_owner, calls,
-                                 statement_context);
+        collect_local_call_sites(line, element, env, implicit_owner, calls);
       return;
     }
     string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         (unary_operation == "not" || unary_operation == "~")) {
       collect_local_call_sites(line, unary_operand, env,
-                               implicit_owner, calls, statement_context);
+                               implicit_owner, calls);
       return;
     }
     // Split at the outer operator before looking for a trailing call.  For
@@ -19202,10 +18851,8 @@ class Checker {
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = tree_split_binary(value, operators)) {
-        collect_local_call_sites(line, binary->first, env, implicit_owner, calls,
-                                 statement_context);
-        collect_local_call_sites(line, binary->second, env, implicit_owner,
-                                 calls, statement_context);
+        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
+        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
         return;
       }
 
@@ -19225,8 +18872,7 @@ class Checker {
                           [&](const Field& candidate) {
                             return candidate.name == field;
                           })) {
-            collect_local_call_sites(line, member_base, env, implicit_owner,
-                                     calls, statement_context);
+            collect_local_call_sites(line, member_base, env, implicit_owner, calls);
             return;
           }
         }
@@ -19261,11 +18907,9 @@ class Checker {
           }
         }
       }
-      collect_local_call_sites(line, receiver, env, implicit_owner, calls,
-                               statement_context);
+      collect_local_call_sites(line, receiver, env, implicit_owner, calls);
       for (const auto& argument : arguments)
-        collect_local_call_sites(line, argument, env, implicit_owner, calls,
-                                 statement_context);
+        collect_local_call_sites(line, argument, env, implicit_owner, calls);
       return;
     }
 
@@ -19328,22 +18972,20 @@ class Checker {
         collect_local_call_sites(line,
                                  tree_parse_named_argument(argument, field, field_value)
                                      ? field_value : argument,
-                                 env, implicit_owner, calls, statement_context);
+                                 env, implicit_owner, calls);
       }
       return;
     }
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      collect_local_call_sites(line, base, env, implicit_owner, calls,
-                               statement_context);
-      collect_local_call_sites(line, index, env, implicit_owner, calls,
-                               statement_context);
+      collect_local_call_sites(line, base, env, implicit_owner, calls);
+      collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
     if (tree_parse_unary(value, unary_operation, unary_operand))
       collect_local_call_sites(line, unary_operand, env,
-                               implicit_owner, calls, statement_context);
+                               implicit_owner, calls);
   }
 
   void ensure_signature_dependency_storage() {
@@ -19414,8 +19056,7 @@ class Checker {
 
   void record_signature_call_dependencies(size_t caller, int line,
                                           const string& expression,
-                                          const TypeEnv& env,
-                                          const Stmt* statement_context = nullptr) {
+                                          const TypeEnv& env) {
     if (caller >= p_.functions.size()) return;
     if (has_unresolved_local_callable_call(expression, env))
       signature_unresolved_consumers_.insert(caller);
@@ -19430,8 +19071,7 @@ class Checker {
     }
 
     vector<LocalCallSite> call_sites;
-    collect_local_call_sites(line, expression, env, nullptr, call_sites,
-                             statement_context);
+    collect_local_call_sites(line, expression, env, nullptr, call_sites);
     for (const auto& call : call_sites) {
       if (!starts_with(call.target, "fn:")) continue;
       const string callee_name = call.target.substr(3);
@@ -19575,8 +19215,7 @@ class Checker {
       const vector<Stmt>& body, const std::optional<string>& result_expression,
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
-      std::map<string,int>& edge_lines, const string& physical_source,
-      const std::vector<est::Handle>* result_handles = nullptr) {
+      std::map<string,int>& edge_lines, const string& physical_source) {
     std::map<std::tuple<string,int,string>, uint32_t> call_occurrences;
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
@@ -19621,7 +19260,7 @@ class Checker {
       for (const auto& expression : statement_expressions(statement)) {
         vector<LocalCallSite> calls;
         collect_local_call_sites(statement.line, expression, current_env,
-                                 implicit_owner, calls, &statement);
+                                 implicit_owner, calls);
         for (const auto& call : calls) {
           graph[source].insert(call.target);
           edge_lines.emplace(source + "\n" + call.target, statement.line);
@@ -19678,9 +19317,7 @@ class Checker {
             "internal error: callable result expression has no Moss source line");
       vector<LocalCallSite> calls;
       collect_local_call_sites(result_line, *result_expression, env,
-                               implicit_owner, calls, nullptr,
-                               result_handles,
-                               std::pair{est::ExprSlot::ReturnValue, 0u});
+                               implicit_owner, calls);
       for (const auto& call : calls) {
         graph[source].insert(call.target);
         edge_lines.emplace(source + "\n" + call.target, result_line);
@@ -19778,8 +19415,7 @@ class Checker {
       collect_callable_edges(function.body, function.result_expression,
                              function.result_line, std::move(env), nullptr,
                              "fn:" + function.name, graph, edge_lines,
-                             function.source_file,
-                             &function.expression_handles);
+                             function.source_file);
     }
     for (const auto& object : p_.objects) {
       for (const auto& method : object.methods) {
@@ -19791,8 +19427,7 @@ class Checker {
         collect_callable_edges(method.body, method.result_expression,
                                method.result_line, std::move(env), &object,
                                "method:" + object.name + "." + method.name,
-                               graph, edge_lines, method.source_file,
-                               &method.expression_handles);
+                               graph, edge_lines, method.source_file);
       }
     }
     for (const auto& domain : p_.domains) {
@@ -21921,10 +21556,9 @@ class Checker {
       const ObjectType* implicit_object = nullptr,
       const vector<int>& continuation_lines = {},
       const string& source_file = {},
-      const vector<est::Handle>* expression_handles = nullptr,
-      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) {
+      const vector<est::Handle>* expression_handles = nullptr) {
     auto parsed = functional_pipeline_from_est(expression,
-                                               expression_handles, handle_key);
+                                               expression_handles);
     if (!parsed) return std::nullopt;
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) return std::nullopt;
@@ -22147,18 +21781,19 @@ class Checker {
             statement.line, occurrence.text, context, identity, current_env,
             owning_function, next_pipeline_id, next_node_id, domain_fields,
             implicit_object, statement.continuation_lines,
-            statement.source_file, &statement.expression_handles,
-            std::make_pair(occurrence.slot, occurrence.argument_index));
+            statement.source_file, &statement.expression_handles);
         ids.push_back(id.value_or(0));
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
         if (id) {
+          const auto fingerprint = est::fingerprint(occurrence.text);
           auto handle = std::find_if(statement.expression_handles.begin(),
               statement.expression_handles.end(), [&](const auto& candidate) {
                 return candidate.slot == occurrence.slot &&
                     candidate.argument_index == occurrence.argument_index;
               });
-          if (handle != statement.expression_handles.end()) {
+          if (handle != statement.expression_handles.end() &&
+              handle->source_fingerprint == fingerprint) {
             expression_plan.slot = occurrence.slot;
             expression_plan.argument_index = occurrence.argument_index;
             expression_plan.arena_index = handle->arena_index;
@@ -22180,16 +21815,17 @@ class Checker {
           owning_function, next_pipeline_id, next_node_id, domain_fields,
           implicit_object, result_continuation_lines,
           owning_function ? owning_function->source_file : string(),
-          result_expression_handles,
-          std::make_pair(est::ExprSlot::ReturnValue, 0));
+          result_expression_handles);
       if (result_pipeline_ids) {
         result_pipeline_ids->erase(context);
         if (id) {
           (*result_pipeline_ids)[context] = *id;
           if (result_expression_handles) {
+            const auto fingerprint = est::fingerprint(*result);
             for (const auto& handle : *result_expression_handles) {
               if (handle.slot != est::ExprSlot::ReturnValue ||
-                  handle.argument_index != 0)
+                  handle.argument_index != 0 ||
+                  handle.source_fingerprint != fingerprint)
                 continue;
               Stmt::FunctionalExpressionPlan plan;
               plan.slot = handle.slot;
@@ -23654,16 +23290,10 @@ class Checker {
 
         case Stmt::Kind::Message: {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
-          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types,
-                                              &s.expression_handles);
+          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
-            auto inferred = inferred_expr_on_handle(arg, env.types,
-                &s.expression_handles, est::ExprSlot::Argument,
-                static_cast<std::uint32_t>(arg_index));
-            auto type = inferred
-                ? std::optional<string>(inferred->projection())
-                : inferred_expr_type(arg, env.types);
+            auto type = inferred_expr_type(arg, env.types);
             if (type && fileio_scoped_type(*type))
               err(s.line, "FileIO and ranges cannot cross a message boundary",
                   "FILEIO_BOUNDARY_ESCAPE");
@@ -24443,8 +24073,7 @@ class Checker {
         ~ResultExpressionScope() { slot = prior; }
       } result_scope(current_check_result_function_, function);
       check_expression(function.result_line ? function.result_line : function.line,
-                       *function.result_expression, specialized_env,
-                       "return-value");
+                       *function.result_expression, specialized_env);
     }
     } catch (CompileError& error) {
       if (profile_spec) {
@@ -25871,25 +25500,7 @@ class Checker {
 
   bool check_functional_pipeline(int line, const string& expression,
                                  const TypeEnv& env) {
-    std::optional<ParsedFunctionalPipeline> parsed;
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena || !std::holds_alternative<est::Pipeline>(
-                        arena->at(cursor.expr)))
-        return false;
-      const auto resolve_stage = [](std::string_view name)
-          -> std::optional<FunctionalNodeKind> {
-        for (const auto& operation : functional_operations())
-          if (name == operation.name) return operation.kind;
-        return std::nullopt;
-      };
-      parsed = est::functional_pipeline(*arena, cursor.expr, cursor.source,
-                                        resolve_stage);
-    } else {
-      parsed = functional_pipeline_from_est(expression);
-    }
+    auto parsed = functional_pipeline_from_est(expression);
     if (!parsed) return false;
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {
@@ -26431,47 +26042,17 @@ class Checker {
     return nullptr;
   }
 
-  std::optional<bool> checked_named_argument(
-      const std::vector<est::Handle>& handles, est::ExprSlot slot,
-      std::uint32_t argument_index, std::string_view source,
-      string& name, string& value, char& separator) const {
-    for (const auto& handle : handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index)
-        continue;
-      const auto* arena = expression_arena(handle.arena_index);
-      if (!arena || handle.expr >= arena->size()) return std::nullopt;
-      const auto root = est::unparenthesized(*arena, handle.expr);
-      const auto* named = std::get_if<est::NamedArgument>(&arena->at(root));
-      if (!named) return false;
-      EstExpressionCursor cursor{handle.arena_index, handle.expr,
-                                 std::string(source)};
-      auto argument_value = expression_child_source(cursor, named->value);
-      if (!argument_value)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT named argument value span missing line=" +
-            std::to_string(arena->span(root).line));
-      name = named->name;
-      value = std::move(*argument_value);
-      separator = named->separator;
-      return true;
-    }
-    return std::nullopt;
-  }
-
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
-      const std::vector<est::Handle>* handles = nullptr,
-      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {},
-      const Stmt* statement_context = nullptr) const {
-#ifdef MOSS_TEST_BUILD
-    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::CheckerPipeline);
-#endif
+      const std::vector<est::Handle>* handles = nullptr) const {
+    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
+    const auto source_fingerprint = est::fingerprint(std::string(source));
     auto convert = [&](std::uint32_t arena_index, est::ExprId expression)
         -> std::optional<ParsedFunctionalPipeline> {
       const auto* arena = expression_arena(arena_index);
@@ -26479,68 +26060,23 @@ class Checker {
                                                resolve_stage) : std::nullopt;
     };
     if (handles) {
-      if (handle_key) {
-        for (const auto& handle : *handles)
-          if (handle.slot == handle_key->first &&
-              handle.argument_index == handle_key->second &&
-              handle.source_fingerprint ==
-                  est::fingerprint(std::string(source)))
-            return convert(handle.arena_index, handle.expr);
-        return std::nullopt;
-      }
-    }
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      if (trim(cursor.source) == trim(std::string(source)))
-        if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
-    }
-    std::string_view root_slot;
-    const Stmt* pipeline_statement = statement_context
-        ? statement_context : current_check_statement_
-            ? current_check_statement_ : ownership_current_stmt_;
-    if (pipeline_statement) {
-      switch (pipeline_statement->kind) {
-        case Stmt::Kind::Assign: root_slot = "initializer"; break;
-        case Stmt::Kind::Let:
-        case Stmt::Kind::Var: root_slot = "initializer"; break;
-        case Stmt::Kind::Call: root_slot = "expression"; break;
-        case Stmt::Kind::If:
-        case Stmt::Kind::While: root_slot = "condition"; break;
-        case Stmt::Kind::For: root_slot = "for-iterable"; break;
-        case Stmt::Kind::Match: root_slot = "match-subject"; break;
-        case Stmt::Kind::Return: root_slot = "return-value"; break;
-        case Stmt::Kind::Reply: root_slot = "reply-value"; break;
-        case Stmt::Kind::Raise: root_slot = "raise-value"; break;
-        default: break;
-      }
-    } else if (current_check_result_function_ &&
-               current_check_result_function_->result_expression) {
-      root_slot = "return-value";
-    }
-    if (!root_slot.empty())
-      if (auto cursor = root_expression_cursor(source, root_slot, {}, 0,
-                                                pipeline_statement))
-        if (auto parsed = convert(cursor->arena_index, cursor->expr))
-          return parsed;
-    // Prefer the checked syntax node before asking whether its source text
-    // resembles pipeline syntax. The source predicate is only a compatibility
-    // filter for legacy callers that have no owning checked node.
-    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
-    if (handles) {
-#ifdef MOSS_TEST_BUILD
-      est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::PipelineHandle);
-#endif
-      const auto source_fingerprint = est::fingerprint(std::string(source));
       for (const auto& handle : *handles)
         if (handle.source_fingerprint == source_fingerprint)
           if (auto parsed = convert(handle.arena_index, handle.expr))
             return parsed;
     }
-    // Some checker passes currently examine pipeline fragments without the
-    // owning statement cursor. Keep this parser path until those callers pass
-    // their checked ExprId directly; the test-build boundary counter records
-    // each such call as checker reparse debt.
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back() &&
+        active_est_expression_cursors_.back()->source == source) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
+    }
+    if (auto cursor = root_expression_cursor(source, {}))
+      if (auto parsed = convert(cursor->arena_index, cursor->expr))
+        return parsed;
+
+    // Expressions without a retained source handle use a temporary syntax
+    // tree; the Pipeline node is the only positive syntax oracle.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);
@@ -26568,10 +26104,13 @@ class Checker {
       const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
       std::string_view source, std::string context,
       est::SemanticFacts facts, bool require_match = false) const {
+    const auto fingerprint = est::fingerprint(std::string(source));
     bool recorded = false;
     for (const auto& handle : statement.expression_handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index)
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.source_fingerprint != fingerprint)
         continue;
+      est::assert_fresh(handle, std::string(source));
       auto* arena = expression_arena(handle.arena_index);
       if (!arena) continue;
       arena->record_facts(handle.expr, context, facts);
@@ -26624,10 +26163,12 @@ class Checker {
       const moss::TypeRef& expected_type,
       std::string_view expected_target = {}) const {
     if (est::mode() != est::Mode::Shadow) return;
-    (void)source;
+    const auto fingerprint = est::fingerprint(std::string(source));
     for (const auto& handle : statement.expression_handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index)
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.source_fingerprint != fingerprint)
         continue;
+      est::assert_fresh(handle, std::string(source));
       const auto* arena = expression_arena(handle.arena_index);
       const auto* actual = arena ? arena->facts(handle.expr, context) : nullptr;
       assert(actual);
@@ -26693,12 +26234,6 @@ class Checker {
                                   est::ExprId child,
                                   std::string_view parent_source,
                                   std::string_view child_source) {
-#ifdef MOSS_TEST_BUILD
-    // Effect-expression traversal currently selects a child by comparing its
-    // rendered source with the candidate node's source span. Count each such
-    // text-based node lookup as part of tightened K2.
-    est::record_expression_text_lookup();
-#endif
     const auto parent_span = arena.span(parent);
     const auto child_span = arena.span(child);
     if (child_span.source_begin < parent_span.source_begin ||
@@ -26799,19 +26334,11 @@ class Checker {
   }
 
   std::optional<EstExpressionCursor> root_expression_cursor(
-      std::string_view source, std::string_view root_slot,
-      std::string_view child_role = {},
-      std::uint32_t child_ordinal = 0,
-      const Stmt* statement_context = nullptr) const {
-    const Stmt* statement_ptr = statement_context
-        ? statement_context : current_check_statement_
-            ? current_check_statement_ : ownership_current_stmt_;
-    if (!statement_ptr) return std::nullopt;
+      std::string_view source, std::string_view root_slot) const {
+    if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
-    std::optional<std::uint32_t> expected_argument;
-    const auto& statement = *statement_ptr;
+    const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
-    else if (root_slot == "expression") expected = est::ExprSlot::Expression;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
     else if (root_slot == "match-subject") expected = est::ExprSlot::Scrutinee;
     else if (root_slot == "initializer")
@@ -26822,49 +26349,28 @@ class Checker {
       expected = est::ExprSlot::ReturnValue;
     else if (root_slot == "raise-value") expected = est::ExprSlot::RaisedValue;
     else if (root_slot.rfind("message-argument:", 0) == 0 ||
-             root_slot.rfind("echo-argument:", 0) == 0) {
+             root_slot.rfind("echo-argument:", 0) == 0)
       expected = est::ExprSlot::Argument;
-      expected_argument = expression_role_index(root_slot,
-          {"message-argument:", "echo-argument:"});
-    }
-    if (!expected && (child_role.rfind("argument:", 0) == 0 ||
-                      child_role.rfind("call-argument:", 0) == 0)) {
-      expected = est::ExprSlot::Argument;
-      expected_argument = expression_role_index(child_role,
-          {"argument:", "call-argument:"});
-      if (!expected_argument) expected_argument = child_ordinal;
-    }
-    auto select = [&](const std::vector<est::Handle>& handles,
-                      std::optional<est::ExprSlot> slot,
-                      std::optional<std::uint32_t> argument)
+    const auto source_fingerprint = est::fingerprint(std::string(source));
+    auto select = [&](const std::vector<est::Handle>& handles)
         -> std::optional<EstExpressionCursor> {
       for (const auto& handle : handles) {
-        if (slot && handle.slot != *slot) continue;
-        if (argument && handle.argument_index != *argument) continue;
-        if (handle.source_fingerprint != est::fingerprint(std::string(source)))
-          continue;
+        if (expected && handle.slot != *expected) continue;
+        if (handle.source_fingerprint != source_fingerprint) continue;
         if (expression_arena(handle.arena_index))
           return EstExpressionCursor{handle.arena_index, handle.expr,
                                      std::string(source)};
       }
       return std::nullopt;
     };
-    if (expected)
-      if (auto found = select(statement.expression_handles, expected,
-                              expected_argument)) {
-        if (*expected == est::ExprSlot::Argument) {
-          const auto* arena = expression_arena(found->arena_index);
-          if (arena)
-            if (const auto* named = std::get_if<est::NamedArgument>(
-                    &arena->at(found->expr)))
-              found->expr = named->value;
-        }
-        return found;
-      }
-    if (root_slot == "return-value" && current_check_result_function_ &&
-        current_check_result_function_->result_expression)
-      return select(current_check_result_function_->expression_handles,
-                    est::ExprSlot::ReturnValue, 0);
+    if (auto found = select(statement.expression_handles)) return found;
+    if (!expected)
+      if (auto found = select(statement.expression_handles)) return found;
+    if (current_check_result_function_ &&
+        current_check_result_function_->result_expression &&
+        est::fingerprint(*current_check_result_function_->result_expression) ==
+            est::fingerprint(std::string(source)))
+      return select(current_check_result_function_->expression_handles);
     return std::nullopt;
   }
 
@@ -26876,14 +26382,13 @@ class Checker {
       const auto& parent = *active_est_expression_cursors_.back();
       auto* arena = expression_arena(parent.arena_index);
       if (!arena) return std::nullopt;
-      auto child = expression_child_node(*arena, parent.expr, child_role,
-                                         child_ordinal);
+      auto child = matching_expression_child(*arena, parent.expr, child_role,
+          child_ordinal, parent.source, source);
       if (!child) return std::nullopt;
       return EstExpressionCursor{parent.arena_index, *child,
                                  std::string(source)};
     }
-    return root_expression_cursor(source, root_slot, child_role,
-                                 child_ordinal);
+    return root_expression_cursor(source, root_slot);
   }
 
   void record_active_expression_facts(est::SemanticFacts facts) {
@@ -26935,638 +26440,10 @@ class Checker {
     record_active_expression_facts(std::move(facts));
   }
 
-  std::optional<string> expression_child_source(
-      const EstExpressionCursor& parent, est::ExprId child) const {
-    const auto* arena = expression_arena(parent.arena_index);
-    if (!arena) return std::nullopt;
-    const auto parent_span = arena->span(parent.expr);
-    const auto child_span = arena->span(child);
-    if (child_span.source_begin < parent_span.source_begin ||
-        child_span.source_end < child_span.source_begin ||
-        child_span.source_end > parent_span.source_end)
-      return std::nullopt;
-    const auto begin = child_span.source_begin - parent_span.source_begin;
-    const auto length = child_span.source_end - child_span.source_begin;
-    if (begin > parent.source.size() ||
-        length > parent.source.size() - begin)
-      return std::nullopt;
-    return trim(parent.source.substr(begin, length));
-  }
-
-  void check_expression_node(int line, std::uint32_t arena_index,
-                             est::ExprId expression,
-                             const std::unordered_map<string,string>& env,
-                             std::string_view child_role) {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      throw std::logic_error(
-          "MOSS_INTERNAL_INVARIANT expression node has no checked parent cursor line=" +
-          std::to_string(line));
-    const auto& parent = *active_est_expression_cursors_.back();
-    if (parent.arena_index != arena_index)
-      throw std::logic_error(
-          "MOSS_INTERNAL_INVARIANT expression node arena differs from parent line=" +
-          std::to_string(line));
-    auto source = expression_child_source(parent, expression);
-    if (!source)
-      throw std::logic_error(
-          "MOSS_INTERNAL_INVARIANT expression node is outside parent source line=" +
-          std::to_string(line));
-    EstExpressionCursor cursor{arena_index, expression, *source};
-    check_expression(line, *source, env, {}, child_role, std::move(cursor));
-  }
-
-  std::optional<est::ExprId> expression_child_node(
-      const est::Arena& arena, est::ExprId parent, std::string_view role,
-      std::uint32_t ordinal = 0) const {
-    return std::visit([&](const auto& node) -> std::optional<est::ExprId> {
-      using T = std::decay_t<decltype(node)>;
-      if constexpr (std::is_same_v<T, est::Binary>) {
-        if (role == "left") return node.left;
-        if (role == "right") return node.right;
-      } else if constexpr (std::is_same_v<T, est::Unary>) {
-        if (role == "operand") return node.operand;
-      } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
-        if (role == "grouped-expression") return node.inner;
-      } else if constexpr (std::is_same_v<T, est::Collection> ||
-                           std::is_same_v<T, est::Tuple>) {
-        if (auto index = expression_role_index(role, {"element:"});
-            index && *index < node.elements.size())
-          return node.elements[*index];
-        if (ordinal < node.elements.size()) return node.elements[ordinal];
-      } else if constexpr (std::is_same_v<T, est::Call>) {
-        if (role == "receiver" || role == "callee") {
-          if (const auto* member = std::get_if<est::Member>(&arena.at(node.callee)))
-            return member->base;
-          return node.callee;
-        }
-        if (auto index = expression_role_index(
-                role, {"argument:", "call-argument:"});
-            index && *index < node.arguments.size()) {
-          const auto argument = node.arguments[*index];
-          if (const auto* named = std::get_if<est::NamedArgument>(
-                  &arena.at(argument)))
-            return named->value;
-          return argument;
-        }
-        if (role.rfind("field:", 0) == 0) {
-          const auto field_name = role.substr(6);
-          for (const auto argument : node.arguments)
-            if (const auto* named =
-                    std::get_if<est::NamedArgument>(&arena.at(argument));
-                named && named->name == field_name)
-              return named->value;
-        }
-      } else if constexpr (std::is_same_v<T, est::Message>) {
-        if (role == "receiver" || role == "target") return node.target;
-        if (auto index = expression_role_index(
-                role, {"argument:", "message-argument:"});
-            index && *index < node.arguments.size())
-          return node.arguments[*index];
-      } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
-        if (role.rfind("field:", 0) == 0 || role == "value")
-          return node.value;
-      } else if constexpr (std::is_same_v<T, est::Index>) {
-        if (role == "container" || role == "receiver" || role == "base")
-          return node.base;
-        if (role == "index") return node.index;
-      } else if constexpr (std::is_same_v<T, est::Member>) {
-        if (role == "receiver" || role == "base") return node.base;
-      } else if constexpr (std::is_same_v<T, est::Constructor>) {
-        if (auto index = expression_role_index(
-                role, {"argument:", "constructor-argument:"});
-            index && *index < node.arguments.size()) {
-          const auto argument = node.arguments[*index];
-          if (const auto* named = std::get_if<est::NamedArgument>(
-                  &arena.at(argument)))
-            return named->value;
-          return argument;
-        }
-        if (role.rfind("field:", 0) == 0) {
-          const auto field_name = role.substr(6);
-          for (const auto argument : node.arguments)
-            if (const auto* named =
-                    std::get_if<est::NamedArgument>(&arena.at(argument));
-                named && named->name == field_name)
-              return named->value;
-        }
-      } else if constexpr (std::is_same_v<T, est::Pipeline>) {
-        if (role == "source" || role == "input" ||
-            role == "pipeline-source")
-          return node.input;
-        if (auto index = expression_role_index(role, {"stage:"});
-            index && *index < node.stages.size())
-          return node.stages[*index];
-      }
-      return std::nullopt;
-    }, arena.at(parent));
-  }
-
-  std::optional<est::ExpressionView> active_expression_view() const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return std::nullopt;
-    const auto& cursor = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(cursor.arena_index);
-    if (!arena) return std::nullopt;
-    est::ExpressionView view;
-    view.arena = arena;
-    view.root = cursor.expr;
-    view.source = cursor.source;
-    return view;
-  }
-
-  std::optional<est::ExpressionView> checked_expression_view(
-      const string& source) const {
-    if (auto active = active_expression_view();
-        active && active->source == source)
-      return active;
-    auto parsed = checker_est_view(source);
-    return parsed ? std::optional<est::ExpressionView>(*parsed) : std::nullopt;
-  }
-
-  bool checked_expression_child_parse_index(std::string_view role,
-      const string& source, string& base, string& index) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& parent = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(parent.arena_index);
-      if (!arena) return false;
-      const auto child = expression_child_node(*arena, parent.expr, role);
-      if (!child) return false;
-      auto child_source = expression_child_source(parent, *child);
-      if (!child_source)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT checked index child source missing line=" +
-            std::to_string(arena->span(parent.expr).line));
-      est::ExpressionView view;
-      view.arena = arena;
-      view.root = *child;
-      view.source = std::move(*child_source);
-      return est::project_index(view, base, index);
-    }
-    return tree_parse_index(source, base, index);
-  }
-
-  std::optional<string> checked_expression_empty_typed_vector_constructor(
-      const string& source) const {
-    if (auto view = active_expression_view()) {
-      auto type = est::project_empty_constructor_type(*view);
-      if (!type) return std::nullopt;
-      string canonical = canonical_type_name(*type);
-      return starts_with(canonical, "vector[") && ends_with(canonical, "]")
-          ? std::optional<string>(std::move(canonical)) : std::nullopt;
-    }
-    return tree_empty_typed_vector_constructor(source);
-  }
-
-  bool checked_expression_child_empty_constructor_named(
-      std::string_view role, const string& source,
-      std::string_view name) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& parent = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(parent.arena_index);
-      if (!arena) return false;
-      const auto child = expression_child_node(*arena, parent.expr, role);
-      if (!child) return false;
-      auto child_source = expression_child_source(parent, *child);
-      if (!child_source)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT checked constructor child source missing line=" +
-            std::to_string(arena->span(parent.expr).line));
-      est::ExpressionView view;
-      view.arena = arena;
-      view.root = *child;
-      view.source = std::move(*child_source);
-      return est::empty_constructor_named(view, name);
-    }
-    return tree_empty_constructor_named(source, name);
-  }
-
-  std::optional<std::vector<string>> checked_expression_vector_literal(
-      const string& source) const {
-    if (auto view = active_expression_view())
-      return est::project_vector_literal(*view);
-    return tree_parse_vector_literal(source);
-  }
-
-  string checked_expression_strip_grouping(const string& source) const {
-    if (auto view = active_expression_view())
-      return est::strip_grouping(*view);
-    return tree_strip_redundant_outer_parentheses(source);
-  }
-
-  bool checked_expression_parse_index(const string& source, string& base,
-                                      string& index) const {
-    if (auto view = active_expression_view()) {
-      view->root = est::unparenthesized(*view->arena, view->root);
-      return est::project_index(*view, base, index);
-    }
-    return tree_parse_index(source, base, index);
-  }
-
-  bool checked_expression_parse_member_access(const string& source,
-      string& base, string& member) const {
-    if (auto view = active_expression_view()) {
-      view->root = est::unparenthesized(*view->arena, view->root);
-      return est::project_member_access(*view, base, member);
-    }
-    return tree_parse_member_access(source, base, member);
-  }
-
-  std::optional<string> checked_expression_identifier_name(
-      const string& source) const {
-    if (auto view = active_expression_view()) {
-      const auto root = est::unparenthesized(*view->arena, view->root);
-      if (const auto* identifier = std::get_if<est::Identifier>(
-              &view->arena->at(root)))
-        return identifier->name;
-      return std::nullopt;
-    }
-    return tree_identifier_name(source);
-  }
-
-  bool checked_expression_identifier(const string& source) const {
-    return checked_expression_identifier_name(source).has_value();
-  }
-
-  bool checked_expression_decimal_integer(const string& source,
-      bool allow_sign, bool allow_underscores) const {
-    if (auto view = active_expression_view())
-      return est::decimal_integer_literal(*view, allow_sign,
-                                          allow_underscores);
-    return tree_decimal_integer_literal(source, allow_sign, allow_underscores);
-  }
-
-  bool checked_expression_parse_fileio_open(
-      const string& source, vector<string>& arguments) const {
-    if (auto view = active_expression_view())
-      return est::project_fileio_open(*view, arguments);
-    return tree_parse_fileio_open(source, arguments);
-  }
-
-  bool active_expression_has_call_arguments() const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return false;
-    const auto& cursor = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(cursor.arena_index);
-    return arena && (std::holds_alternative<est::Call>(arena->at(cursor.expr)) ||
-                     std::holds_alternative<est::Constructor>(arena->at(cursor.expr)));
-  }
-
-  bool checked_expression_named_argument(std::size_t index,
-      string& name, string& value, char& separator) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return false;
-    const auto& cursor = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(cursor.arena_index);
-    if (!arena) return false;
-    const std::vector<est::ExprId>* arguments = nullptr;
-    if (const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr)))
-      arguments = &call->arguments;
-    else if (const auto* constructor =
-                 std::get_if<est::Constructor>(&arena->at(cursor.expr)))
-      arguments = &constructor->arguments;
-    if (!arguments || index >= arguments->size()) return false;
-    const auto* named = std::get_if<est::NamedArgument>(
-        &arena->at(arguments->at(index)));
-    if (!named) return false;
-    auto text = expression_child_source(cursor, named->value);
-    if (!text)
-      throw std::logic_error(
-          "MOSS_INTERNAL_INVARIANT checked named argument value missing line=" +
-          std::to_string(arena->span(cursor.expr).line));
-    name = named->name;
-    value = std::move(*text);
-    separator = named->separator;
-    return true;
-  }
-
-  bool checked_expression_placeholder(const string& source) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      return arena && std::holds_alternative<est::Placeholder>(
-                          arena->at(cursor.expr));
-    }
-    return tree_placeholder_expression(source);
-  }
-
-  bool checked_expression_parse_enum_case(const string& source,
-      string& enum_name, string& case_name, vector<string>& fields,
-      bool& called) const {
-    if (auto view = active_expression_view()) {
-      view->root = est::unparenthesized(*view->arena, view->root);
-      return est::project_enum_case(*view, enum_name, case_name, fields,
-                                    &called);
-    }
-    return tree_parse_enum_case_expression(source, enum_name, case_name,
-                                           fields, called);
-  }
-
-  bool checked_message_identifiers(const string& receiver,
-                                   const string& handler) const {
-    if (auto view = active_expression_view()) {
-      if (const auto* message = std::get_if<est::Message>(
-              &view->arena->at(view->root)))
-        return std::holds_alternative<est::Identifier>(
-                   view->arena->at(message->target)) &&
-            moss::plain_identifier(handler);
-      return false;
-    }
-    return tree_plain_identifier(receiver) && tree_plain_identifier(handler);
-  }
-
-  bool checked_expression_parse_message(const string& source,
-      string& target, string& handler, vector<string>& arguments) const {
-    if (auto view = active_expression_view()) {
-      view->root = est::unparenthesized(*view->arena, view->root);
-      return est::project_message(*view, target, handler, arguments);
-    }
-    return tree_parse_message(source, target, handler, arguments);
-  }
-
-  string checked_expression_normalize_pipeline(const string& source) const {
-    if (auto view = active_expression_view())
-      return est::normalize_pipeline_tree(*view);
-    return tree_normalize_pipeline(source);
-  }
-
-  bool checked_expression_child_parse_unary(std::string_view role,
-      string& operation, string& operand) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return false;
-    const auto& parent = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(parent.arena_index);
-    if (!arena) return false;
-    const auto child = expression_child_node(*arena, parent.expr, role);
-    if (!child) return false;
-    const auto* unary = std::get_if<est::Unary>(&arena->at(*child));
-    if (!unary) return false;
-    auto text = expression_child_source(parent, unary->operand);
-    if (!text)
-      throw std::logic_error(
-          "MOSS_INTERNAL_INVARIANT nested unary source missing line=" +
-          std::to_string(arena->span(parent.expr).line));
-    operation = unary->op;
-    operand = std::move(*text);
-    return true;
-  }
-
-  bool checked_expression_parse_unary(const string& source, string& operation,
-                                      string& operand) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena) return false;
-      const auto root = est::unparenthesized(*arena, cursor.expr);
-      const auto* unary = std::get_if<est::Unary>(&arena->at(root));
-      if (!unary) return false;
-      auto child = expression_child_source(cursor, unary->operand);
-      if (!child)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT checked unary child source missing line=" +
-            std::to_string(arena->span(cursor.expr).line));
-      operation = unary->op;
-      operand = std::move(*child);
-      return true;
-    }
-    return tree_parse_unary(source, operation, operand);
-  }
-
-  bool checked_expression_parse_simple_call(const string& source,
-      string& callee, vector<string>& arguments) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back() &&
-        active_est_expression_cursors_.back()->source == source) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena) return false;
-      const auto root = est::unparenthesized(*arena, cursor.expr);
-      const auto* call = std::get_if<est::Call>(&arena->at(root));
-      if (!call) return false;
-      const auto* identifier = std::get_if<est::Identifier>(
-          &arena->at(call->callee));
-      if (!identifier) return false;
-      callee = identifier->name;
-      arguments.clear();
-      for (const auto argument : call->arguments) {
-        auto text = expression_child_source(cursor, argument);
-        if (!text)
-          throw std::logic_error(
-              "MOSS_INTERNAL_INVARIANT checked call argument source missing line=" +
-              std::to_string(arena->span(cursor.expr).line));
-        arguments.push_back(std::move(*text));
-      }
-      return true;
-    }
-    return tree_parse_simple_call(source, callee, arguments);
-  }
-
-  bool checked_expression_parse_member_call(const string& source,
-      string& receiver, string& member, vector<string>& arguments) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back() &&
-        active_est_expression_cursors_.back()->source == source) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena) return false;
-      const auto root = est::unparenthesized(*arena, cursor.expr);
-      const auto* call = std::get_if<est::Call>(&arena->at(root));
-      if (!call) return false;
-      const auto* access = std::get_if<est::Member>(&arena->at(call->callee));
-      if (!access) return false;
-      auto text = expression_child_source(cursor, access->base);
-      if (!text)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT checked member receiver source missing line=" +
-            std::to_string(arena->span(cursor.expr).line));
-      receiver = std::move(*text);
-      member = access->name;
-      arguments.clear();
-      for (const auto argument : call->arguments) {
-        auto argument_text = expression_child_source(cursor, argument);
-        if (!argument_text)
-          throw std::logic_error(
-              "MOSS_INTERNAL_INVARIANT checked member argument source missing line=" +
-              std::to_string(arena->span(cursor.expr).line));
-        arguments.push_back(std::move(*argument_text));
-      }
-      return true;
-    }
-    return tree_parse_member_call(source, receiver, member, arguments);
-  }
-
-  bool checked_expression_outer_grouping(const string& source) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      return arena && std::holds_alternative<est::Parenthesized>(
-                          arena->at(cursor.expr));
-    }
-    return tree_outer_grouping(source);
-  }
-
-  moss::est::LiteralClass checked_expression_literal_class(
-      const string& source) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena) return moss::est::LiteralClass::None;
-      if (const auto* literal = std::get_if<est::Literal>(
-              &arena->at(cursor.expr)))
-        return literal->literal_class;
-      return moss::est::LiteralClass::None;
-    }
-    return tree_literal_class(source);
-  }
-
-  std::optional<std::pair<string, string>> checked_expression_split_binary(
-      const string& source, const vector<string>& operators) const {
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back() &&
-        active_est_expression_cursors_.back()->source == source) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (!arena) return std::nullopt;
-      const auto root = est::unparenthesized(*arena, cursor.expr);
-      const auto* binary = std::get_if<est::Binary>(&arena->at(root));
-      if (!binary) return std::nullopt;
-      const bool operator_matches = std::any_of(
-          operators.begin(), operators.end(), [&](const string& candidate) {
-            return trim(candidate) == binary->op;
-          });
-      if (!operator_matches) return std::nullopt;
-      const auto left = expression_child_source(cursor, binary->left);
-      const auto right = expression_child_source(cursor, binary->right);
-      if (!left || !right)
-        throw std::logic_error(
-            "MOSS_INTERNAL_INVARIANT checked binary child source missing line=" +
-            std::to_string(arena->span(cursor.expr).line));
-      return std::pair<string, string>{*left, *right};
-    }
-    return tree_split_binary(source, operators);
-  }
-
-  moss::TypeRef checked_expression_child_type_ref(
-      std::string_view role) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return nullptr;
-    const auto& parent = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(parent.arena_index);
-    if (!arena) return nullptr;
-    const auto child = expression_child_node(*arena, parent.expr, role);
-    if (!child) return nullptr;
-    const auto* facts = arena->facts(*child, expression_fact_context());
-    return facts ? facts->type : nullptr;
-  }
-
-  bool checked_child_matches_declared(std::string_view role,
-      const string& expression, const string& declared,
-      const std::unordered_map<string,string>& env) const {
-    if (auto actual = checked_expression_child_type_ref(role)) {
-      auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
-      if (current_body_types_ && expected && (*expected)->is_closed())
-        return current_body_types_->solver.unify(actual, *expected);
-      if (actual->is_closed())
-        return same_type(actual->to_canonical_string(), declared);
-    }
-    return checked_matches_declared(expression, declared, env);
-  }
-
-  std::optional<string> checked_expression_leaf_type(
-      const std::unordered_map<string,string>& env) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return std::nullopt;
-    const auto& cursor = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(cursor.arena_index);
-    if (!arena) return std::nullopt;
-    if (const auto* facts = arena->facts(cursor.expr, expression_fact_context());
-        facts && facts->type)
-      return facts->type->to_canonical_string();
-    if (const auto* identifier = std::get_if<est::Identifier>(
-            &arena->at(cursor.expr))) {
-      const auto binding = env.find(identifier->name);
-      if (binding != env.end())
-        return canonical_type_name(binding->second);
-      return std::nullopt;
-    }
-    if (const auto* literal = std::get_if<est::Literal>(
-            &arena->at(cursor.expr))) {
-      switch (literal->literal_class) {
-        case est::LiteralClass::Integer: return "int";
-        case est::LiteralClass::Float: return "float";
-        case est::LiteralClass::String: return "string";
-        case est::LiteralClass::Character: return "char";
-        case est::LiteralClass::Boolean: return "bool";
-        case est::LiteralClass::None: break;
-      }
-    }
-    if (std::holds_alternative<est::Placeholder>(arena->at(cursor.expr)) &&
-        current_body_types_ &&
-        current_body_types_->active_pipeline_placeholder_type) {
-      auto resolved = current_body_types_->solver.resolve(
-          current_body_types_->active_pipeline_placeholder_type);
-      if (resolved) return resolved->to_canonical_string();
-      return std::nullopt;
-    }
-    return std::nullopt;
-  }
-
-  std::optional<string> checked_expression_child_type(
-      std::string_view role) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return std::nullopt;
-    const auto& parent = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(parent.arena_index);
-    if (!arena) return std::nullopt;
-    const auto child = expression_child_node(*arena, parent.expr, role);
-    if (!child) return std::nullopt;
-    const auto* facts = arena->facts(*child, expression_fact_context());
-    if (!facts || !facts->type) return std::nullopt;
-    return facts->type->to_canonical_string();
-  }
-
-  std::optional<string> checked_child_or_inferred_type(
-      std::string_view role, const string& source,
-      const std::unordered_map<string,string>& env) const {
-    if (auto checked = checked_expression_child_type(role)) return checked;
-    return inferred_expr_type(source, env);
-  }
-
-  bool check_expression_child_node(int line,
-      const std::unordered_map<string,string>& env, std::string_view role,
-      std::uint32_t ordinal = 0) {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back()) return false;
-    const auto& parent = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(parent.arena_index);
-    if (!arena) return false;
-    auto child = expression_child_node(*arena, parent.expr, role, ordinal);
-    if (!child) return false;
-    check_expression_node(line, parent.arena_index, *child, env, role);
-    return true;
-  }
-
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
                         std::string_view root_slot = {},
-                        std::string_view child_role = {},
-                        std::optional<EstExpressionCursor> exact_cursor = {}) {
-#ifdef MOSS_TEST_BUILD
-    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Checker);
-#endif
+                        std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
     const auto [source_issue, trailing_operator] =
@@ -27603,19 +26480,8 @@ class Checker {
         active_est_expression_cursors_.back())
       cursor_child_ordinal =
           active_est_expression_cursors_.back()->child_count++;
-    auto tree_cursor = exact_cursor ? std::move(exact_cursor)
-        : resolve_expression_cursor(original, root_slot, child_role,
-                                    cursor_child_ordinal);
-    bool record_checked_expression_type = true;
-    if (tree_cursor) {
-      const auto* arena = expression_arena(tree_cursor->arena_index);
-      if (arena && tree_cursor->expr < arena->size()) {
-        const auto root = est::unparenthesized(*arena, tree_cursor->expr);
-        if (const auto* member = std::get_if<est::Member>(&arena->at(root)))
-          record_checked_expression_type = member->name.empty() ||
-              !std::isdigit(static_cast<unsigned char>(member->name.front()));
-      }
-    }
+    auto tree_cursor = resolve_expression_cursor(
+        original, root_slot, child_role, cursor_child_ordinal);
     active_est_expression_cursors_.push_back(tree_cursor);
     const string fact_context = expression_fact_context();
     struct EstExpressionCursorScope {
@@ -27629,15 +26495,13 @@ class Checker {
     } tree_cursor_scope{active_est_expression_cursors_,
         tree_cursor ? std::function<void()>([this, cursor = *tree_cursor,
                                              fact_context, source = original,
-                                             record_checked_expression_type,
                                              &env] {
-          if (!record_checked_expression_type) return;
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
           const auto* existing = arena->facts(cursor.expr, fact_context);
           if (!existing || !existing->type) {
             try {
-              auto type = inferred_expr_term_on_cursor(source, env, cursor);
+              auto type = inferred_expr_term(source, env);
               if (type) {
                 est::SemanticFacts facts;
                 facts.type = std::move(type);
@@ -27682,7 +26546,7 @@ class Checker {
         occurrence.est_arena_index = tree_cursor->arena_index;
         occurrence.est_expr_id = tree_cursor->expr;
       }
-      if (checked_expression_placeholder(original) &&
+      if (tree_placeholder_expression(original) &&
           !occurrence_state->active_pipeline_placeholder_identity.empty() &&
           occurrence_state->active_pipeline_placeholder_type) {
         occurrence.resolved_binding_id =
@@ -27746,15 +26610,10 @@ class Checker {
         capture_occurrence
             ? std::function<void()>([this, occurrence_state,
                                      source = occurrence_source, &env,
-                                     tree_cursor, fact_context,
-                                     record_checked_expression_type] {
+                                     tree_cursor, fact_context] {
                 const auto id = occurrence_state->active_expression_occurrences.back();
                 auto term = checked_expression_term(source, env);
                 if (!term) term = occurrence_state->known_expression(source);
-                if (!term && tree_cursor &&
-                    record_checked_expression_type)
-                  term = inferred_expr_term_on_cursor(source, env,
-                                                       *tree_cursor);
                 if (!term) term = inferred_expr_term(source, env);
                 if (!term)
                   term = occurrence_state->expression_occurrences.at(id)
@@ -27836,8 +26695,8 @@ class Checker {
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",
           "INVALID_EXPRESSION");
-    if (checked_expression_literal_class(original) == moss::est::LiteralClass::String ||
-        checked_expression_literal_class(original) == moss::est::LiteralClass::Character) {
+    if (tree_literal_class(original) == moss::est::LiteralClass::String ||
+        tree_literal_class(original) == moss::est::LiteralClass::Character) {
       mark_active_expression(OccurrenceKind::Literal);
       return;
     }
@@ -27845,7 +26704,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> arguments;
       bool called = false;
-      if (checked_expression_parse_enum_case(original, enum_name, case_name, arguments, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         mark_active_expression(OccurrenceKind::Constructor,
                                "enum-case:" + enum_name + "." + case_name);
@@ -27867,15 +26726,9 @@ class Checker {
           occurrence.semantic_target_id = "nominal-enum-variant-v1:" +
               enum_identity + ":case:" + case_name;
           occurrence.source_operands = arguments;
-          for (std::size_t argument_index = 0;
-               argument_index < arguments.size(); ++argument_index) {
-            const auto& argument = arguments[argument_index];
+          for (const auto& argument : arguments) {
             string field_name, field_value;
-            char separator = ':';
-            if (!checked_expression_named_argument(argument_index, field_name,
-                    field_value, separator) &&
-                !active_expression_has_call_arguments() &&
-                !tree_parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -27897,21 +26750,12 @@ class Checker {
         if (!item->fields.empty() && !called)
           err(line, "enum case '" + case_name + "' requires named fields", "MISSING_ENUM_FIELD");
         std::set<string> supplied;
-        for (std::size_t argument_index = 0;
-             argument_index < arguments.size(); ++argument_index) {
-          const auto& argument = arguments[argument_index];
+        for (const auto& argument : arguments) {
           string name, value;
-          char separator = 0;
-          const bool checked_named = checked_expression_named_argument(
-              argument_index, name, value, separator);
-          if (!checked_named && !active_expression_has_call_arguments()) {
-            separator = tree_named_argument_separator(argument).value_or(0);
-            (void)tree_parse_named_argument(argument, name, value);
-          }
-          if (separator == '=')
+          if (tree_named_argument_separator(argument) == '=')
             err(line, "enum constructor fields use ':' rather than '='",
                 "ENUM_FIELD_REQUIRES_COLON");
-          if (name.empty())
+          if (!tree_parse_named_argument(argument, name, value))
             err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
           if (!supplied.insert(name).second)
             err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
@@ -27919,9 +26763,8 @@ class Checker {
               [&](const Field& candidate) { return candidate.name == name; });
           if (field == item->fields.end())
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
-          if (!check_expression_child_node(line, env, "field:" + name))
-            check_expression(line, value, env, {}, "field:" + name);
-          if (!checked_child_matches_declared("field:" + name, value, field->type, env))
+          check_expression(line, value, env, {}, "field:" + name);
+          if (!checked_matches_declared(value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
         }
@@ -27935,12 +26778,12 @@ class Checker {
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
     string message_receiver, message_handler;
     vector<string> message_args;
-    if (checked_expression_parse_message(original, message_receiver, message_handler,
+    if (tree_parse_message(original, message_receiver, message_handler,
                            message_args)) {
       mark_active_expression(OccurrenceKind::Message);
       string receiver = message_receiver, handler = message_handler;
       vector<string> args = std::move(message_args);
-      if (!checked_message_identifiers(receiver, handler))
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
       const Handler* target = check_message_call_after_resolution(
@@ -27970,14 +26813,11 @@ class Checker {
             "move the shared logic into an ordinary non-domain helper and call it directly");
       }
       for (size_t index = 0; index < args.size(); ++index)
-        if (!check_expression_child_node(line, env,
-                "argument:" + std::to_string(index),
-                static_cast<std::uint32_t>(index)))
-          check_expression(line, args[index], env, {},
-                           "argument:" + std::to_string(index));
+        check_expression(line, args[index], env, {},
+                         "argument:" + std::to_string(index));
       return;
     }
-    if (auto syntax = checked_expression_view(original); syntax &&
+    if (auto syntax = checker_est_view(original); syntax &&
         std::holds_alternative<moss::est::Collection>(
             syntax->arena->at(syntax->root))) {
       const auto& collection = std::get<moss::est::Collection>(
@@ -27991,10 +26831,9 @@ class Checker {
           if (!value_text) continue;
           auto value_type = inferred_expr_type(*value_text, env);
           if (value_type && contains_domain_handle(*value_type)) {
-            string binding = *value_text;
-            if (const auto* identifier = std::get_if<est::Identifier>(
-                    &syntax->arena->at(entry->elements[1])))
-              binding = identifier->name;
+            const auto identifier = checker_identifier_name(*value_text);
+            const string binding = identifier ? string(*identifier)
+                                              : *value_text;
             err(line, "domain handle '" + binding +
                 "' is not an ordinary value; use domainroutes and message targets only",
                 "MOSS_COMPILE_ERROR");
@@ -28003,36 +26842,19 @@ class Checker {
         }
       }
     }
-    auto checked_leaf_type = checked_expression_leaf_type(env);
-    auto domain_value_type = checked_leaf_type
-        ? checked_leaf_type : inferred_expr_type(original, env);
-    if (domain_value_type && contains_domain_handle(*domain_value_type))
+    if (auto type = inferred_expr_type(original, env))
+      if (contains_domain_handle(*type))
         err(line, "domain handles cannot be used as ordinary values or payloads; "
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
     // from the ordinary-expression checker.
-    if (checked_expression_outer_grouping(original)) {
+    if (tree_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
-      const bool checked_node = !active_est_expression_cursors_.empty() &&
-          active_est_expression_cursors_.back() &&
-          [&] {
-            const auto& cursor = *active_est_expression_cursors_.back();
-            const auto* arena = expression_arena(cursor.arena_index);
-            if (!arena) return false;
-            const auto* grouped = std::get_if<est::Parenthesized>(
-                &arena->at(cursor.expr));
-            if (!grouped) return false;
-            check_expression_node(line, cursor.arena_index, grouped->inner,
-                                  env, "grouped-expression");
-            return true;
-          }();
-      if (!checked_node)
-        check_expression(line,
-            tree_strip_redundant_outer_parentheses(original), env, {},
-            "grouped-expression");
+      check_expression(line, tree_strip_redundant_outer_parentheses(original), env,
+                       {}, "grouped-expression");
       return;
     }
-    if (auto elements = checked_expression_vector_literal(original)) {
+    if (auto elements = tree_parse_vector_literal(original)) {
       mark_active_expression(OccurrenceKind::VectorLiteral,
                              "builtin:vector-literal");
       if (current_body_types_ && !checking_specialization_ &&
@@ -28040,38 +26862,13 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = *elements;
-      std::vector<std::pair<string, std::optional<est::ExprId>>> checked_elements;
-      if (!active_est_expression_cursors_.empty() &&
-          active_est_expression_cursors_.back()) {
-        const auto& cursor = *active_est_expression_cursors_.back();
-        if (const auto* arena = expression_arena(cursor.arena_index))
-          if (const auto* collection = std::get_if<est::Collection>(
-                  &arena->at(cursor.expr));
-              collection && collection->delimiter == '[' &&
-              collection->elements.size() == elements->size()) {
-            for (std::size_t index = 0; index < collection->elements.size();
-                 ++index)
-              checked_elements.emplace_back((*elements)[index],
-                                             collection->elements[index]);
-          }
-      }
-      if (checked_elements.empty())
-        for (const auto& element : *elements)
-          checked_elements.emplace_back(element, std::nullopt);
-      for (std::size_t index = 0; index < checked_elements.size(); ++index) {
-        const auto& [element, node] = checked_elements[index];
-        const auto role = "element:" + std::to_string(index);
-        if (node && !active_est_expression_cursors_.empty() &&
-            active_est_expression_cursors_.back())
-          check_expression_node(line,
-              active_est_expression_cursors_.back()->arena_index, *node, env,
-              role);
-        else
-          check_expression(line, element, env, {}, role);
-        auto type = checked_child_or_inferred_type(role, element, env);
+      for (const auto& element : *elements) {
+        auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
           err(line, "FileIO and ranges cannot enter ordinary collections",
               "FILEIO_COLLECTION_ESCAPE");
+        check_expression(line, element, env, {},
+                         "element:" + std::to_string(&element - elements->data()));
       }
       if (current_body_types_) {
         if (elements->empty()) {
@@ -28143,93 +26940,41 @@ class Checker {
       }
       return;
     }
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (arena) {
-        const auto root = est::unparenthesized(*arena, cursor.expr);
-        if (const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(root))) {
-          const auto input = est::unparenthesized(*arena, pipeline->input);
-          const auto* comparison = std::get_if<est::Binary>(&arena->at(input));
-          const bool comparison_operator = comparison &&
-              (comparison->op == "==" || comparison->op == "!=" ||
-               comparison->op == "<" || comparison->op == "<=" ||
-               comparison->op == ">" || comparison->op == ">=");
-          const bool count_stage = std::any_of(
-              pipeline->stages.begin(), pipeline->stages.end(),
-              [&](est::ExprId stage) {
-                const auto stage_root = est::unparenthesized(*arena, stage);
-                const auto* identifier = std::get_if<est::Identifier>(
-                    &arena->at(stage_root));
-                return identifier && identifier->name == "count";
-              });
-          if (comparison_operator && count_stage)
-            err(line, "unknown local function 'count'", "UNKNOWN_SYMBOL_OR_TYPE");
-        }
-      }
-    }
     if (check_functional_pipeline(line, original, env)) {
       mark_active_expression(OccurrenceKind::Pipeline,
                              "functional-pipeline-v1");
       return;
     }
-    // A comparison used as an unrecognized pipeline stage still needs ordinary
-    // expression checking. Visit that stage node directly so an unknown name
-    // such as `count` retains the established checker diagnostic.
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back()) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      const auto* arena = expression_arena(cursor.arena_index);
-      if (arena) {
-        const auto root = est::unparenthesized(*arena, cursor.expr);
-        if (const auto* pipeline = std::get_if<est::Pipeline>(
-                &arena->at(root))) {
-          for (std::size_t index = 0; index < pipeline->stages.size(); ++index)
-            if (std::holds_alternative<est::Binary>(
-                    arena->at(pipeline->stages[index]))) {
-              if (!check_expression_child_node(line, env,
-                      "stage:" + std::to_string(index),
-                      static_cast<std::uint32_t>(index)))
-                err(line, "pipeline stage is missing its checked expression node",
-                    "MOSS_INTERNAL_INVARIANT");
-              return;
-            }
-        }
-      }
-    }
-    string value = checked_expression_normalize_pipeline(original);
+    string value = tree_normalize_pipeline(std::move(original));
     string unary_operation, unary_operand;
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
-    auto membership = checked_expression_split_binary(value, {" not in "});
-    if (!membership) membership = checked_expression_split_binary(value, {" in "});
+    auto membership = tree_split_binary(value, {" not in "});
+    if (!membership) membership = tree_split_binary(value, {" in "});
     if (membership) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
       return;
     }
-    if (checked_expression_split_binary(value, {"**"})) {
+    if (tree_split_binary(value, {"**"})) {
       err(line, "invalid arithmetic expression");
       return;
     }
     for (const auto& op :
          vector<string>{"&&", "||"}) {
-      if (checked_expression_split_binary(value, {op}))
+      if (tree_split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = checked_expression_split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
-        if (!check_expression_child_node(line, env, "left"))
-          check_expression(line, binary->first, env, {}, "left");
-        if (!check_expression_child_node(line, env, "right"))
-          check_expression(line, binary->second, env, {}, "right");
-        auto left = checked_child_or_inferred_type("left", binary->first, env);
-        auto right = checked_child_or_inferred_type("right", binary->second, env);
+        check_expression(line, binary->first, env, {}, "left");
+        check_expression(line, binary->second, env, {}, "right");
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
         if (!left || !right ||
             canonical_type_name(*left) != "bool" ||
             canonical_type_name(*right) != "bool")
@@ -28238,32 +26983,31 @@ class Checker {
         return;
       }
     }
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
       string operand = unary_operand;
-      if (!check_expression_child_node(line, env, "operand"))
-        check_expression(line, operand, env, {}, "operand");
+      check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
-      auto operand_type = checked_child_or_inferred_type("operand", operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
       if (!operand_type || canonical_type_name(*operand_type) != "bool")
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
-    if (auto ordering = checked_expression_split_binary(value, {"<=", ">=", "<", ">"})) {
+    if (auto ordering = tree_split_binary(value, {"<=", ">=", "<", ">"})) {
       // This pass checks the ordering-specific exclusions. The common
       // comparison branch below owns the single recursive operand traversal,
       // so the checker occurrence graph represents each source operand once.
       for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
-        auto candidate = checked_expression_split_binary(value, {op});
+        auto candidate = tree_split_binary(value, {op});
         if (candidate && candidate->first == ordering->first) {
           retain_open_operator_operation(line, op, ordering->first,
                                          ordering->second, env);
           break;
         }
       }
-      auto left = checked_child_or_inferred_type("left", ordering->first, env);
-      auto right = checked_child_or_inferred_type("right", ordering->second, env);
+      auto left = inferred_expr_type(ordering->first, env);
+      auto right = inferred_expr_type(ordering->second, env);
       if ((left && canonical_type_name(*left) == "string") ||
           (right && canonical_type_name(*right) == "string")) {
         err(line,
@@ -28290,26 +27034,24 @@ class Checker {
         }
       }
     }
-    if (auto binary = checked_expression_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+    if (auto binary = tree_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          checked_expression_split_binary(value, {"=="}) ? "==" :
-          checked_expression_split_binary(value, {"!="}) ? "!=" :
-          checked_expression_split_binary(value, {"<="}) ? "<=" :
-          checked_expression_split_binary(value, {">="}) ? ">=" :
-          checked_expression_split_binary(value, {"<"}) ? "<" : ">");
-      if (!check_expression_child_node(line, env, "left"))
-        check_expression(line, binary->first, env, {}, "left");
-      if (!check_expression_child_node(line, env, "right"))
-        check_expression(line, binary->second, env, {}, "right");
-      auto left_type = checked_child_or_inferred_type("left", binary->first, env);
-      auto right_type = checked_child_or_inferred_type("right", binary->second, env);
+          tree_split_binary(value, {"=="}) ? "==" :
+          tree_split_binary(value, {"!="}) ? "!=" :
+          tree_split_binary(value, {"<="}) ? "<=" :
+          tree_split_binary(value, {">="}) ? ">=" :
+          tree_split_binary(value, {"<"}) ? "<" : ">");
+      check_expression(line, binary->first, env, {}, "left");
+      check_expression(line, binary->second, env, {}, "right");
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
       if ((left_type && contains_enum_type(*left_type)) ||
           (right_type && contains_enum_type(*right_type)))
         err(line, "enum equality and ordering are not supported; use an exhaustive match",
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      auto equality = checked_expression_split_binary(value, {"==", "!="});
+      auto equality = tree_split_binary(value, {"==", "!="});
       if (equality && equality->first == binary->first && current_body_types_) {
         auto operand_term = [&](const string& operand) {
           auto retained = current_body_types_->known_expression(operand);
@@ -28324,8 +27066,8 @@ class Checker {
               (!resolved_left->is_closed() || !resolved_right->is_closed())) {
             string indexed_base, indexed_key;
             const bool compares_index =
-                checked_expression_child_parse_index("left", binary->first, indexed_base, indexed_key) ||
-                checked_expression_child_parse_index("right", binary->second, indexed_base, indexed_key);
+                tree_parse_index(binary->first, indexed_base, indexed_key) ||
+                tree_parse_index(binary->second, indexed_base, indexed_key);
             if (compares_index && !resolved_left->is_closed() &&
                 !resolved_right->is_closed() &&
                 !current_body_types_->solver.unify(left, right))
@@ -28333,7 +27075,7 @@ class Checker {
                   "TYPE_MISMATCH");
             moss::Requirement requirement;
             requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = checked_expression_split_binary(value, {"=="})
+            requirement.target_id = tree_split_binary(value, {"=="})
                 ? "operator:==" : "operator:!=";
             requirement.subject = left;
             requirement.arguments.push_back(right);
@@ -28369,16 +27111,14 @@ class Checker {
       return;
     }
     for (const auto& op : vector<string>{"|", "^", "&"}) {
-      if (auto binary = checked_expression_split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
-        if (!check_expression_child_node(line, env, "left"))
-          check_expression(line, binary->first, env, {}, "left");
-        if (!check_expression_child_node(line, env, "right"))
-          check_expression(line, binary->second, env, {}, "right");
+        check_expression(line, binary->first, env, {}, "left");
+        check_expression(line, binary->second, env, {}, "right");
         retain_open_operator_operation(line, op, binary->first,
                                        binary->second, env);
-        auto left_type = checked_child_or_inferred_type("left", binary->first, env);
-        auto right_type = checked_child_or_inferred_type("right", binary->second, env);
+        auto left_type = inferred_expr_type(binary->first, env);
+        auto right_type = inferred_expr_type(binary->second, env);
         if (unresolved_expression(binary->first, env) ||
             unresolved_expression(binary->second, env)) return;
         if (!left_type || !right_type ||
@@ -28388,22 +27128,20 @@ class Checker {
         return;
       }
     }
-    if (auto binary = checked_expression_split_binary(value, {"<<", ">>"})) {
+    if (auto binary = tree_split_binary(value, {"<<", ">>"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          checked_expression_split_binary(value, {"<<"}) ? "<<" : ">>");
-      string op = checked_expression_split_binary(value, {"<<"}) ? "<<" : ">>";
-      if (!check_expression_child_node(line, env, "left"))
-        check_expression(line, binary->first, env, {}, "left");
-      if (!check_expression_child_node(line, env, "right"))
-        check_expression(line, binary->second, env, {}, "right");
+          tree_split_binary(value, {"<<"}) ? "<<" : ">>");
+      string op = tree_split_binary(value, {"<<"}) ? "<<" : ">>";
+      check_expression(line, binary->first, env, {}, "left");
+      check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
-        if (checked_expression_split_binary(value, {candidate})) {
+        if (tree_split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
                                          binary->second, env);
           break;
         }
-      auto left_type = checked_child_or_inferred_type("left", binary->first, env);
-      auto right_type = checked_child_or_inferred_type("right", binary->second, env);
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
       if (unresolved_expression(binary->first, env) ||
           unresolved_expression(binary->second, env)) return;
       if (!left_type || !right_type ||
@@ -28412,21 +27150,20 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "-" &&
-        !checked_expression_split_binary(value, {"+", "-", "*", "/", "%"})) {
+        !tree_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
       // the call result, so the operand is checked as one expression
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
       string operand = unary_operand;
       string nested_operation, nested_operand;
-      if (!checked_expression_child_parse_unary("operand", nested_operation, nested_operand) ||
+      if (!tree_parse_unary(operand, nested_operation, nested_operand) ||
           nested_operation != "-") {
-        if (!check_expression_child_node(line, env, "operand"))
-          check_expression(line, operand, env, {}, "operand");
+        check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
-        auto operand_type = checked_child_or_inferred_type("operand", operand, env);
+        auto operand_type = inferred_expr_type(operand, env);
         if (operand_type) {
           string type = canonical_type_name(*operand_type);
           if ((builtin_equality_type(type) || contains_record_type(type)) &&
@@ -28439,30 +27176,28 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{
              {"+", "-"}, {"*", "/", "%"}}) {
-        if (auto binary = checked_expression_split_binary(value, operators)) {
+        if (auto binary = tree_split_binary(value, operators)) {
           string operation_id;
           for (const auto& candidate : operators) {
-            auto operation = checked_expression_split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               operation_id = candidate;
               break;
             }
           }
           mark_active_expression(OccurrenceKind::Binary, operation_id);
-          if (!check_expression_child_node(line, env, "left"))
-            check_expression(line, binary->first, env, {}, "left");
-          if (!check_expression_child_node(line, env, "right"))
-            check_expression(line, binary->second, env, {}, "right");
+          check_expression(line, binary->first, env, {}, "left");
+          check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
-            auto operation = checked_expression_split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               retain_open_operator_operation(line, candidate,
                   binary->first, binary->second, env);
               break;
             }
           }
-          auto left_type = checked_child_or_inferred_type("left", binary->first, env);
-          auto right_type = checked_child_or_inferred_type("right", binary->second, env);
+          auto left_type = inferred_expr_type(binary->first, env);
+          auto right_type = inferred_expr_type(binary->second, env);
           if ((left_type && contains_enum_type(*left_type)) ||
               (right_type && contains_enum_type(*right_type)))
             err(line, "enum equality and ordering are not supported; use an exhaustive match",
@@ -28484,7 +27219,7 @@ class Checker {
             string rt = canonical_type_name(*right_type);
             string op;
             for (const string candidate : {"+", "-", "*", "/", "%"}) {
-              auto split = checked_expression_split_binary(value, {candidate});
+              auto split = tree_split_binary(value, {candidate});
               if (split && split->first == binary->first) op = candidate;
             }
             bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
@@ -28500,9 +27235,9 @@ class Checker {
                 (contains_record_type(lt) || contains_record_type(rt)))
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
-          if (checked_expression_split_binary(value, {"%"})) {
-            auto left = checked_child_or_inferred_type("left", binary->first, env);
-            auto right = checked_child_or_inferred_type("right", binary->second, env);
+          if (tree_split_binary(value, {"%"})) {
+            auto left = inferred_expr_type(binary->first, env);
+            auto right = inferred_expr_type(binary->second, env);
             if (!left || !right || canonical_type_name(*left) != "int" ||
                 canonical_type_name(*right) != "int")
               err(line, "integer remainder operands must have type 'Int'",
@@ -28511,14 +27246,13 @@ class Checker {
           return;
         }
     }
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "~") {
       string operand = unary_operand;
-        if (!check_expression_child_node(line, env, "operand"))
-          check_expression(line, operand, env, {}, "operand");
+      check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
-      auto operand_type = checked_child_or_inferred_type("operand", operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
       if (unresolved_expression(operand, env)) return;
       if (!operand_type || canonical_type_name(*operand_type) != "int")
         err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");
@@ -28527,7 +27261,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (checked_expression_parse_simple_call(value, callee, arguments) &&
+      if (tree_parse_simple_call(value, callee, arguments) &&
           callee == "assertEqual" && arguments.size() == 2) {
         for (const auto& argument : arguments) {
           auto type = inferred_expr_type(argument, env);
@@ -28539,7 +27273,7 @@ class Checker {
     }
     string receiver, handler;
     vector<string> args;
-    if (checked_expression_parse_member_call(value, receiver, handler, args)) {
+    if (tree_parse_member_call(value, receiver, handler, args)) {
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
@@ -28601,19 +27335,15 @@ class Checker {
                   .non_expression_operand_ordinals.push_back(
                       static_cast<std::uint32_t>(index));
           } else {
-            if (!check_expression_child_node(line, env,
-                    "argument:" + std::to_string(index),
-                    static_cast<std::uint32_t>(index)))
-              check_expression(line, args[index], env, {},
-                               "argument:" + std::to_string(index));
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
           }
         }
         return;
       }
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (staged_abi_v10() && *receiver_type == "map" &&
-            checked_expression_child_empty_constructor_named(
-                "receiver", receiver, "Map") && handler == "get" &&
+            tree_empty_constructor_named(receiver, "Map") && handler == "get" &&
             args.size() == 2) {
           auto key = inferred_expr_type(args[0], env);
           auto value = inferred_expr_type(args[1], env);
@@ -28637,17 +27367,12 @@ class Checker {
           err(line, "Set operation requires a concrete key type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
-          if (staged_abi_v10() &&
-              checked_expression_child_empty_constructor_named(
-                  "receiver", receiver, "Map") &&
+          if (staged_abi_v10() && tree_empty_constructor_named(receiver, "Map") &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           for (size_t index = 0; index < args.size(); ++index)
-            if (!check_expression_child_node(line, env,
-                    "argument:" + std::to_string(index),
-                    static_cast<std::uint32_t>(index)))
-              check_expression(line, args[index], env, {},
-                               "argument:" + std::to_string(index));
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
           vector<string> argument_types;
           for (const auto& arg : args)
             argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -28731,11 +27456,8 @@ class Checker {
             err(line, "argument " + std::to_string(index + 1) +
                 " to trait method '" + handler + "' has type '" + *actual +
                 "', expected '" + method->params[index].type + "'");
-          if (!check_expression_child_node(line, env,
-                  "argument:" + std::to_string(index),
-                  static_cast<std::uint32_t>(index)))
-            check_expression(line, args[index], env, {},
-                             "argument:" + std::to_string(index));
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
         }
         return;
       }
@@ -28760,11 +27482,8 @@ class Checker {
         retain_active_expression_target(
             "builtin-method:" + canon_recv + "." + handler);
         for (size_t index = 0; index < args.size(); ++index)
-          if (!check_expression_child_node(line, env,
-                  "argument:" + std::to_string(index),
-                  static_cast<std::uint32_t>(index)))
-            check_expression(line, args[index], env, {},
-                             "argument:" + std::to_string(index));
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
         return;
       }
       if (it != env.end() && open_generic(it->second)) {
@@ -28800,15 +27519,12 @@ class Checker {
           current_body_types_->expression_occurrence_ledger_complete = false;
       }
       for (size_t index = 0; index < args.size(); ++index)
-        if (!check_expression_child_node(line, env,
-                "argument:" + std::to_string(index),
-                static_cast<std::uint32_t>(index)))
-          check_expression(line, args[index], env, {},
-                           "argument:" + std::to_string(index));
+        check_expression(line, args[index], env, {},
+                         "argument:" + std::to_string(index));
       return;
     }
     string ib, ii;
-    if (checked_expression_parse_index(value, ib, ii)) {
+    if (tree_parse_index(value, ib, ii)) {
       mark_active_expression(OccurrenceKind::Index, "builtin:index");
       check_expression(line, ib, env, {}, "container");
       check_expression(line, ii, env, {}, "index");
@@ -28895,7 +27611,7 @@ class Checker {
     }
     {
       string base, field;
-      if (checked_expression_parse_member_access(value, base, field)) {
+      if (tree_parse_member_access(value, base, field)) {
         auto receiver_type = inferred_expr_type(base, env);
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
@@ -28999,11 +27715,11 @@ class Checker {
       }
     }
     string callee;
-    if (checked_expression_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||
-             checked_expression_empty_typed_vector_constructor(value)
+             tree_empty_typed_vector_constructor(value)
                 ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_ && !checking_specialization_ &&
@@ -29011,7 +27727,7 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = args;
-      if (checked_expression_empty_typed_vector_constructor(value) && current_body_types_ &&
+      if (tree_empty_typed_vector_constructor(value) && current_body_types_ &&
           !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
         auto& occurrence = current_body_types_->expression_occurrences.at(
@@ -29022,14 +27738,9 @@ class Checker {
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
         bool has_open_argument = false;
-        for (std::size_t argument_index = 0;
-             argument_index < args.size(); ++argument_index) {
-          const auto& argument = args[argument_index];
+        for (const auto& argument : args) {
           string field_name, value = argument;
-          char separator = 0;
-          if (!checked_expression_named_argument(argument_index, field_name,
-                  value, separator) && !active_expression_has_call_arguments())
-            (void)tree_parse_named_argument(argument, field_name, value);
+          (void)tree_parse_named_argument(argument, field_name, value);
           auto term = current_body_types_->known_expression(value);
           if (!term) term = inferred_expr_term(value, env);
           auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
@@ -29103,7 +27814,7 @@ class Checker {
               "REPLACE_TYPE_MISMATCH");
         return;
       }
-      if (auto typed_vector = checked_expression_empty_typed_vector_constructor(value)) {
+      if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
         if (contains_trait_type(*typed_vector))
           err(line,
               "trait types are static structural constraints and cannot be stored "
@@ -29132,15 +27843,9 @@ class Checker {
           occurrence.semantic_target_id = moss::declaration_identity(
               moss::DeclarationKind::Record,
               program_module_identity(p_, object.defining_module), type_name);
-          for (std::size_t argument_index = 0;
-               argument_index < args.size(); ++argument_index) {
-            const auto& argument = args[argument_index];
+          for (const auto& argument : args) {
             string field_name, field_value;
-            char separator = 0;
-            if (!checked_expression_named_argument(argument_index, field_name,
-                    field_value, separator) &&
-                !active_expression_has_call_arguments() &&
-                !tree_parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -29159,15 +27864,10 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string field_name, field_value;
-          char separator = 0;
-          if (!checked_expression_named_argument(index, field_name,
-                  field_value, separator) &&
-              !active_expression_has_call_arguments() &&
-              !tree_parse_named_argument(arg, field_name, field_value))
+          if (!tree_parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
-          if (!check_expression_child_node(line, env, "field:" + field_name))
-            check_expression(line, field_value, env, {}, "field:" + field_name);
+          check_expression(line, field_value, env, {}, "field:" + field_name);
         }
         for (const auto& field : objects_.at(callee)->fields)
           if (enums_.count(canonical_type_name(field.type)) &&
@@ -29257,12 +27957,10 @@ class Checker {
           for (size_t index = 0; index < args.size(); ++index) {
             const auto& arg = args[index];
             string name, val;
-            char separator = 0;
-            if (checked_expression_named_argument(index, name, val, separator))
+            if (tree_parse_named_argument(arg, name, val))
               check_expression(line, val, env, {},
                                "argument:" + std::to_string(index));
-            else if (!check_expression_child_node(line, env,
-                         "argument:" + std::to_string(index)))
+            else
               check_expression(line, arg, env, {},
                                "argument:" + std::to_string(index));
           }
@@ -29291,12 +27989,10 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string name, val;
-          char separator = 0;
-          if (checked_expression_named_argument(index, name, val, separator))
+          if (tree_parse_named_argument(arg, name, val))
             check_expression(line, val, env, {},
                              "argument:" + std::to_string(index));
-          else if (!check_expression_child_node(line, env,
-                       "argument:" + std::to_string(index)))
+          else
             check_expression(line, arg, env, {},
                              "argument:" + std::to_string(index));
         }
@@ -30064,12 +28760,8 @@ class Checker {
                 "move the shared logic into an ordinary non-domain helper and call it directly");
           }
         }
-        for (std::size_t index = 0; index < statement.args.size(); ++index) {
-          const auto& argument = statement.args[index];
-          if (auto pipeline = functional_pipeline_from_est(
-                  argument, &statement.expression_handles,
-                  std::pair{est::ExprSlot::Argument,
-                            static_cast<std::uint32_t>(index)})) {
+        for (const auto& argument : statement.args) {
+          if (auto pipeline = functional_pipeline_from_est(argument)) {
             auto source_type = inferred_expr_type(pipeline->source, current_env);
             if (source_type && functional_element_type(
                                    *source_type, pipeline->source) &&
@@ -30257,15 +28949,7 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            char separator = ':';
-            const auto checked_named = checked_named_argument(
-                statement.expression_handles, est::ExprSlot::Argument,
-                static_cast<std::uint32_t>(index), argument, name, val,
-                separator);
-            const bool named = checked_named
-                ? *checked_named
-                : tree_parse_named_argument(argument, name, val);
-            if (named)
+            if (tree_parse_named_argument(argument, name, val))
               check_expression(statement.line, val, current_env, occurrence_slot,
                                "call-argument:" + std::to_string(index));
             else
@@ -30378,9 +29062,7 @@ class Checker {
         check_expression(statement.line, statement.a, current_env,
                          "reply-value");
         auto actual = inferred_expr_type(statement.a, current_env);
-        if (auto pipeline = functional_pipeline_from_est(
-                statement.a, &statement.expression_handles,
-                std::pair{est::ExprSlot::ReturnValue, 0u})) {
+        if (auto pipeline = functional_pipeline_from_est(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
           if (source_type && functional_element_type(
                                  *source_type, pipeline->source) &&
