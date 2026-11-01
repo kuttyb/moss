@@ -1,10 +1,20 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `fa4899b5`; named-argument classification is
-  uncommitted. No full suite,
-  corpus pass, or performance
+  latest pushed commit is `9bff2ee0`; one FileIO pipeline-classification
+  simplification is uncommitted. No full suite, corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
+- Latest focused improvement removes a redundant `functional_pipeline_from_est`
+  parse from `fileio_result_type`: the EST member-call projection already
+  requires a root Call, so it cannot mistake a Pipeline root for its first
+  stage. After rebuilding, the functional-tree harness, FileIO runtime
+  fixture, and pipeline-try fixture pass; `git diff --check` passes.
+  `functional_basics.moss` checker parses fell from 121 to 101 (pipeline
+  parses 44 to 24); its checker text-cache consultations are 14,766.
+  Emitter measurement for that fixture is 866 post-initial parses, all
+  814 from native expression-view parsing; no consumer migration claim.
+  `specialized_call_facts.moss` remains 44 checker parses and 24,405 text
+  cache consultations. No full suite, corpus pass, or performance run.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
   Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses

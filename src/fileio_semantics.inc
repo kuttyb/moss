@@ -146,9 +146,8 @@
 
   std::optional<string> fileio_result_type(const string& expression,
                                             const TypeEnv& env) const {
-    // `file.chunks(n) |> map(f) |> reduce(...)` is typed by the functional
-    // pipeline IR; parse_member_call would misread it as `file.chunks(...)`.
-    if (functional_pipeline_from_est(expression)) return std::nullopt;
+    // The EST member-call projection recognizes only a root Call node, so a
+    // pipeline rooted at `|>` cannot be mistaken for its first stage.
     string receiver, method;
     vector<string> args;
     const bool parsed_call = checked_inference_cursor_depth_ != 0
