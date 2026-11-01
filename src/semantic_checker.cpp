@@ -26284,6 +26284,12 @@ class Checker {
                                   est::ExprId child,
                                   std::string_view parent_source,
                                   std::string_view child_source) {
+#ifdef MOSS_TEST_BUILD
+    // Effect-expression traversal currently selects a child by comparing its
+    // rendered source with the candidate node's source span. Count each such
+    // text-based node lookup as part of tightened K2.
+    est::record_expression_text_lookup();
+#endif
     const auto parent_span = arena.span(parent);
     const auto child_span = arena.span(child);
     if (child_span.source_begin < parent_span.source_begin ||
@@ -26720,6 +26726,34 @@ class Checker {
     if (auto view = active_expression_view())
       return est::project_message(*view, target, handler, arguments);
     return tree_parse_message(source, target, handler, arguments);
+  }
+
+  string checked_expression_normalize_pipeline(const string& source) const {
+    if (auto view = active_expression_view())
+      return est::normalize_pipeline_tree(*view);
+    return tree_normalize_pipeline(source);
+  }
+
+  bool checked_expression_child_parse_unary(std::string_view role,
+      string& operation, string& operand) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return false;
+    const auto& parent = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(parent.arena_index);
+    if (!arena) return false;
+    const auto child = expression_child_node(*arena, parent.expr, role);
+    if (!child) return false;
+    const auto* unary = std::get_if<est::Unary>(&arena->at(*child));
+    if (!unary) return false;
+    auto text = expression_child_source(parent, unary->operand);
+    if (!text)
+      throw std::logic_error(
+          "MOSS_INTERNAL_INVARIANT nested unary source missing line=" +
+          std::to_string(arena->span(parent.expr).line));
+    operation = unary->op;
+    operand = std::move(*text);
+    return true;
   }
 
   bool checked_expression_parse_unary(const string& source, string& operation,
@@ -27454,7 +27488,7 @@ class Checker {
                              "functional-pipeline-v1");
       return;
     }
-    string value = tree_normalize_pipeline(std::move(original));
+    string value = checked_expression_normalize_pipeline(original);
     string unary_operation, unary_operand;
     if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "!")
@@ -27676,7 +27710,7 @@ class Checker {
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
       string operand = unary_operand;
       string nested_operation, nested_operand;
-      if (!tree_parse_unary(operand, nested_operation, nested_operand) ||
+      if (!checked_expression_child_parse_unary("operand", nested_operation, nested_operand) ||
           nested_operation != "-") {
         if (!check_expression_child_node(line, env, "operand"))
           check_expression(line, operand, env, {}, "operand");

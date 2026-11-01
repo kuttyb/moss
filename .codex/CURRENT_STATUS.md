@@ -13797,3 +13797,18 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   and grouping calls. The text-cache K2 target remains zero.
 - `check_phase27_est_coverage.py` passes with test/dev and optimized binaries;
   it confirms counters are opt-in/test-only/output-neutral. No full suite/perf.
+
+## Phase 27.5.4 latest checker cursor checkpoint (2026-10-31)
+
+- `check_expression` now normalizes pipelines through the active ExpressionView,
+  and recognizes nested unary operands through the checked child ExprId. The
+  effect analyzer's remaining source-span candidate comparisons are included
+  in the text-node lookup test counter. Focused counter-output and
+  functional-tree default/shadow scripts pass; shadow checks also pass for
+  functional_basics and the parenthesized-enum reproducer.
+- `functional_basics.moss`: cache consultations 15,462 (site breakdown: EST
+  entry 4,541; EST view 3,960; named arg 326; simple call 916; member call 631;
+  top split 12; outer grouping 1,040; binary 3,710; overflow 326; pipeline
+  handle 0). Checker reparses remain 121 (body 18, view 59, pipeline 44).
+  Text-node lookups remain 0 on this fixture, including the newly counted
+  effect span-matching path. K2 overall remains far from target zero.
