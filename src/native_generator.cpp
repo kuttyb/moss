@@ -7146,14 +7146,15 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              const EmitterExpr argument_expression = checked_expression_ref(
+                  s.args[argument], est::ExprSlot::Argument,
+                  static_cast<std::uint32_t>(argument));
               string rendered = expr(
-                  checked_expression_ref(s.args[argument],
-                      est::ExprSlot::Argument,
-                      static_cast<std::uint32_t>(argument)),
+                  argument_expression,
                   d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
-              auto type = generated_expr_type(s.args[argument], &types);
+              auto type = generated_expr_type(argument_expression, &types);
               auto resolved = [](const std::optional<string>& t) {
                 if (!t) return false;
                 const string c = canonical_type_name(*t);
@@ -7495,8 +7496,10 @@ class Generator {
             break;
           }
           if (s.b.empty() && s.a == "assert") {
+            const EmitterExpr condition = checked_expression_ref(
+                s.args.front(), est::ExprSlot::Argument, 0);
             o << indent(level) << "if !("
-              << expr(s.args.front(), d, locals, &types,
+              << expr(condition, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ") { panic!(\"{}\", "
@@ -7511,13 +7514,17 @@ class Generator {
             size_t id = assertion_temp_++;
             string actual = "__moss_assert_actual_" + std::to_string(id);
             string expected = "__moss_assert_expected_" + std::to_string(id);
+            const EmitterExpr actual_expression = checked_expression_ref(
+                s.args[0], est::ExprSlot::Argument, 0);
+            const EmitterExpr expected_expression = checked_expression_ref(
+                s.args[1], est::ExprSlot::Argument, 1);
             o << indent(level) << "let " << actual << " = &("
-              << expr(s.args[0], d, locals, &types,
+              << expr(actual_expression, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ");\n";
             o << indent(level) << "let " << expected << " = &("
-              << expr(s.args[1], d, locals, &types,
+              << expr(expected_expression, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 1))
               << ");\n";

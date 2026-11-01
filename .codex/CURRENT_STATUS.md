@@ -14746,3 +14746,13 @@ check and compile; Fast Debug/native outputs agree; generated Rust matches the
 c96 parent on all three. Fact perturb/drop still passes for all four classes,
 and the static emitter/optimizer string-debt audit passes. Full corpus counts
 will be refreshed at the next paired-count checkpoint; no full suite/perf.
+
+### Phase 27.5.4 C2 checkpoint — argument slots stay on nodes (2026-11-01)
+
+Emitter Echo, assert, and assertEqual argument lowering now holds the exact
+`ExprSlot::Argument` node through both type queries and rendering. The Phase 5
+tooling fixture checks, generates parent-identical Rust, compiles, and matches
+Fast Debug/native. Paired default + `-O` counts for that source changed from
+parent 4,312 text lookups / 2,164 expression-view reparses / 0 pipeline
+reparses to candidate 2,400 / 1,260 / 0. Full workload and final suites remain
+pending.
