@@ -16617,3 +16617,18 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - The earlier initializer, simple-call, scalar-member and replace slices remain
   in pushed commits and their evidence above. No final full gates, performance
   suites, or Agent 2 audit have run. C2 remains incomplete.
+
+## C2 checkpoint: checked FileIO chunk call lowering (2026-11-01)
+
+- Latest pushed slice `c4d41b07` handles `builtin-fileio:chunks` directly from
+  the checked member-call node, passing the receiver and size child nodes into
+  expression lowering.
+- `tests/tooling/fixtures/phase20_domain_fileio_native.moss` reparses/lookups
+  fell 12/12 to 0/0. Generated Rust compiles; native output `100\n4\n` matches
+  the fixture's existing integration harness expectation. Fast Debug reports
+  its existing unsupported FileIO diagnostic.
+- Together, recent targeted decreases include replace 32/32 -> 0/0, numeric
+  member 35/35 -> 0/0, range slicing 34/34 -> 0/0, assert nested call 26/26 ->
+  0/0, and domain chunks 12/12 -> 0/0. Full whole-workload paired counters are
+  due again after more changes. Full suites, perf and Agent 2 audit remain
+  pending.
