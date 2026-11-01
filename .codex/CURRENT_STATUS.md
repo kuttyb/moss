@@ -1,7 +1,8 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `d552f32e` (checked
-  unary projection; simple-call projection `1e00496e` precedes it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `c34b0917` (handover
+  refresh after unary projection `d552f32e`; simple-call projection
+  `1e00496e` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -50,6 +51,11 @@
   Generated Rust stayed byte-identical; Rust compilation, native/Fast Debug
   stdout parity, fact hooks, and feedback validation passed. This slice is
   committed and pushed as `d552f32e`.
+- Current uncommitted slice adds checked-root message and enum-case projections.
+  On the same calculator command, text lookups fell 22,380 to 22,228 and
+  reparses stayed 15,360. Rust is byte-identical, compiles, and matches Fast
+  Debug output; checked-fact perturb/drop hooks and feedback validation pass.
+  Commit/push this measured slice before continuing.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.

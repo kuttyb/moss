@@ -1448,6 +1448,14 @@ class Generator {
         *syntax, target, handler, arguments);
   }
 
+  bool tree_parse_message(const EmitterExpr& expression, string& target,
+                          string& handler, vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_message(view, target, handler, arguments);
+  }
+
   bool tree_parse_fileio_chunks_source(const string& expression,
                                        string& receiver,
                                        string& size_expression) const {
@@ -1512,6 +1520,16 @@ class Generator {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_enum_case(*syntax, enum_name, case_name,
                                             fields, &called);
+  }
+
+  bool tree_parse_enum_case_expression(const EmitterExpr& expression,
+                                       string& enum_name, string& case_name,
+                                       vector<string>& fields,
+                                       bool& called) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_enum_case(view, enum_name, case_name, fields, &called);
   }
 
   bool tree_parse_bound_method_callable(const string& expression,
@@ -6498,6 +6516,20 @@ class Generator {
         return tree_parse_unary(*checked_node, operation, operand);
       return tree_parse_unary(e, operation, operand);
     };
+    auto parse_root_message = [&](string& target, string& handler,
+                                  vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_message(*checked_node, target, handler, arguments);
+      return tree_parse_message(e, target, handler, arguments);
+    };
+    auto parse_root_enum_case = [&](string& enum_name, string& case_name,
+                                    vector<string>& fields, bool& called) {
+      if (checked_node)
+        return tree_parse_enum_case_expression(
+            *checked_node, enum_name, case_name, fields, called);
+      return tree_parse_enum_case_expression(
+          e, enum_name, case_name, fields, called);
+    };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
@@ -6530,7 +6562,7 @@ class Generator {
     // completion and reply semantics through synchronized handler entry.
     string message_target, message_handler;
     vector<string> message_arguments;
-    if (tree_parse_message(e, message_target, message_handler,
+    if (parse_root_message(message_target, message_handler,
                            message_arguments)) {
       string receiver = message_target;
       string handler = message_handler;
@@ -6629,8 +6661,7 @@ class Generator {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (tree_parse_enum_case_expression(e, enum_name, case_name,
-                                          fields, called) &&
+      if (parse_root_enum_case(enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         std::ostringstream rendered;
         rendered << enum_name << "::" << rust_identifier(case_name);
