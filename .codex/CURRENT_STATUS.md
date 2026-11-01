@@ -1,8 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `b042f983`. A checked call-argument type projection is uncommitted. Moss
-  bootstrap confirms `moss-0.1`.
+  `d18515ce`. Checked-node local-call collection is uncommitted. Moss bootstrap
+  confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -48,6 +48,11 @@
   projection instead of launching a second string-based type query. The
   specialized-call fact harness and fixture pass in default/shadow; their
   focused counters are unchanged because this case is absent from that sample.
+- Local-call collection now activates a fingerprint-verified retained cursor
+  and uses tree-aware projections for root normalization and call/member,
+  vector, binary, unary, and index forms. `functional_basics.moss` text-cache
+  consultations fall from 14,766 to 14,680 (-86); checker reparses remain 94.
+  Default/shadow, functional-tree, and Fast Debug parity checks pass.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
