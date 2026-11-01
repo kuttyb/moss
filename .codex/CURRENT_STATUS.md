@@ -15173,3 +15173,20 @@ remaining shapes. This does not substitute for the required corpus/examples/
 packages measurement. Full suites and performance remain unrun by design until
 C2 is near completion. The uncommitted code slice is ready for a checkpoint
 commit/push after final targeted verification.
+
+### Phase 27.5.4 C2 checkpoint — checked specialized member dispatch (2026-11-01)
+
+Emitter member-call lowering now reads the active function specialization's
+checked `member_requirements` and `selected_callable_id` when the call node
+lacks a direct resolved-target fact. It maps the checked callable identity to
+its method declaration and lowers the retained node without re-running method
+resolution. This removed `item.measure()` fallback reparses from
+`tests/phase27/est/specialized_call_facts.moss`.
+
+Paired default counts with equivalent parser-site instrumentation on pinned c96:
+parent 3,387 text-node lookups / 2,685 reparses; candidate 519 / 470 (−85% /
+−82%). Generated Rust matches byte-for-byte, compiles and prints `2` / `2`.
+Three-engine parity and the call-target/specialization/join/pattern
+perturb/drop matrix pass. Test-only emitter fallback node-kind accounting now
+shows remaining fallback shapes without printing source text. This is still a
+single fixture; bulk counts, full suites, and perf remain pending.

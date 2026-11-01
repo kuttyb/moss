@@ -2675,14 +2675,6 @@ class Generator {
           checked_edge = checked_call_edge_specialization(
               p_, codegen_body_context_, found->second->name,
               static_cast<int>(expression.arena->span(root).line));
-#ifdef MOSS_TEST_BUILD
-          if (std::getenv("MOSS_EST_COVERAGE_STATS"))
-            std::cerr << "MOSS_EST_CALL_EDGE_TYPE|" << callee->name << "|"
-                      << codegen_body_context_ << "|"
-                      << expression.arena->span(root).line << "|"
-                      << static_cast<unsigned>(checked_edge.kind) << "|"
-                      << checked_edge.candidates.size() << '\n';
-#endif
           if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
             function = found->second;
         }
@@ -4275,12 +4267,55 @@ class Generator {
                 ? "specialization:" + codegen_active_specialization_key_
                 : codegen_body_context_;
         const auto* facts = expression.arena->facts(root, checker_context);
-        const string target = facts ? facts->resolved_target : string();
-        if ((!facts || target.empty()) &&
-            (moss_test_drop_fact("call-targets") ||
-             moss_test_perturb_fact("call-targets")))
+        string target = facts ? facts->resolved_target : string();
+        const bool call_target_fact_hooked =
+            moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets");
+        if (call_target_fact_hooked)
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked member-call target");
+        if (target.empty() && !codegen_active_specialization_key_.empty()) {
+          const Method* selected_method = nullptr;
+          const ObjectType* selected_owner = nullptr;
+          for (const auto& function_entry : functions_) {
+            for (const auto& specialization :
+                 function_entry.second->specializations) {
+              if (specialization.stable_type_key !=
+                  codegen_active_specialization_key_) continue;
+              for (const auto& requirement : specialization.member_requirements) {
+                if (requirement.member_name != member->name ||
+                    !requirement.selected_callable_id) continue;
+                const auto callable = CallableId::parse(
+                    *requirement.selected_callable_id);
+                if (!callable || callable->kind != "method") continue;
+                for (const auto& object_entry : objects_) {
+                  if (!p_.type_context) continue;
+                  const auto declaration = p_.type_context->find(
+                      object_entry.second->name);
+                  if (!declaration || declaration->id != callable->module_id)
+                    continue;
+                  auto method = std::find_if(
+                      object_entry.second->methods.begin(),
+                      object_entry.second->methods.end(),
+                      [&](const Method& candidate) {
+                        return candidate.name == callable->declaration_name;
+                      });
+                  if (method == object_entry.second->methods.end()) continue;
+                  if (selected_method &&
+                      (selected_method != &*method ||
+                       selected_owner != object_entry.second))
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT ambiguous checked specialization member target");
+                  selected_method = &*method;
+                  selected_owner = object_entry.second;
+                }
+              }
+            }
+          }
+          if (selected_method && selected_owner)
+            target = "method:" + selected_owner->name + "." +
+                selected_method->name;
+        }
         if (target == "fn:__moss_test_perturbed_call_target__")
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
@@ -4717,8 +4752,7 @@ class Generator {
                 ? "binary"
           : std::holds_alternative<est::Unary>(expression.arena->at(root))
                 ? "unary" : "other";
-      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind
-                << "|" << expression.text() << '\n';
+      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind << '\n';
     }
 #endif
     return expr(expression.text(), d, locals, types, functional_pipeline_id,
@@ -8734,9 +8768,9 @@ class Generator {
     }
     vector<string> targets;
     for (const auto& edge : p_.semantic_call_edges) {
-      if (edge.line != line || edge.invocation_kind != "ordinary_call" ||
-          std::find(sources.begin(), sources.end(), edge.source) == sources.end())
+      if (std::find(sources.begin(), sources.end(), edge.source) == sources.end())
         continue;
+      if (edge.line != line || edge.invocation_kind != "ordinary_call") continue;
       if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
         targets.push_back(edge.target);
     }

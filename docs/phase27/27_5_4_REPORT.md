@@ -215,3 +215,19 @@ matching parser-site instrumentation measured 3,387 text-node lookups and
 runtime succeed (`2`, `2`), and three-engine output matches. The four-class
 perturb/drop matrix passes. This is a one-fixture sample; bulk counts and full
 C2 gates remain pending.
+
+## C2 progress — specialized method calls use checked member requirements
+
+For generic caller specializations whose retained call node lacks a direct
+resolved-target fact, the emitter now reads the matching
+`FunctionSpecialization.member_requirements` entry and its checker-selected
+`selected_callable_id`. It maps that identity to the declared method and lowers
+the node directly; an absent or ambiguous checked target does not choose a
+method from runtime values. This removes nested specialized method-call
+fallbacks in `specialized_call_facts.moss`.
+
+With the same default command and test-build parser-site counters, the c96
+parent measured 3,387 text-node lookups / 2,685 reparses; the candidate
+measured 519 / 470 (−85% / −82%). Generated Rust is byte-identical; rustc and
+runtime succeed (`2`, `2`), and three-engine parity plus the fact-hook matrix
+pass. This remains a targeted sample, not the required bulk measurement.
