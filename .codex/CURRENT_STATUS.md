@@ -1,4 +1,41 @@
-# Phase 27.5.4 — active handover (2026-10-31)
+# Phase 27.5.4 — current handover (2026-10-31)
+
+- Branch: `phase27-5-4-work`; latest pushed commit: `151cd004`; working tree
+  was clean at this checkpoint. Moss bootstrap confirms `moss-0.1`.
+- Most recent K2 slice routes checker pipeline projection through the known
+  statement/result root slot before the text-shape filter. Focused
+  `functional_basics.moss` checker parses changed 101 -> 98 post-initial
+  (pipeline parses 24 -> 21); text-cache consultations remain 14,766. The
+  latest `specialized_call_facts.moss` sample is 44 checker parses and 24,459
+  text-cache consultations. No corpus-wide rerun has followed the prior corpus
+  checkpoint at `48a00319`, so its K1/K2/K8 values remain the latest aggregate.
+- Latest aggregate checkpoint: K1 39,561 / 441,479 = 8.961%; K2 checker
+  post-initial parses 671,854 and consumer parses 8,249,789 across the
+  measured invocations; checker text-cache consultations 255,545,164; K8
+  rebuilds 23,337. Historical baselines are from smaller/different workloads:
+  K1 23,452 / 282,668 (8.3%), consumer reparses 4,929,605, and K8 10,095.
+  Like-for-like checker/cache baselines are unavailable. See the due report
+  below for exact scope and breakdown caveats.
+- The context-scoped effect-fact assertion was introduced by the branch's
+  root-slot migration (not present at `phase27-5-3-c1`) and fixed by mapping
+  the active statement to its checked root slot. `check_phase27_est.py` passes.
+- The requested ASan/UBSan `make check` ran once and failed before the latest
+  targeted fixes. It produced no sanitizer diagnostic markers, but did expose
+  a generic result-root checker error and a Fast Debug method-argument node
+  error; both have targeted fixes. The numeric-member crash was stack overflow
+  in recursive member inference, not vector-reference use-after-free.
+  No full suite has run after those fixes.
+- At `151cd004`, focused tests pass: functional-tree, specialized facts,
+  Fast Debug/native/optimized parity, EST checks, the generic string review
+  probe, and `swarm_044_typed_string_map_index` three-engine parity. Regex
+  checks pass in default and shadow. No bulk suite or performance run has run
+  since the earlier checkpoints.
+- Next: continue checker recursion over ExprIds and remove text-keyed cache
+  consultations, then migrate post-parse rewrites for K8. Do not run corpus
+  suites or performance tests until the phase is nearing completion. Keep this
+  file current at each handover; commit and push meaningful slices.
+
+### Prior implementation notes (historical; superseded by the snapshot above)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
   latest pushed commit is `f9197e1d`; retained argument-node routing is
@@ -119,7 +156,6 @@
   then migrate post-parse rewrites for K8. Do not run bulk suites/performance
   until phase completion is near. Commit and push each meaningful slice and
   update this handover as evidence changes.
-
 # Phase 26.2 — Cargo package graph checkpoint
 
 ### Earlier Phase 27.5.4 evidence (prior checkpoint; see active handover above) (2026-10-31)
