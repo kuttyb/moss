@@ -1,7 +1,8 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `0b07e6c7` (checked
-  literal-root projections; access-shape projection `daa922d3` precedes it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `d822a000` (handover
+  refresh after checked literal-root projections `0b07e6c7`; access-shape
+  projection `daa922d3` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -65,6 +66,11 @@
   21,620, with 15,360 reparses unchanged. Rust output is identical, compiles,
   and matches Fast Debug; fact hooks and feedback validation pass. Commit/push
   It is committed and pushed as `0b07e6c7`.
+- Current uncommitted slice reads numeric literal class/value from the checked
+  root. The calculator command reduced lookups 21,620 to 21,544 while
+  reparses remained 15,360. Rust is identical, compiles, and matches Fast
+  Debug; focused numeric parsing parity and feedback validation pass. Commit
+  and push this slice before continuing.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.

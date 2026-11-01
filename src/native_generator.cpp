@@ -1252,6 +1252,14 @@ class Generator {
                   : std::nullopt;
   }
 
+  std::optional<DecodedNumber> tree_numeric_literal_value(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::numeric_literal_value(view);
+  }
+
   std::optional<string> tree_empty_typed_vector_constructor(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
@@ -6688,8 +6696,14 @@ class Generator {
     // Numeric literals are emitted from the shared decoder's value as a
     // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
     // spelling.
-    if (generated_integer_literal(e) || literal == est::LiteralClass::Float) {
-      if (auto numeric = tree_numeric_literal_value(e))
+    const bool checked_integer = checked_node
+        ? generated_integer_literal(*checked_node)
+        : generated_integer_literal(e);
+    if (checked_integer || literal == est::LiteralClass::Float) {
+      auto numeric = checked_node
+          ? tree_numeric_literal_value(*checked_node)
+          : tree_numeric_literal_value(e);
+      if (numeric)
         return rust_numeric_literal(*numeric);
       throw std::runtime_error("internal error: numeric literal '" + e +
                                "' was not validated by the lexer");
