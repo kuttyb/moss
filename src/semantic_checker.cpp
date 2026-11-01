@@ -26650,7 +26650,9 @@ class Checker {
   }
 
   std::optional<EstExpressionCursor> root_expression_cursor(
-      std::string_view source, std::string_view root_slot) const {
+      std::string_view source, std::string_view root_slot,
+      std::string_view child_role = {},
+      std::uint32_t child_ordinal = 0) const {
     if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     std::optional<std::uint32_t> expected_argument;
@@ -26671,6 +26673,13 @@ class Checker {
       expected_argument = expression_role_index(root_slot,
           {"message-argument:", "echo-argument:"});
     }
+    if (!expected && (child_role.rfind("argument:", 0) == 0 ||
+                      child_role.rfind("call-argument:", 0) == 0)) {
+      expected = est::ExprSlot::Argument;
+      expected_argument = expression_role_index(child_role,
+          {"argument:", "call-argument:"});
+      if (!expected_argument) expected_argument = child_ordinal;
+    }
     auto select = [&](const std::vector<est::Handle>& handles,
                       std::optional<est::ExprSlot> slot,
                       std::optional<std::uint32_t> argument)
@@ -26686,7 +26695,16 @@ class Checker {
     };
     if (expected)
       if (auto found = select(statement.expression_handles, expected,
-                              expected_argument)) return found;
+                              expected_argument)) {
+        if (*expected == est::ExprSlot::Argument) {
+          const auto* arena = expression_arena(found->arena_index);
+          if (arena)
+            if (const auto* named = std::get_if<est::NamedArgument>(
+                    &arena->at(found->expr)))
+              found->expr = named->value;
+        }
+        return found;
+      }
     if (current_check_result_function_ &&
         current_check_result_function_->result_expression)
       return select(current_check_result_function_->expression_handles,
@@ -26708,7 +26726,8 @@ class Checker {
       return EstExpressionCursor{parent.arena_index, *child,
                                  std::string(source)};
     }
-    return root_expression_cursor(source, root_slot);
+    return root_expression_cursor(source, root_slot, child_role,
+                                 child_ordinal);
   }
 
   void record_active_expression_facts(est::SemanticFacts facts) {

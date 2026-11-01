@@ -1,8 +1,8 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `9bff2ee0`; one FileIO pipeline-classification
-  simplification is uncommitted. No full suite, corpus pass, or performance
+  latest pushed commit is `6108ed2d`; retained argument-node routing is
+  uncommitted. No full suite, corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Latest focused improvement removes a redundant `functional_pipeline_from_est`
   parse from `fileio_result_type`: the EST member-call projection already
@@ -23,6 +23,14 @@
   in a fresh build of pushed parent `9bff2ee0`, so the observed failure
   predates the latest FileIO pipeline change. Full suite status is FAIL;
   the run did not reach later gates. No repeated full-suite run yet.
+- Added a structural root-cursor route for recursive `argument:<n>` and
+  `call-argument:<n>` checking: it selects the matching retained
+  `ExprSlot::Argument` handle by role/index and unwraps a NamedArgument
+  node to its value ID. Functional basics and specialized-call/call-edge
+  fixtures pass default/shadow. Focused counters did not move
+  (functional-basics checker=101 parses, text-cache=14,766;
+  specialized-call checker=44, text-cache=24,405), so this is a node
+  routing foundation, not measured K2 progress yet.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
   Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses
