@@ -15258,3 +15258,35 @@ Map-indexed and other ownership-sensitive method receivers remain unverified.
 No final suites, bulk corpus counts, or performance run yet. Next: continue
 narrow checked-node paths with byte-parity targets, then execute full C2 gates
 when the residual count work is near completion.
+# 27.5.4 current handover — C2 emitter tree migration
+
+Branch `phase27-5-4-work`, based on C1 tag `phase27-5-4-c1` (`4a04ad40`).
+Latest pushed commit before this working slice: `ca03f1ab`. The current slice
+has uncommitted changes in `src/native_generator.cpp`,
+`src/functional_source_pipeline.hpp`, `src/est/expression_tree.cpp`,
+`docs/phase27/27_5_4_REPORT.md`, and this file. No full suite, bulk consumer
+measurement, performance run, or C2 Agent 2 audit has run since the previous
+checkpoint.
+
+This slice adds node-based functional pipeline descriptors with preserved
+ExprIds; parsed compatibility pipelines own their arena, fixing an ASan
+stack-use-after-return in the map-call argument repro. Eager map lowering uses
+the stage node type before callable-result inference. Targeted default and `-O`
+emission, Rust compile and runtime passed for `assoc-grouped.moss` (`3`),
+`swarm_049b_fast_debug_map_call_argument.moss` (`4`), and the trait-parameter
+sample (`10`). `phase21_peer_effects.moss` compiles and its output matches C1
+after using checked exceptional alternatives for missing direct raise-value
+type facts. The earlier trait and raise failures were new relative to C1 and
+are fixed. Fast Debug for the map-call repro fails identically on C1 with a
+missing checked expression node; baseline debt. The incomplete-index
+adversarial probe still fails closed for a missing handle on the candidate,
+while C1 emits it; it is not a complete fixture.
+
+Latest paired bulk counts remain the measurement at `ca03f1ab`, not this tree:
+candidate 5,929,515 text lookups / 3,534,743 reparses versus c96 15,167,953 /
+9,750,215. Candidate standalone per-file emission failures were 1,427 vs
+1,406 parent; some are package-context artifacts. Rerun identical paired
+counts after C2 consumer work is near completion. Next inspect other remaining
+emitter parse sites and ownership-safe node lowering; then run the paired
+measurement, fix all new failures, execute final gates once, request Agent 2
+audit, and merge/tag only on GO. Do not run performance before near-completion.

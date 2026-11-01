@@ -2106,14 +2106,118 @@ class Generator {
     est::record_consumer_reparse(
         est::ConsumerReparseSite::NativeFunctionalPipeline);
 #endif
-    est::Arena temporary;
+    auto temporary = std::make_shared<est::Arena>();
     try {
-      const auto root = est::parse_expression(temporary, expression);
-      return est::functional_pipeline(temporary, root, expression,
-                                      resolve_stage);
+      const auto root = est::parse_expression(*temporary, expression);
+      auto parsed = est::functional_pipeline(*temporary, root, expression,
+                                             resolve_stage);
+      if (parsed) {
+        parsed->expression_arena = temporary.get();
+        parsed->owned_expression_arena = std::move(temporary);
+        for (auto& stage : parsed->stages)
+          stage.expression_arena = parsed->expression_arena;
+      }
+      return parsed;
     } catch (const std::invalid_argument&) {
       return std::nullopt;
     }
+  }
+
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_node(
+      const EmitterExpr& expression,
+      const std::function<std::optional<FunctionalNodeKind>(
+          std::string_view)>& resolve_stage) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* pipeline = std::get_if<est::Pipeline>(
+        &expression.arena->at(root));
+    if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+    ParsedFunctionalPipeline parsed;
+    parsed.expression_arena = expression.arena;
+    parsed.expression_source = expression.source;
+    parsed.source_node = pipeline->input;
+    parsed.source = expression.child(pipeline->input).text();
+    if (parsed.source.empty()) return std::nullopt;
+    for (const auto stage_id : pipeline->stages) {
+      const auto stage_root = est::unparenthesized(*expression.arena, stage_id);
+      const auto stage_node = expression.child(stage_root);
+      ParsedFunctionalStage stage;
+      stage.raw = stage_node.text();
+      stage.expression_node = stage_root;
+      stage.expression_arena = expression.arena;
+      stage.expression_source = expression.source;
+      std::string_view stage_name;
+      if (const auto* call = std::get_if<est::Call>(
+              &expression.arena->at(stage_root))) {
+        const auto callee_root = est::unparenthesized(
+            *expression.arena, call->callee);
+        const auto* callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_root));
+        if (!callee) return std::nullopt;
+        stage_name = callee->name;
+        stage.argument_nodes = call->arguments;
+        for (const auto argument : call->arguments)
+          stage.arguments.push_back(expression.child(argument).text());
+      } else {
+        const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(stage_root));
+        if (!identifier) return std::nullopt;
+        stage_name = identifier->name;
+      }
+      const auto kind = resolve_stage(stage_name);
+      if (!kind) return std::nullopt;
+      stage.kind = *kind;
+      parsed.stages.push_back(std::move(stage));
+    }
+    return parsed;
+  }
+
+  std::optional<string> generated_functional_pipeline_type_from_node(
+      const ParsedFunctionalPipeline& pipeline,
+      const std::unordered_map<string,string>* types) const {
+    const EmitterExpr source{pipeline.expression_arena, pipeline.source_node,
+                             pipeline.expression_source};
+    auto source_type = generated_expr_type(source, types);
+    auto element = source_type
+        ? generated_functional_element_type(*source_type) : std::nullopt;
+    if (!element) return std::nullopt;
+    string current = *element;
+    string output = "vector[" + current + "]";
+    for (const auto& stage : pipeline.stages) {
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          if (stage.arguments.size() != 1) return std::nullopt;
+          auto result = generated_callable_result(stage.arguments.front(),
+              {current}, types, stage, 0);
+          if (!result) return std::nullopt;
+          current = *result;
+          output = "vector[" + current + "]";
+          break;
+        }
+        case FunctionalNodeKind::Filter:
+          output = "vector[" + current + "]";
+          break;
+        case FunctionalNodeKind::Reduce:
+          if (stage.argument_nodes.empty()) return std::nullopt;
+          output = generated_expr_type(EmitterExpr{pipeline.expression_arena,
+              stage.argument_nodes.front(), pipeline.expression_source}, types)
+              .value_or("");
+          break;
+        case FunctionalNodeKind::Sum:
+          output = current;
+          break;
+        case FunctionalNodeKind::Count:
+          output = "int";
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All:
+          output = "bool";
+          break;
+        case FunctionalNodeKind::Source:
+          return std::nullopt;
+      }
+    }
+    return output.empty() ? std::nullopt : std::optional<string>(output);
   }
 
   EmitterExpr checked_expression_ref(std::string source, est::ExprSlot slot,
@@ -2497,8 +2601,13 @@ class Generator {
     const auto checker_context = !codegen_active_specialization_key_.empty()
         ? "specialization:" + codegen_active_specialization_key_
         : codegen_body_context_;
-    const auto* facts = expression.arena->facts(
-        expression.id, checker_context);
+    const auto* facts = expression.arena->facts(expression.id,
+                                                 checker_context);
+    if (!facts && root != expression.id)
+      facts = expression.arena->facts(root, checker_context);
+    if (!facts) facts = expression.arena->facts(expression.id, "");
+    if (!facts && root != expression.id)
+      facts = expression.arena->facts(root, "");
     const bool has_fact = facts && facts->type;
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
@@ -2533,6 +2642,10 @@ class Generator {
         if (found != types->end()) return canonical_type_name(found->second);
       }
       return legacy_type();
+    }
+    if (std::holds_alternative<est::Placeholder>(node) && types) {
+      auto found = types->find("_");
+      if (found != types->end()) return canonical_type_name(found->second);
     }
     if (const auto* literal = std::get_if<est::Literal>(&node)) {
       switch (literal->literal_class) {
@@ -2715,6 +2828,10 @@ class Generator {
       return legacy_type();
     }
     if (std::holds_alternative<est::Pipeline>(node)) {
+      if (auto id = checked_functional_pipeline_id(expression))
+        if (const auto* plan = planned_functional_pipeline(*id);
+            plan && !plan->output_type.empty())
+          return canonical_type_name(plan->output_type);
       const auto span = expression.arena->span(root);
       const string context = codegen_body_context_;
       const FunctionalPipeline* selected = nullptr;
@@ -2726,6 +2843,16 @@ class Generator {
       }
       if (selected && !selected->output_type.empty())
         return canonical_type_name(selected->output_type);
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      if (auto parsed = functional_pipeline_from_node(expression, resolve_stage))
+        if (auto inferred = generated_functional_pipeline_type_from_node(
+                *parsed, types))
+          return inferred;
     }
     if (const auto* collection = std::get_if<est::Collection>(&node);
         collection && collection->delimiter == '[' &&
@@ -3147,6 +3274,43 @@ class Generator {
       throw std::runtime_error(
           "internal error: checked functional_pipeline_id has no IR plan");
     return &*planned;
+  }
+
+  std::optional<size_t> checked_functional_pipeline_id(
+      const EmitterExpr& expression) const {
+    if (!phase21_codegen_statement_ || !expression.arena)
+      return std::nullopt;
+    std::optional<std::uint32_t> arena_index;
+    for (std::uint32_t index = 0; index < p_.expression_arenas.size(); ++index)
+      if (p_.expression_arenas[index].get() == expression.arena) {
+        arena_index = index;
+        break;
+      }
+    if (!arena_index) return std::nullopt;
+    vector<string> contexts{codegen_body_context_};
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    contexts.push_back("");
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    std::optional<size_t> selected;
+    for (const auto& context : contexts) {
+      const auto found = phase21_codegen_statement_
+          ->functional_expression_plans_by_context.find(context);
+      if (found == phase21_codegen_statement_
+              ->functional_expression_plans_by_context.end()) continue;
+      for (const auto& plan : found->second) {
+        if (plan.arena_index != *arena_index ||
+            (plan.expression != expression.id && plan.expression != root))
+          continue;
+        if (selected && *selected != plan.pipeline_id)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline node");
+        selected = plan.pipeline_id;
+      }
+      if (selected) return selected;
+    }
+    return std::nullopt;
   }
 
   const FunctionalTraversalGroup* functional_traversal_group(
@@ -3693,9 +3857,20 @@ class Generator {
         string mapped = render_functional_callable(
             stage.arguments.front(), {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
-        auto result = planned
+        std::optional<string> result = planned
             ? checked_functional_result_element(*planned, pipeline_stage + 1)
             : std::nullopt;
+        if (!result && stage.expression_arena &&
+            stage.expression_node != UINT32_MAX) {
+          auto stage_type = generated_expr_type(EmitterExpr{
+              stage.expression_arena, stage.expression_node,
+              stage.expression_source}, types);
+          if (stage_type)
+            result = generated_functional_element_type(*stage_type);
+        }
+        if (!result)
+          result = generated_callable_result(stage.arguments.front(),
+              {current_type}, types, stage, 0);
         if (!result)
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked eager map output type");
@@ -4429,6 +4604,8 @@ class Generator {
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked member-call target");
         if (target.empty() && !codegen_active_specialization_key_.empty()) {
+          const auto receiver_type = generated_expr_type(
+              expression.child(member->base), types);
           const Method* selected_method = nullptr;
           const ObjectType* selected_owner = nullptr;
           for (const auto& function_entry : functions_) {
@@ -4443,6 +4620,9 @@ class Generator {
                     *requirement.selected_callable_id);
                 if (!callable || callable->kind != "method") continue;
                 for (const auto& object_entry : objects_) {
+                  if (receiver_type && canonical_type_name(*receiver_type) !=
+                      canonical_type_name(object_entry.second->name))
+                    continue;
                   if (!p_.type_context) continue;
                   const auto declaration = p_.type_context->find(
                       object_entry.second->name);
@@ -4895,12 +5075,15 @@ class Generator {
       return std::nullopt;
     };
     if (std::holds_alternative<est::Pipeline>(expression.arena->at(root))) {
-      auto pipeline = est::functional_pipeline(*expression.arena, root,
-                                                expression.source, resolve_stage);
-      if (pipeline)
+      auto pipeline = functional_pipeline_from_node(expression, resolve_stage);
+      if (pipeline) {
+        if (functional_pipeline_id == 0)
+          functional_pipeline_id = checked_functional_pipeline_id(expression)
+              .value_or(0);
         if (auto rendered = functional_expr(*pipeline, d, locals, types,
                                              functional_pipeline_id))
           return *rendered;
+      }
       if (auto rendered = checked_callable_pipeline_expr(
               expression, d, locals, types))
         return *rendered;
@@ -7622,6 +7805,23 @@ class Generator {
             const EmitterExpr raise_value = checked_expression_ref(
                 s.a, est::ExprSlot::RaisedValue);
             auto type = generated_expr_type(raise_value, &types);
+            if (!type && !s.exceptional_alternatives.empty()) {
+              std::optional<string> checked_error_type;
+              bool one_type = true;
+              for (const auto& identity : s.exceptional_alternatives) {
+                if (identity.kind != RaisedIdentityKind::EnumVariant) {
+                  one_type = false;
+                  break;
+                }
+                const string candidate = canonical_type_name(identity.type);
+                if (checked_error_type && *checked_error_type != candidate) {
+                  one_type = false;
+                  break;
+                }
+                checked_error_type = candidate;
+              }
+              if (one_type) type = checked_error_type;
+            }
             if (!type)
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
@@ -8456,6 +8656,8 @@ class Generator {
               !codegen_active_specialization_key_.empty())
             checked_target_fact = s.checked_call_targets_by_context.find(
                 "specialization:" + codegen_active_specialization_key_);
+          if (checked_target_fact == s.checked_call_targets_by_context.end())
+            checked_target_fact = s.checked_call_targets_by_context.find("");
           const string checked_target =
               checked_target_fact == s.checked_call_targets_by_context.end()
                   ? string() : checked_target_fact->second;

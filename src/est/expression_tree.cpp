@@ -122,6 +122,7 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
     ParsedFunctionalStage parsed_stage;
     parsed_stage.kind = *kind;
     parsed_stage.raw = std::move(*raw);
+    parsed_stage.expression_node = stage_id;
     parsed_stage.argument_nodes = arguments;
     parsed_stage.expression_arena = &arena;
     parsed_stage.expression_source = std::string(source);

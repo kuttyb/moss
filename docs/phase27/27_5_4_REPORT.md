@@ -294,3 +294,33 @@ Paired counts per command are parent 2,607 lookups / 1,259 expression
 reparses and candidate 855 / 194 (−67% / −85%) in both modes. Three-engine
 and the four-class perturb/drop matrix pass. Map-indexed or other
 ownership-sensitive method receivers are not covered by this narrow path.
+
+## C2 progress — nested pipeline nodes and checked exceptional identity
+
+The emitter now builds pure functional pipeline descriptors directly from
+retained `Pipeline`/`Call` nodes, preserving stage ExprIds. A temporary parsed
+pipeline owns its arena so callback nodes cannot dangle after returning from
+the compatibility parser. Eager map lowering consults the retained stage type
+before callable-result fallback. This fixes the grouped `map`/`filter` lowering
+fixture and the checked pipeline paths in GraphKit without changing generated
+program output. `assoc-grouped.moss` default and `-O` Rust compiles and prints
+`3`.
+
+Two targeted C2 regressions were repaired. A raise value whose direct EST type
+fact is unavailable now uses the type identity in the checker's exceptional
+alternatives (when those alternatives name one enum type); `phase21_peer_effects`
+compiles and matches its expected output. Specialized member selection filters
+checked member requirements against the checked receiver type, resolving the
+trait-parameter sample (`10`). The initial failures were regressions relative to
+the C1 binary. `swarm_049b_fast_debug_map_call_argument` also emits, compiles,
+and prints `4`; its Fast Debug missing checked-expression-node error reproduces
+on C1 and is baseline debt. The incomplete-index adversarial probe continues to
+fail closed on a missing checked handle, while C1 emits it; it is an incomplete
+probe rather than a passing source fixture.
+
+The prior paired corpus counts are from commit `ca03f1ab`, before this node
+pipeline and regression-fix slice: 5,929,515 lookups and 3,534,743 reparses
+candidate versus 15,167,953 and 9,750,215 at c96, with candidate per-file
+emission failures 1,427 vs 1,406. These aggregate counts are stale for the
+current tree and must be rerun once the C2 consumer migration is complete.
+No full suite or performance run has been done for this slice.
