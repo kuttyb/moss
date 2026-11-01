@@ -5059,6 +5059,33 @@ class Generator {
                                                    call->callee);
       if (const auto* callee = std::get_if<est::Identifier>(
               &expression.arena->at(callee_id))) {
+        auto object = objects_.find(callee->name);
+        if (object != objects_.end() && !call->arguments.empty()) {
+          std::unordered_map<string, EmitterExpr> values;
+          bool named = true;
+          for (const auto argument_id : call->arguments) {
+            const auto* argument = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (!argument) { named = false; break; }
+            values[argument->name] = expression.child(argument->value);
+          }
+          if (named) {
+            std::ostringstream rendered;
+            rendered << callee->name << " { ";
+            bool first = true;
+            for (const auto& field : object->second->fields) {
+              const auto value = values.find(field.name);
+              if (value == values.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked object constructor field is missing");
+              if (!first) rendered << ", ";
+              first = false;
+              rendered << rust_identifier(field.name) << ": "
+                       << expr(value->second, d, locals, types);
+            }
+            return rendered.str() + " }";
+          }
+        }
         if (call->arguments.empty() && !functions_.count(callee->name)) {
           if (callee->name == "Map")
             return staged_abi_v10()
@@ -5422,6 +5449,12 @@ class Generator {
                canonical_type_name(*receiver_type) == "RangeBatch"))
             return "(" + expr(member_receiver, d, locals, types) + ").len()";
         }
+        if (member->name == "pop" && call->arguments.empty() &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].pop"))
+          return method_receiver_place(member_receiver, member->name,
+              vector<EmitterExpr>{}, d, locals, types) +
+              ".pop().unwrap_or_else(|| std::process::abort())";
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, "].get") && member->name == "get" &&
             call->arguments.size() == 2) {

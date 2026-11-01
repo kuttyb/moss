@@ -15707,3 +15707,17 @@ passes with this fix isolated; before it, Rust failed on three writes in
 `errors.rs`, `ast.rs`, and `env.rs`. The C2 call-node lowering edits are
 separately saved in `tmp/native-full-current.patch` and will be reapplied after
 this checkpoint.
+
+### C2 checked object constructor and Vector.pop lowering (2026-11-01)
+
+The emitter now lowers named object-constructor `Call` nodes by traversing
+checked `NamedArgument` children and emitting fields in declaration order. It
+also lowers checked `builtin-method:vector[T].pop` calls through the existing
+method receiver-place helper, retaining mutable views and Vector's existing
+empty-pop abort behavior. The focused calculator source
+`examples/swarm/modules/calc_interpreter/src/main.moss` moves from 48,014 text
+lookups / 37,270 reparses to 46,432 / 36,586 per emission. Native package build,
+`margo run`, and `margo debug` pass with matching output. Remaining fallback
+trace for that source is 20 Call nodes, mainly object methods such as
+`Diag.code()` and `Token.value()`; overall corpus target is not met. No full
+suite or perf run has occurred.
