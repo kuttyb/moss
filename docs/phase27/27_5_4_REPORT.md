@@ -132,3 +132,13 @@ for perturbation and drop is fail-closed `MOSS_INTERNAL_INVARIANT`; successful
 Fast Debug/native/`-O` execution or emission is a test failure. Expression
 types, pipeline types, and ownership remain documented known consumer debt.
 Neither full C2 suite nor performance validation has run.
+
+A further four-source paired sample (collections, empty-map context, typed
+string-map indexing, and mini application; default plus `-O`) measured 23,204
+text lookups / 14,138 expression-view reparses on c96 and 12,394 / 7,446 on the
+candidate. The generated Rust is byte-identical on all four. Node lowering for
+empty Map/Set/Queue and Some constructors is active; checked-call wrapper
+selection uses node argument facts. A mini-application parity comparison
+caught an operator-precedence difference for a borrowed object receiver; the
+emitted receiver is now parenthesized and the focused default/`-O` parity
+comparison passes. These remain targeted samples, not the final workload.

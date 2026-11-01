@@ -4124,6 +4124,21 @@ class Generator {
                                                    call->callee);
       if (const auto* callee = std::get_if<est::Identifier>(
               &expression.arena->at(callee_id))) {
+        if (call->arguments.empty() && !functions_.count(callee->name)) {
+          if (callee->name == "Map")
+            return staged_abi_v10()
+                ? "std::default::Default::default()"
+                : "std::collections::HashMap::new()";
+          if (callee->name == "Set" && staged_abi_v10())
+            return "moss_runtime::MossSet::new()";
+          if (callee->name == "Queue")
+            return "std::collections::VecDeque::new()";
+        }
+        if (callee->name == "Some" && call->arguments.size() == 1 &&
+            !std::holds_alternative<est::NamedArgument>(
+                expression.arena->at(call->arguments.front())))
+          return "Some(" + expr(expression.child(call->arguments.front()),
+                                  d, locals, types) + ")";
         const string checker_context =
             !codegen_active_specialization_key_.empty()
                 ? "specialization:" + codegen_active_specialization_key_
@@ -4208,8 +4223,12 @@ class Generator {
           }
           if (simple_arguments) {
             const auto receiver_expression = expression.child(member->base);
+            string rendered_receiver =
+                expr(receiver_expression, d, locals, types);
+            if (starts_with(rendered_receiver, "*"))
+              rendered_receiver = "(" + rendered_receiver + ")";
             std::ostringstream rendered;
-            rendered << expr(receiver_expression, d, locals, types) << "."
+            rendered << rendered_receiver << "."
                      << rust_identifier(viewed_method_name(
                             receiver_expression, method_name, argument_nodes,
                             d, locals, types)) << "(";

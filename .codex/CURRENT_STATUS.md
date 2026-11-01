@@ -15041,3 +15041,18 @@ checked source calls. A temporary accepted `to_int` fixture verified the
 numeric runtime helper is still emitted, generated Rust compiles, runtime output
 is `1`, and its Rust bytes match the pinned c96 parent. The temporary fixture
 lives under `tmp/` and is not registered. Full suite/perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — empty constructors and checked-call wrapper parity (2026-11-01)
+
+The retained Call path directly lowers empty `Map()`, staged `Set()`, `Queue()`,
+and `Some(value)` constructors. The node-based specialized-call wrapper path
+also now groups borrowed receiver dereferences before method selection; a
+focused diff first caught and fixed the `*job.cost()` precedence regression in
+`examples/mini_application.moss`.
+
+Four-source paired counters (collections, empty-map context, typed string map
+index, and mini application; default plus `-O`) are parent 23,204 text lookups
+/ 14,138 expression-view reparses versus candidate 12,394 / 7,446. Generated
+Rust is byte-identical for all four in both modes. The three-engine gate passes.
+The to_int helper-discovery probe also remains accepted, compiles, and runs with
+identical generated Rust. Full C2 suites and performance remain pending.
