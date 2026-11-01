@@ -2656,6 +2656,37 @@ class Generator {
         auto found = functions_.find(target.substr(3));
         if (found != functions_.end()) function = found->second;
       }
+      vector<string> checked_edge_targets;
+      if (!function && callee) {
+        checked_edge_targets = checked_call_edge_targets(
+            codegen_body_context_,
+            static_cast<int>(expression.arena->span(root).line));
+        const string checked_name = "fn:" + callee->name;
+        if (std::find(checked_edge_targets.begin(), checked_edge_targets.end(),
+                      checked_name) != checked_edge_targets.end()) {
+          auto found = functions_.find(callee->name);
+          if (found != functions_.end()) function = found->second;
+        }
+      }
+      CheckedCallEdgeSpecialization checked_edge;
+      if (!function && callee) {
+        auto found = functions_.find(callee->name);
+        if (found != functions_.end() && found->second->static_dispatch) {
+          checked_edge = checked_call_edge_specialization(
+              p_, codegen_body_context_, found->second->name,
+              static_cast<int>(expression.arena->span(root).line));
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_EST_COVERAGE_STATS"))
+            std::cerr << "MOSS_EST_CALL_EDGE_TYPE|" << callee->name << "|"
+                      << codegen_body_context_ << "|"
+                      << expression.arena->span(root).line << "|"
+                      << static_cast<unsigned>(checked_edge.kind) << "|"
+                      << checked_edge.candidates.size() << '\n';
+#endif
+          if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
+            function = found->second;
+        }
+      }
       if (!function) {
         if (callee->name == "range") return string("range[int]");
         if (callee->name == "Some" && call->arguments.size() == 1) {
@@ -2672,6 +2703,19 @@ class Generator {
             });
         if (specialization != function->specializations.end())
           return specialization->return_type;
+      }
+      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Unique &&
+          checked_edge.unique)
+        return checked_edge.unique->return_type;
+      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
+        std::optional<string> common_result;
+        for (const auto* candidate : checked_edge.candidates) {
+          if (!candidate) continue;
+          const string result = canonical_type_name(candidate->return_type);
+          if (!common_result) common_result = result;
+          else if (*common_result != result) return legacy_type();
+        }
+        if (common_result) return common_result;
       }
       if (function->return_type &&
           !contains_internal_placeholder(*function->return_type))
@@ -4187,12 +4231,17 @@ class Generator {
                 ? "specialization:" + codegen_active_specialization_key_
                 : codegen_body_context_;
         const auto* facts = expression.arena->facts(root, checker_context);
-        const string checked_target = facts ? facts->resolved_target : string();
-        if ((moss_test_drop_fact("call-targets") ||
-             moss_test_perturb_fact("call-targets")) &&
-            functions_.count(callee->name) &&
-            (checked_target.empty() ||
-             checked_target == "fn:__moss_test_perturbed_call_target__"))
+        string checked_target = facts ? facts->resolved_target : string();
+        if (checked_target.empty()) {
+          const auto targets = checked_call_edge_targets(
+              codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+          if (targets.size() == 1) checked_target = targets.front();
+        }
+        const bool call_target_hooked =
+            moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets");
+        if (call_target_hooked && functions_.count(callee->name))
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing or contradictory checked call target");
         const Function* function = nullptr;
@@ -4451,6 +4500,18 @@ class Generator {
             &expression.arena->at(root))) {
       const auto type_id = est::unparenthesized(*expression.arena,
                                                   constructor->type);
+      if (const auto* builtin = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id));
+          builtin && constructor->arguments.empty()) {
+        if (builtin->name == "Map")
+          return staged_abi_v10()
+              ? "std::default::Default::default()"
+              : "std::collections::HashMap::new()";
+        if (builtin->name == "Set" && staged_abi_v10())
+          return "moss_runtime::MossSet::new()";
+        if (builtin->name == "Queue")
+          return "std::collections::VecDeque::new()";
+      }
       if (const auto* case_member = std::get_if<est::Member>(
               &expression.arena->at(type_id))) {
         const auto enum_id = est::unparenthesized(*expression.arena,
@@ -4632,6 +4693,34 @@ class Generator {
                                            functional_pipeline_id))
         return *rendered;
     }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_EST_COVERAGE_STATS")) {
+      const char* kind = std::holds_alternative<est::NamedArgument>(
+                             expression.arena->at(root)) ? "named_argument"
+          : std::holds_alternative<est::Placeholder>(
+                expression.arena->at(root)) ? "placeholder"
+          : std::holds_alternative<est::Tuple>(expression.arena->at(root))
+                ? "tuple"
+          : std::holds_alternative<est::Collection>(expression.arena->at(root))
+                ? "collection"
+          : std::holds_alternative<est::Constructor>(expression.arena->at(root))
+                ? "constructor"
+          : std::holds_alternative<est::Member>(expression.arena->at(root))
+                ? "member"
+          : std::holds_alternative<est::Call>(expression.arena->at(root))
+                ? "call"
+          : std::holds_alternative<est::Pipeline>(expression.arena->at(root))
+                ? "pipeline"
+          : std::holds_alternative<est::Index>(expression.arena->at(root))
+                ? "index"
+          : std::holds_alternative<est::Binary>(expression.arena->at(root))
+                ? "binary"
+          : std::holds_alternative<est::Unary>(expression.arena->at(root))
+                ? "unary" : "other";
+      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind
+                << "|" << expression.text() << '\n';
+    }
+#endif
     return expr(expression.text(), d, locals, types, functional_pipeline_id,
                 message_argument_plans);
   }
@@ -8633,6 +8722,25 @@ class Generator {
   const Handler* find_handler(const Domain& d, const string& name) const {
     for (const auto& h : d.handlers) if (h.name == name) return &h;
     return nullptr;
+  }
+
+  vector<string> checked_call_edge_targets(const string& context,
+                                           int line) const {
+    vector<string> sources{context};
+    if (context.rfind("fn:", 0) == 0) {
+      const auto specialization = context.find('<');
+      if (specialization != string::npos)
+        sources.push_back(context.substr(0, specialization));
+    }
+    vector<string> targets;
+    for (const auto& edge : p_.semantic_call_edges) {
+      if (edge.line != line || edge.invocation_kind != "ordinary_call" ||
+          std::find(sources.begin(), sources.end(), edge.source) == sources.end())
+        continue;
+      if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
+        targets.push_back(edge.target);
+    }
+    return targets;
   }
 
 };

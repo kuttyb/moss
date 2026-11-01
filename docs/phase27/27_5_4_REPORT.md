@@ -198,3 +198,20 @@ lookups and 532 native expression-view reparses. Since c96's existing
 instrumentation omitted these same direct parser sites, this is not a strict
 paired delta. C2 full suites, corpus measurement and performance gates remain
 pending.
+
+## C2 progress — emitter consumes checked call edges on nested nodes
+
+When nested call nodes lacked a retained resolved-target fact, the emitter now
+uses the checker's `SemanticCallEdge` for the active body context and source
+line. The emitter does not infer the target from runtime or consumer-computed
+argument types. Static specialization result types are taken from the checked
+specialization candidates when uniquely available. This also restores the
+parent's wrapping integer lowering in `specialized_call_facts.moss`.
+
+For the same fixture and default emission command, the c96 parent rebuilt with
+matching parser-site instrumentation measured 3,387 text-node lookups and
+2,685 expression reparses; the candidate measured 777 and 728, respectively
+(−77% and −73%). Generated Rust is byte-identical, rustc compilation and
+runtime succeed (`2`, `2`), and three-engine output matches. The four-class
+perturb/drop matrix passes. This is a one-fixture sample; bulk counts and full
+C2 gates remain pending.

@@ -15152,3 +15152,24 @@ Next: migrate a real emitter path from EmitterExpr rather than expression text,
 then construct a parent test build with equivalent counters for paired reports.
 Run the required default/shadow full gates and Agent 2 only once after C2 work
 stabilizes.
+
+### Phase 27.5.4 C2 checkpoint — nested checked call edges avoid emitter fallback (2026-11-01)
+
+Uncommitted C2 slice now consumes a unique checker-recorded `SemanticCallEdge`
+for nested function calls when the EST node's resolved-target fact is absent;
+the call is matched by body context and source line. Static specialization
+result types use the checked edge candidate when uniquely available. The direct
+node path restores integer wrapping lowering for
+`tests/phase27/est/specialized_call_facts.moss`, correcting a generated Rust
+text difference found during spot-check. Rust is byte-identical to c96,
+compiles, and runs with `2` / `2`. The three-engine check and C1 four-class
+perturb/drop matrix pass.
+
+Like-for-like default counts for that one source, using a locally rebuilt c96
+parent with equivalent instrumentation for borrowed-view and named-argument
+parser sites: parent 3,387 text-node lookups / 2,685 reparses; candidate 777 /
+728 (−77% / −73%). Candidate's test-only node-fallback diagnostic reports the
+remaining shapes. This does not substitute for the required corpus/examples/
+packages measurement. Full suites and performance remain unrun by design until
+C2 is near completion. The uncommitted code slice is ready for a checkpoint
+commit/push after final targeted verification.
