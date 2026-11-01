@@ -1,7 +1,8 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `e09a6b0d`; the FileIO cursor routing is uncommitted. No full suite,
+  latest pushed commit is `d2eb491f`; current inference projections are
+  uncommitted. No full suite,
   corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
@@ -57,10 +58,19 @@
   15,160 lookups / 121 checker reparses; the FileIO fixture measures 63,576 /
   142, with no prior same-source counter for comparison. This is a structural
   change only; no aggregate K2 delta is claimed.
+- Fact inference now projects identifier names, literal classes, signed integer
+  literal classification, empty typed vectors, and FileIO open roots directly
+  from the active ExprId. It also routes FileIO result typing and recursive
+  binary/unary/index/vector/call children by node role. Focused regex/pipeline,
+  optimizer three-engine, For, match-copy, and FileIO fixtures pass. Current
+  text-cache counts: `functional_basics` 14,744 (15,160 at `d2eb491f`, -416);
+  `specialized_call_facts` 24,405 (24,835 at `d2eb491f`, -430). Checker parse
+  counts remain 121 and 44 respectively; this lookup progress does not meet the
+  separate zero-reparse K2 target.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
-  hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
+  hit and miss. Focused `functional_basics.moss` now has 14,744 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
-  `specialized_call_facts.moss` is 24,835 cache lookups and 44 reparses (body
+  `specialized_call_facts.moss` is 24,405 cache lookups and 44 reparses (body
   2, view 42). Focused prior baseline was 16,593 and 25,118 cache lookups
   respectively; counters reflect prior routing work, not the latest predicate
   reorder. Parser and text lookup targets remain zero.

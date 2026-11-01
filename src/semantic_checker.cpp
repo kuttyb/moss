@@ -10453,22 +10453,29 @@ class Checker {
     return h;
   }
 
-  static std::optional<string> obvious_expr_type(const string& expression,
-                                                  const TypeEnv& env) {
+  std::optional<string> obvious_expr_type(const string& expression,
+                                           const TypeEnv& env) const {
     string e = trim(expression);
-    if (tree_identifier_named(e, "None")) return "_none";
-    const auto literal = tree_literal_class(e);
+    const bool checked = checked_inference_cursor_depth_ != 0;
+    auto identifier = checked ? checked_expression_identifier_name(e)
+                              : tree_identifier_name(e);
+    if (identifier && *identifier == "None") return "_none";
+    const auto literal = checked ? checked_expression_literal_class(e)
+                                 : tree_literal_class(e);
     if (literal == moss::est::LiteralClass::Boolean) return "bool";
     if (literal == moss::est::LiteralClass::String) return "string";
     if (literal == moss::est::LiteralClass::Character) return "char";
-    auto identifier = tree_identifier_name(e);
-    if (!identifier && tree_placeholder_expression(e)) identifier = "_";
+    if (!identifier && (checked ? checked_expression_placeholder(e)
+                                : tree_placeholder_expression(e)))
+      identifier = "_";
     if (identifier) {
       auto local = env.find(*identifier);
       if (local != env.end() && local->second && local->second->name != "_value")
         return local->second->to_canonical_string();
     }
-    if (tree_decimal_integer_literal(e, true, false)) return "int";
+    if (checked ? checked_expression_decimal_integer(e, true, false)
+                : tree_decimal_integer_literal(e, true, false))
+      return "int";
     if (literal == moss::est::LiteralClass::Float) return "float";
     return std::nullopt;
   }
@@ -12065,7 +12072,8 @@ class Checker {
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
-    if (tree_plain_identifier(e)) {
+    if (checked_node ? checked_expression_identifier(e)
+                     : tree_plain_identifier(e)) {
       auto fn_it = functions_.find(e);
       if (fn_it != functions_.end() && fn_it->second) {
         const string& cid = !fn_it->second->semantic_callable_id.empty()
@@ -12074,14 +12082,19 @@ class Checker {
         return InferredExpr{nullptr, "callable:" + e, cid};
       }
     }
-    if (auto typed_vector = tree_empty_typed_vector_constructor(e))
+    auto typed_vector = checked_node
+        ? checked_expression_empty_typed_vector_constructor(e)
+        : tree_empty_typed_vector_constructor(e);
+    if (typed_vector)
       return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
     if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if (tree_parse_fileio_open(e, open_arguments)) return primitive("FileIO");
+      if ((checked_node ? checked_expression_parse_fileio_open(e, open_arguments)
+                        : tree_parse_fileio_open(e, open_arguments)))
+        return primitive("FileIO");
     }
     if (auto parts = parse_vector(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
@@ -26956,6 +26969,37 @@ class Checker {
       return est::project_member_access(*view, base, member);
     }
     return tree_parse_member_access(source, base, member);
+  }
+
+  std::optional<string> checked_expression_identifier_name(
+      const string& source) const {
+    if (auto view = active_expression_view()) {
+      const auto root = est::unparenthesized(*view->arena, view->root);
+      if (const auto* identifier = std::get_if<est::Identifier>(
+              &view->arena->at(root)))
+        return identifier->name;
+      return std::nullopt;
+    }
+    return tree_identifier_name(source);
+  }
+
+  bool checked_expression_identifier(const string& source) const {
+    return checked_expression_identifier_name(source).has_value();
+  }
+
+  bool checked_expression_decimal_integer(const string& source,
+      bool allow_sign, bool allow_underscores) const {
+    if (auto view = active_expression_view())
+      return est::decimal_integer_literal(*view, allow_sign,
+                                          allow_underscores);
+    return tree_decimal_integer_literal(source, allow_sign, allow_underscores);
+  }
+
+  bool checked_expression_parse_fileio_open(
+      const string& source, vector<string>& arguments) const {
+    if (auto view = active_expression_view())
+      return est::project_fileio_open(*view, arguments);
+    return tree_parse_fileio_open(source, arguments);
   }
 
   bool active_expression_has_call_arguments() const {
