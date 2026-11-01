@@ -2253,6 +2253,37 @@ class Generator {
         " context=" + codegen_body_context_);
   }
 
+  const est::SemanticFacts* checked_expression_facts(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return nullptr;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    vector<string> contexts;
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    if (!codegen_body_context_.empty() &&
+        std::find(contexts.begin(), contexts.end(), codegen_body_context_) ==
+            contexts.end())
+      contexts.push_back(codegen_body_context_);
+    if (phase21_codegen_statement_ &&
+        !phase21_codegen_statement_->source_file.empty()) {
+      const string source_context = "source:" +
+          phase21_codegen_statement_->source_file + ":" +
+          std::to_string(phase21_codegen_statement_->line);
+      if (std::find(contexts.begin(), contexts.end(), source_context) ==
+          contexts.end()) contexts.push_back(source_context);
+    }
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      if (const auto* facts = expression.arena->facts(expression.id, context))
+        return facts;
+      if (root != expression.id)
+        if (const auto* facts = expression.arena->facts(root, context))
+          return facts;
+    }
+    return nullptr;
+  }
+
   std::optional<string> generated_functional_pipeline_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
@@ -2598,16 +2629,7 @@ class Generator {
     if (!expression.arena) return std::nullopt;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const est::Node& node = expression.arena->at(root);
-    const auto checker_context = !codegen_active_specialization_key_.empty()
-        ? "specialization:" + codegen_active_specialization_key_
-        : codegen_body_context_;
-    const auto* facts = expression.arena->facts(expression.id,
-                                                 checker_context);
-    if (!facts && root != expression.id)
-      facts = expression.arena->facts(root, checker_context);
-    if (!facts) facts = expression.arena->facts(expression.id, "");
-    if (!facts && root != expression.id)
-      facts = expression.arena->facts(root, "");
+    const auto* facts = checked_expression_facts(expression);
     const bool has_fact = facts && facts->type;
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
@@ -2758,8 +2780,7 @@ class Generator {
                                                    call->callee);
       const auto* callee = std::get_if<est::Identifier>(
           &expression.arena->at(callee_id));
-      const auto* call_facts = expression.arena->facts(root,
-                                                        checker_context);
+      const auto* call_facts = checked_expression_facts(expression);
       const string target = call_facts ? call_facts->resolved_target : string();
       if (!callee) {
         const auto* member = std::get_if<est::Member>(
@@ -4622,22 +4643,24 @@ class Generator {
                 generated_expr_type(builtin_arguments.front(), types).value_or(""),
                 builtin_arg(0));
         }
-        const string checker_context =
-            !codegen_active_specialization_key_.empty()
-                ? "specialization:" + codegen_active_specialization_key_
-                : codegen_body_context_;
-        const auto* facts = expression.arena->facts(root, checker_context);
+        const auto* facts = checked_expression_facts(expression);
         string checked_target = facts ? facts->resolved_target : string();
+        const auto checked_edges = checked_call_edge_targets(
+            codegen_body_context_,
+            static_cast<int>(expression.arena->span(root).line));
         if (checked_target.empty()) {
-          const auto targets = checked_call_edge_targets(
-              codegen_body_context_,
-              static_cast<int>(expression.arena->span(root).line));
-          if (targets.size() == 1) checked_target = targets.front();
+          if (checked_edges.size() == 1)
+            checked_target = checked_edges.front();
+        } else if (starts_with(checked_target, "builtin:") &&
+                   checked_edges.size() == 1 &&
+                   starts_with(checked_edges.front(), "method:")) {
+          checked_target = checked_edges.front();
         }
         const bool call_target_hooked =
             moss_test_drop_fact("call-targets") ||
             moss_test_perturb_fact("call-targets");
-        if (call_target_hooked && functions_.count(callee->name))
+        if (call_target_hooked &&
+            (functions_.count(callee->name) || !checked_target.empty()))
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing or contradictory checked call target");
         const Function* function = nullptr;
@@ -4663,20 +4686,61 @@ class Generator {
         if (function && simple_arguments)
           return render_known_function_call(*function, function->name,
               arguments, d, locals, types, &argument_nodes);
+        if (starts_with(checked_target, "method:") && simple_arguments) {
+          const auto separator = checked_target.rfind('.');
+          const string owner = separator == string::npos ? string()
+              : checked_target.substr(7, separator - 7);
+          const string method_name = separator == string::npos ? string()
+              : checked_target.substr(separator + 1);
+          const ObjectType* checked_owner = nullptr;
+          const Method* checked_method = nullptr;
+          for (const auto& object : objects_) {
+            if (canonical_type_name(object.second->name) !=
+                canonical_type_name(owner)) continue;
+            const auto found = std::find_if(object.second->methods.begin(),
+                object.second->methods.end(), [&](const Method& method) {
+                  return method.name == method_name;
+                });
+            if (found != object.second->methods.end()) {
+              checked_owner = object.second;
+              checked_method = &*found;
+              break;
+            }
+          }
+          if (!checked_owner || !checked_method)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked sibling method target has no declaration");
+          std::ostringstream rendered;
+          rendered << "self." << rust_identifier(method_name) << "(";
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            if (index) rendered << ", ";
+            rendered << method_call_argument(*checked_method, index,
+                arguments[index], d, locals, types,
+                functional_pipeline_id);
+          }
+          rendered << ")";
+          if (!checked_method->observable_effects.raise_set.empty())
+            return phase21_propagate(rendered.str());
+          return rendered.str();
+        }
         (void)callee;
       } else if (const auto* member = std::get_if<est::Member>(
                      &expression.arena->at(callee_id))) {
-        const string checker_context =
-            !codegen_active_specialization_key_.empty()
-                ? "specialization:" + codegen_active_specialization_key_
-                : codegen_body_context_;
-        const auto* facts = expression.arena->facts(root, checker_context);
+        const auto* facts = checked_expression_facts(expression);
         string target = facts ? facts->resolved_target : string();
         if (target.empty()) {
           const auto targets = checked_call_edge_targets(
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
+        }
+        if ((starts_with(target, "builtin:") ||
+             starts_with(target, "builtin-method:"))) {
+          const auto targets = checked_call_edge_targets(
+              codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+          if (targets.size() == 1 && starts_with(targets.front(), "method:"))
+            target = targets.front();
         }
         const bool call_target_fact_hooked =
             moss_test_drop_fact("call-targets") ||
@@ -4734,6 +4798,36 @@ class Generator {
         if (target == "fn:__moss_test_perturbed_call_target__")
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
+        if (starts_with(target, "builtin-method:map[") &&
+            ends_with(target, "].get") && member->name == "get" &&
+            call->arguments.size() == 2) {
+          const auto receiver = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver, types);
+          const string checked_map_type = target.substr(
+              std::string("builtin-method:").size(),
+              target.size() - std::string("builtin-method:").size() -
+                  std::string(".get").size());
+          if (!receiver_type || canonical_type_name(*receiver_type) !=
+              canonical_type_name(checked_map_type))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.get receiver type disagrees");
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.get lacks a concrete map type");
+          const auto key_node = expression.child(call->arguments[0]);
+          const auto fallback_node = expression.child(call->arguments[1]);
+          const string receiver_value = expr(receiver, d, locals, types);
+          string key = expr(key_node, d, locals, types);
+          if (map_types->first == "string") key = "(" + key + ").as_str()";
+          else key = "&( " + key + " )";
+          string fallback = expr(fallback_node, d, locals, types);
+          if (!copy_type(map_types->second)) fallback = "(" + fallback + ").clone()";
+          return "(" + receiver_value + ").get(" + key + ").cloned().unwrap_or(" +
+              fallback + ")";
+        }
         if (starts_with(target, "method:")) {
           const auto separator = target.rfind('.');
           const string owner = separator == string::npos
@@ -4980,6 +5074,13 @@ class Generator {
           return "moss_runtime::MossSet::new()";
         if (builtin->name == "Queue")
           return "std::collections::VecDeque::new()";
+        if ((builtin->name == "Vector" || builtin->name == "Seq") &&
+            constructor->type_arguments.size() == 1) {
+          const auto element = expression.child(
+              constructor->type_arguments.front());
+          return "std::vec::Vec::<" + rust_type(element.text()) +
+              ">::new()";
+        }
       }
       if (const auto* case_member = std::get_if<est::Member>(
               &expression.arena->at(type_id))) {
@@ -5199,7 +5300,9 @@ class Generator {
                 ? "binary"
           : std::holds_alternative<est::Unary>(expression.arena->at(root))
                 ? "unary" : "other";
-      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind << '\n';
+      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind
+                << "|line=" << expression.arena->span(root).line
+                << "|text=" << expression.text() << '\n';
       if (const auto* pipeline = std::get_if<est::Pipeline>(
               &expression.arena->at(root))) {
         const auto input_type = generated_expr_type(

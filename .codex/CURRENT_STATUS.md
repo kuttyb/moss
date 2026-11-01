@@ -15308,6 +15308,21 @@ counts for map-method after fix are 1,521/1,173 -> 434/338 (lookups/reparses)
 in default; generated Rust is identical to C1 in default and `-O`, and both
 compile and print 2. Rerun full paired counts after further node migrations.
 
+### C2 checked source-context target checkpoint
+
+Uncommitted `src/native_generator.cpp` now looks up checked expression facts
+under the checker-recorded `source:<file>:<line>` context, besides body and
+specialization contexts. This fixed GraphKit's missing-target tree fallback:
+Map.get uses its checked builtin target, unqualified sibling method calls use
+the checked call edge, and typed empty Vector/Seq constructors lower from type
+argument ExprIds. GraphKit fallback trace reduced from 44 call + 30 constructor
+events to zero. Default and optimized Rust both compile and runtime output
+matches C1; only redundant map-place parentheses differ in Rust text. Targeted
+three-engine and four-class fact hook matrix pass. Current GraphKit counts:
+38,180 lookups / 9,580 expression reparses / zero functional reparses. The
+complete paired corpus count predates this slice; do it when node work is
+stable. Full gates and performance are still not run.
+
 ### C2 retained functional-plan node routing
 
 Working tree adds checked pipeline-node resolution by `FunctionalExpressionPlan`

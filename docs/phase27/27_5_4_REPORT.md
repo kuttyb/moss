@@ -357,3 +357,19 @@ GraphKit emit successfully. Mini-application default Rust remains byte-identical
 to C1; its paired counts remain 9,497 -> 3,031 lookups and 6,090 -> 1,610 total
 reparses (native functional reparses 2 -> 0). The full corpus recount remains
 pending until the remaining consumer paths are migrated.
+
+## C2 progress — source-scoped call facts and GraphKit node lowering
+
+Some checker facts are recorded under `source:<file>:<line>` while native
+codegen executes under a method identity. The emitter now consults that exact
+source context, and uses the checked builtin Map.get target and checked
+`SemanticCallEdge` target for sibling method calls. It lowers typed empty
+Vector/Seq constructors from their retained type-argument nodes. GraphKit
+default and `-O` generated Rust compiles and runtime output matches C1; Rust
+text differs only in redundant parentheses around a map place. The GraphKit
+test-build trace went from 44 call + 30 constructor node fallbacks to zero.
+Its current standalone default counters are 38,180 text lookups and 9,580
+native expression-view reparses (functional pipeline reparses zero). Three-
+engine check and the call-target/specialization/join/pattern fact hook matrix
+pass. These are targeted results; full suite and final paired corpus count
+remain pending.
