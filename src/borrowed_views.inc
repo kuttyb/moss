@@ -327,6 +327,13 @@
         if (method.result_expression) {
           auto context = functional_method_context(t, method);
           auto pipeline = method.result_functional_pipeline_ids.find(context);
+          struct ResultBodyContextScope {
+            string& slot;
+            string prior;
+            ResultBodyContextScope(string& target, const string& current)
+                : slot(target), prior(target) { slot = current; }
+            ~ResultBodyContextScope() { slot = std::move(prior); }
+          } result_body_context(codegen_body_context_, context);
           o << "        ";
           if (raises) o << "Ok(";
           o << expr(checked_expression_ref(method.expression_handles,

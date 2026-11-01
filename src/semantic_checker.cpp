@@ -9391,13 +9391,25 @@ class Checker {
             });
         if (!method.return_type && !has_value_return) method.set_return_type("unit");
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
+        method_function.expression_handles = method.expression_handles;
+        method_function.result_expression = method.result_expression;
         method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
-        if (method.result_expression)
+        if (method.result_expression) {
+          struct ResultFunctionScope {
+            const Function*& slot;
+            const Function* prior;
+            ResultFunctionScope(const Function*& target,
+                                const Function& current)
+                : slot(target), prior(target) { slot = &current; }
+            ~ResultFunctionScope() { slot = prior; }
+          } result_function_scope(current_check_result_function_,
+                                  method_function);
           check_expression_root_in_body(method.body,
               method.result_line ? method.result_line : method.line,
               *method.result_expression, final_env, "return-value");
+        }
         if (!method.return_type && has_value_return)
           err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -10364,6 +10376,14 @@ class Checker {
     check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
                            f.result_expression);
     if (f.result_expression) {
+      struct ResultFunctionScope {
+        const Function*& slot;
+        const Function* prior;
+        ResultFunctionScope(const Function*& target,
+                            const Function& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ResultFunctionScope() { slot = prior; }
+      } result_function_scope(current_check_result_function_, f);
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
                                  Effect::Consume);
@@ -24368,7 +24388,8 @@ class Checker {
                            const moss::TypeRef& expected_open_result = nullptr,
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt,
-                           Function** resolved_target = nullptr) {
+                           Function** resolved_target = nullptr,
+                           const Method** resolved_method = nullptr) {
     if (name == "sort" && !functions_.count(name)) {
       check_sort_call(line, args, env);
       return;
@@ -24515,7 +24536,10 @@ class Checker {
         vector<string> argument_types;
         for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         auto method = resolve_method(current_object_->name, name, argument_types);
-        if (method) return;
+        if (method) {
+          if (resolved_method) *resolved_method = method;
+          return;
+        }
       }
       for (const auto& pruned : p_.file_scope_pruned_functions) {
         if (pruned.name != name || pruned.source_file.empty()) continue;
@@ -26385,6 +26409,7 @@ class Checker {
       std::string_view source, std::string_view root_slot) const {
     if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
+    std::optional<std::uint32_t> expected_argument_index;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
@@ -26397,13 +26422,24 @@ class Checker {
       expected = est::ExprSlot::ReturnValue;
     else if (root_slot == "raise-value") expected = est::ExprSlot::RaisedValue;
     else if (root_slot.rfind("message-argument:", 0) == 0 ||
-             root_slot.rfind("echo-argument:", 0) == 0)
+             root_slot.rfind("echo-argument:", 0) == 0 ||
+             root_slot.rfind("call-argument:", 0) == 0) {
       expected = est::ExprSlot::Argument;
+      const auto separator = root_slot.rfind(':');
+      try {
+        expected_argument_index = static_cast<std::uint32_t>(
+            std::stoul(std::string(root_slot.substr(separator + 1))));
+      } catch (...) {
+        expected_argument_index.reset();
+      }
+    }
     const auto source_fingerprint = est::fingerprint(std::string(source));
     auto select = [&](const std::vector<est::Handle>& handles)
         -> std::optional<EstExpressionCursor> {
       for (const auto& handle : handles) {
         if (expected && handle.slot != *expected) continue;
+        if (expected_argument_index &&
+            handle.argument_index != *expected_argument_index) continue;
         if (handle.source_fingerprint != source_fingerprint) continue;
         if (expression_arena(handle.arena_index))
           return EstExpressionCursor{handle.arena_index, handle.expr,
@@ -27864,7 +27900,8 @@ class Checker {
       if (callee == "Reverse" && !functions_.count(callee))
         err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
             "SORT_REVERSE_POSITION");
-      if (callee == "range" && !functions_.count(callee))
+      if (callee == "range" && !functions_.count(callee) &&
+          root_slot != "for-iterable")
         err(line, "range(start, end[, step]) is only valid as a for-loop source, not a value (P25-S-ARCH-017)",
             "RANGE_OUTSIDE_FOR");
       if (callee == "replace" && args.size() == 2) {
@@ -28037,11 +28074,16 @@ class Checker {
           return;
         }
         Function* resolved_target = nullptr;
+        const Method* resolved_method = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
-                            &resolved_target);
+                            &resolved_target, &resolved_method);
         if (resolved_target) {
           retain_active_expression_target(
               resolved_target->semantic_callable_id);
+        } else if (resolved_method) {
+          retain_active_expression_target(
+              "method:" + current_object_->name + "." +
+              resolved_method->name);
         } else if (auto binding = env.find(callee);
                    binding != env.end() && open_generic(binding->second)) {
           retain_active_expression_target("binding:pending:" + callee);
@@ -28353,6 +28395,20 @@ class Checker {
         state.statement_occurrence_ids.erase(&statement);
       }
     } registration{*retained->second, synthetic_return};
+    struct ResultSemanticContextScope {
+      string& slot;
+      string prior;
+      ResultSemanticContextScope(string& target, const Function* function)
+          : slot(target), prior(target) {
+        if (!function) return;
+        const auto separator = function->name.rfind('.');
+        slot = separator == string::npos
+            ? "fn:" + function->name
+            : "method:" + function->name;
+      }
+      ~ResultSemanticContextScope() { slot = std::move(prior); }
+    } result_context_scope(current_semantic_context_,
+                           current_check_result_function_);
     check_expression(line, expression, env, root_slot);
   }
 
@@ -28451,12 +28507,10 @@ class Checker {
     string callee;
     vector<string> arguments;
     if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
-      check_function_call(line, callee, arguments, env);
-      for (size_t index = 0; index < arguments.size(); ++index) {
-        const string slot = "for-range-argument:" + std::to_string(index);
-        check_expression(line, arguments[index], env,
-            root_slot.empty() ? std::string_view{} : std::string_view(slot));
-      }
+      // Keep the retained iterable root active while checking its children so
+      // every nested call (including calls in range bounds) receives facts on
+      // the corresponding tree node.
+      check_expression(line, source, env, root_slot);
     } else {
       check_expression(line, source, env, root_slot);
     }

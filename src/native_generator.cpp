@@ -2729,6 +2729,17 @@ class Generator {
         std::find(contexts.begin(), contexts.end(), codegen_body_context_) ==
             contexts.end())
       contexts.push_back(codegen_body_context_);
+    // Recovery clauses have a lowering subcontext so their locals and
+    // outcome state stay isolated, while the checker records source handler
+    // expression facts on the owning handler context.
+    if (starts_with(codegen_body_context_, "handler:")) {
+      const auto recovery = codegen_body_context_.find(":on_fail:");
+      if (recovery != string::npos) {
+        const string owner = codegen_body_context_.substr(0, recovery);
+        if (std::find(contexts.begin(), contexts.end(), owner) == contexts.end())
+          contexts.push_back(owner);
+      }
+    }
     // Imported checked bodies are projected with their generic function
     // context before the consumer closes a concrete specialization. Preserve
     // those checked targets as a fallback when no per-specialization fact was
@@ -2767,8 +2778,7 @@ class Generator {
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     bool is_statement_root = false;
     for (const auto& handle : statement->expression_handles) {
-      if (handle.slot != est::ExprSlot::Expression ||
-          handle.arena_index >= p_.expression_arenas.size() ||
+      if (handle.arena_index >= p_.expression_arenas.size() ||
           !p_.expression_arenas[handle.arena_index]) continue;
       if (p_.expression_arenas[handle.arena_index].get() == expression.arena &&
           est::unparenthesized(*expression.arena, handle.expr) == root) {
@@ -3701,11 +3711,20 @@ class Generator {
       const auto stage_root = est::unparenthesized(*expression.arena, stage_id);
       const auto* call = std::get_if<est::Call>(
           &expression.arena->at(stage_root));
-      if (!call) return decline("stage-not-call");
-      const auto callee_id = est::unparenthesized(*expression.arena,
-                                                   call->callee);
-      const auto* callee = std::get_if<est::Identifier>(
-          &expression.arena->at(callee_id));
+      const est::Identifier* callee = nullptr;
+      const std::vector<est::ExprId>* explicit_arguments = nullptr;
+      static const std::vector<est::ExprId> no_arguments;
+      if (call) {
+        const auto callee_id = est::unparenthesized(*expression.arena,
+                                                     call->callee);
+        callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_id));
+        explicit_arguments = &call->arguments;
+      } else {
+        callee = std::get_if<est::Identifier>(
+            &expression.arena->at(stage_root));
+        explicit_arguments = &no_arguments;
+      }
       if (!callee) return decline("callee-not-name");
       const auto* call_facts = expression.arena->facts(
           stage_root, !codegen_active_specialization_key_.empty()
@@ -3736,7 +3755,7 @@ class Generator {
       vector<string> argument_types{*current_type};
       if (is_object_view(current_node, domain, locals, types))
         return decline("input-view");
-      for (const auto argument_id : call->arguments) {
+      for (const auto argument_id : *explicit_arguments) {
         if (std::holds_alternative<est::NamedArgument>(
                 expression.arena->at(argument_id))) return decline("named-arg");
         auto argument = expression.child(argument_id);
@@ -5640,6 +5659,19 @@ class Generator {
         if (function && simple_arguments)
           return render_known_function_call(*function, function->name,
               arguments, d, locals, types, &argument_nodes);
+        // The checker retains the legacy `return(...)` spelling produced by
+        // the formatter as a builtin-tagged call. Preserve the emitter's
+        // established Rust projection for this already-accepted form.
+        if (checked_target == "builtin:return" && simple_arguments) {
+          std::ostringstream rendered;
+          rendered << "self.return(";
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            if (index) rendered << ", ";
+            rendered << expr(argument_nodes[index], d, locals, types);
+          }
+          rendered << ")";
+          return rendered.str();
+        }
         if (starts_with(checked_target, "method:") && simple_arguments) {
           const auto separator = checked_target.rfind('.');
           const string owner = separator == string::npos ? string()
@@ -5845,10 +5877,11 @@ class Generator {
           return render_known_function_call(*selected, selected->name,
               arguments, d, locals, types, &argument_nodes);
         }
-        if (target.empty())
+        if (target.empty()) {
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked member-call target for lowering name=" +
               member->name + " context=" + codegen_body_context_);
+        }
         if (target == "fn:__moss_test_perturbed_call_target__")
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");

@@ -16289,3 +16289,31 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Still pending: corpus-wide C2 counter measurement; full make check default
   and shadow, three-engine/parity and performance gates; Agent 2 audit; merge
   and C2 tag. Closing round remains queued until after C2 merge.
+
+## C2 failure-fix checkpoint (2026-11-01; uncommitted)
+
+- The corpus counter pass exposed 78 candidate-only emission failures (39
+  sources, default and `-O`) across a workload of 1,824 sources / 337 package
+  manifests. The paired parent/candidate counts remain recorded above in
+  `tmp/phase2754-emitter-counts/1793568984396012849/summary.json`; do not treat
+  those counts as current after the following edits.
+- Checker call resolution now returns the selected implicit method as a checked
+  target, and checked method result bodies retain their result context. Targeted
+  emission passes for FenwickTree, method-tail push examples, `swarm_034`, and
+  `swarm_035`; FenwickTree generated Rust compiles and matches Fast Debug output.
+- Recovery-clause expression fact lookup maps its lowering subcontext back to
+  the owning checked handler. `phase21_capture_method_early_raise`,
+  `phase21_capture_method_local`, and `phase21_pipeline_try_placeholder` now
+  emit. Range-for checking retains the iterable root when checking bounds;
+  `phase21_peer_speculation` now emits with zero consumer reparses/lookups on
+  the focused coverage run.
+- Temporary source debug hooks and backtrace instrumentation were removed.
+  One remaining known candidate-only failure is the formatter fixture
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`;
+  another is `phase21_early_condition_state_write.moss`. Other previously
+  identified residuals include enum module constructors and the adversarial
+  incomplete-index probe. Recheck the full list before repeating the corpus pass.
+- No full `make check`, three-engine/parity, or performance gates have run.
+  Agent 2 has not audited. No merge/tag. Current changes are uncommitted in
+  `src/native_generator.cpp`, `src/semantic_checker.cpp`, and
+  `src/borrowed_views.inc`; temporary build outputs are under `tmp/`.
