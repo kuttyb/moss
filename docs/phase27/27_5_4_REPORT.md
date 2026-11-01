@@ -373,3 +373,9 @@ native expression-view reparses (functional pipeline reparses zero). Three-
 engine check and the call-target/specialization/join/pattern fact hook matrix
 pass. These are targeted results; full suite and final paired corpus count
 remain pending.
+
+Sibling-call arguments now also travel as `EmitterExpr` values into method ABI
+lowering. On the same GraphKit default command, text lookups/reparses fell
+38,180/9,580 -> 37,596/8,996 with unchanged runtime output and no node fallback
+events. This remains a targeted improvement only; the corpus still has
+unmigrated emitter type/string consumers.

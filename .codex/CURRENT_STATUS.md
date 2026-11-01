@@ -15332,3 +15332,12 @@ sites. Targeted functional-tree test, mini_application and GraphKit emission
 pass. Mini application remains byte-identical to C1; paired default counts
 9,497 -> 3,031 text lookups, 6,090 -> 1,610 total emitter reparses, and
 functional pipeline reparses 2 -> 0. This slice is not yet committed/pushed.
+
+### C2 node argument handoff checkpoint
+
+The uncommitted follow-up adds `method_call_argument(Method, ..., EmitterExpr)`
+and uses it for checked sibling-method calls, avoiding reparsing their argument
+strings. GraphKit's targeted default counters decreased from 38,180 lookups /
+9,580 reparses to 37,596 / 8,996; runtime matches C1 and node fallback events
+remain zero. Full paired recount, make check, parity, perf and Agent2 audit are
+pending. This latest slice is uncommitted.

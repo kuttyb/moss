@@ -1903,6 +1903,40 @@ class Generator {
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
 
+  string method_call_argument(const Method& method, size_t index,
+                              const EmitterExpr& argument, const Domain* d,
+                              const std::set<string>& locals,
+                              const std::unordered_map<string,string>* types,
+                              size_t functional_pipeline_id = 0) const {
+    if (index >= method.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
+    const auto root = est::unparenthesized(*argument.arena, argument.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &argument.arena->at(root));
+    const std::optional<string> binding = identifier
+        ? std::optional<string>(identifier->name) : std::nullopt;
+    const Effect effect = method_effect(method, index);
+    if (effect == Effect::Consume && binding &&
+        phase21_option_slots_.count(*binding))
+      return "__moss_recovery_slot_" + *binding +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    const string actual_type = generated_expr_type(argument, types).value_or("");
+    const string rendered = nominal_domain_handle_argument(
+        argument, method.params[index].type, d, locals, types,
+        functional_pipeline_id);
+    if (effect == Effect::Consume ||
+        (effect != Effect::Write && !borrowable_type(method.params[index].type)))
+      return rendered;
+    if (effect == Effect::Read && binding &&
+        borrowed_message_parameters_.count(*binding) &&
+        !view_object_type(actual_type))
+      return rendered;
+    if (effect == Effect::Write)
+      return "&mut (" + place_expr(argument, d, locals, types) + ")";
+    return "&( " + expr(argument, d, locals, types) + " )";
+  }
+
   struct GeneratedBinaryExpression {
     string left;
     string op;
@@ -4715,7 +4749,7 @@ class Generator {
           for (size_t index = 0; index < arguments.size(); ++index) {
             if (index) rendered << ", ";
             rendered << method_call_argument(*checked_method, index,
-                arguments[index], d, locals, types,
+                argument_nodes[index], d, locals, types,
                 functional_pipeline_id);
           }
           rendered << ")";
