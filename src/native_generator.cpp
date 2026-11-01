@@ -2518,6 +2518,26 @@ class Generator {
                        selected->expr, std::move(source)};
   }
 
+  EmitterExpr checked_expression_ref(const Field& field, std::string source,
+                                     est::ExprSlot slot) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : field.expression_handles) {
+      if (handle.slot != slot || handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked field expression line=" +
+            std::to_string(field.line));
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked field expression line=" +
+          std::to_string(field.line));
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
+  }
+
   const est::SemanticFacts* checked_expression_facts(
       const EmitterExpr& expression) const {
     if (!expression.arena) return nullptr;
@@ -9967,7 +9987,8 @@ class Generator {
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans)
+          o << expr(checked_expression_ref(s, call, est::ExprSlot::Receiver),
+                    d, locals, &types, 0, &argument_plans)
             << (state_view ? ")" : "") << ";\n";
           if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
@@ -10110,7 +10131,8 @@ class Generator {
         constructor_argument = true;
         o << (value == named.end()
             ? (field.init.empty() ? default_value(field.type)
-            : expr(field.init, context, locals, types))
+            : expr(checked_expression_ref(field, field.init,
+                  est::ExprSlot::Initializer), context, locals, types))
             : expr(value->second, context, locals, types));
       }
     }

@@ -15598,3 +15598,14 @@ argument ExprIds and query their node types. The optimized fixture is now at 0
 emitter reparses / 0 text-node lookups (was 0 / 15), and
 `check_phase20_executor_fileio.py` passes. This targeted sample is not a corpus
 measurement; no full suite or perf run has occurred.
+
+### C2 message and domain initializer checked-node emission (2026-11-01)
+
+Message statements now emit through their retained `ExprSlot::Receiver` Message
+node rather than synthesizing and reparsing `message target.Handler(args)`.
+Domain construction reads omitted state-field initializer expressions from each
+field's checked Initializer handle. On `examples/counter.moss -O`, emitter
+lookups/reparses fell 73/65 -> 4/4. The generated Rust compiles with warnings
+denied and prints `counter: 41` / `counter: 42`. Four lookups of identifier
+`value` remain and are still being traced. Phase 20 FileIO harness passes after
+the Message change. No full suite, corpus count, or perf run.
