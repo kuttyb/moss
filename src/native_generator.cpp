@@ -6273,6 +6273,152 @@ class Generator {
       rendered << "]";
       return rendered.str();
     }
+    if (const auto* binary = std::get_if<est::Binary>(
+            &expression.arena->at(root))) {
+      const auto left_node = expression.child(binary->left);
+      const auto right_node = expression.child(binary->right);
+      const string left = expr(left_node, d, locals, types);
+      const string right = expr(right_node, d, locals, types);
+      if (binary->op == "or" || binary->op == "and" ||
+          binary->op == "xor") {
+        const string rust_op = binary->op == "or" ? "||"
+            : binary->op == "and" ? "&&" : "^";
+        return "(" + left + ") " + rust_op + " (" + right + ")";
+      }
+      if (binary->op == "==" || binary->op == "!=" || binary->op == "<" ||
+          binary->op == ">" || binary->op == "<=" || binary->op == ">=") {
+        string rendered_left = value_from_borrowed_message_parameter(
+            left_node.text(), left, types);
+        string rendered_right = value_from_borrowed_message_parameter(
+            right_node.text(), right, types);
+        const auto left_type = generated_expr_type(left_node, types);
+        const auto right_type = generated_expr_type(right_node, types);
+        if (left_type && canonical_type_name(*left_type) == "string")
+          rendered_left = "(" + rendered_left + ").as_str()";
+        if (right_type && canonical_type_name(*right_type) == "string")
+          rendered_right = "(" + rendered_right + ").as_str()";
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          rendered_right = generated_integer_literal(right_node)
+              ? generated_integer_literal_as_float(right_node)
+              : "((" + rendered_right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          rendered_left = generated_integer_literal(left_node)
+              ? generated_integer_literal_as_float(left_node)
+              : "((" + rendered_left + ") as f64)";
+        return "(" + rendered_left + ") " + binary->op + " (" +
+            rendered_right + ")";
+      }
+      if (binary->op == "|" || binary->op == "^" || binary->op == "&") {
+        const string rendered_left = value_from_borrowed_message_parameter(
+            left_node.text(), left, types);
+        const string rendered_right = value_from_borrowed_message_parameter(
+            right_node.text(), right, types);
+        return "(" + rendered_left + ") " + binary->op + " (" +
+            rendered_right + ")";
+      }
+      if (binary->op == "<<" || binary->op == ">>") {
+        const string rendered_left = value_from_borrowed_message_parameter(
+            left_node.text(), left, types);
+        const string rendered_right = value_from_borrowed_message_parameter(
+            right_node.text(), right, types);
+        return string(binary->op == "<<" ? "__moss_shl(" : "__moss_shr(") +
+            rendered_left + ", " + rendered_right + ")";
+      }
+      if (binary->op == "+" || binary->op == "-" || binary->op == "*" ||
+          binary->op == "/" || binary->op == "%") {
+        const auto left_type = generated_expr_type(left_node, types);
+        const auto right_type = generated_expr_type(right_node, types);
+        const bool string_concat = binary->op == "+" && left_type &&
+            right_type && canonical_type_name(*left_type) == "string" &&
+            canonical_type_name(*right_type) == "string";
+        if (string_concat) {
+          vector<EmitterExpr> operands;
+          std::function<void(const EmitterExpr&)> collect =
+              [&](const EmitterExpr& current) {
+            const auto current_root = est::unparenthesized(
+                *current.arena, current.id);
+            const auto* nested = std::get_if<est::Binary>(
+                &current.arena->at(current_root));
+            if (nested && nested->op == "+") {
+              const auto nested_left = current.child(nested->left);
+              const auto nested_right = current.child(nested->right);
+              const auto nested_left_type = generated_expr_type(nested_left, types);
+              const auto nested_right_type = generated_expr_type(nested_right, types);
+              if (nested_left_type && nested_right_type &&
+                  canonical_type_name(*nested_left_type) == "string" &&
+                  canonical_type_name(*nested_right_type) == "string") {
+                collect(nested_left);
+                collect(nested_right);
+                return;
+              }
+            }
+            operands.push_back(current);
+          };
+          collect(expression);
+          if (operands.size() == 2 &&
+              tree_empty_string_literal(operands[1].text()))
+            return "(" + expr(operands[0], d, locals, types) + ").clone()";
+          if (operands.size() == 2 &&
+              tree_empty_string_literal(operands[0].text()))
+            return "(" + expr(operands[1], d, locals, types) + ").clone()";
+          std::ostringstream joined;
+          joined << "{ ";
+          for (size_t index = 0; index < operands.size(); ++index) {
+            const bool literal = tree_literal_class(operands[index]) ==
+                est::LiteralClass::String;
+            joined << "let __moss_concat_" << index << " = ";
+            if (literal) joined << operands[index].text() << "; ";
+            else joined << "&( " << expr(operands[index], d, locals, types)
+                        << " ); ";
+          }
+          joined << "let mut __moss_concat_result = MossStr::with_capacity(";
+          for (size_t index = 0; index < operands.size(); ++index) {
+            if (index) joined << ".saturating_add(";
+            joined << "__moss_concat_" << index << ".len()";
+          }
+          for (size_t index = 1; index < operands.size(); ++index)
+            joined << ")";
+          joined << "); ";
+          for (size_t index = 0; index < operands.size(); ++index)
+            joined << "__moss_concat_result.push_str(__moss_concat_" << index
+                   << (tree_literal_class(operands[index]) ==
+                           est::LiteralClass::String
+                           ? "); " : ".as_str()); ");
+          joined << "__moss_concat_result }";
+          return joined.str();
+        }
+        const string rendered_left = value_from_borrowed_message_parameter(
+            left_node.text(), left, types);
+        const string rendered_right = value_from_borrowed_message_parameter(
+            right_node.text(), right, types);
+        if (left_type && right_type &&
+            canonical_type_name(*left_type) == "int" &&
+            canonical_type_name(*right_type) == "int") {
+          const string method = binary->op == "+" ? "wrapping_add"
+              : binary->op == "-" ? "wrapping_sub"
+              : binary->op == "*" ? "wrapping_mul"
+              : binary->op == "/" ? "wrapping_div" : "wrapping_rem";
+          return "(" + rendered_left + ")." + method + "(" +
+              rendered_right + ")";
+        }
+        string adjusted_left = rendered_left;
+        string adjusted_right = rendered_right;
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          adjusted_right = generated_integer_literal(right_node)
+              ? generated_integer_literal_as_float(right_node)
+              : "((" + adjusted_right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          adjusted_left = generated_integer_literal(left_node)
+              ? generated_integer_literal_as_float(left_node)
+              : "((" + adjusted_left + ") as f64)";
+        return "(" + adjusted_left + ") " + binary->op + " (" +
+            adjusted_right + ")";
+      }
+    }
     if (const auto* index = std::get_if<est::Index>(
             &expression.arena->at(root))) {
       const auto base_expr = expression.child(index->base);

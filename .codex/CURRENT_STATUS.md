@@ -33,6 +33,19 @@
 - The closing-round shadow demotion/runtime ratchet/contract edits remain
   queued until after C2 is merged. No merge/tag has occurred.
 
+### C2 binary-node lowering checkpoint
+
+- Added direct `est::Binary` lowering in the retained-node emitter path,
+  including comparison coercions, wrapping integer operations, bit operations,
+  and flattened string concatenation. Generated Rust compiles with `rustc`;
+  `margo` native output matches Fast Debug on calculator. Functional-tree and
+  Team A focused harnesses pass.
+- The calculator aggregate reparse/text-lookup counters did not move: this
+  measurement is still dominated by legacy string-based type queries and
+  helper paths, which are outside this node-renderer branch. This edit is a
+  lowering-path migration, not a measured reduction. Working-tree change is
+  not yet committed; full gates are pending.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
 
 - Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current
