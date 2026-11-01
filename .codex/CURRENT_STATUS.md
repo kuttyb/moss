@@ -15449,3 +15449,18 @@ measurement, parity, and perf remain pending. Current worktree contains
 uncommitted `src/native_generator.cpp` plus this status/report update; after
 committing and pushing, continue migrating emitter text consumers. Branch:
 `phase27-5-4-work`.
+
+### C2 checked call-argument handoff (2026-11-01)
+
+The emitter's ordinary call-statement lowering now passes retained argument
+ExprIds into function/method ABI lowering and uses node-based type queries for
+compile-time callable classification. A candidate-local identifier shortcut
+introduced in checkpoint `863d432a` was removed after the optimized
+`collections_and_methods` fixture exposed bare object-field names; the focused
+Rust is now byte-identical to C1 in default and `-O`, compiles, and prints
+`lead code: 106 12` / `test score: 12`. Its focused counters remain 484 text
+lookups / 86 reparses; this is a structural migration, not a measured delta.
+The four-class perturb/drop harness (5/4/4/3 fixtures) and three-engine check
+pass. This checkpoint is committed and pushed as `PHASE_CHECKPOINT`; replace
+that placeholder with the commit SHA after committing. Continue C2 consumer
+migration; do not run full suite/perf until near completion.

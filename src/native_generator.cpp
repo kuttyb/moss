@@ -4600,7 +4600,6 @@ class Generator {
       // borrowed views. Any remaining local identifier is emitted as its
       // checked local binding; the old text rewriter left these unchanged.
       if (locals.count(name)) return name;
-      if (types && types->count(name)) return name;
       if (d && !view_domain_ && !view_method_ &&
           (std::any_of(d->state.begin(), d->state.end(),
                        [&](const Field& field) { return field.name == name; }) ||
@@ -9382,8 +9381,10 @@ class Generator {
           call_output << "(";
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
+            const EmitterExpr checked_argument = argument_node(k);
             bool compile_time_callable = known_function &&
-                is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
+                is_compile_time_callable(generated_expr_type(
+                    checked_argument, &types).value_or(""));
             if (compile_time_callable) continue;
             if (emitted_arguments++) call_output << ", ";
             if (benchmark_body_) call_output << "std::hint::black_box(";
@@ -9395,13 +9396,20 @@ class Generator {
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
                                           call_specialization(*function_target,
-                                                              s.args, &types));
+                                                              s.args, &types),
+                                          argument_temporaries[k].empty()
+                                              ? &checked_argument : nullptr);
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
-                string rendered = method_call_argument(
-                    *call_method, k, argument_expression, d, locals, &types,
-                    statement_functional_pipeline_id(
-                        s, functional_context, k));
+                string rendered = argument_temporaries[k].empty()
+                    ? method_call_argument(
+                          *call_method, k, checked_argument, d, locals, &types,
+                          statement_functional_pipeline_id(
+                              s, functional_context, k))
+                    : method_call_argument(
+                          *call_method, k, argument_expression, d, locals,
+                          &types, statement_functional_pipeline_id(
+                              s, functional_context, k));
                 bool standard_write_argument = false;
                 if (external_method_module && k < call_method->params.size() &&
                     !standard_error_variants(canonical_type_name(

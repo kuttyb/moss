@@ -462,3 +462,17 @@ C1/candidate `-O` counts are: `phase24_string_concat` 5,775/2,138 ->
 3,912/2,158 -> 274/242 (lookups/reparses). These are focused fixtures, not
 the final corpus + examples + packages measurement. No full suite or perf run
 has occurred for this checkpoint.
+
+### C2 checked call-statement arguments (2026-11-01)
+
+Ordinary call-statement arguments now use their retained ExprIds for compile-time
+callable classification and function/method parameter lowering when no temporary
+argument binding is needed. This exposed a pre-existing bad direct-identifier
+shortcut from the preceding checkpoint: fields in ordinary object methods were
+emitted as bare locals. Removing that shortcut restores the field path. The
+optimized `collections_and_methods` Rust is byte-identical to C1 in default and
+`-O`; both candidate binaries compile and print `lead code: 106 12` and
+`test score: 12`. Its focused counters remain 484 lookups / 86 reparses, so
+this migration is not counted as a measured reduction on that fixture. The
+four-class perturb/drop harness (call targets 5, specializations 4, joins 4,
+patterns 3) and three-engine check pass. Full gates remain pending.
