@@ -15461,6 +15461,5 @@ Rust is now byte-identical to C1 in default and `-O`, compiles, and prints
 `lead code: 106 12` / `test score: 12`. Its focused counters remain 484 text
 lookups / 86 reparses; this is a structural migration, not a measured delta.
 The four-class perturb/drop harness (5/4/4/3 fixtures) and three-engine check
-pass. This checkpoint is committed and pushed as `PHASE_CHECKPOINT`; replace
-that placeholder with the commit SHA after committing. Continue C2 consumer
+pass. This checkpoint is committed and pushed as `051434d1`. Continue C2 consumer
 migration; do not run full suite/perf until near completion.
