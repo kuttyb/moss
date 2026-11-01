@@ -1,6 +1,6 @@
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `f10d8ff9`. The checked member-target slice was
+- Branch `phase27-5-4-work`; latest pushed checkpoint `c3f51618`. The checked member-target slice was
   committed in `bf0d04cc` across `src/native_generator.cpp`,
   `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
 - The emitter no longer selects a custom method from receiver type in the
