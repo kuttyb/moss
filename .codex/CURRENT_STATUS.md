@@ -1,9 +1,9 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed checkpoint is `890f45a7`
-  (parent `7fcf119f`). The latest local slice extends exact `Argument[index]` pipeline selection
-  to the message validation passes; it is validated but not yet committed. The
-  current implementation has
+- Branch: `phase27-5-4-work`; latest pushed checkpoint is `96f25fc8`; this local slice is not yet committed.
+  Function constraint derivation now receives exact handles for function result
+  expressions, statement initializers/assignment values/iterables, and
+  call/message arguments.
   `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
   and reply pipeline validation receives its exact `ReturnValue` handle. The
   explicit-handle path in `functional_pipeline_from_est` projects that ExprId
@@ -27,8 +27,11 @@
 - Tight K2 clarification is active: every checker EST cache lookup and every
   text-keyed parse-cache consultation is a lookup (hit or miss). The focused
   `functional_basics.moss` measurement is still 15,160 text-cache lookups and
-  121 checker reparses (body 18, view 59, pipeline 44), so this slice did not
-  improve those totals. No suite, corpus pass, or performance run has occurred.
+  121 checker reparses (body 18, view 59, pipeline 44). The specialized-call
+  fixture fell from 25,118 to 24,901 cache consultations; checker reparses stay
+  44 (body 2, view 42). Both fixtures pass default/shadow, and the Fast Debug
+  functional-basics output matches expectation. No suite, corpus pass, or
+  performance run has occurred.
 - Next: continue migrating checker classification/recursion from text-keyed
   caches to retained ExprIds; do not count cache growth as K2 progress. Also
   resume rewrite-side tree mutation work for K8 (baseline 10,095 rebuilds).

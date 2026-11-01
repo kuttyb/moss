@@ -8838,9 +8838,13 @@ class Checker {
   }
 
   void derive_expression_constraints(Function& function, const string& expression,
-                                     const string& expected_result = "") {
+                                     const string& expected_result = "",
+                                     const vector<est::Handle>* handles = nullptr,
+                                     std::optional<std::pair<est::ExprSlot,
+                                         std::uint32_t>> handle_key = {}) {
     string original = trim(expression);
-    if (auto pipeline = functional_pipeline_from_est(original)) {
+    if (auto pipeline = functional_pipeline_from_est(
+            original, handles, handle_key)) {
       for (const auto& parameter : function.params) {
         if (tree_identifier_named(pipeline->source, parameter.name) &&
             (parameter.type.empty() || parameter.type == "vector")) {
@@ -15420,7 +15424,9 @@ class Checker {
       };
       if (function.result_expression)
         derive_expression_constraints(function, *function.result_expression,
-                                      result_expectation());
+                                      result_expectation(),
+                                      &function.expression_handles,
+                                      std::pair{est::ExprSlot::ReturnValue, 0u});
       for (const auto& s : function.body) {
         if (s.kind == Stmt::Kind::For) {
           for (const auto& parameter : function.params) {
@@ -15437,12 +15443,36 @@ class Checker {
           }
         }
         derive_expression_constraints(function, s.a);
-        derive_expression_constraints(function, s.b);
-        for (const auto& arg : s.args) derive_expression_constraints(function, arg);
-        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+        std::optional<std::pair<est::ExprSlot, std::uint32_t>> value_slot;
+        if (s.kind == Stmt::Kind::Assign)
+          value_slot = std::pair{est::ExprSlot::RhsValue, 0u};
+        else if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+          value_slot = std::pair{est::ExprSlot::Initializer, 0u};
+        else if (s.kind == Stmt::Kind::For)
+          value_slot = std::pair{est::ExprSlot::Iterable, 0u};
+        if (value_slot)
+          derive_expression_constraints(function, s.b, "",
+                                        &s.expression_handles, value_slot);
+        else
           derive_expression_constraints(function, s.b);
+        for (std::size_t argument = 0; argument < s.args.size(); ++argument) {
+          if (s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Message ||
+              s.kind == Stmt::Kind::Echo)
+            derive_expression_constraints(function, s.args[argument], "",
+                &s.expression_handles,
+                std::pair{est::ExprSlot::Argument,
+                          static_cast<std::uint32_t>(argument)});
+          else
+            derive_expression_constraints(function, s.args[argument]);
+        }
+        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
+            s.kind == Stmt::Kind::Var)
+          derive_expression_constraints(function, s.b, "",
+                                        &s.expression_handles, value_slot);
         if (s.kind == Stmt::Kind::Return && !s.a.empty())
-          derive_expression_constraints(function, s.a, result_expectation());
+          derive_expression_constraints(function, s.a, result_expectation(),
+              &s.expression_handles,
+              std::pair{est::ExprSlot::ReturnValue, 0u});
       }
       std::unordered_map<string,string> local_sources;
       for (const auto& statement : function.body) {
