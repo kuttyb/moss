@@ -14491,3 +14491,25 @@ representative set of successful emitter paths, connect their expression
 children structurally to retained handles, add targeted Rust-output checks,
 then rerun paired counts using a successful, identical workload. No C2 full
 suite or performance comparison has run.
+
+### Phase 27.5.4 C2 structural attempt checkpoint 2
+
+The first active-root `EmitterExpr` adapter was compiled, then crashed while
+compiling `examples/functional_basics.moss`. It exposed that legacy recursive
+emitter calls pass child-expression strings while an active-root adapter has
+no structural child identity. I reverted the adapter completely and rebuilt
+`moss-dev` from the C1 source; the focused functional-basics native compile
+then succeeded. This is not a candidate improvement and the paired counters
+remain at checkpoint 1: parent/candidate 15,167,953 text-node lookups,
+9,733,531 expression-view reparses, and 7,362 functional-pipeline reparses.
+The paired measurement utility is now checked in as
+`tests/tooling/measure_phase27_5_4_emitter_consumers.py`; its initial sweep
+includes 1,406 standalone compile failures on both sides, so counts are raw
+like-for-like invocation totals rather than successful-only totals. The
+measurement did not invoke each of the 337 package manifests as package
+projects. No C2 suite, three-engine, parity, or performance gate has run.
+
+Next work must carry child ExprIds explicitly through emitter recursion (and
+pipeline node traversal) rather than installing a root node in a string-based
+recursive path. This remains the main C2 blocker. The current source tree is
+back at the clean C1 implementation, plus the paired-count utility.
