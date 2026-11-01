@@ -14454,3 +14454,17 @@ and `-O`. Agent 2 confirmed zero Fast Debug consumer reparse/text-lookup
 counter sites and absence of the fallback branch; the coverage sample was
 also zero. `origin/main` advanced to `3da06d9e`; the authorized C1 merge must
 use that as first parent after the report is committed and pushed.
+
+### Phase 27.5.4 C2 start — emitter/optimizer count baseline
+
+C1 is merged/tagged as `4a04ad40` / `phase27-5-4-c1`; the work branch is
+fast-forwarded to that exact checkpoint. C2 has just started. The common
+baseline source worktree is `tmp/phase27-5-4-parent` at `c96bca78` and includes
+test-build reparse counters. On `examples/functional_basics.moss`, parent and
+C1 candidate both report 814 native expression-view reparses and 0 native
+functional-pipeline reparses. Candidate additionally reports 1,319 text-node
+lookups; the c96 baseline binary does not yet expose this lookup counter, so
+this is not a valid like-for-like lookup comparison. Next is to rebuild the
+baseline with the identical test-only lookup instrumentation, then run the
+same tracked source/package workload on both binaries. No bulk performance
+comparison has started.
