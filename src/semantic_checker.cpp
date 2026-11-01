@@ -26744,6 +26744,19 @@ class Checker {
                                            fields, called);
   }
 
+  bool checked_message_identifiers(const string& receiver,
+                                   const string& handler) const {
+    if (auto view = active_expression_view()) {
+      if (const auto* message = std::get_if<est::Message>(
+              &view->arena->at(view->root)))
+        return std::holds_alternative<est::Identifier>(
+                   view->arena->at(message->target)) &&
+            moss::plain_identifier(handler);
+      return false;
+    }
+    return tree_plain_identifier(receiver) && tree_plain_identifier(handler);
+  }
+
   bool checked_expression_parse_message(const string& source,
       string& target, string& handler, vector<string>& arguments) const {
     if (auto view = active_expression_view())
@@ -27306,7 +27319,7 @@ class Checker {
       mark_active_expression(OccurrenceKind::Message);
       string receiver = message_receiver, handler = message_handler;
       vector<string> args = std::move(message_args);
-      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
+      if (!checked_message_identifiers(receiver, handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
       const Handler* target = check_message_call_after_resolution(

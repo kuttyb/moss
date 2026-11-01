@@ -13830,3 +13830,11 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - `functional_basics.moss` cache consultations are 15,436 (down 26 from the
   previous focused count); checker parses remain 121. The phase remains far
   from K2's zero target.
+
+## Phase 27.5.4 message-target node checkpoint (2026-10-31)
+
+- Message target identifier validation now reads the active `Message.target`
+  node and message handler name instead of invoking the checker identifier
+  projection cache. The message-argument fixture passes default/shadow, and all
+  six focused three-engine expression-use fixtures pass. functional_basics
+  counters are unchanged, as it does not exercise message target checking.
