@@ -8151,7 +8151,8 @@ class Generator {
           // just like an ordinary call result; otherwise rustc may erase the
           // very arithmetic or functional pipeline being measured.
           if (benchmark_body_) o << "std::hint::black_box(";
-          o << expr(s.text, d, locals, &types,
+          o << expr(checked_expression_ref(s.text, est::ExprSlot::Expression),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0));
           if (benchmark_body_) o << ")";

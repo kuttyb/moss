@@ -68,3 +68,8 @@ and 5,052 expression-view reparses to 7,914 and 4,752; the pinned parent was
 17,129 and 9,047. Both had zero pipeline reparses. Three-engine checks, the
 functional-tree harness, and eight generated-Rust comparisons passed. Final C2
 corpus counts and suites remain pending.
+
+A subsequent small slice routes native `Stmt::Kind::Raw` expression lowering
+through the retained `ExprSlot::Expression` root. Its focused checks pass. The
+four-source counter sample did not change (7,914 / 4,752 / 0), since the sample
+does not exercise that statement kind; broader counters remain due at C2.

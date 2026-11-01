@@ -14873,3 +14873,13 @@ reparses; latest candidate 7,914 / 4,752 / 0. Relative to the prior candidate
 checkpoint (8,235 / 5,052 / 0), this slice drops 321 lookups and 300 reparses.
 This is not the full workload. Callback rendering retains its text substitution
 path for member-call callbacks, as documented above. No full suite or perf run.
+
+### Phase 27.5.4 C2 checkpoint — raw expression statements use checked roots (2026-11-01)
+
+Native lowering for `Stmt::Kind::Raw` now obtains the expression through the
+statement's checked `ExprSlot::Expression` handle. The build, functional-tree
+harness, three-engine execution of `examples/functional_objects.moss`, and the
+four-class perturb/drop harness pass. The paired four-source C2 counters remain
+7,914 lookups / 4,752 expression reparses / 0 pipeline reparses, unchanged
+because this sample does not exercise a Raw expression statement. No suite or
+perf run.
