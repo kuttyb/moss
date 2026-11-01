@@ -4,13 +4,12 @@
 
 - Handover branch `phase27-5-4-work` is based on `phase27-5-3-c1`
   (`c96bca786caefa5744000af9918be50a65b41037`). Bootstrap reports
-  `moss-0.1`. Latest pushed checkpoint is `e6ac0bb2`; current local changes are
-  not yet committed. No full suites, performance runs, or Agent 2 audit have
+  `moss-0.1`. Latest pushed checkpoint is `4569c4b3`; current implementation tree is clean. An exploratory EST rewrite API sketch was inspected and discarded because it declared dependent types before their definitions; it did not compile or enter a commit. No full suites, performance runs, or Agent 2 audit have
   run.
 - Pushed slices: kickoff/status `c151b89a`, focused baseline `247d2d8b`, checker
   ExprId recursion for grouping/vectors `62bce8c2`, binary children `74a8bdb8`,
   unary and indexed call children `0b7eb533`, coverage evidence `fdb726bf`, and
-  Fast Debug tree lifetime/call arguments `e6ac0bb2`.
+  Fast Debug tree lifetime/call arguments `e6ac0bb2`, followed by fallback removal and the K8 rebuild counter `4569c4b3`.
 - Local checker work adds ExprId recursive entry for retained parenthesized
   expressions, vector elements, binary operands, unary operands, and indexed
   call arguments. Checker recursion still accepts strings in most paths and
@@ -31,7 +30,7 @@
   **10,095** and current **10,095** text-to-tree rebuilds. 1,403 generated
   successfully; 724 failed as expected/incompatible standalone inputs,
   including negative examples and project sources requiring package context.
-  No rewrite-side code has changed yet, so K8 has not improved. The K2 text-node
+  No rewrite-side transformation has changed yet, so K8 has not improved. The next implementation area is `rewrite_module_program` in `src/moss.cpp`, which mutates source strings and rebuilds expression slots. The K2 text-node
   lookup counter and K4 per-class perturbation fixtures are not implemented.
 - Native emitter focused baseline remains 2,681 expression-view reparses on
   `tests/phase27/est/specialized_call_facts.moss`; generated type facts there
