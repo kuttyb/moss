@@ -241,3 +241,21 @@ reports 4,673 and 3,172 (−51% / −48%). Generated Rust is byte-identical in
 both modes. The fixture retains the previously documented Fast Debug
 unsupported user-named pipeline-stage baseline limitation; this sample is
 emitter count and Rust-output evidence only. No bulk suite or performance run.
+
+## C2 progress — checked callable pipelines lower from nodes
+
+The emitter now handles user-named pure function-call pipelines directly from
+`Pipeline` and `Call` nodes. It reads each stage's checked target and the
+checker-selected specialization; the fast path is restricted to pure,
+non-raising, non-WRITE calls with literal/identifier explicit arguments and
+falls back for other shapes. Call-target and specialization drop/perturb hooks
+fail closed on this path.
+
+On `examples/mini_application.moss`, matched c96/candidate default and `-O`
+generation produces byte-identical Rust and identical compiled output. Counts
+per mode changed from parent 9,497 text-node lookups / 6,122 reparses to
+candidate 3,507 / 2,018 (−63% / −67%); native functional-pipeline reparses
+fell 2 -> 0. The four-class hook matrix passes, and direct drop/perturb probes
+for call targets and specializations on this fixture all fail with
+`MOSS_INTERNAL_INVARIANT`. Other emitter reparses remain; C2 full gates are
+pending.

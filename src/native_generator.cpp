@@ -2736,6 +2736,150 @@ class Generator {
     return legacy_type();
   }
 
+  std::optional<string> checked_callable_pipeline_expr(
+      const EmitterExpr& expression, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* pipeline = std::get_if<est::Pipeline>(
+        &expression.arena->at(root));
+    if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+    const bool call_target_fact_hooked =
+        moss_test_drop_fact("call-targets") ||
+        moss_test_perturb_fact("call-targets");
+    if (call_target_fact_hooked)
+      for (const auto stage_id : pipeline->stages) {
+        const auto stage_root = est::unparenthesized(*expression.arena,
+                                                      stage_id);
+        const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(stage_root));
+        if (!call) continue;
+        const auto callee_root = est::unparenthesized(*expression.arena,
+                                                       call->callee);
+        const auto* callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_root));
+        if (callee && functions_.count(callee->name))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline call target");
+      }
+    auto decline = [&](const char* reason) -> std::optional<string> {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_EST_COVERAGE_STATS"))
+        std::cerr << "MOSS_EST_CALLABLE_PIPELINE_DECLINE=" << reason << '\n';
+#else
+      (void)reason;
+#endif
+      return std::nullopt;
+    };
+    auto current_node = expression.child(pipeline->input);
+    auto current_type = generated_expr_type(current_node, types);
+    if (!current_type) return decline("input-type");
+    string rendered = expr(current_node, domain, locals, types);
+    for (const auto stage_id : pipeline->stages) {
+      const auto stage_root = est::unparenthesized(*expression.arena, stage_id);
+      const auto* call = std::get_if<est::Call>(
+          &expression.arena->at(stage_root));
+      if (!call) return decline("stage-not-call");
+      const auto callee_id = est::unparenthesized(*expression.arena,
+                                                   call->callee);
+      const auto* callee = std::get_if<est::Identifier>(
+          &expression.arena->at(callee_id));
+      if (!callee) return decline("callee-not-name");
+      const auto* call_facts = expression.arena->facts(
+          stage_root, !codegen_active_specialization_key_.empty()
+              ? "specialization:" + codegen_active_specialization_key_
+              : codegen_body_context_);
+      string target = call_facts ? call_facts->resolved_target : string();
+      if (target.empty()) {
+        const auto targets = checked_call_edge_targets(
+            codegen_body_context_,
+            static_cast<int>(expression.arena->span(stage_root).line));
+        const string expected = "fn:" + callee->name;
+        if (std::find(targets.begin(), targets.end(), expected) == targets.end())
+          return decline("checked-edge-target");
+        target = expected;
+      }
+      const Function* function = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function = find_function_by_callable_id(target);
+      else if (starts_with(target, "fn:")) {
+        auto found = functions_.find(target.substr(3));
+        if (found != functions_.end()) function = found->second;
+      }
+      if (!function || function->name != callee->name ||
+          !function->observable_effects.raise_set.empty() ||
+          phase21_external_module_for_symbol(function->name))
+        return decline("function-unsupported");
+      vector<string> argument_values{rendered};
+      vector<string> argument_types{*current_type};
+      if (is_object_view(current_node, domain, locals, types))
+        return decline("input-view");
+      for (const auto argument_id : call->arguments) {
+        if (std::holds_alternative<est::NamedArgument>(
+                expression.arena->at(argument_id))) return decline("named-arg");
+        auto argument = expression.child(argument_id);
+        const auto argument_root = est::unparenthesized(
+            *argument.arena, argument.id);
+        if (!std::holds_alternative<est::Literal>(
+                argument.arena->at(argument_root)) &&
+            !std::holds_alternative<est::Identifier>(
+                argument.arena->at(argument_root)))
+          return decline("complex-explicit-arg");
+        auto type = generated_expr_type(argument, types);
+        if (!type) return decline("explicit-arg-type");
+        if (is_object_view(argument, domain, locals, types))
+          return decline("explicit-arg-view");
+        argument_values.push_back(expr(argument, domain, locals, types));
+        argument_types.push_back(*type);
+      }
+      if (argument_values.size() != function->params.size())
+        return decline("arity");
+      const FunctionSpecialization* specialization = nullptr;
+      if (function->static_dispatch) {
+        const auto selected = checked_call_edge_specialization(
+            p_, codegen_body_context_, function->name,
+            static_cast<int>(expression.arena->span(stage_root).line));
+        if (selected.test_fact_dropped || selected.test_fact_perturbed)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline specialization");
+        if (selected.kind != CheckedCallEdgeSelectionKind::Unique ||
+            !selected.unique) return decline("specialization-edge");
+        specialization = selected.unique;
+        if (specialization->parameter_types.size() != argument_values.size())
+          return decline("specialization-arity");
+        argument_types = specialization->parameter_types;
+      }
+      string emitted_name = specialization
+          ? specialization->generated_name : function->name;
+      if (emitted_name.empty()) return decline("empty-name");
+      std::ostringstream next;
+      next << rust_identifier(emitted_name) << "(";
+      for (size_t index = 0; index < argument_values.size(); ++index) {
+        if (index) next << ", ";
+        const Effect effect = function_effect(
+            *function, index, argument_types[index], specialization);
+        if (effect == Effect::Write) return decline("write-effect");
+        string value = argument_values[index];
+        if (effect != Effect::Consume &&
+            !copy_type(argument_types[index]) &&
+            !domains_.count(canonical_type_name(argument_types[index])))
+          value = "&(" + value + ")";
+        next << value;
+      }
+      next << ")";
+      const string result_type = specialization
+          ? specialization->return_type
+          : function->return_type.value_or("");
+      if (result_type.empty() || contains_internal_placeholder(result_type))
+        return decline("result-type");
+      rendered = next.str();
+      current_type = canonical_type_name(result_type);
+      current_node = {};
+    }
+    return rendered;
+  }
+
   static string generated_type_list(const vector<string>& types) {
     std::ostringstream out;
     for (size_t index = 0; index < types.size(); ++index) {
@@ -4721,11 +4865,15 @@ class Generator {
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
-    auto pipeline = est::functional_pipeline(*expression.arena, root,
-                                              expression.source, resolve_stage);
-    if (pipeline) {
-      if (auto rendered = functional_expr(*pipeline, d, locals, types,
-                                           functional_pipeline_id))
+    if (std::holds_alternative<est::Pipeline>(expression.arena->at(root))) {
+      auto pipeline = est::functional_pipeline(*expression.arena, root,
+                                                expression.source, resolve_stage);
+      if (pipeline)
+        if (auto rendered = functional_expr(*pipeline, d, locals, types,
+                                             functional_pipeline_id))
+          return *rendered;
+      if (auto rendered = checked_callable_pipeline_expr(
+              expression, d, locals, types))
         return *rendered;
     }
 #ifdef MOSS_TEST_BUILD
@@ -4753,6 +4901,17 @@ class Generator {
           : std::holds_alternative<est::Unary>(expression.arena->at(root))
                 ? "unary" : "other";
       std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind << '\n';
+      if (const auto* pipeline = std::get_if<est::Pipeline>(
+              &expression.arena->at(root))) {
+        const auto input_type = generated_expr_type(
+            expression.child(pipeline->input), types);
+        const auto* plan = planned_functional_pipeline(
+            functional_pipeline_id);
+        std::cerr << "MOSS_EST_EMITTER_PIPELINE_FALLBACK|line="
+                  << expression.arena->span(root).line << "|input="
+                  << input_type.value_or("<missing>") << "|plan="
+                  << (plan ? "present" : "absent") << '\n';
+      }
     }
 #endif
     return expr(expression.text(), d, locals, types, functional_pipeline_id,

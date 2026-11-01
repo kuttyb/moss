@@ -15203,3 +15203,22 @@ all direct `parse_view` entries under `fileio_semantics.inc`,
 `executor_invoke_lowering.inc`, and `static_bounds.inc` belong to the checker
 translation unit and are outside re-scoped C2. Full suites and perf remain
 pending.
+
+### Phase 27.5.4 C2 checkpoint — user-named callable pipelines from nodes (2026-11-01)
+
+The emitter's retained `Pipeline` path now has a direct lowering for pure,
+non-raising user-named function stages. It reads the stage target from checked
+call facts / semantic call edges, and obtains static specialization from the
+checker edge. It declines unsupported effectful, cross-module, view, named-arg,
+or complex explicit-argument shapes. The new path fails closed under call-target
+and specialization perturb/drop hooks.
+
+On `examples/mini_application.moss`, parent counts in default and `-O` are
+9,497 text-node lookups / 6,122 reparses; current candidate counts are 3,507 /
+2,018 (−63% / −67%), with native functional-pipeline reparses 2 -> 0. Generated
+Rust is byte-identical in both modes; compiled output matches in both modes.
+The four-class hook matrix passes, and direct call-target/specialization
+perturb/drop probes all hit `MOSS_INTERNAL_INVARIANT`. The no-parser scan found
+no parser calls in `functional_optimizer.cpp`. C2 still has nonzero emitter
+reparses; no full suites or performance run yet. Evidence is also recorded in
+`agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`.
