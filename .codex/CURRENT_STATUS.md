@@ -15083,3 +15083,15 @@ and collections/methods; default plus `-O`), c96 measured 20,514 text lookups /
 Rust is byte-identical for all sources and modes. Fast Debug/native/`-O`
 compile-and-run outputs agree; three-engine and fact-hook checks pass. Full
 C2 suites and perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked root handles select by slot identity (2026-11-01)
+
+`checked_expression_ref` no longer selects a retained node by comparing its span
+length with the expression string. It selects by the checked `(slot,
+argument_index)` identity within the active statement handle set, reports an
+internal invariant if that identity is ambiguous or missing, and retains the
+source buffer solely for rendering the selected node. Four focused sources
+(mini application, numeric-member projection, string map, and collections with
+methods) remain Rust-byte-identical to c96 in default and `-O`. Three-engine
+and fact-hook checks pass. This change removes a text-derived node-selection
+condition; the bulk lookup counter does not instrument that span comparison.

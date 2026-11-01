@@ -2116,18 +2116,27 @@ class Generator {
   EmitterExpr checked_expression_ref(std::string source, est::ExprSlot slot,
                                     std::uint32_t argument_index = 0) const {
     const auto* handles = active_functional_expression_handles_;
+    const est::Handle* selected = nullptr;
     if (handles) {
       for (const auto& handle : *handles) {
         if (handle.slot != slot || handle.argument_index != argument_index ||
             handle.arena_index >= p_.expression_arenas.size() ||
             !p_.expression_arenas[handle.arena_index]) continue;
-        const auto* arena = p_.expression_arenas[handle.arena_index].get();
-        const auto span = arena->span(handle.expr);
-        if (span.source_begin != 0 || span.source_end != source.size())
-          continue;
-        return EmitterExpr{arena, handle.expr, std::move(source)};
+        if (selected)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked emitter expression slot=" +
+              std::to_string(static_cast<unsigned>(slot)) + " index=" +
+              std::to_string(argument_index) + " line=" +
+              std::to_string(phase21_codegen_statement_
+                                 ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        selected = &handle;
       }
     }
+    if (selected)
+      return EmitterExpr{
+          p_.expression_arenas[selected->arena_index].get(), selected->expr,
+          std::move(source)};
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT missing checked emitter expression slot=" +
         std::to_string(static_cast<unsigned>(slot)) + " index=" +
