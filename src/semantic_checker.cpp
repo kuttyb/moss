@@ -26567,8 +26567,13 @@ class Checker {
         }
         if (auto index = expression_role_index(
                 role, {"argument:", "call-argument:"});
-            index && *index < node.arguments.size())
-          return node.arguments[*index];
+            index && *index < node.arguments.size()) {
+          const auto argument = node.arguments[*index];
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &arena.at(argument)))
+            return named->value;
+          return argument;
+        }
         if (role.rfind("field:", 0) == 0) {
           const auto field_name = role.substr(6);
           for (const auto argument : node.arguments)
@@ -26595,8 +26600,13 @@ class Checker {
       } else if constexpr (std::is_same_v<T, est::Constructor>) {
         if (auto index = expression_role_index(
                 role, {"argument:", "constructor-argument:"});
-            index && *index < node.arguments.size())
-          return node.arguments[*index];
+            index && *index < node.arguments.size()) {
+          const auto argument = node.arguments[*index];
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &arena.at(argument)))
+            return named->value;
+          return argument;
+        }
         if (role.rfind("field:", 0) == 0) {
           const auto field_name = role.substr(6);
           for (const auto argument : node.arguments)
@@ -28455,9 +28465,14 @@ class Checker {
           occurrence.semantic_target_id = moss::declaration_identity(
               moss::DeclarationKind::Record,
               program_module_identity(p_, object.defining_module), type_name);
-          for (const auto& argument : args) {
+          for (std::size_t argument_index = 0;
+               argument_index < args.size(); ++argument_index) {
+            const auto& argument = args[argument_index];
             string field_name, field_value;
-            if (!tree_parse_named_argument(argument, field_name, field_value)) {
+            char separator = 0;
+            if (!checked_expression_named_argument(argument_index, field_name,
+                    field_value, separator) &&
+                !tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -28476,10 +28491,14 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string field_name, field_value;
-          if (!tree_parse_named_argument(arg, field_name, field_value))
+          char separator = 0;
+          if (!checked_expression_named_argument(index, field_name,
+                  field_value, separator) &&
+              !tree_parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
-          check_expression(line, field_value, env, {}, "field:" + field_name);
+          if (!check_expression_child_node(line, env, "field:" + field_name))
+            check_expression(line, field_value, env, {}, "field:" + field_name);
         }
         for (const auto& field : objects_.at(callee)->fields)
           if (enums_.count(canonical_type_name(field.type)) &&
@@ -28569,10 +28588,12 @@ class Checker {
           for (size_t index = 0; index < args.size(); ++index) {
             const auto& arg = args[index];
             string name, val;
-            if (tree_parse_named_argument(arg, name, val))
+            char separator = 0;
+            if (checked_expression_named_argument(index, name, val, separator))
               check_expression(line, val, env, {},
                                "argument:" + std::to_string(index));
-            else
+            else if (!check_expression_child_node(line, env,
+                         "argument:" + std::to_string(index)))
               check_expression(line, arg, env, {},
                                "argument:" + std::to_string(index));
           }
@@ -28601,10 +28622,12 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string name, val;
-          if (tree_parse_named_argument(arg, name, val))
+          char separator = 0;
+          if (checked_expression_named_argument(index, name, val, separator))
             check_expression(line, val, env, {},
                              "argument:" + std::to_string(index));
-          else
+          else if (!check_expression_child_node(line, env,
+                       "argument:" + std::to_string(index)))
             check_expression(line, arg, env, {},
                              "argument:" + std::to_string(index));
         }

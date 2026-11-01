@@ -13838,3 +13838,14 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   projection cache. The message-argument fixture passes default/shadow, and all
   six focused three-engine expression-use fixtures pass. functional_basics
   counters are unchanged, as it does not exercise message target checking.
+
+## Phase 27.5.4 call-argument ExprId checkpoint (2026-10-31)
+
+- Call and constructor child lookup now unwraps a `NamedArgument` to its value
+  ExprId for `argument:<n>` roles. Object constructor metadata and ordinary
+  call/constructor recursion use indexed named-argument facts; recursive
+  argument checking now passes the value node. This removes more cache-backed
+  argument parsing.
+- Default/shadow message and enum fixtures and all six focused three-engine
+  expression-use fixtures pass. `specialized_call_facts.moss` is at 25,130
+  cache consultations (down from 25,216), checker reparses remain 44.
