@@ -15620,3 +15620,13 @@ measured delta on that sample. The four-class perturb/drop harness passes in
 default and shadow (call targets 5 fixtures, specializations 4, joins 4,
 patterns 3). The four `value` lookups remain open. No full suite, corpus count,
 or perf run has occurred.
+
+### C2 statement-call emission uses checked arguments (2026-11-01)
+
+Ordinary statement-call emission now passes retained receiver and argument
+ExprIds through borrowed-view method/function naming and receiver-place
+selection. This closes additional string-taking consumer paths even though the
+counter example remains unchanged at 4/4. The optimized functional semantic
+optimization fixture and Phase 15 string-map fixture are each at 0 lookups / 0
+reparses; the Phase 20 FileIO harness passes. Four counter `value` queries
+remain unresolved. No corpus count, full suite, or perf run has occurred.

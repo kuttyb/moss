@@ -9745,8 +9745,10 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
-                    : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+                    ? viewed_function_name(*function_target,
+                          checked_call_arguments, d, locals, &types)
+                    : !s.b.empty() ? method_receiver_place(receiver_expression,
+                          s.b, checked_call_arguments, d, locals, &types)
                     : expr(receiver_expression, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
           call_output << (standard_write_bridge ? "__moss_bridge_receiver" :
@@ -9756,7 +9758,8 @@ class Generator {
             auto it = types.find(s.a);
             if (it != types.end() && collection_named(parsed_type(it->second), {"queue"}))
               method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
-            call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+            call_output << "." << viewed_method_name(receiver_expression,
+                method, checked_call_arguments, d, locals, &types);
           }
           call_output << "(";
           size_t emitted_arguments = 0;
