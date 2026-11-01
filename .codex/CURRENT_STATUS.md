@@ -14963,3 +14963,19 @@ string cases, parent is 33,442/16,611 and candidate 14,646/7,340. Pipeline
 reparses are zero in both samples. Perturb/drop hook matrix still passes
 (4 call-target fixtures; 3 each for specialization, joins, patterns). No full
 suite or performance run.
+
+### Phase 27.5.4 C2 checkpoint — borrowed view lowering traverses expression nodes (2026-11-01)
+
+Borrowed-view place detection now walks retained `Member`/`Identifier` nodes
+instead of requiring the expression's text. Index lowering uses this node path
+when deciding whether an indexed borrowed view needs a clone, and direct checked
+method-call lowering selects view method spelling using the receiver/argument
+nodes. This preserves the parent lowering for field access and viewed method
+calls without converting the expression back to source text.
+
+Validation: default and `-O` generated Rust for `tests/swarm_010_map_views.moss`,
+`tests/swarm_011_sibling_field_borrow.moss`, and
+`tests/phase106d1_read_projection.moss` is byte-identical to the pinned c96
+parent. The three-engine gate passes and the call-target/specialization/join/
+pattern perturb/drop harness passes. Full suites, corpus counters, and
+performance remain pending.

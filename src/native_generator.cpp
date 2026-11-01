@@ -1316,6 +1316,29 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<vector<string>> tree_member_path(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    vector<string> reverse;
+    est::ExprId current = expression.id;
+    while (current < expression.arena->size()) {
+      current = est::unparenthesized(*expression.arena, current);
+      const auto& node = expression.arena->at(current);
+      if (const auto* member = std::get_if<est::Member>(&node)) {
+        reverse.push_back(member->name);
+        current = member->base;
+      } else if (const auto* identifier =
+                     std::get_if<est::Identifier>(&node)) {
+        reverse.push_back(identifier->name);
+        std::reverse(reverse.begin(), reverse.end());
+        return reverse;
+      } else {
+        return std::nullopt;
+      }
+    }
+    return std::nullopt;
+  }
+
   std::optional<vector<string>> tree_tuple_elements(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
@@ -3902,6 +3925,8 @@ class Generator {
     if (!expression.arena)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
+    if (auto place = view_place(expression, d, locals, types))
+      return *place;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     if (const auto* identifier = std::get_if<est::Identifier>(
             &expression.arena->at(root))) {
@@ -4228,7 +4253,9 @@ class Generator {
             const auto receiver_expression = expression.child(member->base);
             std::ostringstream rendered;
             rendered << expr(receiver_expression, d, locals, types) << "."
-                     << rust_identifier(method_name) << "(";
+                     << rust_identifier(viewed_method_name(
+                            receiver_expression, method_name, argument_nodes,
+                            d, locals, types)) << "(";
             for (size_t index = 0; index < argument_nodes.size(); ++index) {
               if (index) rendered << ", ";
               const auto& argument = argument_nodes[index];
@@ -4362,7 +4389,6 @@ class Generator {
             &expression.arena->at(root))) {
       const auto base_expr = expression.child(index->base);
       const auto index_expr = expression.child(index->index);
-      const string base_source = base_expr.text();
       const string index_source = index_expr.text();
       auto base_type = generated_expr_type(base_expr, types);
       if (base_type && shared_protocol_map_key_from_type(*base_type)) {
@@ -4410,7 +4436,7 @@ class Generator {
       }
       string indexed = "(" + expr(base_expr, d, locals, types) + ")[" +
           rendered_index + "]";
-      return borrowed_view_expression(base_source, d, locals, types)
+      return borrowed_view_expression(base_expr, d, locals, types)
           ? indexed : "(" + indexed + ").clone()";
     }
     if (const auto* member = std::get_if<est::Member>(
