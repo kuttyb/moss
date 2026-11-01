@@ -16603,3 +16603,17 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Full gates/perf remain deferred until the C2 closing checkpoint. Remaining
   high-count sources include -O functional callbacks, package test sources,
   and domain/Phase 21 fixtures. No Agent 2 audit or merge yet.
+
+## C2 checkpoint: checked Range slicing remains node-backed (2026-11-01)
+
+- Latest pushed slice `9a4cc448` handles the checker-recorded
+  `builtin-fileio:slice` target for a `Range` receiver directly in node lowering.
+  It checks the receiver's checked type and passes both bound nodes to Rust
+  lowering.
+- `tests/tooling/fixtures/phase21c_range_slice_effects.moss` reparses/lookups
+  fell 34/34 to 0/0; generated Rust stayed byte-identical and compiles.
+  Fast Debug intentionally reports its existing unsupported FileIO execution
+  diagnostic for this full fixture, so no runtime parity claim is recorded.
+- The earlier initializer, simple-call, scalar-member and replace slices remain
+  in pushed commits and their evidence above. No final full gates, performance
+  suites, or Agent 2 audit have run. C2 remains incomplete.
