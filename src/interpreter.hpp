@@ -486,6 +486,10 @@ class FastInterpreter {
 
   bool recovery_matches(const Stmt& recovery,
                         const RaisedIdentity& identity) const {
+    if (moss_test_drop_fact("patterns") ||
+        moss_test_perturb_fact("patterns"))
+      throw RuntimeError(recovery.line,
+          "MOSS_INTERNAL_INVARIANT checked recovery pattern fact was dropped or perturbed");
     return recovery.est_pattern &&
         recovery_pattern_matches(*recovery.est_pattern, identity);
   }
@@ -493,6 +497,10 @@ class FastInterpreter {
   std::vector<std::pair<std::string, std::pair<Value, std::string>>>
   error_pattern_payloads(const est::PatternNode& root,
                          const RaisedSignal& raised, int line) const {
+    if (moss_test_drop_fact("patterns") ||
+        moss_test_perturb_fact("patterns"))
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked recovery payload pattern was dropped or perturbed");
     std::vector<const est::PatternNode*> patterns;
     if (root.kind == est::PatternNode::Kind::GroupedAlternatives) {
       for (const auto& pattern : root.alternatives) patterns.push_back(&pattern);
@@ -1237,6 +1245,9 @@ class FastInterpreter {
     if (!target.static_dispatch) return nullptr;
     const auto checked = checked_call_edge_specialization(
         program_, caller.functional_context, target.name, line);
+    if (checked.test_fact_dropped || checked.test_fact_perturbed)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
     return checked.kind == CheckedCallEdgeSelectionKind::Unique
         ? checked.unique : nullptr;
   }
@@ -1899,6 +1910,17 @@ class FastInterpreter {
         else if (const auto* constructor_node =
                      std::get_if<est::Constructor>(&call_root))
           call_argument_nodes = &constructor_node->arguments;
+      }
+      if ((moss_test_drop_fact("call-targets") ||
+           moss_test_perturb_fact("call-targets")) && function(callee)) {
+        const auto* facts = tree
+            ? tree->arena->facts(current_root, frame.functional_context)
+            : nullptr;
+        if (!facts || facts->resolved_target.empty() ||
+            facts->resolved_target ==
+                "fn:__moss_test_perturbed_call_target__")
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked call target fact was dropped or perturbed");
       }
       auto evaluate_call_argument = [&](std::size_t index) {
         if (call_argument_nodes && index < call_argument_nodes->size())
@@ -2990,6 +3012,9 @@ class FastInterpreter {
 
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
+    if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
+      throw RuntimeError(statement.line,
+          "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
     auto exact = statement.joined_types_by_context.find(frame.functional_context);
     return exact == statement.joined_types_by_context.end()
         ? statement.joined_types : exact->second;
@@ -3145,7 +3170,11 @@ class FastInterpreter {
           const auto* pattern = arm.est_pattern ? &*arm.est_pattern : nullptr;
           if (!pattern || (pattern->kind != est::PatternNode::Kind::EnumTag &&
                            pattern->kind != est::PatternNode::Kind::EnumCase))
-            throw RuntimeError(arm.line, "checked enum pattern is absent");
+            throw RuntimeError(arm.line,
+                "MOSS_INTERNAL_INVARIANT checked enum pattern is absent");
+          if (pattern->case_name == "__moss_test_perturbed_pattern__")
+            throw RuntimeError(arm.line,
+                "MOSS_INTERNAL_INVARIANT checked enum pattern was perturbed");
           if (pattern->case_name == selected.object->case_name) {
             taken = true;
             emit("BranchTaken", frame, arm.line, pattern->case_name);

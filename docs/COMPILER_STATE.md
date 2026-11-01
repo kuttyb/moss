@@ -105,3 +105,32 @@ The conflict registry for this round is [27.5.3 conflicts](phase27/27_5_3_CONFLI
 The Fast Debug pipeline/handle slice was checkpointed in commit `88f611ce`. Its targeted tests covered `examples/functional_basics.moss`, `tests/phase27/est/specialized_call_facts.moss`, and `tests/swarm_001_parenthesized_pipeline.moss`; at that commit all three matched native plus optimized generated execution and reported zero Fast Debug reparses. Removing the final Fast Debug expression-tree parse fallback then caused 54 failures in the default 165-job suite, each sampled failure reporting `MOSS_INTERNAL_INVARIANT missing checked expression handle`. Representative accepted sources were `tests/phase106e_domains.moss`, `tests/tooling/fixtures/phase21_addendum_grouped_root.moss`, and `tests/tooling/fixtures/phase21_capture_owned_string.moss`; their prior Fast Debug behavior was restored. The broad fallback removal is therefore not part of the current candidate. The targeted parity gate remains registered; it does not claim zero reparses for the wider corpus.
 
 The Phase 27.5.3 C1 attempt did not implement K2/K3 perturbation and removal tests for classes 1–4, 7, and 8, nor 100% class 1–4 consumer fact coverage. C1 is blocked. The exact full-suite run on the attempted fallback removal passed 111/165 jobs and failed 54; `MOSS_INTERNAL_INVARIANT missing checked expression handle` appeared in both recovery fixtures and the Fast Debug shard. After restoring the fallback, `make check` passed 165/165 jobs in default mode and 165/165 in shadow mode. The focused three-engine and `.mossi` gates passed as part of those suites. Compiler sources are identical to `origin/main`, and `build/compiler/moss-opt` has the same SHA256 as the saved phase27-5-2 baseline binary (`98c9cd8769b4a120c6154e6973f9f59dcf70a228fe9334f4b484ac366fb331f7`); no bulk performance suite was run, so timing and peak RSS are unmeasured.
+
+## Phase 27.5.4 C1 fact-hook contract (in progress)
+
+`tests/tooling/check_phase27_5_4_fact_hooks.py` is registered in `make check`
+for default and shadow runs. It uses three accepted fixtures per class and
+requires Fast Debug, native lowering, and `-O` to fail with
+`MOSS_INTERNAL_INVARIANT` when the test build perturbs or drops a checked
+answer. The expected behavior for these fixtures is fail-closed: the mutation
+invalidates the checked answer, so successful execution/lowering is a test
+failure. The hook implementation is guarded by `MOSS_TEST_BUILD` (`src/ast.hpp`
+and `src/semantic_checker.cpp`); `moss-dev` defines it in `Makefile:18`.
+Agent 2 still must select at least one additional fixture per class during the
+C1 audit.
+
+The current hook coverage is limited to call targets, specializations, joins,
+and patterns. It does not establish that expression-type, pipeline-type, or
+ownership decisions are consumed from checked facts. Known downstream debt at
+this checkpoint:
+
+| Decision | Fast Debug | Native emitter | Optimizer |
+| --- | --- | --- | --- |
+| Expression types | Executes expressions from runtime values; exact checked-type coverage is not established. | Re-infers types in `generated_expr_type` (`src/native_generator.cpp:2024`). | No perturbation coverage yet; consumer authority is not established. |
+| Pipeline stage/output types | Has a runtime output-type fallback (`src/interpreter.hpp:1300–1331`, 12 prior firings). | Callable and type selection still depend on emitter-side inference (`src/native_generator.cpp:1978–2015, 3367–3388`). | No perturbation coverage yet; consumer authority is not established. |
+| Ownership / clone-move-borrow | Executes runtime values; no ownership-fact perturbation coverage yet. | Makes local borrow/clone/recovery-slot choices (`src/native_generator.cpp:1417–1438, 1690–1708, 1774–1823`). | No perturbation coverage yet; consumer authority is not established. |
+
+This table records known gaps and missing evidence, not a claim that each
+engine ignores every fact in that class. K1 remains report-only in the current
+re-scoped phase. The C1 full suite and adversarial audit have not run after the
+fact-hook changes.

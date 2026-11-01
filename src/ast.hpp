@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include "constraints.hpp"
@@ -934,10 +936,32 @@ struct Program {
 
 enum class CheckedCallEdgeSelectionKind { None, Unique, Ambiguous };
 
+inline bool moss_test_fact_hook(const char* variable,
+                                std::string_view fact_class) {
+#ifdef MOSS_TEST_BUILD
+  const char* configured = std::getenv(variable);
+  return configured && fact_class == configured;
+#else
+  (void)variable;
+  (void)fact_class;
+  return false;
+#endif
+}
+
+inline bool moss_test_drop_fact(std::string_view fact_class) {
+  return moss_test_fact_hook("MOSS_TEST_DROP_FACT", fact_class);
+}
+
+inline bool moss_test_perturb_fact(std::string_view fact_class) {
+  return moss_test_fact_hook("MOSS_TEST_PERTURB", fact_class);
+}
+
 struct CheckedCallEdgeSpecialization {
   CheckedCallEdgeSelectionKind kind = CheckedCallEdgeSelectionKind::None;
   const FunctionSpecialization* unique = nullptr;
   vector<const FunctionSpecialization*> candidates;
+  bool test_fact_dropped = false;
+  bool test_fact_perturbed = false;
 };
 
 // Consumers select only the specialization attached to a checker-recorded
@@ -946,6 +970,9 @@ inline CheckedCallEdgeSpecialization checked_call_edge_specialization(
     const Program& program, const string& context, const string& callee,
     int line) {
   CheckedCallEdgeSpecialization result;
+  result.test_fact_dropped = moss_test_drop_fact("specializations");
+  result.test_fact_perturbed = moss_test_perturb_fact("specializations");
+  if (result.test_fact_dropped || result.test_fact_perturbed) return result;
   const string target = "fn:" + callee;
   vector<string> edge_sources{context};
   if (context.rfind("fn:", 0) == 0) {

@@ -65,6 +65,17 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
+#ifdef MOSS_TEST_BUILD
+void Arena::test_mutate_call_targets(bool drop) {
+  for (auto& entry : semantic_facts_) {
+    auto& target = entry.second.resolved_target;
+    if (target.empty()) continue;
+    if (drop) target.clear();
+    else target = "fn:__moss_test_perturbed_call_target__";
+  }
+}
+#endif
+
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
     const Arena& arena, ExprId expression, std::string_view source,
     const std::function<std::optional<FunctionalNodeKind>(

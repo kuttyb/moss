@@ -14376,3 +14376,34 @@ longer request independent textual roots. `swarm_044_typed_string_map_index`
 passes check/Fast Debug/native/-O parity with output `7`. Focused
 `check_phase27_est.py` and `check_phase27_5_3_fastdebug_checked_tree.py` pass.
 The ASan suite was run before these fixes; no full suite has run after them.
+
+### Phase 27.5.4 C1 checkpoint — test-build perturb/drop layer
+
+At branch `phase27-5-4-work`, the test-build fact-hook layer is implemented
+for call targets, specializations, joins, and patterns. `Makefile` runs
+`check_phase27_5_4_fact_hooks.py` in default and `MOSS_EST=shadow` modes.
+Each class has three accepted fixtures; for each, `MOSS_TEST_PERTURB` and
+`MOSS_TEST_DROP_FACT` require Fast Debug, native generation, and `-O`
+generation to return `MOSS_INTERNAL_INVARIANT`. The expected behavior is
+fail-closed after invalidating the checked answer. Agent 2 still needs to
+select an additional audit fixture for each class.
+
+Focused checks pass: hook harness in default (4 classes x 3 fixtures) and
+shadow; Fast Debug string-debt audit with `--require-zero fast_debug`; and
+three-fixture Fast Debug/native/optimized parity. `build/compiler/moss-opt`
+ignored perturb/drop environment variables on two smoke fixtures, confirming
+these new hooks are test-build-only. Note: the repository-root `./moss` is
+currently a local test binary and did honor them, so release-hook validation
+must use the non-test `build/compiler/moss-opt`, not `./moss`.
+
+No full suite has run after this work. The initial pre-fix default suite
+remains 18 failures (listed in `tmp/phase2754-c1-default-first.log`). C1
+still requires final default/shadow suites, Agent 2 audit and authorized merge
+plus tag. C2 emitter/optimizer zero-count migration and performance have not
+started. `docs/COMPILER_STATE.md` now records the hook contract and the
+expression-type/pipeline-type/ownership gaps per engine. `AGENTS.md` now
+records scoped Phase 27.5.4 commit/push and gated C1/C2 merge authorization.
+
+The hook harness now also receives `moss-opt` and verifies that the non-test
+build ignores both perturb and drop variables on one accepted fixture per
+class. Both registered-mode harness invocations pass with this assertion.
