@@ -26611,6 +26611,37 @@ class Checker {
     }, arena.at(parent));
   }
 
+  std::optional<est::ExpressionView> active_expression_view() const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return std::nullopt;
+    const auto& cursor = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(cursor.arena_index);
+    if (!arena) return std::nullopt;
+    est::ExpressionView view;
+    view.arena = arena;
+    view.root = cursor.expr;
+    view.source = cursor.source;
+    return view;
+  }
+
+  bool checked_expression_parse_enum_case(const string& source,
+      string& enum_name, string& case_name, vector<string>& fields,
+      bool& called) const {
+    if (auto view = active_expression_view())
+      return est::project_enum_case(*view, enum_name, case_name, fields,
+                                    &called);
+    return tree_parse_enum_case_expression(source, enum_name, case_name,
+                                           fields, called);
+  }
+
+  bool checked_expression_parse_message(const string& source,
+      string& target, string& handler, vector<string>& arguments) const {
+    if (auto view = active_expression_view())
+      return est::project_message(*view, target, handler, arguments);
+    return tree_parse_message(source, target, handler, arguments);
+  }
+
   bool checked_expression_parse_unary(const string& source, string& operation,
                                       string& operand) const {
     if (!active_est_expression_cursors_.empty() &&
@@ -26737,6 +26768,28 @@ class Checker {
       return std::pair<string, string>{*left, *right};
     }
     return tree_split_binary(source, operators);
+  }
+
+  std::optional<string> checked_expression_child_type(
+      std::string_view role) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return std::nullopt;
+    const auto& parent = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(parent.arena_index);
+    if (!arena) return std::nullopt;
+    const auto child = expression_child_node(*arena, parent.expr, role);
+    if (!child) return std::nullopt;
+    const auto* facts = arena->facts(*child, expression_fact_context());
+    if (!facts || !facts->type) return std::nullopt;
+    return facts->type->to_canonical_string();
+  }
+
+  std::optional<string> checked_child_or_inferred_type(
+      std::string_view role, const string& source,
+      const std::unordered_map<string,string>& env) const {
+    if (auto checked = checked_expression_child_type(role)) return checked;
+    return inferred_expr_type(source, env);
   }
 
   bool check_expression_child_node(int line,
@@ -27022,7 +27075,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> arguments;
       bool called = false;
-      if (tree_parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
+      if (checked_expression_parse_enum_case(original, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         mark_active_expression(OccurrenceKind::Constructor,
                                "enum-case:" + enum_name + "." + case_name);
@@ -27096,7 +27149,7 @@ class Checker {
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
     string message_receiver, message_handler;
     vector<string> message_args;
-    if (tree_parse_message(original, message_receiver, message_handler,
+    if (checked_expression_parse_message(original, message_receiver, message_handler,
                            message_args)) {
       mark_active_expression(OccurrenceKind::Message);
       string receiver = message_receiver, handler = message_handler;
@@ -27336,8 +27389,8 @@ class Checker {
           check_expression(line, binary->first, env, {}, "left");
         if (!check_expression_child_node(line, env, "right"))
           check_expression(line, binary->second, env, {}, "right");
-        auto left = inferred_expr_type(binary->first, env);
-        auto right = inferred_expr_type(binary->second, env);
+        auto left = checked_child_or_inferred_type("left", binary->first, env);
+        auto right = checked_child_or_inferred_type("right", binary->second, env);
         if (!left || !right ||
             canonical_type_name(*left) != "bool" ||
             canonical_type_name(*right) != "bool")
@@ -27353,7 +27406,7 @@ class Checker {
       if (!check_expression_child_node(line, env, "operand"))
         check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
-      auto operand_type = inferred_expr_type(operand, env);
+      auto operand_type = checked_child_or_inferred_type("operand", operand, env);
       if (!operand_type || canonical_type_name(*operand_type) != "bool")
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
@@ -27370,8 +27423,8 @@ class Checker {
           break;
         }
       }
-      auto left = inferred_expr_type(ordering->first, env);
-      auto right = inferred_expr_type(ordering->second, env);
+      auto left = checked_child_or_inferred_type("left", ordering->first, env);
+      auto right = checked_child_or_inferred_type("right", ordering->second, env);
       if ((left && canonical_type_name(*left) == "string") ||
           (right && canonical_type_name(*right) == "string")) {
         err(line,
@@ -27409,8 +27462,8 @@ class Checker {
         check_expression(line, binary->first, env, {}, "left");
       if (!check_expression_child_node(line, env, "right"))
         check_expression(line, binary->second, env, {}, "right");
-      auto left_type = inferred_expr_type(binary->first, env);
-      auto right_type = inferred_expr_type(binary->second, env);
+      auto left_type = checked_child_or_inferred_type("left", binary->first, env);
+      auto right_type = checked_child_or_inferred_type("right", binary->second, env);
       if ((left_type && contains_enum_type(*left_type)) ||
           (right_type && contains_enum_type(*right_type)))
         err(line, "enum equality and ordering are not supported; use an exhaustive match",
@@ -27485,8 +27538,8 @@ class Checker {
           check_expression(line, binary->second, env, {}, "right");
         retain_open_operator_operation(line, op, binary->first,
                                        binary->second, env);
-        auto left_type = inferred_expr_type(binary->first, env);
-        auto right_type = inferred_expr_type(binary->second, env);
+        auto left_type = checked_child_or_inferred_type("left", binary->first, env);
+        auto right_type = checked_child_or_inferred_type("right", binary->second, env);
         if (unresolved_expression(binary->first, env) ||
             unresolved_expression(binary->second, env)) return;
         if (!left_type || !right_type ||
@@ -27510,8 +27563,8 @@ class Checker {
                                          binary->second, env);
           break;
         }
-      auto left_type = inferred_expr_type(binary->first, env);
-      auto right_type = inferred_expr_type(binary->second, env);
+      auto left_type = checked_child_or_inferred_type("left", binary->first, env);
+      auto right_type = checked_child_or_inferred_type("right", binary->second, env);
       if (unresolved_expression(binary->first, env) ||
           unresolved_expression(binary->second, env)) return;
       if (!left_type || !right_type ||
@@ -27534,7 +27587,7 @@ class Checker {
           check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
-        auto operand_type = inferred_expr_type(operand, env);
+        auto operand_type = checked_child_or_inferred_type("operand", operand, env);
         if (operand_type) {
           string type = canonical_type_name(*operand_type);
           if ((builtin_equality_type(type) || contains_record_type(type)) &&
@@ -27569,8 +27622,8 @@ class Checker {
               break;
             }
           }
-          auto left_type = inferred_expr_type(binary->first, env);
-          auto right_type = inferred_expr_type(binary->second, env);
+          auto left_type = checked_child_or_inferred_type("left", binary->first, env);
+          auto right_type = checked_child_or_inferred_type("right", binary->second, env);
           if ((left_type && contains_enum_type(*left_type)) ||
               (right_type && contains_enum_type(*right_type)))
             err(line, "enum equality and ordering are not supported; use an exhaustive match",
@@ -27609,8 +27662,8 @@ class Checker {
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
           if (checked_expression_split_binary(value, {"%"})) {
-            auto left = inferred_expr_type(binary->first, env);
-            auto right = inferred_expr_type(binary->second, env);
+            auto left = checked_child_or_inferred_type("left", binary->first, env);
+            auto right = checked_child_or_inferred_type("right", binary->second, env);
             if (!left || !right || canonical_type_name(*left) != "int" ||
                 canonical_type_name(*right) != "int")
               err(line, "integer remainder operands must have type 'Int'",
@@ -27626,7 +27679,7 @@ class Checker {
           check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
-      auto operand_type = inferred_expr_type(operand, env);
+      auto operand_type = checked_child_or_inferred_type("operand", operand, env);
       if (unresolved_expression(operand, env)) return;
       if (!operand_type || canonical_type_name(*operand_type) != "int")
         err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");

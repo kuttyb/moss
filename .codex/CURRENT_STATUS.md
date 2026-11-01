@@ -13750,3 +13750,15 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   checker=121/checker_pipeline=44 and cache=15,675, confirming these 44 parses
   come from other inference callers, not this entry point. No full suite or
   perf run.
+
+## Phase 27.5.4 child facts and enum/message projection checkpoint (2026-10-31)
+
+- Binary/unary checking now prefers the checked child type fact after recursive
+  child checking, with the existing inference routine retained only when no
+  child fact is available. Enum-case and message classification project from
+  the active ExpressionView/ExprId rather than the EST-view text cache.
+- `functional_basics.moss` default/shadow checks pass; focused functional-tree
+  test passed before this last projection change. Current focused counts:
+  functional_basics cache=15,568, checker reparses=121; specialized_call_facts
+  cache=25,318, checker reparses=44. Baseline counts remain 16,593/121 and
+  26,775/44 respectively. No full suite/perf run.
