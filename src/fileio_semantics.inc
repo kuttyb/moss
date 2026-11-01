@@ -151,19 +151,32 @@
     if (functional_pipeline_from_est(expression)) return std::nullopt;
     string receiver, method;
     vector<string> args;
-    if (!tree_parse_member_call(expression, receiver, method, args)) return std::nullopt;
+    const bool parsed_call = checked_inference_cursor_depth_ != 0
+        ? checked_expression_parse_member_call(expression, receiver, method,
+                                               args)
+        : tree_parse_member_call(expression, receiver, method, args);
+    if (!parsed_call) return std::nullopt;
     if (receiver == "FileIO" && method == "open") return string("FileIO");
-    auto owner = inferred_expr_type(receiver, env);
+    auto inferred_owner = checked_inference_cursor_depth_ != 0
+        ? inferred_child_expr(receiver, env, "receiver")
+        : inferred_expr(receiver, env);
+    auto owner = inferred_owner
+        ? std::optional<string>(inferred_owner->projection()) : std::nullopt;
     if (!owner) return std::nullopt;
     string type = canonical_type_name(*owner);
     if (type == "FileIO") {
       if (method == "read") {
         if (args.size() == 2) return string("Range");
-        if (args.size() == 1 &&
-            (static_collection_entries(args[0]) ||
-             fileio_request_vector_type(
-                 inferred_expr_type(args[0], env).value_or(""))))
-          return string("RangeBatch");
+        if (args.size() == 1) {
+          auto inferred_argument = checked_inference_cursor_depth_ != 0
+              ? inferred_child_expr(args[0], env, "call-argument", 0)
+              : inferred_expr(args[0], env);
+          const string argument_type = inferred_argument
+              ? inferred_argument->projection() : string{};
+          if (static_collection_entries(args[0]) ||
+              fileio_request_vector_type(argument_type))
+            return string("RangeBatch");
+        }
         return std::nullopt;
       }
       if (method == "chunks") return string("seq[Range]");

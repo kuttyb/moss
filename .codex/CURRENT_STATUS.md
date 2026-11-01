@@ -1,7 +1,7 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `dfba1338`; the worktree is clean. No full suite,
+  latest pushed commit is `e09a6b0d`; the FileIO cursor routing is uncommitted. No full suite,
   corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
@@ -40,16 +40,23 @@
   source fragments plus synthetic `__est_named__(...)` wrappers; all 44
   checker-pipeline parses are the same full pipeline expression. This points
   at repeated semantic-analysis passes and named-argument/string helper paths,
-  not one remaining high-level parser call. Current uncommitted fix routes
-  `Some`/`sum` and inferred named constructor fields through explicit call
-  argument ExprIds while checked-cursor inference is active. The match-copy
-  fixture and functional-tree harness pass after that fix.
+  not one remaining high-level parser call. The committed `Some`/`sum` and
+  inferred named constructor argument route is exercised by the match-copy
+  fixture and functional-tree harness.
 - An attempted exact `Argument[index]` routing in the ordinary Stmt::Call
   checker loop was reverted: it caused a segmentation fault in
   `packages/regex/src/main.moss`. The pre-attempt candidate at `dfba1338` passes
   `check_phase27_est_functional_tree.py` for regex and the pipeline fixture.
   The root cause is not isolated; do not reapply that slice without a safer
   cursor-lifetime investigation.
+- `fileio_result_type` now consumes the active checked member-call node and
+  infers its receiver / first argument through child ExprIds. Targeted checks
+  pass for `phase20_fileio_helper_parameter.moss`,
+  `phase20_fileio_runtime_integration.moss`, `phase21_fileio_close_full.moss`,
+  and the regex/pipeline harness. Functional-basics counters remain
+  15,160 lookups / 121 checker reparses; the FileIO fixture measures 63,576 /
+  142, with no prior same-source counter for comparison. This is a structural
+  change only; no aggregate K2 delta is claimed.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
   hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
