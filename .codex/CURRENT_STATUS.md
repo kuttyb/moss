@@ -1,8 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `77f15e2b` (handover
-  update after the simple-call projection; receiver fixture commit `b69bc561`
-  precedes it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `d552f32e` (checked
+  unary projection; simple-call projection `1e00496e` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -45,12 +44,12 @@
   zero-reparse target and is not a full suite result.
 - This slice is now committed and pushed as `1e00496e`; the working tree was
   clean at push time.
-- Current uncommitted work adds retained-node unary projection and grouping
+- Latest committed work adds retained-node unary projection and grouping
   removal for compatibility lowering. On the same calculator command, text
   lookups fell again from 22,760 to 22,380 while reparses remained 15,360.
   Generated Rust stayed byte-identical; Rust compilation, native/Fast Debug
   stdout parity, fact hooks, and feedback validation passed. This slice is
-  measured but not yet committed.
+  committed and pushed as `d552f32e`.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.
