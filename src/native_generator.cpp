@@ -5282,6 +5282,121 @@ class Generator {
         if (target == "fn:__moss_test_perturbed_call_target__")
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
+        const auto member_receiver = expression.child(member->base);
+        if (target == "builtin-fileio:read" &&
+            member->name == "read" && call->arguments.size() == 2) {
+          const string rendered = expr(member_receiver, d, locals, types) +
+              (phase21_result_context_ ? ".read_checked(" : ".read(") +
+              expr(expression.child(call->arguments[0]), d, locals, types) +
+              ", " +
+              expr(expression.child(call->arguments[1]), d, locals, types) +
+              ")";
+          return phase21_result_context_
+              ? phase21_propagate(rendered + ".map_err(__moss_raise_fileio)")
+              : rendered;
+        }
+        if (target == "builtin-fileio:read" &&
+            member->name == "read" && call->arguments.size() == 1) {
+          const auto requests = expression.child(call->arguments.front());
+          const auto requests_root = est::unparenthesized(
+              *requests.arena, requests.id);
+          const auto* collection = std::get_if<est::Collection>(
+              &requests.arena->at(requests_root));
+          const size_t batch_id = fileio_chunk_temp_++;
+          std::ostringstream batch;
+          const string receiver_temp = "__moss_fileio_batch_receiver_" +
+              std::to_string(batch_id);
+          batch << "{ let " << receiver_temp << " = &("
+                << expr(member_receiver, d, locals, types) << "); ";
+          if (!collection || collection->delimiter != '[') {
+            auto request_type = generated_expr_type(requests, types);
+            const string concrete_type = request_type
+                ? canonical_type_name(*request_type) : string();
+            if (!starts_with(concrete_type, "vector[") ||
+                !ends_with(concrete_type, "]"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch lost its vector type");
+            const string record_name = concrete_type.substr(
+                7, concrete_type.size() - 8);
+            auto record = objects_.find(record_name);
+            if (record == objects_.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch lost its request record");
+            const auto offset_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "offset";
+                });
+            const auto size_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "size";
+                });
+            if (offset_field == record->second->fields.end() ||
+                size_field == record->second->fields.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO request fields are unavailable");
+            const string requests_temp = "__moss_fileio_batch_records_" +
+                std::to_string(batch_id);
+            const string pairs_temp = "__moss_fileio_batch_pairs_" +
+                std::to_string(batch_id);
+            batch << "let " << requests_temp << " = &("
+                  << expr(requests, d, locals, types) << "); let "
+                  << pairs_temp << " = " << requests_temp
+                  << ".iter().map(|__moss_request| (__moss_request."
+                  << rust_identifier(offset_field->name)
+                  << ", __moss_request."
+                  << rust_identifier(size_field->name)
+                  << ")).collect::<std::vec::Vec<_>>(); "
+                  << receiver_temp
+                  << (phase21_result_context_ ? ".read_batch_checked(&"
+                                              : ".read_batch(&")
+                  << pairs_temp << ") }";
+            return phase21_result_context_
+                ? phase21_propagate("(" + batch.str() +
+                    ").map_err(__moss_raise_fileio)")
+                : batch.str();
+          }
+          vector<std::pair<string, string>> pairs;
+          for (size_t index = 0; index < collection->elements.size(); ++index) {
+            const auto entry = requests.child(collection->elements[index]);
+            const auto entry_root = est::unparenthesized(
+                *entry.arena, entry.id);
+            const auto* tuple = std::get_if<est::Tuple>(
+                &entry.arena->at(entry_root));
+            if (!tuple || tuple->elements.size() != 2)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch entry lost its pair node");
+            const string offset = "__moss_fileio_offset_" +
+                std::to_string(batch_id) + "_" + std::to_string(index);
+            const string size = "__moss_fileio_size_" +
+                std::to_string(batch_id) + "_" + std::to_string(index);
+            batch << "let " << offset << " = "
+                  << expr(entry.child(tuple->elements[0]), d, locals, types)
+                  << "; let " << size << " = "
+                  << expr(entry.child(tuple->elements[1]), d, locals, types)
+                  << "; ";
+            pairs.emplace_back(offset, size);
+          }
+          batch << receiver_temp
+                << (phase21_result_context_ ? ".read_batch_checked(&["
+                                            : ".read_batch(&[");
+          for (size_t index = 0; index < pairs.size(); ++index) {
+            if (index) batch << ", ";
+            batch << "(" << pairs[index].first << ", "
+                  << pairs[index].second << ")";
+          }
+          batch << "]) }";
+          return phase21_result_context_
+              ? phase21_propagate("(" + batch.str() +
+                  ").map_err(__moss_raise_fileio)")
+              : batch.str();
+        }
+        if (member->name == "length" && call->arguments.empty()) {
+          const auto receiver_type = generated_expr_type(member_receiver, types);
+          if (receiver_type &&
+              (canonical_type_name(*receiver_type) == "Range" ||
+               canonical_type_name(*receiver_type) == "RangeBatch"))
+            return "(" + expr(member_receiver, d, locals, types) + ").len()";
+        }
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, "].get") && member->name == "get" &&
             call->arguments.size() == 2) {

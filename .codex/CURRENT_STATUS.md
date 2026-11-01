@@ -15576,3 +15576,15 @@ optimized FileIO runtime fixture improved from 369 lookups / 230 reparses to
 reparses cluster around FileIO coordinate/length expressions (`4`, `offset,
 4`, `item.length()`). Temporary reparse-input tracing was removed. Full suite,
 corpus counts, and perf remain pending.
+
+### C2 FileIO batch checked-node lowering (2026-11-01)
+
+The native emitter now handles both `FileIO.read(offset, size)` and batch
+`FileIO.read(requests)` directly from checked call/argument nodes. Batch lowering
+supports inline tuple request vectors and computed vectors of request records;
+it reads the record type from the checked expression type and traverses tuple
+and constructor children by ExprId. The optimized Phase 20 FileIO fixture now
+reports 0 emitter reparses (down from 204) and 15 text-node lookups (down from
+343); the full `check_phase20_executor_fileio.py` harness passes, including its
+computed-batch native compile/run. Remaining 15 lookups are not yet localized.
+No full suite, corpus count, or perf run has occurred.
