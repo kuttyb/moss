@@ -14669,3 +14669,29 @@ harness expects failure for every perturbed case. Before claiming this request
 is met, reshape it so the declared checked answer is actually altered and each
 consumer follows that altered answer or fails closed; preserve drop tests as
 fail-closed checks. Existing registration is in Makefile default and shadow.
+
+### Phase 27.5.4 handover — emitter node-type slice validated (2026-11-01)
+
+Since `53db981b`, the C2 uncommitted emitter slice extends `generated_expr_type`
+for checked-tree constructors, enum constructors, nonempty vector literals,
+and more node-derived child types. Nine targeted sources were generated with
+both the pinned c96 parent and candidate; generated Rust was byte-identical,
+all candidate Rust compiled, and native output matched Fast Debug. Sources:
+`tests/phase5_tooling.moss`, `tests/phase4_callable_specialization.moss`,
+`tests/phase15_15_enum_message.moss`,
+`tests/tooling/fixtures/phase27_5_1/pattern_local_payload.moss`,
+`examples/collections.moss`, `examples/functional_objects.moss`,
+`examples/dogfood_index.moss`, `examples/object_pipeline.moss`, and
+`examples/collections_and_methods.moss`.
+
+The C1 receiver-place fix is committed/pushed as `53db981b`. The checked-fact
+perturb/drop harness was rerun on the current test build: call-targets,
+specializations, joins, patterns each pass perturb and drop on three accepted
+fixtures, with Fast Debug/native/-O all failing closed. `Makefile` registers it
+in both default and shadow `make check`; its `MOSS_TEST_AGENT2_CLASS` and
+`MOSS_TEST_AGENT2_FIXTURE` inputs allow Agent 2 to add the required adversarial
+fixture. `docs/COMPILER_STATE.md` records fail-closed as expected behavior and
+lists the expression-type, pipeline-type, and ownership known-debt engine set.
+No full suite or perf pass has run for C2. The emitter changes are still
+uncommitted; next checkpoint them, then continue removing emitter parser/view
+and text-lookup consumers structurally.

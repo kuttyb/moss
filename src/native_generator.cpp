@@ -2465,6 +2465,9 @@ class Generator {
     }
 #endif
     if (has_fact) return canonical_type_name(facts->type);
+    const auto legacy_type = [&] {
+      return generated_expr_type(expression.text(), types);
+    };
     const auto type_of = [&](est::ExprId child) {
       return generated_expr_type(expression.child(child), types);
     };
@@ -2473,7 +2476,7 @@ class Generator {
         auto found = types->find(identifier->name);
         if (found != types->end()) return canonical_type_name(found->second);
       }
-      return std::nullopt;
+      return legacy_type();
     }
     if (const auto* literal = std::get_if<est::Literal>(&node)) {
       switch (literal->literal_class) {
@@ -2495,7 +2498,7 @@ class Generator {
           (canonical_type_name(*operand) == "int" ||
            canonical_type_name(*operand) == "float"))
         return operand;
-      return std::nullopt;
+      return legacy_type();
     }
     if (const auto* binary = std::get_if<est::Binary>(&node)) {
       if (binary->op == "and" || binary->op == "or" ||
@@ -2506,7 +2509,7 @@ class Generator {
         return string("bool");
       auto left = type_of(binary->left);
       auto right = type_of(binary->right);
-      if (!left || !right) return std::nullopt;
+      if (!left || !right) return legacy_type();
       const string left_type = canonical_type_name(*left);
       const string right_type = canonical_type_name(*right);
       if (binary->op == "+" && left_type == "string" &&
@@ -2523,36 +2526,70 @@ class Generator {
           (right_type == "int" || right_type == "float"))
         return left_type == "float" || right_type == "float"
             ? string("float") : string("int");
-      return std::nullopt;
+      return legacy_type();
     }
     if (const auto* member = std::get_if<est::Member>(&node)) {
       auto base = type_of(member->base);
       if (base)
         if (auto field = nominal_field_type(*base, member->name))
           return canonical_type_name(*field);
-      return std::nullopt;
+      return legacy_type();
     }
     if (const auto* index = std::get_if<est::Index>(&node)) {
       auto base = type_of(index->base);
-      if (!base) return std::nullopt;
+      if (!base) return legacy_type();
       const string concrete = canonical_type_name(*base);
       if (concrete == "RangeBatch") return string("Range");
-      return indexed_element(parsed_type(concrete));
+      auto element = indexed_element(parsed_type(concrete));
+      return element ? element : legacy_type();
     }
     if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
       const auto type_id = est::unparenthesized(*expression.arena,
                                                 constructor->type);
       if (const auto* identifier = std::get_if<est::Identifier>(
-              &expression.arena->at(type_id)))
+              &expression.arena->at(type_id))) {
+        if (identifier->name == "Map" || identifier->name == "Set" ||
+            identifier->name == "Queue") {
+          const string base = identifier->name == "Map" ? "map" :
+              identifier->name == "Set" ? "set" : "queue";
+          if (!constructor->type_arguments.empty()) {
+            vector<string> arguments;
+            for (const auto argument : constructor->type_arguments) {
+              const auto argument_id = est::unparenthesized(
+                  *expression.arena, argument);
+              if (const auto* name = std::get_if<est::Identifier>(
+                      &expression.arena->at(argument_id)))
+                arguments.push_back(canonical_type_name(name->name));
+              else
+                return legacy_type();
+            }
+            string rendered = base + "[";
+            for (size_t index = 0; index < arguments.size(); ++index) {
+              if (index) rendered += ",";
+              rendered += arguments[index];
+            }
+            return rendered + "]";
+          }
+          return base;
+        }
         return identifier->name;
-      return std::nullopt;
+      }
+      if (const auto* member = std::get_if<est::Member>(
+              &expression.arena->at(type_id))) {
+        const auto base_id = est::unparenthesized(*expression.arena,
+                                                   member->base);
+        if (const auto* base = std::get_if<est::Identifier>(
+                &expression.arena->at(base_id)))
+          return base->name;
+      }
+      return legacy_type();
     }
     if (const auto* call = std::get_if<est::Call>(&node)) {
       const auto callee_id = est::unparenthesized(*expression.arena,
                                                    call->callee);
       const auto* callee = std::get_if<est::Identifier>(
           &expression.arena->at(callee_id));
-      if (!callee) return std::nullopt;
+      if (!callee) return legacy_type();
       const auto* call_facts = expression.arena->facts(root,
                                                         checker_context);
       const string target = call_facts ? call_facts->resolved_target : string();
@@ -2563,7 +2600,14 @@ class Generator {
         auto found = functions_.find(target.substr(3));
         if (found != functions_.end()) function = found->second;
       }
-      if (!function) return std::nullopt;
+      if (!function) {
+        if (callee->name == "range") return string("range[int]");
+        if (callee->name == "Some" && call->arguments.size() == 1) {
+          auto value = type_of(call->arguments.front());
+          return value ? "option[" + *value + "]" : string("option[_]");
+        }
+        return legacy_type();
+      }
       if (call_facts && !call_facts->specialization_result.empty()) {
         auto specialization = std::find_if(function->specializations.begin(),
             function->specializations.end(), [&](const auto& candidate) {
@@ -2576,7 +2620,7 @@ class Generator {
       if (function->return_type &&
           !contains_internal_placeholder(*function->return_type))
         return canonical_type_name(*function->return_type);
-      return std::nullopt;
+      return legacy_type();
     }
     if (std::holds_alternative<est::Pipeline>(node)) {
       const auto span = expression.arena->span(root);
@@ -2585,13 +2629,19 @@ class Generator {
       for (const auto& pipeline : p_.functional_pipelines) {
         if (pipeline.line != static_cast<int>(span.line) ||
             pipeline.context != context) continue;
-        if (selected) return std::nullopt;
+        if (selected) return legacy_type();
         selected = &pipeline;
       }
       if (selected && !selected->output_type.empty())
         return canonical_type_name(selected->output_type);
     }
-    return std::nullopt;
+    if (const auto* collection = std::get_if<est::Collection>(&node);
+        collection && collection->delimiter == '[' &&
+        !collection->elements.empty()) {
+      auto element = type_of(collection->elements.front());
+      if (element) return "vector[" + *element + "]";
+    }
+    return legacy_type();
   }
 
   static string generated_type_list(const vector<string>& types) {
@@ -3868,6 +3918,52 @@ class Generator {
             &expression.arena->at(root))) {
       const auto type_id = est::unparenthesized(*expression.arena,
                                                   constructor->type);
+      if (const auto* case_member = std::get_if<est::Member>(
+              &expression.arena->at(type_id))) {
+        const auto enum_id = est::unparenthesized(*expression.arena,
+                                                   case_member->base);
+        if (const auto* enum_name = std::get_if<est::Identifier>(
+                &expression.arena->at(enum_id))) {
+          auto declaration = enums_.find(enum_name->name);
+          if (declaration != enums_.end()) {
+            auto item = std::find_if(declaration->second->cases.begin(),
+                declaration->second->cases.end(), [&](const EnumCase& candidate) {
+                  return candidate.name == case_member->name;
+                });
+            if (item != declaration->second->cases.end()) {
+              std::unordered_map<string, EmitterExpr> values;
+              bool named = true;
+              for (const auto argument_id : constructor->arguments) {
+                const auto* argument = std::get_if<est::NamedArgument>(
+                    &expression.arena->at(argument_id));
+                if (!argument) { named = false; break; }
+                values[argument->name] = expression.child(argument->value);
+              }
+              if (named) {
+                std::ostringstream rendered;
+                rendered << enum_name->name << "::"
+                         << rust_identifier(case_member->name);
+                if (!item->fields.empty()) {
+                  rendered << " { ";
+                  for (size_t index = 0; index < item->fields.size(); ++index) {
+                    if (index) rendered << ", ";
+                    const auto value = values.find(item->fields[index].name);
+                    if (value == values.end())
+                      throw std::runtime_error(
+                          "missing enum constructor field: " + enum_name->name +
+                          "." + item->fields[index].name);
+                    rendered << rust_identifier(item->fields[index].name)
+                             << ": "
+                             << expr(value->second, d, locals, types);
+                  }
+                  rendered << " }";
+                }
+                return rendered.str();
+              }
+            }
+          }
+        }
+      }
       if (const auto* type_name = std::get_if<est::Identifier>(
               &expression.arena->at(type_id))) {
         auto object = objects_.find(type_name->name);
@@ -3900,6 +3996,24 @@ class Generator {
           }
         }
       }
+    }
+    if (const auto* collection = std::get_if<est::Collection>(
+            &expression.arena->at(root));
+        collection && collection->delimiter == '[' &&
+        !collection->elements.empty()) {
+      std::ostringstream rendered;
+      rendered << "vec![";
+      for (size_t index = 0; index < collection->elements.size(); ++index) {
+        if (index) rendered << ", ";
+        const auto value = expression.child(collection->elements[index]);
+        string element = expr(value, d, locals, types);
+        auto type = generated_expr_type(value, types);
+        if (type && domains_.count(canonical_type_name(*type)))
+          element = "(" + element + ").clone()";
+        rendered << element;
+      }
+      rendered << "]";
+      return rendered.str();
     }
     if (const auto* index = std::get_if<est::Index>(
             &expression.arena->at(root))) {
