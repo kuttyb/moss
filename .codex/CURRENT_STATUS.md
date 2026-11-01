@@ -15640,3 +15640,8 @@ counter example remains unchanged at 4/4. The optimized functional semantic
 optimization fixture and Phase 15 string-map fixture are each at 0 lookups / 0
 reparses; the Phase 20 FileIO harness passes. Four counter `value` queries
 remain unresolved. No corpus count, full suite, or perf run has occurred.
+
+The emitter's path-sensitive handler wrapper now reads its condition through
+the checked Condition slot. Phase 15.3 path-placement checks pass, and the
+counter fixture's generated Rust still compiles and prints the same output;
+its 4/4 count remains unchanged, confirming this was a separate reader.

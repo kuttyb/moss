@@ -352,7 +352,10 @@
       borrowed_message_parameters_.insert(p.name);
       if (view_object_type(p.type)) view_parameters_.insert(p.name);
     }
-    o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
+    const Stmt& condition_statement = h.body.front();
+    const auto checked_condition = checked_expression_ref(
+        condition_statement, condition_statement.a, est::ExprSlot::Condition);
+    o << "        " << expr(checked_condition, &d, locals, &types) << "\n        };\n";
     view_domain_ = false; view_domain_access_ = false;
     borrowed_message_parameters_.clear(); view_parameters_.clear();
     write_through_parameters_.clear();
