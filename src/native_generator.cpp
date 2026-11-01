@@ -1101,6 +1101,9 @@ class Generator {
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(string(expression));
     const auto* selected = handles ? handles
         : active_functional_expression_handles_;
@@ -1535,6 +1538,9 @@ class Generator {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
           phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      if (checked.test_fact_dropped || checked.test_fact_perturbed)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
       bool dropped_checked_call_edge = false;
       if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
           dropped && string(dropped) == "g1") {
@@ -1880,6 +1886,11 @@ class Generator {
         return local->second.substr(9);
       }
     }
+    if ((moss_test_drop_fact("call-targets") ||
+         moss_test_perturb_fact("call-targets")) &&
+        functions_.count(callable))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked call target fact was dropped or perturbed");
     return callable;
   }
 
@@ -1942,6 +1953,9 @@ class Generator {
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
+#ifdef MOSS_TEST_BUILD
+    est::record_expression_text_lookup();
+#endif
     const auto fingerprint = est::fingerprint(string(expression));
     auto convert = [&](std::uint32_t arena_index, est::ExprId root)
         -> std::optional<ParsedFunctionalPipeline> {
@@ -2027,6 +2041,9 @@ class Generator {
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
       auto record_type_fact_coverage = [&] {
+#ifdef MOSS_TEST_BUILD
+        est::record_expression_text_lookup();
+#endif
         const auto fingerprint = est::fingerprint(expression);
         const vector<est::Handle>* handles =
             active_functional_expression_handles_;
@@ -5790,6 +5807,9 @@ class Generator {
               << " = Some(" << rust_identifier(binding) << ");\n";
             phase21_option_slots_.insert(binding);
           }
+          if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
           const auto exact_join =
               s.joined_types_by_context.find(functional_context);
           const auto& joined_types = exact_join ==
@@ -5935,6 +5955,10 @@ class Generator {
 
               auto arm_locals = locals;
               auto arm_types = types;
+              if (moss_test_drop_fact("patterns") ||
+                  moss_test_perturb_fact("patterns"))
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked recovery pattern was dropped or perturbed");
               if (arm.est_pattern && arm.est_pattern->kind ==
                   est::PatternNode::Kind::RecoveryBinding) {
                 const auto& binding = arm.est_pattern->binding;
@@ -6088,6 +6112,9 @@ class Generator {
           if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
             throw std::runtime_error("unchecked enum match");
           const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
+          if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
           const auto exact_join = s.joined_types_by_context.find(functional_context);
           const auto& joined_types = exact_join == s.joined_types_by_context.end()
               ? s.joined_types : exact_join->second;
@@ -6136,7 +6163,12 @@ class Generator {
             if (!arm.est_pattern ||
                 (arm.est_pattern->kind != est::PatternNode::Kind::EnumTag &&
                  arm.est_pattern->kind != est::PatternNode::Kind::EnumCase))
-              throw std::runtime_error("unchecked enum pattern");
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked enum pattern is absent");
+            if (moss_test_drop_fact("patterns") ||
+                moss_test_perturb_fact("patterns"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked enum pattern was dropped or perturbed");
             const auto& pattern = *arm.est_pattern;
             auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
                 [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
@@ -6188,6 +6220,9 @@ class Generator {
         case Stmt::Kind::Case:
           throw std::runtime_error("case outside checked match");
         case Stmt::Kind::If: {
+          if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
           const auto exact_join = s.joined_types_by_context.find(functional_context);
           if (functional_context.find('<') != string::npos &&
               exact_join == s.joined_types_by_context.end())
@@ -7253,6 +7288,9 @@ std::string generate_native(
     ProgramGenerationMode mode, vector<string> rust_dependencies,
     const Program* resolution_program, bool project_module_artifact,
     bool emit_static_specializations, bool public_specializations) {
+#ifdef MOSS_TEST_BUILD
+  est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Consumer);
+#endif
   return Generator(program, plan, debug_build, mode,
                    std::move(rust_dependencies), resolution_program,
                    project_module_artifact, emit_static_specializations,

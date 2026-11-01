@@ -418,7 +418,7 @@ def main():
                 raise SystemExit("Fast Debug EST evaluator entry points are missing")
             adapter = interpreter[adapter_start:node_start]
             node_body = interpreter[node_start:interpreter.find("// Native lowering", node_start)]
-            if "expression_tree(expression)" not in adapter or \
+            if "expression_tree(expression," not in adapter or \
                     "evaluate_expression_tree(*tree, tree->root" not in adapter:
                 raise SystemExit("Fast Debug source adapter does not dispatch through EST")
             if "evaluate_tree_node" not in node_body or \

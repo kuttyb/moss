@@ -1,6 +1,345 @@
+### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
+
+Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
+
+After removal: `tests/shards/shard_fast_debug.sh` passes and `check_phase27_5_3_fastdebug_checked_tree.py` passes targeted Fast Debug/native/optimized parity. Targeted Phase 25 conformance, Team A, S3 key protocol, root totality, Fast Debug package, enum module and SDK results remain as noted in the previous checkpoint. No final default/shadow suite has run since the fixes.
+
+Remaining: test-build perturb/drop coverage for call targets, specializations, joins, patterns (three fixtures per class, one selected by Agent 2), known-debt engine list in `docs/COMPILER_STATE.md`; then final C1 gates and Agent 2. C2 consumer counts/migration and performance measurement remain unstarted.
+
+### Phase 27.5.4 C1 checkpoint (2026-11-01, latest)
+
+Branch `phase27-5-4-work`, pushed through `981ca31e`. Targeted latest greens include the phase25 Team A semantics suite after reverting the incomplete direct-call fact lookup experiment; it was an attempted migration that made a valid source-free callable fail Fast Debug, so that experiment was removed. The prior retained-tree changes remain.
+
+Targeted pass ledger after the current tree rebuild: root totality/Executor; ABI-v10 X1; Phase25 conformance (11/11); G3 ordering; indexed String; S2 Char/String; S1 checker-authority; S3 key protocol (28 cases, including path dependency and source-free provider); safe arithmetic; L7; Team A; generic typing (128); Executor/FileIO; sdk text encoding; advanced-data oracle Fast Debug; advanced-data Margo debug; Fast Debug shard; enum module shard (60 cases). These are targeted tests only. The initial default make check still stands at 18 failures before fixes; the final full default+shadow check has not been run.
+
+Pending: perturb/drop test-build layer and make-check registration for call targets, specializations, joins, and patterns (three fixtures per class; ask Agent 2 to select at least one fixture per class during the one scheduled audit); document per-engine known debt for expression types, pipeline types, ownership. No C2 emitter/optimizer count measurement, full suite, or perf run yet. Current uncommitted change is the API declaration for `est::populate_loaded_expression`; its implementation and call sites are in the pushed tree. `make moss-dev` plus targeted suites passed after the implementation.
+
+### Phase 27.5.4 C1 checkpoint (2026-11-01, continued)
+
+Branch `phase27-5-4-work`, pushed checkpoint `d52e112a`. C1 remains in progress; no merge/tag. The initial default `make check` before fixes had 18 failed jobs; see `tmp/phase2754-c1-default-first.log` for the exact list.
+
+Additional targeted fixes after d52e112a: imported `.mossi` execution-result expressions now retain an EST handle on initial load; implicit-self method calls forward the call's argument ExprIds into parameter binding. Latest targeted greens: phase25 S3 key-protocol (28 cases, including path dependency and source-free provider), Fast Debug shard, enum module shard (60 EXPRESS-005 cases), sdk text-encoding acceptance, advanced-data Fast Debug oracle, plus prior phase25 conformance 11/11, phase21 root totality, ABI-v10 X1, G3 ordering, indexed String, S2, S1, safe arithmetic, L7 repairs, Team A semantics, generic typing (128), and Executor/FileIO.
+
+Remaining C1 work: rerun the initial 18-job default `make check` at the final C1 gate after perturb/drop tests are implemented and registered; run shadow then; implement requested test-build perturb/drop coverage for call targets, specializations, joins, patterns, and document known debt for expression types, pipeline types, ownership. No C2 emitter/optimizer count work or perf suite has started. Full suite not yet rerun after fixes.
+
+### Phase 27.5.4 C1 checkpoint (2026-11-01)
+
+Branch: `phase27-5-4-work`; current pushed base `0003aeee`. C1 is still in progress; no merge/tag yet. The first requested default `make check` ran before C1 fixes and had 18 failed jobs (full list and log: `tmp/phase2754-c1-default-first.log`). Targeted fixes so far include retained-node evaluation in Fast Debug, checked H3 projected-body node/fact attachment, and consumption of checked Executor RootSubmissionPlan for Fast Debug.
+
+Latest targeted green results after the fixes: `check_phase25_conformance.py` 11/11; `check_phase21_root_totality.py` passed including executor Root totality. Parent `phase27-5-3-c1` executor/fileio test also passes, so candidate's prior executor failure was a regression and was fixed. Previous standalone targeted greens/failures in the preceding checkpoint are not yet all rerun against the latest build. Latest compiler build is `build/compiler/moss-dev`.
+
+Next: rerun the remaining targeted scripts from the initial 18-failure set in a serialized manner; fix regressions while keeping Fast Debug tree-only. Then implement and register the requested C1 perturb/drop tests (Fast Debug side for call targets, specializations, joins, patterns; document known debt for types, pipeline types, ownership). After implementation stabilizes, run default and shadow `make check`, three-engine/parity gates, then Agent 2 once, merge/tag only on GO. C2 counters and emitter/optimizer migration have not started. No perf suite has been run.
+
+
+# Phase 27.5.4 — current handover (2026-11-01)
+
+## Current scoped status (latest checkpoint)
+
+- Re-scope: only Fast Debug, emitter, and optimizer consumer parsing/text
+  lookups count toward K2. Checker parsing and text-cache consultations are
+  permitted; K1 is report-only. C1 is still open; C2 has not started.
+- Branch remains `phase27-5-4-work`. Latest pushed tip is `2ef7e8cf`.
+- The C1 full `make check` attempt failed in default mode (therefore shadow was
+  not reached). Failures included checker diagnostic/acceptance regressions,
+  cross-package specialization, Fast Debug pipeline predicate nodes, enum
+  module diagnostics, and the Phase 25.4 performance-baseline gate. The branch
+  checker recursive-node migration was outside the new scope and is currently
+  being rolled back to the C1 base behavior (`c96bca78`) in
+  `src/semantic_checker.cpp` and `src/fileio_semantics.inc`.
+- Following the rollback, `make --jobs="$(nproc)"` succeeds. Targeted checks
+  pass for `guard_generic_string_native.moss` (`4`, `abab`),
+  `swarm_044_typed_string_map_index.moss` (`7`), the pipeline fixture
+  `swarm_023_fast_debug_pipelines.moss` (`12`, `3`, `6`, `true`, `true`), and
+  `check_phase15_9_cross_package_specialization.py`. The Fast Debug checked
+  tree and functional-tree harnesses pass. The new any/all path reads the
+  checked predicate ExprId directly; it invokes identifiers by node name and
+  evaluates other predicates as tree nodes, without text-based node lookup.
+- These rollback and predicate changes are not yet committed/pushed. Next:
+  inspect/resolve remaining targeted C1 failures, update this record, then run
+  default and shadow `make check` once the C1 candidate is stable. No C2 bulk
+  consumer-count or performance run has started.
+
+- Branch: `phase27-5-4-work`; code checkpoint in progress. Latest pushed tip
+  before this slice: `976291b2`. Moss bootstrap confirms `moss-0.1`.
+- User re-scoped the phase: checker string work is out of K2; C1 is Fast Debug
+  only, with the two known invariant regressions fixed and `make check` required
+  in default and shadow. C2 covers emitter/optimizer consumer counts. K1 is
+  report-only.
+- C1 removes Fast Debug's source-fingerprint scans of retained handles in
+  `expression_tree` and pipeline resolution. Function/method return evaluation
+  requests the checked `ReturnValue` slot explicitly. The pipeline helper
+  receives the active tree and ExprId and verifies the node kind directly.
+  Targeted generic-string, swarm_044, functional-tree, Fast Debug/native/
+  optimized, specialized-facts, pipeline, and Phase 27 EST checks pass in
+  default/shadow. Generic-string Fast Debug counters: consumer reparses 0,
+  text-node lookups 0; checker text caches are outside the new target.
+- The first C1 `make check` failed in `check_phase27_est.py` before the corpus
+  jobs: two checker recursion/hang cases. ASan showed specialized-return
+  inference re-entry; a targeted recursion guard restored its expected
+  `TYPE_AMBIGUOUS_OPEN_RESULT`. A source-identity guard in pipeline inference
+  restored the expected rejection for `02_untyped_vector_parameters.moss`.
+  `grouped_recovery_reraise.moss` stalled only with the 8a3 local-call cursor
+  migration; that checker-side migration was reverted because checker counts
+  are no longer targets. Phase 27 EST focused checks pass after these changes.
+- Next: commit/push the checker regression repair, then rerun the C1 full gate
+  once. Do not run C2 corpus consumer counts or performance tests until C2 is
+  near completion.
+- The cursor migration now keeps the retained ExprId active for composite
+  inference and routes message target checks, member receiver inference, and
+  member-call argument inference through checked child nodes where available.
+  Build succeeded. Functional-tree, specialized-facts, Fast Debug/native/
+  optimized parity, generic review, optimizer-expression-uses, and focused
+  collection checks pass; collection and specialized-call checks pass in
+  shadow mode too. `functional_basics.moss` remains at 98 checker parses and
+  14,766 text-cache consultations. `specialized_call_facts.moss` remains at 44
+  checker parses and 24,399 text-cache consultations (24,459 before the
+  composite-cursor change). K8 is unchanged. The open-Map fixtures inspected
+  for the member inference path are checker-rejected, so they are not behavior
+  evidence. Message argument type queries now use the retained Argument ExprId
+  in both message checking passes. The focused message binding fixture remains
+  at 66 checker parses; checker text-cache consultations changed 8,638 ->
+  8,634, with default/shadow checks and Fast Debug output parity passing. This
+  is a small measured decrease. No full suite, corpus run, or performance run.
+- Pipeline projection now maps Let/Var initializer and Call expression roots,
+  with a fingerprint check before accepting a root handle. Functional
+  materialization checks in default/shadow pass. Exposing
+  `ownership_current_stmt_` to checked pipeline-root selection reduces the
+  same fixture from 118 to 109 checker parses (63 to 54 pipeline parses); the
+  functional-tree parity harness passes. This is checker-side K2 progress, but
+  the fixture remains far from the zero target.
+- Phase 21 local-call collection now passes its owning statement into pipeline
+  lookup, so the retained handle is available even before the ordinary checker
+  and ownership cursors run. A second statement-based dependency collector
+  also supplies that context. `functional_basics.moss` is now at 94 checker
+  reparses (pipeline 17), down from 98 (21 pipeline) before these two collector
+  routes; default/shadow checks and the functional-tree parity harness pass.
+  `functional_materialization.moss` remains at 109 checker reparses (54
+  pipeline). No aggregate scan yet.
+- A second signature-inference entry point now forwards the owning statement
+  into the same collector. Current focused measurements did not change
+  (`functional_basics` 94 checker / 17 pipeline; `functional_scope_fusion` 96
+  / 34). Default/shadow checks and the functional-tree parity harness pass;
+  this is structural context plumbing without measured K2 delta so far.
+- Function/method result call-edge collection now passes the retained
+  ReturnValue handle into the recursive pipeline collector, guarded by source
+  fingerprint. The accepted `swarm_065_pipeline_return.moss` checks in
+  default/shadow; focused counters remain 64 checker parses / 24 pipeline
+  parses. No delta is claimed for that fixture.
+- Generic field-result inference now reuses the already checked argument-type
+  projection instead of launching a second string-based type query. The
+  specialized-call fact harness and fixture pass in default/shadow; their
+  focused counters are unchanged because this case is absent from that sample.
+- Local-call collection now activates a fingerprint-verified retained cursor
+  and uses tree-aware projections for root normalization and call/member,
+  vector, binary, unary, and index forms. `functional_basics.moss` text-cache
+  consultations fall from 14,766 to 14,680 (-86); checker reparses remain 94.
+  Default/shadow, functional-tree, and Fast Debug parity checks pass.
+- Vector literal call collection now carries each child ExprId recursively.
+  Focused `functional_basics.moss` text-cache consultations fall further from
+  14,680 to 14,608 (-72), with checker reparses still 94. Regex and
+  `swarm_001_parenthesized_pipeline` checks complete normally; functional-tree
+  and Fast Debug/native/optimized parity harnesses pass. A binary-child cursor
+  experiment was reverted because the regex check exceeded a 15-second
+  targeted timeout; it caused no diagnostic or acceptance change. A follow-up
+  that only propagated binary ExprIds when child source matched the split text
+  also hit the 15-second regex timeout and was reverted. Vector-only cursor
+  propagation remains the last validated state. The experimental code changed
+  no diagnostics, acceptance, nor focused cache counters.
+- Most recent K2 slice routes checker pipeline projection through the known
+  statement/result root slot before the text-shape filter. Focused
+  `functional_basics.moss` checker parses changed 101 -> 98 post-initial
+  (pipeline parses 24 -> 21); text-cache consultations remain 14,766. The
+  latest `specialized_call_facts.moss` sample is 44 checker parses and 24,459
+  text-cache consultations. No corpus-wide rerun has followed the prior corpus
+  checkpoint at `48a00319`, so its K1/K2/K8 values remain the latest aggregate.
+- Latest aggregate checkpoint: K1 39,561 / 441,479 = 8.961%; K2 checker
+  post-initial parses 671,854 and consumer parses 8,249,789 across the
+  measured invocations; checker text-cache consultations 255,545,164; K8
+  rebuilds 23,337. Historical baselines are from smaller/different workloads:
+  K1 23,452 / 282,668 (8.3%), consumer reparses 4,929,605, and K8 10,095.
+  Like-for-like checker/cache baselines are unavailable. See the due report
+  below for exact scope and breakdown caveats.
+- The context-scoped effect-fact assertion was introduced by the branch's
+  root-slot migration (not present at `phase27-5-3-c1`) and fixed by mapping
+  the active statement to its checked root slot. `check_phase27_est.py` passes.
+- The requested ASan/UBSan `make check` ran once and failed before the latest
+  targeted fixes. It produced no sanitizer diagnostic markers, but did expose
+  a generic result-root checker error and a Fast Debug method-argument node
+  error; both have targeted fixes. The numeric-member crash was stack overflow
+  in recursive member inference, not vector-reference use-after-free.
+  No full suite has run after those fixes.
+- At `151cd004`, focused tests pass: functional-tree, specialized facts,
+  Fast Debug/native/optimized parity, EST checks, the generic string review
+  probe, and `swarm_044_typed_string_map_index` three-engine parity. Regex
+  checks pass in default and shadow. No bulk suite or performance run has run
+  since the earlier checkpoints.
+- Next: continue checker recursion over ExprIds and remove text-keyed cache
+  consultations, then migrate post-parse rewrites for K8. Do not run corpus
+  suites or performance tests until the phase is nearing completion. Keep this
+  file current at each handover; commit and push meaningful slices.
+
+### Prior implementation notes (historical; superseded by the snapshot above)
+
+- Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
+  latest pushed commit is `f9197e1d`; retained argument-node routing is
+  committed. The one default full-suite run failed at a baseline-reproducible
+  EST fixture segfault; no corpus or performance run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
+- Latest focused improvement removes a redundant `functional_pipeline_from_est`
+  parse from `fileio_result_type`: the EST member-call projection already
+  requires a root Call, so it cannot mistake a Pipeline root for its first
+  stage. After rebuilding, the functional-tree harness, FileIO runtime
+  fixture, and pipeline-try fixture pass; `git diff --check` passes.
+  `functional_basics.moss` checker parses fell from 121 to 101 (pipeline
+  parses 44 to 24); its checker text-cache consultations are 14,766.
+  Emitter measurement for that fixture is 866 post-initial parses, all
+  814 from native expression-view parsing; no consumer migration claim.
+  `specialized_call_facts.moss` remains 44 checker parses and 24,405 text
+  cache consultations. No full suite, corpus pass, or performance run.
+- Per the K2 clarification, `make --jobs=... check` was run once in default
+  mode. Its Fast Debug/native/optimized parity harness passed; the suite
+  then failed in `check_phase27_est.py` because checking
+  `numeric_member_field.moss --json` segfaulted before JSON output. The
+  same fixture segfaults in default and shadow on the current branch and
+  in a fresh build of pushed parent `9bff2ee0`, so the observed failure
+  predates the latest FileIO pipeline change. Full suite status is FAIL;
+  the run did not reach later gates. No repeated full-suite run yet.
+- Added a structural root-cursor route for recursive `argument:<n>` and
+  `call-argument:<n>` checking: it selects the matching retained
+  `ExprSlot::Argument` handle by role/index and unwraps a NamedArgument
+  node to its value ID. Functional basics and specialized-call/call-edge
+  fixtures pass default/shadow. Focused counters did not move
+  (functional-basics checker=101 parses, text-cache=14,766;
+  specialized-call checker=44, text-cache=24,405), so this is a node
+  routing foundation, not measured K2 progress yet.
+- A follow-up mapping of `call-invocation` to `ExprSlot::Expression` was
+  tested and reverted: it made `packages/regex/src/main.moss` segfault.
+  The focused regex/pipeline harness and Fast Debug/native/optimized
+  parity harness pass again after the revert. Do not restore that mapping
+  without resolving the handle/context mismatch first.
+- Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
+  statement roots, message/reply values, constructor fields, and Phase 20
+  Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses
+  pass. `tests/phase20_executor_basic.moss` still fails at line 12 with an
+  unchecked Executor callable on both `d8002391` and the release binary; this
+  is recorded baseline debt.
+- Checker pipeline validation passes exact statement/call handles to its
+  projector. This checkpoint moves the active checked-cursor projection ahead
+  of the textual `functional_pipeline_candidate` filter in
+  `functional_pipeline_from_est`; exact checked handles and active cursor are
+  now consulted before that compatibility predicate. `make moss-dev` and
+  `check_phase27_est_functional_tree.py build/compiler/moss-dev` pass. This did
+  not yet measure a K2 counter delta; no cache enlargement is being counted as
+  progress.
+- Checker expression checking tests empty Map receivers through
+  the active call's `receiver` ExprId with `est::empty_constructor_named`, for
+  both Map.get specialization paths. The accepted
+  `tests/swarm_028_self_method_argument_borrow.moss` checks successfully; the
+  parenthesized open Map.get adversarial fixture still rejects with
+  `TYPE_AMBIGUOUS_OPEN_RESULT`.
+- Fact-only expression inference now has an explicit checked-cursor entry and
+  recursively projects binary, unary, index, vector-element, call, enum-case,
+  and message roots from their ExprIds. Recursive operands receive child ExprIds
+  by AST role/ordinal. Targeted functional-tree, optimizer three-engine,
+  functional-basics Fast Debug, specialized-call check, and accepted borrow
+  fixture checks pass. The focused specialized-call text-cache count is now
+  24,835 (was 24,901, a reduction of 66); functional-basics remains 15,160.
+  Checker reparses remain 44 and 121 respectively, so this is partial K2
+  progress only and not completion. No bulk suite or performance pass ran.
+- A test-only temporary parse trace (removed without commit) localized focused
+  `functional_basics` checker parse traffic: 18 checker-scope parses include
+  `values |> map(normalize) |> filter(_ > 0) |> map(_ + offset)` (3), vector
+  literals/identifiers and indexed reads; 59 checker-view parses include the
+  source fragments plus synthetic `__est_named__(...)` wrappers; all 44
+  checker-pipeline parses are the same full pipeline expression. This points
+  at repeated semantic-analysis passes and named-argument/string helper paths,
+  not one remaining high-level parser call. The committed `Some`/`sum` and
+  inferred named constructor argument route is exercised by the match-copy
+  fixture and functional-tree harness.
+- An attempted exact `Argument[index]` routing in the ordinary Stmt::Call
+  checker loop was reverted: it caused a segmentation fault in
+  `packages/regex/src/main.moss`. The pre-attempt candidate at `dfba1338` passes
+  `check_phase27_est_functional_tree.py` for regex and the pipeline fixture.
+  The root cause is not isolated; do not reapply that slice without a safer
+  cursor-lifetime investigation.
+- A narrowed ordinary Stmt::Call change now classifies an argument as named
+  from its retained `Argument[index]` node, while leaving recursive checking on
+  the established string path. The regex/pipeline, functional-basics,
+  specialized-call, and borrow fixtures pass; a temporary `f(a: 1)` probe
+  still rejects with `CALL_NAMED_ARGUMENT_UNSUPPORTED`. It did not move the
+  focused aggregate counters, so no K2 delta is claimed.
+- `fileio_result_type` now consumes the active checked member-call node and
+  infers its receiver / first argument through child ExprIds. Targeted checks
+  pass for `phase20_fileio_helper_parameter.moss`,
+  `phase20_fileio_runtime_integration.moss`, `phase21_fileio_close_full.moss`,
+  and the regex/pipeline harness. Functional-basics counters remain
+  15,160 lookups / 121 checker reparses; the FileIO fixture measures 63,576 /
+  142, with no prior same-source counter for comparison. This is a structural
+  change only; no aggregate K2 delta is claimed.
+- Fact inference now projects identifier names, literal classes, signed integer
+  literal classification, empty typed vectors, and FileIO open roots directly
+  from the active ExprId. It also routes FileIO result typing and recursive
+  binary/unary/index/vector/call children by node role. Focused regex/pipeline,
+  optimizer three-engine, For, match-copy, and FileIO fixtures pass. Current
+  text-cache counts: `functional_basics` 14,744 (15,160 at `d2eb491f`, -416);
+  `specialized_call_facts` 24,405 (24,835 at `d2eb491f`, -430). Checker parse
+  counts remain 121 and 44 respectively; this lookup progress does not meet the
+  separate zero-reparse K2 target.
+- Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
+  hit and miss. Focused `functional_basics.moss` now has 14,744 checker text
+  cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
+  `specialized_call_facts.moss` is 24,405 cache lookups and 44 reparses (body
+  2, view 42). Focused prior baseline was 16,593 and 25,118 cache lookups
+  respectively; counters reflect prior routing work, not the latest predicate
+  reorder. Parser and text lookup targets remain zero.
+- Fast Debug's focused text-node lookup count is 0; on the earlier checkpoint it
+  was 6 for `functional_basics`. K8 text-to-tree rebuild baseline remains
+  10,095; no rewrite-side migration has yet reduced it.
+- Next: continue checker recursion from source strings to existing ExprIds,
+  including elimination of EST-view and text-keyed parse-cache consultations;
+  then migrate post-parse rewrites for K8. Do not run bulk suites/performance
+  until phase completion is near. Commit and push each meaningful slice and
+  update this handover as evidence changes.
 # Phase 26.2 — Cargo package graph checkpoint
 
-## Phase 27.5.3 active checkpoint (2026-10-31)
+### Earlier Phase 27.5.4 evidence (prior checkpoint; see active handover above) (2026-10-31)
+
+- Handover branch `phase27-5-4-work` is based on `phase27-5-3-c1`
+  (`c96bca786caefa5744000af9918be50a65b41037`). Bootstrap reports
+  `moss-0.1`. Latest pushed checkpoint is `33dff808`; the implementation tree is clean. An exploratory EST rewrite API sketch was inspected and discarded because it declared dependent types before their definitions; it did not compile or enter a commit. No full suites, performance runs, or Agent 2 audit have
+  run. Tightened K2 parser-boundary baseline: the focused `functional_basics.moss` check has 26 initial expression parses plus 121 checker re-parses split into body=18, EST-view=59, pipeline=44; `specialized_call_facts.moss` has 18 initial plus 44 checker re-parses. The parser boundary now counts each parse_expression call; initial parse_handle population and populate_loaded (.mossi bodies) are classified as allowed initial loads, and the whole Checker::run is classified as checker. Native generation and Fast Debug now have consumer scopes: functional_basics emission reports 866 consumer-side post-initial parses (the old native expression-view counter reports 814); Fast Debug adds zero consumer parses beyond checker=121. Corpus aggregation remains outstanding. The older text-node lookup metric is separate and does not satisfy this tightened K2. Removed an unnecessary checker source-syntax cache dependency on checker_est_view, but the parser-boundary count did not change (121/44); the remaining checker parsers are elsewhere in tree-based expression classification. An attempt to reuse the active cursor in tree_split_binary was reverted after `MOSS_EST=shadow` triggered the established EST/legacy agreement assertion on `packages/regex/src/main.moss`. Removing the checker pipeline temporary parse as an invariant also failed: `packages/regex/src/main.moss` then failed checking because a checker pass lacks its owning cursor; the parser fallback was restored and the default/shadow functional-tree fixture passes. The 44 checker-pipeline reparse baseline remains outstanding.
+- Pushed slices: kickoff/status `c151b89a`, focused baseline `247d2d8b`, checker
+  ExprId recursion for grouping/vectors `62bce8c2`, binary children `74a8bdb8`,
+  unary and indexed call children `0b7eb533`, coverage evidence `fdb726bf`, and
+  Fast Debug tree lifetime/call arguments `e6ac0bb2`, followed by fallback removal and the K8 rebuild counter `4569c4b3`.
+- Local checker work adds ExprId recursive entry for retained parenthesized
+  expressions, vector elements, binary operands, unary operands, and indexed
+  call arguments. Checker recursion still accepts strings in most paths and
+  has not changed emitter type-fact coverage.
+- Fast Debug now keeps the active tree/node for the full recursive evaluation,
+  reads calls, member calls, constructors, map/filter callbacks, message
+  arguments, indexed places, and for iterable/range arguments from retained
+  nodes. The expression-tree and functional-pipeline temporary-arena fallback
+  code is locally deleted and raises `MOSS_INTERNAL_INVARIANT` when a checked
+  node is absent. Targeted three-engine parity passes for the established
+  fixture set; checked parenthesized pattern, J1–J3 joins, D1 for fixture, and
+  `examples/functional_basics.moss` pass. Five representative Fast Debug runs
+  report zero expression reparses and zero pipeline reparses. This is targeted
+  evidence only, not C1 K1/K2 coverage.
+- Amendment K8 counter is test-build-only and increments `est::rebuild_slot`,
+  covering both `moss.cpp` rewrite helpers. Generation-only scan of all 2,127
+  `.moss` inputs under `tests/`, `examples/`, and `packages/` measured baseline
+  **10,095** and current **10,095** text-to-tree rebuilds. 1,403 generated
+  successfully; 724 failed as expected/incompatible standalone inputs,
+  including negative examples and project sources requiring package context.
+  No rewrite-side transformation has changed yet, so K8 has not improved. The next implementation area is `rewrite_module_program` in `src/moss.cpp`, which mutates source strings and rebuilds expression slots. A test-build-only K2 counter now reports `MOSS_EST_TEXT_NODE_LOOKUPS` at checker and consumer handle-selection sites. The targeted EST coverage harness passes; parser-boundary counts are 121 checker parses on functional_basics and 44 on specialized_call_facts. The module rewrite helpers in `src/moss.cpp` now update the already-selected handle by owner/slot/argument and assert freshness, removing redundant `est::lookup` text rediscovery; the actual text rewrite/reparse remains. Targeted `phase10_modules` rebuild and native/Fast Debug runs both produce `42`; direct check initially reported 2 tree-text rebuilds and 15 text-keyed lookups. The checker root cursor now selects by checked slot and argument index; the same check now reports 2 rebuilds and 1 text-keyed lookup after checker fact recording/agreement was also changed to use slot/argument identity. The focused specialization-facts test passes. The focused specialized-call fixture reported 113 text lookups before this work, then 15 after root/fact identity selection; checker child selection now uses checked parent/role/ordinal and the same fixture reports zero lookups. Fast Debug message execution now selects the checked `Receiver` handle by slot/argument identity instead of a synthesized invocation fingerprint; `message_argument_binding_use.moss` still prints three callback `777777` lines and `accepted`; `check_phase27_optimizer_expression_uses.py` passes its three-engine checks for all six targeted fixtures. A pipeline checker path now prefers the active checked cursor; `check_phase27_est_functional_tree.py` passes in default/shadow. Corpus K2 measurement and K4 per-class perturbation fixtures remain outstanding. An attempted Fast Debug change to consume the active node unconditionally failed the focused functional-basics parity fixture because synthesized expressions can be evaluated while a different node is active; that change was reverted, and the parity fixture passes on the restored code. This confirms those invocation paths need explicit node construction/propagation.
+- Native emitter focused baseline remains 2,681 expression-view reparses on
+  `tests/phase27/est/specialized_call_facts.moss`; generated type facts there
+  remain calls 2/18, constructors 0/10, identifiers 0/68, literals 0/44.
+  Corpus K1 and K2 have not been measured for this branch. No perf run has been
+  made.
+
+
+### Phase 27.5.3 active checkpoint (2026-10-31)
 
 - Working branch `phase27-5-3-work`, based on `phase27-5-2-m1`
   (`a2b308fd804d0d3b9970a292b2f4de076bf20f2d`). Baseline binaries and the
@@ -13644,3 +13983,474 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Final parity passed: 1,822 source checks, 1,130 default Rust emissions, 1,130 `-O` emissions, and 763 Fast Debug runs with no differences; same two paired Fast Debug timeouts. All 337 package builds and generated Rust matched; twelve raw package Fast Debug errors differ only by compiler executable path, with zero normalized residuals. `.mossi` baseline-identity comparison and three-engine parity passed.
 - Final first-parent performance against `origin/main=32a80a46220f49ac69f6ec68a7bd676b5941f27e`: aggregate 5.585s→5.698s (+2.0%), no `rw_*` beyond noise; `w2_spec_distinct_n032` +2.4% time, +1.9% RSS. Sum of per-fixture peak RSS maxima +1.13% across 77 fixtures. Full report and every fixture's peak RSS are in `tmp/compiler-perf/20261031-155208/LOCAL_REPORT.md` and CSV. The phase performance tripwire passes.
 - Agent 2 reviewed implementation SHA `9aa85e8877987155e6fd4f50bd734150e4665a7a` and returned GO. The phase merged as `a2b308fd804d0d3b9970a292b2f4de076bf20f2d`, first parent `32a80a46220f49ac69f6ec68a7bd676b5941f27e`; annotated tag `phase27-5-2-m1` targets it. Merge and tag were pushed to origin. Delivery report and Team closeout: `docs/phase27/27_5_2_REPORT.md`, `docs/phase27/agent-patterns/phase27-5-2.md`.
+
+## Phase 27.5.4 tightened-K2 cache-lookup checkpoint (2026-10-31)
+
+- User clarification: every lookup in the checker's EST-view cache and every
+  text-keyed parse cache counts as a text lookup, including hits and misses;
+  target requires these caches not to be consulted. Larger text-keyed caches
+  are not an acceptable K2 solution.
+- Added an opt-in, test-build-only `MOSS_EST_TEXT_CACHE_LOOKUPS` counter at
+  checker EST-view map lookups and the `simple_call_parse_cache_`,
+  `member_call_parse_cache_`, `top_level_parse_cache_`,
+  `outer_parentheses_parse_cache_`, and binary split cache lookups. Functional
+  pipeline handle-fingerprint consultation is included. Keyed identifier-name
+  projection lookups are not expression-text keyed and are excluded.
+- Corrected focused baseline: `functional_basics.moss` reports 16,593 text-cache
+  consultations and 121 checker reparses (body 18, EST view 59, pipeline 44);
+  `specialized_call_facts.moss` reports 26,775 consultations and 44 checker
+  reparses (body 2, EST view 42, pipeline 0). The old node-text lookup counter
+  reports zero for both and therefore does not measure this K2 requirement.
+- `make --jobs="$(nproc)" moss-dev`, both focused checks, and
+  `check_phase27_est_coverage.py` pass with instrumentation. This is baseline
+  instrumentation only; no checker cache has yet been removed. No full suite
+  or performance run has occurred.
+- Worktree has uncommitted edits to `src/est/expression_tree.{hpp,cpp}`,
+  `src/semantic_checker.cpp`, and `tests/tooling/check_phase27_est_coverage.py`
+  implementing the above counter. Next: checkpoint these edits, then continue
+  replacing checker string recursion/cache consultations with ExprId recursion
+  and facts. Keep branch `phase27-5-4-work`.
+
+## Phase 27.5.4 checker binary-node recursion checkpoint (2026-10-31)
+
+- `check_expression` now selects binary operators and child expressions from the
+  active checked `est::Binary` node via child ExprIds/source spans. Its 26
+  direct `tree_split_binary(value, ...)` decisions no longer consult the
+  text-keyed split cache when a checked cursor exists; no-cursor legacy call
+  sites remain and are still counted.
+- Focused checks passed: `check_phase27_est_functional_tree.py` (default/shadow)
+  and `check_phase27_optimizer_expression_uses.py` (six three-engine fixtures).
+  No full suites/performance run.
+- On `functional_basics.moss`, text-cache consultations moved from 16,593 to
+  15,887 (-706); on `specialized_call_facts.moss`, from 26,775 to 26,017
+  (-758). Checker reparses did not change (121 and 44). This remains far from
+  tightened K2 target zero and is not a completion claim.
+
+## Phase 27.5.4 unary/call node-recursion checkpoint (2026-10-31)
+
+- In `check_expression`, literal class, parenthesized grouping, unary shape,
+  simple calls, and member calls now read the active EST node and child spans
+  when available. Existing text helpers remain only for paths with no active
+  cursor; these helpers themselves are not yet eliminated.
+- Focused functional-tree default/shadow checks and all six
+  optimizer-expression three-engine fixtures pass. `functional_basics.moss`
+  also passes in EST shadow mode. The focused cache counter reads 15,675
+  consultations for this source (down from 16,593 at baseline); parse counts
+  remain initial=26, checker=121 (body=18, view=59, pipeline=44).
+- This is a further reduction, not K2 completion. All broad suites remain
+  pending for the phase checkpoint.
+
+## Phase 27.5.4 checked pipeline entry checkpoint (2026-10-31)
+
+- `check_functional_pipeline` now classifies the active checked expression as a
+  pipeline from its ExprId, and if it is a pipeline, constructs stages directly
+  from that EST node. This bypasses the pipeline-candidate text scan and
+  temporary parse for the ordinary recursive expression-check path. Calls to
+  `functional_pipeline_from_est` from other checker analyses still use text and
+  account for the remaining checker_pipeline parse count.
+- `functional_basics.moss` passes default and shadow checking; the focused
+  functional-tree script passes. Its parse counters are unchanged at
+  checker=121/checker_pipeline=44 and cache=15,675, confirming these 44 parses
+  come from other inference callers, not this entry point. No full suite or
+  perf run.
+
+## Phase 27.5.4 child facts and enum/message projection checkpoint (2026-10-31)
+
+- Binary/unary checking now prefers the checked child type fact after recursive
+  child checking, with the existing inference routine retained only when no
+  child fact is available. Enum-case and message classification project from
+  the active ExpressionView/ExprId rather than the EST-view text cache.
+- `functional_basics.moss` default/shadow checks pass; focused functional-tree
+  test passed before this last projection change. Current focused counts:
+  functional_basics cache=15,568, checker reparses=121; specialized_call_facts
+  cache=25,318, checker reparses=44. Baseline counts remain 16,593/121 and
+  26,775/44 respectively. No full suite/perf run.
+
+## Phase 27.5.4 collection/index node projection checkpoint (2026-10-31)
+
+- `check_expression` now projects collection shape/vector elements, Index, and
+  member access from its active ExpressionView, bypassing corresponding
+  checker EST-view lookups on these recursive paths. Functional-tree and six
+  optimizer-expression three-engine tests pass; functional_basics passes in
+  default and shadow.
+- Focused `functional_basics.moss` cache consultations are now 15,479 versus
+  16,593 baseline; checker reparses remain 121. K8 remains unchanged: the
+  phase10 module fixture reports two expression-tree rebuilds. The previously
+  measured corpus baseline is 10,095; corpus current count is not yet rerun.
+
+## Phase 27.5.4 named-argument node checkpoint (2026-10-31)
+
+- Enum payload field names, separators and values now come from the indexed
+  `NamedArgument` child node; enum value recursion selects that child by its
+  field role. Call-argument open-term extraction also reads the named node.
+- Shadow checks pass for `cp-e-phase27-3-rereview-parenthesized-enum.moss` and
+  `cp-e-rawshape-rerun/probe_vector_index.moss`. Specialized-call focused cache
+  consultations are 25,216 (baseline 26,775), checker parses remain 44.
+  `functional_basics.moss` remains at 15,486 consultations / 121 checker parses.
+  Full suites and performance remain pending.
+
+## Phase 27.5.4 cache-site breakdown checkpoint (2026-10-31)
+
+- The opt-in test-build cache counter now reports consultations by site, in
+  addition to a total. `functional_basics.moss`: total 15,486, split as
+  EST-view-entry=4,565, EST-view=3,960, named-argument-view=326, simple-call=916,
+  member-call=631, top-level-split=12, outer-parentheses=1,040,
+  binary-split=3,710, binary-overflow=326, pipeline-handle=0. This narrows the
+  next migration targets to text-based EST query helpers and inference's binary
+  and grouping calls. The text-cache K2 target remains zero.
+- `check_phase27_est_coverage.py` passes with test/dev and optimized binaries;
+  it confirms counters are opt-in/test-only/output-neutral. No full suite/perf.
+
+## Phase 27.5.4 latest checker cursor checkpoint (2026-10-31)
+
+- `check_expression` now normalizes pipelines through the active ExpressionView,
+  and recognizes nested unary operands through the checked child ExprId. The
+  effect analyzer's remaining source-span candidate comparisons are included
+  in the text-node lookup test counter. Focused counter-output and
+  functional-tree default/shadow scripts pass; shadow checks also pass for
+  functional_basics and the parenthesized-enum reproducer.
+- `functional_basics.moss`: cache consultations 15,462 (site breakdown: EST
+  entry 4,541; EST view 3,960; named arg 326; simple call 916; member call 631;
+  top split 12; outer grouping 1,040; binary 3,710; overflow 326; pipeline
+  handle 0). Checker reparses remain 121 (body 18, view 59, pipeline 44).
+  Text-node lookups remain 0 on this fixture, including the newly counted
+  effect span-matching path. K2 overall remains far from target zero.
+
+## Phase 27.5.4 typed-constructor node projection checkpoint (2026-10-31)
+
+- Empty typed-vector constructor recognition in `check_expression` now projects
+  the type from the active EST node. Default and shadow checks pass for
+  `tests/swarm_020_typed_vector_factory.moss`; focused functional-tree test
+  passes. The unrelated functional_basics cache total remains 15,462 and its
+  checker parse total remains 121, as expected for a source without that shape.
+
+## Phase 27.5.4 placeholder-node checkpoint (2026-10-31)
+
+- Pipeline placeholder classification in `check_expression` now reads the
+  active `Placeholder` ExprId instead of querying the EST-view cache by source.
+  The six optimizer-expression three-engine fixtures and two pipeline fixtures
+  pass in shadow mode.
+- `functional_basics.moss` cache consultations are 15,436 (down 26 from the
+  previous focused count); checker parses remain 121. The phase remains far
+  from K2's zero target.
+
+## Phase 27.5.4 message-target node checkpoint (2026-10-31)
+
+- Message target identifier validation now reads the active `Message.target`
+  node and message handler name instead of invoking the checker identifier
+  projection cache. The message-argument fixture passes default/shadow, and all
+  six focused three-engine expression-use fixtures pass. functional_basics
+  counters are unchanged, as it does not exercise message target checking.
+
+## Phase 27.5.4 call-argument ExprId checkpoint (2026-10-31)
+
+- Call and constructor child lookup now unwraps a `NamedArgument` to its value
+  ExprId for `argument:<n>` roles. Object constructor metadata and ordinary
+  call/constructor recursion use indexed named-argument facts; recursive
+  argument checking now passes the value node. This removes more cache-backed
+  argument parsing.
+- Default/shadow message and enum fixtures and all six focused three-engine
+  expression-use fixtures pass. `specialized_call_facts.moss` is at 25,130
+  cache consultations (down from 25,216), checker reparses remain 44.
+
+## Phase 27.5.4 vector child facts checkpoint (2026-10-31)
+
+- Vector literal elements are checked by ExprId before the FileIO/range escape
+  type decision; the decision now prefers the recorded child type fact and
+  falls back to inference only if that fact is absent. Default/shadow checks
+  pass for `swarm_020_typed_vector_factory.moss` and `functional_basics.moss`.
+- functional_basics cache consultations are 15,360 (down 76 from 15,436),
+  checker reparses remain 121 (body=18, view=59, pipeline=44). No full suite.
+
+## Phase 27.5.4 child TypeRef constraint checkpoint (2026-10-31)
+
+- Enum payload declared-type matching now consumes the child ExprId's checked
+  TypeRef and unifies it with the declared field type before falling back to
+  the previous checker inference path. Parenthesized-enum, vector/index, and
+  typed-vector default/shadow fixtures pass. The unrelated specialization
+  fixture's cache and parser counters are unchanged at 25,130 and 44.
+
+## Phase 27.5.4 named-argument parse fallback checkpoint (2026-10-31)
+
+- When a checked Call/Constructor is active, positional and named argument
+  shape now comes exclusively from the argument ExprId; those paths no longer
+  fall back to `tree_parse_named_argument` or its separator query. Text parsing
+  remains only for no-cursor callers.
+- Default/shadow message and typed-vector checks, shadow parenthesized-enum,
+  and six three-engine expression-use fixtures pass. specialized_call_facts
+  cache consultations are 25,118 (down 12), checker reparses remain 44.
+
+## Phase 27.5.4 map-entry identifier projection checkpoint (2026-10-31)
+
+- Domain-handle escape checking in map literals now reads the value Identifier
+  node directly instead of querying checker identifier projection by its source
+  text. The `domain-handle-map.moss` adversarial fixture still rejects with
+  `MOSS_COMPILE_ERROR` in default and shadow. functional_basics counters are
+  unchanged because it has no map domain-handle entry.
+
+## Phase 27.5.4 leaf-type node checkpoint (2026-10-31)
+
+- The domain-handle guard reads active Identifier bindings and Literal classes
+  directly from checked nodes (including pipeline placeholder type facts),
+  avoiding general expression inference for these leaf forms. `functional_basics`
+  and the domain-handle-map rejection pass default/shadow checks.
+- functional_basics cache consultations are 15,160 (down 200); checker
+  reparses remain 121. Tightened K2 is still open.
+
+## Phase 27.5.4 root fact reuse checkpoint (2026-10-31)
+
+- The domain-handle guard now consumes an existing root semantic type fact
+  when present and resolves pipeline placeholder TypeRefs through the active
+  checker solver before examining their type. `phase2_safety.moss` passes
+  default/shadow, and the domain-handle-map rejection remains.
+- functional_basics counters are unchanged at 15,160 cache consultations and
+  121 checker reparses because its guard queries happen before first-pass facts
+  are available. No full suite/perf run.
+
+### Phase 27.5.4 current uncommitted checkpoint (2026-10-31)
+
+- Pushed handover remains `bb5bde84` on `phase27-5-4-work`. The one default
+  full-suite attempt remains failed at the numeric-member fixture segfault;
+  bisect localized the first bad commit to `1b7c5ccc`. A separate diagnostic
+  regression bisected to `9490a8a7`.
+- Current local edits contain: a guarded checker cursor path for direct leaf
+  facts, pipeline operator matching against normalized EST operator spelling,
+  traversal of binary pipeline stages through their checked child node, and a
+  narrow compatibility diagnostic preserving the established unknown-`count`
+  result. `docs/phase27/27_5_4_CONFLICTS.md` records that observable pipeline
+  conflict. The temporary trace hook and an ineffective result-handle lookup
+  experiment were removed.
+- Targeted validation after these edits: `make moss-dev --jobs="$(nproc)"`
+  built successfully; `check_phase27_est_functional_tree.py` passed;
+  `check_phase27_5_3_fastdebug_checked_tree.py` passed; direct JSON checks
+  returned the expected UNKNOWN_FIELD, UNSUPPORTED_EXPRESSION_OPERATOR,
+  unknown local function `count`, and TYPE_AMBIGUOUS_OPEN_RESULT diagnostics
+  for their four reproducers. `check_phase27_est.py` still fails at its
+  context-scoped effect-fact assertion; this was also reproduced at earlier
+  commit `745c6176`, so it predates the current local changes. No second full
+  suite, corpus pass, or performance run has occurred.
+- Current exact working tree and commit state must be inspected before another
+  handover: the fixes above are not yet committed or pushed. Next steps are to
+  rebuild after cleanup, review the patch for scope, checkpoint it, and resume
+  checker recursion and rewrite-side K8 migration.
+- Arena stability advisory investigated with ASan/UBSan. `est::Arena::at()`
+  returns references to `std::vector<Node>` storage, so any reference/pointer
+  retained across `append()` is invalid; node work must carry ExprIds across
+  append-capable calls or make storage stable. The numeric-member crash itself
+  is not this invalidation: an ASan/UBSan build of bisected bad commit
+  `1b7c5ccc` reports stack overflow in `Checker::inferred_expr_core`, with
+  repeated recursion at its member fallback (`inferred_expr(member_base)` at
+  line 12423). The current candidate ASan/UBSan build returns the expected
+  `UNKNOWN_FIELD` JSON for `numeric_member_field.moss` with no sanitizer report.
+  At the next full checkpoint run, run `make check` once under ASan and record
+  the result; no ASan full suite has run yet.
+- Added the reference-lifetime rule beside `est::Arena::append()`/`at()` in
+  `src/est/expression_tree.hpp`: ExprIds survive growth; references do not, so
+  reacquire `at(id)` after append-capable operations. This is documentation-only.
+- Follow-up checker slice uses the active EST view for field-access projection
+  and routes its receiver through the `base` ExprId child. The first attempt to
+  migrate member-call inference to its checked helper caused
+  `packages/regex/src/main.moss` to segfault: an active cursor can belong to a
+  different expression than the legacy inference string. That member-call
+  change was reverted; do not use the helper there until cursor/source identity
+  is explicit. After the revert, the functional-tree harness and targeted
+  Fast Debug/native/optimized parity harness pass; `check_phase27_est.py` still
+  fails at the context-scoped effect-fact assertion. No full suite or perf run.
+- Expanded checked inference to project nonnumeric Member roots through the
+  active cursor; numeric member names deliberately remain outside this
+  observational fact path to avoid the malformed-field stack recursion. The
+  functional-tree and Fast Debug/native/optimized parity harnesses pass;
+  regex package checking succeeds and the numeric-field fixture retains
+  UNKNOWN_FIELD. A focused regex measurement is 12,003 checker post-initial
+  parses (body 1,106, view 1,674, pipeline 9,020), 4,933,254 text-cache
+  lookups, and 203 tree-text rebuilds. There is no same-source pre-change
+  measurement, so no K2/K8 delta is claimed. The member-call node experiment
+  remains reverted because of the cursor/source mismatch described above.
+- Member-call projection was retried with an exact source-identity gate on the
+  active cursor. This prevents the prior cursor/source mismatch: functional
+  tree, Fast Debug/native/optimized parity, and regex package checks pass. On
+  `packages/regex/src/main.moss`, checker text-cache lookups moved from
+  4,933,254 to 4,933,110 (-144; member_call site 265,799 to 265,655), while
+  checker reparses remain 12,003 and tree rebuilds remain 203. This is measured
+  K2 progress, but the remaining target is zero. No full suite/performance run.
+- Added exact source identity checks before the checked simple-call and binary
+  split helpers use an active cursor; a mismatch falls back to the established
+  parser path. Focused regex, pipeline diagnostic, functional-tree and parity
+  checks pass. Regex counters did not change from the `a4552fb2` sample
+  (4,933,110 text-cache lookups; 12,003 checker reparses), so this guard is
+  recorded as cursor-context safety only, with no K2 progress claim.
+- `checked_expression_view` now also requires exact retained-source identity
+  before returning the active node; mismatches use the checker view path. The
+  same focused functional-tree, Fast Debug/native/optimized, regex and pipeline
+  diagnostic checks pass. Regex text-cache lookups are 4,933,148 (+38 from
+  mismatched-source fallbacks), while checker reparses stay at 12,003. This is
+  an identity correctness guard and not K2 progress.
+- The effect-fact assertion is a branch regression, not parent debt: the
+  `phase27-5-3-c1` compiler emits `MOSS_EST_EFFECT_FACT` for
+  `tests/phase27/est/side_facts.moss`, while this branch had lost it. During the
+  checker root-slot migration, `analyze_effect_expression` still requested an
+  empty root slot; after generic source-fingerprint selection was removed it
+  could no longer find the return node. It now maps the active statement kind
+  to its checked root slot (return/reply/raise/assignment/condition/iterable/
+  match). `check_phase27_est.py` now passes on the current dev compiler. This
+  fixes observability/coverage only; no semantic output change is intended.
+
+### Phase 27.5.4 due corpus progress report (2026-10-31)
+
+Measured current candidate `48a00319` with `MOSS_EST_COVERAGE_STATS=1` over
+2,161 `.moss` files and 384 `Moss.toml` manifests under tests, examples,
+benchmarks, and packages. Measurement is a source check, native emission
+attempt, Fast Debug for accepted main-bearing sources, then package build and
+package debug. 760 source checks, 772 emissions, 154 source Fast Debug runs,
+77 package builds, and 158 package debug runs returned nonzero (many are
+expected negative fixtures); counters include repeated checker work in each
+separate command.
+
+- K1: 39,561 PRESENT / 441,479 total = 8.961%. Published 27.5.2 baseline is
+  23,452 / 282,668 = 8.3%, but it used a smaller corpus. A c96bca78 diagnostic
+  over tests/examples/packages (no benchmarks) measured 39,125 / 416,005 =
+  9.4049%; it is also not directly comparable to the present expanded run.
+  Thus current expanded-run K1 is reported, but neither historical figure is
+  an exact same-workload delta.
+- K2 checker post-initial parses: 671,854 across every measured command (the
+  direct source-check + package-build pass alone is 242,033). Text-keyed EST
+  cache consultations: 255,545,164 across command invocations (all recorded
+  at checker call sites); 89,381,312 in direct source checks alone. No
+  consumer-side text-keyed-cache lookup was observed. The phase27.5.2 consumer-reparse baseline is
+  4,929,605, while current parse-site consumer count is 8,249,789 and the
+  specialized fallback counters total 7,734,213 (native expression/pipeline
+  plus Fast Debug expression/pipeline; the current explicit Fast Debug
+  fallback counters are zero). Current scan includes benchmarks and counts
+  failed emission attempts, unlike the historical baseline, so that delta is
+  not apples-to-apples. The old baseline has no text-keyed-cache consultation
+  counter, so its comparable cache-lookup baseline is unavailable. Text-to-node
+  lookups total 12,993,343 across command invocations; available split shows
+  395,461 in direct source checks, 12,048,499 emitter-side in source emission,
+  and 167 Fast Debug-side in source runs; package commands contribute 77,170
+  and are not split by consumer in this harness. Text
+  cache lookup sites are currently in checker code; their counter should not
+  be misreported as consumer cache reads.
+- K8: 23,337 text-to-tree rebuilds summed across measured command invocations
+  (10,312 direct source checks, 10,312 emission commands, 721 source Fast
+  Debug commands, 54 package builds, 1,938 package debug commands). Historical
+  baseline is 10,095 on a smaller/different 2,127-source workload; because the
+  present run includes repeated check/build work and an expanded source set,
+  this is not a comparable delta. Exact like-for-like baseline counters were
+  not instrumented in the parent binary.
+
+Effect-fact assertion classification is confirmed: branch regression, not
+pre-existing on main. The `phase27-5-3-c1` parent binary emits the context-
+scoped `MOSS_EST_EFFECT_FACT` for `tests/phase27/est/side_facts.moss` and passes
+`check_phase27_est.py`; the branch root-slot migration had removed the generic
+empty-slot source selection while effect analysis still requested that slot.
+The root slot is now derived from the active statement kind, and the targeted
+harness passes on `48a00319`.
+
+### Phase 27.5.4 ASan checkpoint (2026-10-31)
+
+Ran `make --jobs="$(nproc)"` `check` once with the dev build compiled and linked
+using Clang AddressSanitizer + UndefinedBehaviorSanitizer. The gate failed; do
+not count it as suite PASS. The run emitted no `ERROR: AddressSanitizer`,
+UBSan `runtime error`, or ASan deadly-signal marker. It did expose current
+branch fail-closed errors in existing fixtures: the generic helper source
+`tests/tooling/phase20_review/probes/guard_generic_string_native.moss` fails
+checking with `MOSS_INTERNAL_INVARIANT checked binary child source missing
+line=2`, and `tests/swarm_044_typed_string_map_index.moss` fails Fast Debug
+with `MOSS_INTERNAL_INVARIANT missing checked expression node` for
+`lookup.read("alpha")`. These reproduce with the regular `./moss` too, so they
+are not sanitizer-only findings and require diagnosis. The run also had
+sanitizer-overhead performance trips/timeouts and nested Rust build jobserver
+warnings due inherited MAKEFLAGS; those do not establish compiler semantic or
+memory-safety defects. No changes were made in response yet. The earlier
+numeric-member ASan/UBSan diagnosis remains stack overflow at the old malformed
+member recursion site, not a vector-reference use-after-free.
+
+After the sanitizer checkpoint, both source-level invariant failures were
+fixed with targeted context preservation. `check_expression` now labels a
+function result root as `return-value`, and `root_expression_cursor` only uses
+the current function's result handle for that explicit root. This prevents a
+recursive generic operand from being mistaken for the entire result expression
+(`guard_generic_string_native`); its review-probe native/Fast Debug check now
+passes. Fast Debug `call_method` now carries the checked call tree and argument
+ExprIds into parameter binding, so method parameters with literal arguments no
+longer request independent textual roots. `swarm_044_typed_string_map_index`
+passes check/Fast Debug/native/-O parity with output `7`. Focused
+`check_phase27_est.py` and `check_phase27_5_3_fastdebug_checked_tree.py` pass.
+The ASan suite was run before these fixes; no full suite has run after them.
+
+### Phase 27.5.4 C1 checkpoint — test-build perturb/drop layer
+
+At branch `phase27-5-4-work`, the test-build fact-hook layer is implemented
+for call targets, specializations, joins, and patterns. `Makefile` runs
+`check_phase27_5_4_fact_hooks.py` in default and `MOSS_EST=shadow` modes.
+Each class has three accepted fixtures; for each, `MOSS_TEST_PERTURB` and
+`MOSS_TEST_DROP_FACT` require Fast Debug, native generation, and `-O`
+generation to return `MOSS_INTERNAL_INVARIANT`. The expected behavior is
+fail-closed after invalidating the checked answer. Agent 2 still needs to
+select an additional audit fixture for each class.
+
+Focused checks pass: hook harness in default (4 classes x 3 fixtures) and
+shadow; Fast Debug string-debt audit with `--require-zero fast_debug`; and
+three-fixture Fast Debug/native/optimized parity. `build/compiler/moss-opt`
+ignored perturb/drop environment variables on two smoke fixtures, confirming
+these new hooks are test-build-only. Note: the repository-root `./moss` is
+currently a local test binary and did honor them, so release-hook validation
+must use the non-test `build/compiler/moss-opt`, not `./moss`.
+
+No full suite has run after this work. The initial pre-fix default suite
+remains 18 failures (listed in `tmp/phase2754-c1-default-first.log`). C1
+still requires final default/shadow suites, Agent 2 audit and authorized merge
+plus tag. C2 emitter/optimizer zero-count migration and performance have not
+started. `docs/COMPILER_STATE.md` now records the hook contract and the
+expression-type/pipeline-type/ownership gaps per engine. `AGENTS.md` now
+records scoped Phase 27.5.4 commit/push and gated C1/C2 merge authorization.
+
+The hook harness now also receives `moss-opt` and verifies that the non-test
+build ignores both perturb and drop variables on one accepted fixture per
+class. Both registered-mode harness invocations pass with this assertion.
+
+### Phase 27.5.4 C1 checkpoint — callable Identifier regression
+
+The first post-hook full default run completed at 160/165. Five jobs failed on
+Fast Debug `MOSS_INTERNAL_INVARIANT missing checked expression node`, all from
+function/callback Identifiers (`add_one`, `plus`, project-local callable IDs,
+and a Phase 15.14 imported callable). The exact Team A and typed-semantic-API
+reproducers pass on parent `c96bca78`, so this was a branch regression. Cause:
+Fast Debug had removed the text-to-active-node lookup, but its last Identifier
+case still called `expression_identifier(source)`. It now reads the current
+`est::Identifier` node directly and fails closed if no checked tree is active.
+
+After the fix, targeted Team A and typed-semantic-API tests pass in default and
+shadow; Phase 26.1 C1 scope and X4 pass; Phase 106 runtime shard passes; the
+string-debt `--require-zero fast_debug`, targeted three-engine parity, and
+all perturb/drop hooks pass. The five-job cluster is therefore resolved in
+focused tests. The first full run did not reach the shadow suite. A fresh
+full default+shadow gate is still required before C1 audit/merge.
+
+### Phase 27.5.4 C1 full-suite checkpoint
+
+Fixed candidate `6a7d24ba` passes `make --jobs="$(nproc)" check` in both
+modes. The final log is `tmp/phase2754-c1-final-check.log`: pre-suite EST,
+coverage, Fast Debug checked-tree/parity, string-debt and fact-hook checks
+pass; default suite is 165/165; shadow suite is 165/165. The 165-job suites
+include `check_phase27_three_engine`, Phase 26 package/semantic gates, Phase
+25/SDK tests, the Fast Debug shard and performance-baseline regression gate.
+The separate targeted Fast Debug/native/optimized parity harness, three
+accepted-fixture perturb/drop checks per class in both modes, and non-test
+compiler hook-ignore checks also pass. The first failed post-hook run was
+160/165; its five Fast Debug Identifier failures were fixed and all five
+corresponding jobs pass in this full run.
+
+Next: Agent 2 selects and tests one additional fixture per required fact class,
+audits C1's Fast Debug no-reparse/text-lookup boundary and fallback deletion,
+and spot-checks three parity results. If GO, fetch current `origin/main`,
+merge C1 with first parent at that tip, tag `phase27-5-4-c1`, and add the
+Phase 27.5.4 C1 delivery entry. C2 has not started.
+
+Agent 2 C1 audit returned GO at reviewed implementation `0e150dce`. The
+additional fixtures selected by Agent 2 and results are in
+`docs/phase27/27_5_4_REPORT.md`; all passed perturb/drop in Fast Debug, native,
+and `-O`. Agent 2 confirmed zero Fast Debug consumer reparse/text-lookup
+counter sites and absence of the fallback branch; the coverage sample was
+also zero. `origin/main` advanced to `3da06d9e`; the authorized C1 merge must
+use that as first parent after the report is committed and pushed.

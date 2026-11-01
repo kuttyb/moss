@@ -130,6 +130,9 @@ class Arena {
                   rejected_source = 0, failed = 0;
   };
   static constexpr std::size_t slot_count = 12;
+  // Node IDs remain stable across growth; references returned by at() do not,
+  // because nodes_ is vector-backed. Carry ExprIds across any operation that
+  // may append, then reacquire the node reference afterward.
   ExprId append(Node node);
   ExprId append(Node node, SourceSpan span);
   const Node& at(ExprId id) const;
@@ -139,6 +142,9 @@ class Arena {
                     SemanticFacts facts);
   const SemanticFacts* facts(ExprId id,
                              std::string_view specialization_context) const;
+#ifdef MOSS_TEST_BUILD
+  void test_mutate_call_targets(bool drop);
+#endif
 
   // Same-source copies retain handles and share this immutable arena.
   // A transformed or duplicated logical occurrence calls duplicate() and
@@ -286,6 +292,29 @@ ExprId fresh_occurrence(Arena& arena, ExprId root);
 void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint64_t owner, ExprSlot slot,
                   std::uint32_t argument_index, const std::string& new_text);
+#ifdef MOSS_TEST_BUILD
+enum class ExpressionParseSite : std::uint8_t {
+  InitialSource, Checker, CheckerView, CheckerPipeline, Consumer, Other
+};
+enum class ExpressionTextCacheSite : std::uint8_t {
+  EstViewEntry, EstView, NamedArgumentView, SimpleCall, MemberCall,
+  TopLevelSplit, OuterParentheses, BinarySplit, BinaryOverflow, PipelineHandle,
+  Count
+};
+class ExpressionParseSiteScope {
+ public:
+  explicit ExpressionParseSiteScope(ExpressionParseSite site) noexcept;
+  ~ExpressionParseSiteScope();
+  ExpressionParseSiteScope(const ExpressionParseSiteScope&) = delete;
+  ExpressionParseSiteScope& operator=(const ExpressionParseSiteScope&) = delete;
+ private:
+  ExpressionParseSite previous_;
+};
+void record_expression_text_parse() noexcept;
+void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept;
+void record_expression_tree_rebuild() noexcept;
+void record_expression_text_lookup() noexcept;
+#endif
 
 enum class Mode { On, Shadow };
 Mode mode();  // Defaults to On; Shadow enables test-only parser cross-checks.
@@ -330,6 +359,9 @@ inline bool functional_pipeline_candidate(std::string_view source) {
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);
+void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
+                                std::string_view source, ExprSlot slot,
+                                int line, std::uint64_t origin_id);
 void adopt_program_arenas(Program& destination, Program& source);
 std::uint64_t stable_origin_id(std::string_view identity);
 

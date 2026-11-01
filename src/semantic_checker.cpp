@@ -31273,6 +31273,72 @@ class Checker {
   }
 
 public:
+  void apply_test_fact_hooks() {
+#ifdef MOSS_TEST_BUILD
+    const bool drop_targets = moss_test_drop_fact("call-targets");
+    const bool perturb_targets = moss_test_perturb_fact("call-targets");
+    if (drop_targets || perturb_targets) {
+      std::set<est::Arena*> visited;
+      for (const auto& arena : p_.expression_arenas)
+        if (arena && visited.insert(arena.get()).second)
+          arena->test_mutate_call_targets(drop_targets);
+      if (p_.expression_arena &&
+          visited.insert(p_.expression_arena.get()).second)
+        p_.expression_arena->test_mutate_call_targets(drop_targets);
+    }
+    const bool drop_joins = moss_test_drop_fact("joins");
+    const bool perturb_joins = moss_test_perturb_fact("joins");
+    const bool drop_patterns = moss_test_drop_fact("patterns");
+    const bool perturb_patterns = moss_test_perturb_fact("patterns");
+    auto alter_pattern = [&](std::optional<est::PatternNode>& pattern) {
+      if (!pattern) return;
+      if (drop_patterns) pattern.reset();
+      else if (perturb_patterns)
+        pattern->case_name = "__moss_test_perturbed_pattern__";
+    };
+    auto alter_failure_arms = [&](std::vector<FailureArm>& arms) {
+      for (auto& arm : arms) {
+        if (drop_patterns) {
+          arm.est_patterns.clear();
+          arm.est_pattern.reset();
+        } else if (perturb_patterns) {
+          for (auto& pattern : arm.est_patterns)
+            pattern.case_name = "__moss_test_perturbed_pattern__";
+          alter_pattern(arm.est_pattern);
+        }
+      }
+    };
+    auto alter_body = [&](std::vector<Stmt>& body) {
+      for (auto& statement : body) {
+        if (drop_joins || perturb_joins) {
+          statement.joined_types.clear();
+          statement.joined_types_by_context.clear();
+        }
+        if (drop_patterns || perturb_patterns)
+          alter_pattern(statement.est_pattern);
+      }
+    };
+    if (p_.main) alter_body(p_.main->body);
+    for (auto& function : p_.functions) {
+      alter_body(function.body);
+      if (function.execution_body) alter_body(*function.execution_body);
+    }
+    for (auto& object : p_.objects)
+      for (auto& method : object.methods) {
+        alter_body(method.body);
+        if (method.execution_body) alter_body(*method.execution_body);
+      }
+    for (auto& domain : p_.domains)
+      for (auto& handler : domain.handlers) {
+        alter_body(handler.body);
+        if (handler.execution_body) alter_body(*handler.execution_body);
+        alter_failure_arms(handler.failure_arms);
+        if (handler.execution_failure_arms)
+          alter_failure_arms(*handler.execution_failure_arms);
+      }
+#endif
+  }
+
   static bool unit_test_control_join_binding_facts() {
     std::istringstream input(R"moss(export fn select(value, flag: Bool):
   if flag:
@@ -33697,7 +33763,10 @@ CheckedProgram::CheckedProgram(Program& program)
 CheckedProgram::~CheckedProgram() = default;
 CheckedProgram::CheckedProgram(CheckedProgram&&) noexcept = default;
 CheckedProgram& CheckedProgram::operator=(CheckedProgram&&) noexcept = default;
-void CheckedProgram::run() { impl_->checker.run(); }
+void CheckedProgram::run() {
+  impl_->checker.run();
+  impl_->checker.apply_test_fact_hooks();
+}
 const std::vector<Warning>& CheckedProgram::warnings() const {
   return impl_->checker.warnings();
 }

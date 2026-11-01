@@ -180,9 +180,9 @@ When working with Moss:
   authorized scoped local commits and normal pushes to the configured remote;
   no PR is in scope. This authorization includes the Phase 27.3 expression-tree
   migration on `phase27-3-work` and Phase 27.5.1 work on
-  `phase27-5-1-work`. The Phase 27.5.1 delivery may merge only after its
-  stated gates and independent review pass, as explicitly authorized for that
-  phase.
+  `phase27-5-1-work`. Phase 27.5.4 work on `phase27-5-4-work` is authorized
+  for scoped local commits, normal pushes, and its explicitly stated C1/C2
+  merges after the required gates and independent reviews pass.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

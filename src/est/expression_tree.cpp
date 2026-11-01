@@ -65,6 +65,17 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
+#ifdef MOSS_TEST_BUILD
+void Arena::test_mutate_call_targets(bool drop) {
+  for (auto& entry : semantic_facts_) {
+    auto& target = entry.second.resolved_target;
+    if (target.empty()) continue;
+    if (drop) target.clear();
+    else target = "fn:__moss_test_perturbed_call_target__";
+  }
+}
+#endif
+
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
     const Arena& arena, ExprId expression, std::string_view source,
     const std::function<std::optional<FunctionalNodeKind>(
@@ -223,6 +234,9 @@ void assert_fresh(const Handle& handle, const std::string& source) {
 const Handle* lookup(const std::vector<Handle>& handles, const Arena& arena,
                      std::uint64_t owner, ExprSlot slot,
                      std::uint32_t argument_index, const std::string& source) {
+#ifdef MOSS_TEST_BUILD
+  record_expression_text_lookup();
+#endif
   for (const auto& handle : handles) {
     if (handle.owner != owner || handle.slot != slot ||
         handle.argument_index != argument_index) continue;
@@ -240,6 +254,9 @@ ExprId fresh_occurrence(Arena& arena, ExprId root) {
 void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint64_t owner, ExprSlot slot,
                   std::uint32_t argument_index, const std::string& new_text) {
+#ifdef MOSS_TEST_BUILD
+  record_expression_tree_rebuild();
+#endif
   std::uint64_t origin_id = 0;
   std::uint32_t arena_index = 0;
   std::uint32_t base_line = 1, base_column = 1;
@@ -278,6 +295,15 @@ Mode mode() {
 namespace {
 std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
+std::uint64_t expression_tree_rebuild_count = 0;
+std::uint64_t expression_text_lookup_count = 0;
+std::uint64_t expression_text_cache_lookup_count = 0;
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionTextCacheSite::Count)>
+    expression_text_cache_lookup_counts{};
+std::array<std::uint64_t, 6> expression_text_parse_counts{};
+thread_local ExpressionParseSite active_expression_parse_site =
+    ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
 
 struct TestCoverageReporter {
@@ -307,6 +333,54 @@ void record_consumer_reparse(ConsumerReparseSite site) noexcept {
   }
 }
 
+void record_expression_tree_rebuild() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_tree_rebuild_count;
+  } catch (...) {
+  }
+}
+
+void record_expression_text_lookup() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_lookup_count;
+  } catch (...) {
+  }
+}
+
+ExpressionParseSiteScope::ExpressionParseSiteScope(
+    ExpressionParseSite site) noexcept
+    : previous_(active_expression_parse_site) {
+  active_expression_parse_site = site;
+}
+
+ExpressionParseSiteScope::~ExpressionParseSiteScope() {
+  active_expression_parse_site = previous_;
+}
+
+void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_cache_lookup_count;
+    ++expression_text_cache_lookup_counts[static_cast<std::size_t>(site)];
+  } catch (...) {
+  }
+}
+
+void record_expression_text_parse() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_parse_counts[
+        static_cast<std::size_t>(active_expression_parse_site)];
+  } catch (...) {
+  }
+}
+
 void record_generated_type_fact_coverage(std::string_view node_kind,
                                          bool present) noexcept {
   if (!test_coverage_counters_enabled()) return;
@@ -319,6 +393,45 @@ void record_generated_type_fact_coverage(std::string_view node_kind,
 
 void report_test_coverage_counters() {
   std::lock_guard<std::mutex> lock(test_coverage_mutex);
+  std::cerr << "MOSS_EST_TREE_TEXT_REBUILDS="
+            << expression_tree_rebuild_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_NODE_LOOKUPS="
+            << expression_text_lookup_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_CACHE_LOOKUPS="
+            << expression_text_cache_lookup_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_CACHE_LOOKUPS_BY_SITE";
+  static constexpr std::array<std::string_view,
+      static_cast<std::size_t>(ExpressionTextCacheSite::Count)> cache_site_names{
+      "est_view_entry", "est_view", "named_argument_view", "simple_call",
+      "member_call", "top_level_split", "outer_parentheses", "binary_split",
+      "binary_overflow", "pipeline_handle"};
+  for (std::size_t index = 0; index < cache_site_names.size(); ++index)
+    std::cerr << ' ' << cache_site_names[index] << '='
+              << expression_text_cache_lookup_counts[index];
+  std::cerr << '\n';
+  const auto checker_body_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Checker)];
+  const auto checker_view_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::CheckerView)];
+  const auto checker_pipeline_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::CheckerPipeline)];
+  const auto checker_parses = checker_body_parses + checker_view_parses +
+      checker_pipeline_parses;
+  const auto consumer_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Consumer)];
+  const auto other_parses = expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Other)];
+  std::cerr << "MOSS_EST_EXPRESSION_TEXT_PARSES initial="
+            << expression_text_parse_counts[static_cast<std::size_t>(
+                   ExpressionParseSite::InitialSource)]
+            << " checker=" << checker_parses
+            << " checker_body=" << checker_body_parses
+            << " checker_view=" << checker_view_parses
+            << " checker_pipeline=" << checker_pipeline_parses
+            << " consumer=" << consumer_parses
+            << " other=" << other_parses
+            << " post_initial=" << checker_parses + consumer_parses + other_parses
+            << '\n';
   std::cerr << "MOSS_EST_REPARSES native_expression_view="
             << consumer_reparse_counts[0]
             << " native_functional_pipeline=" << consumer_reparse_counts[1]
@@ -1338,6 +1451,9 @@ std::optional<std::string> outer_grouping_fragment(std::string_view source) {
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {
+#ifdef MOSS_TEST_BUILD
+  record_expression_text_parse();
+#endif
   const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
   if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
   return id;
@@ -1694,6 +1810,10 @@ std::string dump_node(const Arena& arena, ExprId id) {
 
 static void populate_impl(Program& program, std::vector<Stmt>* additional,
                           std::uint64_t origin_id) {
+#ifdef MOSS_TEST_BUILD
+  ExpressionParseSiteScope initial_parse_scope(
+      ExpressionParseSite::InitialSource);
+#endif
   const auto compare_attempts_before = shadow_attempts;
   const auto compare_matches_before = shadow_compared;
   const auto compare_unparsed_before = shadow_unparsed;
@@ -1842,7 +1962,10 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     return result;
   };
   auto statement = [&](Stmt& s) {
-    if (additional && (!s.expression_handles.empty() || s.est_raw_form)) return;
+    // Loaded execution bodies preserve their statement form but not their
+    // process-local ExprIds. Rebuild handles on the initial .mossi load unless
+    // this exact statement already owns live handles.
+    if (additional && !s.expression_handles.empty()) return;
     set_location(s.line, s.text);
     const auto owner = next_owner++;
     if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)
@@ -2016,6 +2139,11 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       set_location(function.result_line, *function.result_expression);
       bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
            *function.result_expression);
+    }
+    if (function.execution_result_expression) {
+      set_location(function.result_line, *function.execution_result_expression);
+      bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
+           *function.execution_result_expression);
     }
   }
   for (auto& domain : program.domains) {
@@ -2230,6 +2358,38 @@ void populate(Program& program) { populate_impl(program, nullptr, 0); }
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
+}
+
+void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
+                                std::string_view source, ExprSlot slot,
+                                int line, std::uint64_t origin_id) {
+  if (source.empty()) return;
+  for (const auto& handle : handles)
+    if (handle.slot == slot && handle.argument_index == 0 &&
+        handle.source_fingerprint == fingerprint(std::string(source)) &&
+        handle.arena_index < program.expression_arenas.size() &&
+        program.expression_arenas[handle.arena_index])
+      return;
+  auto arena_owner = program.expression_arena;
+  if (!arena_owner) {
+    arena_owner = std::make_shared<Arena>();
+    program.expression_arena = arena_owner;
+  }
+  auto arena_position = std::find(program.expression_arenas.begin(),
+                                  program.expression_arenas.end(), arena_owner);
+  if (arena_position == program.expression_arenas.end()) {
+    program.expression_arenas.push_back(arena_owner);
+    arena_position = std::prev(program.expression_arenas.end());
+  }
+  const auto owner = stable_origin_id("loaded-expression:" +
+      std::to_string(origin_id) + ":" + std::to_string(line) + ":" +
+      std::to_string(static_cast<unsigned>(slot)));
+  const auto expression = parse_expression(*arena_owner, source, owner,
+      static_cast<std::uint32_t>(std::max(line, 1)), 1);
+  handles.push_back({owner, slot, 0, expression,
+      fingerprint(std::string(source)), owner,
+      static_cast<std::uint32_t>(std::distance(
+          program.expression_arenas.begin(), arena_position))});
 }
 
 void adopt_program_arenas(Program& destination, Program& source) {

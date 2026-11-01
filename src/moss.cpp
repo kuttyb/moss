@@ -4123,6 +4123,250 @@ static bool abi_v10_checked_arithmetic_body_candidate(
 // Stage-v10 H3 import projection. It derives an AST lowering view solely from
 // sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
 // Every target is selected by exact provider identity before inference starts.
+static std::optional<est::ExprId> imported_checked_body_expression_node(
+    Program& program, const Function& function,
+    const checked_ir::Expr& expression, const vector<string>& local_names,
+    unsigned depth = 0) {
+  if (depth > 64 || !expression.type) return std::nullopt;
+  auto arena_owner = program.expression_arena;
+  if (!arena_owner) {
+    arena_owner = std::make_shared<est::Arena>();
+    program.expression_arena = arena_owner;
+  }
+  auto arena_position = std::find(program.expression_arenas.begin(),
+                                  program.expression_arenas.end(),
+                                  arena_owner);
+  if (arena_position == program.expression_arenas.end()) {
+    program.expression_arenas.push_back(arena_owner);
+    arena_position = std::prev(program.expression_arenas.end());
+  }
+  const auto origin = est::stable_origin_id(
+      "checked-body-node:" + function.semantic_callable_id + ":" +
+      std::to_string(depth) + ":" + std::to_string(arena_owner->size()));
+  const auto append_auxiliary = [&](est::Node auxiliary) {
+    return arena_owner->append(std::move(auxiliary),
+        est::SourceSpan{1, 1, origin, 1, 0});
+  };
+  const auto child = [&](const checked_ir::Expr& nested)
+      -> std::optional<est::ExprId> {
+    return imported_checked_body_expression_node(
+        program, function, nested, local_names, depth + 1);
+  };
+  std::optional<est::Node> node;
+  std::string target;
+  switch (expression.kind) {
+    case checked_ir::ExprKind::Parameter:
+      if (expression.ordinal >= function.params.size()) return std::nullopt;
+      node = est::Identifier{function.params[expression.ordinal].name};
+      break;
+    case checked_ir::ExprKind::LocalRead:
+      if (expression.ordinal >= local_names.size()) return std::nullopt;
+      node = est::Identifier{local_names[expression.ordinal]};
+      break;
+    case checked_ir::ExprKind::IntegerLiteral:
+    case checked_ir::ExprKind::FloatLiteral:
+    case checked_ir::ExprKind::BoolLiteral:
+    case checked_ir::ExprKind::StringLiteral: {
+      est::Literal literal;
+      literal.spelling = expression.literal_value;
+      if (expression.kind == checked_ir::ExprKind::IntegerLiteral)
+        literal.literal_class = est::LiteralClass::Integer;
+      else if (expression.kind == checked_ir::ExprKind::FloatLiteral)
+        literal.literal_class = est::LiteralClass::Float;
+      else if (expression.kind == checked_ir::ExprKind::BoolLiteral)
+        literal.literal_class = est::LiteralClass::Boolean;
+      else literal.literal_class = est::LiteralClass::String;
+      node = std::move(literal);
+      break;
+    }
+    case checked_ir::ExprKind::Unary: {
+      if (expression.operands.size() != 1) return std::nullopt;
+      auto operand = child(expression.operands.front());
+      if (!operand) return std::nullopt;
+      const std::string op = expression.unary_op == checked_ir::UnaryOp::Neg
+          ? "-" : "not ";
+      node = est::Unary{op, *operand};
+      break;
+    }
+    case checked_ir::ExprKind::Add:
+    case checked_ir::ExprKind::Binary: {
+      if (expression.operands.size() != 2) return std::nullopt;
+      auto left = child(expression.operands[0]);
+      auto right = child(expression.operands[1]);
+      if (!left || !right) return std::nullopt;
+      std::string op;
+      switch (expression.binary_op) {
+        case checked_ir::BinaryOp::Add: op = "+"; break;
+        case checked_ir::BinaryOp::Sub: op = "-"; break;
+        case checked_ir::BinaryOp::Mul: op = "*"; break;
+        case checked_ir::BinaryOp::Div: op = "/"; break;
+        case checked_ir::BinaryOp::Mod: op = "%"; break;
+        case checked_ir::BinaryOp::Equal: op = "=="; break;
+        case checked_ir::BinaryOp::NotEqual: op = "!="; break;
+        case checked_ir::BinaryOp::Less: op = "<"; break;
+        case checked_ir::BinaryOp::LessEqual: op = "<="; break;
+        case checked_ir::BinaryOp::Greater: op = ">"; break;
+        case checked_ir::BinaryOp::GreaterEqual: op = ">="; break;
+        case checked_ir::BinaryOp::And: op = "and"; break;
+        case checked_ir::BinaryOp::Or: op = "or"; break;
+        case checked_ir::BinaryOp::Xor: op = "xor"; break;
+      }
+      node = est::Binary{op, *left, *right};
+      break;
+    }
+    case checked_ir::ExprKind::Field: {
+      if (expression.operands.size() != 1 || expression.member_name.empty())
+        return std::nullopt;
+      auto base = child(expression.operands.front());
+      if (!base) return std::nullopt;
+      node = est::Member{*base, expression.member_name};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::Index: {
+      if (expression.operands.size() != 2) return std::nullopt;
+      auto base = child(expression.operands[0]);
+      auto index = child(expression.operands[1]);
+      if (!base || !index) return std::nullopt;
+      node = est::Index{*base, *index};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::VectorLiteral:
+    case checked_ir::ExprKind::MapLiteral: {
+      std::vector<est::ExprId> elements;
+      elements.reserve(expression.operands.size());
+      for (const auto& operand : expression.operands) {
+        auto item = child(operand);
+        if (!item) return std::nullopt;
+        elements.push_back(*item);
+      }
+      node = est::Collection{
+          expression.kind == checked_ir::ExprKind::VectorLiteral ? '[' : '{',
+          std::move(elements)};
+      break;
+    }
+    case checked_ir::ExprKind::Call: {
+      est::ExprId callee_id = 0;
+      if (expression.semantic_target_id == "builtin:assert") {
+        callee_id = append_auxiliary(est::Identifier{"assert"});
+      } else if (expression.semantic_target_id == "parameter:0") {
+        if (function.params.empty()) return std::nullopt;
+        callee_id = append_auxiliary(
+            est::Identifier{function.params.front().name});
+      } else {
+        auto callee = std::find_if(program.functions.begin(),
+            program.functions.end(), [&](const Function& candidate) {
+          return candidate.semantic_callable_id ==
+              expression.semantic_target_id;
+        });
+        if (callee == program.functions.end()) return std::nullopt;
+        callee_id = append_auxiliary(est::Identifier{callee->name});
+      }
+      std::vector<est::ExprId> arguments;
+      arguments.reserve(expression.operands.size());
+      for (const auto& operand : expression.operands) {
+        auto argument = child(operand);
+        if (!argument) return std::nullopt;
+        arguments.push_back(*argument);
+      }
+      node = est::Call{callee_id, std::move(arguments)};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::NominalConstruct: {
+      auto declaration = program.type_context
+          ? program.type_context->find_id(expression.semantic_target_id)
+          : nullptr;
+      if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
+          expression.operands.size() != declaration->fields.size())
+        return std::nullopt;
+      const auto type_id = append_auxiliary(
+          est::Identifier{declaration->program_name});
+      std::vector<est::ExprId> arguments;
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        auto value = child(expression.operands[index]);
+        if (!value) return std::nullopt;
+        arguments.push_back(append_auxiliary(est::NamedArgument{
+            declaration->fields[index].name, *value, ':'}));
+      }
+      node = est::Constructor{type_id, {}, std::move(arguments)};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::MemberCall: {
+      if (expression.operands.size() != 1 || expression.member_name.empty())
+        return std::nullopt;
+      auto receiver = child(expression.operands.front());
+      if (!receiver) return std::nullopt;
+      const auto callee_id = append_auxiliary(
+          est::Member{*receiver, expression.member_name});
+      node = est::Call{callee_id, {}};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::CollectionPush: {
+      if (expression.operands.size() != 2) return std::nullopt;
+      auto receiver = child(expression.operands[0]);
+      auto value = child(expression.operands[1]);
+      if (!receiver || !value) return std::nullopt;
+      const auto callee_id = append_auxiliary(est::Member{*receiver, "push"});
+      node = est::Call{callee_id, {*value}};
+      target = expression.semantic_target_id;
+      break;
+    }
+    case checked_ir::ExprKind::CollectionCount: {
+      if (expression.operands.size() != 1) return std::nullopt;
+      auto input = child(expression.operands.front());
+      if (!input) return std::nullopt;
+      const auto count = append_auxiliary(est::Identifier{"count"});
+      node = est::Pipeline{*input, {count}};
+      target = expression.semantic_target_id;
+      break;
+    }
+    default:
+      return std::nullopt;
+  }
+  const auto id = arena_owner->append(std::move(*node),
+      est::SourceSpan{1, 1, origin, 1, 0});
+  est::SemanticFacts facts;
+  facts.type = expression.type;
+  facts.resolved_target = std::move(target);
+  const auto context = functional_function_context(function);
+  arena_owner->record_facts(id, context, facts);
+  for (const auto& specialization : function.specializations)
+    arena_owner->record_facts(id,
+        functional_function_context(function, &specialization), facts);
+  return id;
+}
+
+static void attach_imported_checked_body_expression(
+    Program& program, const Function& function, Stmt& statement,
+    est::ExprSlot slot, const checked_ir::Expr& expression,
+    const vector<string>& local_names) {
+  auto root = imported_checked_body_expression_node(
+      program, function, expression, local_names);
+  if (!root) return;
+  auto arena_position = std::find(program.expression_arenas.begin(),
+                                  program.expression_arenas.end(),
+                                  program.expression_arena);
+  if (arena_position == program.expression_arenas.end()) return;
+  const auto source = slot == est::ExprSlot::Expression
+      ? statement.text
+      : slot == est::ExprSlot::ReturnValue ||
+            slot == est::ExprSlot::Condition ||
+            slot == est::ExprSlot::RaisedValue
+          ? statement.a : statement.b;
+  const auto owner = est::stable_origin_id(
+      "checked-body-handle:" + function.semantic_callable_id + ":" +
+      std::to_string(statement.line) + ":" +
+      std::to_string(static_cast<unsigned>(slot)));
+  statement.expression_handles.push_back({
+      owner, slot, 0, *root, est::fingerprint(source), owner,
+      static_cast<std::uint32_t>(std::distance(
+          program.expression_arenas.begin(), arena_position))});
+}
+
 void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
   // Validate/project direct member leaves before any forwarding caller. A
@@ -5569,6 +5813,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           statement.b = *expression;
           statement.text = (statement.kind == Stmt::Kind::Var ? "var " : "let ") +
               statement.a + " = " + statement.b;
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::Initializer,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5580,6 +5827,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           statement.a = local_names[checked.local_ordinal];
           statement.b = *expression;
           statement.text = statement.a + " = " + statement.b;
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::RhsValue,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5592,6 +5842,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           statement.a = *receiver + "[" + *index + "]";
           statement.b = *expression;
           statement.text = statement.a + " = " + statement.b;
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::RhsValue,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5601,6 +5854,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           statement.kind = Stmt::Kind::Return;
           statement.a = *expression;
           statement.text = "return " + statement.a;
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::ReturnValue,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5637,6 +5893,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           } else {
             return false;
           }
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::Expression,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5679,6 +5938,9 @@ void project_imported_h3_checked_bodies(Program& program) {
           statement.text = "raise " + statement.a;
           statement.exceptional_alternatives.insert(
               RaisedIdentity::enum_variant(*enum_name, variant_name));
+          attach_imported_checked_body_expression(
+              program, function, statement, est::ExprSlot::RaisedValue,
+              *checked.expr, local_names);
           projected.push_back(std::move(statement));
           return true;
         }
@@ -5956,7 +6218,76 @@ void project_imported_h3_checked_bodies(Program& program) {
           !expression.type->structurally_equal(*parameters.front()) ||
           !expression.type->structurally_equal(*result))
         invalid("checked ABI-v10 direct parameter-return body is unsupported");
-      lowered = function.params.front().name;
+      // Source-backed generic bodies already retain the checked return node.
+      // Reuse it when it is exactly the parameter selected by the validated
+      // checked body; synthesizing a Let/Return pair here would discard its
+      // ExprId and leave Fast Debug without a checked initializer node.
+      if (function.body.size() == 1 &&
+          function.body.front().kind == Stmt::Kind::Return) {
+        const auto& handles = function.body.front().expression_handles;
+        auto handle = std::find_if(handles.begin(), handles.end(),
+            [](const est::Handle& candidate) {
+          return candidate.slot == est::ExprSlot::ReturnValue &&
+              candidate.argument_index == 0;
+        });
+        if (handle != handles.end() &&
+            handle->arena_index < program.expression_arenas.size() &&
+            program.expression_arenas[handle->arena_index]) {
+          const auto& arena = *program.expression_arenas[handle->arena_index];
+          est::ExprId root = handle->expr;
+          while (const auto* grouped =
+                     std::get_if<est::Parenthesized>(&arena.at(root)))
+            root = grouped->inner;
+          if (const auto* identifier =
+                  std::get_if<est::Identifier>(&arena.at(root));
+              identifier &&
+              identifier->name == function.params.front().name) {
+            function.imported_checked_body_projected = true;
+            continue;
+          }
+        }
+      }
+      auto arena_owner = program.expression_arena;
+      if (!arena_owner) {
+        arena_owner = std::make_shared<est::Arena>();
+        program.expression_arena = arena_owner;
+      }
+      auto arena_position = std::find(program.expression_arenas.begin(),
+                                      program.expression_arenas.end(),
+                                      arena_owner);
+      if (arena_position == program.expression_arenas.end()) {
+        program.expression_arenas.push_back(arena_owner);
+        arena_position = std::prev(program.expression_arenas.end());
+      }
+      const auto arena_index = static_cast<std::uint32_t>(
+          std::distance(program.expression_arenas.begin(), arena_position));
+      const auto& parameter_name = function.params.front().name;
+      const auto origin_id = est::stable_origin_id(
+          "checked-body-parameter-return:" + function.semantic_callable_id);
+      const auto expression_id = arena_owner->append(
+          est::Identifier{parameter_name},
+          est::SourceSpan{static_cast<std::uint32_t>(std::max(function.line, 1)),
+                          1, origin_id, 0,
+                          static_cast<std::uint32_t>(parameter_name.size())});
+      est::SemanticFacts parameter_facts;
+      parameter_facts.type = expression.type;
+      arena_owner->record_facts(expression_id, {}, std::move(parameter_facts));
+      Stmt returned;
+      returned.kind = Stmt::Kind::Return;
+      returned.line = std::max(function.line, 1);
+      returned.a = parameter_name;
+      returned.text = "return " + parameter_name;
+      returned.expression_handles.push_back({
+          origin_id, est::ExprSlot::ReturnValue, 0, expression_id,
+          est::fingerprint(parameter_name), origin_id, arena_index});
+      function.body = {std::move(returned)};
+      function.result_expression.reset();
+      function.imported_checked_body_projected = true;
+      if (const char* trace = std::getenv("MOSS_PHASE25_CHECKED_BODY_TRACE");
+          trace && string(trace) == "1")
+        std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
+                  << function.semantic_callable_id << "|checked-body-v1\n";
+      continue;
     } else if (expression.kind == checked_ir::ExprKind::VectorLiteral &&
                expression.operands.empty()) {
       if (!direct_return_body ||
@@ -6313,6 +6644,9 @@ void project_imported_h3_checked_bodies(Program& program) {
       returned.indent = 0;
       returned.a = lowered;
       returned.text = "return " + lowered;
+      attach_imported_checked_body_expression(
+          program, function, returned, est::ExprSlot::ReturnValue,
+          expression, {});
       function.body = {std::move(returned)};
       function.result_expression.reset();
       function.imported_checked_body_projected = true;
@@ -6333,12 +6667,38 @@ void project_imported_h3_checked_bodies(Program& program) {
     bind.a = local;
     bind.b = lowered;
     bind.text = "let " + local + " = " + lowered;
+    attach_imported_checked_body_expression(
+        program, function, bind, est::ExprSlot::Initializer, expression,
+        {});
     Stmt returned;
     returned.kind = Stmt::Kind::Return;
     returned.line = bind.line + 1;
     returned.indent = 0;
     returned.a = local;
     returned.text = "return " + local;
+    auto arena_owner = program.expression_arena;
+    auto arena_position = std::find(program.expression_arenas.begin(),
+                                    program.expression_arenas.end(),
+                                    arena_owner);
+    if (arena_owner && arena_position != program.expression_arenas.end()) {
+      const auto arena_index = static_cast<std::uint32_t>(
+          std::distance(program.expression_arenas.begin(), arena_position));
+      const auto origin = est::stable_origin_id(
+          "checked-body-local-result:" + function.semantic_callable_id);
+      const auto id = arena_owner->append(
+          est::Identifier{local},
+          est::SourceSpan{static_cast<std::uint32_t>(returned.line), 1,
+                          origin, 0, static_cast<std::uint32_t>(local.size())});
+      est::SemanticFacts facts;
+      facts.type = result;
+      arena_owner->record_facts(id, functional_function_context(function), facts);
+      for (const auto& specialization : function.specializations)
+        arena_owner->record_facts(id,
+            functional_function_context(function, &specialization), facts);
+      returned.expression_handles.push_back({
+          origin, est::ExprSlot::ReturnValue, 0, id,
+          est::fingerprint(local), origin, arena_index});
+    }
     function.body = {std::move(bind), std::move(returned)};
     function.result_expression.reset();
     function.imported_checked_body_projected = true;
@@ -13708,14 +14068,16 @@ static void rewrite_module_program(
     const auto prior = handles;
     for (const auto& handle : prior) {
       if (handle.slot != slot || handle.argument_index != argument) continue;
-      if (!est::lookup(handles, *program.expression_arena, handle.owner,
-                       slot, argument, old_text)) continue;
+      est::assert_fresh(handle, old_text);
       const auto old_expr = handle.expr;
       est::rebuild_slot(*program.expression_arena, handles, handle.owner,
                         slot, argument, new_text);
-      const auto* refreshed = est::lookup(handles, *program.expression_arena,
-          handle.owner, slot, argument, new_text);
-      assert(refreshed && refreshed->expr != old_expr);
+      const auto refreshed = std::find_if(handles.begin(), handles.end(),
+          [&](const est::Handle& candidate) {
+        return candidate.owner == handle.owner && candidate.slot == slot &&
+            candidate.argument_index == argument;
+      });
+      assert(refreshed != handles.end() && refreshed->expr != old_expr);
       (void)program.expression_arena->at(old_expr);
       return;
     }
@@ -13727,18 +14089,18 @@ static void rewrite_module_program(
       const string old_text = expression_text(before, handle);
       const string new_text = expression_text(after, handle);
       if (old_text == new_text) continue;
-      const auto* current = est::lookup(before.expression_handles,
-          *program.expression_arena, handle.owner, handle.slot,
-          handle.argument_index, old_text);
-      if (!current) continue;
-      const auto old_expr = current->expr;
+      est::assert_fresh(handle, old_text);
+      const auto old_expr = handle.expr;
       est::rebuild_slot(*program.expression_arena, after.expression_handles,
                         handle.owner, handle.slot, handle.argument_index,
                         new_text);
-      const auto* refreshed = est::lookup(after.expression_handles,
-          *program.expression_arena, handle.owner, handle.slot,
-          handle.argument_index, new_text);
-      assert(refreshed && refreshed->expr != old_expr);
+      const auto refreshed = std::find_if(after.expression_handles.begin(),
+          after.expression_handles.end(), [&](const est::Handle& candidate) {
+        return candidate.owner == handle.owner && candidate.slot == handle.slot &&
+            candidate.argument_index == handle.argument_index;
+      });
+      assert(refreshed != after.expression_handles.end() &&
+             refreshed->expr != old_expr);
       (void)program.expression_arena->at(old_expr);
     }
   };
@@ -17099,17 +17461,36 @@ static ParsedModuleUnit load_module_interface(
   if (load_execution_bodies) {
     parse_execution_body_payload(execution_bodies, provider, file);
     for (auto& function : provider.functions) {
+      if (function.execution_result_expression)
+        est::populate_loaded_expression(provider, function.expression_handles,
+            *function.execution_result_expression, est::ExprSlot::ReturnValue,
+            function.result_line, est::stable_origin_id(
+                file.string() + "\nfunction-result:" + function.name));
       if (function.execution_body)
         build_loaded_body(*function.execution_body, "function:" + function.name);
     }
     for (auto& object : provider.objects)
       for (auto& method : object.methods) {
+        if (method.execution_result_expression)
+          est::populate_loaded_expression(provider,
+              method.expression_handles,
+              *method.execution_result_expression,
+              est::ExprSlot::ReturnValue, method.result_line,
+              est::stable_origin_id(file.string() + "\nmethod-result:" +
+                  object.name + "::" + method.name));
         if (method.execution_body)
           build_loaded_body(*method.execution_body,
                             "method:" + object.name + "::" + method.name);
       }
     for (auto& domain : provider.domains)
       for (auto& handler : domain.handlers) {
+        if (handler.execution_result_expression)
+          est::populate_loaded_expression(provider,
+              handler.expression_handles,
+              *handler.execution_result_expression,
+              est::ExprSlot::ReturnValue, handler.line,
+              est::stable_origin_id(file.string() + "\nhandler-result:" +
+                  domain.name + "::" + handler.name));
         if (handler.execution_body)
           build_loaded_body(*handler.execution_body,
                             "handler:" + domain.name + "::" + handler.name);
