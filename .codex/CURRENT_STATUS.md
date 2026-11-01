@@ -13866,3 +13866,13 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   the previous checker inference path. Parenthesized-enum, vector/index, and
   typed-vector default/shadow fixtures pass. The unrelated specialization
   fixture's cache and parser counters are unchanged at 25,130 and 44.
+
+## Phase 27.5.4 named-argument parse fallback checkpoint (2026-10-31)
+
+- When a checked Call/Constructor is active, positional and named argument
+  shape now comes exclusively from the argument ExprId; those paths no longer
+  fall back to `tree_parse_named_argument` or its separator query. Text parsing
+  remains only for no-cursor callers.
+- Default/shadow message and typed-vector checks, shadow parenthesized-enum,
+  and six three-engine expression-use fixtures pass. specialized_call_facts
+  cache consultations are 25,118 (down 12), checker reparses remain 44.

@@ -26704,6 +26704,16 @@ class Checker {
     return tree_parse_member_access(source, base, member);
   }
 
+  bool active_expression_has_call_arguments() const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return false;
+    const auto& cursor = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(cursor.arena_index);
+    return arena && (std::holds_alternative<est::Call>(arena->at(cursor.expr)) ||
+                     std::holds_alternative<est::Constructor>(arena->at(cursor.expr)));
+  }
+
   bool checked_expression_named_argument(std::size_t index,
       string& name, string& value, char& separator) const {
     if (active_est_expression_cursors_.empty() ||
@@ -27291,6 +27301,7 @@ class Checker {
             char separator = ':';
             if (!checked_expression_named_argument(argument_index, field_name,
                     field_value, separator) &&
+                !active_expression_has_call_arguments() &&
                 !tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
@@ -27320,7 +27331,7 @@ class Checker {
           char separator = 0;
           const bool checked_named = checked_expression_named_argument(
               argument_index, name, value, separator);
-          if (!checked_named) {
+          if (!checked_named && !active_expression_has_call_arguments()) {
             separator = tree_named_argument_separator(argument).value_or(0);
             (void)tree_parse_named_argument(argument, name, value);
           }
@@ -28388,7 +28399,7 @@ class Checker {
           string field_name, value = argument;
           char separator = 0;
           if (!checked_expression_named_argument(argument_index, field_name,
-                  value, separator))
+                  value, separator) && !active_expression_has_call_arguments())
             (void)tree_parse_named_argument(argument, field_name, value);
           auto term = current_body_types_->known_expression(value);
           if (!term) term = inferred_expr_term(value, env);
@@ -28499,6 +28510,7 @@ class Checker {
             char separator = 0;
             if (!checked_expression_named_argument(argument_index, field_name,
                     field_value, separator) &&
+                !active_expression_has_call_arguments() &&
                 !tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
@@ -28521,6 +28533,7 @@ class Checker {
           char separator = 0;
           if (!checked_expression_named_argument(index, field_name,
                   field_value, separator) &&
+              !active_expression_has_call_arguments() &&
               !tree_parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
