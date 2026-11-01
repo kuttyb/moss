@@ -19105,6 +19105,20 @@ class Checker {
       vector<std::optional<EstExpressionCursor>>& stack;
       ~CallSiteCursorScope() { stack.pop_back(); }
     } cursor_scope{active_est_expression_cursors_};
+    auto checked_child_cursor = [&](std::string_view role,
+                                    std::uint32_t ordinal)
+        -> std::optional<EstExpressionCursor> {
+      if (!checked_cursor) return std::nullopt;
+      const auto* arena = expression_arena(checked_cursor->arena_index);
+      if (!arena) return std::nullopt;
+      const auto root = est::unparenthesized(*arena, checked_cursor->expr);
+      const auto child = expression_child_node(*arena, root, role, ordinal);
+      if (!child) return std::nullopt;
+      auto source = expression_child_source(*checked_cursor, *child);
+      if (!source) return std::nullopt;
+      return EstExpressionCursor{checked_cursor->arena_index, *child,
+                                 std::move(*source)};
+    };
     if (auto pipeline = functional_pipeline_from_est(
             original, checked_handles, checked_key, statement_context)) {
       collect_local_call_sites(line, pipeline->source, env, implicit_owner,
@@ -19185,9 +19199,12 @@ class Checker {
     // specializations into the consumer crate.  The checker and native
     // expression lowering already recurse through these forms.
     if (auto elements = checked_expression_vector_literal(value)) {
-      for (const auto& element : *elements)
-        collect_local_call_sites(line, element, env, implicit_owner, calls,
-                                 statement_context);
+      for (std::uint32_t index = 0; index < elements->size(); ++index) {
+        auto child = checked_child_cursor("element", index);
+        collect_local_call_sites(line, elements->at(index), env, implicit_owner, calls,
+                                 statement_context, nullptr, {},
+                                 std::move(child));
+      }
       return;
     }
     string unary_operation, unary_operand;

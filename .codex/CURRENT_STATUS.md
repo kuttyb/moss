@@ -1,7 +1,7 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `d18515ce`. Checked-node local-call collection is uncommitted. Moss bootstrap
+  `8a3ae4d8`. Vector-child cursor routing is uncommitted. Moss bootstrap
   confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
@@ -53,6 +53,14 @@
   vector, binary, unary, and index forms. `functional_basics.moss` text-cache
   consultations fall from 14,766 to 14,680 (-86); checker reparses remain 94.
   Default/shadow, functional-tree, and Fast Debug parity checks pass.
+- Vector literal call collection now carries each child ExprId recursively.
+  Focused `functional_basics.moss` text-cache consultations fall further from
+  14,680 to 14,608 (-72), with checker reparses still 94. Regex and
+  `swarm_001_parenthesized_pipeline` checks complete normally; functional-tree
+  and Fast Debug/native/optimized parity harnesses pass. A binary-child cursor
+  experiment was reverted because the regex check exceeded a 15-second
+  targeted timeout; it caused no diagnostic or acceptance change. Continue
+  investigating binary child traversal separately.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
