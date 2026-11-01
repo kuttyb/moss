@@ -1,60 +1,37 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed checkpoint is `d8002391`; local Fast Debug Phase 20 node-handoff
-  edits are pending. Function constraint derivation receives exact handles for
-  function results, statement initializers/assignment values/iterables, and
-  call/message arguments.
-  `src/semantic_checker.cpp`: message-call pipeline validation receives its exact `Argument[index]` handle,
-  and reply pipeline validation receives its exact `ReturnValue` handle. The
-  explicit-handle path in `functional_pipeline_from_est` projects that ExprId
-  before scanning source text. Exact-handle misses return no pipeline parse. The
-  temporary `MOSS_EST_PIPELINE_FALLBACK_TRACE` diagnostic was removed.
-- Targeted validation after the edit: `make --jobs="$(nproc)" moss-dev` passed;
-  `check_phase27_est_functional_tree.py build/compiler/moss-dev` passed;
-  message argument binding fixture passed in default and shadow;
-  `phase4_terminal_boundary.moss` remains accepted and
-  `negative/functional_domain_boundary.moss` still rejects with
-  `FUNCTIONAL_SEMANTIC_ERROR`. A trial that implicitly projected the active
-  node inside generic string helpers was discarded because nested/synthesized
-  fragments do not guarantee the active cursor denotes that fragment.
-- A second pushed slice routes exact-handle pipeline projection before the
-  functional candidate text scan in `functional_pipeline_from_est`; callers
-  without an exact handle retain the legacy fallback while they are migrated.
-  The functional-tree harness passes default/shadow, `phase4_terminal_boundary`
-  remains accepted, and the domain-boundary negative remains rejected. Message argument validation
-  now uses exact handles in all three checker passes. This focused route is not covered by the `functional_basics` counter, which stays
-  at 15,160 cache consultations / 121 checker reparses.
-- Current uncommitted interpreter slice routes Phase 20 Executor/FileIO probes
-  through the statement ExprId, invokes executor messages from their checked
-  Message node, and evaluates executor configuration child nodes directly.
-  `functional_basics` Fast Debug node-text lookups are now **0** (were 6 after
-  the prior pushed initializer slice); consumer reparses remain 0. The checked
-  tree three-engine harness, six optimizer expression-use parity fixtures, and
-  `swarm_023_pipeline_context_identity` Fast Debug/native/-O output parity
+- Branch `phase27-5-4-work` is cleanly based on the Phase 27.5.3 C1 checkpoint;
+  latest pushed commit is `4a3df618`. No full suite, corpus pass, or performance
+  run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
+- Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
+  statement roots, message/reply values, constructor fields, and Phase 20
+  Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses
   pass. `tests/phase20_executor_basic.moss` still fails at line 12 with an
-  unchecked Executor callable both on pushed `d8002391` and on the release
-  binary, so this is recorded baseline debt.
-- Baseline evidence for the new Fast Debug fix: at pushed `b52466a9`,
-  `tests/swarm_023_pipeline_context_identity.moss` failed at line 27 with
-  `MOSS_INTERNAL_INVARIANT missing checked expression node source=Vector[Int]()`
-  while `compose()` reevaluated the named state field from text. Current local
-  code preserves the nested value ExprId. The fixture now passes default and
-  shadow checks/runs and matches emitted Rust compiled with rustc at `-O` and
-  without it. `examples/phase2_safety.moss`, `examples/functional_basics.moss`,
-  and `tests/phase4_terminal_boundary.moss` also pass targeted Fast Debug runs.
-- Tight K2 clarification is active: every checker EST cache lookup and every
-  text-keyed parse-cache consultation is a lookup (hit or miss). The focused
-  `functional_basics.moss` measurement is still 15,160 text-cache lookups and
-  121 checker reparses (body 18, view 59, pipeline 44). The specialized-call
-  fixture fell from 25,118 to 24,901 cache consultations; checker reparses stay
-  44 (body 2, view 42). Both fixtures pass default/shadow, and the Fast Debug
-  functional-basics output matches expectation. No suite, corpus pass, or
-  performance run has occurred.
-- Next: continue migrating checker classification/recursion from text-keyed
-  caches to retained ExprIds; do not count cache growth as K2 progress. Also
-  resume rewrite-side tree mutation work for K8 (baseline 10,095 rebuilds).
-  Keep this handover current and checkpoint each substantive result. Agent 2
-  audit remains reserved for the final full-suite checkpoint.
+  unchecked Executor callable on both `d8002391` and the release binary; this
+  is recorded baseline debt.
+- Checker pipeline validation passes exact statement/call handles to its
+  projector. This checkpoint moves the active checked-cursor projection ahead
+  of the textual `functional_pipeline_candidate` filter in
+  `functional_pipeline_from_est`; exact checked handles and active cursor are
+  now consulted before that compatibility predicate. `make moss-dev` and
+  `check_phase27_est_functional_tree.py build/compiler/moss-dev` pass. This did
+  not yet measure a K2 counter delta; no cache enlargement is being counted as
+  progress.
+- Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
+  hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
+  cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
+  `specialized_call_facts.moss` is 24,901 cache lookups and 44 reparses (body
+  2, view 42). Focused prior baseline was 16,593 and 25,118 cache lookups
+  respectively; counters reflect prior routing work, not the latest predicate
+  reorder. Parser and text lookup targets remain zero.
+- Fast Debug's focused text-node lookup count is 0; on the earlier checkpoint it
+  was 6 for `functional_basics`. K8 text-to-tree rebuild baseline remains
+  10,095; no rewrite-side migration has yet reduced it.
+- Next: continue checker recursion from source strings to existing ExprIds,
+  including elimination of EST-view and text-keyed parse-cache consultations;
+  then migrate post-parse rewrites for K8. Do not run bulk suites/performance
+  until phase completion is near. Commit and push each meaningful slice and
+  update this handover as evidence changes.
 
 # Phase 26.2 — Cargo package graph checkpoint
 

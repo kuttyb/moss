@@ -26160,12 +26160,15 @@ class Checker {
         return std::nullopt;
       }
     }
-    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     if (!active_est_expression_cursors_.empty() &&
         active_est_expression_cursors_.back()) {
       const auto& cursor = *active_est_expression_cursors_.back();
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
+    // Prefer the checked syntax node before asking whether its source text
+    // resembles pipeline syntax. The source predicate is only a compatibility
+    // filter for legacy callers that have no owning checked node.
+    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     if (handles) {
 #ifdef MOSS_TEST_BUILD
       est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::PipelineHandle);
