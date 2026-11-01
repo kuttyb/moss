@@ -15190,3 +15190,16 @@ Three-engine parity and the call-target/specialization/join/pattern
 perturb/drop matrix pass. Test-only emitter fallback node-kind accounting now
 shows remaining fallback shapes without printing source text. This is still a
 single fixture; bulk counts, full suites, and perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — paired mini-application counts (2026-11-01)
+
+Same instrumentation and commands on `examples/mini_application.moss`:
+parent default and `-O` each report 9,497 text-node lookups / 6,122 expression
+reparses; candidate each reports 4,673 / 3,172 (−51% / −48%). Generated Rust
+is byte-identical in both modes. This measures emitter parsing only; the
+fixture's known Fast Debug unsupported user-named pipeline stage remains a
+baseline limitation. The optimizer source scan found no parser entry point;
+all direct `parse_view` entries under `fileio_semantics.inc`,
+`executor_invoke_lowering.inc`, and `static_bounds.inc` belong to the checker
+translation unit and are outside re-scoped C2. Full suites and perf remain
+pending.

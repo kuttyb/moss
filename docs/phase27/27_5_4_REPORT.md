@@ -231,3 +231,13 @@ parent measured 3,387 text-node lookups / 2,685 reparses; the candidate
 measured 519 / 470 (−85% / −82%). Generated Rust is byte-identical; rustc and
 runtime succeed (`2`, `2`), and three-engine parity plus the fact-hook matrix
 pass. This remains a targeted sample, not the required bulk measurement.
+
+## C2 progress — mini application paired consumer counts
+
+On `examples/mini_application.moss`, with the same test-build parser-site
+instrumentation and default / `-O` generation commands, c96 reports 9,497
+text-node lookups and 6,122 expression reparses in each mode; the candidate
+reports 4,673 and 3,172 (−51% / −48%). Generated Rust is byte-identical in
+both modes. The fixture retains the previously documented Fast Debug
+unsupported user-named pipeline-stage baseline limitation; this sample is
+emitter count and Rust-output evidence only. No bulk suite or performance run.
