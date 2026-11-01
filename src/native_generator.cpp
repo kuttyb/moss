@@ -1433,6 +1433,14 @@ class Generator {
     return syntax && est::project_unary(*syntax, operation, operand);
   }
 
+  bool tree_parse_unary(const EmitterExpr& expression, string& operation,
+                        string& operand) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_unary(view, operation, operand);
+  }
+
   bool tree_parse_message(const string& expression, string& target,
                           string& handler, vector<string>& arguments) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
@@ -6485,14 +6493,27 @@ class Generator {
         return tree_parse_simple_call(*checked_node, callee, arguments);
       return tree_parse_simple_call(e, callee, arguments);
     };
+    auto parse_root_unary = [&](string& operation, string& operand) {
+      if (checked_node)
+        return tree_parse_unary(*checked_node, operation, operand);
+      return tree_parse_unary(e, operation, operand);
+    };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
     // Moss parentheses are grouping syntax, not an observable expression node.
-    // Remove only complete balanced outer groups before lowering. Nested groups
-    // still protect precedence until their recursive expr() call reaches them.
-    e = tree_strip_expression_grouping(std::move(e));
-    const auto root_name = tree_identifier_name(e);
+    // When the checked root is available, move to its unparenthesized node and
+    // use that node's source slice; do not rediscover the grouping from text.
+    // String-only synthetic expressions retain the legacy projection path.
+    if (checked_node && checked_node->arena) {
+      EmitterExpr ungrouped = *checked_node;
+      ungrouped.id = est::unparenthesized(*ungrouped.arena, ungrouped.id);
+      e = ungrouped.text();
+    } else {
+      e = tree_strip_expression_grouping(std::move(e));
+    }
+    const auto root_name = checked_node
+        ? tree_identifier_name(*checked_node) : tree_identifier_name(e);
     if (root_name && phase21_option_slots_.count(*root_name))
       return "__moss_recovery_slot_" + *root_name +
           (phase21_codegen_statement_ &&
@@ -6639,7 +6660,7 @@ class Generator {
             expr(binary->right, d, locals, types) + ")";
     }
     string unary_operation, unary_operand;
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "not")
       return "!(" + expr(unary_operand, d, locals, types) + ")";
     if (auto comparison =
@@ -6791,7 +6812,7 @@ class Generator {
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
     // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "-") {
       const string inner = unary_operand;
       if (generated_integer_literal(inner))
@@ -6811,7 +6832,7 @@ class Generator {
         return "-(" + operand + ")";
       }
     }
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "~") {
       string operand = expr(unary_operand, d, locals, types);
       operand = value_from_borrowed_message_parameter(unary_operand, operand, types);
