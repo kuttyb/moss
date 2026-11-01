@@ -14099,3 +14099,9 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   checks pass. Regex counters did not change from the `a4552fb2` sample
   (4,933,110 text-cache lookups; 12,003 checker reparses), so this guard is
   recorded as cursor-context safety only, with no K2 progress claim.
+- `checked_expression_view` now also requires exact retained-source identity
+  before returning the active node; mismatches use the checker view path. The
+  same focused functional-tree, Fast Debug/native/optimized, regex and pipeline
+  diagnostic checks pass. Regex text-cache lookups are 4,933,148 (+38 from
+  mismatched-source fallbacks), while checker reparses stay at 12,003. This is
+  an identity correctness guard and not K2 progress.

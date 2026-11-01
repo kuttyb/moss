@@ -26952,7 +26952,9 @@ class Checker {
 
   std::optional<est::ExpressionView> checked_expression_view(
       const string& source) const {
-    if (auto active = active_expression_view()) return active;
+    if (auto active = active_expression_view();
+        active && active->source == source)
+      return active;
     auto parsed = checker_est_view(source);
     return parsed ? std::optional<est::ExpressionView>(*parsed) : std::nullopt;
   }
