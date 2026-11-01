@@ -1427,6 +1427,14 @@ class Generator {
     return syntax && est::project_member_access(*syntax, base, member);
   }
 
+  bool tree_parse_member_access(const EmitterExpr& expression, string& base,
+                               string& member) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_member_access(view, base, member);
+  }
+
   bool tree_parse_unary(const string& expression, string& operation,
                         string& operand) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
@@ -1498,6 +1506,15 @@ class Generator {
     return true;
   }
 
+  bool tree_parse_index(const EmitterExpr& expression, string& base,
+                        string& index) const {
+    EmitterExpr base_node, index_node;
+    if (!tree_parse_index(expression, base_node, index_node)) return false;
+    base = base_node.text();
+    index = index_node.text();
+    return true;
+  }
+
   bool tree_parse_named_argument(const string& expression, string& name,
                                  string& value) const {
 #ifdef MOSS_TEST_BUILD
@@ -1511,6 +1528,14 @@ class Generator {
       const string& expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::project_vector_literal(*syntax) : std::nullopt;
+  }
+
+  std::optional<vector<string>> tree_parse_vector_literal(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_vector_literal(view);
   }
 
   bool tree_parse_enum_case_expression(const string& expression,
@@ -6530,6 +6555,27 @@ class Generator {
       return tree_parse_enum_case_expression(
           e, enum_name, case_name, fields, called);
     };
+    auto parse_root_member_call = [&](string& receiver, string& member,
+                                      vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_member_call(*checked_node, receiver, member,
+                                      arguments);
+      return tree_parse_member_call(e, receiver, member, arguments);
+    };
+    auto parse_root_member_access = [&](string& base, string& member) {
+      if (checked_node)
+        return tree_parse_member_access(*checked_node, base, member);
+      return tree_parse_member_access(e, base, member);
+    };
+    auto parse_root_index = [&](string& base, string& index) {
+      if (checked_node)
+        return tree_parse_index(*checked_node, base, index);
+      return tree_parse_index(e, base, index);
+    };
+    auto parse_root_vector = [&]() {
+      return checked_node ? tree_parse_vector_literal(*checked_node)
+                          : tree_parse_vector_literal(e);
+    };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
@@ -6876,7 +6922,7 @@ class Generator {
       return "MossStr::from(" + e + ")";
     if (tree_literal_class(e) == est::LiteralClass::Character)
       return e;
-    if (auto parts = tree_parse_vector_literal(e)) {
+    if (auto parts = parse_root_vector()) {
       std::ostringstream r; r << "vec![";
       for (size_t i=0;i<parts->size();++i) {
         if (i) r << ", ";
@@ -6889,7 +6935,7 @@ class Generator {
       r << "]"; return r.str();
     }
     string ib, ii;
-    if (tree_parse_index(e, ib, ii)) {
+    if (parse_root_index(ib, ii)) {
       auto base_type = generated_expr_type(ib, types);
       if (base_type && shared_protocol_map_key_from_type(*base_type)) {
         const string key_type = *shared_protocol_map_key_from_type(*base_type);
@@ -6933,7 +6979,7 @@ class Generator {
     }
 
     string projection_base, projection_field;
-    if (tree_parse_member_access(e, projection_base, projection_field)) {
+    if (parse_root_member_access(projection_base, projection_field)) {
       if (tree_plain_identifier(projection_field)) {
         auto projection_type = generated_expr_type(projection_base, types);
         if (projection_type) {
@@ -6954,7 +7000,7 @@ class Generator {
 
     string member_receiver, member_name;
     vector<string> member_arguments;
-    if (tree_parse_member_call(e, member_receiver, member_name, member_arguments)) {
+    if (parse_root_member_call(member_receiver, member_name, member_arguments)) {
       string canon_recv = canonical_type_name(member_receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
         if ((member_name == "less" || member_name == "isequal") &&
