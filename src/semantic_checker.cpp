@@ -26095,7 +26095,6 @@ class Checker {
 #ifdef MOSS_TEST_BUILD
     est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::CheckerPipeline);
 #endif
-    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
@@ -26108,20 +26107,22 @@ class Checker {
       return arena ? est::functional_pipeline(*arena, expression, source,
                                                resolve_stage) : std::nullopt;
     };
+    if (handles) {
+      if (handle_key) {
+        for (const auto& handle : *handles)
+          if (handle.slot == handle_key->first &&
+              handle.argument_index == handle_key->second)
+            return convert(handle.arena_index, handle.expr);
+        return std::nullopt;
+      }
+    }
+    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     if (!active_est_expression_cursors_.empty() &&
         active_est_expression_cursors_.back()) {
       const auto& cursor = *active_est_expression_cursors_.back();
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     if (handles) {
-      if (handle_key) {
-        for (const auto& handle : *handles)
-          if (handle.slot == handle_key->first &&
-              handle.argument_index == handle_key->second)
-            if (auto parsed = convert(handle.arena_index, handle.expr))
-              return parsed;
-        return std::nullopt;
-      }
 #ifdef MOSS_TEST_BUILD
       est::record_expression_text_cache_lookup(est::ExpressionTextCacheSite::PipelineHandle);
 #endif

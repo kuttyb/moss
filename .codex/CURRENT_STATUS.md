@@ -14,6 +14,13 @@
   `FUNCTIONAL_SEMANTIC_ERROR`. A trial that implicitly projected the active
   node inside generic string helpers was discarded because nested/synthesized
   fragments do not guarantee the active cursor denotes that fragment.
+- A second pushed slice routes exact-handle pipeline projection before the
+  functional candidate text scan in `functional_pipeline_from_est`; callers
+  without an exact handle retain the legacy fallback while they are migrated.
+  The functional-tree harness passes default/shadow, `phase4_terminal_boundary`
+  remains accepted, and the domain-boundary negative remains rejected. This
+  focused route is not covered by the `functional_basics` counter, which stays
+  at 15,160 cache consultations / 121 checker reparses.
 - Tight K2 clarification is active: every checker EST cache lookup and every
   text-keyed parse-cache consultation is a lookup (hit or miss). The focused
   `functional_basics.moss` measurement is still 15,160 text-cache lookups and
