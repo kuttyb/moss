@@ -46,6 +46,18 @@
   lowering-path migration, not a measured reduction. Working-tree change is
   not yet committed; full gates are pending.
 
+### C2 checked receiver type slice
+
+- Statement method lowering now asks `generated_expr_type` on its already
+  retained receiver node. This removes two receiver-type requests from the
+  string-query path. On the same calculator default emission command, string
+  type queries fell from 1,692 to 1,568; text-node lookups stayed 24,462 and
+  expression-view reparses stayed 15,804, so other text helpers remain the
+  dominant issue.
+- Generated Rust compiled and its output matched Fast Debug and the previous
+  generated Rust executable. The change is uncommitted; full gates remain
+  pending.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
 
 - Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current

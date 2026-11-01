@@ -10205,7 +10205,7 @@ class Generator {
               s.b.empty() && !known_function;
           auto call_receiver_type = implicit_method
               ? std::optional<string>(d->name)
-              : !s.b.empty() ? generated_expr_type(s.a, &types)
+              : !s.b.empty() ? generated_expr_type(receiver_expression, &types)
                              : std::optional<string>{};
           const Method* call_method = nullptr;
           if (call_receiver_type && (!s.b.empty() || implicit_method)) {
@@ -10418,7 +10418,8 @@ class Generator {
           if (benchmark_body_) o << "std::hint::black_box(";
           o << lowered_call;
           auto receiver_type = !s.b.empty()
-              ? generated_expr_type(s.a, &types) : std::optional<string>{};
+              ? generated_expr_type(receiver_expression, &types)
+              : std::optional<string>{};
           if (!s.b.empty() && s.b == "pop" && receiver_type &&
               (starts_with(canonical_type_name(*receiver_type), "vector[") ||
                starts_with(canonical_type_name(*receiver_type), "queue[")))
