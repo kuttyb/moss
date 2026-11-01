@@ -286,6 +286,9 @@ ExprId fresh_occurrence(Arena& arena, ExprId root);
 void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint64_t owner, ExprSlot slot,
                   std::uint32_t argument_index, const std::string& new_text);
+#ifdef MOSS_TEST_BUILD
+void record_expression_tree_rebuild() noexcept;
+#endif
 
 enum class Mode { On, Shadow };
 Mode mode();  // Defaults to On; Shadow enables test-only parser cross-checks.

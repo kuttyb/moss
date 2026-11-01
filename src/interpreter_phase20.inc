@@ -71,23 +71,33 @@
   // configuration arguments in source order.
   bool interp_executor_construction(const std::string& text,
                                     std::vector<std::string>& config_arguments) const {
-    std::string value = trim_copy(text);
-    std::vector<std::string> reversed;
+    auto tree = expression_tree(text, "executor_construction");
+    if (!tree) return false;
+    est::ExprId current = tree->root;
+    std::vector<est::ExprId> reversed;
     while (true) {
-      auto member = expression_member(value);
-      if (!member) {
-        std::string callee;
-        std::vector<std::string> args;
-        if (!(expression_call(value, callee, args) && callee == "Executor" && args.empty()))
-          return false;
-        config_arguments.assign(reversed.rbegin(), reversed.rend());
-        return true;
+      const auto* call = std::get_if<est::Call>(&tree->arena->at(current));
+      if (!call) return false;
+      const auto* member = std::get_if<est::Member>(
+          &tree->arena->at(call->callee));
+      if (member) {
+        if (member->name != "start")
+          for (auto argument = call->arguments.rbegin();
+               argument != call->arguments.rend(); ++argument)
+            reversed.push_back(*argument);
+        current = member->base;
+        continue;
       }
-      std::string method;
-      std::vector<std::string> args;
-      if (expression_call(member->second, method, args) && method != "start")
-        for (auto it = args.rbegin(); it != args.rend(); ++it) reversed.push_back(*it);
-      value = member->first;
+      const auto* callee = std::get_if<est::Identifier>(
+          &tree->arena->at(call->callee));
+      if (!callee || callee->name != "Executor" ||
+          !call->arguments.empty()) return false;
+      config_arguments.clear();
+      config_arguments.reserve(reversed.size());
+      for (auto argument = reversed.rbegin(); argument != reversed.rend();
+           ++argument)
+        config_arguments.emplace_back(expression_node_text(*tree, *argument));
+      return true;
     }
   }
 
@@ -96,6 +106,8 @@
     auto member = expression_member(text);
     if (!member || member->first != "FileIO") return false;
     std::string method_name;
-    return expression_call(member->second, method_name, args) && method_name == "open" &&
+    return member->second.find('(') != std::string::npos &&
+        expression_call(member->second, method_name, args,
+                        "fileio_open_method") && method_name == "open" &&
         args.size() == 2;
   }

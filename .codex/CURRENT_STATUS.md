@@ -2,54 +2,42 @@
 
 ## Phase 27.5.4 active checkpoint (2026-10-31)
 
-- Handover branch: `phase27-5-4-work`, based on the requested checkpoint
-  `phase27-5-3-c1` (`c96bca786caefa5744000af9918be50a65b41037`). The worktree was
-  clean at kickoff; no 27.5.4 implementation changes or commits exist yet.
-- Startup discovery ran successfully: `./moss agent bootstrap --json` reports
-  language version `moss-0.1`. The C1 baseline evidence and prior failure
-  examples are recorded below in the 27.5.3 section.
-- Immediate implementation focus is checker expression recursion: the current
-  `check_expression` still accepts `const string&`, resolves retained nodes by
-  source-fragment matching, and observationally fills missing types by calling
-  `inferred_expr_term(source, env)`. This is the checker-side gap to eliminate
-  before removing Fast Debug reparsing fallbacks.
-- No Phase 27.5.4 tests, corpus measurements, full suites, perf runs, or Agent 2
-  audits have run. Do not treat earlier phase results as current validation.
-- Focused baseline emit on `tests/phase27/est/specialized_call_facts.moss`
-  succeeded. With `MOSS_EST_COVERAGE_STATS=1`, it reported 2,681 native
-  expression-view reparses, 0 native pipeline reparses, and generated type
-  facts: calls 2 PRESENT/16 ABSENT, constructors 0/10, identifiers 0/68,
-  literals 0/44. This is a single-fixture baseline, not a corpus KPI result.
-- First checker recursion slice is committed below: retained parenthesized
-  expressions and vector literal children now enter through their exact EST
-  ExprIds and source spans, rather than resolving child identity from text.
-  Development build succeeded; targeted `phase27_5_for.moss`, parenthesized
-  pattern, and the three join fixtures checked and ran; the existing focused
-  Fast Debug/native/optimized parity script passed. This does not yet change
-  most recursive string paths or consumer K1/K2 totals. Full suites and perf
-  remain unrun.
-- The second checker slice is committed and pushed as `74a8bdb8`; it routes
-  retained binary `left` and `right` recursive checks through AST child IDs.
-  A further local slice routes unary operands and indexed call arguments
-  through the AST child lookup. Its development rebuild, two join fixtures,
-  and focused three-engine parity script pass. This further slice is not yet
-  committed; call, constructor, pipeline, and many checker paths still use
-  source fragments.
-- Focused remeasurement on the same specialized-call fixture shows no consumer
-  KPI change yet: generated Rust still reports 2,681 native expression-view
-  reparses and type-fact coverage calls 2/18, constructors 0/10, identifiers
-  0/68, literals 0/44. Fast Debug execution reports 16 expression-tree
-  reparses and 0 pipeline reparses. The checker fact dump shows facts on
-  retained node IDs, but the emitter still parses generated-expression strings
-  into temporary arenas, so its fact counter looks up different node IDs.
-  These are focused measurements, not the corpus K1/K2 progress report.
-- Fast Debug now keeps the active EST tree/node set during a complete recursive
-  evaluation, avoiding repeated reparsing in helper calls. Evaluating callable
-  and object-constructor arguments now consumes the existing Call/Constructor
-  child IDs, and member calls use their Member/Call nodes instead of rebuilding
-  `method()` text. The focused Fast Debug reparse count fell from 16 to 4;
-  targeted three-engine parity and join/pattern fixtures pass. This is not yet
-  a zero-reparse result and no Fast Debug fallback has been deleted.
+- Handover branch `phase27-5-4-work` is based on `phase27-5-3-c1`
+  (`c96bca786caefa5744000af9918be50a65b41037`). Bootstrap reports
+  `moss-0.1`. Latest pushed checkpoint is `e6ac0bb2`; current local changes are
+  not yet committed. No full suites, performance runs, or Agent 2 audit have
+  run.
+- Pushed slices: kickoff/status `c151b89a`, focused baseline `247d2d8b`, checker
+  ExprId recursion for grouping/vectors `62bce8c2`, binary children `74a8bdb8`,
+  unary and indexed call children `0b7eb533`, coverage evidence `fdb726bf`, and
+  Fast Debug tree lifetime/call arguments `e6ac0bb2`.
+- Local checker work adds ExprId recursive entry for retained parenthesized
+  expressions, vector elements, binary operands, unary operands, and indexed
+  call arguments. Checker recursion still accepts strings in most paths and
+  has not changed emitter type-fact coverage.
+- Fast Debug now keeps the active tree/node for the full recursive evaluation,
+  reads calls, member calls, constructors, map/filter callbacks, message
+  arguments, indexed places, and for iterable/range arguments from retained
+  nodes. The expression-tree and functional-pipeline temporary-arena fallback
+  code is locally deleted and raises `MOSS_INTERNAL_INVARIANT` when a checked
+  node is absent. Targeted three-engine parity passes for the established
+  fixture set; checked parenthesized pattern, J1–J3 joins, D1 for fixture, and
+  `examples/functional_basics.moss` pass. Five representative Fast Debug runs
+  report zero expression reparses and zero pipeline reparses. This is targeted
+  evidence only, not C1 K1/K2 coverage.
+- Amendment K8 counter is test-build-only and increments `est::rebuild_slot`,
+  covering both `moss.cpp` rewrite helpers. Generation-only scan of all 2,127
+  `.moss` inputs under `tests/`, `examples/`, and `packages/` measured baseline
+  **10,095** and current **10,095** text-to-tree rebuilds. 1,403 generated
+  successfully; 724 failed as expected/incompatible standalone inputs,
+  including negative examples and project sources requiring package context.
+  No rewrite-side code has changed yet, so K8 has not improved. The K2 text-node
+  lookup counter and K4 per-class perturbation fixtures are not implemented.
+- Native emitter focused baseline remains 2,681 expression-view reparses on
+  `tests/phase27/est/specialized_call_facts.moss`; generated type facts there
+  remain calls 2/18, constructors 0/10, identifiers 0/68, literals 0/44.
+  Corpus K1 and K2 have not been measured for this branch. No perf run has been
+  made.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 

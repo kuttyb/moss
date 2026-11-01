@@ -61,6 +61,19 @@
 
   Place locate(const std::string& text, Frame& frame, int line, std::ostream& output) {
     std::string expression = trim_copy(text);
+    std::vector<est::ExprId> checked_indices;
+    if (active_expression_tree_ &&
+        trim_copy(std::string(expression_node_text(
+            *active_expression_tree_, active_expression_node_))) == expression) {
+      est::ExprId base = active_expression_node_;
+      while (const auto* index = std::get_if<est::Index>(
+                 &active_expression_tree_->arena->at(base))) {
+        checked_indices.push_back(index->index);
+        base = index->base;
+      }
+      std::reverse(checked_indices.begin(), checked_indices.end());
+    }
+    std::size_t checked_index = 0;
     // Only checked lvalue-shaped expressions participate in location lookup.
     size_t end = 0;
     while (end < expression.size() && (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
@@ -94,7 +107,13 @@
           if (depth) ++end;
         }
         if (depth) return {};
-        auto index = evaluate_expression_source(expression.substr(start, end - start), frame, line, output);
+        Value index;
+        if (checked_index < checked_indices.size())
+          index = evaluate_tree_node(*active_expression_tree_,
+              checked_indices[checked_index++], frame, line, output);
+        else
+          index = evaluate_expression_source(
+              expression.substr(start, end - start), frame, line, output);
         if (place.value->map) {
           bool found = false;
           for (auto& entry : *place.value->map) {
@@ -121,7 +140,9 @@
 
   void bind_parameters(const std::vector<Param>& parameters, const std::vector<Effect>& effects,
       const std::vector<std::string>& arguments, Frame& caller, Frame& frame, int line,
-      std::ostream& output, const std::vector<std::string>* concrete_types = nullptr) {
+      std::ostream& output, const std::vector<std::string>* concrete_types = nullptr,
+      const ExpressionTreeView* tree = nullptr,
+      const std::vector<est::ExprId>* argument_nodes = nullptr) {
     frame.domain = caller.domain; frame.handler = caller.handler;
     // Domain context is trace provenance only in helpers; state names remain
     // lexically resolved through explicit actual/formal bindings.
@@ -134,10 +155,17 @@
       }
       if (!type.empty()) frame.local_types[parameters[i].name] = type;
       Effect effect = i < effects.size() ? effects[i] : Effect::Read;
-      auto place = locate(arguments[i], caller, line, output);
+      const bool has_node = tree && argument_nodes &&
+          i < argument_nodes->size();
+      auto place = has_node
+          ? locate_tree_node(*tree, argument_nodes->at(i), caller, line, output)
+          : locate(arguments[i], caller, line, output);
       if (effect != Effect::Consume && place.value) frame.aliases[parameters[i].name] = place;
       else {
-        frame.locals[parameters[i].name] = evaluate_expression_source(arguments[i], caller, line, output);
+        frame.locals[parameters[i].name] = has_node
+            ? evaluate_tree_node(*tree, argument_nodes->at(i), caller, line,
+                                 output)
+            : evaluate_expression_source(arguments[i], caller, line, output);
         if (effect == Effect::Consume && place.value) {
           if (place.domain) state_event("state_consume", caller, line, place, summary(*place.value), "<moved>");
           *place.value = Value::unit();
@@ -187,7 +215,8 @@
       if (instance.concrete->binding != statement.a || instance.concrete->line != statement.line) continue;
       if (instance.initialized) throw RuntimeError(statement.line, "internal error: duplicate domain initialization");
       std::string name; std::vector<std::string> arguments;
-      if (!expression_call(statement.b, name, arguments)) throw RuntimeError(statement.line, "internal error: missing domain constructor");
+      if (!expression_call(statement.b, name, arguments,
+                           "compose_domain_constructor")) throw RuntimeError(statement.line, "internal error: missing domain constructor");
       const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
       std::unordered_map<std::string, std::string> initializers;
       for (const auto& argument : arguments) {
@@ -226,7 +255,8 @@
   PreparedHandlerCall prepare_handler_call(const std::string& invocation, Frame& caller,
                                            int line, std::ostream& output) {
     std::string callee; std::vector<std::string> arguments;
-    if (!expression_call(invocation, callee, arguments)) throw RuntimeError(line, "internal error: malformed checked message");
+    if (!expression_call(invocation, callee, arguments,
+                         "prepare_handler_call")) throw RuntimeError(line, "internal error: malformed checked message");
     auto member = expression_member(callee);
     if (!member) throw RuntimeError(line, "internal error: missing checked message receiver");
     Value handle = evaluate_expression_source(member->first, caller, line, output);
@@ -245,6 +275,31 @@
     return call;
   }
 
+  PreparedHandlerCall prepare_handler_call(const ExpressionTreeView& tree,
+      const est::Message& message_node, Frame& caller, int line,
+      std::ostream& output) {
+    Value handle = evaluate_tree_node(tree, message_node.target, caller, line,
+                                      output);
+    if (handle.kind != Value::Kind::DomainHandle || !handle.domain ||
+        !handle.domain->initialized)
+      throw RuntimeError(line,
+          "internal error: message target is not a published concrete domain");
+    auto& instance = *handle.domain;
+    const Handler* target = nullptr;
+    for (const auto& handler : instance.definition->handlers)
+      if (handler.name == message_node.handler) target = &handler;
+    if (!target || target->params.size() != message_node.arguments.size())
+      throw RuntimeError(line, "internal error: unresolved checked handler");
+    PreparedHandlerCall call;
+    call.instance = &instance;
+    call.target = target;
+    call.line = line;
+    for (const auto argument : message_node.arguments)
+      call.arguments.push_back(independent(evaluate_tree_node(
+          tree, argument, caller, line, output)));
+    return call;
+  }
+
   // Phase 20: a top-level `message` from `main` (checker bit
   // message_root_ingress) is an independent synchronous Root. Fast Debug's
   // sequential schedule already gives it Root semantics: arguments are
@@ -252,6 +307,12 @@
   // the caller continues. Nested messages inside it are ordinary nested calls.
   Value message(const std::string& invocation, Frame& caller, int line, std::ostream& output) {
     return run_handler_call(prepare_handler_call(invocation, caller, line, output), caller, output);
+  }
+
+  Value message(const ExpressionTreeView& tree, const est::Message& node,
+                Frame& caller, int line, std::ostream& output) {
+    return run_handler_call(prepare_handler_call(tree, node, caller, line,
+                                                 output), caller, output);
   }
 
   Value run_handler_call(PreparedHandlerCall call, Frame& caller, std::ostream& output) {
