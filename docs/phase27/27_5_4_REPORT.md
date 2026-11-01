@@ -215,6 +215,13 @@ and `-O` generated Rust remain byte-identical to C1; both Rust programs compile
 and print `string concat ok`. The test trace has no emitter-node fallback for
 this fixture. These are targeted counts, not the final paired corpus result.
 
+Four accepted string/write-through fixtures (`phase24_string_concat`,
+`swarm_049_string_builtin_operators`, `swarm_030_string_comparison_borrowed`,
+and `repro6_string_concat_native`) also remain byte-identical to C1 in default
+and `-O`; all eight generated Rust files compile and native stdout matches.
+`swarm_044_string_literal_binary_lexing` is rejected by C1 with
+`UNSUPPORTED_STRING_ORDERING`, so it was excluded from this parity set.
+
 ## C2 progress — emitter consumes checked call edges on nested nodes
 
 When nested call nodes lacked a retained resolved-target fact, the emitter now

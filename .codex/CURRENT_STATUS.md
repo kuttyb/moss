@@ -15392,3 +15392,13 @@ fallback on `tests/phase24_string_concat.moss`. Its optimized counts fell
 and `-O` Rust are byte-identical to C1, both rustc builds run and print
 `string concat ok`; the candidate's test trace reports zero node fallbacks for
 this fixture. The paired corpus count is still pending.
+
+### C2 adjacent string/write-through validation (2026-11-01)
+
+The same retained-node lowering is byte-identical to C1 for four accepted
+string fixtures in default and `-O`: `phase24_string_concat`,
+`swarm_049_string_builtin_operators`, `swarm_030_string_comparison_borrowed`,
+and `repro6_string_concat_native`. All eight generated Rust files compile and
+produce matching native output. `swarm_044_string_literal_binary_lexing` is
+rejected by C1's checker with `UNSUPPORTED_STRING_ORDERING`, so it was not a
+candidate migration input. No full suite or performance run has occurred.
