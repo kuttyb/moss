@@ -19577,7 +19577,7 @@ class Checker {
       for (const auto& expression : statement_expressions(statement)) {
         vector<LocalCallSite> calls;
         collect_local_call_sites(statement.line, expression, current_env,
-                                 implicit_owner, calls);
+                                 implicit_owner, calls, &statement);
         for (const auto& call : calls) {
           graph[source].insert(call.target);
           edge_lines.emplace(source + "\n" + call.target, statement.line);
