@@ -1,9 +1,22 @@
-# Phase 27.5.4 — current handover (2026-10-31)
+# Phase 27.5.4 — current handover (2026-11-01)
 
-- Branch: `phase27-5-4-work`; latest pushed commit: `452e0a3e` (also the
-  current branch tip). Working tree is clean after reverting a binary-child
-  cursor experiment and a source-match validation experiment. Moss bootstrap
-  confirms `moss-0.1`.
+- Branch: `phase27-5-4-work`; code checkpoint in progress. Latest pushed tip
+  before this slice: `976291b2`. Moss bootstrap confirms `moss-0.1`.
+- User re-scoped the phase: checker string work is out of K2; C1 is Fast Debug
+  only, with the two known invariant regressions fixed and `make check` required
+  in default and shadow. C2 covers emitter/optimizer consumer counts. K1 is
+  report-only.
+- C1 implementation removes Fast Debug's source-fingerprint scans of retained
+  handles in `expression_tree` and pipeline resolution. Function/method return
+  evaluation now requests the checked `ReturnValue` slot explicitly, which
+  preserves the generic string fixture without text lookup. The pipeline helper
+  receives the active tree and ExprId and verifies the node kind directly.
+  Targeted functional-tree, Fast Debug/native/optimized, generic-string,
+  swarm_044, and pipeline fixtures pass in default/shadow. Generic-string
+  Fast Debug counters: consumer reparses 0, text-node lookups 0; checker text
+  caches are still used and are outside the new target.
+- Next: checkpoint and push C1, then run `make check` once for C1. Do not run
+  C2 corpus consumer counts or performance tests until C2 is near completion.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.

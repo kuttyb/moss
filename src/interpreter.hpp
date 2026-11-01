@@ -657,23 +657,6 @@ class FastInterpreter {
       return view;
     }
     view.source.assign(source);
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(view.source);
-    if (active_expression_handles_) {
-      for (const auto& handle : *active_expression_handles_) {
-        if (handle.source_fingerprint != fingerprint ||
-            handle.arena_index >= program_.expression_arenas.size() ||
-            !program_.expression_arenas[handle.arena_index])
-          continue;
-        est::assert_fresh(handle, view.source);
-        view.arena = program_.expression_arenas[handle.arena_index].get();
-        view.root = handle.expr;
-        const auto span = view.arena->span(view.root);
-        if (span.source_end <= view.source.size()) return view;
-      }
-    }
     throw RuntimeError(0,
         "MOSS_INTERNAL_INVARIANT missing checked expression node source=" +
         std::string(source) + " active=" +
@@ -1206,10 +1189,7 @@ class FastInterpreter {
   }
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
-      std::string_view expression,
-      const std::vector<est::Handle>* handles = nullptr) const {
-    if (expression.find("|>") == std::string_view::npos)
-      return std::nullopt;
+      const ExpressionTreeView& tree, est::ExprId root) const {
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
@@ -1220,33 +1200,10 @@ class FastInterpreter {
       // parse failure.
       return FunctionalNodeKind::Source;
     };
-    if (active_expression_tree_ &&
-        expression_node_text(*active_expression_tree_,
-                             active_expression_node_) == expression)
-      return est::functional_pipeline(*active_expression_tree_->arena,
-          active_expression_node_, expression, resolve_stage);
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(std::string(expression));
-    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
-        -> std::optional<ParsedFunctionalPipeline> {
-      if (arena_index >= program_.expression_arenas.size() ||
-          !program_.expression_arenas[arena_index]) return std::nullopt;
-      return est::functional_pipeline(*program_.expression_arenas[arena_index],
-                                      root, expression, resolve_stage);
-    };
-    const auto* selected_handles = handles ? handles : active_expression_handles_;
-    if (selected_handles) {
-      for (const auto& handle : *selected_handles)
-        if (handle.source_fingerprint == fingerprint)
-          if (auto parsed = convert(handle.arena_index, handle.expr))
-            return parsed;
-    }
-
-    throw RuntimeError(0,
-        "MOSS_INTERNAL_INVARIANT missing checked functional pipeline node source=" +
-        std::string(expression));
+    if (!std::holds_alternative<est::Pipeline>(tree.arena->at(root)))
+      return std::nullopt;
+    return est::functional_pipeline(*tree.arena, root,
+        expression_node_text(tree, root), resolve_stage);
   }
 
   Value invoke_pipeline_callable(const std::string& callable,
@@ -1532,7 +1489,7 @@ class FastInterpreter {
       if (constructor.rfind("Vector[", 0) == 0 && constructor.back() == ']')
         return Value::vector_value({}, constructor.substr(7, constructor.size() - 8));
     }
-    if (auto pipeline = functional_pipeline_from_est(e)) {
+    if (auto pipeline = functional_pipeline_from_est(*tree, current_root)) {
       const auto* pipeline_node = tree
           ? std::get_if<est::Pipeline>(&tree->arena->at(current_root)) : nullptr;
       if (!pipeline_node)
@@ -2764,9 +2721,13 @@ class FastInterpreter {
         active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
-             ? evaluate_expression_source(*target.execution_result_expression, frame, target.result_line, output)
+             ? evaluate_expression_source(*target.execution_result_expression,
+                   frame, target.result_line, output,
+                   std::pair{est::ExprSlot::ReturnValue, 0u})
              : target.result_expression
-                 ? evaluate_expression_source(*target.result_expression, frame, target.result_line, output)
+                 ? evaluate_expression_source(*target.result_expression, frame,
+                       target.result_line, output,
+                       std::pair{est::ExprSlot::ReturnValue, 0u})
                  : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
@@ -2808,9 +2769,13 @@ class FastInterpreter {
         active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
-             ? evaluate_expression_source(*target.execution_result_expression, frame, target.result_line, output)
+             ? evaluate_expression_source(*target.execution_result_expression,
+                   frame, target.result_line, output,
+                   std::pair{est::ExprSlot::ReturnValue, 0u})
              : target.result_expression
-                 ? evaluate_expression_source(*target.result_expression, frame, target.result_line, output)
+                 ? evaluate_expression_source(*target.result_expression, frame,
+                       target.result_line, output,
+                       std::pair{est::ExprSlot::ReturnValue, 0u})
                  : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
