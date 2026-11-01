@@ -223,6 +223,9 @@ void assert_fresh(const Handle& handle, const std::string& source) {
 const Handle* lookup(const std::vector<Handle>& handles, const Arena& arena,
                      std::uint64_t owner, ExprSlot slot,
                      std::uint32_t argument_index, const std::string& source) {
+#ifdef MOSS_TEST_BUILD
+  record_expression_text_lookup();
+#endif
   for (const auto& handle : handles) {
     if (handle.owner != owner || handle.slot != slot ||
         handle.argument_index != argument_index) continue;
@@ -282,6 +285,7 @@ namespace {
 std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
+std::uint64_t expression_text_lookup_count = 0;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
 
 struct TestCoverageReporter {
@@ -320,6 +324,15 @@ void record_expression_tree_rebuild() noexcept {
   }
 }
 
+void record_expression_text_lookup() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++expression_text_lookup_count;
+  } catch (...) {
+  }
+}
+
 void record_generated_type_fact_coverage(std::string_view node_kind,
                                          bool present) noexcept {
   if (!test_coverage_counters_enabled()) return;
@@ -334,6 +347,8 @@ void report_test_coverage_counters() {
   std::lock_guard<std::mutex> lock(test_coverage_mutex);
   std::cerr << "MOSS_EST_TREE_TEXT_REBUILDS="
             << expression_tree_rebuild_count << '\n';
+  std::cerr << "MOSS_EST_TEXT_NODE_LOOKUPS="
+            << expression_text_lookup_count << '\n';
   std::cerr << "MOSS_EST_REPARSES native_expression_view="
             << consumer_reparse_counts[0]
             << " native_functional_pipeline=" << consumer_reparse_counts[1]

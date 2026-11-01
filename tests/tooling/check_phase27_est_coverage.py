@@ -35,20 +35,30 @@ dev_without = OUT / "dev-without.rs"
 dev_stats = emit(DEV, dev_with, True)
 if "MOSS_EST_REPARSES " not in dev_stats:
     raise SystemExit("test compiler did not report consumer reparse counters")
+if "MOSS_EST_TEXT_NODE_LOOKUPS=" not in dev_stats:
+    raise SystemExit("test compiler did not report expression-text node lookups")
+if "MOSS_EST_TREE_TEXT_REBUILDS=" not in dev_stats:
+    raise SystemExit("test compiler did not report expression-tree rebuilds")
 facts = re.findall(
     r"MOSS_EST_GENERATED_TYPE_FACT kind=\S+ PRESENT=(\d+) ABSENT=(\d+)",
     dev_stats)
 if not facts or not any(int(present) + int(absent) for present, absent in facts):
     raise SystemExit("test compiler did not report generated_expr_type fact coverage")
 dev_plain_stats = emit(DEV, dev_without, False)
-if "MOSS_EST_REPARSES " in dev_plain_stats or "MOSS_EST_GENERATED_TYPE_FACT" in dev_plain_stats:
+if ("MOSS_EST_REPARSES " in dev_plain_stats or
+        "MOSS_EST_GENERATED_TYPE_FACT" in dev_plain_stats or
+        "MOSS_EST_TEXT_NODE_LOOKUPS=" in dev_plain_stats or
+        "MOSS_EST_TREE_TEXT_REBUILDS=" in dev_plain_stats):
     raise SystemExit("coverage counters printed without the opt-in report environment")
 if dev_with.read_bytes() != dev_without.read_bytes():
     raise SystemExit("coverage instrumentation changed generated Rust")
 
 opt_output = OUT / "opt.rs"
 opt_stats = emit(OPT, opt_output, True)
-if "MOSS_EST_REPARSES " in opt_stats or "MOSS_EST_GENERATED_TYPE_FACT" in opt_stats:
+if ("MOSS_EST_REPARSES " in opt_stats or
+        "MOSS_EST_GENERATED_TYPE_FACT" in opt_stats or
+        "MOSS_EST_TEXT_NODE_LOOKUPS=" in opt_stats or
+        "MOSS_EST_TREE_TEXT_REBUILDS=" in opt_stats):
     raise SystemExit("optimized/release compiler contains test-only coverage counters")
 
 print("PASS EST counters are opt-in, test-build-only, and output-neutral")

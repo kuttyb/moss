@@ -288,6 +288,7 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint32_t argument_index, const std::string& new_text);
 #ifdef MOSS_TEST_BUILD
 void record_expression_tree_rebuild() noexcept;
+void record_expression_text_lookup() noexcept;
 #endif
 
 enum class Mode { On, Shadow };
