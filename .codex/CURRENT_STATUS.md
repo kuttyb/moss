@@ -16532,3 +16532,24 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   regular pipeline fixtures are also 0/0.
 - Perturb/drop hooks pass again with known debt unchanged at 38/38. No full
   suite or paired whole-corpus measurement has run after these changes.
+
+## C2 checkpoint: domain initializer call edges (2026-11-01)
+
+- Latest branch commit `8aee6af0` is pushed on `phase27-5-4-work`. It retains
+  ordinary call edges for domain state initializers after `check_local_call_cycles`
+  rebuilds/clears the edge vector. The emitter matches checker-recorded target
+  identity across initializer source contexts, deduplicating equivalent target
+  edges; it does not use consumer argument types to choose a target.
+- The valid `family09_imported_generic_effects/01_pure_domain_init_pos/case.moss`
+  fixture now checks, Fast Debug prints `42`, and generated Rust compiles and
+  prints `42`. `positive_control.moss` and `tests/swarm_038_effects_loop_helper.moss`
+  both check, emit, compile, and have matching native/Fast Debug output.
+  `check_phase27_5_4_fact_hooks.py` passes: call targets 8, specializations 4,
+  joins 4, patterns 3, known debt 38/38.
+- A diagnostic default emission of `examples/projects/phase10_modules/src/main.moss`
+  on this checkpoint still reports 270 emitter reparses / 270 text-node lookups
+  (including 12 text type queries and 4 text expression queries). The like-for-like
+  paired corpus totals from `340af4cd` are stale after later commits and must be
+  rerun after the next migration slice. No full suites or performance suites
+  have run. C2 remains incomplete; focus next on recurring call/result type
+  queries passed as strings through emitter lowering.
