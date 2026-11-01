@@ -26389,11 +26389,8 @@ class Checker {
       const auto& parent = *active_est_expression_cursors_.back();
       auto* arena = expression_arena(parent.arena_index);
       if (!arena) return std::nullopt;
-#ifdef MOSS_TEST_BUILD
-      est::record_expression_text_lookup();
-#endif
-      auto child = matching_expression_child(*arena, parent.expr, child_role,
-          child_ordinal, parent.source, source);
+      auto child = expression_child_node(*arena, parent.expr, child_role,
+                                         child_ordinal);
       if (!child) return std::nullopt;
       return EstExpressionCursor{parent.arena_index, *child,
                                  std::string(source)};
