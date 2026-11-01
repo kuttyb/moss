@@ -14,6 +14,12 @@ For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MOD
 
 Only the checker decides Moss semantics. The emitter, Fast Debug and the optimizer read the checker's answers and never compute them. If an answer is missing, the checker must provide it. Log conflicts and continue.
 
+## Moss compiler development
+
+For Moss compiler development (any change under `src/`, the compiler's tests or its build), read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md) before making changes, and keep its statuses and known-debt numbers current in the same delivery. It defines the compiler's architectural invariants, the gates that enforce them, and the declared known debt.
+
+Regular Moss development (writing Moss programs, packages, SDK libraries or examples) does not require it; use the language docs from `moss agent bootstrap --json` instead.
+
 ## Mandatory Session Startup
 
 Every agent session must execute the following startup sequence before inspecting or editing Moss code:
