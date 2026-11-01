@@ -18,6 +18,7 @@ CASES = {
         ROOT / "tests/phase27/est/side_facts.moss",
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
         FIXTURES / "call_edges.moss",
+        FIXTURES / "call_target_receiver_member.moss",
         FIXTURES / "call_target_indexed_member.moss",
         ROOT / "examples/collections_and_methods.moss",
         ROOT / "tests/phase27/est/pipeline_shape.moss",

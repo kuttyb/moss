@@ -1,0 +1,9 @@
+type Counter:
+  value: Int
+
+  fn add(amount: Int):
+    return value + amount
+
+fn main():
+  x = Counter(value = 40)
+  echo x.add(2)
