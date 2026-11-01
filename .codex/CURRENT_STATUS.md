@@ -58,6 +58,14 @@
   generated Rust executable. The change is uncommitted; full gates remain
   pending.
 
+### C2 checked call statement slice
+
+- The emitter now lowers intrinsic receiver-call statements from their retained
+  `Stmt::Kind::Call` expression node instead of synthesizing a call string.
+  On the same calculator command, text-node lookups decreased a further 210
+  (24,462 to 24,252); reparses remain 15,804. Generated Rust compiled and
+  matched Fast Debug. This change is uncommitted and full gates remain pending.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
 
 - Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current

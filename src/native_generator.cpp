@@ -10095,13 +10095,9 @@ class Generator {
                  starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
-            string call = s.a + "." + s.b + "(";
-            for (size_t argument = 0; argument < s.args.size(); ++argument) {
-              if (argument) call += ", ";
-              call += s.args[argument];
-            }
-            call += ")";
-            o << indent(level) << expr(call, d, locals, &types) << ";\n";
+            const EmitterExpr checked_call = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            o << indent(level) << expr(checked_call, d, locals, &types) << ";\n";
             ++i;
             break;
           }
