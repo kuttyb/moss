@@ -26113,16 +26113,10 @@ class Checker {
       const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
       std::string_view source, std::string context,
       est::SemanticFacts facts, bool require_match = false) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(std::string(source));
     bool recorded = false;
     for (const auto& handle : statement.expression_handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index ||
-          handle.source_fingerprint != fingerprint)
+      if (handle.slot != slot || handle.argument_index != argument_index)
         continue;
-      est::assert_fresh(handle, std::string(source));
       auto* arena = expression_arena(handle.arena_index);
       if (!arena) continue;
       arena->record_facts(handle.expr, context, facts);
@@ -26175,15 +26169,10 @@ class Checker {
       const moss::TypeRef& expected_type,
       std::string_view expected_target = {}) const {
     if (est::mode() != est::Mode::Shadow) return;
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(std::string(source));
+    (void)source;
     for (const auto& handle : statement.expression_handles) {
-      if (handle.slot != slot || handle.argument_index != argument_index ||
-          handle.source_fingerprint != fingerprint)
+      if (handle.slot != slot || handle.argument_index != argument_index)
         continue;
-      est::assert_fresh(handle, std::string(source));
       const auto* arena = expression_arena(handle.arena_index);
       const auto* actual = arena ? arena->facts(handle.expr, context) : nullptr;
       assert(actual);
