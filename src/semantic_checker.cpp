@@ -12047,7 +12047,10 @@ class Checker {
                            message_args)) {
       string receiver = message_target;
       string handler = message_handler;
-      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
+      if (!(checked_node
+                ? checked_message_identifiers(receiver, handler)
+                : tree_plain_identifier(receiver) &&
+                      tree_plain_identifier(handler)))
         return std::nullopt;
       auto binding = env.find(receiver);
       if (binding == env.end()) return std::nullopt;
@@ -12356,10 +12359,20 @@ class Checker {
     string method_receiver, method_name; vector<string> method_args;
     if (checked_expression_parse_member_call(
             e, method_receiver, method_name, method_args)) {
-      if (staged_abi_v10() && tree_empty_constructor_named(method_receiver, "Map") &&
+      if (staged_abi_v10() &&
+          (checked_node
+               ? checked_expression_child_empty_constructor_named(
+                     "receiver", method_receiver, "Map")
+               : tree_empty_constructor_named(method_receiver, "Map")) &&
           method_name == "get" && method_args.size() == 2) {
-        auto key = inferred_expr_type(method_args[0], env);
-        auto value = inferred_expr_type(method_args[1], env);
+        auto key_expr = inferred_child_expr(method_args[0], env,
+                                            "call-argument", 0);
+        auto value_expr = inferred_child_expr(method_args[1], env,
+                                              "call-argument", 1);
+        auto key = key_expr
+            ? std::optional<string>(key_expr->projection()) : std::nullopt;
+        auto value = value_expr
+            ? std::optional<string>(value_expr->projection()) : std::nullopt;
         if (key && value) {
           auto key_term = parsed_type(*key);
           auto value_term = parsed_type(*value);
@@ -12380,7 +12393,7 @@ class Checker {
         if (canon_recv == "char" && method_name == "codepoint" && method_args.size() == 1)
           return primitive("int");
       }
-      auto base = inferred_expr(method_receiver, env);
+      auto base = inferred_child_expr(method_receiver, env, "receiver");
       if (base) {
         auto receiver_ir = current_body_types_
             ? current_body_types_->known_expression(method_receiver) : nullptr;
