@@ -7196,11 +7196,24 @@ class Generator {
       string callee;
       vector<string> arguments;
       if (parse_root_simple_call(callee, arguments) && callee == "replace" &&
-          arguments.size() == 2)
+          arguments.size() == 2) {
+        if (checked_node) {
+          string node_callee;
+          vector<EmitterExpr> node_arguments;
+          if (tree_parse_simple_call_nodes(*checked_node, node_callee,
+                                           node_arguments) &&
+              node_callee == "replace" && node_arguments.size() == 2)
+            return "{ let __moss_replacement = " +
+                expr(node_arguments[1], d, locals, types) +
+                "; std::mem::replace(&mut " +
+                write_call_place(node_arguments[0], d, locals, types) +
+                ", __moss_replacement) }";
+        }
         return "{ let __moss_replacement = " +
             expr(arguments[1], d, locals, types) + "; std::mem::replace(&mut " +
             write_call_place(arguments[0], d, locals, types) +
             ", __moss_replacement) }";
+      }
     }
     {
       string enum_name, case_name;
