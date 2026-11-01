@@ -94,3 +94,12 @@ expression-view reparses (parent 17,129 / 9,047; prior candidate 7,914 / 4,752);
 pipeline reparses remain zero. Three representative method examples generate
 parent-identical Rust in both profiles. The four-class perturb/drop harness
 passes; full C2 gates remain pending.
+
+The C2 method-call target path is now covered by the perturb/drop harness using
+`examples/collections_and_methods.moss`. The emitter fails closed when its
+checked method target is dropped or replaced by the synthetic perturbation.
+Call-target coverage has four fixtures; the other required classes retain three
+each. The registered test passes for Fast Debug, native, and `-O`; the normal
+method examples pass three-engine execution. The expected perturbed/dropped
+behavior is a `MOSS_INTERNAL_INVARIANT`, so a successful emission or run fails
+the test.

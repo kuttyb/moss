@@ -17,6 +17,7 @@ CASES = {
         ROOT / "tests/phase27/est/side_facts.moss",
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
         FIXTURES / "call_edges.moss",
+        ROOT / "examples/collections_and_methods.moss",
     ],
     "specializations": [
         ROOT / "tests/phase27/est/specialized_call_facts.moss",

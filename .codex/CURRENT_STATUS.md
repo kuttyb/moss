@@ -14922,3 +14922,15 @@ The paired four-source/default-plus-`-O` sample is parent 17,129 text-node
 lookups / 9,047 expression reparses / 0 pipeline reparses versus candidate
 7,782 / 4,688 / 0. Counts improved from 7,914 / 4,752 / 0 at the prior broad
 sample. Full corpus counts, suites, and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — method target perturb/drop fixture
+
+Added `examples/collections_and_methods.moss` to the call-target fact-hook
+matrix. This fixture exercises direct object method calls, which exposed a
+legacy emitter path that ignored perturbed/dropped call facts. The node-based
+method-call route now fails with `MOSS_INTERNAL_INVARIANT` when that checked
+target is absent under the hook or has the synthetic contradictory target.
+The registered harness passes: call targets 4 fixtures; specializations,
+joins, and patterns 3 each; Fast Debug/native/`-O` fail closed for perturb and
+drop. Three-engine runs for collections/methods, object pipeline, and
+functional objects pass. C2 full suites/perf remain pending.

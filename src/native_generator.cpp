@@ -4158,6 +4158,14 @@ class Generator {
                 : codegen_body_context_;
         const auto* facts = expression.arena->facts(root, checker_context);
         const string target = facts ? facts->resolved_target : string();
+        if ((!facts || target.empty()) &&
+            (moss_test_drop_fact("call-targets") ||
+             moss_test_perturb_fact("call-targets")))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target");
+        if (target == "fn:__moss_test_perturbed_call_target__")
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
         if (starts_with(target, "method:")) {
           const auto separator = target.rfind('.');
           const string owner = separator == string::npos
