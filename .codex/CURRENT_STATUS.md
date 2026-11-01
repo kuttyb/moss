@@ -1,7 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `bcf1861b` (paired
-  parent counter report; numeric-root projection `16f1cf57` precedes it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `54da7c64` (paired
+  counter handover; numeric-root projection `16f1cf57` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -82,6 +82,11 @@
   stdout match. Keep using these same commands for progress reports.
 - Paired counter report and evidence are committed/pushed in `bcf1861b`;
   feedback validation passes.
+- Current uncommitted slice bridges the retained-root binary projection into
+  compatibility lowering. Same-command candidate counters are now 15,360
+  reparses / 20,784 lookups, against parent 181,742 / 273,688 (-91.55% /
+  -92.41%). Generated Rust is byte-identical, compiles, and matches Fast
+  Debug; fact hooks and feedback validation pass. Commit/push before continuing.
 
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 

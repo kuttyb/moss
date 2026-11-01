@@ -6596,6 +6596,14 @@ class Generator {
       return checked_node ? tree_parse_vector_literal(*checked_node)
                           : tree_parse_vector_literal(e);
     };
+    auto parse_root_binary = [&](const vector<string>& operators)
+        -> std::optional<GeneratedBinaryExpression> {
+      if (!checked_node) return tree_generated_binary(e, operators);
+      auto binary = tree_generated_binary(*checked_node, operators);
+      if (!binary) return std::nullopt;
+      return GeneratedBinaryExpression{binary->left.text(), binary->op,
+                                       binary->right.text()};
+    };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
@@ -6761,7 +6769,7 @@ class Generator {
          vector<std::pair<string, string>>{{" or ", "||"},
                                                 {" xor ", "^"},
                                                 {" and ", "&&"}}) {
-      if (auto binary = tree_generated_binary(e, {boolean_operator.first}))
+      if (auto binary = parse_root_binary({boolean_operator.first}))
         return "(" + expr(binary->left, d, locals, types) + ") " +
             boolean_operator.second + " (" +
             expr(binary->right, d, locals, types) + ")";
@@ -6771,7 +6779,7 @@ class Generator {
         unary_operation == "not")
       return "!(" + expr(unary_operand, d, locals, types) + ")";
     if (auto comparison =
-            tree_generated_binary(e, {"==", "!=", "<=", ">=", "<", ">"})) {
+        parse_root_binary({"==", "!=", "<=", ">=", "<", ">"})) {
       string left = expr(comparison->left, d, locals, types);
       string right = expr(comparison->right, d, locals, types);
       left = value_from_borrowed_message_parameter(comparison->left, left, types);
@@ -6800,28 +6808,28 @@ class Generator {
       }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"|"})) {
+    if (auto binary = parse_root_binary({"|"})) {
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
       left = value_from_borrowed_message_parameter(binary->left, left, types);
       right = value_from_borrowed_message_parameter(binary->right, right, types);
       return "(" + left + ") | (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"^"})) {
+    if (auto binary = parse_root_binary({"^"})) {
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
       left = value_from_borrowed_message_parameter(binary->left, left, types);
       right = value_from_borrowed_message_parameter(binary->right, right, types);
       return "(" + left + ") ^ (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"&"})) {
+    if (auto binary = parse_root_binary({"&"})) {
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
       left = value_from_borrowed_message_parameter(binary->left, left, types);
       right = value_from_borrowed_message_parameter(binary->right, right, types);
       return "(" + left + ") & (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"<<", ">>"})) {
+    if (auto binary = parse_root_binary({"<<", ">>"})) {
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
       left = value_from_borrowed_message_parameter(binary->left, left, types);
@@ -6830,7 +6838,7 @@ class Generator {
       return fn_name + "(" + left + ", " + right + ")";
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
-      auto binary = tree_generated_binary(e, operators);
+      auto binary = parse_root_binary(operators);
       if (!binary) continue;
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
