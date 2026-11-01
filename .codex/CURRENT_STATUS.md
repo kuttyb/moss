@@ -1,8 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `2ebac3d6`. Ownership-pass pipeline routing is uncommitted. Moss bootstrap
-  confirms `moss-0.1`.
+  `c3e7a3be`. Local-call collector context routing is uncommitted. Moss
+  bootstrap confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -26,6 +26,12 @@
   same fixture from 118 to 109 checker parses (63 to 54 pipeline parses); the
   functional-tree parity harness passes. This is checker-side K2 progress, but
   the fixture remains far from the zero target.
+- Phase 21 local-call collection now passes its owning statement into pipeline
+  lookup, so the retained handle is available even before the ordinary checker
+  and ownership cursors run. `functional_basics.moss` falls from 98 to 95
+  checker reparses (pipeline 21 to 18); default/shadow checks and the
+  functional-tree parity harness pass. `functional_materialization.moss`
+  remains at 109 checker reparses (54 pipeline). No aggregate scan yet.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial

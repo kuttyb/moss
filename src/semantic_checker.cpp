@@ -17096,7 +17096,7 @@ class Checker {
         vector<LocalCallSite> calls;
         for (const auto& expression : statement_expressions(statement))
           collect_local_call_sites(statement.line, expression, env,
-                                   nullptr, calls);
+                                   nullptr, calls, &statement);
         for (const auto& site : calls) {
           const Function* target_function = nullptr;
           const Method* target_method = nullptr;
@@ -17450,7 +17450,7 @@ class Checker {
       vector<LocalCallSite> call_sites;
       for (const auto& expression : statement_expressions(call))
         collect_local_call_sites(call.line, expression, caller_types,
-                                 nullptr, call_sites);
+                                 nullptr, call_sites, &call);
       for (const auto& site : call_sites) {
       if (starts_with(site.target, "method:")) {
         phase21_warn_method_catch_alls(domain, source, planned, site,
@@ -17632,7 +17632,7 @@ class Checker {
         vector<LocalCallSite> calls;
         for (const auto& expression : statement_expressions(statement))
           collect_local_call_sites(statement.line, expression, formal_env,
-                                   nullptr, calls);
+                                   nullptr, calls, &statement);
         for (const auto& call : calls) {
           auto map_to_handler = [&](const string& expression) {
             string actual = expression;
@@ -17697,7 +17697,7 @@ class Checker {
       vector<LocalCallSite> calls;
       for (const auto& expression : statement_expressions(statement))
         collect_local_call_sites(statement.line, expression, handler_env,
-                                 nullptr, calls);
+                                 nullptr, calls, &statement);
       for (const auto& call : calls) {
         if (!starts_with(call.target, "fn:")) continue;
         auto function = functions_.find(call.target.substr(3));
@@ -19058,11 +19058,13 @@ class Checker {
       int line, const string& expression,
       const TypeEnv& env,
       const ObjectType* implicit_owner,
-      vector<LocalCallSite>& calls) const {
+      vector<LocalCallSite>& calls, const Stmt* statement_context = nullptr) const {
     (void)line;
     string original = trim(expression);
-    if (auto pipeline = functional_pipeline_from_est(original)) {
-      collect_local_call_sites(line, pipeline->source, env, implicit_owner, calls);
+    if (auto pipeline = functional_pipeline_from_est(
+            original, nullptr, {}, statement_context)) {
+      collect_local_call_sites(line, pipeline->source, env, implicit_owner,
+                               calls, statement_context);
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
           ? functional_element_type(*source_type, pipeline->source).value_or("")
@@ -19071,7 +19073,7 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Reduce &&
             !stage.arguments.empty())
           collect_local_call_sites(line, stage.arguments.front(), env,
-                                   implicit_owner, calls);
+                                   implicit_owner, calls, statement_context);
         string callable;
         vector<string> argument_types;
         if ((stage.kind == FunctionalNodeKind::Map ||
@@ -19093,7 +19095,7 @@ class Checker {
           TypeEnv placeholder_env = env;
           placeholder_env["_"] = element;
           collect_local_call_sites(line, callable, placeholder_env,
-                                   implicit_owner, calls);
+                                   implicit_owner, calls, statement_context);
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
@@ -19140,14 +19142,15 @@ class Checker {
     // expression lowering already recurse through these forms.
     if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
-        collect_local_call_sites(line, element, env, implicit_owner, calls);
+        collect_local_call_sites(line, element, env, implicit_owner, calls,
+                                 statement_context);
       return;
     }
     string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         (unary_operation == "not" || unary_operation == "~")) {
       collect_local_call_sites(line, unary_operand, env,
-                               implicit_owner, calls);
+                               implicit_owner, calls, statement_context);
       return;
     }
     // Split at the outer operator before looking for a trailing call.  For
@@ -19158,8 +19161,10 @@ class Checker {
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = tree_split_binary(value, operators)) {
-        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
-        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
+        collect_local_call_sites(line, binary->first, env, implicit_owner, calls,
+                                 statement_context);
+        collect_local_call_sites(line, binary->second, env, implicit_owner,
+                                 calls, statement_context);
         return;
       }
 
@@ -19179,7 +19184,8 @@ class Checker {
                           [&](const Field& candidate) {
                             return candidate.name == field;
                           })) {
-            collect_local_call_sites(line, member_base, env, implicit_owner, calls);
+            collect_local_call_sites(line, member_base, env, implicit_owner,
+                                     calls, statement_context);
             return;
           }
         }
@@ -19214,9 +19220,11 @@ class Checker {
           }
         }
       }
-      collect_local_call_sites(line, receiver, env, implicit_owner, calls);
+      collect_local_call_sites(line, receiver, env, implicit_owner, calls,
+                               statement_context);
       for (const auto& argument : arguments)
-        collect_local_call_sites(line, argument, env, implicit_owner, calls);
+        collect_local_call_sites(line, argument, env, implicit_owner, calls,
+                                 statement_context);
       return;
     }
 
@@ -19279,20 +19287,22 @@ class Checker {
         collect_local_call_sites(line,
                                  tree_parse_named_argument(argument, field, field_value)
                                      ? field_value : argument,
-                                 env, implicit_owner, calls);
+                                 env, implicit_owner, calls, statement_context);
       }
       return;
     }
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      collect_local_call_sites(line, base, env, implicit_owner, calls);
-      collect_local_call_sites(line, index, env, implicit_owner, calls);
+      collect_local_call_sites(line, base, env, implicit_owner, calls,
+                               statement_context);
+      collect_local_call_sites(line, index, env, implicit_owner, calls,
+                               statement_context);
       return;
     }
     if (tree_parse_unary(value, unary_operation, unary_operand))
       collect_local_call_sites(line, unary_operand, env,
-                               implicit_owner, calls);
+                               implicit_owner, calls, statement_context);
   }
 
   void ensure_signature_dependency_storage() {
@@ -26403,7 +26413,8 @@ class Checker {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr,
-      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) const {
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {},
+      const Stmt* statement_context = nullptr) const {
 #ifdef MOSS_TEST_BUILD
     est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::CheckerPipeline);
 #endif
@@ -26434,8 +26445,9 @@ class Checker {
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     std::string_view root_slot;
-    const Stmt* pipeline_statement = current_check_statement_
-        ? current_check_statement_ : ownership_current_stmt_;
+    const Stmt* pipeline_statement = statement_context
+        ? statement_context : current_check_statement_
+            ? current_check_statement_ : ownership_current_stmt_;
     if (pipeline_statement) {
       switch (pipeline_statement->kind) {
         case Stmt::Kind::Assign: root_slot = "initializer"; break;
@@ -26456,7 +26468,8 @@ class Checker {
       root_slot = "return-value";
     }
     if (!root_slot.empty())
-      if (auto cursor = root_expression_cursor(source, root_slot))
+      if (auto cursor = root_expression_cursor(source, root_slot, {}, 0,
+                                                pipeline_statement))
         if (auto parsed = convert(cursor->arena_index, cursor->expr))
           return parsed;
     // Prefer the checked syntax node before asking whether its source text
@@ -26737,9 +26750,11 @@ class Checker {
   std::optional<EstExpressionCursor> root_expression_cursor(
       std::string_view source, std::string_view root_slot,
       std::string_view child_role = {},
-      std::uint32_t child_ordinal = 0) const {
-    const Stmt* statement_ptr = current_check_statement_
-        ? current_check_statement_ : ownership_current_stmt_;
+      std::uint32_t child_ordinal = 0,
+      const Stmt* statement_context = nullptr) const {
+    const Stmt* statement_ptr = statement_context
+        ? statement_context : current_check_statement_
+            ? current_check_statement_ : ownership_current_stmt_;
     if (!statement_ptr) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     std::optional<std::uint32_t> expected_argument;
