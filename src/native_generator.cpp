@@ -6485,6 +6485,14 @@ class Generator {
         if (target == "builtin:" + member->name ||
             (starts_with(target, "builtin-method:string.") &&
              ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:int.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:float.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:char.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:bool.") &&
+             ends_with(target, "." + member->name)) ||
             target == "builtin-scalar-protocol:" + member->name) {
           const auto receiver_expression = expression.child(member->base);
           const auto receiver_type = generated_expr_type(receiver_expression,
@@ -7519,7 +7527,28 @@ class Generator {
     string member_receiver, member_name;
     vector<string> member_arguments;
     if (parse_root_member_call(member_receiver, member_name, member_arguments)) {
-      string canon_recv = canonical_type_name(member_receiver);
+      EmitterExpr member_receiver_node;
+      vector<EmitterExpr> member_argument_nodes;
+      if (checked_node) {
+        string node_member;
+        if (!tree_parse_member_call_nodes(*checked_node,
+                                          member_receiver_node,
+                                          node_member,
+                                          member_argument_nodes) ||
+            node_member != member_name ||
+            member_argument_nodes.size() != member_arguments.size()) {
+          member_receiver_node = {};
+          member_argument_nodes.clear();
+        }
+      }
+      auto type_member_receiver = [&]() {
+        return member_receiver_node.arena
+            ? generated_expr_type(member_receiver_node, types)
+            : generated_expr_type(member_receiver, types);
+      };
+      string canon_recv = type_member_receiver().value_or(
+          canonical_type_name(member_receiver));
+      canon_recv = canonical_type_name(canon_recv);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
         if ((member_name == "less" || member_name == "isequal") &&
             member_arguments.size() == 2)
@@ -7564,7 +7593,7 @@ class Generator {
           member_name, member_arguments, d, locals, types,
           checked_receiver_method);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
-      auto receiver_type = generated_expr_type(member_receiver, types);
+      auto receiver_type = type_member_receiver();
       if (staged_abi_v10() && tree_empty_constructor_named(member_receiver, "Map") &&
           member_name == "get" &&
           member_arguments.size() == 2) {
