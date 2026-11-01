@@ -15486,6 +15486,6 @@ candidate's 649 lookups / 628 reparses to 35 / 14 after bound-method checks
 used node shape (C1 baseline: 1,844 / 1,166; functional pipeline reparses 0). Default and `-O` Rust are byte-
 identical to C1 and runtime output matches. `phase21_pipeline_try_placeholder`
 compiles/runs with four `-2` results. Four-class perturb/drop and three-engine
-checks pass. This checkpoint is uncommitted after `741ec710`; no full suite,
-paired corpus measurement, or perf run has occurred. Continue migrating the
+checks pass. This checkpoint is committed and pushed as `4e94f8be`; no full
+suite, paired corpus measurement, or perf run has occurred. Continue migrating the
 remaining emitter text lookup sites.
