@@ -15123,3 +15123,13 @@ counters remain opt-in/output-neutral; three-engine and fact-hook gates pass.
 On the same ten-source/default-plus-`-O` workload, paired lookups fell from
 41,205 to 40,133; expression-view reparses remain 25,257 (c96 parent remains
 76,824 / 43,213).
+
+### Phase 27.5.4 C2 checkpoint — Root-ingress messages lower from expression nodes (2026-11-01)
+
+Root-ingress Message expressions now pass the receiver and payload ExprIds to a
+node-based executor-invocation lowering path. On five focused message sources,
+generated Rust is byte-identical to c96 in default and `-O`; paired counters
+fall from 6,408 lookups / 2,878 expression reparses to 4,503 / 2,015. Four
+sources pass Fast Debug/native/`-O` runtime parity. The FileIO cleanup fixture
+hits the documented Fast Debug unsupported-FileIO error and still passes Rust
+byte parity. Three-engine and fact-hook checks pass.

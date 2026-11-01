@@ -4384,9 +4384,6 @@ class Generator {
     }
     if (const auto* message = std::get_if<est::Message>(
             &expression.arena->at(root))) {
-      if (root_ingress_statement_)
-        return expr(expression.text(), d, locals, types,
-                    functional_pipeline_id, message_argument_plans);
       const auto target = expression.child(message->target);
       const auto target_root = est::unparenthesized(*target.arena, target.id);
       const auto* receiver = std::get_if<est::Identifier>(
@@ -4407,6 +4404,15 @@ class Generator {
       if (!handler || handler->params.size() != message->arguments.size())
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT checked message handler is missing");
+      if (root_ingress_statement_) {
+        vector<EmitterExpr> arguments;
+        arguments.reserve(message->arguments.size());
+        for (const auto argument : message->arguments)
+          arguments.push_back(expression.child(argument));
+        return root_ingress_message(target, message->handler, arguments,
+            *domain->second, *handler, d, locals, types,
+            message_argument_plans);
+      }
       const bool raises = !handler->observable_effects.raise_set.empty();
       if (raises && !phase21_result_context_)
         throw std::runtime_error(

@@ -238,3 +238,68 @@ string root_ingress_message(const string& receiver, const string& handler,
   rendered << " }";
   return rendered.str();
 }
+
+string root_ingress_message(const EmitterExpr& receiver,
+                            const string& handler,
+                            const vector<EmitterExpr>& arguments,
+                            const Domain& target_domain,
+                            const Handler& target_handler, const Domain* d,
+                            const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types,
+                            const vector<size_t>* message_argument_plans) const {
+  std::ostringstream rendered;
+  const string domain_temp = "__moss_root_domain_" +
+      std::to_string(executor_invoke_temp_++);
+  rendered << "{ let " << domain_temp << " = "
+           << expr(receiver, d, locals, types) << ".clone(); ";
+  vector<string> argument_locals;
+  for (size_t index = 0; index < arguments.size(); ++index) {
+    const string temp = "__moss_root_arg_" +
+        std::to_string(executor_invoke_temp_++);
+    const size_t plan = message_argument_plans &&
+            index < message_argument_plans->size()
+        ? message_argument_plans->at(index) : 0;
+    rendered << "let " << temp << " = "
+             << message_arg(arguments[index],
+                            target_handler.params.at(index).type,
+                            d, locals, types, plan) << "; ";
+    argument_locals.push_back(temp);
+  }
+  std::ostringstream invocation;
+  invocation << "runtime_invoke(move || ";
+  const bool root_handles_failure = !target_handler.failure_arms.empty();
+  const bool raises = !target_handler.observable_effects.raise_set.empty() &&
+      !root_handles_failure;
+  if (raises && !phase21_result_context_)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked raising Root message lacks outcome context");
+  if (root_handles_failure && !exported_domain_bridge_body_) {
+    invocation << domain_temp << "." << handler << "_root(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      invocation << (index ? ", " : "") << argument_locals[index];
+    invocation << ")";
+  } else if (target_domain.exported && !exported_domain_bridge_body_) {
+    invocation << domain_temp << ".__moss_message_" << handler << "(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      invocation << (index ? ", " : "") << argument_locals[index];
+    invocation << ")";
+  } else {
+    invocation << domain_temp << "." << handler << "_shared(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      invocation << (index ? ", " : "")
+          << shared_message_forward_argument(
+                 Param{argument_locals[index],
+                       target_handler.params.at(index).type, false}, true);
+    invocation << ")";
+    if (target_handler.reply_type) {
+      if (raises)
+        invocation << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+      else
+        invocation << ".unwrap_or_else(|| std::process::abort())";
+    }
+  }
+  invocation << ")";
+  rendered << (raises ? phase21_propagate(invocation.str()) : invocation.str());
+  rendered << " }";
+  return rendered.str();
+}

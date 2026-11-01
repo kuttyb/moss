@@ -177,3 +177,11 @@ query. Such text-only queries are counted as `text-query/ABSENT`. The opt-in
 coverage test remains output-neutral. On the ten-source paired workload, this
 reduces candidate text lookups from 41,205 to 40,133; expression-view reparses
 remain 25,257, against c96's 76,824 / 43,213.
+
+Root-ingress `Message` expressions now lower their receiver and payloads from
+retained ExprIds through executor invocation. On five focused message fixtures,
+c96 measured 6,408 / 2,878 and the candidate 4,503 / 2,015 (text lookups /
+expression reparses); Rust is byte-identical in default and `-O`. Four fixtures
+pass Fast Debug/native/`-O` runtime parity. The FileIO cleanup fixture retains
+the documented Fast Debug unsupported-FileIO result while generated Rust
+matches c96.
