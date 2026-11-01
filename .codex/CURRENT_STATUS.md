@@ -14623,3 +14623,27 @@ and native output matches Fast Debug. The fact-hook test-build harness still
 passes (last run at report 4; no hook implementation changed since). C1
 Fast Debug fixture failure noted in report 5 remains unresolved. No full suite,
 three-engine bulk check, or performance gate has run.
+
+### Phase 27.5.4 C2 progress report 7 — node-based emitter type queries
+
+Added a `generated_expr_type(EmitterExpr)` path that reads checked type facts
+first and structurally handles identifier/literal/unary/binary/member/index,
+constructor, direct-call, and uniquely located pipeline queries. It records
+coverage against the exact queried ExprId in test builds, including
+Parenthesized nodes. This remains emitter-owned type inference where checked
+type facts are unavailable; it does not parse the node's text on these paths.
+The path is used by the corresponding node lowerers.
+
+Focused paired parent -> candidate counts after the change:
+
+- phase5 tool: lookups 2,155 -> 1,433; reparses 1,081 -> 755.
+- phase4 specialization: 841 -> 539; 439 -> 263.
+- functional objects: 2,596 -> 1,855; 1,426 -> 1,048.
+- object pipeline: 2,922 -> 1,755; 1,530 -> 1,159.
+
+All six focused fixtures in report 6 still generate byte-identical Rust and
+pass native compile and Fast Debug/native parity. The perturb/drop hook
+harness passes in its current test build, with non-test `moss-opt` ignoring
+the hooks. Re-parses and lookups remain nonzero, and the initial 1,822-source
+paired sweep has not been rerun after this progress. No full suite or perf
+measurement has run.

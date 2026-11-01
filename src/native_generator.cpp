@@ -2432,6 +2432,168 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<string> generated_expr_type(
+      const EmitterExpr& expression,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const est::Node& node = expression.arena->at(root);
+    const auto checker_context = !codegen_active_specialization_key_.empty()
+        ? "specialization:" + codegen_active_specialization_key_
+        : codegen_body_context_;
+    const auto* facts = expression.arena->facts(
+        expression.id, checker_context);
+    const bool has_fact = facts && facts->type;
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) {
+      const est::Node& observed_node = expression.arena->at(expression.id);
+      const char* kind = std::holds_alternative<est::Identifier>(observed_node)
+          ? "identifier"
+          : std::holds_alternative<est::Literal>(observed_node) ? "literal"
+          : std::holds_alternative<est::Call>(observed_node) ? "call"
+          : std::holds_alternative<est::Member>(observed_node) ? "member"
+          : std::holds_alternative<est::Index>(observed_node) ? "index"
+          : std::holds_alternative<est::Binary>(observed_node) ? "binary"
+          : std::holds_alternative<est::Unary>(observed_node) ? "unary"
+          : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
+          : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
+          : std::holds_alternative<est::Collection>(observed_node) ? "collection"
+          : std::holds_alternative<est::Parenthesized>(observed_node)
+              ? "parenthesized"
+          : "other";
+      est::record_generated_type_fact_coverage(kind, has_fact);
+    }
+#endif
+    if (has_fact) return canonical_type_name(facts->type);
+    const auto type_of = [&](est::ExprId child) {
+      return generated_expr_type(expression.child(child), types);
+    };
+    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+      if (types) {
+        auto found = types->find(identifier->name);
+        if (found != types->end()) return canonical_type_name(found->second);
+      }
+      return std::nullopt;
+    }
+    if (const auto* literal = std::get_if<est::Literal>(&node)) {
+      switch (literal->literal_class) {
+        case est::LiteralClass::Integer: return string("int");
+        case est::LiteralClass::Float: return string("float");
+        case est::LiteralClass::String: return string("string");
+        case est::LiteralClass::Character: return string("char");
+        case est::LiteralClass::Boolean: return string("bool");
+        case est::LiteralClass::None: return string("option[_]");
+      }
+    }
+    if (const auto* unary = std::get_if<est::Unary>(&node)) {
+      auto operand = type_of(unary->operand);
+      if (unary->op == "not") return string("bool");
+      if (unary->op == "~")
+        return operand && canonical_type_name(*operand) == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      if ((unary->op == "-" || unary->op == "+") && operand &&
+          (canonical_type_name(*operand) == "int" ||
+           canonical_type_name(*operand) == "float"))
+        return operand;
+      return std::nullopt;
+    }
+    if (const auto* binary = std::get_if<est::Binary>(&node)) {
+      if (binary->op == "and" || binary->op == "or" ||
+          binary->op == "xor" || binary->op == "==" ||
+          binary->op == "!=" || binary->op == "<" ||
+          binary->op == ">" || binary->op == "<=" ||
+          binary->op == ">=")
+        return string("bool");
+      auto left = type_of(binary->left);
+      auto right = type_of(binary->right);
+      if (!left || !right) return std::nullopt;
+      const string left_type = canonical_type_name(*left);
+      const string right_type = canonical_type_name(*right);
+      if (binary->op == "+" && left_type == "string" &&
+          right_type == "string") return string("string");
+      if (binary->op == "|" || binary->op == "^" ||
+          binary->op == "&" || binary->op == "<<" ||
+          binary->op == ">>")
+        return left_type == "int" && right_type == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      if ((binary->op == "+" || binary->op == "-" ||
+           binary->op == "*" || binary->op == "/" ||
+           binary->op == "%") &&
+          (left_type == "int" || left_type == "float") &&
+          (right_type == "int" || right_type == "float"))
+        return left_type == "float" || right_type == "float"
+            ? string("float") : string("int");
+      return std::nullopt;
+    }
+    if (const auto* member = std::get_if<est::Member>(&node)) {
+      auto base = type_of(member->base);
+      if (base)
+        if (auto field = nominal_field_type(*base, member->name))
+          return canonical_type_name(*field);
+      return std::nullopt;
+    }
+    if (const auto* index = std::get_if<est::Index>(&node)) {
+      auto base = type_of(index->base);
+      if (!base) return std::nullopt;
+      const string concrete = canonical_type_name(*base);
+      if (concrete == "RangeBatch") return string("Range");
+      return indexed_element(parsed_type(concrete));
+    }
+    if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+      const auto type_id = est::unparenthesized(*expression.arena,
+                                                constructor->type);
+      if (const auto* identifier = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id)))
+        return identifier->name;
+      return std::nullopt;
+    }
+    if (const auto* call = std::get_if<est::Call>(&node)) {
+      const auto callee_id = est::unparenthesized(*expression.arena,
+                                                   call->callee);
+      const auto* callee = std::get_if<est::Identifier>(
+          &expression.arena->at(callee_id));
+      if (!callee) return std::nullopt;
+      const auto* call_facts = expression.arena->facts(root,
+                                                        checker_context);
+      const string target = call_facts ? call_facts->resolved_target : string();
+      const Function* function = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function = find_function_by_callable_id(target);
+      else if (starts_with(target, "fn:")) {
+        auto found = functions_.find(target.substr(3));
+        if (found != functions_.end()) function = found->second;
+      }
+      if (!function) return std::nullopt;
+      if (call_facts && !call_facts->specialization_result.empty()) {
+        auto specialization = std::find_if(function->specializations.begin(),
+            function->specializations.end(), [&](const auto& candidate) {
+              return candidate.stable_type_key ==
+                  call_facts->specialization_result;
+            });
+        if (specialization != function->specializations.end())
+          return specialization->return_type;
+      }
+      if (function->return_type &&
+          !contains_internal_placeholder(*function->return_type))
+        return canonical_type_name(*function->return_type);
+      return std::nullopt;
+    }
+    if (std::holds_alternative<est::Pipeline>(node)) {
+      const auto span = expression.arena->span(root);
+      const string context = codegen_body_context_;
+      const FunctionalPipeline* selected = nullptr;
+      for (const auto& pipeline : p_.functional_pipelines) {
+        if (pipeline.line != static_cast<int>(span.line) ||
+            pipeline.context != context) continue;
+        if (selected) return std::nullopt;
+        selected = &pipeline;
+      }
+      if (selected && !selected->output_type.empty())
+        return canonical_type_name(selected->output_type);
+    }
+    return std::nullopt;
+  }
+
   static string generated_type_list(const vector<string>& types) {
     std::ostringstream out;
     for (size_t index = 0; index < types.size(); ++index) {
@@ -3576,7 +3738,7 @@ class Generator {
           }
           return rust_numeric_literal(decoded);
         }
-        auto operand_type = generated_expr_type(operand.text(), types);
+        auto operand_type = generated_expr_type(operand, types);
         if (operand_type && canonical_type_name(*operand_type) == "int")
           return "(" + expr(operand, d, locals, types) + ").wrapping_neg()";
         if (operand_type && canonical_type_name(*operand_type) == "float")
@@ -3600,8 +3762,8 @@ class Generator {
         string right = expr(right_expr, d, locals, types);
         left = value_from_borrowed_message_parameter(left_source, left, types);
         right = value_from_borrowed_message_parameter(right_source, right, types);
-        auto left_type = generated_expr_type(left_source, types);
-        auto right_type = generated_expr_type(right_source, types);
+        auto left_type = generated_expr_type(left_expr, types);
+        auto right_type = generated_expr_type(right_expr, types);
         if (left_type && canonical_type_name(*left_type) == "string")
           left = "(" + left + ").as_str()";
         if (right_type && canonical_type_name(*right_type) == "string")
@@ -3634,8 +3796,8 @@ class Generator {
             left + ", " + right + ")";
       }
       if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
-        auto left_type = generated_expr_type(left_source, types);
-        auto right_type = generated_expr_type(right_source, types);
+        auto left_type = generated_expr_type(left_expr, types);
+        auto right_type = generated_expr_type(right_expr, types);
         if (left_type && right_type && op == "+" &&
             canonical_type_name(*left_type) == "string" &&
             canonical_type_name(*right_type) == "string")
@@ -3745,7 +3907,7 @@ class Generator {
       const auto index_expr = expression.child(index->index);
       const string base_source = base_expr.text();
       const string index_source = index_expr.text();
-      auto base_type = generated_expr_type(base_source, types);
+      auto base_type = generated_expr_type(base_expr, types);
       if (base_type && shared_protocol_map_key_from_type(*base_type)) {
         const string key_type = *shared_protocol_map_key_from_type(*base_type);
         const string key = expr(index_expr, d, locals, types);
@@ -3782,7 +3944,7 @@ class Generator {
       else if (map_index && !string_index) {
         const auto* key_identifier = std::get_if<est::Identifier>(
             &index_expr.arena->at(index_root));
-        auto key_type = generated_expr_type(index_source, types);
+        auto key_type = generated_expr_type(index_expr, types);
         if (key_type && canonical_type_name(*key_type) == "string")
           rendered_index = "(" + rendered_index + ").as_str()";
         else if (!key_identifier || !borrowed_function_parameters_.count(
@@ -3797,7 +3959,7 @@ class Generator {
     if (const auto* member = std::get_if<est::Member>(
             &expression.arena->at(root))) {
       const auto base_expr = expression.child(member->base);
-      auto projection_type = generated_expr_type(base_expr.text(), types);
+      auto projection_type = generated_expr_type(base_expr, types);
       if (projection_type) {
         auto object = objects_.find(nominal_template_name(*projection_type));
         if (object != objects_.end()) {
