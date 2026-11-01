@@ -3265,14 +3265,10 @@ class FastInterpreter {
           std::string invocation = statement.a + "." + statement.b + "(";
           for (size_t i = 0; i < statement.args.size(); ++i) { if (i) invocation += ", "; invocation += statement.args[i]; }
           const std::string checked_source = "message " + invocation + ")";
-#ifdef MOSS_TEST_BUILD
-          est::record_expression_text_lookup();
-#endif
-          const auto fingerprint = est::fingerprint(checked_source);
           const est::Handle* checked_handle = nullptr;
           for (const auto& handle : statement.expression_handles)
             if (handle.slot == est::ExprSlot::Receiver &&
-                handle.source_fingerprint == fingerprint) {
+                handle.argument_index == 0) {
               checked_handle = &handle;
               break;
             }
