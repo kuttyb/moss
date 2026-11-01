@@ -14105,3 +14105,12 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   diagnostic checks pass. Regex text-cache lookups are 4,933,148 (+38 from
   mismatched-source fallbacks), while checker reparses stay at 12,003. This is
   an identity correctness guard and not K2 progress.
+- The effect-fact assertion is a branch regression, not parent debt: the
+  `phase27-5-3-c1` compiler emits `MOSS_EST_EFFECT_FACT` for
+  `tests/phase27/est/side_facts.moss`, while this branch had lost it. During the
+  checker root-slot migration, `analyze_effect_expression` still requested an
+  empty root slot; after generic source-fingerprint selection was removed it
+  could no longer find the return node. It now maps the active statement kind
+  to its checked root slot (return/reply/raise/assignment/condition/iterable/
+  match). `check_phase27_est.py` now passes on the current dev compiler. This
+  fixes observability/coverage only; no semantic output change is intended.

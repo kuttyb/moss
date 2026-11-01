@@ -18212,7 +18212,21 @@ class Checker {
           effect_cursor = EstExpressionCursor{parent.arena_index, *child,
                                               effect_source};
     } else {
-      effect_cursor = root_expression_cursor(effect_source, {});
+      std::string_view root_slot;
+      if (current_check_statement_) {
+        switch (current_check_statement_->kind) {
+          case Stmt::Kind::Assign: root_slot = "initializer"; break;
+          case Stmt::Kind::If:
+          case Stmt::Kind::While: root_slot = "condition"; break;
+          case Stmt::Kind::For: root_slot = "for-iterable"; break;
+          case Stmt::Kind::Match: root_slot = "match-subject"; break;
+          case Stmt::Kind::Return: root_slot = "return-value"; break;
+          case Stmt::Kind::Reply: root_slot = "reply-value"; break;
+          case Stmt::Kind::Raise: root_slot = "raise-value"; break;
+          default: break;
+        }
+      }
+      effect_cursor = root_expression_cursor(effect_source, root_slot);
     }
     active_effect_cursors_.push_back(effect_cursor);
     Effect expression_effect = requested;
