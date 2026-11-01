@@ -26415,6 +26415,27 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
+    std::string_view root_slot;
+    if (current_check_statement_) {
+      switch (current_check_statement_->kind) {
+        case Stmt::Kind::Assign: root_slot = "initializer"; break;
+        case Stmt::Kind::If:
+        case Stmt::Kind::While: root_slot = "condition"; break;
+        case Stmt::Kind::For: root_slot = "for-iterable"; break;
+        case Stmt::Kind::Match: root_slot = "match-subject"; break;
+        case Stmt::Kind::Return: root_slot = "return-value"; break;
+        case Stmt::Kind::Reply: root_slot = "reply-value"; break;
+        case Stmt::Kind::Raise: root_slot = "raise-value"; break;
+        default: break;
+      }
+    } else if (current_check_result_function_ &&
+               current_check_result_function_->result_expression) {
+      root_slot = "return-value";
+    }
+    if (!root_slot.empty())
+      if (auto cursor = root_expression_cursor(source, root_slot))
+        if (auto parsed = convert(cursor->arena_index, cursor->expr))
+          return parsed;
     // Prefer the checked syntax node before asking whether its source text
     // resembles pipeline syntax. The source predicate is only a compatibility
     // filter for legacy callers that have no owning checked node.
@@ -26429,10 +26450,6 @@ class Checker {
           if (auto parsed = convert(handle.arena_index, handle.expr))
             return parsed;
     }
-    if (auto cursor = root_expression_cursor(source, {}))
-      if (auto parsed = convert(cursor->arena_index, cursor->expr))
-        return parsed;
-
     // Some checker passes currently examine pipeline fragments without the
     // owning statement cursor. Keep this parser path until those callers pass
     // their checked ExprId directly; the test-build boundary counter records
