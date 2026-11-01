@@ -2500,8 +2500,12 @@ class FastInterpreter {
                 ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: method '" +
                       method_name + "' was not checked in this run"
                 : "unresolved method '" + method_name + "'");
+          Place receiver_place;
+          if (tree && member_node)
+            receiver_place = locate_tree_node(*tree, member_node->base, frame,
+                                              line, output);
           return call_method(*target, receiver, method_args, frame, line, output,
-                             locate(member->first, frame, line, output), tree,
+                             receiver_place, tree,
                              member_argument_nodes);
         }
       }

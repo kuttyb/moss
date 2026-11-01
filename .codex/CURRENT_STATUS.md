@@ -14647,3 +14647,25 @@ harness passes in its current test build, with non-test `moss-opt` ignoring
 the hooks. Re-parses and lookups remain nonzero, and the initial 1,822-source
 paired sweep has not been rerun after this progress. No full suite or perf
 measurement has run.
+
+### Phase 27.5.4 handover — C1 indexed receiver regression fixed (2026-11-01)
+
+C2 is active on `phase27-5-4-work`, pushed tip `7f48b73e`. In addition to
+ongoing emitter ExprId traversal, fixed a C1 Fast Debug regression discovered
+in C2 parity: struct-method receiver places now use the retained member-base
+ExprId (`jobs[1]`) via `locate_tree_node`, rather than reparsing the receiver
+text. `make --jobs=$(nproc) moss-dev` succeeds; Fast Debug output for
+`examples/collections_and_methods.moss` matches the pinned c96 parent exactly
+(`lead code: 106 12`, `test score: 12`), and `--trace` emits expected local
+writes. `git diff --check` passes. This is not yet committed. Remaining
+uncommitted native-generator work is the continued node-based emitter type /
+constructor traversal from C2 report 7.
+
+Important review note for the newly requested perturb/drop layer: the existing
+`check_phase27_5_4_fact_hooks.py` is not yet sufficient evidence of coherent
+checker-answer perturbation. Although the test-only hook helpers exist, current
+consumers often throw directly when `MOSS_TEST_PERTURB` is set, and the test
+harness expects failure for every perturbed case. Before claiming this request
+is met, reshape it so the declared checked answer is actually altered and each
+consumer follows that altered answer or fails closed; preserve drop tests as
+fail-closed checks. Existing registration is in Makefile default and shadow.
