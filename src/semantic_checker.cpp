@@ -408,21 +408,8 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
 
 std::pair<moss::est::SourceSyntaxIssue, bool> checker_source_syntax_facts(
     std::string_view source) {
-  auto* cached = checker_est_view_entry(source);
-  if (cached && cached->source_syntax_facts_attempted)
-    return {cached->source_syntax_issue,
-            cached->incomplete_trailing_operator};
-  if (!cached) {
-    (void)checker_est_view(source);
-    cached = checker_est_view_entry(source);
-  }
   const auto issue = moss::est::source_syntax_issue(source);
   const bool incomplete = moss::est::incomplete_trailing_operator(source);
-  if (cached) {
-    cached->source_syntax_facts_attempted = true;
-    cached->source_syntax_issue = issue;
-    cached->incomplete_trailing_operator = incomplete;
-  }
   return {issue, incomplete};
 }
 
