@@ -14468,3 +14468,26 @@ this is not a valid like-for-like lookup comparison. Next is to rebuild the
 baseline with the identical test-only lookup instrumentation, then run the
 same tracked source/package workload on both binaries. No bulk performance
 comparison has started.
+
+### Phase 27.5.4 C2 paired-count checkpoint 1
+
+The first paired sweep completed over the same 1,822 tracked `tests/` and
+`examples/` Moss source files in default and `-O` emission (3,644 invocations
+per binary). The test-build baseline was rebuilt from `c96bca78` with the
+same EST text-node-lookup instrumentation as the candidate. Counts were
+identical: 15,167,953 text-node lookups, 9,733,531 native expression-view
+reparses, and 7,362 native functional-pipeline reparses on each side. Thus
+this first migration attempt yields no measurable reduction. The new
+candidate's aggregate consumer-expression-parse counter is 10,414,090; this
+counter was absent from the parent instrumentation and is not a valid paired
+metric. Each side had 1,406 failed commands, which means raw per-source
+invocations include unsupported/incomplete-context fixtures and are not a
+suite-pass metric. Output summary: `tmp/phase2754-c2-counts-start.json`.
+
+Exploratory `EmitterExpr` plumbing is present in `src/native_generator.cpp`,
+but does not yet reduce the paired counters and has not been built or
+validated. Treat this as an in-progress checkpoint only. Next: isolate a
+representative set of successful emitter paths, connect their expression
+children structurally to retained handles, add targeted Rust-output checks,
+then rerun paired counts using a successful, identical workload. No C2 full
+suite or performance comparison has run.
