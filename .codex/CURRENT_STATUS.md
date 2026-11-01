@@ -15,6 +15,14 @@
   814 from native expression-view parsing; no consumer migration claim.
   `specialized_call_facts.moss` remains 44 checker parses and 24,405 text
   cache consultations. No full suite, corpus pass, or performance run.
+- Per the K2 clarification, `make --jobs=... check` was run once in default
+  mode. Its Fast Debug/native/optimized parity harness passed; the suite
+  then failed in `check_phase27_est.py` because checking
+  `numeric_member_field.moss --json` segfaulted before JSON output. The
+  same fixture segfaults in default and shadow on the current branch and
+  in a fresh build of pushed parent `9bff2ee0`, so the observed failure
+  predates the latest FileIO pipeline change. Full suite status is FAIL;
+  the run did not reach later gates. No repeated full-suite run yet.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
   Executor/FileIO paths. Targeted three-engine and optimizer parity harnesses
