@@ -73,3 +73,10 @@ A subsequent small slice routes native `Stmt::Kind::Raw` expression lowering
 through the retained `ExprSlot::Expression` root. Its focused checks pass. The
 four-source counter sample did not change (7,914 / 4,752 / 0), since the sample
 does not exercise that statement kind; broader counters remain due at C2.
+
+Functional lowering's entry point now accepts `ParsedFunctionalPipeline`
+directly, eliminating its expression-string parameter and optional internal
+parse path. Focused tests and targeted Rust parity pass. The four-source counts
+remain 7,914 text-node lookups / 4,752 expression-view reparses / 0 pipeline
+reparses; the existing checked projection meant this API cleanup did not affect
+that sample. The legacy string `expr` entry remains a reparse path.

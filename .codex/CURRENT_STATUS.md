@@ -14883,3 +14883,16 @@ four-class perturb/drop harness pass. The paired four-source C2 counters remain
 7,914 lookups / 4,752 expression reparses / 0 pipeline reparses, unchanged
 because this sample does not exercise a Raw expression statement. No suite or
 perf run.
+
+### Phase 27.5.4 C2 checkpoint — functional lowering accepts the checked pipeline value (2026-11-01)
+
+`functional_expr` now requires a checked `ParsedFunctionalPipeline` input; it no
+longer accepts an expression string and no longer has an internal text fallback
+that parses a pipeline. The EST expression consumer passes the parsed tree
+projection directly. Legacy string `expr` first obtains the projection, then
+calls the same typed API. Functional-tree and three-engine tests pass, the
+four-fixture default/`-O` Rust output remains byte-identical to c96, and the
+four-class perturb/drop harness passes. The paired counters remain
+7,914/4,752/0 because the migrated path already received a checked projection
+in the previous implementation. The legacy string entry to `expr` remains a
+consumer reparse path and C2 is incomplete.

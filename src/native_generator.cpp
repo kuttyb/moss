@@ -3796,27 +3796,24 @@ class Generator {
   }
 
   std::optional<string> functional_expr(
-      const string& expression, const Domain* domain,
+      const ParsedFunctionalPipeline& checked_pipeline, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      size_t functional_pipeline_id,
-      const ParsedFunctionalPipeline* checked_pipeline = nullptr) const {
-    auto pipeline = checked_pipeline
-        ? std::optional<ParsedFunctionalPipeline>(*checked_pipeline)
-        : functional_pipeline_from_est(expression);
-    if (!pipeline) return std::nullopt;
+      size_t functional_pipeline_id) const {
+    const ParsedFunctionalPipeline* pipeline = &checked_pipeline;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
-            *pipeline, domain, locals, types, functional_pipeline_id))
+            checked_pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
     const std::optional<EmitterExpr> checked_source =
-        pipeline->expression_arena
+        checked_pipeline.expression_arena
             ? std::optional<EmitterExpr>(EmitterExpr{
-                  pipeline->expression_arena, pipeline->source_node,
-                  pipeline->expression_source})
+                  checked_pipeline.expression_arena,
+                  checked_pipeline.source_node,
+                  checked_pipeline.expression_source})
             : std::nullopt;
     auto source_type = checked_source
         ? generated_expr_type(*checked_source, types)
-        : generated_expr_type(pipeline->source, types);
+        : generated_expr_type(checked_pipeline.source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       return std::nullopt;
     const FunctionalPipeline* planned =
@@ -3826,10 +3823,10 @@ class Generator {
     // baseline eager lowering rather than requiring an unrelated outer
     // expression to masquerade as a pipeline statement.
     if (!planned)
-      return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+      return gen_eager_functional_pipeline(checked_pipeline, domain, locals, types,
                                            nullptr);
     LoweredFunctionalPipeline lowered =
-        lower_functional_semantic_plan(*pipeline, *planned);
+        lower_functional_semantic_plan(checked_pipeline, *planned);
     if (planned->virtual_upstream_pipeline_id) {
       const FunctionalPipeline* upstream = planned_functional_pipeline(
           planned->virtual_upstream_pipeline_id);
@@ -3869,7 +3866,7 @@ class Generator {
     if (planned && planned->fused)
       return gen_fused_functional_pipeline(lowered, domain, locals, types,
                                            planned);
-    return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+    return gen_eager_functional_pipeline(checked_pipeline, domain, locals, types,
                                          planned);
   }
 
@@ -4267,8 +4264,8 @@ class Generator {
     auto pipeline = est::functional_pipeline(*expression.arena, root,
                                               expression.source, resolve_stage);
     if (pipeline) {
-      if (auto rendered = functional_expr(expression.text(), d, locals, types,
-                                           functional_pipeline_id, &*pipeline))
+      if (auto rendered = functional_expr(*pipeline, d, locals, types,
+                                           functional_pipeline_id))
         return *rendered;
     }
     return expr(expression.text(), d, locals, types, functional_pipeline_id,
@@ -4355,9 +4352,10 @@ class Generator {
         rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
     }
-    if (auto functional = functional_expr(
-            e, d, locals, types, functional_pipeline_id))
-      return *functional;
+    if (auto pipeline = functional_pipeline_from_est(e))
+      if (auto functional = functional_expr(
+              *pipeline, d, locals, types, functional_pipeline_id))
+        return *functional;
     e = tree_normalize_pipeline(std::move(e));
     // Minimal surface rewrites.
     const auto literal = tree_literal_class(e);
