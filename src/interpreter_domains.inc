@@ -142,7 +142,8 @@
       const std::vector<std::string>& arguments, Frame& caller, Frame& frame, int line,
       std::ostream& output, const std::vector<std::string>* concrete_types = nullptr,
       const ExpressionTreeView* tree = nullptr,
-      const std::vector<est::ExprId>* argument_nodes = nullptr) {
+      const std::vector<est::ExprId>* argument_nodes = nullptr,
+      const std::vector<Value>* argument_values = nullptr) {
     frame.domain = caller.domain; frame.handler = caller.handler;
     // Domain context is trace provenance only in helpers; state names remain
     // lexically resolved through explicit actual/formal bindings.
@@ -155,6 +156,10 @@
       }
       if (!type.empty()) frame.local_types[parameters[i].name] = type;
       Effect effect = i < effects.size() ? effects[i] : Effect::Read;
+      if (argument_values && i < argument_values->size()) {
+        frame.locals[parameters[i].name] = independent(argument_values->at(i));
+        continue;
+      }
       const bool has_node = tree && argument_nodes &&
           i < argument_nodes->size();
       auto place = has_node
@@ -318,6 +323,43 @@
     call.target = target;
     call.line = line;
     for (const auto argument : message_node.arguments)
+      call.arguments.push_back(independent(evaluate_tree_node(
+          tree, argument, caller, line, output)));
+    return call;
+  }
+
+  PreparedHandlerCall prepare_handler_call(const ExpressionTreeView& tree,
+      const RootSubmissionPlan& plan, const est::Call& invocation,
+      Frame& caller, int line, std::ostream& output) {
+    (void)output;
+    auto domain_value = caller.locals.find(plan.target_domain_binding);
+    if (domain_value == caller.locals.end() ||
+        domain_value->second.kind != Value::Kind::DomainHandle ||
+        !domain_value->second.domain ||
+        !domain_value->second.domain->initialized)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked executor target binding unavailable");
+    auto& instance = *domain_value->second.domain;
+    if (plan.target_domain_semantic_identity !=
+        "domain:" + instance.definition->name + "@" +
+            std::to_string(instance.definition->line))
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked executor target identity mismatch");
+    const Handler* target = nullptr;
+    for (const auto& handler : instance.definition->handlers)
+      if (handler.name == plan.handler_name) target = &handler;
+    if (!target ||
+        "handler:" + instance.definition->name + "." + target->name + "@" +
+            std::to_string(target->line) != plan.handler_semantic_identity ||
+        invocation.arguments.size() != plan.argument_types.size() ||
+        target->params.size() != invocation.arguments.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked executor handler shape mismatch");
+    PreparedHandlerCall call;
+    call.instance = &instance;
+    call.target = target;
+    call.line = line;
+    for (const auto argument : invocation.arguments)
       call.arguments.push_back(independent(evaluate_tree_node(
           tree, argument, caller, line, output)));
     return call;

@@ -1951,7 +1951,10 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     return result;
   };
   auto statement = [&](Stmt& s) {
-    if (additional && (!s.expression_handles.empty() || s.est_raw_form)) return;
+    // Loaded execution bodies preserve their statement form but not their
+    // process-local ExprIds. Rebuild handles on the initial .mossi load unless
+    // this exact statement already owns live handles.
+    if (additional && !s.expression_handles.empty()) return;
     set_location(s.line, s.text);
     const auto owner = next_owner++;
     if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)

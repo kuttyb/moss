@@ -1,3 +1,12 @@
+### Phase 27.5.4 C1 checkpoint (2026-11-01)
+
+Branch: `phase27-5-4-work`; current pushed base `0003aeee`. C1 is still in progress; no merge/tag yet. The first requested default `make check` ran before C1 fixes and had 18 failed jobs (full list and log: `tmp/phase2754-c1-default-first.log`). Targeted fixes so far include retained-node evaluation in Fast Debug, checked H3 projected-body node/fact attachment, and consumption of checked Executor RootSubmissionPlan for Fast Debug.
+
+Latest targeted green results after the fixes: `check_phase25_conformance.py` 11/11; `check_phase21_root_totality.py` passed including executor Root totality. Parent `phase27-5-3-c1` executor/fileio test also passes, so candidate's prior executor failure was a regression and was fixed. Previous standalone targeted greens/failures in the preceding checkpoint are not yet all rerun against the latest build. Latest compiler build is `build/compiler/moss-dev`.
+
+Next: rerun the remaining targeted scripts from the initial 18-failure set in a serialized manner; fix regressions while keeping Fast Debug tree-only. Then implement and register the requested C1 perturb/drop tests (Fast Debug side for call targets, specializations, joins, patterns; document known debt for types, pipeline types, ownership). After implementation stabilizes, run default and shadow `make check`, three-engine/parity gates, then Agent 2 once, merge/tag only on GO. C2 counters and emitter/optimizer migration have not started. No perf suite has been run.
+
+
 # Phase 27.5.4 — current handover (2026-11-01)
 
 ## Current scoped status (latest checkpoint)
