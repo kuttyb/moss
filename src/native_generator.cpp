@@ -1934,12 +1934,36 @@ class Generator {
     return tree_decimal_integer_literal(expression);
   }
 
+  bool generated_integer_literal(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    return est::decimal_integer_literal(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source}, true, false);
+  }
+
   string generated_integer_literal_as_float(string expression) const {
     // An Int literal in a Float context converts exactly as `as f64` does.
     auto decoded = tree_numeric_literal_value(expression);
     if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
       throw std::runtime_error("internal error: numeric literal '" + expression +
                                "' was not validated by the lexer");
+    DecodedNumber as_float;
+    as_float.kind = NumericLiteral::Kind::Float;
+    as_float.floating = static_cast<double>(decoded->integer);
+    return rust_numeric_literal(as_float);
+  }
+
+  string generated_integer_literal_as_float(
+      const EmitterExpr& expression) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked integer literal node");
+    auto decoded = est::numeric_literal_value(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source});
+    if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked integer literal was not numeric");
     DecodedNumber as_float;
     as_float.kind = NumericLiteral::Kind::Float;
     as_float.floating = static_cast<double>(decoded->integer);
@@ -3965,8 +3989,6 @@ class Generator {
             &expression.arena->at(root))) {
       const auto left_expr = expression.child(binary->left);
       const auto right_expr = expression.child(binary->right);
-      const string left_source = left_expr.text();
-      const string right_source = right_expr.text();
       const string op = binary->op;
       if (op == "and" || op == "or" || op == "xor")
         return "(" + expr(left_expr, d, locals, types) + ") " +
@@ -3976,8 +3998,8 @@ class Generator {
           op == "<=" || op == ">=") {
         string left = expr(left_expr, d, locals, types);
         string right = expr(right_expr, d, locals, types);
-        left = value_from_borrowed_message_parameter(left_source, left, types);
-        right = value_from_borrowed_message_parameter(right_source, right, types);
+        left = value_from_borrowed_message_parameter(left_expr, left, types);
+        right = value_from_borrowed_message_parameter(right_expr, right, types);
         auto left_type = generated_expr_type(left_expr, types);
         auto right_type = generated_expr_type(right_expr, types);
         if (left_type && canonical_type_name(*left_type) == "string")
@@ -3986,28 +4008,28 @@ class Generator {
           right = "(" + right + ").as_str()";
         if (left_type && canonical_type_name(*left_type) == "float" &&
             right_type && canonical_type_name(*right_type) == "int")
-          right = generated_integer_literal(right_source)
-              ? generated_integer_literal_as_float(right_source)
+          right = generated_integer_literal(right_expr)
+              ? generated_integer_literal_as_float(right_expr)
               : "((" + right + ") as f64)";
         if (right_type && canonical_type_name(*right_type) == "float" &&
             left_type && canonical_type_name(*left_type) == "int")
-          left = generated_integer_literal(left_source)
-              ? generated_integer_literal_as_float(left_source)
+          left = generated_integer_literal(left_expr)
+              ? generated_integer_literal_as_float(left_expr)
               : "((" + left + ") as f64)";
         return "(" + left + ") " + op + " (" + right + ")";
       }
       if (op == "|" || op == "^" || op == "&") {
         string left = value_from_borrowed_message_parameter(
-            left_source, expr(left_expr, d, locals, types), types);
+            left_expr, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
-            right_source, expr(right_expr, d, locals, types), types);
+            right_expr, expr(right_expr, d, locals, types), types);
         return "(" + left + ") " + op + " (" + right + ")";
       }
       if (op == "<<" || op == ">>") {
         string left = value_from_borrowed_message_parameter(
-            left_source, expr(left_expr, d, locals, types), types);
+            left_expr, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
-            right_source, expr(right_expr, d, locals, types), types);
+            right_expr, expr(right_expr, d, locals, types), types);
         return string(op == "<<" ? "__moss_shl(" : "__moss_shr(") +
             left + ", " + right + ")";
       }
@@ -4090,9 +4112,9 @@ class Generator {
           return joined.str();
         }
         string left = value_from_borrowed_message_parameter(
-            left_source, expr(left_expr, d, locals, types), types);
+            left_expr, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
-            right_source, expr(right_expr, d, locals, types), types);
+            right_expr, expr(right_expr, d, locals, types), types);
         if (left_type && right_type &&
             canonical_type_name(*left_type) == "int" &&
             canonical_type_name(*right_type) == "int") {
@@ -4103,13 +4125,13 @@ class Generator {
         }
         if (left_type && canonical_type_name(*left_type) == "float" &&
             right_type && canonical_type_name(*right_type) == "int")
-          right = generated_integer_literal(right_source)
-              ? generated_integer_literal_as_float(right_source)
+          right = generated_integer_literal(right_expr)
+              ? generated_integer_literal_as_float(right_expr)
               : "((" + right + ") as f64)";
         if (right_type && canonical_type_name(*right_type) == "float" &&
             left_type && canonical_type_name(*left_type) == "int")
-          left = generated_integer_literal(left_source)
-              ? generated_integer_literal_as_float(left_source)
+          left = generated_integer_literal(left_expr)
+              ? generated_integer_literal_as_float(left_expr)
               : "((" + left + ") as f64)";
         return "(" + left + ") " + op + " (" + right + ")";
       }

@@ -103,3 +103,12 @@ each. The registered test passes for Fast Debug, native, and `-O`; the normal
 method examples pass three-engine execution. The expected perturbed/dropped
 behavior is a `MOSS_INTERNAL_INVARIANT`, so a successful emission or run fails
 the test.
+
+Recursive binary expression lowering now keeps operand identity as ExprIds for
+borrowed-message-parameter and integer-to-float checks. Six fixtures produce
+byte-identical Rust versus c96 in default and `-O`; targeted three-engine and
+functional-tree checks pass. The original four-source/default-plus-`-O` sample
+improved from 7,782/4,688 to 6,940 text-node lookups/expression reparses; the
+expanded six-source sample is parent 33,442/16,611 versus candidate
+14,646/7,340. Pipeline reparses remain zero. The required full workload and
+suite/performance gates remain pending.

@@ -14945,3 +14945,21 @@ select the method from a checked call fact. The experiment was reverted and
 `examples/functional_objects.moss` three-engine execution passes. A viable
 follow-up needs a separate checked callable target on functional stage facts;
 changing the existing placeholder identity risks optimizer behavior.
+
+### Phase 27.5.4 C2 checkpoint — binary operands stay as ExprIds
+
+Recursive emitter lowering for binary operators now passes operand ExprIds to
+borrowed-message-parameter checks and integer-literal conversion. This removes
+text-based identifier/literal queries from those nested binary paths. Focused
+three-engine checks for Phase 24 string concatenation and borrowed string
+comparison pass; the EST functional-tree check passes. Six fixtures (Phase 4,
+Phase 5, functional objects, object pipeline, string concatenation, borrowed
+string comparison) generate byte-identical Rust to c96 in default and `-O`.
+
+On the original four-source/default-plus-`-O` sample, counters improved from
+candidate 7,782/4,688 to 6,940 text-node lookups/expression reparses; parent
+remains 17,129/9,047. On an expanded six-source sample including the two new
+string cases, parent is 33,442/16,611 and candidate 14,646/7,340. Pipeline
+reparses are zero in both samples. Perturb/drop hook matrix still passes
+(4 call-target fixtures; 3 each for specialization, joins, patterns). No full
+suite or performance run.
