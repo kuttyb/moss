@@ -3456,7 +3456,15 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
-    auto source_type = generated_expr_type(pipeline.source, types);
+    const std::optional<EmitterExpr> checked_source =
+        pipeline.expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  pipeline.expression_arena, pipeline.source_node,
+                  pipeline.expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(pipeline.source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
@@ -3474,7 +3482,9 @@ class Generator {
       out << "        // Moss functional origin|"
           << planned->nodes.front().semantic_identity << "\n";
     out << "        let __moss_pipeline_source = &("
-        << expr(pipeline.source, domain, locals, types) << ");\n";
+        << (checked_source ? expr(*checked_source, domain, locals, types)
+                           : expr(pipeline.source, domain, locals, types))
+        << ");\n";
 
     size_t stage_number = 0;
     for (size_t pipeline_stage = 0; pipeline_stage < pipeline.stages.size();
@@ -3748,7 +3758,15 @@ class Generator {
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             *pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
-    auto source_type = generated_expr_type(pipeline->source, types);
+    const std::optional<EmitterExpr> checked_source =
+        pipeline->expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  pipeline->expression_arena, pipeline->source_node,
+                  pipeline->expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(pipeline->source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       return std::nullopt;
     const FunctionalPipeline* planned =

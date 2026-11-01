@@ -103,6 +103,9 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   if (!source_text || source_text->empty()) return std::nullopt;
   ParsedFunctionalPipeline result;
   result.source = std::move(*source_text);
+  result.expression_arena = &arena;
+  result.source_node = pipeline->input;
+  result.expression_source = std::string(source);
   for (const auto stage_id : pipeline->stages) {
     auto raw = source_slice(stage_id);
     if (!raw || raw->empty()) return std::nullopt;
@@ -119,6 +122,7 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
     ParsedFunctionalStage parsed_stage;
     parsed_stage.kind = *kind;
     parsed_stage.raw = std::move(*raw);
+    parsed_stage.argument_nodes = arguments;
     for (const auto argument : arguments) {
       auto argument_text = source_slice(argument);
       if (!argument_text) return std::nullopt;

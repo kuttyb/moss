@@ -14808,3 +14808,17 @@ pipeline reparses): Phase 5 `4312/2164/0 -> 2126/1076/0`; Phase 4
 `1686/882/0 -> 726/338/0`; functional objects `5287/2941/0 -> 3145/1929/0`;
 object pipeline `5844/3060/0 -> 2622/2078/0`. Full consumer counts and suites
 remain pending; no performance run.
+
+### Phase 27.5.4 C2 checkpoint — functional pipeline source ExprIds (2026-11-01)
+
+EST functional-pipeline projection now carries its source ExprId and stage
+argument ExprIds. Native eager pipeline lowering uses the retained source node
+for source typing and rendering instead of passing the source slice to string
+type/expression consumers. Four fixtures still check, generate c96-identical
+Rust, compile, and match Fast Debug/native. Paired default/`-O` counts versus
+c96 (lookups / expression-view reparses / pipeline reparses): Phase 5
+`4312/2164/0 -> 2059/1012/0`; Phase 4 `1686/882/0 -> 592/210/0`;
+functional objects `5287/2941/0 -> 2944/1737/0`; object pipeline
+`5844/3060/0 -> 2622/2078/0`. The new expression-tree fields are additive and
+legacy string callers retain their existing behavior. Full gates remain
+pending.
