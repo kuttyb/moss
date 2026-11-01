@@ -16553,3 +16553,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   rerun after the next migration slice. No full suites or performance suites
   have run. C2 remains incomplete; focus next on recurring call/result type
   queries passed as strings through emitter lowering.
+
+## C2 checkpoint: simple-call arguments stay node-backed (2026-11-01)
+
+- Latest pushed slice `96140985` adds a child-node projection for simple calls
+  and constructors. Where expression lowering has a retained call root,
+  recursive argument rendering and argument type queries use `EmitterExpr`
+  children; synthetic string-only calls retain their old path.
+- On `examples/swarm/Surface/repros/swarm_034b_tail_assert_native.moss`,
+  emitter reparses/text lookups fell 26/26 to 0/0. Generated Rust is byte-
+  identical to the immediately prior candidate. Check passes and Fast Debug
+  prints `done`. This source's generated Rust already fails rustc because it
+  emits `assert(...)` rather than Rust's `assert!(...)`; the emitted file is
+  byte-identical across the change, so this is not introduced here.
+- `examples/projects/phase10_modules/src/main.moss` generated Rust also stayed
+  byte-identical; its unrelated 270/270 sample remains unchanged. Fact hooks
+  pass with known debt 38/38. No full gates/performance suite has run. Next,
+  target remaining high-reparse checked constructor/member paths and rerun paired
+  counters after a broader node migration slice.
