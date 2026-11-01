@@ -15621,6 +15621,16 @@ default and shadow (call targets 5 fixtures, specializations 4, joins 4,
 patterns 3). The four `value` lookups remain open. No full suite, corpus count,
 or perf run has occurred.
 
+Follow-up narrowed those four lookups to `Counter` domain-layout emission using
+a temporary test-build stage trace (removed afterward); the specific helper is
+not yet identified. Native and Fast Debug `examples/counter.moss` both print
+`counter: 41` / `counter: 42`. The string-debt audit initially exited on the
+emitter comparison `statement.a != consumer.result_binding` at
+`src/native_generator.cpp:4142`. This compares a Let binder name, not
+expression text; the source was added in the existing C2 FileIO-chunk
+checkpoint `f6c0c41c`. Its explicit raw-binding classification is now
+registered in the audit script.
+
 ### C2 statement-call emission uses checked arguments (2026-11-01)
 
 Ordinary statement-call emission now passes retained receiver and argument
