@@ -130,6 +130,9 @@ class Arena {
                   rejected_source = 0, failed = 0;
   };
   static constexpr std::size_t slot_count = 12;
+  // Node IDs remain stable across growth; references returned by at() do not,
+  // because nodes_ is vector-backed. Carry ExprIds across any operation that
+  // may append, then reacquire the node reference afterward.
   ExprId append(Node node);
   ExprId append(Node node, SourceSpan span);
   const Node& at(ExprId id) const;

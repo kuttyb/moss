@@ -14064,3 +14064,6 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   `UNKNOWN_FIELD` JSON for `numeric_member_field.moss` with no sanitizer report.
   At the next full checkpoint run, run `make check` once under ASan and record
   the result; no ASan full suite has run yet.
+- Added the reference-lifetime rule beside `est::Arena::append()`/`at()` in
+  `src/est/expression_tree.hpp`: ExprIds survive growth; references do not, so
+  reacquire `at(id)` after append-capable operations. This is documentation-only.
