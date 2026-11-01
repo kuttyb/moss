@@ -11666,16 +11666,35 @@ class Checker {
   std::optional<BuiltinCallSemantics> builtin_call_semantics(
       const string& callee, const vector<string>& args,
       const TypeEnv& env) const {
+    auto argument_inference = [&](std::size_t index)
+        -> std::optional<InferredExpr> {
+      if (index >= args.size()) return std::nullopt;
+      return inferred_child_expr(args[index], env, "call-argument",
+          static_cast<std::uint32_t>(index));
+    };
+    auto argument_type = [&](std::size_t index) -> std::optional<string> {
+      auto inferred = argument_inference(index);
+      if (!inferred) return std::nullopt;
+      auto type = inferred->projection();
+      return type.empty() || starts_with(type, "_typevar_")
+          ? std::nullopt : std::optional<string>(std::move(type));
+    };
     if (objects_.count(callee)) {
       const ObjectType* obj = objects_.at(callee);
       bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
           [](const Field& f) { return f.inferred || f.type.empty(); });
       if (!has_generic_field) return BuiltinCallSemantics{callee, false};
       std::map<string, string> supplied_types;
-      for (const auto& arg : args) {
+      for (std::size_t index = 0; index < args.size(); ++index) {
+        const auto& arg = args[index];
         string fn, fv;
-        if (tree_parse_named_argument(arg, fn, fv)) {
-          auto ft = inferred_expr_type(fv, env);
+        char separator = ':';
+        const bool named = checked_inference_cursor_depth_ != 0
+            ? checked_expression_named_argument(index, fn, fv, separator)
+            : tree_parse_named_argument(arg, fn, fv);
+        if (named) {
+          auto ft = checked_inference_cursor_depth_ != 0
+              ? argument_type(index) : inferred_expr_type(fv, env);
           if (ft) supplied_types[fn] = canonical_type_name(*ft);
         }
       }
@@ -11723,12 +11742,12 @@ class Checker {
       return result;
     }
     if (callee == "Some" && args.size() == 1) {
-      auto element = inferred_expr_type(args.front(), env);
+      auto element = argument_type(0);
       return BuiltinCallSemantics{
           "option[" + element.value_or("_") + "]", false};
     }
     if (callee == "sum" && args.size() == 1) {
-      auto argument = inferred_expr(args.front(), env);
+      auto argument = argument_inference(0);
       if (!argument) return std::nullopt;
       const auto collection = inferred_shape(*argument);
       if (applied_builtin(collection, {"seq", "vector"}) && collection->type_args.size() == 1)

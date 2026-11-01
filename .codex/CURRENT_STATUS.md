@@ -1,7 +1,7 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `aeb49749`. Current checker inference changes are
+  latest pushed commit is `1b7c5ccc`. Current builtin-argument cursor routing is
   uncommitted. No full suite, corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
@@ -33,6 +33,17 @@
   24,835 (was 24,901, a reduction of 66); functional-basics remains 15,160.
   Checker reparses remain 44 and 121 respectively, so this is partial K2
   progress only and not completion. No bulk suite or performance pass ran.
+- A test-only temporary parse trace (removed without commit) localized focused
+  `functional_basics` checker parse traffic: 18 checker-scope parses include
+  `values |> map(normalize) |> filter(_ > 0) |> map(_ + offset)` (3), vector
+  literals/identifiers and indexed reads; 59 checker-view parses include the
+  source fragments plus synthetic `__est_named__(...)` wrappers; all 44
+  checker-pipeline parses are the same full pipeline expression. This points
+  at repeated semantic-analysis passes and named-argument/string helper paths,
+  not one remaining high-level parser call. Current uncommitted fix routes
+  `Some`/`sum` and inferred named constructor fields through explicit call
+  argument ExprIds while checked-cursor inference is active. The match-copy
+  fixture and functional-tree harness pass after that fix.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
   hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
