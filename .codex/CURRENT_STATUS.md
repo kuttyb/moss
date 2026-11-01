@@ -1,5 +1,21 @@
 # Phase 26.2 — Cargo package graph checkpoint
 
+## Phase 27.5.4 active checkpoint (2026-10-31)
+
+- Handover branch: `phase27-5-4-work`, based on the requested checkpoint
+  `phase27-5-3-c1` (`c96bca786caefa5744000af9918be50a65b41037`). The worktree was
+  clean at kickoff; no 27.5.4 implementation changes or commits exist yet.
+- Startup discovery ran successfully: `./moss agent bootstrap --json` reports
+  language version `moss-0.1`. The C1 baseline evidence and prior failure
+  examples are recorded below in the 27.5.3 section.
+- Immediate implementation focus is checker expression recursion: the current
+  `check_expression` still accepts `const string&`, resolves retained nodes by
+  source-fragment matching, and observationally fills missing types by calling
+  `inferred_expr_term(source, env)`. This is the checker-side gap to eliminate
+  before removing Fast Debug reparsing fallbacks.
+- No Phase 27.5.4 tests, corpus measurements, full suites, perf runs, or Agent 2
+  audits have run. Do not treat earlier phase results as current validation.
+
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 
 - Working branch `phase27-5-3-work`, based on `phase27-5-2-m1`
