@@ -5282,10 +5282,29 @@ class Generator {
         const auto* facts = checked_expression_facts(expression);
         string target = facts ? facts->resolved_target : string();
         if (target.empty()) {
+          const auto* callee_facts = checked_expression_facts(
+              expression.child(callee_id));
+          if (callee_facts) target = callee_facts->resolved_target;
+        }
+        if (target.empty()) {
           const auto targets = checked_call_edge_targets(
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
+          if (target.empty()) {
+            // This source line can contain several checker-selected member
+            // edges. Match the retained member-name node to those checked
+            // identities; do not derive a target from receiver types.
+            vector<string> matching;
+            for (const auto& candidate : targets) {
+              const auto separator = candidate.rfind('.');
+              if (starts_with(candidate, "method:") &&
+                  separator != string::npos &&
+                  candidate.substr(separator + 1) == member->name)
+                matching.push_back(candidate);
+            }
+            if (matching.size() == 1) target = matching.front();
+          }
         }
         if ((starts_with(target, "builtin:") ||
              starts_with(target, "builtin-method:"))) {

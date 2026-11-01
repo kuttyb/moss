@@ -1,3 +1,29 @@
+# Phase 27.5.4 C2 handover (2026-11-01; checked member-edge slice)
+
+- Branch `phase27-5-4-work`; pushed through `f39cf47a`. A follow-up emitter
+  diff is in progress: when a Call node has no direct target fact, the emitter
+  checks the callee Member node fact, then can uniquely correlate the retained
+  member-name node with checker-recorded method targets on that source line.
+  The correlation is only among checked edge identities; receiver-type target
+  inference is not used. This restores the zero node-fallback result on the
+  focused calculator workload.
+- Targeted native package rebuild and Fast Debug run for
+  `examples/swarm/modules/calc_interpreter` succeed with identical output
+  (`= 7`, `= -12`, `= 154`, `= 0`, and the same four expected errors).
+- Like-for-like on `src/main.moss`, phase27-5-3-c1 parent vs candidate, default
+  and `-O` together: parent 363,004 reparses (362,644 expression-view, 360
+  pipeline); candidate 70,292 (expression-view, 0 pipeline), down 80.6%.
+  Both binaries had zero emission failures. Candidate text-node lookups are
+  89,984; parent counter unavailable. Per command the candidate has 35,146
+  reparses and 44,992 text lookups. The previous checkpoint candidate count
+  was 73,172 reparses / 92,864 lookups; this targeted slice reduced both.
+- Existing targeted gates from the previous checkpoint remain green: Team A,
+  Fast Debug string debt, and Phase 27.5.4 fact hooks. Current edit still needs
+  `git diff --check`, exact counter recheck after committing, and push. Full
+  suite, corpus counter sweep, three-engine aggregate, parity aggregate, and
+  performance suite remain reserved for near completion. Optimizer counts are
+  unmeasured. Agent 2 remains reserved for the single final audit.
+
 # Phase 27.5.4 C2 handover (2026-11-01; current candidate)
 
 - Branch `phase27-5-4-work`; pushed tip remains `eadc92ab`. Working tree has
