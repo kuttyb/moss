@@ -1,3 +1,26 @@
+# Phase 27.5.4 C2 handover (2026-11-01; emitter checked-method guard)
+
+- Branch `phase27-5-4-work`; pushed tip currently follows the profiling
+  checkpoint `a8a95b0b`; the checked-method edit below is not yet committed.
+- Removed the `Stmt::Kind::Call` emitter fallback that selected a method by
+  `resolve_object_method(receiver_type, name, argument_types)` when a checked
+  method target was absent. It now fails with `MOSS_INTERNAL_INVARIANT` and
+  includes receiver, method, line and context. Checked `method:` targets still
+  map mechanically to declarations; builtin/non-method checked targets retain
+  their existing lowering. This enforces the receiver-call guardrail.
+- After the edit: `make moss-dev` passed;
+  `check_phase27_5_4_fact_hooks.py` passed (6 call-target fixtures; perturb/drop
+  fail closed across Fast Debug/native/-O; all four required classes pass;
+  known debt 38/38); `check_phase25_team_a_semantics.py` passed end-to-end. The
+  indexed receiver fixture checks and Fast Debug prints `42`.
+- Targeted Phase 25 conformance passed 9/11; gates 7 (`map_get_empty`) and 10
+  (`compiled_only_custom_key`) fail. These were run after the guard edit; no
+  baseline comparison has been made, so do not label them pre-existing.
+- The native generator still has other `resolve_object_method` references in
+  legacy string inference/bound-method/collection/iterator paths. Audit them
+  against checked target facts before claiming the receiver-call guardrail is
+  complete. No full gate, corpus parity or perf suite has run.
+
 # Phase 27.5.4 C2 handover (2026-11-01; emitter reparse attribution)
 
 - Branch `phase27-5-4-work`; pushed tip `51d1e59a`. This checkpoint adds a

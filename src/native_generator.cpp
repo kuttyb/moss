@@ -9860,15 +9860,13 @@ class Generator {
                 throw std::runtime_error(
                     "MOSS_INTERNAL_INVARIANT checked method target is unavailable");
               call_method = &*method;
-            } else {
-              call_method = resolve_object_method(
-                objects_, canonical_type_name(*call_receiver_type), method_name, [&]() {
-                  vector<string> result;
-                  for (const auto& argument : s.args)
-                    result.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
-                  return result;
-                }(), true, nullptr);
+            } else if (checked_target.empty()) {
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked method target receiver=" +
+                  (implicit_method ? std::string("self") : s.a) +
+                  " method=" + method_name + " line=" +
+                  std::to_string(s.line) + " context=" +
+                  codegen_body_context_);
             }
           }
           const auto external_method_module = call_method && call_receiver_type
