@@ -16222,3 +16222,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   string-based generated type inference and compatibility helper recursion;
   then run the end-of-phase gates once, Agent 2 once, and merge/tag C2. The
   queued shadow/runtime-ratchet closing round stays deferred until after C2.
+
+## C2 redundant normalization checkpoint (2026-11-01)
+
+- Removed the second emitter text normalization from the generated-type
+  compatibility helper. Pipeline result types still use the preceding
+  functional-pipeline query; the helper no longer rewrites text into another
+  call-shaped spelling.
+- Same calculator command counters are now 9,734 emitter reparses / 10,294
+  text-node lookups, down from 9,926 / 10,486 at `d3d58feb`; paired C1 parent
+  remains 181,562 / 273,688. Generated Rust is byte-identical to the prior
+  candidate and compiles; native output matches Fast Debug.
+- Targeted `check_phase27_est_functional_tree.py build/compiler/moss-dev` PASS;
+  `tests/phase47_iteration.moss` checks, compiles, and matches Fast Debug/native;
+  phase27.5.4 fact hooks PASS; feedback validation PASS. No full gates have run.
+- The emitter target is still 9,734 reparses and 10,294 text-node lookups on
+  this source, so C2 remains incomplete. Continue migrating compatibility
+  consumers to node arguments and checked facts; keep full suites until the
+  final checkpoint.

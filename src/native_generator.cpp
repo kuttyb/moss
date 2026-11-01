@@ -2996,7 +2996,9 @@ class Generator {
     }
     if (auto pipeline = generated_functional_pipeline_type(original, types))
       return pipeline;
-    string value = tree_strip_expression_grouping(tree_normalize_pipeline(std::move(original)));
+    // The checked functional-pipeline query above handles source pipelines.
+    // Do not normalize text into a second call-shaped expression here.
+    string value = std::move(original);
     {
       string enum_name, case_name;
       vector<string> fields;
