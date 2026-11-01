@@ -504,3 +504,12 @@ Default and optimized generated Rust are byte-identical to C1, and outputs
 match (`semantic space: 68 5 34 3 4 true`). The Phase 21 placeholder fixture
 compiles and prints four `-2` results. Fact-hook and three-engine checks pass.
 This is targeted validation only; final bulk counts and suites remain pending.
+
+The FileIO `.chunks()` lowering now recognizes its retained Call/Member nodes;
+module projection preserves the arenas referenced by statement handles. The
+focused executor/FileIO harness passes. A targeted fallback trace on optimized
+`tests/phase15_15_string_map.moss` identified `values.keys()` as a Call node
+falling through to expression text. Direct checked Map `keys`/`values` lowering
+reduced the fixture from 97 text-node lookups / 65 expression reparses to 65 /
+33. The generated Rust compiles with `rustc -D warnings`; native and Fast Debug
+both print `string/map ok`. These are focused measurements, not the C2 workload.

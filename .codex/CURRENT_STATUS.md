@@ -15523,3 +15523,13 @@ and the focused `check_phase20_executor_fileio.py` harness passes. The invariant
 error retains slot/line and statement context to make any future missing-handle
 report actionable. This migration slice is ready to commit; no full suite or
 performance suite has run.
+
+### C2 checked Map iterator lowering (2026-11-01)
+
+An opt-in emitter fallback trace on optimized `tests/phase15_15_string_map.moss`
+identified `values.keys()` as the remaining Call node re-parsed by string
+lowering. Added direct checked Map `keys`/`values` lowering. Candidate counts
+fell from 97 text-node lookups / 65 expression reparses to 65 / 33 for this
+fixture. Generated Rust compiled with `rustc -D warnings`, and native plus Fast
+Debug both print `string/map ok`. This is a focused sample only. The source and
+delivery report are uncommitted; no full suite/corpus/perf run has occurred.

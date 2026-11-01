@@ -5312,6 +5312,31 @@ class Generator {
               "); " + flag + " = __moss_removed.is_some(); "
               "__moss_removed.unwrap_or(__moss_fallback) }";
         }
+        if (starts_with(target, "builtin-method:map[") &&
+            (ends_with(target, ".keys") || ends_with(target, ".values")) &&
+            call->arguments.empty() &&
+            (member->name == "keys" || member->name == "values")) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map iterator lacks a concrete map type");
+          const string rendered_receiver =
+              expr(receiver_expression, d, locals, types);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
+          if (member->name == "keys") {
+            if (shared_key) return "(" + rendered_receiver + ").keys()";
+            if (map_types->first == "float")
+              return "(" + rendered_receiver + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
+            return "(" + rendered_receiver + ").keys().cloned().collect::<std::vec::Vec<_>>()";
+          }
+          if (shared_key) return "(" + rendered_receiver + ").values()";
+          return "(" + rendered_receiver + ").values().cloned().collect::<std::vec::Vec<_>>()";
+        }
         if ((target.empty() || target == "builtin-method:string." +
                                       member->name) &&
             member->name == "append" && call->arguments.size() == 1) {
