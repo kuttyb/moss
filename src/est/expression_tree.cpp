@@ -347,6 +347,7 @@ ExpressionParseSiteScope::~ExpressionParseSiteScope() {
 }
 
 void record_expression_text_parse() noexcept {
+  if (!test_coverage_counters_enabled()) return;
   try {
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_text_parse_counts[
