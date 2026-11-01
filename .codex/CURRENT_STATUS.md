@@ -1,7 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `ec91f628` (counter
-  report; fixture commit `b69bc561` and handover commit `033bb4b8` precede it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `1e00496e` (node-based
+  simple-call projection; receiver fixture commit `b69bc561` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -35,13 +35,15 @@
   families: unary 635, simple-call 465, grouping 452, message 327, enum-case
   285, identifier 222. This is a diagnostic sample, not the paired parent
   comparison or a performance suite.
-- Latest uncommitted slice adds an `EmitterExpr` simple-call projection and
+- Latest slice adds an `EmitterExpr` simple-call projection and
   uses it when compatibility lowering already has the checked root node. On
   the same one-command calculator source, text-node lookups fell 22,836 to
   22,760 while reparses remained 15,360. Generated Rust was byte-identical to
   the preceding sample; Rust compilation and native/Fast Debug stdout parity
   passed; fact hooks and feedback validation passed. This does not satisfy the
   zero-reparse target and is not a full suite result.
+- This slice is now committed and pushed as `1e00496e`; the working tree was
+  clean at push time.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.
