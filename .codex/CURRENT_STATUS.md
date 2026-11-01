@@ -1,3 +1,36 @@
+# Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
+
+- Branch `phase27-5-4-work`; pushed checkpoint `b69bc561` (parent
+  `3fe7af48`). `origin/main` is already merged into this branch via `2cf4abb9`.
+- Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
+  indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
+  fixture in `check_phase27_5_4_fact_hooks.py`. The harness now passes seven
+  call-target fixtures, with perturb/drop fail-closed coverage across Fast
+  Debug, native, and `-O`. The direct fixture emits Rust, compiles, and prints
+  `42`. Feedback validation and `git diff --check` pass.
+- The user guardrail for receiver method calls is covered by the prior emitter
+  changes: method declarations are mapped from checker-recorded target IDs;
+  receiver type no longer chooses the target. Both direct and indexed receiver
+  shapes are in the call-target hook suite. Agent 2 should choose/spot-check a
+  receiver fixture in the single final audit.
+- An experiment to also route implicit custom `for` iterator protocol lowering
+  through a newly stored statement target was reverted in full: generic
+  iteration in `tests/phase47_iteration.moss` had no retained iterator fact
+  under `consume<Countdown>` and native generation failed closed. There is no
+  partial iterator fact change. Existing `resolve_object_method` calls in
+  emitter `for` lowering at `src/native_generator.cpp:9597-9603` remain a
+  separate unresolved consumer decision; no claim is made that implicit
+  iterator protocol selection is migrated.
+- No full gates/performance suite or Agent 2 audit has run. C2 remains
+  incomplete: emitter expression-view re-parses/text lookups are nonzero (latest
+  paired calculator measurement: 15,804 re-parses and 24,252 text-node lookups
+  per command after receiver/query slices); optimizer remains zero by source
+  audit. Continue node migration and like-for-like measurement before full
+  gates. Run full suites once at the end, then Agent 2 once.
+- The user-requested closing round (shadow demotion, runtime ratchet, contract
+  status update) remains queued until C2 is merged. Do not start it before that
+  merge. No merge/tag has occurred.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
 - Branch `phase27-5-4-work`; latest pushed checkpoint `c2237b40`. Updated
