@@ -43,6 +43,13 @@
   retained node IDs, but the emitter still parses generated-expression strings
   into temporary arenas, so its fact counter looks up different node IDs.
   These are focused measurements, not the corpus K1/K2 progress report.
+- Fast Debug now keeps the active EST tree/node set during a complete recursive
+  evaluation, avoiding repeated reparsing in helper calls. Evaluating callable
+  and object-constructor arguments now consumes the existing Call/Constructor
+  child IDs, and member calls use their Member/Call nodes instead of rebuilding
+  `method()` text. The focused Fast Debug reparse count fell from 16 to 4;
+  targeted three-engine parity and join/pattern fixtures pass. This is not yet
+  a zero-reparse result and no Fast Debug fallback has been deleted.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 

@@ -735,6 +735,30 @@ class FastInterpreter {
     return true;
   }
 
+  bool expression_call(const ExpressionTreeView& tree, est::ExprId root,
+                       std::string& callee,
+                       std::vector<std::string>& arguments) const {
+    const auto& node = tree.arena->at(root);
+    const std::vector<est::ExprId>* node_arguments = nullptr;
+    est::ExprId callee_node = 0;
+    if (const auto* call = std::get_if<est::Call>(&node)) {
+      node_arguments = &call->arguments;
+      callee_node = call->callee;
+    } else if (const auto* constructor =
+                   std::get_if<est::Constructor>(&node)) {
+      node_arguments = &constructor->arguments;
+      callee_node = constructor->type;
+    } else {
+      return false;
+    }
+    callee.assign(expression_node_text(tree, callee_node));
+    arguments.clear();
+    arguments.reserve(node_arguments->size());
+    for (const auto argument : *node_arguments)
+      arguments.emplace_back(expression_node_text(tree, argument));
+    return true;
+  }
+
   std::optional<std::pair<std::string, std::string>> expression_member(
       std::string_view source) const {
     auto tree = expression_tree(source);
@@ -1394,6 +1418,21 @@ class FastInterpreter {
   Value evaluate_expression_tree(const ExpressionTreeView& tree_view,
                                  est::ExprId root, Frame& frame, int line,
                                  std::ostream& output) {
+    const auto* previous_tree = active_expression_tree_;
+    const auto previous_node = active_expression_node_;
+    active_expression_tree_ = &tree_view;
+    active_expression_node_ = root;
+    struct ActiveExpressionTreeScope {
+      const ExpressionTreeView*& tree;
+      est::ExprId& node;
+      const ExpressionTreeView* previous_tree;
+      est::ExprId previous_node;
+      ~ActiveExpressionTreeScope() {
+        tree = previous_tree;
+        node = previous_node;
+      }
+    } active_tree_scope{active_expression_tree_, active_expression_node_,
+                        previous_tree, previous_node};
     std::string e = trim_copy(
         std::string(expression_node_text(tree_view, root)));
     const ExpressionTreeView* tree = &tree_view;
@@ -1505,7 +1544,9 @@ class FastInterpreter {
     {
       std::string qualified;
       std::vector<std::string> arguments;
-      bool called = expression_call(e, qualified, arguments);
+      bool called = tree
+          ? expression_call(*tree, current_root, qualified, arguments)
+          : expression_call(e, qualified, arguments);
       const std::vector<est::ExprId>* enum_argument_nodes = nullptr;
       if (tree) {
         const auto& root_node = tree->arena->at(current_root);
@@ -1683,7 +1724,8 @@ class FastInterpreter {
     }
 
     std::string callee; std::vector<std::string> args;
-    if (expression_call(e, callee, args)) {
+    if ((tree && expression_call(*tree, current_root, callee, args)) ||
+        (!tree && expression_call(e, callee, args))) {
       const std::vector<est::ExprId>* call_argument_nodes = nullptr;
       if (tree) {
         const auto& call_root = tree->arena->at(current_root);
@@ -1889,7 +1931,9 @@ class FastInterpreter {
                     callable_val->string + "' was not checked in this run"
               : "unresolved callable identity '" + callable_val->string + "'");
         }
-        if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
+        if (auto object = object_type(callee))
+          return construct(*object, args, frame, line, output, tree,
+                           call_argument_nodes);
         auto self_it = frame.locals.find("self");
         if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
           if (auto target = method(self_it->second.object->type, callee)) {
@@ -1927,7 +1971,18 @@ class FastInterpreter {
       };
       if (member->second.find('(') != std::string::npos) {
         std::string method_name; std::vector<std::string> method_args;
-        if (expression_call(member->second, method_name, method_args)) {
+        bool method_called = false;
+        if (member_node && member_argument_nodes) {
+          method_name = member_node->name;
+          method_args.reserve(member_argument_nodes->size());
+          for (const auto argument : *member_argument_nodes)
+            method_args.emplace_back(expression_node_text(*tree, argument));
+          method_called = true;
+        } else {
+          method_called = expression_call(member->second, method_name,
+                                          method_args);
+        }
+        if (method_called) {
           auto evaluate_method_argument = [&](std::size_t index) {
             if (member_argument_nodes && index < member_argument_nodes->size())
               return evaluate_tree_node(*tree, member_argument_nodes->at(index),
@@ -2510,20 +2565,43 @@ class FastInterpreter {
   }
 
   Value construct(const ObjectType& object, const std::vector<std::string>& args,
-                  Frame& frame, int line, std::ostream& output) {
+                  Frame& frame, int line, std::ostream& output,
+                  const ExpressionTreeView* tree = nullptr,
+                  const std::vector<est::ExprId>* argument_nodes = nullptr) {
     Value result = Value::struct_value(object.name);
     std::unordered_map<std::string,std::string> supplied;
-    for (const auto& argument : args) {
+    std::unordered_map<std::string,est::ExprId> supplied_nodes;
+    for (std::size_t index = 0; index < args.size(); ++index) {
+      const auto& argument = args[index];
+      if (tree && argument_nodes && index < argument_nodes->size()) {
+        const auto node_id = argument_nodes->at(index);
+        if (const auto* named = std::get_if<est::NamedArgument>(
+                &tree->arena->at(node_id))) {
+          supplied[named->name] = std::string(
+              expression_node_text(*tree, named->value));
+          supplied_nodes[named->name] = named->value;
+          continue;
+        }
+      }
       auto equal_sign = argument.find_first_of(":=");
       if (equal_sign == std::string::npos)
         throw RuntimeError(line, "object constructors require named fields");
       supplied[trim_copy(argument.substr(0, equal_sign))] =
           argument.substr(equal_sign + 1);
+      if (tree && argument_nodes && index < argument_nodes->size())
+        supplied_nodes[trim_copy(argument.substr(0, equal_sign))] =
+            argument_nodes->at(index);
     }
     for (const auto& field : object.fields) {
       auto found = supplied.find(field.name);
       if (found != supplied.end())
-        result.object->fields[field.name] = evaluate_expression_source(found->second, frame, line, output);
+        if (auto node = supplied_nodes.find(field.name);
+            tree && node != supplied_nodes.end())
+          result.object->fields[field.name] = evaluate_tree_node(
+              *tree, node->second, frame, line, output);
+        else
+          result.object->fields[field.name] = evaluate_expression_source(
+              found->second, frame, line, output);
       else if (!field.init.empty())
         result.object->fields[field.name] = evaluate_expression_source(field.init, frame, field.line, output);
       else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
