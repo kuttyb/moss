@@ -112,3 +112,23 @@ improved from 7,782/4,688 to 6,940 text-node lookups/expression reparses; the
 expanded six-source sample is parent 33,442/16,611 versus candidate
 14,646/7,340. Pipeline reparses remain zero. The required full workload and
 suite/performance gates remain pending.
+
+## C2 progress — expression-node lowering and perturb/drop coverage (2026-11-01)
+
+C2 is still in progress. Borrowed-view checks now traverse retained member
+nodes; known-function view-wrapper selection and parameter-effect handling use
+argument ExprIds; checked `Message` expressions have a node-based lowering
+path. Root-ingress messages and other legacy string-lowering shapes remain.
+The candidate generated Rust was byte-identical to the c96 parent on seven
+focused fixtures in default and `-O`. On that same paired sample, counters
+improved from 44,723 text lookups / 24,163 expression-view reparses on c96 to
+22,951 / 13,885 on the candidate after the checked-argument slice. These are
+focused counts, not the required corpus + examples + packages workload.
+
+The make-check perturb/drop harness now runs the Agent 2-selected fixture for
+each class as well as the original fixture set: call targets 5, specializations
+4, joins 4, patterns 3. Default and shadow hook runs pass. Expected behavior
+for perturbation and drop is fail-closed `MOSS_INTERNAL_INVARIANT`; successful
+Fast Debug/native/`-O` execution or emission is a test failure. Expression
+types, pipeline types, and ownership remain documented known consumer debt.
+Neither full C2 suite nor performance validation has run.

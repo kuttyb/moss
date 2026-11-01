@@ -121,16 +121,19 @@ and `src/semantic_checker.cpp`); `moss-dev` defines it in `Makefile:18`.
  Agent 2 selected and ran an additional fixture per class during the C1 audit;
  paths and outcomes are listed in `docs/phase27/27_5_4_REPORT.md`.
 
-The current hook coverage is limited to call targets, specializations, joins,
-and patterns. It does not establish that expression-type, pipeline-type, or
-ownership decisions are consumed from checked facts. Known downstream debt at
-this checkpoint:
+The passing perturb/drop hook set is call targets, specializations, joins,
+and patterns; it runs on Fast Debug, native emission, and `-O`. The registered
+fixture counts are 5, 4, 4, and 3 respectively, including each C1 Agent 2
+selected fixture. The expected result for both perturb and drop is
+`MOSS_INTERNAL_INVARIANT` in every engine. No passing perturb/drop proof exists
+for expression-type, pipeline-type, or ownership facts. Those remain explicit
+known consumer debt:
 
 | Decision | Fast Debug | Native emitter | Optimizer |
 | --- | --- | --- | --- |
-| Expression types | Executes expressions from runtime values; exact checked-type coverage is not established. | Re-infers types in `generated_expr_type` (`src/native_generator.cpp:2024`). | No perturbation coverage yet; consumer authority is not established. |
-| Pipeline stage/output types | Has a runtime output-type fallback (`src/interpreter.hpp:1300–1331`, 12 prior firings). | Callable and type selection still depend on emitter-side inference (`src/native_generator.cpp:1978–2015, 3367–3388`). | No perturbation coverage yet; consumer authority is not established. |
-| Ownership / clone-move-borrow | Executes runtime values; no ownership-fact perturbation coverage yet. | Makes local borrow/clone/recovery-slot choices (`src/native_generator.cpp:1417–1438, 1690–1708, 1774–1823`). | No perturbation coverage yet; consumer authority is not established. |
+| Expression types | Uses runtime values to execute operations; checked-type consumption is not established. | Recursively infers missing types in `generated_expr_type` (`src/native_generator.cpp:2186–2541`). | Direct use/ignore status is unmeasured; no type-fact perturbation coverage. |
+| Pipeline stage/output types | Falls back to callback signature and runtime-value inference after checked lookup (`src/interpreter.hpp:1350–1485`, 12 prior firings). | Callable and result-type selection still use emitter-side inference (`src/native_generator.cpp:2006–2051, 3345–3366`). | Direct use/ignore status is unmeasured; no pipeline-fact perturbation coverage. |
+| Ownership / clone-move-borrow | Executes values at runtime; ownership-fact consumption is not established. | Makes local borrow/clone/recovery-slot choices (`src/native_generator.cpp:1417–1438, 1690–1708, 1774–1823`). | Direct use/ignore status is unmeasured; no ownership-fact perturbation coverage. |
 
 This table records known gaps and missing evidence, not a claim that each
 engine ignores every fact in that class. K1 remains report-only in the current
