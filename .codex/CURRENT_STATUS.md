@@ -1,8 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `16f1cf57` (checked
-  numeric-root projection; literal-root projection `0b07e6c7` and
-  access-shape projection `daa922d3` precede it).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `213cdd68` (handover
+  refresh after checked numeric-root projection `16f1cf57`).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -74,6 +73,15 @@
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.
+- Like-for-like focused counter comparison now uses pinned C1 commit `c96bca78`
+  and the identical calculator emission command. The parent predates the
+  lookup counter, so test-only counter calls were added only in the isolated
+  `tmp/phase27-5-4-parent-counter` worktree (no branch commit): parent 181,742
+  reparses / 273,688 text lookups; candidate 15,360 / 21,544. Deltas are
+  -91.55% reparses and -92.13% lookups. Parent, candidate, and Fast Debug
+  stdout match. Keep using these same commands for progress reports.
+- Current uncommitted change is only the feedback entry documenting that
+  paired comparison; feedback validation passes.
 
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
