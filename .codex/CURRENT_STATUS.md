@@ -14,11 +14,10 @@
   `tests/tooling/fixtures/phase21_capture_owned_string.moss` failed with
   `MOSS_INTERNAL_INVARIANT missing checked expression handle`. The source
   changes were reverted to preserve their prior behavior.
-- Current local changes retain K10, the class 1–9 inventory, the conflict
+- The C1 blocker checkpoint retains K10, the class 1–9 inventory, the conflict
   registry, and a registered focused three-engine parity test; K2/K3 hooks and
-  tests remain absent. The attempted `make check` stopped after the default
-  suite failure, so shadow and final restored-candidate suites remain pending.
-  No performance suite has run. No Phase 27.5.3 merge/tag has been made.
+  tests remain absent. The final restored-candidate suite results are below.
+  No performance suite has run.
 - Final restored-candidate validation on `6724b882`: `make --jobs="$(nproc)"
   check` passed default 165/165 and shadow 165/165, zero failures/skips;
   focused three-engine and `.mossi` gates also passed inside the suites. The
@@ -30,8 +29,10 @@
   K2/K3 fact perturbation/removal coverage is absent and removing the remaining
   Fast Debug fallback caused 54 accepted-program failures. The fallback was
   restored; the failure evidence and representative sources are in
-  `docs/COMPILER_STATE.md`. Waiting for Agent 2's single C1 audit. No merge or
-  tag has been created.
+  `docs/COMPILER_STATE.md`. Agent 2 returned GO only for a blocker checkpoint.
+  Merge `c96bca786caefa5744000af9918be50a65b41037` has first parent
+  `b4670ca1e21dbcf0cf3e7a5413898fa1fd7f0bac`; tag `phase27-5-3-c1` targets the
+  merge. Delivery report: `docs/phase27/27_5_3_REPORT.md`.
 
 ## Phase 26.2 stabilization progress
 
