@@ -35,12 +35,19 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     const auto slot = s.kind == Stmt::Kind::Assign
         ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
     const auto checked_source = checked_expression_ref(s, s.b, slot);
-    vector<string> open_arguments;
-    if (tree_parse_fileio_open(checked_source, open_arguments)) {
+    EmitterExpr open_receiver;
+    string open_method;
+    vector<EmitterExpr> open_arguments;
+    if (tree_parse_member_call_nodes(checked_source, open_receiver,
+                                     open_method, open_arguments) &&
+        tree_identifier_name(open_receiver) ==
+            std::optional<string>("FileIO") && open_method == "open" &&
+        open_arguments.size() == 2) {
       string opened = "FileIO::" + string(phase21_result_context_
           ? "open_checked" : "open") + "(&(" +
           expr(open_arguments[0], d, locals, &types) + "), " +
-          rust_string_literal(trim(open_arguments[1])) + ")";
+          rust_string_literal(tree_identifier_name(open_arguments[1])
+                                  .value_or(open_arguments[1].text())) + ")";
       if (phase21_result_context_)
         opened = phase21_propagate(opened + ".map_err(__moss_raise_fileio)");
       o << pad << "let mut " << s.a << " = " << opened << ";\n";

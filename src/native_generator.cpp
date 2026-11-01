@@ -1371,27 +1371,28 @@ class Generator {
                                    vector<EmitterExpr>& arguments) const {
     if (!expression.arena) return false;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
-    const auto* call = std::get_if<est::Call>(&expression.arena->at(root));
-    if (!call) return false;
-    const auto callee_id = est::unparenthesized(*expression.arena,
-                                                 call->callee);
+    const std::vector<est::ExprId>* node_arguments = nullptr;
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      callee_id = call->callee;
+      node_arguments = &call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &expression.arena->at(root))) {
+      callee_id = constructor->type;
+      node_arguments = &constructor->arguments;
+    }
+    if (!node_arguments) return false;
+    callee_id = est::unparenthesized(*expression.arena, callee_id);
     const auto* selected = std::get_if<est::Member>(
         &expression.arena->at(callee_id));
     if (!selected) return false;
     receiver = expression.child(selected->base);
     member = selected->name;
     arguments.clear();
-    for (const auto argument : call->arguments)
+    for (const auto argument : *node_arguments)
       arguments.push_back(expression.child(argument));
     return true;
-  }
-
-  bool tree_parse_fileio_open(const EmitterExpr& expression,
-                              vector<string>& arguments) const {
-    if (!expression.arena) return false;
-    est::ExpressionView view{nullptr, expression.arena, expression.id,
-                             expression.text()};
-    return est::project_fileio_open(view, arguments);
   }
 
   bool tree_parse_member_access(const string& expression, string& base,

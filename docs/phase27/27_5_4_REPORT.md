@@ -536,3 +536,11 @@ counters from 500 lookups / 289 reparses to 369 / 230; the Phase 20
 executor/FileIO harness passes. The string-map fixture remains at 0 / 0. The
 larger FileIO residual shows these are focused migrations, not completion of
 C2's zero-count requirement.
+
+The EST member-call node projection now accepts both Call and Constructor
+shapes, which covers `FileIO.open` in the retained tree. Open lowering consumes
+the path/mode child nodes directly. The optimized FileIO runtime fixture moved
+from 369 / 230 to 343 text lookups / 204 reparses, and the Phase 20
+executor/FileIO harness passes. Remaining reparses are concentrated in checked
+FileIO coordinate/length expressions (`4`, `offset, 4`, `item.length()`); the
+C2 zero-count target remains open.

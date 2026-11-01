@@ -15566,3 +15566,13 @@ string-map fixture remains at 0 / 0. An attempted direct FileIO.open node
 projection changed generated Rust incorrectly (failed native compile); that
 specific edit was reverted, restoring the passing harness. No full suite or
 perf run has occurred; current residual FileIO counts remain open.
+
+### C2 FileIO open node shape (2026-11-01)
+
+The retained member-call projection now handles Constructor as well as Call
+nodes. `FileIO.open` path and mode lowering consume those checked children. The
+optimized FileIO runtime fixture improved from 369 lookups / 230 reparses to
+343 / 204, and the Phase 20 executor/FileIO harness passes. Remaining
+reparses cluster around FileIO coordinate/length expressions (`4`, `offset,
+4`, `item.length()`). Temporary reparse-input tracing was removed. Full suite,
+corpus counts, and perf remain pending.
