@@ -5286,6 +5286,57 @@ class Generator {
     if (auto place = view_place(expression, d, locals, types))
       return *place;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* checked_facts = checked_expression_facts(expression);
+    const string checked_target = checked_facts
+        ? checked_facts->resolved_target : string();
+    const string enum_case_prefix = "nominal-enum-variant-v1:";
+    if (starts_with(checked_target, enum_case_prefix)) {
+      const std::vector<est::ExprId>* enum_arguments = nullptr;
+      if (const auto* constructor = std::get_if<est::Constructor>(
+              &expression.arena->at(root)))
+        enum_arguments = &constructor->arguments;
+      else if (const auto* call = std::get_if<est::Call>(
+                   &expression.arena->at(root)))
+        enum_arguments = &call->arguments;
+      if (enum_arguments) {
+        const auto separator = checked_target.rfind(":case:");
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked enum constructor target");
+        const string declaration_id = checked_target.substr(
+            enum_case_prefix.size(), separator - enum_case_prefix.size());
+        const string case_name = checked_target.substr(separator + 6);
+        const EnumType* selected_enum = nullptr;
+        for (const auto& candidate : enums_) {
+          if (!p_.type_context) break;
+          const auto declaration = p_.type_context->find(candidate.second->name);
+          if (declaration && declaration->id == declaration_id) {
+            selected_enum = candidate.second;
+            break;
+          }
+        }
+        if (!selected_enum)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked enum constructor declaration is unavailable");
+        std::ostringstream rendered;
+        rendered << selected_enum->name << "::" << rust_identifier(case_name);
+        if (!enum_arguments->empty()) {
+          rendered << " { ";
+          for (size_t index = 0; index < enum_arguments->size(); ++index) {
+            const auto* field = std::get_if<est::NamedArgument>(
+                &expression.arena->at(enum_arguments->at(index)));
+            if (!field)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked enum constructor field is not named");
+            if (index) rendered << ", ";
+            rendered << rust_identifier(field->name) << ": "
+                     << expr(expression.child(field->value), d, locals, types);
+          }
+          rendered << " }";
+        }
+        return rendered.str();
+      }
+    }
     if (std::holds_alternative<est::Placeholder>(
             expression.arena->at(root))) {
       auto replacement = functional_identifier_replacements_.find("_");

@@ -16442,3 +16442,14 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Feedback observation recorded and validation still required before commit.
   Full suite, corpus-wide counters, package/corpus parity, perf, Agent 2,
   merge, and tag remain pending.
+
+## C2 checkpoint: checked enum constructor lowering (2026-11-01)
+
+- The emitter now directly lowers enum constructor nodes from checker-recorded
+  `nominal-enum-variant-v1` targets. It handles both retained `Constructor`
+  and `Call` node forms and recursively emits named payload child nodes.
+- Focused `enum_modules/src/tags.moss` emission reports 0 native expression
+  reparses and 0 text-node lookups (preceding focused sample: 18 and 16).
+  Generated Rust compiles; `margo build` and `margo run` pass (`4`, `1`).
+- This is one focused emitter query path only. Full C2 suite, corpus counters,
+  parity, performance, Agent 2 audit, merge, and tag remain pending.
