@@ -324,3 +324,25 @@ candidate versus 15,167,953 and 9,750,215 at c96, with candidate per-file
 emission failures 1,427 vs 1,406. These aggregate counts are stale for the
 current tree and must be rerun once the C2 consumer migration is complete.
 No full suite or performance run has been done for this slice.
+
+## C2 progress — paired corpus measurement and checked callback result
+
+At `63156e99`, the paired corpus emitter pass covered 1,822 tracked Moss
+sources and 337 package manifests (3,644 standalone default/`-O` commands per
+binary). Against the counter-matched c96 build, text lookups fell
+15,167,953 -> 5,980,690 (−60.6%), expression reparses fell 9,750,215 ->
+3,514,024 (−64.0%), and native functional-pipeline reparses fell 7,362 -> 798.
+Candidate emission failures were 1,410 vs 1,406. Two were the
+`swarm_049a_fast_debug_map_in_method` callback output type; the emitter now
+reads the selected method identity from the checked call fact/edge and obtains
+the declared result type. Default and `-O` generated Rust are byte-identical to
+C1, compile, and print `2`. On this one fixture, default lookups/reparses fell
+1,521/1,173 -> 434/338.
+
+The other two extra failures were the incomplete-index probe in both modes.
+The checker accepts this truncated source, but C1 emits Rust that rustc rejects
+with an unclosed `items[` delimiter. The candidate now fails closed on its
+missing checked `RhsValue` handle instead of emitting the invalid artifact.
+Remaining full-suite parity must confirm this malformed-source diagnostic
+change is outside behavioral coverage. The corpus figures above precede the
+map-method fix and are not the final paired count.

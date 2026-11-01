@@ -2758,10 +2758,40 @@ class Generator {
                                                    call->callee);
       const auto* callee = std::get_if<est::Identifier>(
           &expression.arena->at(callee_id));
-      if (!callee) return legacy_type();
       const auto* call_facts = expression.arena->facts(root,
                                                         checker_context);
       const string target = call_facts ? call_facts->resolved_target : string();
+      if (!callee) {
+        const auto* member = std::get_if<est::Member>(
+            &expression.arena->at(callee_id));
+        if (!member) return legacy_type();
+        vector<string> targets;
+        if (starts_with(target, "method:")) targets.push_back(target);
+        if (targets.empty())
+          targets = checked_call_edge_targets(codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+        std::optional<string> selected;
+        for (const auto& candidate : targets) {
+          if (!starts_with(candidate, "method:") ||
+              !ends_with(candidate, "." + member->name)) continue;
+          if (selected && *selected != candidate) return legacy_type();
+          selected = candidate;
+        }
+        if (!selected) return legacy_type();
+        const auto separator = selected->rfind('.');
+        const string owner = selected->substr(7, separator - 7);
+        for (const auto& object : objects_) {
+          if (canonical_type_name(object.second->name) !=
+              canonical_type_name(owner)) continue;
+          const auto method = std::find_if(object.second->methods.begin(),
+              object.second->methods.end(), [&](const Method& item) {
+                return item.name == member->name;
+              });
+          if (method != object.second->methods.end() && method->return_type)
+            return canonical_type_name(*method->return_type);
+        }
+        return legacy_type();
+      }
       const Function* function = nullptr;
       if (starts_with(target, "callable-v1:"))
         function = find_function_by_callable_id(target);

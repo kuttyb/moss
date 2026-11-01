@@ -15290,3 +15290,20 @@ counts after C2 consumer work is near completion. Next inspect other remaining
 emitter parse sites and ownership-safe node lowering; then run the paired
 measurement, fix all new failures, execute final gates once, request Agent 2
 audit, and merge/tag only on GO. Do not run performance before near-completion.
+
+### C2 paired-count checkpoint (2026-11-01)
+
+Paired measurement at `63156e99`, before the immediately following map-method
+fix: same 1,822 source files / 337 manifests and 3,644 default/`-O` commands
+per compiler. c96 baseline: 15,167,953 text lookups, 9,750,215 expression-view
+reparses, 7,362 functional reparses, 1,406 generation failures. Candidate:
+5,980,690 lookups, 3,514,024 expression-view reparses, 798 functional
+reparses, 1,410 failures. Deltas: −60.6% lookups, −64.0% expression-view
+reparses, −89.2% functional reparses. Candidate failure set contained
+`swarm_049a_fast_debug_map_in_method` (both modes; fixed after measurement)
+and the incomplete-index probe (both modes). C1's generated artifact for the
+probe is invalid Rust (`rustc` reports an unclosed delimiter); current emitter
+fails closed on missing checked RhsValue handle. Current one-fixture paired
+counts for map-method after fix are 1,521/1,173 -> 434/338 (lookups/reparses)
+in default; generated Rust is identical to C1 in default and `-O`, and both
+compile and print 2. Rerun full paired counts after further node migrations.
