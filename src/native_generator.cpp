@@ -6140,6 +6140,15 @@ class Generator {
               expr(expression.child(call->arguments.front()), d, locals,
                    types) + ")";
         }
+        if (target == "builtin-fileio:close" &&
+            member->name == "close" && call->arguments.empty()) {
+          const string lowered_call = expr(member_receiver, d, locals, types) +
+              (phase21_result_context_ ? ".close_checked()" : ".close()");
+          return phase21_result_context_
+              ? phase21_propagate(lowered_call +
+                  ".map_err(__moss_raise_fileio)")
+              : lowered_call;
+        }
         if (target == "builtin-fileio:read" &&
             member->name == "read" && call->arguments.size() == 2) {
           const string rendered = expr(member_receiver, d, locals, types) +
