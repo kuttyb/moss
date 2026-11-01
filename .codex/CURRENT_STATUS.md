@@ -35,6 +35,13 @@
   families: unary 635, simple-call 465, grouping 452, message 327, enum-case
   285, identifier 222. This is a diagnostic sample, not the paired parent
   comparison or a performance suite.
+- Latest uncommitted slice adds an `EmitterExpr` simple-call projection and
+  uses it when compatibility lowering already has the checked root node. On
+  the same one-command calculator source, text-node lookups fell 22,836 to
+  22,760 while reparses remained 15,360. Generated Rust was byte-identical to
+  the preceding sample; Rust compilation and native/Fast Debug stdout parity
+  passed; fact hooks and feedback validation passed. This does not satisfy the
+  zero-reparse target and is not a full suite result.
 - The user-requested closing round (shadow demotion, runtime ratchet, contract
   status update) remains queued until C2 is merged. Do not start it before that
   merge. No merge/tag has occurred.

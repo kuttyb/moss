@@ -1358,6 +1358,14 @@ class Generator {
     return syntax && est::project_simple_call(*syntax, callee, arguments);
   }
 
+  bool tree_parse_simple_call(const EmitterExpr& expression, string& callee,
+                              vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_simple_call(view, callee, arguments);
+  }
+
   bool tree_parse_member_call(const string& expression, string& receiver,
                               string& member, vector<string>& arguments,
                               bool* outputs_written = nullptr) const {
@@ -6471,6 +6479,12 @@ class Generator {
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) ++string_expr_queries_;
 #endif
+    auto parse_root_simple_call = [&](string& callee,
+                                      vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_simple_call(*checked_node, callee, arguments);
+      return tree_parse_simple_call(e, callee, arguments);
+    };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
@@ -6583,7 +6597,7 @@ class Generator {
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(e, callee, arguments) && callee == "replace" &&
+      if (parse_root_simple_call(callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
         return "{ let __moss_replacement = " +
             expr(arguments[1], d, locals, types) + "; std::mem::replace(&mut " +
@@ -7507,7 +7521,7 @@ class Generator {
 
     string builtin;
     vector<string> builtin_args;
-    if (tree_parse_simple_call(e, builtin, builtin_args)) {
+    if (parse_root_simple_call(builtin, builtin_args)) {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
@@ -7585,7 +7599,7 @@ class Generator {
     // compatibility spelling for existing sources.
     string head;
     vector<string> parts;
-    if (tree_parse_simple_call(e, head, parts)) {
+    if (parse_root_simple_call(head, parts)) {
       auto oit = objects_.find(head);
       if (oit != objects_.end()) {
         std::unordered_map<string,string> values;
@@ -7611,7 +7625,7 @@ class Generator {
         return r.str();
       }
       vector<string> call_args;
-      if (tree_parse_simple_call(e, head, call_args)) {
+      if (parse_root_simple_call(head, call_args)) {
         head = resolved_callable_identity(head, types);
         const Function* function_target = nullptr;
         if (starts_with(head, "callable-v1:")) {
