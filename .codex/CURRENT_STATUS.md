@@ -15133,3 +15133,22 @@ fall from 6,408 lookups / 2,878 expression reparses to 4,503 / 2,015. Four
 sources pass Fast Debug/native/`-O` runtime parity. The FileIO cleanup fixture
 hits the documented Fast Debug unsupported-FileIO error and still passes Rust
 byte parity. Three-engine and fact-hook checks pass.
+
+### Phase 27.5.4 C2 checkpoint — uncovered emitter parse accounting (2026-11-01)
+
+Candidate `2cdb5637` is still the latest pushed code checkpoint. The borrowed
+view string helper now routes through the centralized expression-view lookup,
+and test builds count named-argument parsing as a native expression reparse.
+This was counter coverage only. Build, EST counter opt-in/output-neutral gate,
+and the focused three-engine check for `examples/collections_and_methods.moss`
+pass. Generated Rust is byte-identical to pinned c96 for that fixture. Candidate
+reports 1,244 text lookups / 532 expression-view reparses on its default run.
+The old parent instrumentation did not count these same direct parse sites, so
+that candidate number is not presented as a like-for-like delta. No full suite,
+corpus counter pass, or performance suite has run. The evidence and counter-gap
+limitation are recorded in `agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`.
+
+Next: migrate a real emitter path from EmitterExpr rather than expression text,
+then construct a parent test build with equivalent counters for paired reports.
+Run the required default/shadow full gates and Agent 2 only once after C2 work
+stabilizes.

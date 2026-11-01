@@ -1357,6 +1357,9 @@ class Generator {
 
   bool tree_parse_named_argument(const string& expression, string& name,
                                  string& value) const {
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
+#endif
     auto syntax = est::parse_named_argument_view(expression);
     return syntax && est::project_named_argument(*syntax, name, value);
   }

@@ -147,7 +147,7 @@
       const std::unordered_map<string,string>* types) const {
     if (view_place(expression, d, locals, types)) return true;
     string base, index;
-    auto syntax = est::parse_view(trim(expression));
+    auto syntax = expression_view_from_est(trim(expression));
     return syntax && est::project_index(*syntax, base, index) &&
         borrowed_view_expression(base, d, locals, types);
   }

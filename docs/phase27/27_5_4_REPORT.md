@@ -185,3 +185,16 @@ expression reparses); Rust is byte-identical in default and `-O`. Four fixtures
 pass Fast Debug/native/`-O` runtime parity. The FileIO cleanup fixture retains
 the documented Fast Debug unsupported-FileIO result while generated Rust
 matches c96.
+
+## C2 progress — count previously uninstrumented emitter parser paths
+
+The borrowed-view text helper now routes through the counted central expression
+view selection, and named-argument parsing increments the native expression
+reparse counter in test builds. This changes accounting visibility only. The
+candidate builds; the EST instrumentation output-neutrality gate and focused
+three-engine test for `examples/collections_and_methods.moss` pass, with Rust
+output byte-identical to c96. Candidate default counts are 1,244 text-node
+lookups and 532 native expression-view reparses. Since c96's existing
+instrumentation omitted these same direct parser sites, this is not a strict
+paired delta. C2 full suites, corpus measurement and performance gates remain
+pending.
