@@ -15609,3 +15609,14 @@ lookups/reparses fell 73/65 -> 4/4. The generated Rust compiles with warnings
 denied and prints `counter: 41` / `counter: 42`. Four lookups of identifier
 `value` remain and are still being traced. Phase 20 FileIO harness passes after
 the Message change. No full suite, corpus count, or perf run.
+
+### C2 checked arguments in borrowed-view function naming (2026-11-01)
+
+The emitter's node-based borrowed-view function-name path now supplies its
+checked argument nodes to specialization selection instead of allowing the
+selector to infer from rendered argument strings. The optimized counter
+fixture remains at 4 emitter lookups / 4 reparses, so this change has no
+measured delta on that sample. The four-class perturb/drop harness passes in
+default and shadow (call targets 5 fixtures, specializations 4, joins 4,
+patterns 3). The four `value` lookups remain open. No full suite, corpus count,
+or perf run has occurred.

@@ -191,7 +191,7 @@
     source_args.reserve(args.size());
     for (const auto& argument : args) source_args.push_back(argument.text());
     const auto* specialization = function.static_dispatch
-        ? call_specialization(function, source_args, types) : nullptr;
+        ? call_specialization(function, source_args, types, &args) : nullptr;
     string emitted = specialization ? specialization->generated_name
                                     : function.name;
     for (size_t index = 0; index < args.size(); ++index) {
