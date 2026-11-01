@@ -1,8 +1,8 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
 - Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `1b7c5ccc`. Current builtin-argument cursor routing is
-  uncommitted. No full suite, corpus pass, or performance
+  latest pushed commit is `dfba1338`; the worktree is clean. No full suite,
+  corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
@@ -44,6 +44,12 @@
   `Some`/`sum` and inferred named constructor fields through explicit call
   argument ExprIds while checked-cursor inference is active. The match-copy
   fixture and functional-tree harness pass after that fix.
+- An attempted exact `Argument[index]` routing in the ordinary Stmt::Call
+  checker loop was reverted: it caused a segmentation fault in
+  `packages/regex/src/main.moss`. The pre-attempt candidate at `dfba1338` passes
+  `check_phase27_est_functional_tree.py` for regex and the pipeline fixture.
+  The root cause is not isolated; do not reapply that slice without a safer
+  cursor-lifetime investigation.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
   hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
