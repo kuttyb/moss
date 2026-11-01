@@ -14513,3 +14513,23 @@ Next work must carry child ExprIds explicitly through emitter recursion (and
 pipeline node traversal) rather than installing a root node in a string-based
 recursive path. This remains the main C2 blocker. The current source tree is
 back at the clean C1 implementation, plus the paired-count utility.
+
+### Phase 27.5.4 C2 progress report 2 — checked pipeline entry
+
+Added an explicit `EmitterExpr` wrapper selected by semantic handle slot and
+argument index for function/method result expressions, statement returns,
+echo arguments, assignment RHS roots, and Let/Var initializers. The wrapper
+recognizes a retained Pipeline node and gives its checked arena/ExprId to the
+pipeline lowerer; no ambient node state is installed for legacy recursive
+calls. The result contexts are also restored around result lowering.
+
+Targeted paired check: `examples/functional_pipeline.moss`, default and `-O`.
+Parent and candidate generated Rust are byte-identical; both default and
+optimized Rust compile and print `81`. Parent and candidate counters are
+identical: 618 text-node lookups, 476 native expression-view reparses, and 1
+native functional-pipeline reparse. Thus the C2 progress count remains flat on
+this workload; the native test fixture did not provide a measurable reduction.
+The same Fast Debug command times out after 3 seconds on both parent and
+candidate with no output, so it is baseline behavior for this fixture and is
+not used as parity evidence. The broader initial paired sweep also remains
+flat at checkpoint 1. No C2 full gates have run.

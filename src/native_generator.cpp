@@ -519,6 +519,23 @@ class Generator {
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
   const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
+  struct EmitterExpr {
+    const est::Arena* arena = nullptr;
+    est::ExprId id = 0;
+    string source;
+
+    string text() const {
+      if (!arena) return {};
+      const auto span = arena->span(id);
+      if (span.source_begin > span.source_end ||
+          span.source_end > source.size()) return {};
+      return source.substr(span.source_begin,
+                           span.source_end - span.source_begin);
+    }
+    EmitterExpr child(est::ExprId child_id) const {
+      return EmitterExpr{arena, child_id, source};
+    }
+  };
   string codegen_body_context_;
   string codegen_active_specialization_key_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
@@ -1989,6 +2006,30 @@ class Generator {
     }
   }
 
+  EmitterExpr checked_expression_ref(std::string source, est::ExprSlot slot,
+                                    std::uint32_t argument_index = 0) const {
+    const auto* handles = active_functional_expression_handles_;
+    if (handles) {
+      for (const auto& handle : *handles) {
+        if (handle.slot != slot || handle.argument_index != argument_index ||
+            handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        const auto* arena = p_.expression_arenas[handle.arena_index].get();
+        const auto span = arena->span(handle.expr);
+        if (span.source_begin != 0 || span.source_end != source.size())
+          continue;
+        return EmitterExpr{arena, handle.expr, std::move(source)};
+      }
+    }
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked emitter expression slot=" +
+        std::to_string(static_cast<unsigned>(slot)) + " index=" +
+        std::to_string(argument_index) + " line=" +
+        std::to_string(phase21_codegen_statement_
+                           ? phase21_codegen_statement_->line : 0) +
+        " context=" + codegen_body_context_);
+  }
+
   std::optional<string> generated_functional_pipeline_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
@@ -3385,8 +3426,11 @@ class Generator {
       const string& expression, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      size_t functional_pipeline_id) const {
-    auto pipeline = functional_pipeline_from_est(expression);
+      size_t functional_pipeline_id,
+      const ParsedFunctionalPipeline* checked_pipeline = nullptr) const {
+    auto pipeline = checked_pipeline
+        ? std::optional<ParsedFunctionalPipeline>(*checked_pipeline)
+        : functional_pipeline_from_est(expression);
     if (!pipeline) return std::nullopt;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             *pipeline, domain, locals, types, functional_pipeline_id))
@@ -3446,6 +3490,32 @@ class Generator {
                                            planned);
     return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
                                          planned);
+  }
+
+  string expr(const EmitterExpr& expression, const Domain* d,
+              const std::set<string>& locals,
+              const std::unordered_map<string,string>* types = nullptr,
+              size_t functional_pipeline_id = 0,
+              const vector<size_t>* message_argument_plans = nullptr) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    auto pipeline = est::functional_pipeline(*expression.arena, root,
+                                              expression.source, resolve_stage);
+    if (pipeline) {
+      if (auto rendered = functional_expr(expression.text(), d, locals, types,
+                                           functional_pipeline_id, &*pipeline))
+        return *rendered;
+    }
+    return expr(expression.text(), d, locals, types, functional_pipeline_id,
+                message_argument_plans);
   }
 
   string expr(string e, const Domain* d, const std::set<string>& locals,
@@ -4933,12 +5003,21 @@ class Generator {
         FunctionalExpressionHandlesScope result_handles_scope(
             active_functional_expression_handles_,
             &method.expression_handles);
+        struct ResultFactsContextScope {
+          string& slot;
+          string prior;
+          ResultFactsContextScope(string& target, const string& current)
+              : slot(target), prior(target) { slot = current; }
+          ~ResultFactsContextScope() { slot = std::move(prior); }
+        } result_facts_context_scope(codegen_body_context_, context);
         source_comment(o, 8,
                        method.result_line ? method.result_line : method.line,
                        *method.result_expression);
         o << "        ";
         if (raises) o << "Ok(";
-        o << expr(*method.result_expression, &receiver, locals, &types,
+        o << expr(checked_expression_ref(*method.result_expression,
+                                         est::ExprSlot::ReturnValue),
+                  &receiver, locals, &types,
                   plan == method.result_functional_pipeline_ids.end()
                       ? 0 : plan->second)
           ;
@@ -5147,9 +5226,19 @@ class Generator {
                      *f.result_expression);
       FunctionalExpressionHandlesScope result_handles_scope(
           active_functional_expression_handles_, &f.expression_handles);
+      struct ResultFactsContextScope {
+        string& slot;
+        string prior;
+        ResultFactsContextScope(string& target, const string& current)
+            : slot(target), prior(target) { slot = current; }
+        ~ResultFactsContextScope() { slot = std::move(prior); }
+      } result_facts_context_scope(codegen_body_context_, functional_context);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
-      string rendered = expr(*f.result_expression, nullptr, locals, &types,
+      string rendered = expr(checked_expression_ref(
+                                  *f.result_expression,
+                                  est::ExprSlot::ReturnValue),
+                             nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
                                 ? 0 : plan->second);
       if (view_object_type(return_type)) {
@@ -6448,7 +6537,10 @@ class Generator {
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
               string rendered = expr(
-                  s.args[argument], d, locals, &types,
+                  checked_expression_ref(s.args[argument],
+                      est::ExprSlot::Argument,
+                      static_cast<std::uint32_t>(argument)),
+                  d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
@@ -6513,7 +6605,8 @@ class Generator {
         case Stmt::Kind::Assign: {
           if (s.a == "_") {
             o << indent(level) << "let _ = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_expression_ref(s.b, est::ExprSlot::RhsValue),
+                      d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
@@ -6522,7 +6615,8 @@ class Generator {
           }
           if (phase21_option_slots_.count(s.a)) {
             o << indent(level) << "__moss_recovery_slot_" << s.a
-              << " = Some(" << expr(s.b, d, locals, &types,
+              << " = Some(" << expr(checked_expression_ref(
+                     s.b, est::ExprSlot::RhsValue), d, locals, &types,
                      statement_functional_pipeline_id(
                          s, functional_context, 0)) << ");\n";
             ++i;
@@ -6618,7 +6712,8 @@ class Generator {
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_expression_ref(s.b, est::ExprSlot::RhsValue),
+                      d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
@@ -6654,7 +6749,8 @@ class Generator {
               else if (key_type && !copy_type(*key_type) &&
                   !string_key)
                 key = "(" + key + ").clone()";
-              string inserted = expr(s.b, d, locals, &types,
+              string inserted = expr(checked_expression_ref(
+                  s.b, est::ExprSlot::RhsValue), d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
               const auto source_binding = tree_identifier_name(s.b);
               if (source_binding &&
@@ -6675,7 +6771,11 @@ class Generator {
               }
             }
             else if (is_object_view(s.a, d, locals, &types))
-              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(
+                  checked_expression_ref(s.b, est::ExprSlot::RhsValue),
+                  d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0))
+                  << ");\n";
             else {
               string assigned;
               vector<string> concat_operands;
@@ -6737,7 +6837,8 @@ class Generator {
                 reused << "}";
                 assigned = reused.str();
               } else {
-                assigned = expr(s.b, d, locals, &types,
+                assigned = expr(checked_expression_ref(
+                    s.b, est::ExprSlot::RhsValue), d, locals, &types,
                     statement_functional_pipeline_id(s, functional_context, 0));
               }
               const auto source_binding = tree_identifier_name(s.b);
@@ -7088,7 +7189,8 @@ class Generator {
               o << ": " << rust_type(!inferred_map_type.empty()
                   ? inferred_map_type : statement_type);
             o << " = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_expression_ref(s.b, est::ExprSlot::Initializer),
+                      d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
             if (domain_capability) o << ".clone()";
@@ -7170,7 +7272,8 @@ class Generator {
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            string rendered = expr(s.a, d, locals, &types,
+            string rendered = expr(checked_expression_ref(
+                      s.a, est::ExprSlot::ReturnValue), d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
             const auto returned_binding = tree_identifier_name(s.a);
