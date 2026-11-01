@@ -4150,6 +4150,81 @@ class Generator {
           return render_known_function_call(*function, function->name,
               arguments, d, locals, types, &argument_nodes);
         (void)callee;
+      } else if (const auto* member = std::get_if<est::Member>(
+                     &expression.arena->at(callee_id))) {
+        const string checker_context =
+            !codegen_active_specialization_key_.empty()
+                ? "specialization:" + codegen_active_specialization_key_
+                : codegen_body_context_;
+        const auto* facts = expression.arena->facts(root, checker_context);
+        const string target = facts ? facts->resolved_target : string();
+        if (starts_with(target, "method:")) {
+          const auto separator = target.rfind('.');
+          const string owner = separator == string::npos
+              ? string() : target.substr(7, separator - 7);
+          const string method_name = separator == string::npos
+              ? string() : target.substr(separator + 1);
+          if (method_name != member->name)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked method target disagrees with call node");
+          const ObjectType* owner_object = nullptr;
+          const Method* checked_method = nullptr;
+          for (const auto& entry : objects_) {
+            if (entry.second->name != owner) continue;
+            auto found = std::find_if(entry.second->methods.begin(),
+                entry.second->methods.end(), [&](const Method& candidate) {
+                  return candidate.name == method_name;
+                });
+            if (found != entry.second->methods.end()) {
+              owner_object = entry.second;
+              checked_method = &*found;
+              break;
+            }
+          }
+          if (!checked_method || !owner_object)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked method target has no declaration");
+          vector<EmitterExpr> argument_nodes;
+          bool simple_arguments = true;
+          for (const auto argument_id : call->arguments) {
+            if (std::holds_alternative<est::NamedArgument>(
+                    expression.arena->at(argument_id))) {
+              simple_arguments = false;
+              break;
+            }
+            argument_nodes.push_back(expression.child(argument_id));
+          }
+          if (simple_arguments) {
+            const auto receiver_expression = expression.child(member->base);
+            std::ostringstream rendered;
+            rendered << expr(receiver_expression, d, locals, types) << "."
+                     << rust_identifier(method_name) << "(";
+            for (size_t index = 0; index < argument_nodes.size(); ++index) {
+              if (index) rendered << ", ";
+              const auto& argument = argument_nodes[index];
+              auto argument_type = generated_expr_type(argument, types)
+                  .value_or("_");
+              string value = expr(argument, d, locals, types);
+              const Effect effect = method_effect(*checked_method, index);
+              const bool borrow = effect != Effect::Consume &&
+                  (effect == Effect::Write || borrowable_type(argument_type));
+              if (!domains_.count(canonical_type_name(argument_type)) &&
+                  borrow) {
+                value = (effect == Effect::Write ? "&mut (" : "&(") +
+                    value + ")";
+              }
+              rendered << value;
+            }
+            rendered << ")";
+            if (!checked_method->observable_effects.raise_set.empty()) {
+              if (!phase21_result_context_)
+                throw std::runtime_error(
+                    "checked raising method lacks a Phase 21 outcome context");
+              return phase21_propagate(rendered.str());
+            }
+            return rendered.str();
+          }
+        }
       }
     }
     if (const auto* constructor = std::get_if<est::Constructor>(

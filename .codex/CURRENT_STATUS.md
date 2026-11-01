@@ -14907,3 +14907,18 @@ three-engine parity and its generated Rust is byte-identical to c96 in default
 and `-O`. Its paired counts (both profiles) fall from parent 11,550 text-node
 lookups / 4,276 expression reparses to candidate 5,724 / 1,936. The wider
 four-source sample has not yet been rerun after this slice. No full suite/perf.
+
+### Phase 27.5.4 C2 checkpoint — method-call lowering reads checked targets (2026-11-01)
+
+The expression-node emitter now lowers ordinary object method calls from the
+call node's checked `method:Owner.name` target and the matching declaration,
+including argument effect-based borrowing and checked raise propagation. A
+mismatched target/name or missing declaration fails with an internal invariant.
+Targeted functional-object, collections/methods, object-pipeline and functional
+EST checks pass; generated Rust for these three sources is byte-identical to
+c96 in default and `-O`. The four-class perturb/drop harness passes.
+
+The paired four-source/default-plus-`-O` sample is parent 17,129 text-node
+lookups / 9,047 expression reparses / 0 pipeline reparses versus candidate
+7,782 / 4,688 / 0. Counts improved from 7,914 / 4,752 / 0 at the prior broad
+sample. Full corpus counts, suites, and performance remain pending.

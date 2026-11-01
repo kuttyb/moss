@@ -86,3 +86,11 @@ string `+` nodes and emits operands directly. The Phase 24 string-concat
 fixture passes three-engine parity and matches parent generated Rust in default
 and `-O`. Its paired two-profile counters fell from 11,550 lookups / 4,276
 expression reparses to 5,724 / 1,936. Final corpus measurements remain pending.
+
+Checked object method calls in expression nodes now consume their resolved
+`method:Owner.name` target and matching method declaration for lowering. The
+four-source/default-plus-`-O` sample fell to 7,782 text-node lookups and 4,688
+expression-view reparses (parent 17,129 / 9,047; prior candidate 7,914 / 4,752);
+pipeline reparses remain zero. Three representative method examples generate
+parent-identical Rust in both profiles. The four-class perturb/drop harness
+passes; full C2 gates remain pending.
