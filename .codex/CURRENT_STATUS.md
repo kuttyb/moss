@@ -16654,3 +16654,19 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   phase21 Range slice 34, and domain FileIO chunks 12. No full suite or perf run
   has occurred. Continue with optimized functional callbacks and package test
   sources, then remeasure before final gates.
+
+## C2 checkpoint: qualified module calls lower from checked nodes (2026-11-01)
+
+- Latest pushed slice `c3bf4978` adds a node path for EST `Constructor` nodes
+  that carry a checked `fn:` or `callable-v1:` call target. The selected identity
+  maps to a projected declaration; the original argument child nodes are passed
+  to normal ABI/specialization lowering. No receiver/type or argument-type
+  target selection is added.
+- `examples/swarm/polymorphism/collection_pipeline/data_tools/tests/test_data_tools.moss`
+  fell from 314 emitter reparses / lookups to 0/0. Generated Rust is byte-
+  identical and compiles. Package tests report 8 passed, 0 failed. The standalone
+  test source has no `main`, so direct Fast Debug invocation is inapplicable.
+  Fact hooks pass (known debt 38/38).
+- This new slice occurred after the paired whole-corpus report at `698b1afe`;
+  rerun the paired counters after the next focused migration set. C2 remains
+  incomplete; full gates, perf and Agent 2 audit remain pending.
