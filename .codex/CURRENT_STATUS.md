@@ -13736,3 +13736,17 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   remain initial=26, checker=121 (body=18, view=59, pipeline=44).
 - This is a further reduction, not K2 completion. All broad suites remain
   pending for the phase checkpoint.
+
+## Phase 27.5.4 checked pipeline entry checkpoint (2026-10-31)
+
+- `check_functional_pipeline` now classifies the active checked expression as a
+  pipeline from its ExprId, and if it is a pipeline, constructs stages directly
+  from that EST node. This bypasses the pipeline-candidate text scan and
+  temporary parse for the ordinary recursive expression-check path. Calls to
+  `functional_pipeline_from_est` from other checker analyses still use text and
+  account for the remaining checker_pipeline parse count.
+- `functional_basics.moss` passes default and shadow checking; the focused
+  functional-tree script passes. Its parse counters are unchanged at
+  checker=121/checker_pipeline=44 and cache=15,675, confirming these 44 parses
+  come from other inference callers, not this entry point. No full suite or
+  perf run.

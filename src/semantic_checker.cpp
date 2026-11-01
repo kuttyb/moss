@@ -25521,7 +25521,25 @@ class Checker {
 
   bool check_functional_pipeline(int line, const string& expression,
                                  const TypeEnv& env) {
-    auto parsed = functional_pipeline_from_est(expression);
+    std::optional<ParsedFunctionalPipeline> parsed;
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena || !std::holds_alternative<est::Pipeline>(
+                        arena->at(cursor.expr)))
+        return false;
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      parsed = est::functional_pipeline(*arena, cursor.expr, cursor.source,
+                                        resolve_stage);
+    } else {
+      parsed = functional_pipeline_from_est(expression);
+    }
     if (!parsed) return false;
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {
