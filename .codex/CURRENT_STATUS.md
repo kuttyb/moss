@@ -15663,3 +15663,33 @@ performed since this change. Next: inspect residual emitter lookup/reparse
 sites with targeted fixtures, complete the C2 emitter perturb/drop side and
 test registration if not already covered, then run corpus measurement and final
 gates near completion. Temporary stack-trace instrumentation was removed.
+
+### C2 package call-fact and emitter progress checkpoint (2026-11-01)
+
+Paired counter sweep against `tmp/phase27-5-3-baseline-moss-dev` covered 1,822
+tracked `tests/` and `examples/` Moss sources, each in default and `-O` mode
+(3,644 commands; 337 package manifests were counted, not built). Parent:
+9,740,893 native expression-view reparses and 7,362 native pipeline reparses;
+candidate at sweep time: 1,184,113 and 9 respectively (total 9,747,255 ->
+1,184,122, -87.8%). Candidate text-node lookups: 1,734,312. The parent binary
+predates the text-node-lookup counter, so its printed zero is not a comparable
+measurement. Emission command nonzero counts were 1,406 parent / 1,408
+candidate; expected negative fixtures are included and the two-command delta
+still needs triage. Per-source ranking identifies the calc_interpreter swarm
+module as the dominant remaining workload; its `src/main.moss` initially had
+48,014 lookups / 37,270 reparses per mode. A test-build trace showed named
+object construction and vector `pop` as checked Call nodes falling through the
+emitter's text path. Work to lower those nodes directly and repair related
+borrowed-view lowering is in progress and not yet checkpointed.
+
+The calculator package revealed a Fast Debug call-target context gap:
+`Stmt::Call` target facts can be stored under the empty context, while runtime
+frames use `method:<owner>.<method>`. Fast Debug now tries the exact context,
+then the checker-recorded empty-context fact, and validates that a member
+fact's target suffix matches the checked member name. `MOSS_TEST_DROP_FACT` and
+`MOSS_TEST_PERTURB=call-targets` both fail closed on
+`examples/swarm/modules/calc_interpreter`; without hooks, `margo debug` matches
+the 27.5.3 parent output. Native `margo build` also passes with the current
+uncommitted emitter changes. No full suite, three-engine check, or perf suite
+has run; C2 corpus counters need refresh after these edits and the two
+additional parent/candidate emission failures need comparison.

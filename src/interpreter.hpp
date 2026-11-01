@@ -3452,6 +3452,8 @@ class FastInterpreter {
         case Stmt::Kind::Call: {
           auto checked = statement.checked_call_targets_by_context.find(
               frame.functional_context);
+          if (checked == statement.checked_call_targets_by_context.end())
+            checked = statement.checked_call_targets_by_context.find("");
           if (checked != statement.checked_call_targets_by_context.end()) {
             bool matches = !checked->second.empty();
             if (statement.b.empty()) {
@@ -3469,6 +3471,10 @@ class FastInterpreter {
               matches = receiver != statement.receiver_types_by_context.end() &&
                   checked->second == "method:" + receiver->second +
                       "." + statement.b;
+            } else if (!statement.b.empty()) {
+              const auto separator = checked->second.rfind('.');
+              matches = separator != std::string::npos &&
+                  checked->second.substr(separator + 1) == statement.b;
             }
             if (!matches)
               throw RuntimeError(statement.line,
