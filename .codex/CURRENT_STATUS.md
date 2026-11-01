@@ -16514,3 +16514,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   return grouping probe and malformed incomplete-index probe (both modes);
   the former emits invalid Rust on the parent and the latter is malformed
   accepted syntax. Re-run final paired counters after further changes.
+
+## C2 checkpoint: chunk pipeline expressions are node-backed (2026-11-01)
+
+- FileIO chunk lowering now reads the source receiver/chunk-size argument and
+  map/reduce stage arguments from `ParsedFunctionalPipeline` child nodes. It
+  pairs those children with the checker-owned `ChunkParallelPlan` for
+  eligibility, effects, output types, and ordered lowering decisions.
+- Nested direct calls in a mapper now select the matching checked call edge
+  (`edge.source` context, source line, and declaration identity). If a known
+  direct function call has no unique matching checked edge, native generation
+  fails with `MOSS_INTERNAL_INVARIANT` instead of reparsing its text.
+- The initial node-only attempt exposed this missing edge consumption; the
+  fixed version uses `fn:checked` from the edge. The Phase 21 lexical recovery
+  harness passes, generated Rust compiles and behaves as before. Its emitter
+  reparses/text lookups fell 788/788 to 0/0. Two related chunk fixtures and
+  regular pipeline fixtures are also 0/0.
+- Perturb/drop hooks pass again with known debt unchanged at 38/38. No full
+  suite or paired whole-corpus measurement has run after these changes.

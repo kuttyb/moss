@@ -5751,6 +5751,28 @@ class Generator {
         }
         const auto* facts = checked_expression_facts(expression);
         string checked_target = facts ? facts->resolved_target : string();
+        if (checked_target.empty()) {
+          const auto declared = functions_.find(callee->name);
+          if (declared != functions_.end() && declared->second) {
+            const int call_line = static_cast<int>(
+                expression.arena->span(root).line);
+            vector<string> matching_targets;
+            for (const auto& target : checked_call_edge_targets(
+                     codegen_body_context_, call_line)) {
+              if (target == "fn:" + declared->second->name ||
+                  (!declared->second->semantic_callable_id.empty() &&
+                   target == declared->second->semantic_callable_id))
+                matching_targets.push_back(target);
+            }
+            if (matching_targets.size() == 1)
+              checked_target = matching_targets.front();
+            else
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked call edge for " +
+                  callee->name + " line=" + std::to_string(call_line) +
+                  " context=" + codegen_body_context_);
+          }
+        }
         const string enum_case_prefix = "nominal-enum-variant-v1:";
         if (starts_with(checked_target, enum_case_prefix)) {
           const auto separator = checked_target.rfind(":case:");
