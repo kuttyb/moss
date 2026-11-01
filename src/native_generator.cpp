@@ -6893,7 +6893,35 @@ class Generator {
     }
     if (const auto* member = std::get_if<est::Member>(
             &expression.arena->at(root))) {
+      const auto* facts = checked_expression_facts(expression);
+      const string enum_case_prefix = "nominal-enum-variant-v1:";
+      if (facts && starts_with(facts->resolved_target, enum_case_prefix)) {
+        const auto separator = facts->resolved_target.rfind(":case:");
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked enum variant target");
+        const string declaration_id = facts->resolved_target.substr(
+            enum_case_prefix.size(), separator - enum_case_prefix.size());
+        const string case_name =
+            facts->resolved_target.substr(separator + 6);
+        for (const auto& candidate : enums_) {
+          if (!p_.type_context) break;
+          const auto declaration = p_.type_context->find(candidate.second->name);
+          if (declaration && declaration->id == declaration_id)
+            return candidate.second->name + "::" +
+                rust_identifier(case_name);
+        }
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked enum variant declaration is unavailable");
+      }
       const auto base_expr = expression.child(member->base);
+      const auto base_root = est::unparenthesized(
+          *base_expr.arena, base_expr.id);
+      if (const auto* enum_name = std::get_if<est::Identifier>(
+              &base_expr.arena->at(base_root));
+          enum_name && enums_.count(enum_name->name))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked enum variant target");
       auto projection_type = generated_expr_type(base_expr, types);
       if (projection_type) {
         auto object = objects_.find(nominal_template_name(*projection_type));
@@ -9718,14 +9746,97 @@ class Generator {
                 continue;
               for (size_t read = attempt_end; read < recover_end; ++read) {
                 const Stmt& recovered = ss[read];
-                bool mentions = tree_expression_mentions_identifier(
-                    recovered.b, binding);
-                if (recovered.kind != Stmt::Kind::Assign)
-                  mentions |= tree_expression_mentions_identifier(
-                      recovered.a, binding);
-                for (const auto& argument : recovered.args)
-                  mentions |= tree_expression_mentions_identifier(
-                      argument, binding);
+                // The recovery header is a checked pattern, not a value
+                // expression that can read an outer local. Its binder names
+                // are declarations and must not be scanned as expression
+                // text when deciding which consumed locals need slots.
+                if (recovered.kind == Stmt::Kind::Recover) continue;
+                auto mentions_slot = [&](const string& source,
+                                         est::ExprSlot slot,
+                                         std::uint32_t argument_index = 0) {
+                  return tree_expression_mentions_identifier(
+                      checked_expression_ref(recovered, source, slot,
+                                             argument_index), binding);
+                };
+                bool mentions = false;
+                switch (recovered.kind) {
+                  case Stmt::Kind::Assign:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::LhsPlace);
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::RhsValue);
+                    break;
+                  case Stmt::Kind::Let:
+                  case Stmt::Kind::Var:
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::Initializer);
+                    break;
+                  case Stmt::Kind::Call:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Receiver);
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  case Stmt::Kind::Message: {
+                    string message_expression = "message " + recovered.a +
+                        "." + recovered.b + "(";
+                    for (size_t argument = 0;
+                         argument < recovered.args.size(); ++argument) {
+                      if (argument) message_expression += ", ";
+                      message_expression += recovered.args[argument];
+                    }
+                    message_expression += ")";
+                    mentions |= mentions_slot(message_expression,
+                                               est::ExprSlot::Receiver);
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  }
+                  case Stmt::Kind::Echo:
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  case Stmt::Kind::If:
+                  case Stmt::Kind::While:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Condition);
+                    break;
+                  case Stmt::Kind::Match:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Scrutinee);
+                    break;
+                  case Stmt::Kind::For:
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::Iterable);
+                    break;
+                  case Stmt::Kind::Reply:
+                  case Stmt::Kind::Return:
+                    if (!recovered.a.empty())
+                      mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::ReturnValue);
+                    break;
+                  case Stmt::Kind::Raise:
+                    if (!recovered.a.empty())
+                      mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::RaisedValue);
+                    break;
+                  case Stmt::Kind::Raw:
+                    mentions |= mentions_slot(recovered.text,
+                                               est::ExprSlot::Expression);
+                    break;
+                  case Stmt::Kind::Pass:
+                  case Stmt::Kind::Else:
+                  case Stmt::Kind::Case:
+                  case Stmt::Kind::Try:
+                  case Stmt::Kind::Recover:
+                    break;
+                }
                 if (mentions) {
                   recovery_slots.insert(binding);
                   break;
