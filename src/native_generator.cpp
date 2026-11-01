@@ -1408,6 +1408,35 @@ class Generator {
     return est::project_simple_call(view, callee, arguments);
   }
 
+  bool tree_parse_simple_call_nodes(const EmitterExpr& expression,
+                                    string& callee,
+                                    vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const std::vector<est::ExprId>* children = nullptr;
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      callee_id = call->callee;
+      children = &call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &expression.arena->at(root))) {
+      callee_id = constructor->type;
+      children = &constructor->arguments;
+    }
+    if (!children) return false;
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(est::unparenthesized(
+            *expression.arena, callee_id)));
+    if (!identifier) return false;
+    callee = identifier->name;
+    arguments.clear();
+    arguments.reserve(children->size());
+    for (const auto child : *children)
+      arguments.push_back(expression.child(child));
+    return true;
+  }
+
   bool tree_parse_member_call(const string& expression, string& receiver,
                               string& member, vector<string>& arguments,
                               bool* outputs_written = nullptr) const {
@@ -8213,6 +8242,25 @@ class Generator {
       }
       vector<string> call_args;
       if (parse_root_simple_call(head, call_args)) {
+        vector<EmitterExpr> call_argument_nodes;
+        if (checked_node) {
+          string node_callee;
+          if (!tree_parse_simple_call_nodes(*checked_node, node_callee,
+                                            call_argument_nodes) ||
+              node_callee != head ||
+              call_argument_nodes.size() != call_args.size())
+            call_argument_nodes.clear();
+        }
+        auto render_call_argument = [&](size_t index) {
+          return index < call_argument_nodes.size()
+              ? expr(call_argument_nodes[index], d, locals, types)
+              : expr(call_args[index], d, locals, types);
+        };
+        auto type_call_argument = [&](size_t index) {
+          return index < call_argument_nodes.size()
+              ? generated_expr_type(call_argument_nodes[index], types)
+              : generated_expr_type(call_args[index], types);
+        };
         head = resolved_callable_identity(head, types);
         const Function* function_target = nullptr;
         if (starts_with(head, "callable-v1:")) {
@@ -8259,7 +8307,7 @@ class Generator {
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
-              is_compile_time_callable(generated_expr_type(call_args[i], types).value_or(""));
+              is_compile_time_callable(type_call_argument(i).value_or(""));
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
@@ -8268,7 +8316,7 @@ class Generator {
                                                : sibling_temporaries[i],
                 d, locals, types);
           else
-            r << expr(call_args[i], d, locals, types);
+            r << render_call_argument(i);
         }
         r << ")";
         if (sibling_method &&
@@ -8288,7 +8336,7 @@ class Generator {
           for (size_t i = 0; i < call_args.size(); ++i)
             if (!sibling_temporaries[i].empty())
               sequenced << "let " << sibling_temporaries[i] << " = "
-                        << expr(call_args[i], d, locals, types) << "; ";
+                        << render_call_argument(i) << "; ";
           sequenced << r.str() << " }";
           return sequenced.str();
         }
