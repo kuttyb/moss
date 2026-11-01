@@ -26723,6 +26723,17 @@ class Checker {
     return true;
   }
 
+  bool checked_expression_placeholder(const string& source) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      return arena && std::holds_alternative<est::Placeholder>(
+                          arena->at(cursor.expr));
+    }
+    return tree_placeholder_expression(source);
+  }
+
   bool checked_expression_parse_enum_case(const string& source,
       string& enum_name, string& case_name, vector<string>& fields,
       bool& called) const {
@@ -27043,7 +27054,7 @@ class Checker {
         occurrence.est_arena_index = tree_cursor->arena_index;
         occurrence.est_expr_id = tree_cursor->expr;
       }
-      if (tree_placeholder_expression(original) &&
+      if (checked_expression_placeholder(original) &&
           !occurrence_state->active_pipeline_placeholder_identity.empty() &&
           occurrence_state->active_pipeline_placeholder_type) {
         occurrence.resolved_binding_id =

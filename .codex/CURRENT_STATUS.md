@@ -13820,3 +13820,13 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   `tests/swarm_020_typed_vector_factory.moss`; focused functional-tree test
   passes. The unrelated functional_basics cache total remains 15,462 and its
   checker parse total remains 121, as expected for a source without that shape.
+
+## Phase 27.5.4 placeholder-node checkpoint (2026-10-31)
+
+- Pipeline placeholder classification in `check_expression` now reads the
+  active `Placeholder` ExprId instead of querying the EST-view cache by source.
+  The six optimizer-expression three-engine fixtures and two pipeline fixtures
+  pass in shadow mode.
+- `functional_basics.moss` cache consultations are 15,436 (down 26 from the
+  previous focused count); checker parses remain 121. The phase remains far
+  from K2's zero target.
