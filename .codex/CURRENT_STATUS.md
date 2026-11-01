@@ -15067,3 +15067,19 @@ compiles, and prints `3`. Its counters fall from 702 text lookups / 557
 expression-view reparses on c96 to 132 / 125 on the candidate, in both modes.
 The registered hook matrix and three-engine conformance gate pass. Full suites
 and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — scalar and string builtins read checked member calls (2026-11-01)
+
+The emitter now lowers checked string and scalar member builtins from the
+receiver and argument ExprIds when the recorded target is `builtin:<name>` or
+`builtin-scalar-protocol:<name>`. Covered operations include string length,
+character extraction, comparison, hash, find, slice, case conversion, split,
+and join; scalar text conversion, comparison, hash, and Char codepoint. The
+string fallback remains for mutating methods and other receiver families.
+
+On four targeted sources (borrowed string comparison, string map, collections
+and collections/methods; default plus `-O`), c96 measured 20,514 text lookups /
+11,124 expression reparses and the candidate measured 11,354 / 6,272. Generated
+Rust is byte-identical for all sources and modes. Fast Debug/native/`-O`
+compile-and-run outputs agree; three-engine and fact-hook checks pass. Full
+C2 suites and perf remain pending.

@@ -150,3 +150,11 @@ measured 702 text lookups / 557 expression reparses in each profile; the
 candidate measured 132 / 125. Default and `-O` generated Rust is byte-identical
 to c96, compiles, and runs with output `3`. The temporary source is under
 `tmp/`, not registered as a suite fixture.
+
+Checked scalar and string builtin member calls now lower from EST receiver and
+argument nodes, gated by the recorded builtin call target. The focused four-
+source/default-plus-`-O` sample measured 20,514 / 11,124 on c96 versus
+11,354 / 6,272 on the candidate (text lookups / expression reparses). Rust
+output is byte-identical and Fast Debug, native, and `-O` compile-and-run
+outputs agree on the four sources. Mutating string methods and other receiver
+families remain on the legacy path.

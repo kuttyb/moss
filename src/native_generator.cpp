@@ -4336,6 +4336,81 @@ class Generator {
             return rendered.str();
           }
         }
+        if (target == "builtin:" + member->name ||
+            target == "builtin-scalar-protocol:" + member->name) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                          types);
+          vector<EmitterExpr> arguments;
+          bool simple_arguments = true;
+          for (const auto argument_id : call->arguments) {
+            if (std::holds_alternative<est::NamedArgument>(
+                    expression.arena->at(argument_id))) {
+              simple_arguments = false;
+              break;
+            }
+            arguments.push_back(expression.child(argument_id));
+          }
+          if (receiver_type && simple_arguments) {
+            const string concrete = canonical_type_name(*receiver_type);
+            string receiver = expr(receiver_expression, d, locals, types);
+            if (starts_with(receiver, "*")) receiver = "(" + receiver + ")";
+            const string source = "(" + receiver + ")";
+            auto argument = [&](size_t index) {
+              return expr(arguments.at(index), d, locals, types);
+            };
+            if (concrete == "string") {
+              if (member->name == "length" && arguments.empty())
+                return "__moss_string_length(&" + source + ")";
+              if (member->name == "chars" && arguments.empty())
+                return source + ".chars().collect::<std::vec::Vec<char>>()";
+              if (member->name == "char_at" && arguments.size() == 1)
+                return "__moss_string_char_at(&" + source + ", " +
+                    argument(0) + ")";
+              if ((member->name == "less" || member->name == "isequal") &&
+                  arguments.size() == 1)
+                return scalar_protocol_rust(member->name, concrete, source,
+                                            argument(0));
+              if (member->name == "hash" && arguments.empty())
+                return scalar_protocol_rust("hash", concrete, source);
+              if (member->name == "find" && arguments.size() == 1)
+                return "{ let __moss_pattern = " + argument(0) +
+                    "; __moss_string_find(&" + source +
+                    ", __moss_pattern.as_str()) }";
+              if (member->name == "slice" && arguments.size() == 2)
+                return "__moss_string_slice(&" + source + ", " +
+                    argument(0) + ", " + argument(1) + ")";
+              if (member->name == "ascii_lower" && arguments.empty())
+                return "MossStr::from(" + source + ".to_ascii_lowercase())";
+              if (member->name == "ascii_upper" && arguments.empty())
+                return "MossStr::from(" + source + ".to_ascii_uppercase())";
+              if (member->name == "split" && arguments.size() == 1)
+                return "{ let __moss_separator = " + argument(0) +
+                    "; if __moss_separator.is_empty() { std::process::abort(); } " +
+                    source + ".split(__moss_separator.as_str()).map(MossStr::from).collect::<std::vec::Vec<MossStr>>() }";
+              if (member->name == "join" && arguments.size() == 1)
+                return "MossStr::from((" + argument(0) + ").join(" +
+                    source + ".as_str()))";
+            }
+            if (concrete == "int" || concrete == "float" ||
+                concrete == "char" || concrete == "bool") {
+              if (member->name == "to_string" && arguments.empty())
+                return "MossStr::from(" + source + ".to_string())";
+              if ((member->name == "less" || member->name == "isequal") &&
+                  arguments.size() == 1)
+                return scalar_protocol_rust(member->name, concrete, source,
+                                            argument(0));
+              if (member->name == "hash" && arguments.empty())
+                return scalar_protocol_rust("hash", concrete, source);
+              if (concrete == "char" && member->name == "codepoint" &&
+                  arguments.empty())
+                return "((" + source + ") as u32 as i64)";
+            }
+            if ((concrete == "Range" || concrete == "RangeBatch") &&
+                member->name == "length" && arguments.empty())
+              return source + ".len()";
+          }
+        }
       }
     }
     if (const auto* message = std::get_if<est::Message>(
