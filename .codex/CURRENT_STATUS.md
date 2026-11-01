@@ -14114,3 +14114,54 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   to its checked root slot (return/reply/raise/assignment/condition/iterable/
   match). `check_phase27_est.py` now passes on the current dev compiler. This
   fixes observability/coverage only; no semantic output change is intended.
+
+### Phase 27.5.4 due corpus progress report (2026-10-31)
+
+Measured current candidate `48a00319` with `MOSS_EST_COVERAGE_STATS=1` over
+2,161 `.moss` files and 384 `Moss.toml` manifests under tests, examples,
+benchmarks, and packages. Measurement is a source check, native emission
+attempt, Fast Debug for accepted main-bearing sources, then package build and
+package debug. 760 source checks, 772 emissions, 154 source Fast Debug runs,
+77 package builds, and 158 package debug runs returned nonzero (many are
+expected negative fixtures); counters include repeated checker work in each
+separate command.
+
+- K1: 39,561 PRESENT / 441,479 total = 8.961%. Published 27.5.2 baseline is
+  23,452 / 282,668 = 8.3%, but it used a smaller corpus. A c96bca78 diagnostic
+  over tests/examples/packages (no benchmarks) measured 39,125 / 416,005 =
+  9.4049%; it is also not directly comparable to the present expanded run.
+  Thus current expanded-run K1 is reported, but neither historical figure is
+  an exact same-workload delta.
+- K2 checker post-initial parses: 671,854 across every measured command (the
+  direct source-check + package-build pass alone is 242,033). Text-keyed EST
+  cache consultations: 255,545,164 across command invocations (all recorded
+  at checker call sites); 89,381,312 in direct source checks alone. No
+  consumer-side text-keyed-cache lookup was observed. The phase27.5.2 consumer-reparse baseline is
+  4,929,605, while current parse-site consumer count is 8,249,789 and the
+  specialized fallback counters total 7,734,213 (native expression/pipeline
+  plus Fast Debug expression/pipeline; the current explicit Fast Debug
+  fallback counters are zero). Current scan includes benchmarks and counts
+  failed emission attempts, unlike the historical baseline, so that delta is
+  not apples-to-apples. The old baseline has no text-keyed-cache consultation
+  counter, so its comparable cache-lookup baseline is unavailable. Text-to-node
+  lookups total 12,993,343 across command invocations; available split shows
+  395,461 in direct source checks, 12,048,499 emitter-side in source emission,
+  and 167 Fast Debug-side in source runs; package commands contribute 77,170
+  and are not split by consumer in this harness. Text
+  cache lookup sites are currently in checker code; their counter should not
+  be misreported as consumer cache reads.
+- K8: 23,337 text-to-tree rebuilds summed across measured command invocations
+  (10,312 direct source checks, 10,312 emission commands, 721 source Fast
+  Debug commands, 54 package builds, 1,938 package debug commands). Historical
+  baseline is 10,095 on a smaller/different 2,127-source workload; because the
+  present run includes repeated check/build work and an expanded source set,
+  this is not a comparable delta. Exact like-for-like baseline counters were
+  not instrumented in the parent binary.
+
+Effect-fact assertion classification is confirmed: branch regression, not
+pre-existing on main. The `phase27-5-3-c1` parent binary emits the context-
+scoped `MOSS_EST_EFFECT_FACT` for `tests/phase27/est/side_facts.moss` and passes
+`check_phase27_est.py`; the branch root-slot migration had removed the generic
+empty-slot source selection while effect analysis still requested that slot.
+The root slot is now derived from the active statement kind, and the targeted
+harness passes on `48a00319`.
