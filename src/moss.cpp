@@ -13708,14 +13708,16 @@ static void rewrite_module_program(
     const auto prior = handles;
     for (const auto& handle : prior) {
       if (handle.slot != slot || handle.argument_index != argument) continue;
-      if (!est::lookup(handles, *program.expression_arena, handle.owner,
-                       slot, argument, old_text)) continue;
+      est::assert_fresh(handle, old_text);
       const auto old_expr = handle.expr;
       est::rebuild_slot(*program.expression_arena, handles, handle.owner,
                         slot, argument, new_text);
-      const auto* refreshed = est::lookup(handles, *program.expression_arena,
-          handle.owner, slot, argument, new_text);
-      assert(refreshed && refreshed->expr != old_expr);
+      const auto refreshed = std::find_if(handles.begin(), handles.end(),
+          [&](const est::Handle& candidate) {
+        return candidate.owner == handle.owner && candidate.slot == slot &&
+            candidate.argument_index == argument;
+      });
+      assert(refreshed != handles.end() && refreshed->expr != old_expr);
       (void)program.expression_arena->at(old_expr);
       return;
     }
@@ -13727,18 +13729,18 @@ static void rewrite_module_program(
       const string old_text = expression_text(before, handle);
       const string new_text = expression_text(after, handle);
       if (old_text == new_text) continue;
-      const auto* current = est::lookup(before.expression_handles,
-          *program.expression_arena, handle.owner, handle.slot,
-          handle.argument_index, old_text);
-      if (!current) continue;
-      const auto old_expr = current->expr;
+      est::assert_fresh(handle, old_text);
+      const auto old_expr = handle.expr;
       est::rebuild_slot(*program.expression_arena, after.expression_handles,
                         handle.owner, handle.slot, handle.argument_index,
                         new_text);
-      const auto* refreshed = est::lookup(after.expression_handles,
-          *program.expression_arena, handle.owner, handle.slot,
-          handle.argument_index, new_text);
-      assert(refreshed && refreshed->expr != old_expr);
+      const auto refreshed = std::find_if(after.expression_handles.begin(),
+          after.expression_handles.end(), [&](const est::Handle& candidate) {
+        return candidate.owner == handle.owner && candidate.slot == handle.slot &&
+            candidate.argument_index == handle.argument_index;
+      });
+      assert(refreshed != after.expression_handles.end() &&
+             refreshed->expr != old_expr);
       (void)program.expression_arena->at(old_expr);
     }
   };
