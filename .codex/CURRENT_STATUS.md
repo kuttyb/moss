@@ -1,6 +1,33 @@
+# Phase 27.5.4 — active handover (2026-10-31)
+
+- Branch: `phase27-5-4-work`; latest pushed checkpoint before this slice was
+  `bacb5c73`. The worktree now has a targeted checker change in
+  `src/semantic_checker.cpp`: message-call pipeline validation receives its
+  exact `Argument[index]` handle, and return pipeline validation receives its
+  exact `ReturnValue` handle. Exact-handle misses return no pipeline parse. The
+  temporary `MOSS_EST_PIPELINE_FALLBACK_TRACE` diagnostic was removed.
+- Targeted validation after the edit: `make --jobs="$(nproc)" moss-dev` passed;
+  `check_phase27_est_functional_tree.py build/compiler/moss-dev` passed;
+  message argument binding fixture passed in default and shadow;
+  `phase4_terminal_boundary.moss` remains accepted and
+  `negative/functional_domain_boundary.moss` still rejects with
+  `FUNCTIONAL_SEMANTIC_ERROR`. A trial that implicitly projected the active
+  node inside generic string helpers was discarded because nested/synthesized
+  fragments do not guarantee the active cursor denotes that fragment.
+- Tight K2 clarification is active: every checker EST cache lookup and every
+  text-keyed parse-cache consultation is a lookup (hit or miss). The focused
+  `functional_basics.moss` measurement is still 15,160 text-cache lookups and
+  121 checker reparses (body 18, view 59, pipeline 44), so this slice did not
+  improve those totals. No suite, corpus pass, or performance run has occurred.
+- Next: continue migrating checker classification/recursion from text-keyed
+  caches to retained ExprIds; do not count cache growth as K2 progress. Also
+  resume rewrite-side tree mutation work for K8 (baseline 10,095 rebuilds).
+  Keep this handover current and checkpoint each substantive result. Agent 2
+  audit remains reserved for the final full-suite checkpoint.
+
 # Phase 26.2 — Cargo package graph checkpoint
 
-## Phase 27.5.4 active checkpoint (2026-10-31)
+### Earlier Phase 27.5.4 evidence (prior checkpoint; see active handover above) (2026-10-31)
 
 - Handover branch `phase27-5-4-work` is based on `phase27-5-3-c1`
   (`c96bca786caefa5744000af9918be50a65b41037`). Bootstrap reports
@@ -37,7 +64,8 @@
   Corpus K1 and K2 have not been measured for this branch. No perf run has been
   made.
 
-## Phase 27.5.3 active checkpoint (2026-10-31)
+
+### Phase 27.5.3 active checkpoint (2026-10-31)
 
 - Working branch `phase27-5-3-work`, based on `phase27-5-2-m1`
   (`a2b308fd804d0d3b9970a292b2f4de076bf20f2d`). Baseline binaries and the

@@ -10404,7 +10404,8 @@ class Checker {
 
   const Handler* check_call(int line, const string& receiver, const string& message,
                             const vector<string>& args,
-                            const TypeEnv& env) const {
+                            const TypeEnv& env,
+                            const vector<est::Handle>* expression_handles = nullptr) const {
     auto it = env.find(receiver);
     if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
     auto dit = domains_.find(canonical_type_name(it->second));
@@ -10428,7 +10429,12 @@ class Checker {
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
-      if (auto pipeline = functional_pipeline_from_est(args[index]);
+      if (auto pipeline = functional_pipeline_from_est(
+              args[index], expression_handles,
+              expression_handles
+                  ? std::optional(std::pair{est::ExprSlot::Argument,
+                                            static_cast<std::uint32_t>(index)})
+                  : std::nullopt);
           pipeline && functional_pipeline_requires_materialization(*pipeline))
         err(line, "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
@@ -23311,7 +23317,8 @@ class Checker {
 
         case Stmt::Kind::Message: {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
-          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types,
+                                              &s.expression_handles);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
             auto type = inferred_expr_type(arg, env.types);
@@ -29780,7 +29787,9 @@ class Checker {
         check_expression(statement.line, statement.a, current_env,
                          "reply-value");
         auto actual = inferred_expr_type(statement.a, current_env);
-        if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+        if (auto pipeline = functional_pipeline_from_est(
+                statement.a, &statement.expression_handles,
+                std::pair{est::ExprSlot::ReturnValue, 0u})) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
           if (source_type && functional_element_type(
                                  *source_type, pipeline->source) &&
