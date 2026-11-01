@@ -14756,3 +14756,17 @@ Fast Debug/native. Paired default + `-O` counts for that source changed from
 parent 4,312 text lookups / 2,164 expression-view reparses / 0 pipeline
 reparses to candidate 2,400 / 1,260 / 0. Full workload and final suites remain
 pending.
+
+### Phase 27.5.4 C2 checkpoint — statement-call target fact (2026-11-01)
+
+The checker now retains statement-level call targets on `Stmt` by semantic
+context, covering direct calls whose expression-tree root has no semantic-fact
+record (the checker already retains their target in its call-invocation
+occurrence). Native lowering reads that checked target and reports
+`MOSS_INTERNAL_INVARIANT` when a known function target is missing/perturbed.
+Fast Debug validates the same context fact before execution and fails closed on
+missing or contradictory targets. `MOSS_TEST_PERTURB=call-targets` and
+`MOSS_TEST_DROP_FACT=call-targets` now mutate/drop this statement fact along
+with EST facts. The Phase 4 and Phase 5 programs still generate parent-identical
+Rust, compile, and match Fast Debug/native; the registered four-class hook
+harness passes all three engines. This is targeted validation only.

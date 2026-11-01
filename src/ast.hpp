@@ -288,6 +288,10 @@ struct Stmt {
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
+  // Checked target of a statement-level invocation, keyed by semantic body
+  // context. The emitter may lower this identity but must not choose a target
+  // from backend type strings.
+  std::unordered_map<string,string> checked_call_targets_by_context;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;

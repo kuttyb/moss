@@ -28781,6 +28781,7 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Call) {
         bool fileio_builtin = false;
+        string checked_statement_call_target;
         BodyTypeState* call_occurrence_state = current_body_types_;
         std::uint32_t call_occurrence_id = UINT32_MAX;
         moss::TypeRef statement_call_type;
@@ -28857,6 +28858,10 @@ class Checker {
               const Method* method = resolve_method(
                   canonical_type_name(*receiver_type), statement.b,
                   argument_types, false, &failure);
+              if (method)
+                checked_statement_call_target = "method:" +
+                    canonical_type_name(*receiver_type) + "." +
+                    statement.b;
               if (!method &&
                   !defer_generic_method_admission(argument_types, failure))
                 err(statement.line, "no matching method '" + *receiver_type + "." +
@@ -28890,6 +28895,8 @@ class Checker {
                                     ? nullptr : &selected_function);
           if (call_occurrence_id != UINT32_MAX) {
             if (selected_function) {
+              checked_statement_call_target =
+                  selected_function->semantic_callable_id;
               call_occurrence_state->retain_expression_target(
                   call_occurrence_id, selected_function->semantic_callable_id);
               if (selected_function->return_type)
@@ -28899,10 +28906,13 @@ class Checker {
             } else {
               auto binding = current_env.find(statement.a);
               if (binding != current_env.end() && open_generic(binding->second)) {
+                checked_statement_call_target =
+                    "binding:pending:" + statement.a;
                 call_occurrence_state->retain_expression_target(
                     call_occurrence_id,
                     "binding:pending:" + statement.a);
               } else {
+                checked_statement_call_target = "builtin:" + statement.a;
                 call_occurrence_state->retain_expression_target(
                     call_occurrence_id, "builtin:" + statement.a);
               }
@@ -28962,6 +28972,26 @@ class Checker {
                 call_occurrence_id).non_expression_operand_ordinals.push_back(
                     static_cast<std::uint32_t>(index));
           }
+        }
+        if (statement.b.empty() && checked_statement_call_target.empty())
+          checked_statement_call_target = "builtin:" + statement.a;
+        if (!statement.b.empty() && checked_statement_call_target.empty()) {
+          auto receiver = current_env.find(statement.a);
+          auto receiver_type = receiver != current_env.end()
+              ? std::optional<string>(canonical_type_name(receiver->second))
+              : inferred_expr_type(statement.a, current_env);
+          if (receiver_type && (builtin_receiver_family(*receiver_type) ||
+                                fileio_builtin))
+            checked_statement_call_target = "builtin:" +
+                canonical_type_name(*receiver_type) + "." + statement.b;
+        }
+        if (!checked_statement_call_target.empty()) {
+          const string call_context = current_function && checking_specialization_
+              ? functional_function_context(*current_function,
+                                            checking_specialization_)
+              : current_semantic_context_;
+          const_cast<Stmt&>(statement).checked_call_targets_by_context[
+              call_context] = checked_statement_call_target;
         }
         if (statement.b.empty() && statement.a == "assert" &&
             !functions_.count(statement.a))
@@ -31310,6 +31340,12 @@ public:
     };
     auto alter_body = [&](std::vector<Stmt>& body) {
       for (auto& statement : body) {
+        if (drop_targets || perturb_targets) {
+          for (auto& entry : statement.checked_call_targets_by_context) {
+            if (drop_targets) entry.second.clear();
+            else entry.second = "fn:__moss_test_perturbed_call_target__";
+          }
+        }
         if (drop_joins || perturb_joins) {
           statement.joined_types.clear();
           statement.joined_types_by_context.clear();

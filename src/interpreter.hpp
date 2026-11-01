@@ -3449,7 +3449,25 @@ class FastInterpreter {
           }
           output << "\n";
           break;
-        case Stmt::Kind::Call:
+        case Stmt::Kind::Call: {
+          if (statement.b.empty()) {
+            const Function* target = function(statement.a);
+            if (target && !statement.text.empty()) {
+              auto checked = statement.checked_call_targets_by_context.find(
+                  frame.functional_context);
+              if (checked == statement.checked_call_targets_by_context.end())
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT missing checked call target");
+              if (checked->second != target->semantic_callable_id)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT checked call target is missing or contradicted");
+            }
+          }
+          if (!statement.text.empty())
+            evaluate_expression_source(statement.text, frame, statement.line,
+                output, std::pair{est::ExprSlot::Expression, 0u});
+          break;
+        }
         case Stmt::Kind::Raw:
           if (!statement.text.empty())
             evaluate_expression_source(statement.text, frame, statement.line,

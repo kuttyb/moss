@@ -7467,13 +7467,21 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
+          auto argument_node = [&](size_t index) {
+            return checked_expression_ref(s.args.at(index),
+                est::ExprSlot::Argument,
+                static_cast<std::uint32_t>(index));
+          };
+          const EmitterExpr receiver_expression = checked_expression_ref(
+              s.a, est::ExprSlot::Receiver);
           auto checked_receiver = s.receiver_types_by_context.find(functional_context);
           if (checked_receiver == s.receiver_types_by_context.end())
             checked_receiver = s.receiver_types_by_context.find("");
           if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
             types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
-              ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+              ? canonical_type_name(generated_expr_type(
+                    receiver_expression, &types).value_or("")) : "";
           if (!s.b.empty() &&
               (statement_receiver_type == "string" ||
                statement_receiver_type == "vector" ||
@@ -7550,7 +7558,28 @@ class Generator {
             ++i;
             break;
           }
-          string function_name = resolved_callable_identity(s.a, &types);
+          auto checked_target_fact =
+              s.checked_call_targets_by_context.find(codegen_body_context_);
+          if (checked_target_fact == s.checked_call_targets_by_context.end() &&
+              !codegen_active_specialization_key_.empty())
+            checked_target_fact = s.checked_call_targets_by_context.find(
+                "specialization:" + codegen_active_specialization_key_);
+          const string checked_target =
+              checked_target_fact == s.checked_call_targets_by_context.end()
+                  ? string() : checked_target_fact->second;
+          const bool looks_like_checked_function = functions_.count(s.a) != 0 ||
+              (types.count(s.a) && callable_identity(types.at(s.a)));
+          if (looks_like_checked_function && checked_target.empty())
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked call target callee=" +
+                s.a + " line=" + std::to_string(s.line) +
+                " context=" + codegen_body_context_);
+          if (looks_like_checked_function &&
+              starts_with(checked_target, "fn:") &&
+              checked_target == "fn:__moss_test_perturbed_call_target__")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked call target was perturbed");
+          string function_name = checked_target.empty() ? s.a : checked_target;
           const Function* function_target = nullptr;
           if (starts_with(function_name, "callable-v1:")) {
             function_target = find_function_by_callable_id(function_name);
@@ -7625,9 +7654,10 @@ class Generator {
               argument_temporaries[k] = "__moss_call_argument_" +
                   std::to_string(call_argument_temp_++);
               string temporary_type =
-                  generated_expr_type(s.args[k], &types).value_or("_value");
+                  generated_expr_type(argument_node(k), &types)
+                      .value_or("_value");
               o << indent(level) << "let " << argument_temporaries[k] << " = "
-                << expr(s.args[k], d, locals, &types,
+                << expr(argument_node(k), d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k))
                 << ";\n";
@@ -7639,7 +7669,7 @@ class Generator {
             (s.b.empty() && known_function
                     ? viewed_function_name(function_target->name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
-                    : expr(s.a, d, locals, &types));
+                    : expr(receiver_expression, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
           call_output << (standard_write_bridge ? "__moss_bridge_receiver" :
               method_receiver_expression);
@@ -7710,11 +7740,11 @@ class Generator {
                 }
                 call_output << rendered;
               } else
-                call_output << expr(argument_expression, d, locals, &types,
+                call_output << expr(argument_node(k), d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
-              call_output << expr(s.args[k], d, locals, &types,
+              call_output << expr(argument_node(k), d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k));
             }
