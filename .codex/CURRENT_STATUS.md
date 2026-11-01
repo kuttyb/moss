@@ -1,7 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `e0fe4009`. Working tree is clean. Moss bootstrap confirms `moss-0.1`.
+  `60519975`. A pipeline root-slot mapping edit is uncommitted. Moss bootstrap
+  confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -18,6 +19,13 @@
   at 66 checker parses; checker text-cache consultations changed 8,638 ->
   8,634, with default/shadow checks and Fast Debug output parity passing. This
   is a small measured decrease. No full suite, corpus run, or performance run.
+- Pipeline projection now maps Let/Var initializer and Call expression roots,
+  with a fingerprint check before accepting a root handle. Functional
+  materialization checks in default/shadow pass, but the focused checker parse
+  count is still 118 (63 pipeline parses); no reduction is claimed yet. This
+  mapping is safe routing coverage and not K2 progress. The large pipeline
+  count likely comes from passes without a current statement cursor; caller
+  attribution remains open.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial

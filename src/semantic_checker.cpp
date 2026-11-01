@@ -26437,6 +26437,9 @@ class Checker {
     if (current_check_statement_) {
       switch (current_check_statement_->kind) {
         case Stmt::Kind::Assign: root_slot = "initializer"; break;
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var: root_slot = "initializer"; break;
+        case Stmt::Kind::Call: root_slot = "expression"; break;
         case Stmt::Kind::If:
         case Stmt::Kind::While: root_slot = "condition"; break;
         case Stmt::Kind::For: root_slot = "for-iterable"; break;
@@ -26738,6 +26741,7 @@ class Checker {
     std::optional<std::uint32_t> expected_argument;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
+    else if (root_slot == "expression") expected = est::ExprSlot::Expression;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
     else if (root_slot == "match-subject") expected = est::ExprSlot::Scrutinee;
     else if (root_slot == "initializer")
@@ -26767,6 +26771,8 @@ class Checker {
       for (const auto& handle : handles) {
         if (slot && handle.slot != *slot) continue;
         if (argument && handle.argument_index != *argument) continue;
+        if (handle.source_fingerprint != est::fingerprint(std::string(source)))
+          continue;
         if (expression_arena(handle.arena_index))
           return EstExpressionCursor{handle.arena_index, handle.expr,
                                      std::string(source)};
