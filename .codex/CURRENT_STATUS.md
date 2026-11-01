@@ -1,3 +1,31 @@
+# Phase 27.5.4 C2 handover (2026-11-01; emitter reparse attribution)
+
+- Branch `phase27-5-4-work`; pushed tip `51d1e59a`. This checkpoint adds a
+  test-build-only per-query-family counter for emitter expression-view
+  reparses. Release code/output is unchanged. The current calculator native
+  generator command succeeded.
+- Paired candidate count for
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`
+  together: 16,216 attributed reparses (expression-view category only; pipeline
+  reparses 0). Leading query families: binary 3,500; identifier 1,672; unary
+  1,314; literal-class 1,136; simple-call 1,054; strip-grouping 992;
+  expression-equality 776; decimal-literal 698; pipeline-normalization 698.
+  Counts occur twice per query due to the paired default/optimized commands.
+  The earlier like-for-like 27.5-3-c1 parent count is 363,004 total reparses
+  across these commands; candidate total was 32,432 before this instrumentation.
+- The retained `EmitterExpr` lowering path did not report node fallback on the
+  calculator profile. The remaining parses arise from legacy string-query
+  consumers/type inference paths. No consumer migration has yet reduced the
+  32,432 reparses; next work is to trace and replace the dominant paths with
+  ExprId navigation, preserving emitted behavior.
+- `make moss-dev` passed after instrumentation; generated calculator Rust. No
+  full suite, parity sweep, perf suite, or Agent 2 audit has run. The queued
+  C2-closing-round shadow demotion/runtime ratchet/contract edits remain queued
+  until after C2 merge and have not been started.
+- Startup bootstrap confirmed `moss-0.1`. `docs/MOSS_COMPILER_CONTRACT_DRAFT.md`
+  referenced by session startup is absent in this checkout; the current
+  `docs/MOSS_COMPILER_CONTRACT.md` exists.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checker member-call target slice)
 
 - Branch `phase27-5-4-work`, currently based on merged `origin/main` at
