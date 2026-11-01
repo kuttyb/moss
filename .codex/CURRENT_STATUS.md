@@ -16571,3 +16571,21 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   pass with known debt 38/38. No full gates/performance suite has run. Next,
   target remaining high-reparse checked constructor/member paths and rerun paired
   counters after a broader node migration slice.
+
+## C2 checkpoint: scalar member targets use node lowering (2026-11-01)
+
+- Latest pushed slice `e0da16c0` handles the checked scalar builtin targets
+  (`builtin-method:int|float|char|bool.*`) in the EST node emitter. The prior
+  dispatch covered string methods and scalar protocol builtins but missed these
+  scalar `to_string`/member targets, causing a fallback through source text.
+- `tests/phase27/est/numeric_member.moss` is now 0 emitter reparses / 0 text
+  lookups, down from 35/35; string type/expression queries went 2/2 to 0/0.
+  Generated Rust is byte-identical, compiles, and prints the same output as
+  Fast Debug. The call-argument node migration separately removed 26/26 on
+  `swarm_034b_tail_assert_native.moss`, with identical generated Rust.
+- Fact-hook harness passes; known debt remains 38/38. No full suites or
+  performance suite has run. The like-for-like whole tracked-source paired
+  measurement remains due after more migrations; last complete whole-workload
+  totals were measured at `340af4cd` and are stale. Remaining high samples
+  include optimized expression callback lowering, imported module calls, and
+  collection/test fixtures. Continue reducing those before final gates.
