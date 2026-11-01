@@ -26058,27 +26058,26 @@ class Checker {
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto source_fingerprint = est::fingerprint(std::string(source));
     auto convert = [&](std::uint32_t arena_index, est::ExprId expression)
         -> std::optional<ParsedFunctionalPipeline> {
       const auto* arena = expression_arena(arena_index);
       return arena ? est::functional_pipeline(*arena, expression, source,
                                                resolve_stage) : std::nullopt;
     };
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
+    }
     if (handles) {
+#ifdef MOSS_TEST_BUILD
+      est::record_expression_text_lookup();
+#endif
+      const auto source_fingerprint = est::fingerprint(std::string(source));
       for (const auto& handle : *handles)
         if (handle.source_fingerprint == source_fingerprint)
           if (auto parsed = convert(handle.arena_index, handle.expr))
             return parsed;
-    }
-    if (!active_est_expression_cursors_.empty() &&
-        active_est_expression_cursors_.back() &&
-        active_est_expression_cursors_.back()->source == source) {
-      const auto& cursor = *active_est_expression_cursors_.back();
-      if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     if (auto cursor = root_expression_cursor(source, {}))
       if (auto parsed = convert(cursor->arena_index, cursor->expr))
