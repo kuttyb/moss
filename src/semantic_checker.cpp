@@ -26481,6 +26481,96 @@ class Checker {
     check_expression(line, *source, env, {}, child_role, std::move(cursor));
   }
 
+  std::optional<est::ExprId> expression_child_node(
+      const est::Arena& arena, est::ExprId parent, std::string_view role,
+      std::uint32_t ordinal = 0) const {
+    return std::visit([&](const auto& node) -> std::optional<est::ExprId> {
+      using T = std::decay_t<decltype(node)>;
+      if constexpr (std::is_same_v<T, est::Binary>) {
+        if (role == "left") return node.left;
+        if (role == "right") return node.right;
+      } else if constexpr (std::is_same_v<T, est::Unary>) {
+        if (role == "operand") return node.operand;
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+        if (role == "grouped-expression") return node.inner;
+      } else if constexpr (std::is_same_v<T, est::Collection> ||
+                           std::is_same_v<T, est::Tuple>) {
+        if (auto index = expression_role_index(role, {"element:"});
+            index && *index < node.elements.size())
+          return node.elements[*index];
+        if (ordinal < node.elements.size()) return node.elements[ordinal];
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        if (role == "receiver" || role == "callee") {
+          if (const auto* member = std::get_if<est::Member>(&arena.at(node.callee)))
+            return member->base;
+          return node.callee;
+        }
+        if (auto index = expression_role_index(
+                role, {"argument:", "call-argument:"});
+            index && *index < node.arguments.size())
+          return node.arguments[*index];
+        if (role.rfind("field:", 0) == 0) {
+          const auto field_name = role.substr(6);
+          for (const auto argument : node.arguments)
+            if (const auto* named =
+                    std::get_if<est::NamedArgument>(&arena.at(argument));
+                named && named->name == field_name)
+              return named->value;
+        }
+      } else if constexpr (std::is_same_v<T, est::Message>) {
+        if (role == "receiver" || role == "target") return node.target;
+        if (auto index = expression_role_index(
+                role, {"argument:", "message-argument:"});
+            index && *index < node.arguments.size())
+          return node.arguments[*index];
+      } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
+        if (role.rfind("field:", 0) == 0 || role == "value")
+          return node.value;
+      } else if constexpr (std::is_same_v<T, est::Index>) {
+        if (role == "container" || role == "receiver" || role == "base")
+          return node.base;
+        if (role == "index") return node.index;
+      } else if constexpr (std::is_same_v<T, est::Member>) {
+        if (role == "receiver" || role == "base") return node.base;
+      } else if constexpr (std::is_same_v<T, est::Constructor>) {
+        if (auto index = expression_role_index(
+                role, {"argument:", "constructor-argument:"});
+            index && *index < node.arguments.size())
+          return node.arguments[*index];
+        if (role.rfind("field:", 0) == 0) {
+          const auto field_name = role.substr(6);
+          for (const auto argument : node.arguments)
+            if (const auto* named =
+                    std::get_if<est::NamedArgument>(&arena.at(argument));
+                named && named->name == field_name)
+              return named->value;
+        }
+      } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+        if (role == "source" || role == "input" ||
+            role == "pipeline-source")
+          return node.input;
+        if (auto index = expression_role_index(role, {"stage:"});
+            index && *index < node.stages.size())
+          return node.stages[*index];
+      }
+      return std::nullopt;
+    }, arena.at(parent));
+  }
+
+  bool check_expression_child_node(int line,
+      const std::unordered_map<string,string>& env, std::string_view role,
+      std::uint32_t ordinal = 0) {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back()) return false;
+    const auto& parent = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(parent.arena_index);
+    if (!arena) return false;
+    auto child = expression_child_node(*arena, parent.expr, role, ordinal);
+    if (!child) return false;
+    check_expression_node(line, parent.arena_index, *child, env, role);
+    return true;
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
                         std::string_view root_slot = {},
@@ -27054,8 +27144,10 @@ class Checker {
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
-        check_expression(line, binary->first, env, {}, "left");
-        check_expression(line, binary->second, env, {}, "right");
+        if (!check_expression_child_node(line, env, "left"))
+          check_expression(line, binary->first, env, {}, "left");
+        if (!check_expression_child_node(line, env, "right"))
+          check_expression(line, binary->second, env, {}, "right");
         auto left = inferred_expr_type(binary->first, env);
         auto right = inferred_expr_type(binary->second, env);
         if (!left || !right ||
@@ -27124,8 +27216,10 @@ class Checker {
           tree_split_binary(value, {"<="}) ? "<=" :
           tree_split_binary(value, {">="}) ? ">=" :
           tree_split_binary(value, {"<"}) ? "<" : ">");
-      check_expression(line, binary->first, env, {}, "left");
-      check_expression(line, binary->second, env, {}, "right");
+      if (!check_expression_child_node(line, env, "left"))
+        check_expression(line, binary->first, env, {}, "left");
+      if (!check_expression_child_node(line, env, "right"))
+        check_expression(line, binary->second, env, {}, "right");
       auto left_type = inferred_expr_type(binary->first, env);
       auto right_type = inferred_expr_type(binary->second, env);
       if ((left_type && contains_enum_type(*left_type)) ||
@@ -27196,8 +27290,10 @@ class Checker {
     for (const auto& op : vector<string>{"|", "^", "&"}) {
       if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
-        check_expression(line, binary->first, env, {}, "left");
-        check_expression(line, binary->second, env, {}, "right");
+        if (!check_expression_child_node(line, env, "left"))
+          check_expression(line, binary->first, env, {}, "left");
+        if (!check_expression_child_node(line, env, "right"))
+          check_expression(line, binary->second, env, {}, "right");
         retain_open_operator_operation(line, op, binary->first,
                                        binary->second, env);
         auto left_type = inferred_expr_type(binary->first, env);
@@ -27215,8 +27311,10 @@ class Checker {
       mark_active_expression(OccurrenceKind::Binary,
           tree_split_binary(value, {"<<"}) ? "<<" : ">>");
       string op = tree_split_binary(value, {"<<"}) ? "<<" : ">>";
-      check_expression(line, binary->first, env, {}, "left");
-      check_expression(line, binary->second, env, {}, "right");
+      if (!check_expression_child_node(line, env, "left"))
+        check_expression(line, binary->first, env, {}, "left");
+      if (!check_expression_child_node(line, env, "right"))
+        check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
         if (tree_split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
@@ -27269,8 +27367,10 @@ class Checker {
             }
           }
           mark_active_expression(OccurrenceKind::Binary, operation_id);
-          check_expression(line, binary->first, env, {}, "left");
-          check_expression(line, binary->second, env, {}, "right");
+          if (!check_expression_child_node(line, env, "left"))
+            check_expression(line, binary->first, env, {}, "left");
+          if (!check_expression_child_node(line, env, "right"))
+            check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
             auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
