@@ -4416,6 +4416,12 @@ class Generator {
                 : codegen_body_context_;
         const auto* facts = expression.arena->facts(root, checker_context);
         string target = facts ? facts->resolved_target : string();
+        if (target.empty()) {
+          const auto targets = checked_call_edge_targets(
+              codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+          if (targets.size() == 1) target = targets.front();
+        }
         const bool call_target_fact_hooked =
             moss_test_drop_fact("call-targets") ||
             moss_test_perturb_fact("call-targets");
@@ -4505,8 +4511,27 @@ class Generator {
           }
           if (simple_arguments) {
             const auto receiver_expression = expression.child(member->base);
-            string rendered_receiver =
-                expr(receiver_expression, d, locals, types);
+            string rendered_receiver;
+            const auto receiver_root = est::unparenthesized(
+                *receiver_expression.arena, receiver_expression.id);
+            if (const auto* indexed_receiver = std::get_if<est::Index>(
+                    &receiver_expression.arena->at(receiver_root))) {
+              const auto indexed_base =
+                  receiver_expression.child(indexed_receiver->base);
+              const auto indexed_value =
+                  receiver_expression.child(indexed_receiver->index);
+              const auto indexed_type = generated_expr_type(indexed_base, types);
+              const string indexed_type_name = indexed_type
+                  ? canonical_type_name(*indexed_type) : string();
+              if (starts_with(indexed_type_name, "vector[") ||
+                  starts_with(indexed_type_name, "seq[")) {
+                rendered_receiver = "(" + expr(indexed_base, d, locals, types) +
+                    ")[(" + expr(indexed_value, d, locals, types) +
+                    ") as usize]";
+              }
+            }
+            if (rendered_receiver.empty())
+              rendered_receiver = expr(receiver_expression, d, locals, types);
             if (starts_with(rendered_receiver, "*"))
               rendered_receiver = "(" + rendered_receiver + ")";
             std::ostringstream rendered;

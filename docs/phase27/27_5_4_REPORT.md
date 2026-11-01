@@ -279,3 +279,18 @@ receiver. That is an ownership decision and outside this phase's allowed
 scope. This fixture therefore remains evidence of a member-call fallback,
 not a completed migration. Full suites, corpus consumer counts, and
 performance gates remain pending.
+
+## C2 progress — checked member calls retain receiver place lowering
+
+The emitter now uses a unique checked call-edge target when a retained member
+call node lacks a direct target fact. For indexed Vector/Seq method receivers,
+it renders the index as a method place rather than using value-context index
+lowering, preserving the prior Rust autoref spelling and avoiding the extra
+clone observed in the first experiment. `examples/collections_and_methods.moss`
+now has no emitter node-fallback shapes. Its generated Rust is byte-identical
+to c96 in default and `-O`, compiles with rustc, and prints the same output.
+
+Paired counts per command are parent 2,607 lookups / 1,259 expression
+reparses and candidate 855 / 194 (−67% / −85%) in both modes. Three-engine
+and the four-class perturb/drop matrix pass. Map-indexed or other
+ownership-sensitive method receivers are not covered by this narrow path.

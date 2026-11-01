@@ -15241,3 +15241,20 @@ Targeted native Rust byte comparisons pass; no final suites, bulk corpus count,
 or performance suite has run yet. Next work: continue only with tree paths that
 preserve ownership lowering, then run the corpus count and final C2 gates when
 migration is near completion.
+
+### Phase 27.5.4 C2 checkpoint — checked indexed method receiver (2026-11-01)
+
+Emitter member calls now use a unique checked call-edge target if their node
+lacks a direct target fact. For Vector/Seq indexed receivers, the emitter
+preserves method-place lowering instead of value-index lowering. This avoids
+the extra clone from the first experiment and keeps generated Rust byte-identical
+to c96 for `examples/collections_and_methods.moss` in default and `-O`.
+The generated Rust compiles and runtime output matches. There are no emitter
+node-fallback shapes for this fixture.
+
+Paired counts per command: parent 2,607 lookups / 1,259 reparses; candidate
+855 / 194 (−67% / −85%). Three-engine and all four fact-hook classes pass.
+Map-indexed and other ownership-sensitive method receivers remain unverified.
+No final suites, bulk corpus counts, or performance run yet. Next: continue
+narrow checked-node paths with byte-parity targets, then execute full C2 gates
+when the residual count work is near completion.
