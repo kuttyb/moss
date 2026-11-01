@@ -1,6 +1,14 @@
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `c3f51618`. The checked member-target slice was
+- Branch `phase27-5-4-work`; latest pushed checkpoint `5b6a8177`. Updated
+  `origin/main` is already an ancestor via merge `2cf4abb9`; its AGENTS.md and
+  compiler-contract edits are present on this branch. Latest `make moss-dev`
+  and `check_phase27_5_4_fact_hooks.py` pass; receiver-call perturb/drop runs
+  across Fast Debug, native and `-O`, including the indexed method fixture.
+  Same calculator default-command counters after the node routes: 15,804
+  emitter reparses, 24,252 text-node lookups, 1,562 string type queries and
+  423 string expression queries. No full C2 gates have run.
+- The checked member-target slice was
   committed in `bf0d04cc` across `src/native_generator.cpp`,
   `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
 - The emitter no longer selects a custom method from receiver type in the
