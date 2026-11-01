@@ -15693,3 +15693,17 @@ the 27.5.3 parent output. Native `margo build` also passes with the current
 uncommitted emitter changes. No full suite, three-engine check, or perf suite
 has run; C2 corpus counters need refresh after these edits and the two
 additional parent/candidate emission failures need comparison.
+
+### C2 borrowed-view assignment repair (2026-11-01)
+
+A clean 27.5.3 parent build emits mutable object-view accessors (`*_mut()`) for
+state assignments. The C2 node-based `write_call_place(EmitterExpr)` checked
+`view_place` under the current read projection and returned that result
+immediately, unlike its string overload, which calls `place_expr` to enable
+mutable projection. It therefore emitted read accessors for assignments such as
+`vars[slot] = value`. The node overload now routes detected views through
+`place_expr`. A clean `margo build` of `examples/swarm/modules/calc_interpreter`
+passes with this fix isolated; before it, Rust failed on three writes in
+`errors.rs`, `ast.rs`, and `env.rs`. The C2 call-node lowering edits are
+separately saved in `tmp/native-full-current.patch` and will be reapplied after
+this checkpoint.

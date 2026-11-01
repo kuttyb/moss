@@ -1917,7 +1917,8 @@ class Generator {
     if (!expression.arena)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked write-place node");
-    if (auto place = view_place(expression, d, locals, types)) return *place;
+    if (view_place(expression, d, locals, types))
+      return place_expr(expression, d, locals, types);
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const auto& node = expression.arena->at(root);
     if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
