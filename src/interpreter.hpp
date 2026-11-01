@@ -2382,7 +2382,8 @@ class FastInterpreter {
                       method_name + "' was not checked in this run"
                 : "unresolved method '" + method_name + "'");
           return call_method(*target, receiver, method_args, frame, line, output,
-                             locate(member->first, frame, line, output));
+                             locate(member->first, frame, line, output), tree,
+                             member_argument_nodes);
         }
       }
       auto receiver = evaluate_member_receiver();
@@ -2776,7 +2777,9 @@ class FastInterpreter {
 
   Value call_method(const Method& target, Value receiver,
                     const std::vector<std::string>& arguments, Frame& caller,
-                    int line, std::ostream& output, Place origin) {
+                    int line, std::ostream& output, Place origin,
+                    const ExpressionTreeView* tree = nullptr,
+                    const std::vector<est::ExprId>* argument_nodes = nullptr) {
     if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
     Frame frame;
     frame.function = target.owner + "." + target.name;
@@ -2794,7 +2797,8 @@ class FastInterpreter {
       if (origin.domain) state_event("state_consume", caller, line, origin, summary(*origin.value), "<moved>");
       *origin.value = Value::unit();
     }
-    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
+    bind_parameters(target.params, target.parameter_effects, arguments, caller,
+                    frame, line, output, nullptr, tree, argument_nodes);
     int enter_id = emit("MethodEnter", frame, target.line);
     EventScope method_scope(*this, enter_id, true);
     const auto& executable_body = target.execution_body

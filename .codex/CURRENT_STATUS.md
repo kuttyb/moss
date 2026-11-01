@@ -14184,3 +14184,16 @@ warnings due inherited MAKEFLAGS; those do not establish compiler semantic or
 memory-safety defects. No changes were made in response yet. The earlier
 numeric-member ASan/UBSan diagnosis remains stack overflow at the old malformed
 member recursion site, not a vector-reference use-after-free.
+
+After the sanitizer checkpoint, both source-level invariant failures were
+fixed with targeted context preservation. `check_expression` now labels a
+function result root as `return-value`, and `root_expression_cursor` only uses
+the current function's result handle for that explicit root. This prevents a
+recursive generic operand from being mistaken for the entire result expression
+(`guard_generic_string_native`); its review-probe native/Fast Debug check now
+passes. Fast Debug `call_method` now carries the checked call tree and argument
+ExprIds into parameter binding, so method parameters with literal arguments no
+longer request independent textual roots. `swarm_044_typed_string_map_index`
+passes check/Fast Debug/native/-O parity with output `7`. Focused
+`check_phase27_est.py` and `check_phase27_5_3_fastdebug_checked_tree.py` pass.
+The ASan suite was run before these fixes; no full suite has run after them.

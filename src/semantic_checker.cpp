@@ -24367,7 +24367,8 @@ class Checker {
         ~ResultExpressionScope() { slot = prior; }
       } result_scope(current_check_result_function_, function);
       check_expression(function.result_line ? function.result_line : function.line,
-                       *function.result_expression, specialized_env);
+                       *function.result_expression, specialized_env,
+                       "return-value");
     }
     } catch (CompileError& error) {
       if (profile_spec) {
@@ -26749,7 +26750,7 @@ class Checker {
         }
         return found;
       }
-    if (current_check_result_function_ &&
+    if (root_slot == "return-value" && current_check_result_function_ &&
         current_check_result_function_->result_expression)
       return select(current_check_result_function_->expression_handles,
                     est::ExprSlot::ReturnValue, 0);
