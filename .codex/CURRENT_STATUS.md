@@ -15384,3 +15384,11 @@ native output (`string concat ok`) match in both modes. Its current optimized
 counter sample is 2,161 text lookups and 715 expression-view reparses. No
 paired parent count has been run for this slice. Full suites and perf remain
 deferred until C2 migration is near completion.
+
+Follow-up adds direct retained-node lowering for String append/reserve and
+builtin-method String targets such as `length`, avoiding the old expression
+fallback on `tests/phase24_string_concat.moss`. Its optimized counts fell
+2,161/715 -> 1,678/356 versus the immediately preceding candidate. Default
+and `-O` Rust are byte-identical to C1, both rustc builds run and print
+`string concat ok`; the candidate's test trace reports zero node fallbacks for
+this fixture. The paired corpus count is still pending.

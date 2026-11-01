@@ -4543,9 +4543,11 @@ class Generator {
              phase21_codegen_statement_->ownership_consumed_bindings.count(name)
                  ? ".take()" : ".as_ref()") +
             ".unwrap_or_else(|| std::process::abort())";
-      if (write_through_parameters_.count(name) && types &&
-          types->count(name) && copy_type(types->at(name)))
-        return "*" + name;
+      if (write_through_parameters_.count(name)) {
+        if (types && types->count(name) && copy_type(types->at(name)))
+          return "*" + name;
+        return "(*" + name + ")";
+      }
       // `view_place` above has already handled representation-sensitive
       // borrowed views. Any remaining local identifier is emitted as its
       // checked local binding; the old text rewriter left these unchanged.
@@ -5055,6 +5057,38 @@ class Generator {
           return "(" + receiver_value + ").get(" + key + ").cloned().unwrap_or(" +
               fallback + ")";
         }
+        if ((target.empty() || target == "builtin-method:string." +
+                                      member->name) &&
+            member->name == "append" && call->arguments.size() == 1) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          if (receiver_type && canonical_type_name(*receiver_type) == "string") {
+            const auto argument = expression.child(call->arguments.front());
+            const bool literal = tree_literal_class(argument) ==
+                est::LiteralClass::String;
+            const string value = literal ? argument.text()
+                : "&(" + expr(argument, d, locals, types) + ")";
+            return "{ let __moss_string = &mut (" +
+                place_expr(receiver_expression, d, locals, types) +
+                "); let __moss_part = " + value +
+                "; __moss_string.push_str(__moss_part" +
+                (literal ? "" : ".as_str()") + "); }";
+          }
+        }
+        if ((target.empty() || target == "builtin-method:string." +
+                                      member->name) &&
+            member->name == "reserve" && call->arguments.size() == 1) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          if (receiver_type && canonical_type_name(*receiver_type) == "string")
+            return "{ let __moss_string = &mut (" +
+                place_expr(receiver_expression, d, locals, types) +
+                "); let __moss_additional = " +
+                expr(expression.child(call->arguments.front()), d, locals, types) +
+                "; if __moss_additional > 0 { __moss_string.reserve(__moss_additional as usize); } }";
+        }
         if (starts_with(target, "method:")) {
           const auto separator = target.rfind('.');
           const string owner = separator == string::npos
@@ -5148,6 +5182,8 @@ class Generator {
           }
         }
         if (target == "builtin:" + member->name ||
+            (starts_with(target, "builtin-method:string.") &&
+             ends_with(target, "." + member->name)) ||
             target == "builtin-scalar-protocol:" + member->name) {
           const auto receiver_expression = expression.child(member->base);
           const auto receiver_type = generated_expr_type(receiver_expression,
@@ -5170,7 +5206,8 @@ class Generator {
             auto argument = [&](size_t index) {
               return expr(arguments.at(index), d, locals, types);
             };
-            if (concrete == "string") {
+            if (concrete == "string" || starts_with(target,
+                                                    "builtin-method:string.")) {
               if (member->name == "length" && arguments.empty())
                 return "__moss_string_length(&" + source + ")";
               if (member->name == "chars" && arguments.empty())
@@ -5534,6 +5571,14 @@ class Generator {
       std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind
                 << "|line=" << expression.arena->span(root).line
                 << "|text=" << expression.text() << '\n';
+      if (const auto* facts = checked_expression_facts(expression))
+        std::cerr << "MOSS_EST_EMITTER_NODE_TARGET="
+                  << facts->resolved_target << '\n';
+      if (phase21_codegen_statement_)
+        for (const auto& [context, target] :
+             phase21_codegen_statement_->checked_call_targets_by_context)
+          std::cerr << "MOSS_EST_EMITTER_STMT_TARGET=" << context << "|"
+                    << target << '\n';
       if (const auto* pipeline = std::get_if<est::Pipeline>(
               &expression.arena->at(root))) {
         const auto input_type = generated_expr_type(

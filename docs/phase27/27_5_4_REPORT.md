@@ -207,6 +207,14 @@ match in both modes. Its current optimized candidate sample is 2,161 text
 lookups and 715 expression-view reparses; a paired parent count remains
 pending.
 
+The retained-node emitter now lowers String `append`, `reserve`, and checked
+String builtin-method targets including `length` without falling back to the
+expression-text emitter for this fixture. Its optimized counts fell
+2,161/715 -> 1,678/356 against the immediately preceding candidate. Default
+and `-O` generated Rust remain byte-identical to C1; both Rust programs compile
+and print `string concat ok`. The test trace has no emitter-node fallback for
+this fixture. These are targeted counts, not the final paired corpus result.
+
 ## C2 progress — emitter consumes checked call edges on nested nodes
 
 When nested call nodes lacked a retained resolved-target fact, the emitter now
