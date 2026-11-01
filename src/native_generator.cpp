@@ -376,10 +376,17 @@ class Generator {
       gen_main(o, *p_.main);
     else
       o << "fn main() {}\n";
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled())
+      for (const auto& [site, count] : expression_view_reparse_sites_)
+        std::cerr << "MOSS_EST_REPARSE_QUERY_SITE=" << site << "|"
+                  << count << '\n';
+#endif
     return o.str();
   }
 
  private:
+  mutable std::map<string, std::uint64_t> expression_view_reparse_sites_;
   const Program& p_;
   // Keeps this program's interned declarations bound while lowering.
   moss::TypeContext::Binding type_scope_;
@@ -1081,7 +1088,8 @@ class Generator {
 
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
-      const vector<est::Handle>* handles = nullptr) const {
+      const vector<est::Handle>* handles = nullptr,
+      std::string_view query_site = {}) const {
     if (expression.empty()) return std::nullopt;
 #ifdef MOSS_TEST_BUILD
     est::record_expression_text_lookup();
@@ -1108,12 +1116,14 @@ class Generator {
     }
 #ifdef MOSS_TEST_BUILD
     est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
+    ++expression_view_reparse_sites_[query_site.empty()
+        ? "unknown" : string(query_site)];
 #endif
     return est::parse_view(expression);
   }
 
   bool tree_plain_identifier(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return false;
     string name;
     return est::project_identifier(*syntax, name);
@@ -1127,7 +1137,7 @@ class Generator {
 
   bool tree_empty_constructor_named(std::string_view expression,
                                     std::string_view name) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::empty_constructor_named(*syntax, name);
   }
 
@@ -1140,18 +1150,18 @@ class Generator {
   }
 
   bool tree_empty_vector_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::empty_vector_literal(*syntax);
   }
 
   bool tree_placeholder_expression(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::placeholder_expression(*syntax);
   }
 
   string replace_est_placeholders(const string& source,
                                   const string& replacement) const {
-    auto syntax = expression_view_from_est(source);
+    auto syntax = expression_view_from_est(source, nullptr, __func__);
     if (!syntax || !syntax->arena) return source;
     vector<EstSourceEdit> edits;
     visit_est_expression(*syntax, syntax->root,
@@ -1167,7 +1177,7 @@ class Generator {
       const string& source, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
-    auto syntax = expression_view_from_est(source);
+    auto syntax = expression_view_from_est(source, nullptr, __func__);
     if (!syntax || !syntax->arena) return source;
     std::set<string> state_names;
     if (domain && !view_domain_ && !view_method_) {
@@ -1211,7 +1221,7 @@ class Generator {
   }
 
   est::LiteralClass tree_literal_class(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
   }
 
@@ -1223,20 +1233,20 @@ class Generator {
   }
 
   bool tree_decimal_integer_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::decimal_integer_literal(*syntax, true, false);
   }
 
   std::optional<DecodedNumber> tree_numeric_literal_value(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::numeric_literal_value(*syntax)
                   : std::nullopt;
   }
 
   std::optional<string> tree_empty_typed_vector_constructor(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     auto type = est::project_empty_constructor_type(*syntax);
     if (!type) return std::nullopt;
@@ -1247,7 +1257,7 @@ class Generator {
 
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     string name;
     return est::project_identifier(*syntax, name)
@@ -1266,14 +1276,14 @@ class Generator {
 
   bool tree_expressions_equal(std::string_view left,
                               std::string_view right) const {
-    auto left_tree = expression_view_from_est(left);
-    auto right_tree = expression_view_from_est(right);
+    auto left_tree = expression_view_from_est(left, nullptr, __func__);
+    auto right_tree = expression_view_from_est(right, nullptr, __func__);
     return left_tree && right_tree &&
         est::structurally_equal(*left_tree, *right_tree);
   }
 
   bool tree_empty_string_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return false;
     const auto* literal = std::get_if<est::Literal>(
@@ -1283,7 +1293,7 @@ class Generator {
 
   std::optional<vector<string>> tree_member_path(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return std::nullopt;
     vector<string> reverse;
@@ -1330,20 +1340,20 @@ class Generator {
 
   std::optional<vector<string>> tree_tuple_elements(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::project_tuple_elements(*syntax) : std::nullopt;
   }
 
   bool tree_parse_simple_call(const string& expression, string& callee,
                               vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_simple_call(*syntax, callee, arguments);
   }
 
   bool tree_parse_member_call(const string& expression, string& receiver,
                               string& member, vector<string>& arguments,
                               bool* outputs_written = nullptr) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) {
       if (outputs_written) *outputs_written = false;
       return false;
@@ -1397,19 +1407,19 @@ class Generator {
 
   bool tree_parse_member_access(const string& expression, string& base,
                                string& member) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_member_access(*syntax, base, member);
   }
 
   bool tree_parse_unary(const string& expression, string& operation,
                         string& operand) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_unary(*syntax, operation, operand);
   }
 
   bool tree_parse_message(const string& expression, string& target,
                           string& handler, vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_message(
         *syntax, target, handler, arguments);
   }
@@ -1417,7 +1427,7 @@ class Generator {
   bool tree_parse_fileio_chunks_source(const string& expression,
                                        string& receiver,
                                        string& size_expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_fileio_chunks_source(
         *syntax, receiver, size_expression);
   }
@@ -1441,7 +1451,7 @@ class Generator {
 
   bool tree_parse_index(const string& expression, string& base,
                         string& index) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_index(*syntax, base, index);
   }
 
@@ -1467,7 +1477,7 @@ class Generator {
 
   std::optional<vector<string>> tree_parse_vector_literal(
       const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::project_vector_literal(*syntax) : std::nullopt;
   }
 
@@ -1475,7 +1485,7 @@ class Generator {
                                        string& enum_name, string& case_name,
                                        vector<string>& fields,
                                        bool& called) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_enum_case(*syntax, enum_name, case_name,
                                             fields, &called);
   }
@@ -1483,14 +1493,14 @@ class Generator {
   bool tree_parse_bound_method_callable(const string& expression,
                                         string& receiver,
                                         string& method) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_bound_method(*syntax, receiver, method);
   }
 
   bool tree_parse_executor_chain(
       const string& expression,
       vector<std::pair<string, vector<string>>>& calls) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_executor_chain(*syntax, calls);
   }
 
@@ -1504,18 +1514,18 @@ class Generator {
   }
 
   string tree_strip_expression_grouping(const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::strip_grouping(*syntax) : expression;
   }
 
   string tree_normalize_pipeline(const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::normalize_pipeline_tree(*syntax) : expression;
   }
 
   bool tree_expression_mentions_identifier(
       const string& expression, const string& identifier) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::expression_mentions(*syntax, identifier);
   }
 
@@ -2153,7 +2163,7 @@ class Generator {
 
   std::optional<GeneratedBinaryExpression> tree_generated_binary(
       const string& expression, const vector<string>& operators) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     vector<string> tree_operators;
     tree_operators.reserve(operators.size());
@@ -2210,7 +2220,7 @@ class Generator {
 
   bool generated_expression_uses(const string& expression,
                                 const string& name) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::contains_identifier(*syntax, name);
   }
 
@@ -6337,7 +6347,7 @@ class Generator {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    auto expression_shape = expression_view_from_est(e);
+    auto expression_shape = expression_view_from_est(e, nullptr, __func__);
     if (expression_shape && est::empty_constructor_named(*expression_shape, "Map")) return staged_abi_v10()
         ? "std::default::Default::default()"
         : "std::collections::HashMap::new()";
