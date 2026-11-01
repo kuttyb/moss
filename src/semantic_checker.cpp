@@ -26593,6 +26593,28 @@ class Checker {
     }, arena.at(parent));
   }
 
+  std::optional<std::pair<string, string>> checked_expression_split_binary(
+      const string& source, const vector<string>& operators) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena) return std::nullopt;
+      const auto* binary = std::get_if<est::Binary>(&arena->at(cursor.expr));
+      if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
+                         operators.end())
+        return std::nullopt;
+      const auto left = expression_child_source(cursor, binary->left);
+      const auto right = expression_child_source(cursor, binary->right);
+      if (!left || !right)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT checked binary child source missing line=" +
+            std::to_string(arena->span(cursor.expr).line));
+      return std::pair<string, string>{*left, *right};
+    }
+    return tree_split_binary(source, operators);
+  }
+
   bool check_expression_child_node(int line,
       const std::unordered_map<string,string>& env, std::string_view role,
       std::uint32_t ordinal = 0) {
@@ -27166,25 +27188,25 @@ class Checker {
         unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
-    auto membership = tree_split_binary(value, {" not in "});
-    if (!membership) membership = tree_split_binary(value, {" in "});
+    auto membership = checked_expression_split_binary(value, {" not in "});
+    if (!membership) membership = checked_expression_split_binary(value, {" in "});
     if (membership) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
       return;
     }
-    if (tree_split_binary(value, {"**"})) {
+    if (checked_expression_split_binary(value, {"**"})) {
       err(line, "invalid arithmetic expression");
       return;
     }
     for (const auto& op :
          vector<string>{"&&", "||"}) {
-      if (tree_split_binary(value, {op}))
+      if (checked_expression_split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = tree_split_binary(value, {op})) {
+      if (auto binary = checked_expression_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
         if (!check_expression_child_node(line, env, "left"))
           check_expression(line, binary->first, env, {}, "left");
@@ -27212,12 +27234,12 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
-    if (auto ordering = tree_split_binary(value, {"<=", ">=", "<", ">"})) {
+    if (auto ordering = checked_expression_split_binary(value, {"<=", ">=", "<", ">"})) {
       // This pass checks the ordering-specific exclusions. The common
       // comparison branch below owns the single recursive operand traversal,
       // so the checker occurrence graph represents each source operand once.
       for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
-        auto candidate = tree_split_binary(value, {op});
+        auto candidate = checked_expression_split_binary(value, {op});
         if (candidate && candidate->first == ordering->first) {
           retain_open_operator_operation(line, op, ordering->first,
                                          ordering->second, env);
@@ -27252,13 +27274,13 @@ class Checker {
         }
       }
     }
-    if (auto binary = tree_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+    if (auto binary = checked_expression_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          tree_split_binary(value, {"=="}) ? "==" :
-          tree_split_binary(value, {"!="}) ? "!=" :
-          tree_split_binary(value, {"<="}) ? "<=" :
-          tree_split_binary(value, {">="}) ? ">=" :
-          tree_split_binary(value, {"<"}) ? "<" : ">");
+          checked_expression_split_binary(value, {"=="}) ? "==" :
+          checked_expression_split_binary(value, {"!="}) ? "!=" :
+          checked_expression_split_binary(value, {"<="}) ? "<=" :
+          checked_expression_split_binary(value, {">="}) ? ">=" :
+          checked_expression_split_binary(value, {"<"}) ? "<" : ">");
       if (!check_expression_child_node(line, env, "left"))
         check_expression(line, binary->first, env, {}, "left");
       if (!check_expression_child_node(line, env, "right"))
@@ -27271,7 +27293,7 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      auto equality = tree_split_binary(value, {"==", "!="});
+      auto equality = checked_expression_split_binary(value, {"==", "!="});
       if (equality && equality->first == binary->first && current_body_types_) {
         auto operand_term = [&](const string& operand) {
           auto retained = current_body_types_->known_expression(operand);
@@ -27295,7 +27317,7 @@ class Checker {
                   "TYPE_MISMATCH");
             moss::Requirement requirement;
             requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = tree_split_binary(value, {"=="})
+            requirement.target_id = checked_expression_split_binary(value, {"=="})
                 ? "operator:==" : "operator:!=";
             requirement.subject = left;
             requirement.arguments.push_back(right);
@@ -27331,7 +27353,7 @@ class Checker {
       return;
     }
     for (const auto& op : vector<string>{"|", "^", "&"}) {
-      if (auto binary = tree_split_binary(value, {op})) {
+      if (auto binary = checked_expression_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
         if (!check_expression_child_node(line, env, "left"))
           check_expression(line, binary->first, env, {}, "left");
@@ -27350,16 +27372,16 @@ class Checker {
         return;
       }
     }
-    if (auto binary = tree_split_binary(value, {"<<", ">>"})) {
+    if (auto binary = checked_expression_split_binary(value, {"<<", ">>"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          tree_split_binary(value, {"<<"}) ? "<<" : ">>");
-      string op = tree_split_binary(value, {"<<"}) ? "<<" : ">>";
+          checked_expression_split_binary(value, {"<<"}) ? "<<" : ">>");
+      string op = checked_expression_split_binary(value, {"<<"}) ? "<<" : ">>";
       if (!check_expression_child_node(line, env, "left"))
         check_expression(line, binary->first, env, {}, "left");
       if (!check_expression_child_node(line, env, "right"))
         check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
-        if (tree_split_binary(value, {candidate})) {
+        if (checked_expression_split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
                                          binary->second, env);
           break;
@@ -27376,7 +27398,7 @@ class Checker {
     }
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "-" &&
-        !tree_split_binary(value, {"+", "-", "*", "/", "%"})) {
+        !checked_expression_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
       // the call result, so the operand is checked as one expression
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
@@ -27401,10 +27423,10 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{
              {"+", "-"}, {"*", "/", "%"}}) {
-        if (auto binary = tree_split_binary(value, operators)) {
+        if (auto binary = checked_expression_split_binary(value, operators)) {
           string operation_id;
           for (const auto& candidate : operators) {
-            auto operation = tree_split_binary(value, {candidate});
+            auto operation = checked_expression_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               operation_id = candidate;
               break;
@@ -27416,7 +27438,7 @@ class Checker {
           if (!check_expression_child_node(line, env, "right"))
             check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
-            auto operation = tree_split_binary(value, {candidate});
+            auto operation = checked_expression_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               retain_open_operator_operation(line, candidate,
                   binary->first, binary->second, env);
@@ -27446,7 +27468,7 @@ class Checker {
             string rt = canonical_type_name(*right_type);
             string op;
             for (const string candidate : {"+", "-", "*", "/", "%"}) {
-              auto split = tree_split_binary(value, {candidate});
+              auto split = checked_expression_split_binary(value, {candidate});
               if (split && split->first == binary->first) op = candidate;
             }
             bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
@@ -27462,7 +27484,7 @@ class Checker {
                 (contains_record_type(lt) || contains_record_type(rt)))
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
-          if (tree_split_binary(value, {"%"})) {
+          if (checked_expression_split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
             auto right = inferred_expr_type(binary->second, env);
             if (!left || !right || canonical_type_name(*left) != "int" ||

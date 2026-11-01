@@ -13707,3 +13707,18 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   implementing the above counter. Next: checkpoint these edits, then continue
   replacing checker string recursion/cache consultations with ExprId recursion
   and facts. Keep branch `phase27-5-4-work`.
+
+## Phase 27.5.4 checker binary-node recursion checkpoint (2026-10-31)
+
+- `check_expression` now selects binary operators and child expressions from the
+  active checked `est::Binary` node via child ExprIds/source spans. Its 26
+  direct `tree_split_binary(value, ...)` decisions no longer consult the
+  text-keyed split cache when a checked cursor exists; no-cursor legacy call
+  sites remain and are still counted.
+- Focused checks passed: `check_phase27_est_functional_tree.py` (default/shadow)
+  and `check_phase27_optimizer_expression_uses.py` (six three-engine fixtures).
+  No full suites/performance run.
+- On `functional_basics.moss`, text-cache consultations moved from 16,593 to
+  15,887 (-706); on `specialized_call_facts.moss`, from 26,775 to 26,017
+  (-758). Checker reparses did not change (121 and 44). This remains far from
+  tightened K2 target zero and is not a completion claim.
