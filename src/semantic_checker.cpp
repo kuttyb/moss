@@ -21556,9 +21556,10 @@ class Checker {
       const ObjectType* implicit_object = nullptr,
       const vector<int>& continuation_lines = {},
       const string& source_file = {},
-      const vector<est::Handle>* expression_handles = nullptr) {
+      const vector<est::Handle>* expression_handles = nullptr,
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) {
     auto parsed = functional_pipeline_from_est(expression,
-                                               expression_handles);
+                                               expression_handles, handle_key);
     if (!parsed) return std::nullopt;
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) return std::nullopt;
@@ -21781,22 +21782,18 @@ class Checker {
             statement.line, occurrence.text, context, identity, current_env,
             owning_function, next_pipeline_id, next_node_id, domain_fields,
             implicit_object, statement.continuation_lines,
-            statement.source_file, &statement.expression_handles);
+            statement.source_file, &statement.expression_handles,
+            std::make_pair(occurrence.slot, occurrence.argument_index));
         ids.push_back(id.value_or(0));
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
         if (id) {
-#ifdef MOSS_TEST_BUILD
-          est::record_expression_text_lookup();
-#endif
-          const auto fingerprint = est::fingerprint(occurrence.text);
           auto handle = std::find_if(statement.expression_handles.begin(),
               statement.expression_handles.end(), [&](const auto& candidate) {
                 return candidate.slot == occurrence.slot &&
                     candidate.argument_index == occurrence.argument_index;
               });
-          if (handle != statement.expression_handles.end() &&
-              handle->source_fingerprint == fingerprint) {
+          if (handle != statement.expression_handles.end()) {
             expression_plan.slot = occurrence.slot;
             expression_plan.argument_index = occurrence.argument_index;
             expression_plan.arena_index = handle->arena_index;
@@ -21818,20 +21815,16 @@ class Checker {
           owning_function, next_pipeline_id, next_node_id, domain_fields,
           implicit_object, result_continuation_lines,
           owning_function ? owning_function->source_file : string(),
-          result_expression_handles);
+          result_expression_handles,
+          std::make_pair(est::ExprSlot::ReturnValue, 0));
       if (result_pipeline_ids) {
         result_pipeline_ids->erase(context);
         if (id) {
           (*result_pipeline_ids)[context] = *id;
           if (result_expression_handles) {
-#ifdef MOSS_TEST_BUILD
-            est::record_expression_text_lookup();
-#endif
-            const auto fingerprint = est::fingerprint(*result);
             for (const auto& handle : *result_expression_handles) {
               if (handle.slot != est::ExprSlot::ReturnValue ||
-                  handle.argument_index != 0 ||
-                  handle.source_fingerprint != fingerprint)
+                  handle.argument_index != 0)
                 continue;
               Stmt::FunctionalExpressionPlan plan;
               plan.slot = handle.slot;
@@ -26050,7 +26043,8 @@ class Checker {
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
-      const std::vector<est::Handle>* handles = nullptr) const {
+      const std::vector<est::Handle>* handles = nullptr,
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> handle_key = {}) const {
     if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
@@ -26070,6 +26064,14 @@ class Checker {
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     if (handles) {
+      if (handle_key) {
+        for (const auto& handle : *handles)
+          if (handle.slot == handle_key->first &&
+              handle.argument_index == handle_key->second)
+            if (auto parsed = convert(handle.arena_index, handle.expr))
+              return parsed;
+        return std::nullopt;
+      }
 #ifdef MOSS_TEST_BUILD
       est::record_expression_text_lookup();
 #endif
