@@ -26738,6 +26738,30 @@ class Checker {
     return tree_empty_typed_vector_constructor(source);
   }
 
+  bool checked_expression_child_empty_constructor_named(
+      std::string_view role, const string& source,
+      std::string_view name) const {
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& parent = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(parent.arena_index);
+      if (!arena) return false;
+      const auto child = expression_child_node(*arena, parent.expr, role);
+      if (!child) return false;
+      auto child_source = expression_child_source(parent, *child);
+      if (!child_source)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT checked constructor child source missing line=" +
+            std::to_string(arena->span(parent.expr).line));
+      est::ExpressionView view;
+      view.arena = arena;
+      view.root = *child;
+      view.source = std::move(*child_source);
+      return est::empty_constructor_named(view, name);
+    }
+    return tree_empty_constructor_named(source, name);
+  }
+
   std::optional<std::vector<string>> checked_expression_vector_literal(
       const string& source) const {
     if (auto view = active_expression_view())
@@ -28084,7 +28108,8 @@ class Checker {
       }
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (staged_abi_v10() && *receiver_type == "map" &&
-            tree_empty_constructor_named(receiver, "Map") && handler == "get" &&
+            checked_expression_child_empty_constructor_named(
+                "receiver", receiver, "Map") && handler == "get" &&
             args.size() == 2) {
           auto key = inferred_expr_type(args[0], env);
           auto value = inferred_expr_type(args[1], env);
@@ -28108,7 +28133,9 @@ class Checker {
           err(line, "Set operation requires a concrete key type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
-          if (staged_abi_v10() && tree_empty_constructor_named(receiver, "Map") &&
+          if (staged_abi_v10() &&
+              checked_expression_child_empty_constructor_named(
+                  "receiver", receiver, "Map") &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           for (size_t index = 0; index < args.size(); ++index)

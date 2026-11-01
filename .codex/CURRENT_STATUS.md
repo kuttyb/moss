@@ -17,6 +17,14 @@
   `check_phase27_est_functional_tree.py build/compiler/moss-dev` pass. This did
   not yet measure a K2 counter delta; no cache enlargement is being counted as
   progress.
+- Checker expression checking now tests empty Map receivers through
+  the active call's `receiver` ExprId with `est::empty_constructor_named`, for
+  both Map.get specialization paths. The accepted
+  `tests/swarm_028_self_method_argument_borrow.moss` checks successfully; the
+  parenthesized open Map.get adversarial fixture still rejects with
+  `TYPE_AMBIGUOUS_OPEN_RESULT`. Functional-basics coverage counters and
+  `specialized_call_facts` remain unchanged, so no aggregate K2 improvement is
+  claimed from this narrow direct-node route.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
   hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
