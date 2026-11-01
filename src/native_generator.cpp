@@ -1082,6 +1082,7 @@ class Generator {
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
+    if (expression.empty()) return std::nullopt;
 #ifdef MOSS_TEST_BUILD
     est::record_expression_text_lookup();
 #endif

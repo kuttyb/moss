@@ -513,3 +513,9 @@ falling through to expression text. Direct checked Map `keys`/`values` lowering
 reduced the fixture from 97 text-node lookups / 65 expression reparses to 65 /
 33. The generated Rust compiles with `rustc -D warnings`; native and Fast Debug
 both print `string/map ok`. These are focused measurements, not the C2 workload.
+
+The string-map fixture also issued repeated empty-text shape queries. The
+emitter now returns immediately for an empty expression before a text lookup or
+parse. On the same optimized fixture this reduced counts from 65 lookups / 33
+reparses to 40 / 8. Generated Rust compiled with warnings denied, and both the
+native binary and Fast Debug print `string/map ok`.

@@ -15533,3 +15533,13 @@ fell from 97 text-node lookups / 65 expression reparses to 65 / 33 for this
 fixture. Generated Rust compiled with `rustc -D warnings`, and native plus Fast
 Debug both print `string/map ok`. This is a focused sample only. The source and
 delivery report are uncommitted; no full suite/corpus/perf run has occurred.
+
+### C2 empty-fragment query checkpoint (2026-11-01)
+
+The optimized string-map fixture's previous 65 text lookups / 33 expression
+reparses included 25 requests for an empty string. `expression_view_from_est`
+now returns before lookup/parsing for empty input. Counts are 40 / 8 on the
+same fixture. Generated Rust compiled with `rustc -D warnings`; native and Fast
+Debug both print `string/map ok`, and the focused Phase 15.15 API test passes.
+This remains a focused reduction; residual 8 reparses and full-workload counts
+remain open. No full suite or perf run yet.
