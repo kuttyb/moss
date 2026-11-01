@@ -6968,11 +6968,20 @@ class Generator {
           break;
         }
         case Stmt::Kind::For: {
-          string source = trim(s.b);
-          string range_name;
-          vector<string> range_args;
-          bool is_range = tree_parse_simple_call(source, range_name, range_args) &&
-              range_name == "range";
+          const EmitterExpr source = checked_expression_ref(
+              s.b, est::ExprSlot::Iterable);
+          const auto source_root = est::unparenthesized(
+              *source.arena, source.id);
+          const auto* range_call = std::get_if<est::Call>(
+              &source.arena->at(source_root));
+          const auto* range_callee = range_call
+              ? std::get_if<est::Identifier>(&source.arena->at(
+                    est::unparenthesized(*source.arena, range_call->callee)))
+              : nullptr;
+          const bool is_range = range_callee &&
+              range_callee->name == "range" &&
+              (range_call->arguments.size() == 2 ||
+               range_call->arguments.size() == 3);
           auto source_type = generated_expr_type(source, &types);
           string element_type = source_type ? canonical_type_name(*source_type) : "";
           if (is_range) {
@@ -6986,13 +6995,16 @@ class Generator {
             string start_var = "__moss_range_start_" + std::to_string(s.line);
             string end_var   = "__moss_range_end_"   + std::to_string(s.line);
             o << indent(level) << "let " << start_var << ": i64 = "
-              << expr(range_args[0], d, locals, &types) << ";\n";
+              << expr(source.child(range_call->arguments[0]), d, locals, &types)
+              << ";\n";
             o << indent(level) << "let " << end_var << ": i64 = "
-              << expr(range_args[1], d, locals, &types) << ";\n";
-            if (range_args.size() == 3) {
+              << expr(source.child(range_call->arguments[1]), d, locals, &types)
+              << ";\n";
+            if (range_call->arguments.size() == 3) {
               string step_var = "__moss_range_step_" + std::to_string(s.line);
               o << indent(level) << "let " << step_var << ": i64 = "
-                << expr(range_args[2], d, locals, &types) << ";\n";
+                << expr(source.child(range_call->arguments[2]), d, locals,
+                        &types) << ";\n";
               o << indent(level) << "for " << s.a << " in ("
                 << start_var << ".." << end_var
                 << ").step_by(" << step_var << " as usize) {\n";

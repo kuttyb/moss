@@ -14723,3 +14723,14 @@ generates byte-identical Rust against c96, compiles, and produces native /
 Fast Debug parity. This is a small structural reduction; it does not yet
 change the broad counts. The C2 source remains incomplete and no final suite
 has run.
+
+### Phase 27.5.4 C2 checkpoint — For iterable ExprId route (2026-11-01)
+
+Native `Stmt::Kind::For` lowering now obtains its iterable through the checked
+`ExprSlot::Iterable` handle. Range-call recognition and argument selection use
+the retained Call/Identifier nodes; source typing and rendering use
+`EmitterExpr`, including direct ExprId access for range bounds. This removes
+those For decisions from the string parser path while preserving all native
+lowering branches. `tests/phase47_iteration.moss` checks, generated Rust is
+byte-identical to c96, rustc succeeds, and Fast Debug output matches native.
+No full suite/perf run has occurred.
