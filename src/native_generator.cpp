@@ -5882,12 +5882,35 @@ class Generator {
                canonical_type_name(*receiver_type) == "RangeBatch"))
             return "(" + expr(member_receiver, d, locals, types) + ").len()";
         }
+        if (member->name == "push" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].push")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              member->name, vector<EmitterExpr>{argument}, d, locals, types);
+          return receiver + ".push(" + expr(argument, d, locals, types) + ")";
+        }
+        if (member->name == "push" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:queue[") &&
+            ends_with(target, "].push")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              "push_back", vector<EmitterExpr>{argument}, d, locals, types);
+          return receiver + ".push_back(" +
+              expr(argument, d, locals, types) + ")";
+        }
         if (member->name == "pop" && call->arguments.empty() &&
             starts_with(target, "builtin-method:vector[") &&
             ends_with(target, "].pop"))
           return method_receiver_place(member_receiver, member->name,
               vector<EmitterExpr>{}, d, locals, types) +
               ".pop().unwrap_or_else(|| std::process::abort())";
+        if (member->name == "pop" && call->arguments.empty() &&
+            starts_with(target, "builtin-method:queue[") &&
+            ends_with(target, "].pop"))
+          return method_receiver_place(member_receiver, "pop_front",
+              vector<EmitterExpr>{}, d, locals, types) +
+              ".pop_front().unwrap_or_else(|| std::process::abort())";
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, "].get") && member->name == "get" &&
             call->arguments.size() == 2) {

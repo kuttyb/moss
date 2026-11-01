@@ -24065,6 +24065,14 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
+    auto suspended_expression_cursors = std::move(active_est_expression_cursors_);
+    active_est_expression_cursors_.clear();
+    struct RestoreExpressionCursors {
+      vector<std::optional<EstExpressionCursor>>& target;
+      vector<std::optional<EstExpressionCursor>> saved;
+      ~RestoreExpressionCursors() { target = std::move(saved); }
+    } restore_expression_cursors{
+        active_est_expression_cursors_, std::move(suspended_expression_cursors)};
     SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,
                                            "fn:" + function.name);

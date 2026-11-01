@@ -16161,3 +16161,39 @@ that case now retains the existing path rather than asserting.
 This is a targeted fixture result, not the required corpus measurement. No
 full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 `658a7ff6`, with this specialization lookup change awaiting commit/push.
+
+## Resume checkpoint (2026-11-01)
+
+- Current branch is `phase27-5-4-work`, based on the already merged `origin/main`;
+  last committed checkpoint before this resume is `5b1743a2`.
+- Diagnosis: while the checker checks a specialization nested inside the caller's
+  call expression, its EST cursor stack still points into that caller tree. The
+  checker has the specialized function's statement handles, but cannot select
+  them as root handles while a caller cursor is active. A local specialization
+  scope now suspends/restores the active cursor stack so specialized body facts
+  can bind to that body's retained nodes. Targeted check now records
+  `Countdown` for the `consume_typed` iterable node in its specialization
+  context. No temporary debug hooks remain in source.
+- One pre-existing candidate regression remains: `tests/phase47_iteration.moss`
+  checks and Fast Debug runs, but generated Rust still fails to compile in
+  generic `consume<Countdown>` (emits `.iter()` for `Countdown`). The pinned C1
+  parent emits a direct `.next()` iterator loop and compiles. Do not claim parity;
+  this needs checker/context fact investigation before C2 gates.
+- Verified after resume: `make moss-dev` PASS;
+  `check_phase27_5_4_fact_hooks.py build/compiler/moss-dev` PASS (7 call-target,
+  4 specialization, 4 joins, 3 patterns; known-debt count 38 unchanged); vector
+  and queue valid push fixtures both check, compile with rustc, and have matching
+  Fast Debug/native stdout (`2` and `1` respectively); calculator Fast
+  Debug/native output matches.
+- Latest identical calculator emission command with test counters: candidate
+  10,246 emitter reparses / 10,822 text-node lookups; pinned C1 counter build
+  181,562 / 273,688. Candidate emits 0 pipeline reparses; these are focused
+  counters, not bulk suite/performance measurements. Candidate generated Rust
+  for calculator compiles and output matches Fast Debug.
+- Current uncommitted code: (1) checker specialization cursor isolation;
+  (2) node-based emitter lowering for builtin vector/queue push/pop calls.
+  The latter reduces calculator counters from the previous 15,360/20,784 to
+  10,246/10,822 and its valid vector/queue targets pass parity. No full suite,
+  three-engine aggregate, perf suite, Agent 2 audit, merge, or tag has run.
+- User's closing round (shadow demotion, runtime ratchet, contract status) stays
+  queued until C2 merges.
