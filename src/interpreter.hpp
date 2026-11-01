@@ -2513,19 +2513,27 @@ class FastInterpreter {
       return field->second;
     }
 
-    if (expression_identifier(e)) {
-      auto found = frame.locals.find(e);
-      if (found != frame.locals.end()) {
-        emit("LocalRead", frame, line, e);
-        return found->second;
+    if (tree) {
+      const auto* identifier =
+          std::get_if<est::Identifier>(&tree->arena->at(current_root));
+      if (identifier) {
+        const auto& name = identifier->name;
+        auto found = frame.locals.find(name);
+        if (found != frame.locals.end()) {
+          emit("LocalRead", frame, line, name);
+          return found->second;
+        }
+        if (function(name)) return Value::callable_value(name);
+        if (name == "None") {
+          Value none = Value::struct_value("option");
+          none.object->case_name = "None";
+          return none;
+        }
+        throw RuntimeError(line, "unknown local '" + name + "'");
       }
-      if (function(e)) return Value::callable_value(e);
-      if (e == "None") {
-        Value none = Value::struct_value("option");
-        none.object->case_name = "None";
-        return none;
-      }
-      throw RuntimeError(line, "unknown local '" + e + "'");
+    } else {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT expression execution has no checked tree");
     }
     throw RuntimeError(line, "unsupported expression '" + e + "'");
   }

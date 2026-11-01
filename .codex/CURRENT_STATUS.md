@@ -14407,3 +14407,21 @@ records scoped Phase 27.5.4 commit/push and gated C1/C2 merge authorization.
 The hook harness now also receives `moss-opt` and verifies that the non-test
 build ignores both perturb and drop variables on one accepted fixture per
 class. Both registered-mode harness invocations pass with this assertion.
+
+### Phase 27.5.4 C1 checkpoint — callable Identifier regression
+
+The first post-hook full default run completed at 160/165. Five jobs failed on
+Fast Debug `MOSS_INTERNAL_INVARIANT missing checked expression node`, all from
+function/callback Identifiers (`add_one`, `plus`, project-local callable IDs,
+and a Phase 15.14 imported callable). The exact Team A and typed-semantic-API
+reproducers pass on parent `c96bca78`, so this was a branch regression. Cause:
+Fast Debug had removed the text-to-active-node lookup, but its last Identifier
+case still called `expression_identifier(source)`. It now reads the current
+`est::Identifier` node directly and fails closed if no checked tree is active.
+
+After the fix, targeted Team A and typed-semantic-API tests pass in default and
+shadow; Phase 26.1 C1 scope and X4 pass; Phase 106 runtime shard passes; the
+string-debt `--require-zero fast_debug`, targeted three-engine parity, and
+all perturb/drop hooks pass. The five-job cluster is therefore resolved in
+focused tests. The first full run did not reach the shadow suite. A fresh
+full default+shadow gate is still required before C1 audit/merge.
