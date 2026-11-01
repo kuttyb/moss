@@ -14559,3 +14559,24 @@ the last edit. The bulk C2 counts remain unchanged because these root kinds
 are a small portion of consumer traffic; next, migrate call/constructor,
 member/index, unary and pipeline child traversals. No full suite or perf pass
 has run.
+
+### Phase 27.5.4 C2 progress report 4 — unary nodes and fact hooks
+
+Added direct retained-node lowering for unary `not`, bitwise complement, and
+negated numeric literals/values, including the checked Int minimum magnitude.
+Kept the prior Rust emission for unsupported unary shapes. Rebuilt
+`build/compiler/moss-dev`; targeted native Rust generation, Rust compilation,
+and Fast Debug/native parity passed for phase5, phase4, and the parenthesized
+pipeline fixtures. Generated Rust is byte-identical to c96 on these fixtures.
+`tests/phase25_integer_overflow.moss` also emits byte-identical Rust and native
+output; its Fast Debug run fails on both parent and candidate at line 48 with
+`FAST_DEBUG_UNCHECKED_EXECUTION` for `sum`, so this is recorded baseline debt.
+
+The registered `check_phase27_5_4_fact_hooks.py` harness passes again for the
+four classes (3 fixtures each; perturb/drop; Fast Debug/native/-O fail closed),
+and non-test `moss-opt` ignores both environment hooks. Latest paired
+candidate counts remain as report 3: phase5 1,666 lookups / 899 view
+reparses; phase4 583 / 303; parenthesized pipeline 817 / 596 / 6 pipeline
+reparses. Parent counts are 2,155 / 1,081; 841 / 439; and 881 / 614 / 8.
+The initial corpus sweep still showed no aggregate change. No full suite or
+performance gate has run.

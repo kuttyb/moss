@@ -3550,6 +3550,39 @@ class Generator {
           break;
       }
     }
+    if (const auto* unary = std::get_if<est::Unary>(
+            &expression.arena->at(root))) {
+      const auto operand = expression.child(unary->operand);
+      if (unary->op == "not" || unary->op == "~")
+        return "!(" + expr(operand, d, locals, types) + ")";
+      if (unary->op == "-") {
+        if (const auto* literal = std::get_if<est::Literal>(
+                &operand.arena->at(operand.id));
+            literal && (literal->literal_class == est::LiteralClass::Integer ||
+                        literal->literal_class == est::LiteralClass::Float)) {
+          DecodedNumber decoded;
+          decoded.kind = literal->numeric.kind;
+          if (decoded.kind == NumericLiteral::Kind::Int) {
+            if (literal->numeric.magnitude_overflow ||
+                literal->numeric.magnitude > kNumericIntMinMagnitude)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked negative integer literal is out of range");
+            decoded.integer = literal->numeric.magnitude ==
+                    kNumericIntMinMagnitude
+                ? std::numeric_limits<std::int64_t>::min()
+                : -static_cast<std::int64_t>(literal->numeric.magnitude);
+          } else {
+            decoded.floating = -literal->numeric.floating;
+          }
+          return rust_numeric_literal(decoded);
+        }
+        auto operand_type = generated_expr_type(operand.text(), types);
+        if (operand_type && canonical_type_name(*operand_type) == "int")
+          return "(" + expr(operand, d, locals, types) + ").wrapping_neg()";
+        if (operand_type && canonical_type_name(*operand_type) == "float")
+          return "-(" + expr(operand, d, locals, types) + ")";
+      }
+    }
     if (const auto* binary = std::get_if<est::Binary>(
             &expression.arena->at(root))) {
       const auto left_expr = expression.child(binary->left);
