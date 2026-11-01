@@ -1,3 +1,11 @@
+### Phase 27.5.4 C1 checkpoint (2026-11-01, latest)
+
+Branch `phase27-5-4-work`, pushed through `981ca31e`. Targeted latest greens include the phase25 Team A semantics suite after reverting the incomplete direct-call fact lookup experiment; it was an attempted migration that made a valid source-free callable fail Fast Debug, so that experiment was removed. The prior retained-tree changes remain.
+
+Targeted pass ledger after the current tree rebuild: root totality/Executor; ABI-v10 X1; Phase25 conformance (11/11); G3 ordering; indexed String; S2 Char/String; S1 checker-authority; S3 key protocol (28 cases, including path dependency and source-free provider); safe arithmetic; L7; Team A; generic typing (128); Executor/FileIO; sdk text encoding; advanced-data oracle Fast Debug; advanced-data Margo debug; Fast Debug shard; enum module shard (60 cases). These are targeted tests only. The initial default make check still stands at 18 failures before fixes; the final full default+shadow check has not been run.
+
+Pending: perturb/drop test-build layer and make-check registration for call targets, specializations, joins, and patterns (three fixtures per class; ask Agent 2 to select at least one fixture per class during the one scheduled audit); document per-engine known debt for expression types, pipeline types, ownership. No C2 emitter/optimizer count measurement, full suite, or perf run yet. Current uncommitted change is the API declaration for `est::populate_loaded_expression`; its implementation and call sites are in the pushed tree. `make moss-dev` plus targeted suites passed after the implementation.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, continued)
 
 Branch `phase27-5-4-work`, pushed checkpoint `d52e112a`. C1 remains in progress; no merge/tag. The initial default `make check` before fixes had 18 failed jobs; see `tmp/phase2754-c1-default-first.log` for the exact list.
