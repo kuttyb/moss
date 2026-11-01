@@ -14713,3 +14713,13 @@ is not the corpus workload or a perf run; full C2 consumer counts and perf
 remain deferred to near completion. Emitter re-parses and lookups are still
 nonzero; continue replacing string-facing emitter helpers with `EmitterExpr`
 projections and recursive ExprId lowering. No full suite has run since C1.
+
+### Phase 27.5.4 C2 checkpoint — None literal node lowering (2026-11-01)
+
+A direct `est::LiteralClass::None` lowering now emits Rust `None` from the
+retained node, removing its fallback into the string expression emitter. The
+accepted `tests/tooling/fixtures/phase21_iterator_generic_raise.moss` checks,
+generates byte-identical Rust against c96, compiles, and produces native /
+Fast Debug parity. This is a small structural reduction; it does not yet
+change the broad counts. The C2 source remains incomplete and no final suite
+has run.

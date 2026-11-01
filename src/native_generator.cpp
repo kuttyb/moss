@@ -3759,7 +3759,7 @@ class Generator {
           return rust_numeric_literal(decoded);
         }
         case est::LiteralClass::None:
-          break;
+          return "None";
       }
     }
     if (const auto* unary = std::get_if<est::Unary>(
