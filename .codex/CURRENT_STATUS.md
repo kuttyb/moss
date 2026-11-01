@@ -14770,3 +14770,15 @@ missing or contradictory targets. `MOSS_TEST_PERTURB=call-targets` and
 with EST facts. The Phase 4 and Phase 5 programs still generate parent-identical
 Rust, compile, and match Fast Debug/native; the registered four-class hook
 harness passes all three engines. This is targeted validation only.
+
+### Phase 27.5.4 C2 checkpoint — call target consumers validated (2026-11-01)
+
+After the new checked statement-target fact was wired, Fast Debug validates
+function and object-method call targets from the context-scoped checker record;
+native object-method lowering selects the matching checked method declaration
+instead of calling `resolve_object_method` on backend argument types. Five
+fixtures (Phase 4, Phase 5, functional objects, collections-and-methods, object
+pipeline) check, generate Rust identical to c96, compile, and match Fast
+Debug/native. The four-class perturb/drop harness passes with 3 fixtures each
+across Fast Debug/native/-O, including the updated statement-call fact. No full
+suite or perf run has occurred.

@@ -7603,16 +7603,39 @@ class Generator {
               : !s.b.empty() ? generated_expr_type(s.a, &types)
                              : std::optional<string>{};
           const Method* call_method = nullptr;
-          if (call_receiver_type && (!s.b.empty() || implicit_method))
-            call_method = resolve_object_method(
-                objects_, canonical_type_name(*call_receiver_type),
-                implicit_method ? s.a : s.b, [&]() {
+          if (call_receiver_type && (!s.b.empty() || implicit_method)) {
+            const string method_name = implicit_method ? s.a : s.b;
+            if (starts_with(checked_target, "method:")) {
+              const string selected = checked_target.substr(7);
+              const auto separator = selected.rfind('.');
+              if (separator == string::npos)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT malformed checked method target");
+              const string owner = selected.substr(0, separator);
+              const string name = selected.substr(separator + 1);
+              auto object = objects_.find(owner);
+              if (name != method_name || object == objects_.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked method target is unavailable");
+              auto method = std::find_if(object->second->methods.begin(),
+                  object->second->methods.end(), [&](const Method& candidate) {
+                    return candidate.name == name;
+                  });
+              if (method == object->second->methods.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked method target is unavailable");
+              call_method = &*method;
+            } else {
+              call_method = resolve_object_method(
+                objects_, canonical_type_name(*call_receiver_type), method_name, [&]() {
                   vector<string> result;
                   for (const auto& argument : s.args)
                     result.push_back(nominalized_generated_argument_type(
                         argument, generated_expr_type(argument, &types).value_or("")));
                   return result;
                 }(), true, nullptr);
+            }
+          }
           const auto external_method_module = call_method && call_receiver_type
               ? phase21_external_module_for_symbol(
                     canonical_type_name(*call_receiver_type))

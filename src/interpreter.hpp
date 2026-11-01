@@ -3450,18 +3450,33 @@ class FastInterpreter {
           output << "\n";
           break;
         case Stmt::Kind::Call: {
-          if (statement.b.empty()) {
-            const Function* target = function(statement.a);
-            if (target && !statement.text.empty()) {
-              auto checked = statement.checked_call_targets_by_context.find(
+          auto checked = statement.checked_call_targets_by_context.find(
+              frame.functional_context);
+          if (checked != statement.checked_call_targets_by_context.end()) {
+            bool matches = !checked->second.empty();
+            if (statement.b.empty()) {
+              const Function* target = function(statement.a);
+              if (target)
+                matches = checked->second == target->semantic_callable_id;
+              else if (checked->second.rfind("fn:", 0) == 0 ||
+                       checked->second.rfind("callable-v1:", 0) == 0)
+                matches = false;
+            } else if (checked->second.rfind("method:", 0) == 0) {
+              auto receiver = statement.receiver_types_by_context.find(
                   frame.functional_context);
-              if (checked == statement.checked_call_targets_by_context.end())
-                throw RuntimeError(statement.line,
-                    "MOSS_INTERNAL_INVARIANT missing checked call target");
-              if (checked->second != target->semantic_callable_id)
-                throw RuntimeError(statement.line,
-                    "MOSS_INTERNAL_INVARIANT checked call target is missing or contradicted");
+              if (receiver == statement.receiver_types_by_context.end())
+                receiver = statement.receiver_types_by_context.find("");
+              matches = receiver != statement.receiver_types_by_context.end() &&
+                  checked->second == "method:" + receiver->second +
+                      "." + statement.b;
             }
+            if (!matches)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT checked call target is missing or contradicted");
+          } else if ((statement.b.empty() && function(statement.a)) ||
+                     !statement.b.empty()) {
+            throw RuntimeError(statement.line,
+                "MOSS_INTERNAL_INVARIANT missing checked call target");
           }
           if (!statement.text.empty())
             evaluate_expression_source(statement.text, frame, statement.line,
