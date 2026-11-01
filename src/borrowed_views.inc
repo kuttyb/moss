@@ -205,17 +205,20 @@
   }
 
   string method_receiver_place(const string& receiver, const string& name, const vector<string>& args,
-      const Domain* d, const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
+      const Domain* d, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const Method* checked_method = nullptr) const {
+    (void)args;
     auto type = generated_expr_type(receiver, types);
-    vector<string> argument_types;
-    for (const auto& arg : args) argument_types.push_back(generated_expr_type(arg, types).value_or(""));
-    const Method* method = type ? resolve_object_method(objects_, canonical_type_name(*type), name,
-                                                       argument_types, true, nullptr) : nullptr;
-    bool writes = method && method->receiver_effect == Effect::Write;
-    if (!method && type) {
+    bool writes = checked_method &&
+        checked_method->receiver_effect == Effect::Write;
+    if (!checked_method && type) {
       const auto* builtin = builtin_operation(*type,
           name == "push_back" ? "push" : name == "pop_front" ? "pop" : name);
       if (builtin) writes = builtin->receiver_effect == Effect::Write;
+      else if (objects_.count(nominal_template_name(*type)))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked receiver method target");
     }
     string result = writes ? write_call_place(receiver, d, locals, types) : read_call_place(receiver, d, locals, types);
     return starts_with(result, "*") ? "(" + result + ")" : result;
@@ -224,20 +227,19 @@
   string method_receiver_place(const EmitterExpr& receiver,
       const string& name, const vector<EmitterExpr>& args,
       const Domain* d, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const Method* checked_method = nullptr) const {
+    (void)args;
     auto type = generated_expr_type(receiver, types);
-    vector<string> argument_types;
-    for (const auto& arg : args)
-      argument_types.push_back(generated_expr_type(arg, types).value_or(""));
-    const Method* method = type
-        ? resolve_object_method(objects_, canonical_type_name(*type), name,
-                                argument_types, true, nullptr)
-        : nullptr;
-    bool writes = method && method->receiver_effect == Effect::Write;
-    if (!method && type) {
+    bool writes = checked_method &&
+        checked_method->receiver_effect == Effect::Write;
+    if (!checked_method && type) {
       const auto* builtin = builtin_operation(*type,
           name == "push_back" ? "push" : name == "pop_front" ? "pop" : name);
       if (builtin) writes = builtin->receiver_effect == Effect::Write;
+      else if (objects_.count(nominal_template_name(*type)))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked receiver method target");
     }
     string result = writes ? write_call_place(receiver, d, locals, types)
                            : expr(receiver, d, locals, types);

@@ -2598,6 +2598,41 @@ class Generator {
     return nullptr;
   }
 
+  std::optional<string> checked_statement_call_target(
+      const EmitterExpr& expression) const {
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!statement || !expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    bool is_statement_root = false;
+    for (const auto& handle : statement->expression_handles) {
+      if (handle.slot != est::ExprSlot::Expression ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (p_.expression_arenas[handle.arena_index].get() == expression.arena &&
+          est::unparenthesized(*expression.arena, handle.expr) == root) {
+        is_statement_root = true;
+        break;
+      }
+    }
+    if (!is_statement_root) return std::nullopt;
+    vector<string> contexts;
+    if (!codegen_body_context_.empty())
+      contexts.push_back(codegen_body_context_);
+    if (!codegen_active_specialization_key_.empty()) {
+      const string specialization =
+          "specialization:" + codegen_active_specialization_key_;
+      if (std::find(contexts.begin(), contexts.end(), specialization) ==
+          contexts.end()) contexts.push_back(specialization);
+    }
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      const auto target = statement->checked_call_targets_by_context.find(context);
+      if (target != statement->checked_call_targets_by_context.end() &&
+          !target->second.empty()) return target->second;
+    }
+    return std::nullopt;
+  }
+
   const Method* checked_method_target(
       const EmitterExpr& expression,
       const std::unordered_map<string,string>* types = nullptr) const {
@@ -5494,6 +5529,8 @@ class Generator {
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
         }
+        if (target.empty())
+          target = checked_statement_call_target(expression).value_or("");
         const bool call_target_fact_hooked =
             moss_test_drop_fact("call-targets") ||
             moss_test_perturb_fact("call-targets");
@@ -6869,7 +6906,33 @@ class Generator {
           return "((" + expr(member_arguments[0], d, locals, types) + ") as u32 as i64)";
         }
       }
-      string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
+      const Method* checked_receiver_method = nullptr;
+      if (checked_node && checked_node->arena) {
+        const auto checked_root = est::unparenthesized(
+            *checked_node->arena, checked_node->id);
+        const auto* checked_call = std::get_if<est::Call>(
+            &checked_node->arena->at(checked_root));
+        const auto* checked_facts = checked_expression_facts(*checked_node);
+        if (checked_call && checked_facts &&
+            (starts_with(checked_facts->resolved_target, "method:") ||
+             starts_with(checked_facts->resolved_target,
+                         string(checked_ir::kMemberRequirementPrefix)) ||
+             starts_with(checked_facts->resolved_target, "trait-method:") ||
+             starts_with(checked_facts->resolved_target, "parameter:")))
+          checked_receiver_method = checked_method_target(*checked_node, types);
+      }
+      if (!checked_receiver_method) {
+        const auto candidates = checked_method_targets(member_name,
+            phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+        if (candidates.size() > 1)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked receiver method target=" +
+              member_name + " context=" + codegen_body_context_);
+        if (!candidates.empty()) checked_receiver_method = candidates.front();
+      }
+      string receiver_expression = method_receiver_place(member_receiver,
+          member_name, member_arguments, d, locals, types,
+          checked_receiver_method);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (staged_abi_v10() && tree_empty_constructor_named(member_receiver, "Map") &&
@@ -10153,7 +10216,8 @@ class Generator {
                     ? viewed_function_name(*function_target,
                           checked_call_arguments, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(receiver_expression,
-                          s.b, checked_call_arguments, d, locals, &types)
+                          s.b, checked_call_arguments, d, locals, &types,
+                          call_method)
                     : expr(receiver_expression, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
           call_output << (standard_write_bridge ? "__moss_bridge_receiver" :

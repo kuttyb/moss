@@ -1,6 +1,6 @@
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `5b6a8177`. Updated
+- Branch `phase27-5-4-work`; latest pushed checkpoint `c2237b40`. Updated
   `origin/main` is already an ancestor via merge `2cf4abb9`; its AGENTS.md and
   compiler-contract edits are present on this branch. Latest `make moss-dev`
   and `check_phase27_5_4_fact_hooks.py` pass; receiver-call perturb/drop runs
@@ -8,6 +8,12 @@
   Same calculator default-command counters after the node routes: 15,804
   emitter reparses, 24,252 text-node lookups, 1,562 string type queries and
   423 string expression queries. No full C2 gates have run.
+- Current uncommitted receiver-method guardrail slice removes receiver-type
+  method selection from borrowed-view place lowering. Node lowering now reads
+  the statement-level checked target when the exact expression node has no
+  attached target. Team A, including source-free Range provider rebuild, and
+  Phase 27.5.4 fact hooks pass. Remaining emitter method resolution is limited
+  to implicit `for` iterator protocol selection.
 - The checked member-target slice was
   committed in `bf0d04cc` across `src/native_generator.cpp`,
   `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
