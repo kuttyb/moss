@@ -14822,3 +14822,26 @@ functional objects `5287/2941/0 -> 2944/1737/0`; object pipeline
 `5844/3060/0 -> 2622/2078/0`. The new expression-tree fields are additive and
 legacy string callers retain their existing behavior. Full gates remain
 pending.
+
+
+### Phase 27.5.4 C2 checkpoint — callback type queries use retained stage ExprIds (2026-11-01)
+
+The EST functional-stage projection now stores each callback argument ExprId,
+arena, and source buffer on `ParsedFunctionalStage`. Emitter callback result
+type queries use those nodes for placeholder detection and recursive
+`generated_expr_type`, instead of reparsing callback source for this query.
+The change built successfully; `check_phase27_est_functional_tree.py` and
+`check_phase27_three_engine.py` passed. Four fixtures (Phase 5, Phase 4,
+functional objects, object pipeline) generated Rust byte-identical to the
+pinned c96 parent in default and `-O`.
+
+Like-for-like default + `-O` emitter counters on those four files: parent
+17,129 text-node lookups / 9,047 native expression-view reparses / 0 pipeline
+reparses; candidate 8,235 / 5,052 / 0. This is a targeted sample, not the
+full corpus. Callback rendering still has source substitution and further
+consumer text paths remain. No full suite or performance run since C1.
+
+The four-class perturb/drop harness remains registered for default and shadow;
+its C1 report documents Agent 2's fixture selections. The upcoming final C2
+audit must verify that perturbation actually changes the checked answer, and
+that each consumer follows the changed answer or fails closed.

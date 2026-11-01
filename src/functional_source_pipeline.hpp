@@ -15,6 +15,8 @@ struct ParsedFunctionalStage {
   std::string raw;
   std::vector<std::string> arguments;
   std::vector<est::ExprId> argument_nodes;
+  const est::Arena* expression_arena = nullptr;
+  std::string expression_source;
 };
 
 struct ParsedFunctionalPipeline {

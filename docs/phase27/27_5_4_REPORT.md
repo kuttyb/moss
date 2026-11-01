@@ -4,7 +4,7 @@
 
 C1 implementation: `0e150dcef0a0be69c1502710e38c1dabb4f0877e` on
 `phase27-5-4-work`. Agent 2 reviewed that exact implementation and returned
-**GO** before delivery. C2 emitter/optimizer migration remains unstarted.
+**GO** before delivery. C2 emitter/optimizer migration is in progress; its final gates have not run.
 
 Fast Debug expression evaluation now requires a retained checked tree handle;
 `src/interpreter.hpp:639–670` reports `MOSS_INTERNAL_INVARIANT` when the
@@ -44,3 +44,15 @@ Known debt for expression types, pipeline types, and ownership remains listed
 in `docs/COMPILER_STATE.md`. The class-1 coverage percentage is report-only;
 this C1 checkpoint does not claim emitter/optimizer migration. No separate
 performance suite was run.
+
+
+## C2 progress — retained callback type queries
+
+At the 2026-11-01 checkpoint, functional callback result-type queries consume
+retained stage argument ExprIds. On a targeted four-source/default-plus-`-O`
+sample, the c96 parent measured 17,129 text-node lookups and 9,047 native
+expression-view reparses; the candidate measured 8,235 and 5,052. Both had zero
+native pipeline reparses. Generated Rust was byte-identical for all eight
+source/profile comparisons. These sample counts are not the required final
+corpus + examples + packages measurement. No C2 full suite/performance gate has
+run.

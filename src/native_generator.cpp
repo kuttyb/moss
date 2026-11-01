@@ -536,6 +536,13 @@ class Generator {
       return EmitterExpr{arena, child_id, source};
     }
   };
+  static EmitterExpr functional_argument_node(
+      const ParsedFunctionalStage& stage, size_t index) {
+    if (!stage.expression_arena || index >= stage.argument_nodes.size())
+      return {};
+    return EmitterExpr{stage.expression_arena, stage.argument_nodes[index],
+                       stage.expression_source};
+  }
   string codegen_body_context_;
   string codegen_active_specialization_key_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
@@ -1988,15 +1995,29 @@ class Generator {
     return syntax && est::contains_identifier(*syntax, name);
   }
 
+  bool generated_expression_uses(const EmitterExpr& expression,
+                                 const string& name) const {
+    if (!expression.arena) return false;
+    return est::contains_identifier(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source}, name);
+  }
+
   std::optional<string> generated_callable_result(
       const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types) const {
-    if (generated_expression_uses(callable, "_")) {
+      const std::unordered_map<string,string>* types,
+      const EmitterExpr* checked_callable) const {
+    const bool uses_placeholder = checked_callable && checked_callable->arena
+        ? generated_expression_uses(*checked_callable, "_")
+        : generated_expression_uses(callable, "_");
+    if (uses_placeholder) {
       if (input_types.size() != 1) return std::nullopt;
       std::unordered_map<string,string> placeholder_types = types
           ? *types : std::unordered_map<string,string>{};
       placeholder_types["_"] = input_types.front();
-      return generated_expr_type(callable, &placeholder_types);
+      return checked_callable && checked_callable->arena
+          ? generated_expr_type(*checked_callable, &placeholder_types)
+          : generated_expr_type(callable, &placeholder_types);
     }
     string bound_receiver, bound_method;
     if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
@@ -2028,6 +2049,21 @@ class Generator {
         !contains_internal_placeholder(*fn->return_type))
       return canonical_type_name(*fn->return_type);
     return std::nullopt;
+  }
+
+  std::optional<string> generated_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const std::unordered_map<string,string>* types) const {
+    return generated_callable_result(callable, input_types, types, nullptr);
+  }
+
+  std::optional<string> generated_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const std::unordered_map<string,string>* types,
+      const ParsedFunctionalStage& stage, size_t argument_index) const {
+    auto checked = functional_argument_node(stage, argument_index);
+    return generated_callable_result(callable, input_types, types,
+                                     checked.arena ? &checked : nullptr);
   }
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
@@ -2117,7 +2153,7 @@ class Generator {
         case FunctionalNodeKind::Map: {
           if (stage.arguments.size() != 1) return std::nullopt;
           auto result = generated_callable_result(stage.arguments.front(),
-                                                  {current}, types);
+              {current}, types, stage, 0);
           if (!result) return std::nullopt;
           current = *result;
           output = "vector[" + current + "]";
@@ -3247,7 +3283,8 @@ class Generator {
         if (stage.kind != FunctionalNodeKind::Map) continue;
         for (const auto& operation : stage.operations) {
           auto result = generated_callable_result(
-              operation.arguments.front(), {element_type}, &types);
+              operation.arguments.front(), {element_type}, &types,
+              operation, 0);
           if (!result)
             throw std::runtime_error(
                 "internal error: untyped shared functional map");
@@ -3360,7 +3397,8 @@ class Generator {
                            locals, &types)
                     << ";\n";
                 auto mapped_type = generated_callable_result(
-                    operation.arguments.front(), {current.type}, &types);
+                    operation.arguments.front(), {current.type}, &types,
+                    operation, 0);
                 if (!mapped_type)
                   throw std::runtime_error(
                       "internal error: untyped shared functional map result");
@@ -3511,7 +3549,7 @@ class Generator {
             stage.arguments.front(), {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
         auto result = generated_callable_result(stage.arguments.front(),
-                                                {current_type}, types);
+            {current_type}, types, stage, 0);
         if (!result)
           throw std::runtime_error("internal error: untyped eager map result");
         current_type = *result;
@@ -3612,7 +3650,8 @@ class Generator {
       if (stage.kind != FunctionalNodeKind::Map) continue;
       for (const auto& operation : stage.operations) {
         auto result = generated_callable_result(
-            operation.arguments.front(), {final_element_type}, types);
+            operation.arguments.front(), {final_element_type}, types,
+            operation, 0);
         if (!result)
           throw std::runtime_error("internal error: untyped fused map result");
         final_element_type = *result;
@@ -3665,7 +3704,8 @@ class Generator {
                        locals, types)
                 << ";\n";
             auto result = generated_callable_result(
-                operation.arguments.front(), {current.type}, types);
+                operation.arguments.front(), {current.type}, types,
+                operation, 0);
             if (!result)
               throw std::runtime_error(
                   "internal error: untyped fused map result");

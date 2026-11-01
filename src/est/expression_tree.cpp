@@ -123,6 +123,8 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
     parsed_stage.kind = *kind;
     parsed_stage.raw = std::move(*raw);
     parsed_stage.argument_nodes = arguments;
+    parsed_stage.expression_arena = &arena;
+    parsed_stage.expression_source = std::string(source);
     for (const auto argument : arguments) {
       auto argument_text = source_slice(argument);
       if (!argument_text) return std::nullopt;
