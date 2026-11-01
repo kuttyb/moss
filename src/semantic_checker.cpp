@@ -26661,6 +26661,18 @@ class Checker {
     return tree_parse_index(source, base, index);
   }
 
+  std::optional<string> checked_expression_empty_typed_vector_constructor(
+      const string& source) const {
+    if (auto view = active_expression_view()) {
+      auto type = est::project_empty_constructor_type(*view);
+      if (!type) return std::nullopt;
+      string canonical = canonical_type_name(*type);
+      return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+          ? std::optional<string>(std::move(canonical)) : std::nullopt;
+    }
+    return tree_empty_typed_vector_constructor(source);
+  }
+
   std::optional<std::vector<string>> checked_expression_vector_literal(
       const string& source) const {
     if (auto view = active_expression_view())
@@ -28290,7 +28302,7 @@ class Checker {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||
-             tree_empty_typed_vector_constructor(value)
+             checked_expression_empty_typed_vector_constructor(value)
                 ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_ && !checking_specialization_ &&
@@ -28298,7 +28310,7 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = args;
-      if (tree_empty_typed_vector_constructor(value) && current_body_types_ &&
+      if (checked_expression_empty_typed_vector_constructor(value) && current_body_types_ &&
           !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
         auto& occurrence = current_body_types_->expression_occurrences.at(
@@ -28390,7 +28402,7 @@ class Checker {
               "REPLACE_TYPE_MISMATCH");
         return;
       }
-      if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
+      if (auto typed_vector = checked_expression_empty_typed_vector_constructor(value)) {
         if (contains_trait_type(*typed_vector))
           err(line,
               "trait types are static structural constraints and cannot be stored "

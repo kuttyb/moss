@@ -13812,3 +13812,11 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   handle 0). Checker reparses remain 121 (body 18, view 59, pipeline 44).
   Text-node lookups remain 0 on this fixture, including the newly counted
   effect span-matching path. K2 overall remains far from target zero.
+
+## Phase 27.5.4 typed-constructor node projection checkpoint (2026-10-31)
+
+- Empty typed-vector constructor recognition in `check_expression` now projects
+  the type from the active EST node. Default and shadow checks pass for
+  `tests/swarm_020_typed_vector_factory.moss`; focused functional-tree test
+  passes. The unrelated functional_basics cache total remains 15,462 and its
+  checker parse total remains 121, as expected for a source without that shape.
