@@ -20,6 +20,14 @@
   expression-view reparses, 0 native pipeline reparses, and generated type
   facts: calls 2 PRESENT/16 ABSENT, constructors 0/10, identifiers 0/68,
   literals 0/44. This is a single-fixture baseline, not a corpus KPI result.
+- First checker recursion slice is committed below: retained parenthesized
+  expressions and vector literal children now enter through their exact EST
+  ExprIds and source spans, rather than resolving child identity from text.
+  Development build succeeded; targeted `phase27_5_for.moss`, parenthesized
+  pattern, and the three join fixtures checked and ran; the existing focused
+  Fast Debug/native/optimized parity script passed. This does not yet change
+  most recursive string paths or consumer K1/K2 totals. Full suites and perf
+  remain unrun.
 
 ## Phase 27.5.3 active checkpoint (2026-10-31)
 

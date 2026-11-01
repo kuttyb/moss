@@ -26440,10 +26440,52 @@ class Checker {
     record_active_expression_facts(std::move(facts));
   }
 
+  std::optional<string> expression_child_source(
+      const EstExpressionCursor& parent, est::ExprId child) const {
+    const auto* arena = expression_arena(parent.arena_index);
+    if (!arena) return std::nullopt;
+    const auto parent_span = arena->span(parent.expr);
+    const auto child_span = arena->span(child);
+    if (child_span.source_begin < parent_span.source_begin ||
+        child_span.source_end < child_span.source_begin ||
+        child_span.source_end > parent_span.source_end)
+      return std::nullopt;
+    const auto begin = child_span.source_begin - parent_span.source_begin;
+    const auto length = child_span.source_end - child_span.source_begin;
+    if (begin > parent.source.size() ||
+        length > parent.source.size() - begin)
+      return std::nullopt;
+    return trim(parent.source.substr(begin, length));
+  }
+
+  void check_expression_node(int line, std::uint32_t arena_index,
+                             est::ExprId expression,
+                             const std::unordered_map<string,string>& env,
+                             std::string_view child_role) {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      throw std::logic_error(
+          "MOSS_INTERNAL_INVARIANT expression node has no checked parent cursor line=" +
+          std::to_string(line));
+    const auto& parent = *active_est_expression_cursors_.back();
+    if (parent.arena_index != arena_index)
+      throw std::logic_error(
+          "MOSS_INTERNAL_INVARIANT expression node arena differs from parent line=" +
+          std::to_string(line));
+    auto source = expression_child_source(parent, expression);
+    if (!source)
+      throw std::logic_error(
+          "MOSS_INTERNAL_INVARIANT expression node is outside parent source line=" +
+          std::to_string(line));
+    EstExpressionCursor cursor{arena_index, expression, *source};
+    check_expression(line, *source, env, {}, child_role, std::move(cursor));
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
                         std::string_view root_slot = {},
-                        std::string_view child_role = {}) {
+                        std::string_view child_role = {},
+                        std::optional<EstExpressionCursor> exact_cursor = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
     const auto [source_issue, trailing_operator] =
@@ -26480,8 +26522,9 @@ class Checker {
         active_est_expression_cursors_.back())
       cursor_child_ordinal =
           active_est_expression_cursors_.back()->child_count++;
-    auto tree_cursor = resolve_expression_cursor(
-        original, root_slot, child_role, cursor_child_ordinal);
+    auto tree_cursor = exact_cursor ? std::move(exact_cursor)
+        : resolve_expression_cursor(original, root_slot, child_role,
+                                    cursor_child_ordinal);
     active_est_expression_cursors_.push_back(tree_cursor);
     const string fact_context = expression_fact_context();
     struct EstExpressionCursorScope {
@@ -26850,8 +26893,23 @@ class Checker {
     // from the ordinary-expression checker.
     if (tree_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
-      check_expression(line, tree_strip_redundant_outer_parentheses(original), env,
-                       {}, "grouped-expression");
+      const bool checked_node = !active_est_expression_cursors_.empty() &&
+          active_est_expression_cursors_.back() &&
+          [&] {
+            const auto& cursor = *active_est_expression_cursors_.back();
+            const auto* arena = expression_arena(cursor.arena_index);
+            if (!arena) return false;
+            const auto* grouped = std::get_if<est::Parenthesized>(
+                &arena->at(cursor.expr));
+            if (!grouped) return false;
+            check_expression_node(line, cursor.arena_index, grouped->inner,
+                                  env, "grouped-expression");
+            return true;
+          }();
+      if (!checked_node)
+        check_expression(line,
+            tree_strip_redundant_outer_parentheses(original), env, {},
+            "grouped-expression");
       return;
     }
     if (auto elements = tree_parse_vector_literal(original)) {
@@ -26862,13 +26920,38 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = *elements;
-      for (const auto& element : *elements) {
+      std::vector<std::pair<string, std::optional<est::ExprId>>> checked_elements;
+      if (!active_est_expression_cursors_.empty() &&
+          active_est_expression_cursors_.back()) {
+        const auto& cursor = *active_est_expression_cursors_.back();
+        if (const auto* arena = expression_arena(cursor.arena_index))
+          if (const auto* collection = std::get_if<est::Collection>(
+                  &arena->at(cursor.expr));
+              collection && collection->delimiter == '[' &&
+              collection->elements.size() == elements->size()) {
+            for (std::size_t index = 0; index < collection->elements.size();
+                 ++index)
+              checked_elements.emplace_back((*elements)[index],
+                                             collection->elements[index]);
+          }
+      }
+      if (checked_elements.empty())
+        for (const auto& element : *elements)
+          checked_elements.emplace_back(element, std::nullopt);
+      for (std::size_t index = 0; index < checked_elements.size(); ++index) {
+        const auto& [element, node] = checked_elements[index];
         auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
           err(line, "FileIO and ranges cannot enter ordinary collections",
               "FILEIO_COLLECTION_ESCAPE");
-        check_expression(line, element, env, {},
-                         "element:" + std::to_string(&element - elements->data()));
+        const auto role = "element:" + std::to_string(index);
+        if (node && !active_est_expression_cursors_.empty() &&
+            active_est_expression_cursors_.back())
+          check_expression_node(line,
+              active_est_expression_cursors_.back()->arena_index, *node, env,
+              role);
+        else
+          check_expression(line, element, env, {}, role);
       }
       if (current_body_types_) {
         if (elements->empty()) {
