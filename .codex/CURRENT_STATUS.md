@@ -14076,3 +14076,13 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   is explicit. After the revert, the functional-tree harness and targeted
   Fast Debug/native/optimized parity harness pass; `check_phase27_est.py` still
   fails at the context-scoped effect-fact assertion. No full suite or perf run.
+- Expanded checked inference to project nonnumeric Member roots through the
+  active cursor; numeric member names deliberately remain outside this
+  observational fact path to avoid the malformed-field stack recursion. The
+  functional-tree and Fast Debug/native/optimized parity harnesses pass;
+  regex package checking succeeds and the numeric-field fixture retains
+  UNKNOWN_FIELD. A focused regex measurement is 12,003 checker post-initial
+  parses (body 1,106, view 1,674, pipeline 9,020), 4,933,254 text-cache
+  lookups, and 203 tree-text rebuilds. There is no same-source pre-change
+  measurement, so no K2/K8 delta is claimed. The member-call node experiment
+  remains reverted because of the cursor/source mismatch described above.
