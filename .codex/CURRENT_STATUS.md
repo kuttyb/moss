@@ -1,7 +1,8 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; pushed checkpoint `b69bc561` (parent
-  `3fe7af48`). `origin/main` is already merged into this branch via `2cf4abb9`.
+- Branch `phase27-5-4-work`; latest pushed checkpoint `ec91f628` (counter
+  report; fixture commit `b69bc561` and handover commit `033bb4b8` precede it).
+  `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
   fixture in `check_phase27_5_4_fact_hooks.py`. The harness now passes seven
