@@ -1,4 +1,4 @@
-# Moss compiler contract (rev 2, Nov 1 2026)
+# Moss compiler contract (DRAFT, rev 2, Nov 1 2026)
 
 The compiler counterpart to the Moss language docs: the architectural invariants every stage must hold. Each invariant names the gate that enforces it and its current status. Where an invariant is not yet met, the gap is recorded as **declared known debt** with its current measurement. Debt may shrink; it must not grow.
 
@@ -45,6 +45,6 @@ Terms:
 
 ## Maintenance
 
-- Kept current like the language docs. Required reading for Moss compiler development (see AGENTS.md); not required for regular Moss development. Fed to cold-start reviewers alongside the language docs.
+- Kept current like the language docs; read by agents at session start (AGENTS.md) and fed to cold-start reviewers alongside the language docs.
 - Every phase that changes a status or a debt number updates this file in the same delivery.
 - CI should verify that every gate named here exists in make check (pending).
