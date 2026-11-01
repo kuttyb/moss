@@ -16751,3 +16751,23 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - `check_phase27_5_4_fact_hooks.py` passes with known debt exactly 38/38;
   `git diff --check` passes. No full suite, paired whole-workload count,
   performance run, or Agent 2 audit has run.
+
+## C2 checkpoint: view-name specialization uses the same checked call node (2026-11-01)
+
+- `viewed_function_name(Function, vector<EmitterExpr>, ...)` now forwards the
+  owning call node to checked specialization selection. Previously normal call
+  rendering used the node, but the borrowed-view name calculation repeated the
+  query without it.
+- The six hot fixtures from the prior checkpoint now all emit 0 text lookups / 0
+  reparses per command (both default and `-O`): open-result multihop,
+  open-result zero-iteration, nested-write specialization, FileIO range,
+  trait-open forwarding and swap assignment. Generated Rust is byte-identical
+  to commit `7dd9073d` for all six.
+- Native/Fast Debug output parity passes on multihop, zero-iteration,
+  trait-open-forwarding and swap-assignment fixtures. FileIO is unsupported by
+  Fast Debug. `nested_write` has a pre-existing C2 branch Fast Debug invariant
+  error, reproduced at `7dd9073d`; the pinned C1 parent passes and prints `1`.
+  Its generated Rust compiles and is unchanged.
+- Fact hooks passed at 38/38 before the byte-identity comparison; diff check
+  passes. No full suite, paired whole workload, performance run or Agent 2 audit
+  has run.

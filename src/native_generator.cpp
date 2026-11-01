@@ -4043,7 +4043,8 @@ class Generator {
     std::ostringstream call;
     const string emitted_name = argument_nodes &&
             argument_nodes->size() == arguments.size()
-        ? viewed_function_name(function, *argument_nodes, domain, locals, types)
+        ? viewed_function_name(function, *argument_nodes, domain, locals,
+                               types, call_node)
         : viewed_function_name(name, arguments, domain, locals, types);
     call << emitted_name << "(";
     auto nested_occurrence = [&](size_t index) {

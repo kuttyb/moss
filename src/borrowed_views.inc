@@ -186,12 +186,14 @@
   string viewed_function_name(const Function& function,
       const vector<EmitterExpr>& args, const Domain* d,
       const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const EmitterExpr* call_node = nullptr) const {
     vector<string> source_args;
     source_args.reserve(args.size());
     for (const auto& argument : args) source_args.push_back(argument.text());
     const auto* specialization = function.static_dispatch
-        ? call_specialization(function, source_args, types, &args) : nullptr;
+        ? call_specialization(function, source_args, types, &args, call_node)
+        : nullptr;
     string emitted = specialization ? specialization->generated_name
                                     : function.name;
     for (size_t index = 0; index < args.size(); ++index) {
