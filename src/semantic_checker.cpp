@@ -26625,6 +26625,27 @@ class Checker {
     return view;
   }
 
+  std::optional<std::vector<string>> checked_expression_vector_literal(
+      const string& source) const {
+    if (auto view = active_expression_view())
+      return est::project_vector_literal(*view);
+    return tree_parse_vector_literal(source);
+  }
+
+  bool checked_expression_parse_index(const string& source, string& base,
+                                      string& index) const {
+    if (auto view = active_expression_view())
+      return est::project_index(*view, base, index);
+    return tree_parse_index(source, base, index);
+  }
+
+  bool checked_expression_parse_member_access(const string& source,
+      string& base, string& member) const {
+    if (auto view = active_expression_view())
+      return est::project_member_access(*view, base, member);
+    return tree_parse_member_access(source, base, member);
+  }
+
   bool checked_expression_parse_enum_case(const string& source,
       string& enum_name, string& case_name, vector<string>& fields,
       bool& called) const {
@@ -27191,7 +27212,7 @@ class Checker {
                            "argument:" + std::to_string(index));
       return;
     }
-    if (auto syntax = checker_est_view(original); syntax &&
+    if (auto syntax = active_expression_view(); syntax &&
         std::holds_alternative<moss::est::Collection>(
             syntax->arena->at(syntax->root))) {
       const auto& collection = std::get<moss::est::Collection>(
@@ -27243,7 +27264,7 @@ class Checker {
             "grouped-expression");
       return;
     }
-    if (auto elements = tree_parse_vector_literal(original)) {
+    if (auto elements = checked_expression_vector_literal(original)) {
       mark_active_expression(OccurrenceKind::VectorLiteral,
                              "builtin:vector-literal");
       if (current_body_types_ && !checking_specialization_ &&
@@ -27966,7 +27987,7 @@ class Checker {
       return;
     }
     string ib, ii;
-    if (tree_parse_index(value, ib, ii)) {
+    if (checked_expression_parse_index(value, ib, ii)) {
       mark_active_expression(OccurrenceKind::Index, "builtin:index");
       check_expression(line, ib, env, {}, "container");
       check_expression(line, ii, env, {}, "index");
@@ -28053,7 +28074,7 @@ class Checker {
     }
     {
       string base, field;
-      if (tree_parse_member_access(value, base, field)) {
+      if (checked_expression_parse_member_access(value, base, field)) {
         auto receiver_type = inferred_expr_type(base, env);
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",

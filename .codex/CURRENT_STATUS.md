@@ -13762,3 +13762,15 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   functional_basics cache=15,568, checker reparses=121; specialized_call_facts
   cache=25,318, checker reparses=44. Baseline counts remain 16,593/121 and
   26,775/44 respectively. No full suite/perf run.
+
+## Phase 27.5.4 collection/index node projection checkpoint (2026-10-31)
+
+- `check_expression` now projects collection shape/vector elements, Index, and
+  member access from its active ExpressionView, bypassing corresponding
+  checker EST-view lookups on these recursive paths. Functional-tree and six
+  optimizer-expression three-engine tests pass; functional_basics passes in
+  default and shadow.
+- Focused `functional_basics.moss` cache consultations are now 15,479 versus
+  16,593 baseline; checker reparses remain 121. K8 remains unchanged: the
+  phase10 module fixture reports two expression-tree rebuilds. The previously
+  measured corpus baseline is 10,095; corpus current count is not yet rerun.
