@@ -13884,3 +13884,12 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   text. The `domain-handle-map.moss` adversarial fixture still rejects with
   `MOSS_COMPILE_ERROR` in default and shadow. functional_basics counters are
   unchanged because it has no map domain-handle entry.
+
+## Phase 27.5.4 leaf-type node checkpoint (2026-10-31)
+
+- The domain-handle guard reads active Identifier bindings and Literal classes
+  directly from checked nodes (including pipeline placeholder type facts),
+  avoiding general expression inference for these leaf forms. `functional_basics`
+  and the domain-handle-map rejection pass default/shadow checks.
+- functional_basics cache consultations are 15,160 (down 200); checker
+  reparses remain 121. Tightened K2 is still open.

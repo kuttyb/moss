@@ -26967,6 +26967,40 @@ class Checker {
     return checked_matches_declared(expression, declared, env);
   }
 
+  std::optional<string> checked_expression_leaf_type(
+      const std::unordered_map<string,string>& env) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return std::nullopt;
+    const auto& cursor = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(cursor.arena_index);
+    if (!arena) return std::nullopt;
+    if (const auto* identifier = std::get_if<est::Identifier>(
+            &arena->at(cursor.expr))) {
+      const auto binding = env.find(identifier->name);
+      if (binding != env.end())
+        return canonical_type_name(binding->second);
+      return std::nullopt;
+    }
+    if (const auto* literal = std::get_if<est::Literal>(
+            &arena->at(cursor.expr))) {
+      switch (literal->literal_class) {
+        case est::LiteralClass::Integer: return "int";
+        case est::LiteralClass::Float: return "float";
+        case est::LiteralClass::String: return "string";
+        case est::LiteralClass::Character: return "char";
+        case est::LiteralClass::Boolean: return "bool";
+        case est::LiteralClass::None: break;
+      }
+    }
+    if (std::holds_alternative<est::Placeholder>(arena->at(cursor.expr)) &&
+        current_body_types_ &&
+        current_body_types_->active_pipeline_placeholder_type)
+      return current_body_types_->active_pipeline_placeholder_type
+          ->to_canonical_string();
+    return std::nullopt;
+  }
+
   std::optional<string> checked_expression_child_type(
       std::string_view role) const {
     if (active_est_expression_cursors_.empty() ||
@@ -27430,8 +27464,10 @@ class Checker {
         }
       }
     }
-    if (auto type = inferred_expr_type(original, env))
-      if (contains_domain_handle(*type))
+    auto checked_leaf_type = checked_expression_leaf_type(env);
+    auto domain_value_type = checked_leaf_type
+        ? checked_leaf_type : inferred_expr_type(original, env);
+    if (domain_value_type && contains_domain_handle(*domain_value_type))
         err(line, "domain handles cannot be used as ordinary values or payloads; "
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
