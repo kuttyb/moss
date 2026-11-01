@@ -2240,7 +2240,8 @@ class Checker {
     string source;
     std::uint32_t child_count = 0;
   };
-  vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
+  mutable vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
+  mutable std::size_t checked_inference_cursor_depth_ = 0;
   mutable vector<std::optional<EstExpressionCursor>> active_effect_cursors_;
   bool suppress_expression_occurrence_capture_ = false;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
@@ -11830,6 +11831,13 @@ class Checker {
     return inferred ? inferred->term : nullptr;
   }
 
+  moss::TypeRef inferred_expr_term_on_cursor(
+      const string& expression, const TypeEnv& env,
+      const EstExpressionCursor& cursor) const {
+    auto inferred = inferred_expr_on_cursor(expression, env, cursor);
+    return inferred ? inferred->term : nullptr;
+  }
+
   // A placeholder primitive (`_generic:x`) counts as closed in the algebra
   // but is still open here; it stays legacy until variables replace it.
   std::optional<InferredExpr> inferred_expr(const string& expression,
@@ -11843,25 +11851,139 @@ class Checker {
     return inferred;
   }
 
+  std::optional<InferredExpr> inferred_expr_on_cursor(
+      const string& expression, const TypeEnv& env,
+      const EstExpressionCursor& cursor) const {
+    active_est_expression_cursors_.push_back(cursor);
+    ++checked_inference_cursor_depth_;
+    struct Scope {
+      vector<std::optional<EstExpressionCursor>>& cursors;
+      std::size_t& depth;
+      ~Scope() {
+        --depth;
+        cursors.pop_back();
+      }
+    } scope{active_est_expression_cursors_, checked_inference_cursor_depth_};
+    return inferred_expr(expression, env);
+  }
+
+  std::optional<InferredExpr> inferred_child_expr(
+      const string& fallback, const TypeEnv& env, std::string_view role,
+      std::uint32_t ordinal = 0) const {
+    if (checked_inference_cursor_depth_ != 0 &&
+        !active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& parent = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(parent.arena_index);
+      if (!arena) return std::nullopt;
+      const auto ungrouped_parent = est::unparenthesized(*arena, parent.expr);
+      const auto child = expression_child_node(*arena, ungrouped_parent, role,
+                                               ordinal);
+      if (!child) return std::nullopt;
+      auto source = expression_child_source(parent, *child);
+      if (!source)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT inferred child source missing line=" +
+            std::to_string(arena->span(parent.expr).line));
+      EstExpressionCursor child_cursor{parent.arena_index, *child, *source};
+      return inferred_expr_on_cursor(*source, env, child_cursor);
+    }
+    return inferred_expr(fallback, env);
+  }
+
+  bool inferred_child_empty_vector(const string& fallback,
+                                   std::uint32_t ordinal) const {
+    if (checked_inference_cursor_depth_ != 0 &&
+        !active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& parent = *active_est_expression_cursors_.back();
+      const auto* arena = expression_arena(parent.arena_index);
+      if (!arena) return false;
+      const auto root = est::unparenthesized(*arena, parent.expr);
+      const auto child = expression_child_node(*arena, root, "element",
+                                               ordinal);
+      if (!child) return false;
+      auto source = expression_child_source(parent, *child);
+      if (!source)
+        throw std::logic_error(
+            "MOSS_INTERNAL_INVARIANT inferred vector child source missing line=" +
+            std::to_string(arena->span(parent.expr).line));
+      est::ExpressionView view;
+      view.arena = arena;
+      view.root = *child;
+      view.source = std::move(*source);
+      return est::empty_vector_literal(view);
+    }
+    return tree_empty_vector_literal(fallback);
+  }
+
   std::optional<InferredExpr> inferred_expr_core(const string& expression,
                                                  const TypeEnv& env) const {
     using R = std::optional<InferredExpr>;
+    const bool checked_node = checked_inference_cursor_depth_ != 0;
+    auto strip_grouping = [&](const string& value) {
+      return checked_node ? checked_expression_strip_grouping(value)
+                          : tree_strip_redundant_outer_parentheses(value);
+    };
+    auto parse_simple_call = [&](const string& value, string& callee,
+                                 vector<string>& args) {
+      return checked_node
+          ? checked_expression_parse_simple_call(value, callee, args)
+          : tree_parse_simple_call(value, callee, args);
+    };
+    auto parse_enum_case = [&](const string& value, string& enum_name,
+                               string& case_name, vector<string>& fields,
+                               bool& called) {
+      return checked_node
+          ? checked_expression_parse_enum_case(value, enum_name, case_name,
+                                               fields, called)
+          : tree_parse_enum_case_expression(value, enum_name, case_name,
+                                            fields, called);
+    };
+    auto parse_message = [&](const string& value, string& target,
+                             string& handler, vector<string>& args) {
+      return checked_node
+          ? checked_expression_parse_message(value, target, handler, args)
+          : tree_parse_message(value, target, handler, args);
+    };
+    auto split_binary = [&](const string& value,
+                            const vector<string>& operators) {
+      return checked_node ? checked_expression_split_binary(value, operators)
+                          : tree_split_binary(value, operators);
+    };
+    auto parse_unary = [&](const string& value, string& operation,
+                           string& operand) {
+      return checked_node
+          ? checked_expression_parse_unary(value, operation, operand)
+          : tree_parse_unary(value, operation, operand);
+    };
+    auto parse_vector = [&](const string& value) {
+      return checked_node ? checked_expression_vector_literal(value)
+                          : tree_parse_vector_literal(value);
+    };
+    auto parse_index = [&](const string& value, string& base, string& index) {
+      return checked_node ? checked_expression_parse_index(value, base, index)
+                          : tree_parse_index(value, base, index);
+    };
     auto primitive = [](const char* name) -> R {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
-    string original = tree_strip_redundant_outer_parentheses(expression);
-    if (tree_placeholder_expression(original) && current_body_types_ &&
+    string original = strip_grouping(expression);
+    if ((checked_node ? checked_expression_placeholder(original)
+                      : tree_placeholder_expression(original)) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
       return InferredExpr{
           current_body_types_->solver.resolve(
               current_body_types_->active_pipeline_placeholder_type), {}, {}};
-    auto operand_term = [&](const string& operand) -> moss::TypeRef {
+    auto operand_term = [&](const string& operand,
+                            std::string_view role) -> moss::TypeRef {
       if (current_body_types_) {
         auto retained = current_body_types_->known_expression(operand);
         if (retained) return current_body_types_->solver.resolve(retained);
       }
-      return inferred_expr_term(operand, env);
+      auto inferred = inferred_child_expr(operand, env, role);
+      return inferred ? inferred->term : nullptr;
     };
     // Checked bodies retain one solver-owned term per local. A field or index
     // read composes from that term instead of re-inferring from display text.
@@ -11876,21 +11998,21 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
+      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
-        return inferred_expr(arguments[0], env);
+        return inferred_child_expr(arguments[0], env, "call-argument", 0);
     }
     {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (tree_parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
+      if (parse_enum_case(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
         return inferred_leaf(enum_name);
     }
     string message_target, message_handler;
     vector<string> message_args;
-    if (tree_parse_message(original, message_target, message_handler,
+    if (parse_message(original, message_target, message_handler,
                            message_args)) {
       string receiver = message_target;
       string handler = message_handler;
@@ -11906,18 +12028,21 @@ class Checker {
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return inferred_leaf(*functional);
-    string e = tree_strip_redundant_outer_parentheses(tree_normalize_pipeline(std::move(original)));
+    string normalized = checked_node
+        ? checked_expression_normalize_pipeline(original)
+        : tree_normalize_pipeline(std::move(original));
+    string e = strip_grouping(normalized);
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = tree_split_binary(e, {op})) {
-        return primitive_term(operand_term(binary->first), "bool") &&
-                primitive_term(operand_term(binary->second), "bool")
+      if (auto binary = split_binary(e, {op})) {
+        return primitive_term(operand_term(binary->first, "left"), "bool") &&
+                primitive_term(operand_term(binary->second, "right"), "bool")
             ? primitive("bool") : std::nullopt;
       }
     }
     string unary_operation, unary_operand;
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "not")
-      return primitive_term(operand_term(unary_operand), "bool")
+      return primitive_term(operand_term(unary_operand, "operand"), "bool")
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
@@ -11939,20 +12064,28 @@ class Checker {
       vector<string> open_arguments;
       if (tree_parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
-    if (auto parts = tree_parse_vector_literal(e)) {
+    if (auto parts = parse_vector(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
       vector<InferredExpr> elements;
       // Preserve S's contextual empty-vector siblings using checked terms.
-      const bool has_typed_vector_sibling = std::any_of(
-          parts->begin(), parts->end(), [&](const string& part) {
-            if (tree_empty_vector_literal(part)) return false;
-            auto item = inferred_expr(part, env);
-            return item && item->term &&
-                applied_builtin(item->term, {"vector"});
-          });
-      for (const auto& part : *parts) {
-        if (has_typed_vector_sibling && tree_empty_vector_literal(part)) continue;
-        auto element = inferred_expr(part, env);
+      bool has_typed_vector_sibling = false;
+      for (std::size_t ordinal = 0; ordinal < parts->size(); ++ordinal) {
+        const auto& part = parts->at(ordinal);
+        if (inferred_child_empty_vector(part,
+                static_cast<std::uint32_t>(ordinal))) continue;
+        auto item = inferred_child_expr(part, env, "element",
+            static_cast<std::uint32_t>(ordinal));
+        if (item && item->term && applied_builtin(item->term, {"vector"})) {
+          has_typed_vector_sibling = true;
+          break;
+        }
+      }
+      for (std::size_t ordinal = 0; ordinal < parts->size(); ++ordinal) {
+        const auto& part = parts->at(ordinal);
+        if (has_typed_vector_sibling && inferred_child_empty_vector(part,
+                static_cast<std::uint32_t>(ordinal))) continue;
+        auto element = inferred_child_expr(part, env, "element",
+            static_cast<std::uint32_t>(ordinal));
         if (!element) return std::nullopt;
         elements.push_back(std::move(*element));
       }
@@ -11971,25 +12104,25 @@ class Checker {
           return std::nullopt;
       return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
-    if (auto comparison = tree_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
-      if (auto binary = tree_split_binary(e, ops)) {
-        return primitive_term(operand_term(binary->first), "int") &&
-                primitive_term(operand_term(binary->second), "int")
+      if (auto binary = split_binary(e, ops)) {
+        return primitive_term(operand_term(binary->first, "left"), "int") &&
+                primitive_term(operand_term(binary->second, "right"), "int")
             ? primitive("int") : std::nullopt;
       }
     }
-    if (auto arithmetic = tree_split_binary(e, {"+", "-", "*", "/", "%"})) {
-      auto left = operand_term(arithmetic->first);
-      auto right = operand_term(arithmetic->second);
+    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
+      auto left = operand_term(arithmetic->first, "left");
+      auto right = operand_term(arithmetic->second, "right");
       if (left && right && left->kind == moss::TypeKind::Primitive &&
           right->kind == moss::TypeKind::Primitive) {
         if (left->name == "string" && right->name == "string" &&
-            tree_split_binary(e, {"+"}))
+            split_binary(e, {"+"}))
           return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (tree_split_binary(e, {"%"}) &&
+        if (split_binary(e, {"%"}) &&
             (left->name != "int" || right->name != "int"))
           return std::nullopt;
         if ((left->name == "int" || left->name == "float") &&
@@ -11999,36 +12132,40 @@ class Checker {
       }
       // An open source declaration keeps an operator requirement. Concrete
       // specializations re-enter this branch with bound TypeRefs.
-      auto left_open = inferred_expr(arithmetic->first, env);
-      auto right_open = inferred_expr(arithmetic->second, env);
+      auto left_open = inferred_child_expr(arithmetic->first, env, "left");
+      auto right_open = inferred_child_expr(arithmetic->second, env, "right");
       if (left_open && right_open && !left_open->term && !right_open->term &&
           left_open->legacy == right_open->legacy &&
           open_generic(left_open->legacy))
         return left_open;
     }
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "~")
-      return primitive_term(operand_term(unary_operand), "int")
+      return primitive_term(operand_term(unary_operand, "operand"), "int")
           ? primitive("int") : std::nullopt;
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "-") {
-      auto operand = operand_term(unary_operand);
+      auto operand = operand_term(unary_operand, "operand");
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
       // Unary minus keeps its numeric operand's type (`return -x`).
-      auto operand_type = inferred_expr_type(unary_operand, env);
+      auto inferred_operand = inferred_child_expr(unary_operand, env,
+                                                  "operand");
+      auto operand_type = inferred_operand
+          ? std::optional<string>(inferred_operand->projection())
+          : std::nullopt;
       if (operand_type && (canonical_type_name(*operand_type) == "int" ||
                            canonical_type_name(*operand_type) == "float"))
         return inferred_leaf(canonical_type_name(*operand_type));
     }
     string index_base, index_expr;
-    if (tree_parse_index(e, index_base, index_expr)) {
-      auto base = inferred_expr(index_base, env);
+    if (parse_index(e, index_base, index_expr)) {
+      auto base = inferred_child_expr(index_base, env, "base");
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
       if (primitive_term(base->term, "Range")) return primitive("int");
       if (current_body_types_) {
-        auto base_term = operand_term(index_base);
+        auto base_term = operand_term(index_base, "base");
         if (base_term && base_term->kind == moss::TypeKind::InferenceVar) {
           auto elem = current_body_types_->solver.fresh(0);
           current_body_types_->solver.unify(
@@ -12062,9 +12199,18 @@ class Checker {
     auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
-      if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
+      if (!parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
         return inferred_leaf(builtin->result_type);
+      auto argument_type = [&](std::size_t index) -> std::optional<string> {
+        if (index >= args.size()) return std::nullopt;
+        auto inferred = inferred_child_expr(args[index], env, "call-argument",
+            static_cast<std::uint32_t>(index));
+        if (!inferred) return std::nullopt;
+        auto type = inferred->projection();
+        return type.empty() || starts_with(type, "_typevar_")
+            ? std::nullopt : std::optional<string>(std::move(type));
+      };
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
@@ -12084,8 +12230,8 @@ class Checker {
       }
       if (!function_target && current_object_) {
         vector<string> argument_types;
-        for (const auto& argument : args)
-          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+        for (std::size_t index = 0; index < args.size(); ++index)
+          argument_types.push_back(argument_type(index).value_or(""));
         auto method = resolve_method(current_object_->name, callee, argument_types);
         if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
@@ -12093,8 +12239,8 @@ class Checker {
         string r = canonical_type_name(*function_target->return_type);
         if (function_target->static_dispatch) {
           vector<string> actual_types;
-          for (const auto& arg : args)
-            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          for (std::size_t index = 0; index < args.size(); ++index)
+            actual_types.push_back(argument_type(index).value_or(""));
           bool concrete = actual_types.size() == function_target->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
@@ -12108,8 +12254,8 @@ class Checker {
         }
         if (starts_with(r, "_method_result:")) {
           vector<string> actual_types;
-          for (const auto& arg : args)
-            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          for (std::size_t index = 0; index < args.size(); ++index)
+            actual_types.push_back(argument_type(index).value_or(""));
           auto specialized = specialized_function_return_type(*function_target, actual_types);
           if (!specialized) return std::nullopt;
           return inferred_leaf(*specialized);
@@ -26769,17 +26915,27 @@ class Checker {
     return tree_parse_vector_literal(source);
   }
 
+  string checked_expression_strip_grouping(const string& source) const {
+    if (auto view = active_expression_view())
+      return est::strip_grouping(*view);
+    return tree_strip_redundant_outer_parentheses(source);
+  }
+
   bool checked_expression_parse_index(const string& source, string& base,
                                       string& index) const {
-    if (auto view = active_expression_view())
+    if (auto view = active_expression_view()) {
+      view->root = est::unparenthesized(*view->arena, view->root);
       return est::project_index(*view, base, index);
+    }
     return tree_parse_index(source, base, index);
   }
 
   bool checked_expression_parse_member_access(const string& source,
       string& base, string& member) const {
-    if (auto view = active_expression_view())
+    if (auto view = active_expression_view()) {
+      view->root = est::unparenthesized(*view->arena, view->root);
       return est::project_member_access(*view, base, member);
+    }
     return tree_parse_member_access(source, base, member);
   }
 
@@ -26836,9 +26992,11 @@ class Checker {
   bool checked_expression_parse_enum_case(const string& source,
       string& enum_name, string& case_name, vector<string>& fields,
       bool& called) const {
-    if (auto view = active_expression_view())
+    if (auto view = active_expression_view()) {
+      view->root = est::unparenthesized(*view->arena, view->root);
       return est::project_enum_case(*view, enum_name, case_name, fields,
                                     &called);
+    }
     return tree_parse_enum_case_expression(source, enum_name, case_name,
                                            fields, called);
   }
@@ -26858,8 +27016,10 @@ class Checker {
 
   bool checked_expression_parse_message(const string& source,
       string& target, string& handler, vector<string>& arguments) const {
-    if (auto view = active_expression_view())
+    if (auto view = active_expression_view()) {
+      view->root = est::unparenthesized(*view->arena, view->root);
       return est::project_message(*view, target, handler, arguments);
+    }
     return tree_parse_message(source, target, handler, arguments);
   }
 
@@ -26898,7 +27058,8 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return false;
-      const auto* unary = std::get_if<est::Unary>(&arena->at(cursor.expr));
+      const auto root = est::unparenthesized(*arena, cursor.expr);
+      const auto* unary = std::get_if<est::Unary>(&arena->at(root));
       if (!unary) return false;
       auto child = expression_child_source(cursor, unary->operand);
       if (!child)
@@ -26919,7 +27080,8 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return false;
-      const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+      const auto root = est::unparenthesized(*arena, cursor.expr);
+      const auto* call = std::get_if<est::Call>(&arena->at(root));
       if (!call) return false;
       const auto* identifier = std::get_if<est::Identifier>(
           &arena->at(call->callee));
@@ -26946,7 +27108,8 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return false;
-      const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+      const auto root = est::unparenthesized(*arena, cursor.expr);
+      const auto* call = std::get_if<est::Call>(&arena->at(root));
       if (!call) return false;
       const auto* access = std::get_if<est::Member>(&arena->at(call->callee));
       if (!access) return false;
@@ -27004,7 +27167,8 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena) return std::nullopt;
-      const auto* binary = std::get_if<est::Binary>(&arena->at(cursor.expr));
+      const auto root = est::unparenthesized(*arena, cursor.expr);
+      const auto* binary = std::get_if<est::Binary>(&arena->at(root));
       if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
                          operators.end())
         return std::nullopt;
@@ -27188,7 +27352,7 @@ class Checker {
           const auto* existing = arena->facts(cursor.expr, fact_context);
           if (!existing || !existing->type) {
             try {
-              auto type = inferred_expr_term(source, env);
+              auto type = inferred_expr_term_on_cursor(source, env, cursor);
               if (type) {
                 est::SemanticFacts facts;
                 facts.type = std::move(type);
@@ -27301,6 +27465,9 @@ class Checker {
                 const auto id = occurrence_state->active_expression_occurrences.back();
                 auto term = checked_expression_term(source, env);
                 if (!term) term = occurrence_state->known_expression(source);
+                if (!term && tree_cursor)
+                  term = inferred_expr_term_on_cursor(source, env,
+                                                       *tree_cursor);
                 if (!term) term = inferred_expr_term(source, env);
                 if (!term)
                   term = occurrence_state->expression_occurrences.at(id)

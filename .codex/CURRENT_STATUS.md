@@ -1,7 +1,8 @@
 # Phase 27.5.4 — active handover (2026-10-31)
 
-- Branch `phase27-5-4-work` is cleanly based on the Phase 27.5.3 C1 checkpoint;
-  latest pushed commit is `4a3df618`. No full suite, corpus pass, or performance
+- Branch `phase27-5-4-work` is based on the Phase 27.5.3 C1 checkpoint;
+  latest pushed commit is `aeb49749`. Current checker inference changes are
+  uncommitted. No full suite, corpus pass, or performance
   run has occurred. Agent 2 remains reserved for the final full-suite checkpoint.
 - Fast Debug statement evaluation now passes exact checked ExprIds for ordinary
   statement roots, message/reply values, constructor fields, and Phase 20
@@ -17,18 +18,25 @@
   `check_phase27_est_functional_tree.py build/compiler/moss-dev` pass. This did
   not yet measure a K2 counter delta; no cache enlargement is being counted as
   progress.
-- Checker expression checking now tests empty Map receivers through
+- Checker expression checking tests empty Map receivers through
   the active call's `receiver` ExprId with `est::empty_constructor_named`, for
   both Map.get specialization paths. The accepted
   `tests/swarm_028_self_method_argument_borrow.moss` checks successfully; the
   parenthesized open Map.get adversarial fixture still rejects with
-  `TYPE_AMBIGUOUS_OPEN_RESULT`. Functional-basics coverage counters and
-  `specialized_call_facts` remain unchanged, so no aggregate K2 improvement is
-  claimed from this narrow direct-node route.
+  `TYPE_AMBIGUOUS_OPEN_RESULT`.
+- Fact-only expression inference now has an explicit checked-cursor entry and
+  recursively projects binary, unary, index, vector-element, call, enum-case,
+  and message roots from their ExprIds. Recursive operands receive child ExprIds
+  by AST role/ordinal. Targeted functional-tree, optimizer three-engine,
+  functional-basics Fast Debug, specialized-call check, and accepted borrow
+  fixture checks pass. The focused specialized-call text-cache count is now
+  24,835 (was 24,901, a reduction of 66); functional-basics remains 15,160.
+  Checker reparses remain 44 and 121 respectively, so this is partial K2
+  progress only and not completion. No bulk suite or performance pass ran.
 - Tight K2: every checker EST-view or text-keyed parse-cache lookup counts on
   hit and miss. Focused `functional_basics.moss` remains 15,160 checker text
   cache lookups and 121 checker reparses (body 18, view 59, pipeline 44);
-  `specialized_call_facts.moss` is 24,901 cache lookups and 44 reparses (body
+  `specialized_call_facts.moss` is 24,835 cache lookups and 44 reparses (body
   2, view 42). Focused prior baseline was 16,593 and 25,118 cache lookups
   respectively; counters reflect prior routing work, not the latest predicate
   reorder. Parser and text lookup targets remain zero.
