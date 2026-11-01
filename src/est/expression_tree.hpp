@@ -144,6 +144,7 @@ class Arena {
                              std::string_view specialization_context) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
+  void test_mutate_expression_types(bool drop);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.

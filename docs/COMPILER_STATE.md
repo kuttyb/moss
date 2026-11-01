@@ -131,11 +131,19 @@ known consumer debt:
 
 | Decision | Fast Debug | Native emitter | Optimizer |
 | --- | --- | --- | --- |
-| Expression types | Uses runtime values to execute operations; checked-type consumption is not established. | Recursively infers missing types in `generated_expr_type` (`src/native_generator.cpp:2186–2541`). | Direct use/ignore status is unmeasured; no type-fact perturbation coverage. |
-| Pipeline stage/output types | Falls back to callback signature and runtime-value inference after checked lookup (`src/interpreter.hpp:1350–1485`, 12 prior firings). | Callable and result-type selection still use emitter-side inference (`src/native_generator.cpp:2006–2051, 3345–3366`). | Direct use/ignore status is unmeasured; no pipeline-fact perturbation coverage. |
-| Ownership / clone-move-borrow | Executes values at runtime; ownership-fact consumption is not established. | Makes local borrow/clone/recovery-slot choices (`src/native_generator.cpp:1417–1438, 1690–1708, 1774–1823`). | Direct use/ignore status is unmeasured; no ownership-fact perturbation coverage. |
+| Expression types | Runtime behavior ignores the perturbed answer on all three registered fixtures. | Ignores it on `side_facts.moss`; other fixture outcomes are in the baseline JSON. | Ignores it on `side_facts.moss`; other fixture outcomes are in the baseline JSON. |
+| Pipeline stage/output types | Runtime behavior ignores it on all three fixtures. | Ignores it on `pipeline_shape.moss` and `collections_and_methods.moss`. | Ignores it on `collections_and_methods.moss`. |
+| Ownership / clone-move-borrow | Runtime behavior ignores it on `phase4_effect_smoke.moss`. | Ignores it on `phase4_effect_smoke.moss`. | Ignores it on `phase4_effect_smoke.moss`. |
 
 This table records known gaps and missing evidence, not a claim that each
 engine ignores every fact in that class. K1 remains report-only in the current
 re-scoped phase. C1's default and shadow suites pass 165/165, and Agent 2
 returned GO on the candidate recorded in `docs/phase27/27_5_4_REPORT.md`.
+
+`tests/tooling/check_phase27_5_4_fact_hooks.py` perturbs and drops these three
+classes on three accepted fixtures each, then compares Fast Debug, native, and
+optimized results with the unmodified run. The exact ignored
+`(class, action, fixture, engine)` cases are stored in
+`tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`; make check fails only
+if that set grows. This is a bounded known-debt regression baseline, not proof
+that untested consumers are migrated.

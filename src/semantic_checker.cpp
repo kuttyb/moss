@@ -31307,6 +31307,47 @@ public:
 #ifdef MOSS_TEST_BUILD
     const bool drop_targets = moss_test_drop_fact("call-targets");
     const bool perturb_targets = moss_test_perturb_fact("call-targets");
+    const bool drop_types = moss_test_drop_fact("expression-types");
+    const bool perturb_types = moss_test_perturb_fact("expression-types");
+    const bool drop_pipelines = moss_test_drop_fact("pipeline-types");
+    const bool perturb_pipelines = moss_test_perturb_fact("pipeline-types");
+    const bool drop_ownership = moss_test_drop_fact("ownership");
+    const bool perturb_ownership = moss_test_perturb_fact("ownership");
+    if (drop_types || perturb_types) {
+      std::set<est::Arena*> visited;
+      for (const auto& arena : p_.expression_arenas)
+        if (arena && visited.insert(arena.get()).second)
+          arena->test_mutate_expression_types(drop_types);
+      if (p_.expression_arena && visited.insert(p_.expression_arena.get()).second)
+        p_.expression_arena->test_mutate_expression_types(drop_types);
+    }
+    if (drop_pipelines || perturb_pipelines) {
+      for (auto& pipeline : p_.functional_pipelines) {
+        if (drop_pipelines) {
+          pipeline.output_type.clear();
+          for (auto& node : pipeline.nodes) node.output_type.clear();
+        } else {
+          pipeline.output_type = "bool";
+          for (auto& node : pipeline.nodes) node.output_type = "bool";
+        }
+      }
+    }
+    if (drop_ownership || perturb_ownership) {
+      const auto altered = [&](Effect effect) {
+        if (drop_ownership) return Effect::Read;
+        return effect == Effect::Read ? Effect::Consume : Effect::Read;
+      };
+      for (auto& function : p_.functions) {
+        for (auto& effect : function.parameter_effects) effect = altered(effect);
+        for (auto& specialization : function.specializations)
+          for (auto& effect : specialization.parameter_effects) effect = altered(effect);
+      }
+      for (auto& object : p_.objects)
+        for (auto& method : object.methods)
+          for (auto& effect : method.parameter_effects) effect = altered(effect);
+      for (auto& pipeline : p_.functional_pipelines)
+        for (auto& node : pipeline.nodes) node.ownership = altered(node.ownership);
+    }
     if (drop_targets || perturb_targets) {
       std::set<est::Arena*> visited;
       for (const auto& arena : p_.expression_arenas)

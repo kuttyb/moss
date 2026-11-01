@@ -74,6 +74,15 @@ void Arena::test_mutate_call_targets(bool drop) {
     else target = "fn:__moss_test_perturbed_call_target__";
   }
 }
+
+void Arena::test_mutate_expression_types(bool drop) {
+  const TypeRef perturbed = drop ? nullptr
+      : Type::parse_canonical("bool").value_or(nullptr);
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.type) continue;
+    entry.second.type = perturbed;
+  }
+}
 #endif
 
 std::optional<ParsedFunctionalPipeline> functional_pipeline(

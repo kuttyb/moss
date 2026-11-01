@@ -15721,3 +15721,21 @@ lookups / 37,270 reparses to 46,432 / 36,586 per emission. Native package build,
 trace for that source is 20 Call nodes, mainly object methods such as
 `Diag.code()` and `Token.value()`; overall corpus target is not met. No full
 suite or perf run has occurred.
+
+### C2 fact-hook debt baseline and policy addendum (2026-11-01)
+
+On `phase27-5-4-work`, the requested AGENTS.md policy addendum is present.
+Test-build hooks now perturb/drop expression types, pipeline output/node types,
+and function/specialization/method/pipeline ownership facts. The existing
+`check_phase27_5_4_fact_hooks.py` gate compares Fast Debug, native, and optimized
+results on three accepted fixtures per debt class against the unmodified
+result. Its checked-in fixture-level baseline records 38 ignored
+class/action/fixture/engine cases; the gate permits the set to shrink and fails
+only if it grows. Default and `MOSS_EST=shadow` targeted harness runs pass.
+
+No full suite, corpus counter sweep, or performance suite has run for this
+slice. Latest pushed code base before this slice: `26859054`; these policy and
+test-baseline edits are not yet committed. Next: commit/push this checkpoint,
+then continue tracing C2 emitter call fallback sites on the calculator source
+and broader residual emitter count; optimizer consumer counts are still
+unmeasured. Agent 2 and final gates remain reserved until C2 is complete.
