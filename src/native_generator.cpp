@@ -6727,12 +6727,14 @@ class Generator {
                 << " Err(" << phase21_selected_carrier_ << ");\n";
             }
           } else {
-            auto type = generated_expr_type(s.a, &types);
+            const EmitterExpr raise_value = checked_expression_ref(
+                s.a, est::ExprSlot::RaisedValue);
+            auto type = generated_expr_type(raise_value, &types);
             if (!type)
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
-            const string value = expr(s.a, d, locals, &types,
+            const string value = expr(raise_value, d, locals, &types,
                 statement_functional_pipeline_id(
                     s, functional_context, 0));
             if (enums_.count(concrete)) {
@@ -6783,7 +6785,9 @@ class Generator {
           break;
         }
         case Stmt::Kind::Match: {
-          auto scrutinee_type = generated_expr_type(s.a, &types);
+          const EmitterExpr scrutinee = checked_expression_ref(
+              s.a, est::ExprSlot::Scrutinee);
+          auto scrutinee_type = generated_expr_type(scrutinee, &types);
           if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
             throw std::runtime_error("unchecked enum match");
           const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
@@ -6804,20 +6808,26 @@ class Generator {
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
           }
-          string match_callee;
-          vector<string> match_arguments;
+          const auto scrutinee_root = est::unparenthesized(
+              *scrutinee.arena, scrutinee.id);
           bool struct_literal = false;
-          // A Rust struct literal is not allowed as a bare scrutinee.
-          if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
-            for (const auto& candidate : declaration.cases) {
-              const string suffix = declaration.name + "." + candidate.name;
-              if (!candidate.fields.empty() &&
-                  (match_callee == suffix ||
-                   (match_callee.size() > suffix.size() &&
-                    match_callee.compare(match_callee.size() - suffix.size(), suffix.size(), suffix) == 0 &&
-                    match_callee[match_callee.size() - suffix.size() - 1] == '.'))) {
-                struct_literal = true;
-                break;
+          if (const auto* constructor = std::get_if<est::Constructor>(
+                  &scrutinee.arena->at(scrutinee_root))) {
+            const auto type_root = est::unparenthesized(*scrutinee.arena,
+                                                         constructor->type);
+            if (const auto* case_member = std::get_if<est::Member>(
+                    &scrutinee.arena->at(type_root))) {
+              const auto enum_root = est::unparenthesized(*scrutinee.arena,
+                                                           case_member->base);
+              const auto* enum_name = std::get_if<est::Identifier>(
+                  &scrutinee.arena->at(enum_root));
+              if (enum_name && enum_name->name == declaration.name) {
+                auto item = std::find_if(declaration.cases.begin(),
+                    declaration.cases.end(), [&](const EnumCase& candidate) {
+                      return candidate.name == case_member->name;
+                    });
+                struct_literal = item != declaration.cases.end() &&
+                    !item->fields.empty();
               }
             }
           }
@@ -6829,7 +6839,7 @@ class Generator {
             o << "__moss_recovery_slot_" << s.a
               << ".take().unwrap_or_else(|| std::process::abort())";
           else
-            o << expr(s.a, d, locals, &types);
+            o << expr(scrutinee, d, locals, &types);
           if (struct_literal) o << ")";
           o << " {\n";
           ++i;
@@ -6922,7 +6932,8 @@ class Generator {
             types[binding] = type;
           }
           o << indent(level) << "if "
-            << expr(s.a, d, locals, &types,
+            << expr(checked_expression_ref(s.a, est::ExprSlot::Condition),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0))
             << " {\n";
@@ -6954,7 +6965,8 @@ class Generator {
         }
         case Stmt::Kind::While: {
           o << indent(level) << "while "
-            << expr(s.a, d, locals, &types,
+            << expr(checked_expression_ref(s.a, est::ExprSlot::Condition),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0))
             << " {\n";

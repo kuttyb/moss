@@ -14734,3 +14734,15 @@ those For decisions from the string parser path while preserving all native
 lowering branches. `tests/phase47_iteration.moss` checks, generated Rust is
 byte-identical to c96, rustc succeeds, and Fast Debug output matches native.
 No full suite/perf run has occurred.
+
+### Phase 27.5.4 C2 checkpoint — control roots use checked ExprIds (2026-11-01)
+
+Native Raise values, Match scrutinees, If conditions and While conditions now
+enter lowering through their typed retained slots (`RaisedValue`, `Scrutinee`,
+`Condition`). Match constructor parenthesization is derived from the
+Constructor/Member/Identifier nodes rather than reparsing source. Targeted
+Phase 47 iteration, enum payload-pattern, and collections/methods fixtures
+check and compile; Fast Debug/native outputs agree; generated Rust matches the
+c96 parent on all three. Fact perturb/drop still passes for all four classes,
+and the static emitter/optimizer string-debt audit passes. Full corpus counts
+will be refreshed at the next paired-count checkpoint; no full suite/perf.
