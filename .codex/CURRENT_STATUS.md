@@ -15019,3 +15019,25 @@ lookups / 24,163 expression-view reparses. Candidate fell from 24,139 / 14,227
 to 22,951 / 13,885. Generated Rust stayed byte-identical on all seven
 fixtures in both modes. The three-engine gate and four-class perturb/drop
 harness pass. Full workload counts, suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — run Agent 2-selected perturb/drop fixtures
+
+The registered hook harness now includes the fixture selected during the C1
+Agent 2 audit for each class: call targets (`pipeline_shape.moss`),
+specializations (`twice_multi.moss`), joins (`join_recover_binding.moss`), and
+patterns (`pattern_parenthesized.moss`, already present). Default and shadow
+runs pass perturb and drop across 5 call-target, 4 specialization, 4 join, and
+3 pattern fixtures. The same harness checks Fast Debug, native emission, and
+`-O` for fail-closed behavior; test-hook variables remain ignored by
+`moss-opt`. Emitter/optimizer consumer counts are still nonzero and final gates
+remain pending.
+
+### Phase 27.5.4 C2 checkpoint — numeric helper discovery scans retained arenas only (2026-11-01)
+
+Removed `program_uses_numeric_builtins`'s fallback that reparsed every
+expression-shaped string in synthesized statement bodies. The source and
+imported-body expression arenas are scanned directly; these already cover
+checked source calls. A temporary accepted `to_int` fixture verified the
+numeric runtime helper is still emitted, generated Rust compiles, runtime output
+is `1`, and its Rust bytes match the pinned c96 parent. The temporary fixture
+lives under `tmp/` and is not registered. Full suite/perf remain pending.
