@@ -15095,3 +15095,20 @@ source buffer solely for rendering the selected node. Four focused sources
 methods) remain Rust-byte-identical to c96 in default and `-O`. Three-engine
 and fact-hook checks pass. This change removes a text-derived node-selection
 condition; the bulk lookup counter does not instrument that span comparison.
+
+### Phase 27.5.4 C2 checkpoint — node type inference has no text fallback (2026-11-01)
+
+`generated_expr_type(EmitterExpr)` now uses its checker fact and recursive node
+rules only. An unsupported node shape returns no emitter type instead of calling
+`generated_expr_type(expression.text(), ...)`. Ten targeted sources (three-
+engine fixture, functional objects, object pipeline, string concatenation,
+borrowed views, numeric-member projection, mini application, string map, and
+collections with methods), default plus `-O`, generate Rust byte-identical to
+the c96 parent. Paired counts: c96 76,824 text lookups / 43,213 expression
+reparses; candidate 41,205 / 25,257. Fast Debug/native/`-O` execution matches
+on nine of the ten; `examples/mini_application.moss` remains a pre-existing
+unsupported user-named pipeline stage on c96 (line 88 unsupported-stage error)
+and fails in the current retained-tree interpreter with missing checked node.
+This behavior gap is recorded as baseline debt; no pipeline acceptance or
+meaning was changed. The three-engine and default/shadow hook matrices pass.
+Full suites and performance remain pending.

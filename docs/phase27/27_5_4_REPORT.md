@@ -158,3 +158,15 @@ source/default-plus-`-O` sample measured 20,514 / 11,124 on c96 versus
 output is byte-identical and Fast Debug, native, and `-O` compile-and-run
 outputs agree on the four sources. Mutating string methods and other receiver
 families remain on the legacy path.
+
+`generated_expr_type(EmitterExpr)` no longer falls back to the legacy string
+inference routine: checker facts and recursive EST-node rules supply the answer,
+and an unsupported shape returns no type. On ten targeted sources, default plus
+`-O`, c96 measured 76,824 text lookups / 43,213 expression reparses and the
+candidate measured 41,205 / 25,257; all twenty generated-Rust outputs are
+byte-identical. Fast Debug/native/`-O` agree on nine sources. The tenth,
+`examples/mini_application.moss`, has a pre-existing unsupported user-named
+pipeline stage on c96 (unsupported-stage error at line 88); current retained-tree
+Fast Debug reports a missing checked node for that stage. This remains recorded
+baseline Fast Debug debt and is outside the emitter changes. The full C2 suite
+has not run.

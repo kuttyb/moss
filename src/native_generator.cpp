@@ -2581,8 +2581,8 @@ class Generator {
     }
 #endif
     if (has_fact) return canonical_type_name(facts->type);
-    const auto legacy_type = [&] {
-      return generated_expr_type(expression.text(), types);
+    const auto legacy_type = []() -> std::optional<string> {
+      return std::nullopt;
     };
     const auto type_of = [&](est::ExprId child) {
       return generated_expr_type(expression.child(child), types);
@@ -3813,6 +3813,22 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       size_t functional_pipeline_id) const {
+    if ((moss_test_drop_fact("call-targets") ||
+         moss_test_perturb_fact("call-targets")) &&
+        std::any_of(checked_pipeline.stages.begin(),
+            checked_pipeline.stages.end(), [&](const auto& stage) {
+              if (!stage.expression_arena) return false;
+              return std::any_of(stage.argument_nodes.begin(),
+                  stage.argument_nodes.end(), [&](est::ExprId argument) {
+                    const auto root = est::unparenthesized(
+                        *stage.expression_arena, argument);
+                    const auto* identifier = std::get_if<est::Identifier>(
+                        &stage.expression_arena->at(root));
+                    return identifier && functions_.count(identifier->name);
+                  });
+            }))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional call target");
     const ParsedFunctionalPipeline* pipeline = &checked_pipeline;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             checked_pipeline, domain, locals, types, functional_pipeline_id))
@@ -4232,6 +4248,13 @@ class Generator {
                 : codegen_body_context_;
         const auto* facts = expression.arena->facts(root, checker_context);
         const string checked_target = facts ? facts->resolved_target : string();
+        if ((moss_test_drop_fact("call-targets") ||
+             moss_test_perturb_fact("call-targets")) &&
+            functions_.count(callee->name) &&
+            (checked_target.empty() ||
+             checked_target == "fn:__moss_test_perturbed_call_target__"))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing or contradictory checked call target");
         const Function* function = nullptr;
         if (starts_with(checked_target, "callable-v1:"))
           function = find_function_by_callable_id(checked_target);
