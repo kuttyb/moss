@@ -26975,6 +26975,9 @@ class Checker {
     const auto& cursor = *active_est_expression_cursors_.back();
     const auto* arena = expression_arena(cursor.arena_index);
     if (!arena) return std::nullopt;
+    if (const auto* facts = arena->facts(cursor.expr, expression_fact_context());
+        facts && facts->type)
+      return facts->type->to_canonical_string();
     if (const auto* identifier = std::get_if<est::Identifier>(
             &arena->at(cursor.expr))) {
       const auto binding = env.find(identifier->name);
@@ -26995,9 +26998,12 @@ class Checker {
     }
     if (std::holds_alternative<est::Placeholder>(arena->at(cursor.expr)) &&
         current_body_types_ &&
-        current_body_types_->active_pipeline_placeholder_type)
-      return current_body_types_->active_pipeline_placeholder_type
-          ->to_canonical_string();
+        current_body_types_->active_pipeline_placeholder_type) {
+      auto resolved = current_body_types_->solver.resolve(
+          current_body_types_->active_pipeline_placeholder_type);
+      if (resolved) return resolved->to_canonical_string();
+      return std::nullopt;
+    }
     return std::nullopt;
   }
 

@@ -13893,3 +13893,13 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   and the domain-handle-map rejection pass default/shadow checks.
 - functional_basics cache consultations are 15,160 (down 200); checker
   reparses remain 121. Tightened K2 is still open.
+
+## Phase 27.5.4 root fact reuse checkpoint (2026-10-31)
+
+- The domain-handle guard now consumes an existing root semantic type fact
+  when present and resolves pipeline placeholder TypeRefs through the active
+  checker solver before examining their type. `phase2_safety.moss` passes
+  default/shadow, and the domain-handle-map rejection remains.
+- functional_basics counters are unchanged at 15,160 cache consultations and
+  121 checker reparses because its guard queries happen before first-pass facts
+  are available. No full suite/perf run.
