@@ -2080,6 +2080,40 @@ class Generator {
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
+  string read_call_place(const EmitterExpr& expression, const Domain* d,
+                         const std::set<string>& locals,
+                         const std::unordered_map<string,string>* types) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked read-place node");
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* index = std::get_if<est::Index>(
+            &expression.arena->at(root))) {
+      const auto base = expression.child(index->base);
+      const auto key = expression.child(index->index);
+      const string storage = read_call_place(base, d, locals, types);
+      const string rendered_key = expr(key, d, locals, types);
+      const auto type = generated_expr_type(base, types);
+      if (type && shared_protocol_map_key_from_type(*type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*type);
+        return "*({ let __moss_key = " + rendered_key + "; (" + storage +
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", &__moss_key, |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\") })";
+      }
+      if (type && (starts_with(canonical_type_name(*type), "map[") ||
+                   canonical_type_name(*type) == "map"))
+        return "*(" + storage + ").get(&(" + rendered_key +
+            ")).expect(\"Moss missing map key\")";
+      if (type && (canonical_type_name(*type) == "RangeBatch" ||
+                   canonical_type_name(*type) == "Range"))
+        return "(" + storage + ").get(" + rendered_key + ")";
+      return "(" + storage + ")[(" + rendered_key + ") as usize]";
+    }
+    return expr(expression, d, locals, types);
+  }
+
   string function_call_argument(const Function& function, size_t index,
                                 const string& argument, const Domain* d,
                                 const std::set<string>& locals,
@@ -2105,8 +2139,6 @@ class Generator {
             return std::nullopt;
           }()
         : tree_identifier_name(argument);
-    const bool checked_identifier = checked_expression &&
-        checked_expression->arena && argument_binding.has_value();
     if (effect == Effect::Consume &&
         argument_binding && phase21_option_slots_.count(*argument_binding))
       return "__moss_recovery_slot_" + *argument_binding +
@@ -2123,17 +2155,19 @@ class Generator {
     // retain the extra reference below because view helpers take
     // `&impl MossAccess_T`.
     if (effect == Effect::Read &&
-        (argument_binding
-             ? borrowed_message_parameters_.count(*argument_binding) != 0
-             : borrowed_message_parameter(argument)) &&
+        (checked_expression && checked_expression->arena
+             ? borrowed_message_parameter(*checked_expression)
+             : argument_binding
+                 ? borrowed_message_parameters_.count(*argument_binding) != 0
+                 : borrowed_message_parameter(argument)) &&
         !view_object_type(actual_type))
       return rendered;
     if (effect == Effect::Write)
-      return "&mut (" + (checked_identifier
-          ? place_expr(*checked_expression, d, locals, types)
+      return "&mut (" + (checked_expression && checked_expression->arena
+          ? write_call_place(*checked_expression, d, locals, types)
           : write_call_place(argument, d, locals, types)) + ")";
-    return "&(" + (checked_identifier
-        ? expr(*checked_expression, d, locals, types)
+    return "&(" + (checked_expression && checked_expression->arena
+        ? read_call_place(*checked_expression, d, locals, types)
         : read_call_place(argument, d, locals, types)) + ")";
   }
 
@@ -2579,6 +2613,26 @@ class Generator {
         std::to_string(phase21_codegen_statement_
                            ? phase21_codegen_statement_->line : 0) +
         " context=" + codegen_body_context_);
+  }
+
+  EmitterExpr checked_expression_ref(const vector<est::Handle>& handles,
+                                     std::string source,
+                                     est::ExprSlot slot) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : handles) {
+      if (handle.slot != slot ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked result expression");
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked result expression");
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
   }
 
   EmitterExpr checked_expression_ref(const Stmt& statement,
@@ -6353,6 +6407,10 @@ class Generator {
       }
       if (const auto* type_name = std::get_if<est::Identifier>(
               &expression.arena->at(type_id))) {
+        if (type_name->name == "Some" && constructor->arguments.size() == 1) {
+          const auto value = expression.child(constructor->arguments.front());
+          return "Some(" + expr(value, d, locals, types) + ")";
+        }
         auto object = objects_.find(type_name->name);
         if (object != objects_.end()) {
           std::unordered_map<string, EmitterExpr> values;
@@ -7922,6 +7980,14 @@ class Generator {
   bool borrowed_message_parameter(const string& expression) const {
     const auto binding = tree_identifier_name(expression);
     return binding && borrowed_message_parameters_.count(*binding);
+  }
+
+  bool borrowed_message_parameter(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* binding = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    return binding && borrowed_message_parameters_.count(binding->name);
   }
 
   bool borrowed_message_type(const string& type) const {

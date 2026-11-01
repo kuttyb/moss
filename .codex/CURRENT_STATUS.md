@@ -16240,3 +16240,28 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   this source, so C2 remains incomplete. Continue migrating compatibility
   consumers to node arguments and checked facts; keep full suites until the
   final checkpoint.
+
+## C2 zero-consumer-text checkpoint (2026-11-01; uncommitted)
+
+- Retained-node paths now cover READ/WRITE call places (including indexed
+  receiver arguments), borrowed message parameters, direct `Some(value)`
+  constructor rendering, and object method return expressions. Temporary
+  fail-fast probes/backtrace instrumentation have been removed.
+- Focused no-text-counter measurements on the calculator, phase47 iterator,
+  receiver-method, indexed-receiver-method, vector, and queue fixtures report
+  0 emitter expression reparses, 0 pipeline reparses, 0 text-node lookups,
+  and 0 string type/expression queries. Calculator also reports zero consumer
+  parses. Its 171 expression-tree text rebuilds are checker/driver work and
+  outside the C2 emitter/optimizer consumer target.
+- Generated Rust for calculator is byte-identical to the preceding candidate;
+  its Rust compiles and native/Fast Debug output matches. Receiver, indexed,
+  vector, and queue fixtures each check, compile with rustc, and have identical
+  native/Fast Debug stdout. `phase47_iteration.moss` also compiles and has
+  matching output. `check_phase27_est_functional_tree.py` and
+  `check_phase27_5_4_fact_hooks.py` pass.
+- Like-for-like focused calculator counters: pinned C1 parent 181,562 emitter
+  reparses / 273,688 text lookups; current candidate 0 / 0. This is not a
+  corpus-wide C2 gate. Full suites, aggregate parity/three-engine checks, and
+  performance gates remain pending. No Agent 2 audit, merge, or tag yet.
+- Current source edits are in `src/native_generator.cpp` and
+  `src/borrowed_views.inc`; rerun feedback validation before checkpointing.

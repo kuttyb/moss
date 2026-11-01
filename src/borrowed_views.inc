@@ -329,8 +329,11 @@
           auto pipeline = method.result_functional_pipeline_ids.find(context);
           o << "        ";
           if (raises) o << "Ok(";
-          o << expr(*method.result_expression, &receiver, locals, &types,
-              pipeline == method.result_functional_pipeline_ids.end() ? 0 : pipeline->second);
+          o << expr(checked_expression_ref(method.expression_handles,
+                  *method.result_expression, est::ExprSlot::ReturnValue),
+              &receiver, locals, &types,
+              pipeline == method.result_functional_pipeline_ids.end()
+                  ? 0 : pipeline->second);
           if (raises) o << ")";
           o << "\n";
         }
