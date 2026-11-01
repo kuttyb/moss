@@ -796,6 +796,7 @@ class Checker {
       check_objects();
       check_declared_map_key_types();
       check_local_call_cycles();
+      retain_domain_initializer_call_edges();
       // The first summary pass seeds result relations for call-cycle analysis.
       // A second pass can bind straight-line private-call results to the exact
       // call edges retained by that analysis, without guessing from spelling.
@@ -14849,6 +14850,41 @@ class Checker {
       }
 
       advance_type_environment(statement, main_env, p_.main->body, false);
+    }
+  }
+
+  void retain_domain_initializer_call_edges() {
+    for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name))
+        continue;
+      TypeEnv env;
+      env["self"] = domain.name;
+      for (const auto& field : domain.state)
+        if (!field.type.empty()) env[field.name] = field.type;
+      const string source = "domain:" + domain.name;
+      std::map<std::tuple<string, int, string>, uint32_t> occurrences;
+      for (const auto& field : domain.state) {
+        if (field.init.empty()) continue;
+        vector<LocalCallSite> calls;
+        collect_local_call_sites(field.line, field.init, env, nullptr, calls);
+        for (const auto& call : calls) {
+          auto key = std::make_tuple(field.source_file, field.line, call.target);
+          SemanticCallEdge edge{
+              source, call.target, field.line, call.argument_types,
+              field.source_file.empty() ? domain.source_file : field.source_file,
+              "ordinary_call", {}, {}, {}};
+          edge.occurrence = occurrences[key]++;
+          if (std::find_if(p_.semantic_call_edges.begin(),
+                  p_.semantic_call_edges.end(), [&](const SemanticCallEdge& old) {
+                    return old.source == edge.source && old.target == edge.target &&
+                        old.line == edge.line &&
+                        old.invocation_kind == edge.invocation_kind &&
+                        old.source_file == edge.source_file &&
+                        old.occurrence == edge.occurrence;
+                  }) == p_.semantic_call_edges.end())
+            p_.semantic_call_edges.push_back(std::move(edge));
+        }
+      }
     }
   }
 

@@ -5756,16 +5756,31 @@ class Generator {
           if (declared != functions_.end() && declared->second) {
             const int call_line = static_cast<int>(
                 expression.arena->span(root).line);
-            vector<string> matching_targets;
+            std::set<string> matching_targets;
             for (const auto& target : checked_call_edge_targets(
                      codegen_body_context_, call_line)) {
               if (target == "fn:" + declared->second->name ||
                   (!declared->second->semantic_callable_id.empty() &&
                    target == declared->second->semantic_callable_id))
-                matching_targets.push_back(target);
+                matching_targets.insert(target);
+            }
+            // Some checked calls originate in a field initializer whose
+            // source context is the declaring domain, while codegen runs
+            // under `main`. The exact declaration identity plus source line
+            // is sufficient to select the same checker edge; argument types
+            // are deliberately not consulted here.
+            if (matching_targets.empty()) {
+              for (const auto& edge : p_.semantic_call_edges) {
+                if (edge.line != call_line ||
+                    edge.invocation_kind != "ordinary_call") continue;
+                if (edge.target == "fn:" + declared->second->name ||
+                    (!declared->second->semantic_callable_id.empty() &&
+                     edge.target == declared->second->semantic_callable_id))
+                  matching_targets.insert(edge.target);
+              }
             }
             if (matching_targets.size() == 1)
-              checked_target = matching_targets.front();
+              checked_target = *matching_targets.begin();
             else
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT missing checked call edge for " +
