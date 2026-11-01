@@ -4016,9 +4016,79 @@ class Generator {
         auto right_type = generated_expr_type(right_expr, types);
         if (left_type && right_type && op == "+" &&
             canonical_type_name(*left_type) == "string" &&
-            canonical_type_name(*right_type) == "string")
-          return expr(expression.text(), d, locals, types,
-                      functional_pipeline_id, message_argument_plans);
+            canonical_type_name(*right_type) == "string") {
+          const auto* right_literal = std::get_if<est::Literal>(
+              &right_expr.arena->at(est::unparenthesized(
+                  *right_expr.arena, right_expr.id)));
+          const auto* left_literal = std::get_if<est::Literal>(
+              &left_expr.arena->at(est::unparenthesized(
+                  *left_expr.arena, left_expr.id)));
+          if (right_literal &&
+              right_literal->literal_class == est::LiteralClass::String &&
+              right_literal->spelling == "\"\"")
+            return "(" + value_from_borrowed_message_parameter(
+                left_expr, expr(left_expr, d, locals, types), types) +
+                ").clone()";
+          if (left_literal &&
+              left_literal->literal_class == est::LiteralClass::String &&
+              left_literal->spelling == "\"\"")
+            return "(" + value_from_borrowed_message_parameter(
+                right_expr, expr(right_expr, d, locals, types), types) +
+                ").clone()";
+          vector<EmitterExpr> operands;
+          std::function<void(EmitterExpr)> collect = [&](EmitterExpr part) {
+            const auto part_root = est::unparenthesized(*part.arena, part.id);
+            const auto* nested = std::get_if<est::Binary>(
+                &part.arena->at(part_root));
+            if (nested && nested->op == "+") {
+              auto nested_left = part.child(nested->left);
+              auto nested_right = part.child(nested->right);
+              auto nested_left_type = generated_expr_type(nested_left, types);
+              auto nested_right_type = generated_expr_type(nested_right, types);
+              if (nested_left_type && nested_right_type &&
+                  canonical_type_name(*nested_left_type) == "string" &&
+                  canonical_type_name(*nested_right_type) == "string") {
+                collect(nested_left);
+                collect(nested_right);
+                return;
+              }
+            }
+            operands.push_back(std::move(part));
+          };
+          collect(expression);
+          std::ostringstream joined;
+          joined << "{ ";
+          vector<bool> literals;
+          for (size_t index = 0; index < operands.size(); ++index) {
+            const auto operand_root = est::unparenthesized(
+                *operands[index].arena, operands[index].id);
+            const auto* operand_literal = std::get_if<est::Literal>(
+                &operands[index].arena->at(operand_root));
+            const bool literal = operand_literal &&
+                operand_literal->literal_class == est::LiteralClass::String;
+            literals.push_back(literal);
+            string rendered = literal ? operands[index].text()
+                : value_from_borrowed_message_parameter(
+                      operands[index], expr(operands[index], d, locals, types),
+                      types);
+            joined << "let __moss_concat_" << index << " = ";
+            if (literal) joined << rendered << "; ";
+            else joined << "&(" << rendered << "); ";
+          }
+          joined << "let mut __moss_concat_result = MossStr::with_capacity(";
+          for (size_t index = 0; index < operands.size(); ++index) {
+            if (index) joined << ".saturating_add(";
+            joined << "__moss_concat_" << index << ".len()";
+          }
+          for (size_t index = 1; index < operands.size(); ++index)
+            joined << ")";
+          joined << "); ";
+          for (size_t index = 0; index < operands.size(); ++index)
+            joined << "__moss_concat_result.push_str(__moss_concat_"
+                    << index << (literals[index] ? "); " : ".as_str()); ");
+          joined << "__moss_concat_result }";
+          return joined.str();
+        }
         string left = value_from_borrowed_message_parameter(
             left_source, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
@@ -5551,6 +5621,20 @@ class Generator {
     if (borrowed_message_parameter(source) && type &&
         !view_object_type(*type))
       return "*(" + rendered + ")";
+    return rendered;
+  }
+
+  string value_from_borrowed_message_parameter(
+      const EmitterExpr& expression, const string& rendered,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return rendered;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    if (!identifier || !borrowed_message_parameters_.count(identifier->name))
+      return rendered;
+    auto type = generated_expr_type(expression, types);
+    if (type && !view_object_type(*type)) return "*(" + rendered + ")";
     return rendered;
   }
 

@@ -14896,3 +14896,14 @@ four-class perturb/drop harness passes. The paired counters remain
 7,914/4,752/0 because the migrated path already received a checked projection
 in the previous implementation. The legacy string entry to `expr` remains a
 consumer reparse path and C2 is incomplete.
+
+### Phase 27.5.4 C2 checkpoint — string concatenation lowers recursively from nodes (2026-11-01)
+
+`expr(EmitterExpr)` now lowers checked string concatenation directly from the
+Binary tree, flattening checked string `+` nodes and rendering each operand
+from its ExprId. It preserves empty-string clone behavior and borrowed
+message-parameter handling. `tests/phase24_string_concat.moss` passes
+three-engine parity and its generated Rust is byte-identical to c96 in default
+and `-O`. Its paired counts (both profiles) fall from parent 11,550 text-node
+lookups / 4,276 expression reparses to candidate 5,724 / 1,936. The wider
+four-source sample has not yet been rerun after this slice. No full suite/perf.

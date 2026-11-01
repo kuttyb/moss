@@ -80,3 +80,9 @@ parse path. Focused tests and targeted Rust parity pass. The four-source counts
 remain 7,914 text-node lookups / 4,752 expression-view reparses / 0 pipeline
 reparses; the existing checked projection meant this API cleanup did not affect
 that sample. The legacy string `expr` entry remains a reparse path.
+
+A retained-node string-concatenation lowering now flattens nested checked
+string `+` nodes and emits operands directly. The Phase 24 string-concat
+fixture passes three-engine parity and matches parent generated Rust in default
+and `-O`. Its paired two-profile counters fell from 11,550 lookups / 4,276
+expression reparses to 5,724 / 1,936. Final corpus measurements remain pending.
