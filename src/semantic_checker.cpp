@@ -26434,8 +26434,10 @@ class Checker {
       if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     std::string_view root_slot;
-    if (current_check_statement_) {
-      switch (current_check_statement_->kind) {
+    const Stmt* pipeline_statement = current_check_statement_
+        ? current_check_statement_ : ownership_current_stmt_;
+    if (pipeline_statement) {
+      switch (pipeline_statement->kind) {
         case Stmt::Kind::Assign: root_slot = "initializer"; break;
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: root_slot = "initializer"; break;
@@ -26736,10 +26738,12 @@ class Checker {
       std::string_view source, std::string_view root_slot,
       std::string_view child_role = {},
       std::uint32_t child_ordinal = 0) const {
-    if (!current_check_statement_) return std::nullopt;
+    const Stmt* statement_ptr = current_check_statement_
+        ? current_check_statement_ : ownership_current_stmt_;
+    if (!statement_ptr) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     std::optional<std::uint32_t> expected_argument;
-    const auto& statement = *current_check_statement_;
+    const auto& statement = *statement_ptr;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
     else if (root_slot == "expression") expected = est::ExprSlot::Expression;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
