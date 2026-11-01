@@ -2669,8 +2669,14 @@ class Generator {
   string render_known_function_call(
       const Function& function, const string& name, const vector<string>& arguments,
       const Domain* domain, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const vector<EmitterExpr>* argument_nodes = nullptr) const {
     const auto* specialization = call_specialization(function, arguments, types);
+    auto argument_type = [&](size_t index) {
+      return argument_nodes && index < argument_nodes->size()
+          ? generated_expr_type(argument_nodes->at(index), types)
+          : generated_expr_type(arguments.at(index), types);
+    };
     const auto external_module = function.static_dispatch ? std::nullopt :
         phase21_external_module_for_symbol(name);
     const bool cross_crate = external_module.has_value();
@@ -2691,7 +2697,7 @@ class Generator {
            write_index < arguments.size() && write_index < function.params.size();
            ++write_index) {
         if (function_effect(function, write_index,
-                generated_expr_type(arguments[write_index], types).value_or(""), specialization)
+                argument_type(write_index).value_or(""), specialization)
             != Effect::Write) continue;
         string written = trim(arguments[write_index]);
         bool writes_direct_field = !locals.count(written) &&
@@ -2703,8 +2709,8 @@ class Generator {
              ++read_index) {
           if (!is_pure_state_read_expression(arguments[read_index]))
             continue;
-          auto argument_type = generated_expr_type(arguments[read_index], types);
-          if (!argument_type || !copy_type(*argument_type))
+          auto checked_argument_type = argument_type(read_index);
+          if (!checked_argument_type || !copy_type(*checked_argument_type))
             continue;
           bool reads_sibling = false;
           for (const auto& field : domain->state) {
@@ -2741,7 +2747,7 @@ class Generator {
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(
-          generated_expr_type(arguments[index], types).value_or(""));
+          argument_type(index).value_or(""));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
@@ -2753,7 +2759,7 @@ class Generator {
             !standard_error_variants(
                 canonical_type_name(function.params[index].type)).empty()) {
           const auto abi = function_parameter_abi(function, index,
-              generated_expr_type(arguments[index], types).value_or(""),
+              argument_type(index).value_or(""),
               specialization);
           const string external_type = tooling_name("moss_" +
               *external_module) + "::" +
@@ -2781,7 +2787,7 @@ class Generator {
               !standard_error_variants(canonical_type_name(
                   function.params[index].type)).empty() &&
               function_parameter_abi(function, index,
-                  generated_expr_type(arguments[index], types).value_or(""),
+                  argument_type(index).value_or(""),
                   specialization).effect == Effect::Write)) {
           const string staged = "__moss_call_argument_" +
               std::to_string(call_argument_temp_++);
@@ -3900,17 +3906,19 @@ class Generator {
         }
         bool simple_arguments = true;
         vector<string> arguments;
+        vector<EmitterExpr> argument_nodes;
         for (const auto argument_id : call->arguments) {
           if (std::holds_alternative<est::NamedArgument>(
                   expression.arena->at(argument_id))) {
             simple_arguments = false;
             break;
           }
-          arguments.push_back(expression.child(argument_id).text());
+          argument_nodes.push_back(expression.child(argument_id));
+          arguments.push_back(argument_nodes.back().text());
         }
         if (function && simple_arguments)
           return render_known_function_call(*function, function->name,
-              arguments, d, locals, types);
+              arguments, d, locals, types, &argument_nodes);
         (void)callee;
       }
     }
@@ -7589,9 +7597,14 @@ class Generator {
           }
           bool known_function = (function_target != nullptr);
           if (s.b.empty() && known_function && !benchmark_body_) {
+            vector<EmitterExpr> checked_arguments;
+            checked_arguments.reserve(s.args.size());
+            for (size_t index = 0; index < s.args.size(); ++index)
+              checked_arguments.push_back(argument_node(index));
             o << indent(level)
               << render_known_function_call(*function_target, function_target->name, s.args,
-                                           d, locals, &types)
+                                           d, locals, &types,
+                                           &checked_arguments)
               << ";\n";
             ++i;
             break;

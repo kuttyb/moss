@@ -14782,3 +14782,16 @@ pipeline) check, generate Rust identical to c96, compile, and match Fast
 Debug/native. The four-class perturb/drop harness passes with 3 fixtures each
 across Fast Debug/native/-O, including the updated statement-call fact. No full
 suite or perf run has occurred.
+
+### Phase 27.5.4 C2 checkpoint — call argument type queries (2026-11-01)
+
+Known-function emission now carries its argument ExprIds into parameter-effect,
+ABI and compile-time-callable type queries when the checked invocation is
+available as an `EmitterExpr`. Four-source paired default/`-O` counts versus
+c96 changed after this slice as follows (lookups / expression-view reparses /
+pipeline reparses): Phase 5 `4312/2164/0 -> 2346/1240/0`; Phase 4
+`1686/882/0 -> 726/338/0`; functional objects `5287/2941/0 -> 3145/1929/0`;
+object pipeline `5844/3060/0 -> 2622/2078/0`. Both binaries succeeded for all
+commands. Four targeted fixtures remain parent-identical in Rust, compile, and
+match Fast Debug/native. The four-class hook harness passes all three engines.
+Counts remain nonzero; no full/perf suites yet.
