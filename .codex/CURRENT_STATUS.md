@@ -16317,3 +16317,26 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   Agent 2 has not audited. No merge/tag. Current changes are uncommitted in
   `src/native_generator.cpp`, `src/semantic_checker.cpp`, and
   `src/borrowed_views.inc`; temporary build outputs are under `tmp/`.
+
+## C2 checked call target checkpoint (2026-11-01; uncommitted after ca94d1a6)
+
+- Call statements now take a unique checked target across context entries when
+  the exact lowering context is absent; ambiguous target sets remain unresolved
+  rather than being re-derived. Checked expression fact lookup also uses
+  same-line call-edge contexts only when all matching recorded node targets
+  agree. This fixes targeted `phase106d_specializations` emission and the
+  `phase21_early_condition_state_write` emission.
+- Enum constructor targets stored in checked expression occurrences are now
+  copied into arena facts; the emitter lowers the checker-owned enum variant
+  identity directly. The `enum_modules` main/tags sources emit, and the tags
+  Rust compiles. `phase21_peer_speculation` and both capture-method fixtures
+  still emit after the range-root change.
+- Remaining target failures from the previous corpus pass include the
+  formatter-generated `return(...)` spelling and the adversarial incomplete
+  index probe. Re-run the targeted list before the next aggregate counter pass.
+  The focused Fast Debug/native parity check on `phase106d_specializations`
+  currently fails with `MOSS_INTERNAL_INVARIANT checked method target disagrees
+  with receiver`; this is not cleared by emitter emission success.
+- Debug hooks are removed. Changes since ca94d1a6 are not yet committed/pushed;
+  targeted source emissions only. Full suite, three-engine/parity aggregate,
+  perf, Agent 2, and merge/tag remain pending.

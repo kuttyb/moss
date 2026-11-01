@@ -2760,6 +2760,15 @@ class Generator {
       if (std::find(contexts.begin(), contexts.end(), source_context) ==
           contexts.end()) contexts.push_back(source_context);
     }
+    vector<string> call_edge_contexts;
+    const int expression_line = static_cast<int>(
+        expression.arena->span(root).line);
+    for (const auto& edge : p_.semantic_call_edges) {
+      if (edge.line != expression_line) continue;
+      if (std::find(call_edge_contexts.begin(), call_edge_contexts.end(),
+                    edge.source) == call_edge_contexts.end())
+        call_edge_contexts.push_back(edge.source);
+    }
     contexts.emplace_back();
     for (const auto& context : contexts) {
       if (const auto* facts = expression.arena->facts(expression.id, context))
@@ -2768,6 +2777,18 @@ class Generator {
         if (const auto* facts = expression.arena->facts(root, context))
           return facts;
     }
+    const est::SemanticFacts* selected = nullptr;
+    for (const auto& context : call_edge_contexts) {
+      const est::SemanticFacts* facts = expression.arena->facts(
+          expression.id, context);
+      if (!facts && root != expression.id)
+        facts = expression.arena->facts(root, context);
+      if (!facts || facts->resolved_target.empty()) continue;
+      if (selected && selected->resolved_target != facts->resolved_target)
+        return nullptr;
+      selected = facts;
+    }
+    if (selected) return selected;
     return nullptr;
   }
 
@@ -5629,6 +5650,45 @@ class Generator {
         }
         const auto* facts = checked_expression_facts(expression);
         string checked_target = facts ? facts->resolved_target : string();
+        const string enum_case_prefix = "nominal-enum-variant-v1:";
+        if (starts_with(checked_target, enum_case_prefix)) {
+          const auto separator = checked_target.rfind(":case:");
+          if (separator == string::npos)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT malformed checked enum constructor target");
+          const string declaration_id = checked_target.substr(
+              enum_case_prefix.size(), separator - enum_case_prefix.size());
+          const string case_name = checked_target.substr(separator + 6);
+          const EnumType* selected_enum = nullptr;
+          for (const auto& candidate : enums_) {
+            if (!p_.type_context) break;
+            const auto declaration = p_.type_context->find(candidate.second->name);
+            if (declaration && declaration->id == declaration_id) {
+              selected_enum = candidate.second;
+              break;
+            }
+          }
+          if (!selected_enum)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked enum constructor declaration is unavailable");
+          std::ostringstream rendered;
+          rendered << selected_enum->name << "::" << rust_identifier(case_name);
+          if (!call->arguments.empty()) {
+            rendered << " { ";
+            for (size_t index = 0; index < call->arguments.size(); ++index) {
+              const auto* field = std::get_if<est::NamedArgument>(
+                  &expression.arena->at(call->arguments[index]));
+              if (!field)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked enum constructor field is not named");
+              if (index) rendered << ", ";
+              rendered << rust_identifier(field->name) << ": "
+                       << expr(expression.child(field->value), d, locals, types);
+            }
+            rendered << " }";
+          }
+          return rendered.str();
+        }
         const bool call_target_hooked =
             moss_test_drop_fact("call-targets") ||
             moss_test_perturb_fact("call-targets");
@@ -10502,9 +10562,22 @@ class Generator {
                 "specialization:" + codegen_active_specialization_key_);
           if (checked_target_fact == s.checked_call_targets_by_context.end())
             checked_target_fact = s.checked_call_targets_by_context.find("");
-          const string checked_target =
+          string checked_target =
               checked_target_fact == s.checked_call_targets_by_context.end()
                   ? string() : checked_target_fact->second;
+          if (checked_target.empty() && !s.checked_call_targets_by_context.empty()) {
+            std::set<string> recorded_targets;
+            for (const auto& entry : s.checked_call_targets_by_context)
+              if (!entry.second.empty()) recorded_targets.insert(entry.second);
+            if (recorded_targets.size() == 1)
+              checked_target = *recorded_targets.begin();
+          }
+          if (checked_target.empty() && !s.b.empty()) {
+            const EmitterExpr invocation = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            const auto* facts = checked_expression_facts(invocation);
+            if (facts) checked_target = facts->resolved_target;
+          }
           const bool looks_like_checked_function = functions_.count(s.a) != 0 ||
               (types.count(s.a) && callable_identity(types.at(s.a)));
           if (looks_like_checked_function && checked_target.empty())
