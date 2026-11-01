@@ -14067,3 +14067,12 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Added the reference-lifetime rule beside `est::Arena::append()`/`at()` in
   `src/est/expression_tree.hpp`: ExprIds survive growth; references do not, so
   reacquire `at(id)` after append-capable operations. This is documentation-only.
+- Follow-up checker slice uses the active EST view for field-access projection
+  and routes its receiver through the `base` ExprId child. The first attempt to
+  migrate member-call inference to its checked helper caused
+  `packages/regex/src/main.moss` to segfault: an active cursor can belong to a
+  different expression than the legacy inference string. That member-call
+  change was reverted; do not use the helper there until cursor/source identity
+  is explicit. After the revert, the functional-tree harness and targeted
+  Fast Debug/native/optimized parity harness pass; `check_phase27_est.py` still
+  fails at the context-scoped effect-fact assertion. No full suite or perf run.

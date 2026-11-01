@@ -12474,10 +12474,10 @@ class Checker {
     }
 
     string member_base, field;
-    auto member_access = checker_est_view(e);
+    auto member_access = checked_expression_view(e);
     if (member_access && moss::est::project_member_access(
             *member_access, member_base, field)) {
-      auto base = inferred_expr(member_base, env);
+      auto base = inferred_child_expr(member_base, env, "base");
       const auto receiver = base ? inferred_shape(*base) : nullptr;
       if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
           receiver->declaration)
