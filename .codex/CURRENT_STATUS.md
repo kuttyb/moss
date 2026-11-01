@@ -16691,3 +16691,27 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   0/0. Remaining known hotspots are small Phase 21/25 effect/ownership probes,
   swap assignment and nested mutating calls. No full suite/perf or Agent 2 audit
   has run.
+
+## C2 checkpoint: registered synthetic argument identifiers (2026-11-01)
+
+- Emitter-generated `__moss_call_argument_N` locals are now registered when
+  created. String helper paths recognize only those exact registered temporary
+  names as identifiers, avoiding EST expression lookup/reparse for generated
+  locals while preserving parsing for Moss source names.
+- `tests/swarm_035_nested_mutating_calls.moss` dropped from 2 reparses and 2
+  text lookups per emission to 0/0 (default and `-O`). Generated Rust is
+  byte-identical to the prior branch checkpoint. Fast Debug prints `1`.
+  `rustc` still rejects this fixture's existing nested mutable receiver calls
+  (`self.put(self.take())`); this is present in the previous generated Rust too.
+- `check_phase27_5_4_fact_hooks.py` passes; required classes pass and the
+  known-debt ignore set remains exactly 38/38. `git diff --check` passes.
+- An attempted conversion of the open-result statement call-key text lookup to
+  the retained statement node reduced that hotspot, but caused eight additional
+  expression-type/ownership known-debt ignore observations. That conversion is
+  reverted; no checker/fact hook baseline was changed. Open-result lookups
+  remain 6 per mode in `open_result_multihop` and 2 per mode in
+  `open_result_zero_iteration`. Continue investigating a checked node route
+  that preserves the existing specialization/ownership perturbation behavior.
+- No full suite, paired whole-corpus counter run, performance run, or Agent 2
+  audit has run. C2 remains incomplete. Current pushed base was `aef8c957`;
+  this slice is being checkpointed next.

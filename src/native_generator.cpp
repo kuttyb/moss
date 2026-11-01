@@ -477,6 +477,7 @@ class Generator {
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
+  mutable std::set<string> generated_call_argument_names_;
   mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
@@ -487,6 +488,12 @@ class Generator {
   string phase21_selected_carrier_;
   string phase21_try_label_;
   size_t phase21_try_temp_ = 0;
+  string next_call_argument_name() const {
+    string name = "__moss_call_argument_" +
+        std::to_string(call_argument_temp_++);
+    generated_call_argument_names_.insert(name);
+    return name;
+  }
   const Handler* phase21_capture_handler_ = nullptr;
   const std::set<string>* phase21_capture_locals_ = nullptr;
   const RaiseSet* phase21_capture_alternatives_ = nullptr;
@@ -1145,6 +1152,7 @@ class Generator {
   }
 
   bool tree_plain_identifier(std::string_view expression) const {
+    if (generated_call_argument_names_.count(string(expression))) return true;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return false;
     string name;
@@ -1299,6 +1307,8 @@ class Generator {
 
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
+    string source(expression);
+    if (generated_call_argument_names_.count(source)) return source;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     string name;
@@ -4012,8 +4022,7 @@ class Generator {
             }
           }
           if (reads_sibling)
-            temporaries[read_index] = "__moss_call_argument_" +
-                std::to_string(call_argument_temp_++);
+            temporaries[read_index] = next_call_argument_name();
         }
       }
     }
@@ -4091,8 +4100,7 @@ class Generator {
               function_parameter_abi(function, index,
                   argument_type(index).value_or(""),
                   specialization).effect == Effect::Write)) {
-          const string staged = "__moss_call_argument_" +
-              std::to_string(call_argument_temp_++);
+          const string staged = next_call_argument_name();
           bridge_before << "let " << staged << " = " << rendered << "; ";
           rendered = staged;
         }
@@ -8152,8 +8160,7 @@ class Generator {
               if (tree_parse_member_call(member_arguments[index], nested_receiver,
                                     nested_method, nested_arguments) &&
                   tree_expressions_equal(nested_receiver, member_receiver))
-                argument_temporaries[index] = "__moss_call_argument_" +
-                    std::to_string(call_argument_temp_++);
+                argument_temporaries[index] = next_call_argument_name();
             }
           }
           const bool standard_write_bridge = external_method_module &&
@@ -8203,8 +8210,7 @@ class Generator {
                     : external_type + "::from(" + argument + ")";
             }
             if (standard_write_bridge && !standard_write_argument) {
-              const string staged = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+              const string staged = next_call_argument_name();
               bridge_before << "let " << staged << " = " << argument << "; ";
               argument = staged;
             }
@@ -8436,8 +8442,7 @@ class Generator {
                   nested_name);
             if (!nested_methods.empty() &&
                 nested_methods.front()->receiver_effect != Effect::Read)
-              sibling_temporaries[i] = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+              sibling_temporaries[i] = next_call_argument_name();
           }
         }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
@@ -11110,8 +11115,7 @@ class Generator {
                 }
               }
               if (!same_receiver_mutating_argument) continue;
-              argument_temporaries[k] = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+              argument_temporaries[k] = next_call_argument_name();
               string temporary_type =
                   generated_expr_type(argument_node(k), &types)
                       .value_or("_value");
@@ -11205,8 +11209,7 @@ class Generator {
                         : external_type + "::from(" + rendered + ")";
                 }
                 if (standard_write_bridge && !standard_write_argument) {
-                  const string staged = "__moss_call_argument_" +
-                      std::to_string(call_argument_temp_++);
+                  const string staged = next_call_argument_name();
                   bridge_before << "let " << staged << " = " << rendered
                     << "; ";
                   rendered = staged;
