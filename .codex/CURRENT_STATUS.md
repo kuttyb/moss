@@ -16340,3 +16340,25 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Debug hooks are removed. Changes since ca94d1a6 are not yet committed/pushed;
   targeted source emissions only. Full suite, three-engine/parity aggregate,
   perf, Agent 2, and merge/tag remain pending.
+
+## C2 context-collision handoff (2026-11-01; uncommitted after 0e5166d5)
+
+- Reproduced Fast Debug's `phase106d_specializations` mismatch against both
+  current C2 and the intermediate `9144f146` build; the pinned C1 parent emits
+  `11 22`. The current failure is therefore on the C2 branch, not parent debt.
+- `MOSS_EST_FACTS_DUMP=1` on `tests/phase106d_specializations.moss` shows only
+  `handler:Box.Set -> method:Left.fresh` and
+  `handler:Box.Update -> method:Left.step`; it records no `Right` targets.
+  Native codegen emits concrete `Box__left` and `Box__right` bodies, so one
+  shared handler fact cannot serve both. Fast Debug now fails closed when it
+  reaches the Right instance, as intended for a contradictory checked fact.
+  A checker-side per-concrete-domain target answer is needed; do not mask this
+  with runtime receiver re-resolution.
+- Removing the attempted statement-target propagation did not fix this parity
+  issue. With that removed, `phase106d_specializations` still emits. Enum
+  variant facts are now explicitly recorded at the checked expression node;
+  both enum_modules sources emit and the tags artifact compiles.
+- Current uncommitted diff is in `src/semantic_checker.cpp` and contains the
+  enum target recording plus removal of the statement-map propagation. The
+  branch tip is still `0e5166d5`; the earlier source checkpoint commits are
+  pushed. No full suite/perf/Agent 2/merge/tag.

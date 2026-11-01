@@ -26754,11 +26754,9 @@ class Checker {
                         : term ? occurrence_state->solver.resolve(term) : nullptr);
                 const auto& retained =
                     occurrence_state->expression_occurrences.at(id);
-                if (tree_cursor && (retained.checked_type ||
-                                    !retained.semantic_target_id.empty())) {
+                if (tree_cursor && retained.checked_type) {
                   est::SemanticFacts facts;
                   facts.type = retained.checked_type;
-                  facts.resolved_target = retained.semantic_target_id;
                   if (auto* arena = expression_arena(tree_cursor->arena_index)) {
                     arena->record_facts(tree_cursor->expr, fact_context,
                                         std::move(facts));
@@ -26811,6 +26809,9 @@ class Checker {
               enum_name_identity);
           occurrence.semantic_target_id = "nominal-enum-variant-v1:" +
               enum_identity + ":case:" + case_name;
+          est::SemanticFacts enum_target_facts;
+          enum_target_facts.resolved_target = occurrence.semantic_target_id;
+          record_active_expression_facts(std::move(enum_target_facts));
           occurrence.source_operands = arguments;
           for (const auto& argument : arguments) {
             string field_name, field_value;
@@ -29057,15 +29058,8 @@ class Checker {
                 {statement_id, "call-invocation"});
             if (occurrence == call_occurrence_state->expression_root_slots.end())
               call_occurrence_state->expression_occurrence_ledger_complete = false;
-            else {
+            else
               call_occurrence_id = occurrence->second;
-              const auto& invocation_fact =
-                  call_occurrence_state->expression_occurrences.at(
-                      call_occurrence_id);
-              if (!invocation_fact.semantic_target_id.empty())
-                checked_statement_call_target =
-                    invocation_fact.semantic_target_id;
-            }
           }
         }
         const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
