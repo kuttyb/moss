@@ -15739,3 +15739,27 @@ test-baseline edits are not yet committed. Next: commit/push this checkpoint,
 then continue tracing C2 emitter call fallback sites on the calculator source
 and broader residual emitter count; optimizer consumer counts are still
 unmeasured. Agent 2 and final gates remain reserved until C2 is complete.
+
+### C2 same-source emitter progress after call-edge narrowing (2026-11-01)
+
+The emitter now correlates a member-call node with the checker-recorded
+same-line call-edge candidates by the member name. On the calculator's
+`src/main.moss`, this removed all 20 traced expression-call fallbacks (the
+previous cases were `Diag.code`, `Diag.pos`, and `Token.value`). Candidate
+emission reports 0 `MOSS_EST_EMITTER_NODE_FALLBACK` events, 44,992 text-node
+lookups, and 35,146 native expression-view reparses. On the exact same source
+and command, the saved 27.5.3 parent reports 181,742 reparses (181,562
+expression-view + 180 functional-pipeline), so the candidate is down 80.7% in
+reparses on this sample. The parent's binary predates the text-node-lookup
+counter, so that lookup delta is unavailable. Calculator package build, run,
+and Fast Debug pass with matching outputs (`= 7`, `= -12`, `= 154`, `= 0`,
+and four expected errors).
+
+The C2 target remains 0 emitter reparses and text lookups; this one-source
+result does not establish the required corpus + examples + packages target.
+Optimizer parsing remains unmeasured but source search finds no parser calls
+in `src/functional_optimizer.cpp`. No full suite or performance suite has run.
+Latest pushed checkpoint is `69df03c1`; the call-edge change is not yet
+committed. Next: checkpoint this fix and continue reducing the emitter's
+remaining 35k reparses on this source, then measure the same full workload
+against the baseline after the migration stabilizes.

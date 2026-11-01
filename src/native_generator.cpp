@@ -5269,6 +5269,23 @@ class Generator {
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
+          if (target.empty()) {
+            // Several checked calls may share one source line. Correlate this
+            // call node with the checker's edge by its callee spelling; do not
+            // infer a receiver type or resolve a method in the emitter.
+            vector<string> matching;
+            for (const auto& candidate : targets) {
+              const auto separator = candidate.rfind('.');
+              if (starts_with(candidate, "method:") &&
+                  separator != string::npos &&
+                  candidate.substr(separator + 1) == member->name)
+                matching.push_back(candidate);
+            }
+            if (matching.size() == 1) target = matching.front();
+            else if (matching.size() > 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked member-call edge");
+          }
         }
         if ((starts_with(target, "builtin:") ||
              starts_with(target, "builtin-method:"))) {
