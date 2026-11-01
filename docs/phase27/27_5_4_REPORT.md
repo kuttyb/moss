@@ -447,3 +447,18 @@ consumers dominate this fixture's reparse count. Six assignment/collection
 fixtures compiled in default and `-O`; the optimized functional 30-fixture
 set, fact-hook matrix and three-engine fixture passed. Full C2 gates remain
 pending.
+
+### C2 Map.delete node lowering update (2026-11-01)
+
+The emitter now lowers checked Map.delete calls from retained Call/Member
+nodes, including key, fallback, and mutable result-flag nodes. Identifier nodes
+that are already checked locals/types now return their binding directly. The
+optimized `tests/phase15_15_string_map.moss` command reports 274 text-node
+lookups and 242 native expression-view reparses, with no node fallback event;
+generated Rust compiles and prints `string/map ok`. Latest focused paired
+C1/candidate `-O` counts are: `phase24_string_concat` 5,775/2,138 ->
+1,316/356; `collections_and_methods` 2,607/1,247 -> 484/86;
+`phase45_cross_let_result` 641/467 -> 167/163; and `phase15_15_string_map`
+3,912/2,158 -> 274/242 (lookups/reparses). These are focused fixtures, not
+the final corpus + examples + packages measurement. No full suite or perf run
+has occurred for this checkpoint.

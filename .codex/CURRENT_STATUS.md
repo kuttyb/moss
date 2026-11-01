@@ -15432,3 +15432,20 @@ three-engine tests pass. Six representative outputs match C1 behavior; the
 String map fixture's generated Rust differs only in redundant grouping and
 both binaries compile and print the same output. Updated focused C1/candidate
 counts are listed above. No full suites, corpus pass, or perf run yet.
+
+### C2 latest local checkpoint (2026-11-01)
+
+At commit `a3e404c6`, assignment LHS/RHS place handling was already pushed.
+The next local slice lowers checked Map.delete Call/Member nodes, including
+the result flag's write-place node, and directly emits remaining local
+Identifier nodes. Targeted optimized `tests/phase15_15_string_map.moss`
+generated Rust compiled and printed `string/map ok`; its test-build counters
+are 274 text lookups and 242 expression reparses, with zero node fallback
+events. Focused C1/candidate optimized counts: `phase24_string_concat`
+5,775/2,138 -> 1,316/356; `collections_and_methods` 2,607/1,247 -> 484/86;
+`phase45_cross_let_result` 641/467 -> 167/163; `phase15_15_string_map`
+3,912/2,158 -> 274/242 (lookups/reparses). Full suites, final paired corpus
+measurement, parity, and perf remain pending. Current worktree contains
+uncommitted `src/native_generator.cpp` plus this status/report update; after
+committing and pushing, continue migrating emitter text consumers. Branch:
+`phase27-5-4-work`.

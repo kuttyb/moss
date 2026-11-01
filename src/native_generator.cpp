@@ -4600,12 +4600,15 @@ class Generator {
       // borrowed views. Any remaining local identifier is emitted as its
       // checked local binding; the old text rewriter left these unchanged.
       if (locals.count(name)) return name;
+      if (types && types->count(name)) return name;
       if (d && !view_domain_ && !view_method_ &&
           (std::any_of(d->state.begin(), d->state.end(),
                        [&](const Field& field) { return field.name == name; }) ||
            std::any_of(d->routes.begin(), d->routes.end(),
                        [&](const DomainRoute& route) { return route.name == name; })))
         return (objects_.count(d->name) ? "self." : "state.") + name;
+      if (name == "None") return "None";
+      if (!functions_.count(name)) return name;
     }
     if (const auto* literal = std::get_if<est::Literal>(
             &expression.arena->at(root))) {
@@ -5104,6 +5107,53 @@ class Generator {
           if (!copy_type(map_types->second)) fallback = "(" + fallback + ").clone()";
           return "(" + receiver_value + ").get(" + key + ").cloned().unwrap_or(" +
               fallback + ")";
+        }
+        if (starts_with(target, "builtin-method:map[") &&
+            ends_with(target, ".delete") && member->name == "delete" &&
+            call->arguments.size() == 3) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.delete lacks a concrete map type");
+          string key = expr(expression.child(call->arguments[0]), d, locals, types);
+          string fallback = expr(expression.child(call->arguments[1]),
+                                 d, locals, types);
+          const string flag = write_call_place(
+              expression.child(call->arguments[2]), d, locals, types);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
+          if (shared_key) {
+            const auto key_node = expression.child(call->arguments[0]);
+            const bool view_key = is_object_view(key_node, d, locals, types);
+            if (view_key) key = "(" + key + ").__moss_value()";
+            const auto key_binding = tree_identifier_name(key_node);
+            const string borrowed = !view_key && key_binding &&
+                borrowed_function_parameters_.count(*key_binding)
+                ? "__moss_key" : "&__moss_key";
+            return "{ let __moss_key = " + key +
+                "; let __moss_fallback = " + fallback +
+                "; let __moss_removed = (" +
+                expr(receiver_expression, d, locals, types) +
+                ").remove_with(" + shared_map_hash(map_types->first,
+                    "__moss_key") + ", " + borrowed + ", |a, b| " +
+                shared_map_equal(map_types->first, "a", "b") +
+                "); let _ = &( " + flag + " ); " + flag +
+                " = __moss_removed.is_some(); __moss_removed.unwrap_or(" +
+                "__moss_fallback) }";
+          }
+          const string lookup = map_types->first == "string"
+              ? "__moss_key.as_str()" : "&__moss_key";
+          return "{ let __moss_key = " + key +
+              "; let __moss_fallback = " + fallback +
+              "; let __moss_removed = (" +
+              expr(receiver_expression, d, locals, types) +
+              ").remove(" + lookup + "); let _ = &(" + flag +
+              "); " + flag + " = __moss_removed.is_some(); "
+              "__moss_removed.unwrap_or(__moss_fallback) }";
         }
         if ((target.empty() || target == "builtin-method:string." +
                                       member->name) &&
