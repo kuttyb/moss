@@ -15341,3 +15341,22 @@ strings. GraphKit's targeted default counters decreased from 38,180 lookups /
 9,580 reparses to 37,596 / 8,996; runtime matches C1 and node fallback events
 remain zero. Full paired recount, make check, parity, perf and Agent2 audit are
 pending. This latest slice is uncommitted.
+
+### C2 optimized virtual-upstream checkpoint (2026-11-01)
+
+The retained functional plan lookup now searches the checked owner statement
+across main, functions, methods, handlers/recovery arms and tests. It carries
+the exact arena/ExprId and source slot into virtual-upstream lowering; it does
+not match plans by source line or reparse expression text. With this change,
+all 30 optimized functional fixtures that failed in the paired count at
+`84c01904` emit successfully. The 12 previously remaining failures now pass,
+and the other 18 remain green. This is targeted validation only. No final
+suite, paired corpus recount, parity gate, performance run or Agent 2 review
+has run for this state. Next continue C2 consumer migrations and fact hooks,
+then repeat the paired corpus measurement before final gates.
+
+Validation after this correction: build passed; `check_phase27_est_functional_tree.py`,
+`check_phase27_5_4_fact_hooks.py` (targets 5, specializations 4, joins 4,
+patterns 3), and `check_phase27_three_engine.py` passed. The earlier first
+attempt omitted the required compiler argument and exited before running; the
+correct invocations above passed. This is not a full-suite run.

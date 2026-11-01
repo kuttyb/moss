@@ -374,6 +374,18 @@ engine check and the call-target/specialization/join/pattern fact hook matrix
 pass. These are targeted results; full suite and final paired corpus count
 remain pending.
 
+### Optimized virtual-upstream regression checkpoint (2026-11-01)
+
+The emitter now locates a virtual upstream pipeline through its owning checked
+statement plan and retained ExprId, including plans owned by a different
+statement than the current lowering site. The lookup uses the plan's recorded
+slot to carry the corresponding source view for diagnostics and rendering; it
+does not choose by source line or parse the plan's expression text. All 30
+optimized functional fixtures in the prior failure delta now emit successfully
+(the 12 remaining failures after the first handle correction and 18 already
+passing fixtures retested). This targeted result has not yet been checked by a
+full suite or paired corpus recount.
+
 Sibling-call arguments now also travel as `EmitterExpr` values into method ABI
 lowering. On the same GraphKit default command, text lookups/reparses fell
 38,180/9,580 -> 37,596/8,996 with unchanged runtime output and no node fallback

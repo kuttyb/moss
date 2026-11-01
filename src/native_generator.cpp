@@ -2287,6 +2287,32 @@ class Generator {
         " context=" + codegen_body_context_);
   }
 
+  EmitterExpr checked_expression_ref(const Stmt& statement,
+      std::string source, est::ExprSlot slot,
+      std::uint32_t argument_index = 0) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked statement expression slot=" +
+            std::to_string(static_cast<unsigned>(slot)) + " index=" +
+            std::to_string(argument_index) + " line=" +
+            std::to_string(statement.line));
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked statement expression slot=" +
+          std::to_string(static_cast<unsigned>(slot)) + " index=" +
+          std::to_string(argument_index) + " line=" +
+          std::to_string(statement.line));
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
+  }
+
   const est::SemanticFacts* checked_expression_facts(
       const EmitterExpr& expression) const {
     if (!expression.arena) return nullptr;
@@ -2663,7 +2689,16 @@ class Generator {
     if (!expression.arena) return std::nullopt;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const est::Node& node = expression.arena->at(root);
-    const auto* facts = checked_expression_facts(expression);
+    const auto checker_context = !codegen_active_specialization_key_.empty()
+        ? "specialization:" + codegen_active_specialization_key_
+        : codegen_body_context_;
+    const auto* facts = expression.arena->facts(expression.id,
+                                                 checker_context);
+    if (!facts && root != expression.id)
+      facts = expression.arena->facts(root, checker_context);
+    if (!facts) facts = expression.arena->facts(expression.id, "");
+    if (!facts && root != expression.id)
+      facts = expression.arena->facts(root, "");
     const bool has_fact = facts && facts->type;
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
@@ -3400,36 +3435,139 @@ class Generator {
 
   std::optional<EmitterExpr> checked_functional_pipeline_node(
       size_t pipeline_id) const {
-    if (!phase21_codegen_statement_ || pipeline_id == 0) return std::nullopt;
-    std::optional<std::uint32_t> selected_arena;
-    std::optional<est::ExprId> selected_expression;
+    if (pipeline_id == 0) return std::nullopt;
     vector<string> contexts{codegen_body_context_};
     if (!codegen_active_specialization_key_.empty())
       contexts.push_back("specialization:" +
                          codegen_active_specialization_key_);
     contexts.push_back("");
-    for (const auto& context : contexts) {
-      const auto found = phase21_codegen_statement_
-          ->functional_expression_plans_by_context.find(context);
-      if (found == phase21_codegen_statement_
-              ->functional_expression_plans_by_context.end()) continue;
-      for (const auto& plan : found->second) {
-        if (plan.pipeline_id != pipeline_id ||
-            plan.arena_index >= p_.expression_arenas.size() ||
-            !p_.expression_arenas[plan.arena_index]) continue;
-        if (selected_expression &&
-            (*selected_expression != plan.expression ||
-             *selected_arena != plan.arena_index))
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline id");
-        selected_expression = plan.expression;
-        selected_arena = plan.arena_index;
+    struct Candidate {
+      const Stmt* statement = nullptr;
+      const Stmt::FunctionalExpressionPlan* plan = nullptr;
+    };
+    std::optional<Candidate> selected;
+    const auto inspect = [&](const vector<Stmt>& statements) {
+      for (const auto& statement : statements) {
+        for (const auto& context : contexts) {
+          const auto found =
+              statement.functional_expression_plans_by_context.find(context);
+          if (found == statement.functional_expression_plans_by_context.end())
+            continue;
+          for (const auto& plan : found->second) {
+            if (plan.pipeline_id != pipeline_id) continue;
+            if (selected && (selected->statement != &statement ||
+                selected->plan->arena_index != plan.arena_index ||
+                selected->plan->expression != plan.expression))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline id");
+            selected = Candidate{&statement, &plan};
+          }
+          if (selected && selected->statement == &statement) break;
+        }
       }
-      if (selected_expression)
-        return EmitterExpr{p_.expression_arenas[*selected_arena].get(),
-            *selected_expression, phase21_codegen_statement_->b};
+    };
+    if (p_.main) inspect(p_.main->body);
+    for (const auto& function : p_.functions) inspect(function.body);
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods) inspect(method.body);
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers) {
+        inspect(handler.body);
+        for (const auto& arm : handler.failure_arms) inspect(arm.body);
+      }
+    for (const auto& test : p_.tests) inspect(test.body);
+    if (!selected || selected->plan->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[selected->plan->arena_index])
+      return std::nullopt;
+    const auto& statement = *selected->statement;
+    const auto& plan = *selected->plan;
+    string source;
+    switch (plan.slot) {
+      case est::ExprSlot::Expression: source = statement.text; break;
+      case est::ExprSlot::Argument:
+        if (plan.argument_index < statement.args.size())
+          source = statement.args[plan.argument_index];
+        break;
+      case est::ExprSlot::Initializer: case est::ExprSlot::RhsValue:
+      case est::ExprSlot::ReturnValue: case est::ExprSlot::Iterable:
+      case est::ExprSlot::Condition: case est::ExprSlot::Scrutinee:
+      case est::ExprSlot::RaisedValue: source = statement.b; break;
+      default: source = statement.b; break;
     }
-    return std::nullopt;
+    return EmitterExpr{p_.expression_arenas[plan.arena_index].get(),
+                       plan.expression, std::move(source)};
+  }
+
+  bool functional_pipeline_matches_plan(
+      const ParsedFunctionalPipeline& parsed,
+      const FunctionalPipeline& planned) const {
+    for (const auto& step : planned.semantic_steps)
+      for (const auto node_index : step.source_node_indices)
+        if (node_index == 0 || node_index > parsed.stages.size() ||
+            node_index >= planned.nodes.size() ||
+            parsed.stages[node_index - 1].kind != step.kind ||
+            planned.nodes[node_index].kind != step.kind)
+          return false;
+    return true;
+  }
+
+  std::optional<ParsedFunctionalPipeline> checked_functional_pipeline_from_tree(
+      const EmitterExpr& expression, const FunctionalPipeline& planned) const {
+    if (!expression.arena) return std::nullopt;
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    std::optional<ParsedFunctionalPipeline> selected;
+    std::set<est::ExprId> visited;
+    std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+      if (!visited.insert(id).second) return;
+      const auto root = est::unparenthesized(*expression.arena, id);
+      const auto& node = expression.arena->at(root);
+      if (std::holds_alternative<est::Pipeline>(node)) {
+        auto candidate = functional_pipeline_from_node(
+            EmitterExpr{expression.arena, root, expression.source},
+            resolve_stage);
+        if (candidate && functional_pipeline_matches_plan(*candidate, planned)) {
+          if (selected)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT ambiguous checked virtual pipeline node");
+          selected = std::move(candidate);
+        }
+      }
+      auto child = [&](est::ExprId nested) { visit(nested); };
+      if (const auto* unary = std::get_if<est::Unary>(&node)) child(unary->operand);
+      else if (const auto* binary = std::get_if<est::Binary>(&node)) {
+        child(binary->left); child(binary->right);
+      } else if (const auto* call = std::get_if<est::Call>(&node)) {
+        child(call->callee); for (const auto arg : call->arguments) child(arg);
+      } else if (const auto* member = std::get_if<est::Member>(&node))
+        child(member->base);
+      else if (const auto* index = std::get_if<est::Index>(&node)) {
+        child(index->base); child(index->index);
+      } else if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+        child(grouped->inner);
+      else if (const auto* message = std::get_if<est::Message>(&node)) {
+        child(message->target); for (const auto arg : message->arguments) child(arg);
+      } else if (const auto* named = std::get_if<est::NamedArgument>(&node))
+        child(named->value);
+      else if (const auto* collection = std::get_if<est::Collection>(&node))
+        for (const auto element : collection->elements) child(element);
+      else if (const auto* tuple = std::get_if<est::Tuple>(&node))
+        for (const auto element : tuple->elements) child(element);
+      else if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+        child(constructor->type);
+        for (const auto arg : constructor->type_arguments) child(arg);
+        for (const auto arg : constructor->arguments) child(arg);
+      } else if (const auto* pipeline = std::get_if<est::Pipeline>(&node)) {
+        child(pipeline->input);
+        for (const auto stage : pipeline->stages) child(stage);
+      }
+    };
+    visit(expression.id);
+    return selected;
   }
 
   const FunctionalTraversalGroup* functional_traversal_group(
@@ -3695,7 +3833,7 @@ class Generator {
             "internal error: stale shared functional traversal region");
       const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
       const auto checked_expression = checked_expression_ref(
-          statement.b, est::ExprSlot::RhsValue);
+          statement, statement.b, est::ExprSlot::RhsValue);
       const auto resolve_stage = [](std::string_view name)
           -> std::optional<FunctionalNodeKind> {
         for (const auto& operation : functional_operations())
@@ -4251,7 +4389,6 @@ class Generator {
             }))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked functional call target");
-    const ParsedFunctionalPipeline* pipeline = &checked_pipeline;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             checked_pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
@@ -4283,14 +4420,8 @@ class Generator {
           planned->virtual_upstream_pipeline_id);
       auto upstream_node = checked_functional_pipeline_node(
           planned->virtual_upstream_pipeline_id);
-      const auto resolve_stage = [](std::string_view name)
-          -> std::optional<FunctionalNodeKind> {
-        for (const auto& operation : functional_operations())
-          if (name == operation.name) return operation.kind;
-        return std::nullopt;
-      };
-      auto upstream_parsed = upstream_node
-          ? functional_pipeline_from_node(*upstream_node, resolve_stage)
+      auto upstream_parsed = upstream_node && upstream
+          ? checked_functional_pipeline_from_tree(*upstream_node, *upstream)
           : std::nullopt;
       if (!upstream_parsed || upstream_parsed->stages.empty() ||
           functional_terminal_kind(upstream_parsed->stages.back().kind))
@@ -5293,12 +5424,16 @@ class Generator {
     if (std::holds_alternative<est::Pipeline>(expression.arena->at(root))) {
       auto pipeline = functional_pipeline_from_node(expression, resolve_stage);
       if (pipeline) {
-        if (functional_pipeline_id == 0)
-          functional_pipeline_id = checked_functional_pipeline_id(expression)
-              .value_or(0);
-        if (auto rendered = functional_expr(*pipeline, d, locals, types,
-                                             functional_pipeline_id))
-          return *rendered;
+        if (auto checked_id = checked_functional_pipeline_id(expression))
+          functional_pipeline_id = *checked_id;
+        if (const auto* planned = planned_functional_pipeline(
+                functional_pipeline_id))
+          pipeline = checked_functional_pipeline_from_tree(
+              expression, *planned);
+        if (pipeline)
+          if (auto rendered = functional_expr(*pipeline, d, locals, types,
+                                               functional_pipeline_id))
+            return *rendered;
       }
       if (auto rendered = checked_callable_pipeline_expr(
               expression, d, locals, types))
