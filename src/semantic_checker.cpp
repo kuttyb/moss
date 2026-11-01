@@ -19059,11 +19059,13 @@ class Checker {
       int line, const string& expression,
       const TypeEnv& env,
       const ObjectType* implicit_owner,
-      vector<LocalCallSite>& calls, const Stmt* statement_context = nullptr) const {
+      vector<LocalCallSite>& calls, const Stmt* statement_context = nullptr,
+      const std::vector<est::Handle>* checked_handles = nullptr,
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> checked_key = {}) const {
     (void)line;
     string original = trim(expression);
     if (auto pipeline = functional_pipeline_from_est(
-            original, nullptr, {}, statement_context)) {
+            original, checked_handles, checked_key, statement_context)) {
       collect_local_call_sites(line, pipeline->source, env, implicit_owner,
                                calls, statement_context);
       auto source_type = inferred_expr_type(pipeline->source, env);
@@ -19535,7 +19537,8 @@ class Checker {
       const vector<Stmt>& body, const std::optional<string>& result_expression,
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
-      std::map<string,int>& edge_lines, const string& physical_source) {
+      std::map<string,int>& edge_lines, const string& physical_source,
+      const std::vector<est::Handle>* result_handles = nullptr) {
     std::map<std::tuple<string,int,string>, uint32_t> call_occurrences;
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
@@ -19637,7 +19640,9 @@ class Checker {
             "internal error: callable result expression has no Moss source line");
       vector<LocalCallSite> calls;
       collect_local_call_sites(result_line, *result_expression, env,
-                               implicit_owner, calls);
+                               implicit_owner, calls, nullptr,
+                               result_handles,
+                               std::pair{est::ExprSlot::ReturnValue, 0u});
       for (const auto& call : calls) {
         graph[source].insert(call.target);
         edge_lines.emplace(source + "\n" + call.target, result_line);
@@ -19735,7 +19740,8 @@ class Checker {
       collect_callable_edges(function.body, function.result_expression,
                              function.result_line, std::move(env), nullptr,
                              "fn:" + function.name, graph, edge_lines,
-                             function.source_file);
+                             function.source_file,
+                             &function.expression_handles);
     }
     for (const auto& object : p_.objects) {
       for (const auto& method : object.methods) {
@@ -19747,7 +19753,8 @@ class Checker {
         collect_callable_edges(method.body, method.result_expression,
                                method.result_line, std::move(env), &object,
                                "method:" + object.name + "." + method.name,
-                               graph, edge_lines, method.source_file);
+                               graph, edge_lines, method.source_file,
+                               &method.expression_handles);
       }
     }
     for (const auto& domain : p_.domains) {
@@ -26437,7 +26444,9 @@ class Checker {
       if (handle_key) {
         for (const auto& handle : *handles)
           if (handle.slot == handle_key->first &&
-              handle.argument_index == handle_key->second)
+              handle.argument_index == handle_key->second &&
+              handle.source_fingerprint ==
+                  est::fingerprint(std::string(source)))
             return convert(handle.arena_index, handle.expr);
         return std::nullopt;
       }

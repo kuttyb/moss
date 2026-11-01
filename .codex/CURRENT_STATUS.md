@@ -1,8 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `d0f03319`. Signature-inference statement context is uncommitted. Moss
-  bootstrap confirms `moss-0.1`.
+  `6d5d966c`. Result-expression handle routing is uncommitted. Moss bootstrap
+  confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -39,6 +39,11 @@
   (`functional_basics` 94 checker / 17 pipeline; `functional_scope_fusion` 96
   / 34). Default/shadow checks and the functional-tree parity harness pass;
   this is structural context plumbing without measured K2 delta so far.
+- Function/method result call-edge collection now passes the retained
+  ReturnValue handle into the recursive pipeline collector, guarded by source
+  fingerprint. The accepted `swarm_065_pipeline_return.moss` checks in
+  default/shadow; focused counters remain 64 checker parses / 24 pipeline
+  parses. No delta is claimed for that fixture.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial
