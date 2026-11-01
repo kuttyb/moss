@@ -14695,3 +14695,21 @@ lists the expression-type, pipeline-type, and ownership known-debt engine set.
 No full suite or perf pass has run for C2. The emitter changes are still
 uncommitted; next checkpoint them, then continue removing emitter parser/view
 and text-lookup consumers structurally.
+
+### Phase 27.5.4 C2 paired-count checkpoint (2026-11-01)
+
+At `dedf45a3`, reran a like-for-like targeted count sample (four sources,
+default and `-O`, parent `tmp/phase27-5-4-parent/moss` versus candidate
+`build/compiler/moss-dev`). Counts are `text-node lookups / native expression
+view reparses / native pipeline reparses`:
+
+- `tests/phase5_tooling.moss`: 4312/2164/0 -> 2662/1368/0.
+- `tests/phase4_callable_specialization.moss`: 1686/882/0 -> 770/338/0.
+- `examples/functional_objects.moss`: 5287/2941/0 -> 3591/2029/0.
+- `examples/object_pipeline.moss`: 5844/3060/0 -> 3510/2318/0.
+
+Both binaries completed all eight commands successfully. This targeted sample
+is not the corpus workload or a perf run; full C2 consumer counts and perf
+remain deferred to near completion. Emitter re-parses and lookups are still
+nonzero; continue replacing string-facing emitter helpers with `EmitterExpr`
+projections and recursive ExprId lowering. No full suite has run since C1.
