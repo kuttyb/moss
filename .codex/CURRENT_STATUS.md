@@ -1,3 +1,11 @@
+### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
+
+Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
+
+After removal: `tests/shards/shard_fast_debug.sh` passes and `check_phase27_5_3_fastdebug_checked_tree.py` passes targeted Fast Debug/native/optimized parity. Targeted Phase 25 conformance, Team A, S3 key protocol, root totality, Fast Debug package, enum module and SDK results remain as noted in the previous checkpoint. No final default/shadow suite has run since the fixes.
+
+Remaining: test-build perturb/drop coverage for call targets, specializations, joins, patterns (three fixtures per class, one selected by Agent 2), known-debt engine list in `docs/COMPILER_STATE.md`; then final C1 gates and Agent 2. C2 consumer counts/migration and performance measurement remain unstarted.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, latest)
 
 Branch `phase27-5-4-work`, pushed through `981ca31e`. Targeted latest greens include the phase25 Team A semantics suite after reverting the incomplete direct-call fact lookup experiment; it was an attempted migration that made a valid source-free callable fail Fast Debug, so that experiment was removed. The prior retained-tree changes remain.

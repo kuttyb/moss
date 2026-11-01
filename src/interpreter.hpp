@@ -654,13 +654,6 @@ class FastInterpreter {
           " handles=" + std::to_string(active_expression_handles_
               ? active_expression_handles_->size() : 0));
     }
-    if (active_expression_tree_ &&
-        expression_node_text(*active_expression_tree_, active_expression_node_) == source) {
-      view.source = active_expression_tree_->source;
-      view.arena = active_expression_tree_->arena;
-      view.root = active_expression_node_;
-      return view;
-    }
     view.source.assign(source);
     throw RuntimeError(0,
         "MOSS_INTERNAL_INVARIANT missing checked expression node source=" +
