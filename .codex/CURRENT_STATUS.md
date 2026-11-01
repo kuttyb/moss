@@ -14845,3 +14845,14 @@ The four-class perturb/drop harness remains registered for default and shadow;
 its C1 report documents Agent 2's fixture selections. The upcoming final C2
 audit must verify that perturbation actually changes the checked answer, and
 that each consumer follows the changed answer or fails closed.
+
+### Phase 27.5.4 C2 note — callback rendering boundary (2026-11-01)
+
+A follow-up experiment attempted to render functional callback placeholders
+straight from retained nodes. `examples/functional_objects.moss` showed a
+bound-method callback emitted `_.calibrated()` rather than substituting the
+current item; the candidate Rust differed from the pinned parent. The
+rendering experiment was fully reverted, and the targeted three-engine check
+passed afterward. The committed node-based callback type queries remain. This
+shows callback rendering needs a checked callable/method lowering path before
+its source substitution can be removed; no language behavior was changed.
