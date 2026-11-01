@@ -45,6 +45,6 @@ Terms:
 
 ## Maintenance
 
-- Kept current like the language docs; read by agents at session start (AGENTS.md) and fed to cold-start reviewers alongside the language docs.
+- Kept current like the language docs. Required reading for Moss compiler development (see AGENTS.md); not required for regular Moss development. Fed to cold-start reviewers alongside the language docs.
 - Every phase that changes a status or a debt number updates this file in the same delivery.
 - CI should verify that every gate named here exists in make check (pending).
