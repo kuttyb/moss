@@ -2148,6 +2148,7 @@ class Checker {
   mutable std::unordered_set<string> parse_cache_distinct_failed_member_inputs_;
   mutable bool parse_cache_distinct_failed_simple_saturated_ = false;
   mutable bool parse_cache_distinct_failed_member_saturated_ = false;
+  mutable std::unordered_set<string> active_functional_pipeline_inference_;
 
   Program& p_;
   bool legacy_signature_inference_ = false;
@@ -2227,6 +2228,7 @@ class Checker {
   uint64_t specialization_requests_ = 0;
   uint64_t specialization_body_checking_ns_ = 0;
   std::set<string> specialization_keys_seen_;
+  mutable std::set<string> specialized_return_inference_active_;
   std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
@@ -10579,6 +10581,24 @@ class Checker {
   std::optional<FunctionalPipelineState> inferred_functional_pipeline_state(
       const string& expression, const TypeEnv& env,
       bool accept_bare_source = false) const {
+    string inference_key = current_semantic_context_ + "|" + expression + "|";
+    vector<std::pair<string, string>> environment_types;
+    environment_types.reserve(env.bindings.size());
+    for (const auto& [name, type] : env.bindings)
+      environment_types.emplace_back(name,
+          type ? type->to_canonical_string() : string{});
+    std::sort(environment_types.begin(), environment_types.end());
+    for (const auto& [name, type] : environment_types) {
+      inference_key += std::to_string(name.size()) + ":" + name +
+          std::to_string(type.size()) + ":" + type + ";";
+    }
+    if (!active_functional_pipeline_inference_.insert(inference_key).second)
+      return std::nullopt;
+    struct FunctionalPipelineInferenceScope {
+      std::unordered_set<string>& active;
+      const string& key;
+      ~FunctionalPipelineInferenceScope() { active.erase(key); }
+    } inference_scope{active_functional_pipeline_inference_, inference_key};
     auto parsed = functional_pipeline_from_est(expression);
     string source = parsed ? parsed->source : trim(expression);
     if (!parsed && !accept_bare_source) return std::nullopt;
@@ -12640,6 +12660,24 @@ class Checker {
 
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
+    string inference_key = function.semantic_callable_id.empty()
+        ? function.source_file + ":" + function.name + ":" +
+              std::to_string(function.line)
+        : function.semantic_callable_id;
+    inference_key += "|";
+    for (const auto& type : parameter_types) {
+      inference_key += std::to_string(type.size());
+      inference_key += ":";
+      inference_key += type;
+      inference_key += ";";
+    }
+    if (!specialized_return_inference_active_.insert(inference_key).second)
+      return std::nullopt;
+    struct SpecializedReturnInferenceScope {
+      std::set<string>& active;
+      const string& key;
+      ~SpecializedReturnInferenceScope() { active.erase(key); }
+    } inference_scope{specialized_return_inference_active_, inference_key};
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
     auto parsed_result = result.empty() ? std::nullopt : moss::Type::parse_canonical(result);
     bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) ||
@@ -19061,64 +19099,9 @@ class Checker {
       const ObjectType* implicit_owner,
       vector<LocalCallSite>& calls, const Stmt* statement_context = nullptr,
       const std::vector<est::Handle>* checked_handles = nullptr,
-      std::optional<std::pair<est::ExprSlot, std::uint32_t>> checked_key = {},
-      std::optional<EstExpressionCursor> checked_cursor = {}) const {
+      std::optional<std::pair<est::ExprSlot, std::uint32_t>> checked_key = {}) const {
     (void)line;
     string original = trim(expression);
-    if (!checked_cursor && checked_handles && checked_key)
-      for (const auto& handle : *checked_handles)
-        if (handle.slot == checked_key->first &&
-            handle.argument_index == checked_key->second &&
-            handle.source_fingerprint == est::fingerprint(original)) {
-          const auto* arena = expression_arena(handle.arena_index);
-          if (!arena || handle.expr >= arena->size()) break;
-          auto node = handle.expr;
-          if (const auto* named =
-                  std::get_if<est::NamedArgument>(&arena->at(node)))
-            node = named->value;
-          checked_cursor = EstExpressionCursor{
-              handle.arena_index, node, original};
-          break;
-        }
-    if (!checked_cursor && statement_context) {
-      std::string_view root_slot;
-      switch (statement_context->kind) {
-        case Stmt::Kind::Assign: root_slot = "initializer"; break;
-        case Stmt::Kind::Let:
-        case Stmt::Kind::Var: root_slot = "initializer"; break;
-        case Stmt::Kind::Call: root_slot = "expression"; break;
-        case Stmt::Kind::If:
-        case Stmt::Kind::While: root_slot = "condition"; break;
-        case Stmt::Kind::For: root_slot = "for-iterable"; break;
-        case Stmt::Kind::Match: root_slot = "match-subject"; break;
-        case Stmt::Kind::Return: root_slot = "return-value"; break;
-        case Stmt::Kind::Reply: root_slot = "reply-value"; break;
-        case Stmt::Kind::Raise: root_slot = "raise-value"; break;
-        default: break;
-      }
-      if (!root_slot.empty())
-        checked_cursor = root_expression_cursor(original, root_slot, {}, 0,
-                                                statement_context);
-    }
-    active_est_expression_cursors_.push_back(checked_cursor);
-    struct CallSiteCursorScope {
-      vector<std::optional<EstExpressionCursor>>& stack;
-      ~CallSiteCursorScope() { stack.pop_back(); }
-    } cursor_scope{active_est_expression_cursors_};
-    auto checked_child_cursor = [&](std::string_view role,
-                                    std::uint32_t ordinal)
-        -> std::optional<EstExpressionCursor> {
-      if (!checked_cursor) return std::nullopt;
-      const auto* arena = expression_arena(checked_cursor->arena_index);
-      if (!arena) return std::nullopt;
-      const auto root = est::unparenthesized(*arena, checked_cursor->expr);
-      const auto child = expression_child_node(*arena, root, role, ordinal);
-      if (!child) return std::nullopt;
-      auto source = expression_child_source(*checked_cursor, *child);
-      if (!source) return std::nullopt;
-      return EstExpressionCursor{checked_cursor->arena_index, *child,
-                                 std::move(*source)};
-    };
     if (auto pipeline = functional_pipeline_from_est(
             original, checked_handles, checked_key, statement_context)) {
       collect_local_call_sites(line, pipeline->source, env, implicit_owner,
@@ -19189,26 +19172,23 @@ class Checker {
       }
       return;
     }
-    string value = checked_expression_normalize_pipeline(original);
+    string value = tree_normalize_pipeline(std::move(original));
     if (value.empty()) return;
-    while (checked_expression_outer_grouping(value))
-      value = checked_expression_strip_grouping(value);
+    while (tree_outer_grouping(value))
+      value = tree_strip_redundant_outer_parentheses(value);
 
     // Every call evaluated by a value wrapper still needs a semantic call
     // edge.  Module projection uses these edges to emit imported generic
     // specializations into the consumer crate.  The checker and native
     // expression lowering already recurse through these forms.
-    if (auto elements = checked_expression_vector_literal(value)) {
-      for (std::uint32_t index = 0; index < elements->size(); ++index) {
-        auto child = checked_child_cursor("element", index);
-        collect_local_call_sites(line, elements->at(index), env, implicit_owner, calls,
-                                 statement_context, nullptr, {},
-                                 std::move(child));
-      }
+    if (auto elements = tree_parse_vector_literal(value)) {
+      for (const auto& element : *elements)
+        collect_local_call_sites(line, element, env, implicit_owner, calls,
+                                 statement_context);
       return;
     }
     string unary_operation, unary_operand;
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand) &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
         (unary_operation == "not" || unary_operation == "~")) {
       collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls, statement_context);
@@ -19221,7 +19201,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
-      if (auto binary = checked_expression_split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls,
                                  statement_context);
         collect_local_call_sites(line, binary->second, env, implicit_owner,
@@ -19234,8 +19214,8 @@ class Checker {
     // Confirm a declared field before descending so qualified module names
     // and enum cases retain their call-resolution paths below.
     string member_base, field;
-    if (checked_expression_parse_member_access(value, member_base, field)) {
-      if (checked_expression_identifier(field)) {
+    if (tree_parse_member_access(value, member_base, field)) {
+      if (tree_plain_identifier(field)) {
         auto base_type = inferred_expr_type(member_base, env);
         if (base_type) {
           auto object = objects_.find(canonical_type_name(*base_type));
@@ -19255,8 +19235,7 @@ class Checker {
 
     string receiver, method_name;
     vector<string> arguments;
-    if (checked_expression_parse_member_call(value, receiver, method_name,
-                                              arguments)) {
+    if (tree_parse_member_call(value, receiver, method_name, arguments)) {
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -19292,7 +19271,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (checked_expression_parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       vector<string> argument_types;
       for (const auto& argument : call_arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -19355,14 +19334,14 @@ class Checker {
     }
 
     string base, index;
-    if (checked_expression_parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       collect_local_call_sites(line, base, env, implicit_owner, calls,
                                statement_context);
       collect_local_call_sites(line, index, env, implicit_owner, calls,
                                statement_context);
       return;
     }
-    if (checked_expression_parse_unary(value, unary_operation, unary_operand))
+    if (tree_parse_unary(value, unary_operation, unary_operand))
       collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls, statement_context);
   }
@@ -26513,7 +26492,8 @@ class Checker {
     if (!active_est_expression_cursors_.empty() &&
         active_est_expression_cursors_.back()) {
       const auto& cursor = *active_est_expression_cursors_.back();
-      if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
+      if (trim(cursor.source) == trim(std::string(source)))
+        if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
     }
     std::string_view root_slot;
     const Stmt* pipeline_statement = statement_context

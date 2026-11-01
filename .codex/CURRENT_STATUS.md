@@ -6,17 +6,25 @@
   only, with the two known invariant regressions fixed and `make check` required
   in default and shadow. C2 covers emitter/optimizer consumer counts. K1 is
   report-only.
-- C1 implementation removes Fast Debug's source-fingerprint scans of retained
-  handles in `expression_tree` and pipeline resolution. Function/method return
-  evaluation now requests the checked `ReturnValue` slot explicitly, which
-  preserves the generic string fixture without text lookup. The pipeline helper
+- C1 removes Fast Debug's source-fingerprint scans of retained handles in
+  `expression_tree` and pipeline resolution. Function/method return evaluation
+  requests the checked `ReturnValue` slot explicitly. The pipeline helper
   receives the active tree and ExprId and verifies the node kind directly.
-  Targeted functional-tree, Fast Debug/native/optimized, generic-string,
-  swarm_044, and pipeline fixtures pass in default/shadow. Generic-string
-  Fast Debug counters: consumer reparses 0, text-node lookups 0; checker text
-  caches are still used and are outside the new target.
-- Next: checkpoint and push C1, then run `make check` once for C1. Do not run
-  C2 corpus consumer counts or performance tests until C2 is near completion.
+  Targeted generic-string, swarm_044, functional-tree, Fast Debug/native/
+  optimized, specialized-facts, pipeline, and Phase 27 EST checks pass in
+  default/shadow. Generic-string Fast Debug counters: consumer reparses 0,
+  text-node lookups 0; checker text caches are outside the new target.
+- The first C1 `make check` failed in `check_phase27_est.py` before the corpus
+  jobs: two checker recursion/hang cases. ASan showed specialized-return
+  inference re-entry; a targeted recursion guard restored its expected
+  `TYPE_AMBIGUOUS_OPEN_RESULT`. A source-identity guard in pipeline inference
+  restored the expected rejection for `02_untyped_vector_parameters.moss`.
+  `grouped_recovery_reraise.moss` stalled only with the 8a3 local-call cursor
+  migration; that checker-side migration was reverted because checker counts
+  are no longer targets. Phase 27 EST focused checks pass after these changes.
+- Next: commit/push the checker regression repair, then rerun the C1 full gate
+  once. Do not run C2 corpus consumer counts or performance tests until C2 is
+  near completion.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
