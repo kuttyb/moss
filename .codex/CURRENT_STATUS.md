@@ -1,3 +1,38 @@
+# Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `665e18b7`. The checked
+  member-target slice described here is being checkpointed now; the changes
+  are in `src/native_generator.cpp`,
+  `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
+- The emitter no longer selects a custom method from receiver type in the
+  statement call path, functional bound-method path, member-call result-type
+  path, or legacy member-call lowering when an `EmitterExpr` is available. It
+  consumes checked call-edge targets or specialization member requirements,
+  then maps the chosen identity to a declaration. Same-line trait calls are
+  disambiguated by a new checker-retained member requirement subject (the
+  source binder), not by type-based method resolution. Typed semantic JSON
+  now includes that subject.
+- Build and targeted results: `make moss-dev` PASS;
+  `check_phase25_team_a_semantics.py` PASS (including open trait requirements,
+  distinct `left.cost()` / `right.cost()` calls, and source-free package cases);
+  `check_phase27_5_4_fact_hooks.py` PASS (all required classes pass; known debt
+  38/38); `check_phase27_est_functional_tree.py` PASS.
+- Same-source calculator counters, default and `-O` together: 31,608 emitter
+  expression-view reparses, 0 pipeline reparses, 48,924 text-node lookups;
+  1,692 string type queries and 427 string expression queries per command.
+  Compared with the phase27-5-3-c1 parent’s 363,004 reparses on the same command
+  pair, reparses are down 91.3%. The previous candidate measured 32,432
+  reparses / 52,124 lookups; this slice reduces both. This is still far from
+  C2’s zero target and is one workload only.
+- Remaining emitter `resolve_object_method` sites are iterator protocol
+  selection (`for` lowering); the receiver-call resolver sites above now use
+  checked identities. Optimizer expression parsing/lookups are zero by source
+  audit. Phase 25 conformance last returned 9/11 (gates 7 and 10) before the
+  current slice; no parent comparison. No full suites, parity aggregate, or
+  perf suite has run; Agent 2 is reserved for the single final audit.
+- The closing-round shadow demotion/runtime ratchet/contract edits remain
+  queued until after C2 is merged. No merge/tag has occurred.
+
 # Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
 
 - Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current

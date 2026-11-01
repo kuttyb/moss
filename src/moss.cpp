@@ -10396,6 +10396,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
       else out << "null";
       out << ", \"member_name\": ";
       write_debug_json_string(out, requirement.member_name);
+      out << ", \"subject\": ";
+      write_debug_json_string(out, requirement.subject);
       out << ", \"receiver\": ";
       write_typed_open_type_json(out, requirement.receiver);
       out << ", \"argument_types\": [";

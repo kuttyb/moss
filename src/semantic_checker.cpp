@@ -6618,6 +6618,7 @@ class Checker {
         moss::MemberDispatchRequirement member;
         member.requirement_id = function.semantic_callable_id + ":member:" +
             std::to_string(ordinal);
+        member.subject = constraint.subject;
         member.receiver = receiver->second;
         member.member_name = constraint.detail;
         member.origin = {summary.origin.module_id, function.source_file,
@@ -23638,6 +23639,7 @@ class Checker {
       moss::MemberDispatchRequirement closed;
       closed.requirement_id = function.semantic_callable_id + ":member:" +
           std::to_string(member_ordinal);
+      closed.subject = requirement.subject;
       closed.member_name = requirement.detail;
       closed.receiver = moss::Type::parse_canonical(
           canonical_type_name(receiver->second)).value_or(nullptr);

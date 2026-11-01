@@ -754,6 +754,10 @@ struct Requirement {
 // text and backend symbols are never used to select a member target.
 struct MemberDispatchRequirement {
   std::string requirement_id;
+  // Source binder whose member requirement is being specialized. This keeps
+  // same-name member calls in one generic body associated with the exact
+  // checker-selected callable without consumer-side receiver resolution.
+  std::string subject;
   TypeRef receiver;
   std::string member_name;
   std::vector<TypeRef> argument_types;

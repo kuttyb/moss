@@ -381,12 +381,20 @@ class Generator {
       for (const auto& [site, count] : expression_view_reparse_sites_)
         std::cerr << "MOSS_EST_REPARSE_QUERY_SITE=" << site << "|"
                   << count << '\n';
+    if (est::test_coverage_counters_enabled()) {
+      std::cerr << "MOSS_EST_STRING_TYPE_QUERY=" << string_type_queries_
+                << '\n';
+      std::cerr << "MOSS_EST_STRING_EXPR_QUERY=" << string_expr_queries_
+                << '\n';
+    }
 #endif
     return o.str();
   }
 
  private:
   mutable std::map<string, std::uint64_t> expression_view_reparse_sites_;
+  mutable std::uint64_t string_type_queries_ = 0;
+  mutable std::uint64_t string_expr_queries_ = 0;
   const Program& p_;
   // Keeps this program's interned declarations bound while lowering.
   moss::TypeContext::Binding type_scope_;
@@ -2267,7 +2275,7 @@ class Generator {
       if (!checked_callable || !checked_callable->arena)
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
-      const Method* method = checked_method_target(*checked_callable);
+      const Method* method = checked_method_target(*checked_callable, types);
       if (method && method->return_type)
         return canonical_type_name(*method->return_type);
       throw std::runtime_error(
@@ -2590,15 +2598,155 @@ class Generator {
     return nullptr;
   }
 
-  const Method* checked_method_target(const EmitterExpr& expression) const {
+  const Method* checked_method_target(
+      const EmitterExpr& expression,
+      const std::unordered_map<string,string>* types = nullptr) const {
     const auto* facts = checked_expression_facts(expression);
-    if (!facts || !starts_with(facts->resolved_target, "method:"))
+    string target = facts ? facts->resolved_target : string();
+    string member_name;
+    std::optional<string> checked_receiver_type;
+    std::optional<string> checked_receiver_binding;
+    const auto expression_root = expression.arena
+        ? est::unparenthesized(*expression.arena, expression.id) : 0;
+    if (expression.arena) {
+      const auto* call = std::get_if<est::Call>(
+          &expression.arena->at(expression_root));
+      if (call) {
+        const auto callee_root = est::unparenthesized(
+            *expression.arena, call->callee);
+        if (const auto* member = std::get_if<est::Member>(
+                &expression.arena->at(callee_root))) {
+          member_name = member->name;
+          if (target.empty())
+            if (const auto* callee_facts = checked_expression_facts(
+                    expression.child(call->callee)))
+              target = callee_facts->resolved_target;
+        }
+      } else if (const auto* member = std::get_if<est::Member>(
+                     &expression.arena->at(expression_root))) {
+        member_name = member->name;
+      }
+      if (target.empty()) {
+        const auto targets = checked_call_edge_targets(codegen_body_context_,
+            static_cast<int>(expression.arena->span(expression_root).line));
+        if (targets.size() == 1) target = targets.front();
+      }
+    }
+    auto method_target_for_callable = [&](std::string_view selected) {
+      const auto callable = CallableId::parse(selected);
+      if (!callable || callable->kind != "method") return string();
+      for (const auto& object : objects_) {
+        if (!p_.type_context) break;
+        const auto declaration = p_.type_context->find(object.second->name);
+        if (declaration && declaration->id == callable->module_id)
+          return "method:" + object.second->name + "." +
+              callable->declaration_name;
+      }
+      return string();
+    };
+    if ((target.empty() || starts_with(target, "parameter:") ||
+         starts_with(target, "trait-method:")) && !member_name.empty() &&
+        !codegen_active_specialization_key_.empty()) {
+      std::set<string> selected_ids;
+      if (expression.arena) {
+        const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(expression_root));
+        if (call) {
+          const auto callee_root = est::unparenthesized(
+              *expression.arena, call->callee);
+          if (const auto* member = std::get_if<est::Member>(
+                  &expression.arena->at(callee_root))) {
+            const auto receiver = expression.child(member->base);
+            if (auto receiver_type = generated_expr_type(receiver, types))
+              checked_receiver_type = canonical_type_name(*receiver_type);
+            const auto receiver_root = est::unparenthesized(
+                *receiver.arena, receiver.id);
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &receiver.arena->at(receiver_root)))
+              checked_receiver_binding = identifier->name;
+          }
+        }
+      }
+      for (const auto& function_entry : functions_)
+        for (const auto& specialization : function_entry.second->specializations) {
+          if (specialization.stable_type_key !=
+              codegen_active_specialization_key_) continue;
+          for (const auto& requirement : specialization.member_requirements) {
+            if (requirement.member_name != member_name ||
+                (!checked_receiver_binding && checked_receiver_type &&
+                 requirement.receiver &&
+                 canonical_type_name(requirement.receiver) !=
+                     *checked_receiver_type) ||
+                !requirement.selected_callable_id) continue;
+            bool subject_matches = !checked_receiver_binding ||
+                requirement.subject == *checked_receiver_binding;
+            if (checked_receiver_binding && requirement.subject.empty()) {
+              for (size_t ordinal = 0;
+                   ordinal < function_entry.second->constraints.size();
+                   ++ordinal) {
+                const auto& constraint =
+                    function_entry.second->constraints[ordinal];
+                if (constraint.kind != ConstraintKind::Method ||
+                    constraint.subject != *checked_receiver_binding ||
+                    constraint.detail != member_name) continue;
+                const string base = function_entry.second->semantic_callable_id +
+                    ":member:" + std::to_string(ordinal);
+                subject_matches = requirement.requirement_id == base ||
+                    starts_with(requirement.requirement_id, base + ":call-v1:") ||
+                    requirement.parent_requirement_id ==
+                        std::optional<string>(base);
+                if (subject_matches) break;
+              }
+            }
+            if (subject_matches)
+              selected_ids.insert(*requirement.selected_callable_id);
+          }
+        }
+      if (selected_ids.size() == 1) {
+        const auto& selected = *selected_ids.begin();
+        const string mapped = method_target_for_callable(selected);
+        if (!mapped.empty()) target = mapped;
+      }
+    }
+    const string requirement_prefix(checked_ir::kMemberRequirementPrefix);
+    if (starts_with(target, requirement_prefix)) {
+      const string requirement_id = target.substr(requirement_prefix.size());
+      bool found_requirement = false;
+      for (const auto& function_entry : functions_)
+        for (const auto& specialization : function_entry.second->specializations) {
+          if (specialization.stable_type_key !=
+              codegen_active_specialization_key_) continue;
+          for (const auto& requirement : specialization.member_requirements) {
+            if ((requirement.requirement_id != requirement_id &&
+                 !starts_with(requirement.requirement_id,
+                     requirement_id + ":call-v1:")) ||
+                !requirement.selected_callable_id) continue;
+            found_requirement = true;
+            target = method_target_for_callable(
+                *requirement.selected_callable_id);
+          }
+        }
+      if (!found_requirement || !starts_with(target, "method:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked member requirement target");
+    }
+    if (!starts_with(target, "method:"))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked bound-method target line=" +
           std::to_string(expression.arena
               ? expression.arena->span(expression.id).line : 0) +
-          " context=" + codegen_body_context_);
-    const string selected = facts->resolved_target.substr(7);
+          " context=" + codegen_body_context_ + " target=" + target +
+          " member=" + member_name + " receiver_type=" +
+          checked_receiver_type.value_or("<missing>") +
+          " specialization=" + codegen_active_specialization_key_);
+    return method_for_checked_target(target);
+  }
+
+  const Method* method_for_checked_target(std::string_view target) const {
+    if (target.rfind("method:", 0) != 0)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked method target");
+    const string selected(target.substr(7));
     const auto separator = selected.rfind('.');
     if (separator == string::npos)
       throw std::runtime_error(
@@ -2668,6 +2816,9 @@ class Generator {
   std::optional<string> generated_expr_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) ++string_type_queries_;
+#endif
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
       // A text-only type query has no node identity to inspect. Record it as
@@ -2824,10 +2975,30 @@ class Generator {
         if (auto result = builtin_operation_result(concrete_receiver, method_name,
                                                     method_args.size()))
           return result;
+        const int call_line = phase21_codegen_statement_
+            ? phase21_codegen_statement_->line : 0;
+        const auto checked_methods = checked_method_targets(method_name,
+                                                              call_line);
+        std::optional<string> common_return_type;
+        bool common_return_type_agrees = !checked_methods.empty();
+        for (const Method* method : checked_methods) {
+          if (!method->return_type) {
+            common_return_type_agrees = false;
+            break;
+          }
+          const string candidate = canonical_type_name(*method->return_type);
+          if (!common_return_type) common_return_type = candidate;
+          else if (*common_return_type != candidate) {
+            common_return_type_agrees = false;
+            break;
+          }
+        }
+        if (common_return_type_agrees && common_return_type)
+          return *common_return_type;
         throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT emitter cannot infer a member-call result "
-            "from the receiver type; checked expression node required: " +
-            method_name);
+            "MOSS_INTERNAL_INVARIANT missing or ambiguous checked member-call "
+            "target for generated type method=" + method_name + " line=" +
+            std::to_string(call_line) + " context=" + codegen_body_context_);
       }
     }
 
@@ -4032,7 +4203,7 @@ class Generator {
       if (!checked_callable || !checked_callable->arena)
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
-      const Method* method = checked_method_target(*checked_callable);
+      const Method* method = checked_method_target(*checked_callable, types);
       std::ostringstream rendered;
       rendered << (bound_receiver_node
           ? expr(*bound_receiver_node, domain, locals, types)
@@ -6252,13 +6423,17 @@ class Generator {
     }
 #endif
     return expr(expression.text(), d, locals, types, functional_pipeline_id,
-                message_argument_plans);
+                message_argument_plans, &expression);
   }
 
   string expr(string e, const Domain* d, const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
-              const vector<size_t>* message_argument_plans = nullptr) const {
+              const vector<size_t>* message_argument_plans = nullptr,
+              const EmitterExpr* checked_node = nullptr) const {
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) ++string_expr_queries_;
+#endif
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
       return e;
@@ -7084,13 +7259,45 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
-        if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
-                                                [&]() {
-                                                  vector<string> result;
-                                                  for (const auto& argument : member_arguments)
-                                                    result.push_back(generated_expr_type(argument, types).value_or(""));
-                                                  return result;
-                                                }(), true, nullptr)) {
+        const string checked_method_name = member_name == "push_back" ? "push"
+            : member_name == "pop_front" ? "pop" : member_name;
+        auto checked_methods = checked_method_targets(
+            checked_method_name, phase21_codegen_statement_
+                ? phase21_codegen_statement_->line : 0);
+        const auto concrete_object = objects_.find(
+            nominal_template_name(concrete));
+        if (concrete_object == objects_.end()) checked_methods.clear();
+        const Method* checked_node_method = nullptr;
+        if (concrete_object != objects_.end() && checked_node &&
+            checked_node->arena) {
+          const auto checked_root = est::unparenthesized(
+              *checked_node->arena, checked_node->id);
+          const auto* checked_call = std::get_if<est::Call>(
+              &checked_node->arena->at(checked_root));
+          if (checked_call) {
+            const auto callee_root = est::unparenthesized(
+                *checked_node->arena, checked_call->callee);
+            const auto* checked_member = std::get_if<est::Member>(
+                &checked_node->arena->at(callee_root));
+            if (checked_member && checked_member->name == checked_method_name)
+              checked_node_method = checked_method_target(*checked_node, types);
+          }
+        }
+        if (!checked_node_method && checked_methods.size() > 1)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked member-call target method=" +
+              checked_method_name);
+        const Method* method = checked_node_method ? checked_node_method
+            : checked_methods.empty()
+            ? nullptr : checked_methods.front();
+        if (!method && concrete_object != objects_.end())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target method=" +
+              checked_method_name + " line=" + std::to_string(
+                  phase21_codegen_statement_
+                      ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        if (method) {
           const auto external_method_module =
               phase21_external_module_for_symbol(concrete);
           // A consuming concrete method cannot be invoked through either a
@@ -7356,25 +7563,29 @@ class Generator {
                                             d, locals, types);
         const Method* sibling_method = nullptr;
         if (d && objects_.count(d->name) && !known_function) {
-          vector<string> arg_types;
-          for (const auto& argument : call_args)
-            arg_types.push_back(nominalized_generated_argument_type(
-                argument, generated_expr_type(argument, types).value_or("")));
-          sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
+          const auto checked_methods = checked_method_targets(
+              head, phase21_codegen_statement_
+                  ? phase21_codegen_statement_->line : 0);
+          if (checked_methods.size() != 1)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing or ambiguous checked implicit-method target=" +
+                head + " context=" + codegen_body_context_);
+          sibling_method = checked_methods.front();
         }
         vector<string> sibling_temporaries(call_args.size());
         if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
           for (size_t i = 0; i < call_args.size(); ++i) {
             string nested_name; vector<string> nested_args;
-            if (tree_parse_simple_call(call_args[i], nested_name, nested_args) &&
-                objects_.count(d->name) &&
-                resolve_object_method(objects_, d->name, nested_name,
-                    [&]() {
-                      vector<string> result;
-                      for (const auto& argument : nested_args)
-                        result.push_back(generated_expr_type(argument, types).value_or(""));
-                      return result;
-                    }(), true, nullptr))
+            if (!tree_parse_simple_call(call_args[i], nested_name, nested_args))
+              continue;
+            const auto nested_methods = checked_method_targets(nested_name,
+                phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+            if (nested_methods.size() > 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked nested implicit-method target=" +
+                  nested_name);
+            if (!nested_methods.empty() &&
+                nested_methods.front()->receiver_effect != Effect::Read)
               sibling_temporaries[i] = "__moss_call_argument_" +
                   std::to_string(call_argument_temp_++);
           }
@@ -9899,24 +10110,31 @@ class Generator {
           if (call_method && call_method->receiver_effect != Effect::Read) {
             for (size_t k = 0; k < s.args.size(); ++k) {
               bool same_receiver_mutating_argument = false;
+              const EmitterExpr nested_call = argument_node(k);
+              const auto* nested_facts = checked_expression_facts(nested_call);
+              const Method* nested_method = nested_facts &&
+                      starts_with(nested_facts->resolved_target, "method:")
+                  ? method_for_checked_target(nested_facts->resolved_target)
+                  : nullptr;
+              if (nested_method && nested_method->receiver_effect != Effect::Read) {
               if (!s.b.empty()) {
-                string nested_receiver, nested_method;
-                vector<string> nested_args;
-                same_receiver_mutating_argument =
-                    tree_parse_member_call(s.args[k], nested_receiver, nested_method,
-                                      nested_args) &&
-                    tree_expressions_equal(nested_receiver, s.a);
+                  EmitterExpr nested_receiver;
+                  string nested_name;
+                  vector<EmitterExpr> nested_args;
+                  if (tree_parse_member_call_nodes(nested_call, nested_receiver,
+                                                   nested_name, nested_args)) {
+                    est::ExpressionView nested_view{nullptr,
+                        nested_receiver.arena, nested_receiver.id,
+                        nested_receiver.source};
+                    est::ExpressionView receiver_view{nullptr,
+                        receiver_expression.arena, receiver_expression.id,
+                        receiver_expression.source};
+                    same_receiver_mutating_argument =
+                        est::structurally_equal(nested_view, receiver_view);
+                  }
               } else if (implicit_method) {
-                string nested_name;
-                vector<string> nested_args;
-                if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
-                  vector<string> nested_types;
-                  for (const auto& argument : nested_args)
-                    nested_types.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
                   same_receiver_mutating_argument =
-                      resolve_object_method(objects_, d->name, nested_name,
-                                            nested_types, true, nullptr) != nullptr;
+                      nested_method->owner == call_method->owner;
                 }
               }
               if (!same_receiver_mutating_argument) continue;
@@ -10374,6 +10592,29 @@ class Generator {
       }
     }
     return targets;
+  }
+
+  vector<const Method*> checked_method_targets(const string& name,
+                                               int line) const {
+    vector<const Method*> methods;
+    for (const auto& target : checked_call_edge_targets(
+             codegen_body_context_, line)) {
+      if (!starts_with(target, "method:")) continue;
+      const string selected = target.substr(7);
+      const auto separator = selected.rfind('.');
+      if (separator == string::npos ||
+          selected.substr(separator + 1) != name) continue;
+      const auto object = objects_.find(selected.substr(0, separator));
+      if (object == objects_.end()) continue;
+      const auto method = std::find_if(object->second->methods.begin(),
+          object->second->methods.end(), [&](const Method& candidate) {
+            return candidate.name == name;
+          });
+      if (method != object->second->methods.end() &&
+          std::find(methods.begin(), methods.end(), &*method) == methods.end())
+        methods.push_back(&*method);
+    }
+    return methods;
   }
 
 };
