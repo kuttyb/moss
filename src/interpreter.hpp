@@ -164,6 +164,9 @@ class FastInterpreter {
   }
 
   void run_main(std::ostream& output) {
+#ifdef MOSS_TEST_BUILD
+    est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Consumer);
+#endif
     if (!program_.main)
       throw RuntimeError(0, "Fast Debug requires a Moss main procedure");
     prepare_domains();
