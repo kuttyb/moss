@@ -47,8 +47,17 @@
 
   string physical_leaf_binding(string path) const {
     string result = "__moss_storage_";
-    const auto parts = tree_member_path(path).value_or(vector<string>{});
-    for (const auto& part : parts) result += std::to_string(part.size()) + "_" + part;
+    // Physical paths are generated from checked state/field names above; they
+    // are not Moss expression text and need no EST lookup or temporary parse.
+    size_t begin = 0;
+    while (begin <= path.size()) {
+      const size_t end = path.find('.', begin);
+      const auto part = path.substr(begin, end == string::npos
+          ? string::npos : end - begin);
+      result += std::to_string(part.size()) + "_" + part;
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
     return result;
   }
 

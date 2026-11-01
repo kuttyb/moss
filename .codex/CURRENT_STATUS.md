@@ -15645,3 +15645,21 @@ The emitter's path-sensitive handler wrapper now reads its condition through
 the checked Condition slot. Phase 15.3 path-placement checks pass, and the
 counter fixture's generated Rust still compiles and prints the same output;
 its 4/4 count remains unchanged, confirming this was a separate reader.
+
+### C2 physical place path checkpoint (2026-11-01)
+
+Branch `phase27-5-4-work`, after pushed tip `3e5566e7`. The last four emitter
+text lookups/reparses on optimized `examples/counter.moss` were generated
+physical state paths (`value`) entering `tree_member_path` from
+`physical_leaf_binding` during domain layout. These are checked-plan-derived
+place paths, not Moss expression text. `physical_leaf_binding` now splits its
+generated dotted path directly rather than consulting the EST parser/cache.
+Focused result: 0 emitter text-node lookups, 0 expression-view reparses, and
+0 text-cache lookups. Generated Rust compiles with `rustc -D warnings`; native
+and Fast Debug both print `counter: 41` and `counter: 42`. The Phase 27 string
+debt audit and `check_phase20_executor_fileio.py build/compiler/moss-dev` pass.
+No corpus counters, full suite, three-engine/parity gates, or perf run has been
+performed since this change. Next: inspect residual emitter lookup/reparse
+sites with targeted fixtures, complete the C2 emitter perturb/drop side and
+test registration if not already covered, then run corpus measurement and final
+gates near completion. Temporary stack-trace instrumentation was removed.
