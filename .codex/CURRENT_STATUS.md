@@ -16453,3 +16453,17 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   Generated Rust compiles; `margo build` and `margo run` pass (`4`, `1`).
 - This is one focused emitter query path only. Full C2 suite, corpus counters,
   parity, performance, Agent 2 audit, merge, and tag remain pending.
+
+## C2 checkpoint: executor payload nodes (2026-11-01)
+
+- `ExecutorStartPlan` and `RootSubmissionPlan` retain semantic plan decisions;
+  native lowering now pairs their ordered entries with argument child nodes
+  from the statement's checked expression handle. It verifies the node shape
+  and identities against the plans, then emits payloads from those nodes.
+- `tests/phase20_executor_basic.moss`: focused emitter reparses/text lookups
+  fell from 26/26 to 0/0. Rust compilation and execution pass with output
+  `12`, matching Fast Debug. The earlier enum-module fixture is also at 0/0.
+- A deterministic 100-source counter survey found only this nonzero fixture;
+  the remaining source-specific lowering work may still exist outside that
+  sample. No full suite, whole-corpus counters, parity aggregate, perf, Agent 2,
+  merge, or tag has run.

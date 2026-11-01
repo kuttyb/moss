@@ -1640,6 +1640,42 @@ class Generator {
     return est::project_executor_chain(view, calls);
   }
 
+  bool tree_parse_executor_chain_nodes(
+      const EmitterExpr& expression,
+      vector<std::pair<string, vector<EmitterExpr>>>& calls) const {
+    if (!expression.arena) return false;
+    EmitterExpr current = expression;
+    vector<std::pair<string, vector<EmitterExpr>>> reversed;
+    while (true) {
+      const auto root = est::unparenthesized(*current.arena, current.id);
+      if (const auto* constructor = std::get_if<est::Constructor>(
+              &current.arena->at(root))) {
+        const auto type = est::unparenthesized(*current.arena,
+                                                constructor->type);
+        const auto* name = std::get_if<est::Identifier>(
+            &current.arena->at(type));
+        if (!name || name->name != "Executor" ||
+            !constructor->arguments.empty()) return false;
+        break;
+      }
+      const auto* call = std::get_if<est::Call>(&current.arena->at(root));
+      if (!call) return false;
+      const auto callee = est::unparenthesized(*current.arena, call->callee);
+      const auto* member = std::get_if<est::Member>(&current.arena->at(callee));
+      if (!member) {
+        return false;
+      }
+      vector<EmitterExpr> arguments;
+      arguments.reserve(call->arguments.size());
+      for (const auto argument : call->arguments)
+        arguments.push_back(current.child(argument));
+      reversed.emplace_back(member->name, std::move(arguments));
+      current = current.child(member->base);
+    }
+    calls.assign(reversed.rbegin(), reversed.rend());
+    return !calls.empty();
+  }
+
   string tree_strip_expression_grouping(const string& expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::strip_grouping(*syntax) : expression;
