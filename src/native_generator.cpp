@@ -3666,6 +3666,78 @@ class Generator {
         return "(" + left + ") " + op + " (" + right + ")";
       }
     }
+    if (const auto* index = std::get_if<est::Index>(
+            &expression.arena->at(root))) {
+      const auto base_expr = expression.child(index->base);
+      const auto index_expr = expression.child(index->index);
+      const string base_source = base_expr.text();
+      const string index_source = index_expr.text();
+      auto base_type = generated_expr_type(base_source, types);
+      if (base_type && shared_protocol_map_key_from_type(*base_type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*base_type);
+        const string key = expr(index_expr, d, locals, types);
+        const auto* key_identifier = std::get_if<est::Identifier>(
+            &index_expr.arena->at(est::unparenthesized(
+                *index_expr.arena, index_expr.id)));
+        const string borrowed = key_identifier &&
+            borrowed_function_parameters_.count(key_identifier->name)
+                ? "__moss_key" : "&__moss_key";
+        return "{ let __moss_key = " + key + "; (" +
+            expr(base_expr, d, locals, types) +
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", " + borrowed + ", |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\").clone() }";
+      }
+      if (base_type && (canonical_type_name(*base_type) == "RangeBatch" ||
+                        canonical_type_name(*base_type) == "Range"))
+        return "(" + expr(base_expr, d, locals, types) + ").get(" +
+            expr(index_expr, d, locals, types) + ")";
+      const auto index_root = est::unparenthesized(
+          *index_expr.arena, index_expr.id);
+      const auto* index_literal = std::get_if<est::Literal>(
+          &index_expr.arena->at(index_root));
+      const bool string_index = index_literal &&
+          index_literal->literal_class == est::LiteralClass::String;
+      string rendered_index = string_index
+          ? index_source : expr(index_expr, d, locals, types);
+      const bool map_index = base_type &&
+          (canonical_type_name(*base_type) == "map" ||
+           starts_with(canonical_type_name(*base_type), "map["));
+      if (!string_index && !map_index)
+        rendered_index = "(" + rendered_index + ") as usize";
+      else if (map_index && !string_index) {
+        const auto* key_identifier = std::get_if<est::Identifier>(
+            &index_expr.arena->at(index_root));
+        auto key_type = generated_expr_type(index_source, types);
+        if (key_type && canonical_type_name(*key_type) == "string")
+          rendered_index = "(" + rendered_index + ").as_str()";
+        else if (!key_identifier || !borrowed_function_parameters_.count(
+                                        key_identifier->name))
+          rendered_index = "&(" + rendered_index + ")";
+      }
+      string indexed = "(" + expr(base_expr, d, locals, types) + ")[" +
+          rendered_index + "]";
+      return borrowed_view_expression(base_source, d, locals, types)
+          ? indexed : "(" + indexed + ").clone()";
+    }
+    if (const auto* member = std::get_if<est::Member>(
+            &expression.arena->at(root))) {
+      const auto base_expr = expression.child(member->base);
+      auto projection_type = generated_expr_type(base_expr.text(), types);
+      if (projection_type) {
+        auto object = objects_.find(nominal_template_name(*projection_type));
+        if (object != objects_.end()) {
+          auto field = std::find_if(object->second->fields.begin(),
+              object->second->fields.end(), [&](const Field& candidate) {
+                return candidate.name == member->name;
+              });
+          if (field != object->second->fields.end())
+            return "(" + expr(base_expr, d, locals, types) + ")." +
+                rust_identifier(member->name);
+        }
+      }
+    }
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())

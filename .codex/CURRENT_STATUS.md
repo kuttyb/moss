@@ -14580,3 +14580,24 @@ reparses; phase4 583 / 303; parenthesized pipeline 817 / 596 / 6 pipeline
 reparses. Parent counts are 2,155 / 1,081; 841 / 439; and 881 / 614 / 8.
 The initial corpus sweep still showed no aggregate change. No full suite or
 performance gate has run.
+
+### Phase 27.5.4 C2 progress report 5 — index and field projections
+
+Added `EmitterExpr` navigation for Index nodes and value-object field Member
+nodes. These paths project base/index ExprIds and recursively lower them;
+remaining representation details still use the emitter's existing type/access
+helpers. Paired native generation for four checked examples is byte-identical
+to c96 and all four compile as Rust. Counters (parent -> candidate):
+
+- `examples/collections.moss`: lookups 1,322 -> 1,142; view reparses
+  481 -> 402.
+- `examples/functional_objects.moss`: 2,596 -> 2,008; 1,426 -> 1,188.
+- `examples/dogfood_index.moss`: 928 -> 766; 457 -> 404.
+- `examples/collections_and_methods.moss`: 2,607 -> 2,173; 1,247 -> 1,081.
+
+Fast Debug/native parity passes for the first three. On the fourth, candidate
+Fast Debug fails closed with a missing checked expression node at generated
+`jobs[1].weighted(3)`; the c96 parent succeeds and prints `lead code: 106 12`
+and `test score: 12`. This is a C1 Fast Debug regression outside current
+emitter edits, discovered by the C2 parity check; it must be resolved or
+classified before final C2 gates. No full suite has run.
