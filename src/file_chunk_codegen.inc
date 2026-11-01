@@ -320,7 +320,10 @@ std::optional<string> gen_fileio_chunk_pipeline(
     const std::set<string>& locals, const std::unordered_map<string,string>* types,
     size_t functional_pipeline_id) const {
   string fileio_receiver, size_expression;
-  if (!tree_parse_fileio_chunks_source(pipeline.source, fileio_receiver, size_expression))
+  const EmitterExpr checked_source{pipeline.expression_arena,
+      pipeline.source_node, pipeline.expression_source};
+  if (!tree_parse_fileio_chunks_source(checked_source, fileio_receiver,
+                                       size_expression))
     return std::nullopt;
   if (!types || !fileio_typed(*types, fileio_receiver)) return std::nullopt;
   const FunctionalPipeline* planned = planned_functional_pipeline(functional_pipeline_id);

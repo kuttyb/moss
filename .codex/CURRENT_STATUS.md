@@ -15489,3 +15489,37 @@ compiles/runs with four `-2` results. Four-class perturb/drop and three-engine
 checks pass. This checkpoint is committed and pushed as `4e94f8be`; no full
 suite, paired corpus measurement, or perf run has occurred. Continue migrating the
 remaining emitter text lookup sites.
+
+### C2 resumed handover (2026-11-01)
+
+Resumed from pushed `39e946d1` on `phase27-5-4-work`. The candidate and
+Phase 27.5.3 baseline directories are available under `tmp/`; no full suite,
+corpus count, or perf run has been started. Local uncommitted emitter work
+switches FileIO `.chunks()` pipeline recognition to retained Call/Member nodes
+and uses the checked result binder directly. `git diff --check` was clean
+before a temporary invariant-context addition.
+
+A targeted fresh-package reproduction currently fails in the candidate:
+`tmp/provider-fresh` copied from the generated FileIO provider has
+`MOSS_INTERNAL_INVARIANT missing checked statement expression slot=2 line=4`
+for `return acc * 10 + len`; `moss-dev check src/folds.moss` succeeds and EST
+initial parse dump shows a ReturnValue handle, while package `build` hits a
+later body lacking the handle. The Phase 27.5.3 baseline had succeeded in the
+original provider directory, so this must be diagnosed as a candidate regression,
+not baseline debt. Added invariant statement context locally to identify the
+missing path; it is uncommitted. Next: trace where provider build replaces or
+projects the checked statement, preserve the checker-owned ExprId/handle, then
+rerun the provider and FileIO harness before committing/pushing. Keep user-added
+C1/C2 perturb/drop scope in view: existing `check_phase27_5_4_fact_hooks.py`
+currently exercises fail-closed hooks for four classes, but perturb is presently
+implemented as fact removal/invalid marker (not a coherent alternate answer);
+new work must make perturbation coherent or clearly identify still-open classes.
+
+The regression was in `module_program`: it projected functions (and their
+checked handles) while leaving both EST arena references behind. Copying the
+primary/shared arena references into the projected program fixed the handle
+lifetime/lookup problem. The candidate now builds the fresh provider package,
+and the focused `check_phase20_executor_fileio.py` harness passes. The invariant
+error retains slot/line and statement context to make any future missing-handle
+report actionable. This migration slice is ready to commit; no full suite or
+performance suite has run.

@@ -18989,6 +18989,10 @@ static Program module_program(const Program& whole, const string& module,
   result.key_proof_ids_by_type = whole.key_proof_ids_by_type;
   result.key_operation_specialization_ids =
       whole.key_operation_specialization_ids;
+  // Projected functions keep their checked ExprIds. The module-specific
+  // Program must carry the arenas those handles index into.
+  result.expression_arena = whole.expression_arena;
+  result.expression_arenas = whole.expression_arenas;
   result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;

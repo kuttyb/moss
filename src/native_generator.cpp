@@ -1384,6 +1384,23 @@ class Generator {
         *syntax, receiver, size_expression);
   }
 
+  bool tree_parse_fileio_chunks_source(const EmitterExpr& expression,
+                                       string& receiver,
+                                       string& size_expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* call = std::get_if<est::Call>(&expression.arena->at(root));
+    if (!call) return false;
+    const auto callee = est::unparenthesized(*expression.arena, call->callee);
+    const auto* member = std::get_if<est::Member>(
+        &expression.arena->at(callee));
+    if (!member || member->name != "chunks" || call->arguments.size() != 1)
+      return false;
+    receiver = expression.child(member->base).text();
+    size_expression = expression.child(call->arguments.front()).text();
+    return true;
+  }
+
   bool tree_parse_index(const string& expression, string& base,
                         string& index) const {
     auto syntax = expression_view_from_est(expression);
@@ -2430,7 +2447,7 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT ambiguous checked statement expression slot=" +
             std::to_string(static_cast<unsigned>(slot)) + " index=" +
             std::to_string(argument_index) + " line=" +
-            std::to_string(statement.line));
+            std::to_string(statement.line) + " statement=" + statement.text);
       selected = &handle;
     }
     if (!selected)
@@ -2438,7 +2455,15 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT missing checked statement expression slot=" +
           std::to_string(static_cast<unsigned>(slot)) + " index=" +
           std::to_string(argument_index) + " line=" +
-          std::to_string(statement.line));
+          std::to_string(statement.line) + " handles=" +
+          std::to_string(statement.expression_handles.size()) +
+          " arenas=" + std::to_string(p_.expression_arenas.size()) +
+          " first_handle=" + (statement.expression_handles.empty()
+              ? std::string("none")
+              : std::to_string(static_cast<unsigned>(
+                    statement.expression_handles.front().slot)) + ":" +
+                    std::to_string(statement.expression_handles.front().arena_index)) +
+          " statement=" + statement.text);
     return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
                        selected->expr, std::move(source)};
   }
@@ -4042,9 +4067,8 @@ class Generator {
       const auto& consumer = group.consumers[index];
       const Stmt& statement = statements[statement_index + index];
       size_t exact_id = statement_functional_pipeline_id(statement, context, 0);
-      const auto result_binding = tree_identifier_name(statement.a);
-      if (exact_id != consumer.pipeline_id || !result_binding ||
-          *result_binding != consumer.result_binding)
+      if (exact_id != consumer.pipeline_id || statement.a.empty() ||
+          statement.a != consumer.result_binding)
         throw std::runtime_error(
             "internal error: stale shared functional traversal region");
       const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
