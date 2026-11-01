@@ -1,7 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `213cdd68` (handover
-  refresh after checked numeric-root projection `16f1cf57`).
+- Branch `phase27-5-4-work`; latest pushed checkpoint `bcf1861b` (paired
+  parent counter report; numeric-root projection `16f1cf57` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
 - Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
   indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
@@ -80,8 +80,8 @@
   reparses / 273,688 text lookups; candidate 15,360 / 21,544. Deltas are
   -91.55% reparses and -92.13% lookups. Parent, candidate, and Fast Debug
   stdout match. Keep using these same commands for progress reports.
-- Current uncommitted change is only the feedback entry documenting that
-  paired comparison; feedback validation passes.
+- Paired counter report and evidence are committed/pushed in `bcf1861b`;
+  feedback validation passes.
 
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
