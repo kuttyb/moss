@@ -3054,7 +3054,10 @@ class Generator {
             planned.nodes[node_index].kind != semantic_step.kind)
           throw std::runtime_error(
               "internal error: functional semantic rewrite changed operator kind");
-        stage.operations.push_back(operation);
+        auto lowered_operation = operation;
+        lowered_operation.checked_output_type =
+            planned.nodes[node_index].output_type;
+        stage.operations.push_back(std::move(lowered_operation));
       }
       lowered.stages.push_back(std::move(stage));
     }
@@ -3069,6 +3072,19 @@ class Generator {
       throw std::runtime_error(
           "internal error: lowered functional pipeline has no terminal");
     return pipeline.stages.back().operations.front();
+  }
+
+  std::optional<string> checked_functional_result_element(
+      const ParsedFunctionalStage& stage) const {
+    if (stage.checked_output_type.empty()) return std::nullopt;
+    return generated_functional_element_type(stage.checked_output_type);
+  }
+
+  std::optional<string> checked_functional_result_element(
+      const FunctionalPipeline& pipeline, size_t node_index) const {
+    if (node_index >= pipeline.nodes.size()) return std::nullopt;
+    return generated_functional_element_type(
+        pipeline.nodes[node_index].output_type);
   }
 
   string render_functional_callable(
@@ -3282,12 +3298,10 @@ class Generator {
       for (const auto& stage : lowered.stages) {
         if (stage.kind != FunctionalNodeKind::Map) continue;
         for (const auto& operation : stage.operations) {
-          auto result = generated_callable_result(
-              operation.arguments.front(), {element_type}, &types,
-              operation, 0);
+          auto result = checked_functional_result_element(operation);
           if (!result)
             throw std::runtime_error(
-                "internal error: untyped shared functional map");
+                "MOSS_INTERNAL_INVARIANT missing checked shared map output type");
           element_type = *result;
         }
       }
@@ -3396,12 +3410,10 @@ class Generator {
                            operation.arguments.front(), {current}, domain,
                            locals, &types)
                     << ";\n";
-                auto mapped_type = generated_callable_result(
-                    operation.arguments.front(), {current.type}, &types,
-                    operation, 0);
+                auto mapped_type = checked_functional_result_element(operation);
                 if (!mapped_type)
                   throw std::runtime_error(
-                      "internal error: untyped shared functional map result");
+                      "MOSS_INTERNAL_INVARIANT missing checked shared map output type");
                 current = {next, *mapped_type, false};
               }
               break;
@@ -3548,10 +3560,12 @@ class Generator {
         string mapped = render_functional_callable(
             stage.arguments.front(), {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
-        auto result = generated_callable_result(stage.arguments.front(),
-            {current_type}, types, stage, 0);
+        auto result = planned
+            ? checked_functional_result_element(*planned, pipeline_stage + 1)
+            : std::nullopt;
         if (!result)
-          throw std::runtime_error("internal error: untyped eager map result");
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked eager map output type");
         current_type = *result;
       } else {
         string predicate = render_functional_callable(
@@ -3649,9 +3663,7 @@ class Generator {
     for (const auto& stage : pipeline.stages) {
       if (stage.kind != FunctionalNodeKind::Map) continue;
       for (const auto& operation : stage.operations) {
-        auto result = generated_callable_result(
-            operation.arguments.front(), {final_element_type}, types,
-            operation, 0);
+        auto result = checked_functional_result_element(operation);
         if (!result)
           throw std::runtime_error("internal error: untyped fused map result");
         final_element_type = *result;
@@ -3703,12 +3715,10 @@ class Generator {
                        operation.arguments.front(), {current}, domain,
                        locals, types)
                 << ";\n";
-            auto result = generated_callable_result(
-                operation.arguments.front(), {current.type}, types,
-                operation, 0);
+            auto result = checked_functional_result_element(operation);
             if (!result)
               throw std::runtime_error(
-                  "internal error: untyped fused map result");
+                  "MOSS_INTERNAL_INVARIANT missing checked fused map output type");
             current = {next, *result, false};
           }
           break;

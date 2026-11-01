@@ -56,3 +56,15 @@ native pipeline reparses. Generated Rust was byte-identical for all eight
 source/profile comparisons. These sample counts are not the required final
 corpus + examples + packages measurement. No C2 full suite/performance gate has
 run.
+
+## C2 progress — checked functional stage output types
+
+The emitter now carries planned functional stage output types into mapped-stage
+lowering and no longer infers the mapped element type from callback source in
+shared, eager, or fused traversals. Missing planned map output types fail with
+an internal invariant. On the same targeted four-source/default-plus-`-O`
+sample, counts changed from the preceding candidate's 8,235 text-node lookups
+and 5,052 expression-view reparses to 7,914 and 4,752; the pinned parent was
+17,129 and 9,047. Both had zero pipeline reparses. Three-engine checks, the
+functional-tree harness, and eight generated-Rust comparisons passed. Final C2
+corpus counts and suites remain pending.

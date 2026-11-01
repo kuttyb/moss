@@ -14856,3 +14856,20 @@ rendering experiment was fully reverted, and the targeted three-engine check
 passed afterward. The committed node-based callback type queries remain. This
 shows callback rendering needs a checked callable/method lowering path before
 its source substitution can be removed; no language behavior was changed.
+
+### Phase 27.5.4 C2 checkpoint — mapped output types from checked functional IR (2026-11-01)
+
+The emitter projection now carries each planned functional stage's checked
+`output_type` into lowering. Mapped element type selection in shared, eager,
+and fused traversals reads this checked stage fact instead of rerunning
+`generated_callable_result` for the callback. If a planned map lacks its output
+type, the emitter reports an internal invariant. The build, functional-tree
+harness, three-engine checks over Phase 4/5 and functional examples, and Rust
+byte-parity (four fixtures, default and `-O`) pass.
+
+Paired targeted counters (four fixtures, default + `-O`): parent
+17,129 text-node lookups / 9,047 expression-view reparses / 0 pipeline
+reparses; latest candidate 7,914 / 4,752 / 0. Relative to the prior candidate
+checkpoint (8,235 / 5,052 / 0), this slice drops 321 lookups and 300 reparses.
+This is not the full workload. Callback rendering retains its text substitution
+path for member-call callbacks, as documented above. No full suite or perf run.
