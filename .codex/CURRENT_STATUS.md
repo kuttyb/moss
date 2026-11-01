@@ -14053,3 +14053,14 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   handover: the fixes above are not yet committed or pushed. Next steps are to
   rebuild after cleanup, review the patch for scope, checkpoint it, and resume
   checker recursion and rewrite-side K8 migration.
+- Arena stability advisory investigated with ASan/UBSan. `est::Arena::at()`
+  returns references to `std::vector<Node>` storage, so any reference/pointer
+  retained across `append()` is invalid; node work must carry ExprIds across
+  append-capable calls or make storage stable. The numeric-member crash itself
+  is not this invalidation: an ASan/UBSan build of bisected bad commit
+  `1b7c5ccc` reports stack overflow in `Checker::inferred_expr_core`, with
+  repeated recursion at its member fallback (`inferred_expr(member_base)` at
+  line 12423). The current candidate ASan/UBSan build returns the expected
+  `UNKNOWN_FIELD` JSON for `numeric_member_field.moss` with no sanitizer report.
+  At the next full checkpoint run, run `make check` once under ASan and record
+  the result; no ASan full suite has run yet.
