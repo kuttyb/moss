@@ -1,3 +1,37 @@
+# Phase 27.5.4 C2 handover (2026-11-01; checker member-call target slice)
+
+- Branch `phase27-5-4-work`, currently based on merged `origin/main` at
+  `2cf4abb9`. This checkpoint adds checker targets for indexed receivers
+  (`items[0].value_plus(2)`) and named constructor fields, consumes checked
+  member/call-edge/specialization requirements in Fast Debug and the emitter,
+  and removes emitter selection by matching `member->name` against candidate
+  targets or receiver type. Ambiguous/missing checked answers fail closed.
+- New fixture: `tests/tooling/fixtures/phase27_5_1/
+  call_target_indexed_member.moss`; registered in
+  `check_phase27_5_4_fact_hooks.py` (already run by `make check`). It checks
+  `items[0].value_plus(2)` => `42`; call-target perturb/drop both fail with
+  `MOSS_INTERNAL_INVARIANT` in Fast Debug, native and `-O`. The broader
+  fact-hook harness passes: call-targets 6 fixtures; specializations 4; joins
+  4; patterns 3; known-debt remains 38/38.
+- Checker cursor matching now associates a `field:<name>` role with the
+  matching named argument value on both Constructor and Call nodes. This
+  records exact checked targets for nested calls such as `diag.code()` and
+  `diag.pos()` inside constructor fields. Calculator native emission now
+  succeeds; Team A compiler-path semantics passes end to end.
+- `check_phase27_string_debt.py --require-zero fast_debug` passes.
+  `git diff --check` passes. Full suites, three-engine aggregate, parity
+  aggregate and perf suite have not been run for this checkpoint.
+- Paired same-file counter measurement,
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`:
+  phase27-5-3-c1 parent 363,004 reparses (362,644 expression view, 360
+  pipeline), zero emission failures; current candidate 32,432 reparses, zero
+  pipeline, 52,124 text-node lookups, zero emission failures (-91.1% reparses).
+  Parent text-lookup counter is unavailable. Optimizer remains unmeasured by
+  runtime counters and needs the final source audit/count evidence.
+- Next: continue C2 emitter/optimizer consumer migration, add Agent 2-selected
+  receiver-call hook fixture during the single final audit, run full gates only
+  near completion, then Agent 2 once and merge/tag if GO.
+
 # Phase 27.5.4 C2 handover (2026-11-01; primitive type-query slice)
 
 - Branch `phase27-5-4-work`; latest pushed tip before this slice is

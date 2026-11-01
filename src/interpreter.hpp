@@ -1274,6 +1274,98 @@ class FastInterpreter {
     return nullptr;
   }
 
+  std::optional<std::string> checked_member_call_target(
+      const Frame& frame, int line) const {
+    std::vector<std::string> sources{frame.functional_context};
+    if (frame.functional_context.rfind("fn:", 0) == 0) {
+      const auto specialization = frame.functional_context.find('<');
+      if (specialization != std::string::npos)
+        sources.push_back(frame.functional_context.substr(0, specialization));
+    }
+    std::vector<std::string> targets;
+    for (const auto& edge : program_.semantic_call_edges) {
+      if (std::find(sources.begin(), sources.end(), edge.source) == sources.end() ||
+          edge.line != line || edge.invocation_kind != "ordinary_call" ||
+          edge.target.empty() ||
+          (!edge.source_file.empty() && !frame.source_file.empty() &&
+           edge.source_file != frame.source_file))
+        continue;
+      if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
+        targets.push_back(edge.target);
+    }
+    if (targets.size() != 1) return std::nullopt;
+    return targets.front();
+  }
+
+  std::optional<std::string> checked_trait_method_target(
+      const ExpressionTreeView& tree, est::ExprId call_id,
+      const Frame& frame, int line, const std::string& method_name) const {
+    const auto* active_function = function(frame.function);
+    if (!active_function) return std::nullopt;
+    const FunctionSpecialization* selected_specialization = nullptr;
+    for (const auto& candidate : active_function->specializations)
+      if (functional_function_context(*active_function, &candidate) ==
+          frame.functional_context) {
+        selected_specialization = &candidate;
+        break;
+      }
+    if (!selected_specialization) return std::nullopt;
+
+    std::vector<std::pair<std::uint32_t, est::ExprId>> member_calls;
+    for (est::ExprId id = 0; id < tree.arena->size(); ++id) {
+      const auto* call = std::get_if<est::Call>(&tree.arena->at(id));
+      if (!call || tree.arena->span(id).line !=
+              tree.arena->span(call_id).line)
+        continue;
+      const auto callee = est::unparenthesized(*tree.arena, call->callee);
+      const auto* member = std::get_if<est::Member>(&tree.arena->at(callee));
+      if (!member || member->name != method_name) continue;
+      member_calls.emplace_back(tree.arena->span(id).column, id);
+    }
+    std::sort(member_calls.begin(), member_calls.end());
+    auto occurrence = std::find_if(member_calls.begin(), member_calls.end(),
+        [&](const auto& item) { return item.second == call_id; });
+    if (occurrence == member_calls.end()) return std::nullopt;
+    const auto ordinal = static_cast<std::size_t>(
+        std::distance(member_calls.begin(), occurrence));
+
+    std::vector<std::pair<std::size_t, std::string>> selected_targets;
+    for (const auto& requirement : selected_specialization->member_requirements) {
+      if (requirement.member_name != method_name ||
+          (requirement.origin.line != line &&
+           requirement.origin.line + 1 != line) ||
+          !requirement.selected_callable_id)
+        continue;
+      const auto marker = requirement.requirement_id.rfind(":member:");
+      if (marker == std::string::npos) continue;
+      std::size_t required_ordinal = 0;
+      try {
+        required_ordinal = static_cast<std::size_t>(
+            std::stoull(requirement.requirement_id.substr(marker + 8)));
+      } catch (...) {
+        continue;
+      }
+      selected_targets.emplace_back(required_ordinal,
+                                    *requirement.selected_callable_id);
+    }
+    std::sort(selected_targets.begin(), selected_targets.end());
+    if (ordinal >= selected_targets.size()) return std::nullopt;
+    const auto callable = CallableId::parse(selected_targets[ordinal].second);
+    if (!callable || callable->kind != "method") return std::nullopt;
+    for (const auto& object : program_.objects) {
+      if (!program_.type_context) break;
+      const auto declaration = program_.type_context->find(object.name);
+      if (!declaration || declaration->id != callable->module_id) continue;
+      const auto method_decl = std::find_if(object.methods.begin(),
+          object.methods.end(), [&](const Method& candidate) {
+            return candidate.name == callable->declaration_name;
+          });
+      if (method_decl != object.methods.end())
+        return "method:" + object.name + "." + method_decl->name;
+    }
+    return std::nullopt;
+  }
+
   static std::int64_t wrapping_add(std::int64_t left, std::int64_t right) {
     return static_cast<std::int64_t>(static_cast<std::uint64_t>(left) +
                                      static_cast<std::uint64_t>(right));
@@ -2208,6 +2300,63 @@ class FastInterpreter {
                                           method_args, "member_method");
         }
         if (method_called) {
+          const est::SemanticFacts* target_facts = nullptr;
+          if (tree && member_argument_nodes) {
+            const auto unwrapped = est::unparenthesized(
+                *tree->arena, current_root);
+            const auto find_target = [&](const std::string& context) {
+              auto find = [&](est::ExprId id) {
+                const auto* facts = tree->arena->facts(id, context);
+                return facts && !facts->resolved_target.empty()
+                    ? facts : static_cast<const est::SemanticFacts*>(nullptr);
+              };
+              if (const auto* facts = find(current_root)) return facts;
+              return unwrapped != current_root ? find(unwrapped) : nullptr;
+            };
+            target_facts = find_target(frame.functional_context);
+            if (!target_facts && !frame.source_file.empty())
+              target_facts = find_target("source:" + frame.source_file +
+                                         ":" + std::to_string(line));
+            if (!target_facts) {
+              if (const auto* active_function = function(frame.function)) {
+                target_facts = find_target(
+                    functional_function_context(*active_function));
+                for (const auto& specialization :
+                     active_function->specializations) {
+                  if (target_facts) break;
+                  if (functional_function_context(*active_function,
+                          &specialization) != frame.functional_context)
+                    continue;
+                  target_facts = find_target("specialization:" +
+                      specialization.stable_type_key);
+                  break;
+                }
+              }
+            }
+          }
+          std::string checked_target = target_facts
+              ? target_facts->resolved_target : std::string();
+          if (checked_target.empty())
+            checked_target = checked_member_call_target(frame, line).value_or("");
+          if (checked_target.empty() || checked_target ==
+                  "fn:__moss_test_perturbed_call_target__") {
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT missing checked member-call target context=" +
+                frame.functional_context + " expr=" +
+                (tree ? std::to_string(current_root) : std::string("none")) +
+                " found=" + (target_facts ? target_facts->resolved_target
+                                           : std::string("<absent>")));
+          }
+          if (checked_target.rfind("trait-method:", 0) == 0) {
+            auto selected = tree
+                ? checked_trait_method_target(*tree, current_root, frame, line,
+                                              method_name)
+                : std::nullopt;
+            if (!selected)
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT missing checked trait method target");
+            checked_target = std::move(*selected);
+          }
           auto evaluate_method_argument = [&](std::size_t index) {
             if (member_argument_nodes && index < member_argument_nodes->size())
               return evaluate_tree_node(*tree, member_argument_nodes->at(index),
@@ -2494,7 +2643,21 @@ class FastInterpreter {
           }
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
             throw RuntimeError(line, "method receiver is not a Moss object");
-          auto target = method(receiver.object->type, method_name);
+          if (checked_target.rfind("method:", 0) != 0)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked member target is not a method");
+          const auto separator = checked_target.rfind('.');
+          if (separator == std::string::npos)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT malformed checked member target");
+          const std::string checked_owner = checked_target.substr(
+              7, separator - 7);
+          const std::string checked_name = checked_target.substr(separator + 1);
+          if (checked_name != method_name ||
+              checked_owner != receiver.object->type)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked method target disagrees with receiver");
+          auto target = method(checked_owner, checked_name);
           if (!target)
             throw RuntimeError(line, program_.file_check_scope
                 ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: method '" +

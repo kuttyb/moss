@@ -26306,6 +26306,12 @@ class Checker {
           candidates.push_back(arg);
           if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg)))
             candidates.push_back(named->value);
+        } else if (role.rfind("field:", 0) == 0) {
+          const auto name = role.substr(6);
+          for (const auto arg : node.arguments)
+            if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg));
+                named && named->name == name)
+              candidates.push_back(named->value);
         } else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Message>) {
         if (role == "target" || role == "receiver") candidates.push_back(node.target);
@@ -26329,7 +26335,7 @@ class Checker {
           for (const auto arg : node.arguments)
             if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg));
                 named && named->name == name) {
-              candidates.push_back(arg); candidates.push_back(named->value);
+              candidates.push_back(named->value);
             }
         } else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Pipeline>) {
@@ -26351,6 +26357,9 @@ class Checker {
       if (source_span_matches(arena, parent, candidate, parent_source,
                               child_source))
         matches.push_back(candidate);
+    if (matches.empty() && role.rfind("field:", 0) == 0 &&
+        candidates.size() == 1)
+      return candidates.front();
     if (matches.empty()) return std::nullopt;
     return matches.size() == 1 ? matches.front()
         : matches[std::min<std::size_t>(child_ordinal, matches.size() - 1)];
@@ -27498,6 +27507,27 @@ class Checker {
         if (method)
           retain_active_expression_target(
               "method:" + method->owner + "." + method->name);
+      }
+      // The receiver may itself be an expression (for example xs[i]), not a
+      // single environment binding. Resolve that method here in the checker
+      // and attach the selected target to this call's checked expression.
+      if (it == env.end()) {
+        auto receiver_type = inferred_expr_type(receiver, env);
+        if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
+          vector<string> argument_types;
+          for (const auto& arg : args)
+            argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          MethodResolutionFailure failure = MethodResolutionFailure::None;
+          const Method* method = resolve_method(
+              canonical_type_name(*receiver_type), handler, argument_types,
+              false, &failure);
+          if (!method && !defer_generic_method_admission(argument_types, failure))
+            err(line, "no matching method '" + canonical_type_name(*receiver_type) +
+                "." + handler + "' for supplied arguments");
+          if (method)
+            retain_active_expression_target(
+                "method:" + method->owner + "." + method->name);
+        }
       }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
@@ -31379,6 +31409,10 @@ public:
       if (p_.expression_arena &&
           visited.insert(p_.expression_arena.get()).second)
         p_.expression_arena->test_mutate_call_targets(drop_targets);
+      for (auto& edge : p_.semantic_call_edges) {
+        if (drop_targets) edge.target.clear();
+        else edge.target = "fn:__moss_test_perturbed_call_target__";
+      }
     }
     const bool drop_joins = moss_test_drop_fact("joins");
     const bool perturb_joins = moss_test_perturb_fact("joins");

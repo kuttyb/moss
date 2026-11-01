@@ -3106,32 +3106,40 @@ class Generator {
       const auto* callee = std::get_if<est::Identifier>(
           &expression.arena->at(callee_id));
       const auto* call_facts = checked_expression_facts(expression);
-      const string target = call_facts ? call_facts->resolved_target : string();
+      string target = call_facts ? call_facts->resolved_target : string();
       if (!callee) {
         const auto* member = std::get_if<est::Member>(
             &expression.arena->at(callee_id));
         if (!member) return legacy_type();
-        vector<string> targets;
-        if (starts_with(target, "method:")) targets.push_back(target);
-        if (targets.empty())
-          targets = checked_call_edge_targets(codegen_body_context_,
+        if (target.empty()) {
+          const auto targets = checked_call_edge_targets(codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
-        std::optional<string> selected;
-        for (const auto& candidate : targets) {
-          if (!starts_with(candidate, "method:") ||
-              !ends_with(candidate, "." + member->name)) continue;
-          if (selected && *selected != candidate) return legacy_type();
-          selected = candidate;
+          if (targets.size() == 1) target = targets.front();
         }
-        if (!selected) return legacy_type();
-        const auto separator = selected->rfind('.');
-        const string owner = selected->substr(7, separator - 7);
+        if (starts_with(target, "callable-v1:")) {
+          const auto* selected = find_function_by_callable_id(target);
+          if (selected && selected->return_type)
+            return canonical_type_name(*selected->return_type);
+        } else if (starts_with(target, "fn:")) {
+          const auto selected = functions_.find(target.substr(3));
+          if (selected != functions_.end() && selected->second->return_type)
+            return canonical_type_name(*selected->second->return_type);
+        }
+        if (!starts_with(target, "method:"))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target for generated type name=" +
+              member->name + " context=" + codegen_body_context_);
+        const auto separator = target.rfind('.');
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked member-call target");
+        const string owner = target.substr(7, separator - 7);
         for (const auto& object : objects_) {
           if (canonical_type_name(object.second->name) !=
               canonical_type_name(owner)) continue;
           const auto method = std::find_if(object.second->methods.begin(),
               object.second->methods.end(), [&](const Method& item) {
-                return item.name == member->name;
+                return item.name == target.substr(separator + 1);
               });
           if (method != object.second->methods.end() && method->return_type)
             return canonical_type_name(*method->return_type);
@@ -5209,17 +5217,6 @@ class Generator {
         }
         const auto* facts = checked_expression_facts(expression);
         string checked_target = facts ? facts->resolved_target : string();
-        const auto checked_edges = checked_call_edge_targets(
-            codegen_body_context_,
-            static_cast<int>(expression.arena->span(root).line));
-        if (checked_target.empty()) {
-          if (checked_edges.size() == 1)
-            checked_target = checked_edges.front();
-        } else if (starts_with(checked_target, "builtin:") &&
-                   checked_edges.size() == 1 &&
-                   starts_with(checked_edges.front(), "method:")) {
-          checked_target = checked_edges.front();
-        }
         const bool call_target_hooked =
             moss_test_drop_fact("call-targets") ||
             moss_test_perturb_fact("call-targets");
@@ -5302,28 +5299,6 @@ class Generator {
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
-          if (target.empty()) {
-            // This source line can contain several checker-selected member
-            // edges. Match the retained member-name node to those checked
-            // identities; do not derive a target from receiver types.
-            vector<string> matching;
-            for (const auto& candidate : targets) {
-              const auto separator = candidate.rfind('.');
-              if (starts_with(candidate, "method:") &&
-                  separator != string::npos &&
-                  candidate.substr(separator + 1) == member->name)
-                matching.push_back(candidate);
-            }
-            if (matching.size() == 1) target = matching.front();
-          }
-        }
-        if ((starts_with(target, "builtin:") ||
-             starts_with(target, "builtin-method:"))) {
-          const auto targets = checked_call_edge_targets(
-              codegen_body_context_,
-              static_cast<int>(expression.arena->span(root).line));
-          if (targets.size() == 1 && starts_with(targets.front(), "method:"))
-            target = targets.front();
         }
         const bool call_target_fact_hooked =
             moss_test_drop_fact("call-targets") ||
@@ -5364,9 +5339,29 @@ class Generator {
                   target = "builtin-method:" + receiver_type + "." +
                       member->name;
                 } else {
-                  // The existing lowering below maps this selected callable
-                  // identity to its declaration; it does not resolve a method.
-                  target.clear();
+                  const auto callable = CallableId::parse(selected);
+                  if (!callable)
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT malformed checked member callable identity");
+                  if (callable->kind == "method") {
+                    bool mapped = false;
+                    for (const auto& object : objects_) {
+                      if (!p_.type_context) break;
+                      const auto declaration = p_.type_context->find(
+                          object.second->name);
+                      if (!declaration || declaration->id != callable->module_id)
+                        continue;
+                      target = "method:" + object.second->name + "." +
+                          callable->declaration_name;
+                      mapped = true;
+                      break;
+                    }
+                    if (!mapped)
+                      throw std::runtime_error(
+                          "MOSS_INTERNAL_INVARIANT checked member method declaration is unavailable");
+                  } else {
+                    target = selected;
+                  }
                 }
               }
             }
@@ -5374,53 +5369,91 @@ class Generator {
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT missing checked member requirement");
         }
-        if (target.empty() && !codegen_active_specialization_key_.empty()) {
-          const auto receiver_type = generated_expr_type(
-              expression.child(member->base), types);
-          const Method* selected_method = nullptr;
-          const ObjectType* selected_owner = nullptr;
-          for (const auto& function_entry : functions_) {
+        if ((target.empty() || starts_with(target, "parameter:") ||
+             starts_with(target, "trait-method:")) &&
+            !codegen_active_specialization_key_.empty()) {
+          std::set<string> selected_ids;
+          for (const auto& function_entry : functions_)
             for (const auto& specialization :
                  function_entry.second->specializations) {
               if (specialization.stable_type_key !=
                   codegen_active_specialization_key_) continue;
-              for (const auto& requirement : specialization.member_requirements) {
-                if (requirement.member_name != member->name ||
-                    !requirement.selected_callable_id) continue;
-                const auto callable = CallableId::parse(
-                    *requirement.selected_callable_id);
-                if (!callable || callable->kind != "method") continue;
-                for (const auto& object_entry : objects_) {
-                  if (receiver_type && canonical_type_name(*receiver_type) !=
-                      canonical_type_name(object_entry.second->name))
-                    continue;
-                  if (!p_.type_context) continue;
-                  const auto declaration = p_.type_context->find(
-                      object_entry.second->name);
-                  if (!declaration || declaration->id != callable->module_id)
-                    continue;
-                  auto method = std::find_if(
-                      object_entry.second->methods.begin(),
-                      object_entry.second->methods.end(),
-                      [&](const Method& candidate) {
-                        return candidate.name == callable->declaration_name;
-                      });
-                  if (method == object_entry.second->methods.end()) continue;
-                  if (selected_method &&
-                      (selected_method != &*method ||
-                       selected_owner != object_entry.second))
-                    throw std::runtime_error(
-                        "MOSS_INTERNAL_INVARIANT ambiguous checked specialization member target");
-                  selected_method = &*method;
-                  selected_owner = object_entry.second;
+              for (const auto& requirement : specialization.member_requirements)
+                if (requirement.member_name == member->name &&
+                    requirement.selected_callable_id)
+                  selected_ids.insert(*requirement.selected_callable_id);
+            }
+          if (selected_ids.size() == 1) {
+            const string& selected = *selected_ids.begin();
+            if (starts_with(selected, "builtin:FileIO.")) {
+              target = "builtin-fileio:" +
+                  selected.substr(string("builtin:FileIO.").size());
+            } else if (starts_with(selected, "builtin:")) {
+              // The concrete receiver type is part of this checker-owned
+              // requirement; use it only to lower the selected builtin.
+              for (const auto& function_entry : functions_)
+                for (const auto& specialization :
+                     function_entry.second->specializations) {
+                  if (specialization.stable_type_key !=
+                      codegen_active_specialization_key_) continue;
+                  for (const auto& requirement :
+                       specialization.member_requirements) {
+                    if (requirement.member_name != member->name ||
+                        !requirement.selected_callable_id ||
+                        *requirement.selected_callable_id != selected ||
+                        !requirement.receiver) continue;
+                    target = "builtin-method:" +
+                        canonical_type_name(requirement.receiver) + "." +
+                        member->name;
+                  }
                 }
+            } else if (const auto callable = CallableId::parse(selected);
+                       callable && callable->kind == "method") {
+              for (const auto& object : objects_) {
+                if (!p_.type_context) break;
+                const auto declaration = p_.type_context->find(
+                    object.second->name);
+                if (!declaration || declaration->id != callable->module_id)
+                  continue;
+                target = "method:" + object.second->name + "." +
+                    callable->declaration_name;
               }
+            } else {
+              target = selected;
             }
           }
-          if (selected_method && selected_owner)
-            target = "method:" + selected_owner->name + "." +
-                selected_method->name;
         }
+        if (starts_with(target, "callable-v1:") || starts_with(target, "fn:")) {
+          const Function* selected = starts_with(target, "callable-v1:")
+              ? find_function_by_callable_id(target) : nullptr;
+          if (!selected && starts_with(target, "fn:")) {
+            const auto found = functions_.find(target.substr(3));
+            if (found != functions_.end()) selected = found->second;
+          }
+          if (!selected)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked qualified callable has no declaration");
+          vector<string> arguments;
+          vector<EmitterExpr> argument_nodes;
+          for (const auto argument_id : call->arguments) {
+            const auto* named = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (named) {
+              arguments.push_back(named->name + " = " +
+                  expression.child(named->value).text());
+              argument_nodes.push_back(expression.child(named->value));
+            } else {
+              argument_nodes.push_back(expression.child(argument_id));
+              arguments.push_back(argument_nodes.back().text());
+            }
+          }
+          return render_known_function_call(*selected, selected->name,
+              arguments, d, locals, types, &argument_nodes);
+        }
+        if (target.empty())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target for lowering name=" +
+              member->name + " context=" + codegen_body_context_);
         if (target == "fn:__moss_test_perturbed_call_target__")
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
@@ -10308,6 +10341,16 @@ class Generator {
       if (edge.line != line || edge.invocation_kind != "ordinary_call") continue;
       if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
         targets.push_back(edge.target);
+    }
+    if (targets.empty() && phase21_codegen_statement_ &&
+        !phase21_codegen_statement_->source_file.empty()) {
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.line != line || edge.invocation_kind != "ordinary_call" ||
+            edge.source_file != phase21_codegen_statement_->source_file ||
+            edge.target.empty()) continue;
+        if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
+          targets.push_back(edge.target);
+      }
     }
     return targets;
   }
