@@ -13858,3 +13858,11 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   pass for `swarm_020_typed_vector_factory.moss` and `functional_basics.moss`.
 - functional_basics cache consultations are 15,360 (down 76 from 15,436),
   checker reparses remain 121 (body=18, view=59, pipeline=44). No full suite.
+
+## Phase 27.5.4 child TypeRef constraint checkpoint (2026-10-31)
+
+- Enum payload declared-type matching now consumes the child ExprId's checked
+  TypeRef and unifies it with the declared field type before falling back to
+  the previous checker inference path. Parenthesized-enum, vector/index, and
+  typed-vector default/shadow fixtures pass. The unrelated specialization
+  fixture's cache and parser counters are unchanged at 25,130 and 44.

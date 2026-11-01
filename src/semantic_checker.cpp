@@ -26930,6 +26930,33 @@ class Checker {
     return tree_split_binary(source, operators);
   }
 
+  moss::TypeRef checked_expression_child_type_ref(
+      std::string_view role) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return nullptr;
+    const auto& parent = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(parent.arena_index);
+    if (!arena) return nullptr;
+    const auto child = expression_child_node(*arena, parent.expr, role);
+    if (!child) return nullptr;
+    const auto* facts = arena->facts(*child, expression_fact_context());
+    return facts ? facts->type : nullptr;
+  }
+
+  bool checked_child_matches_declared(std::string_view role,
+      const string& expression, const string& declared,
+      const std::unordered_map<string,string>& env) const {
+    if (auto actual = checked_expression_child_type_ref(role)) {
+      auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
+      if (current_body_types_ && expected && (*expected)->is_closed())
+        return current_body_types_->solver.unify(actual, *expected);
+      if (actual->is_closed())
+        return same_type(actual->to_canonical_string(), declared);
+    }
+    return checked_matches_declared(expression, declared, env);
+  }
+
   std::optional<string> checked_expression_child_type(
       std::string_view role) const {
     if (active_est_expression_cursors_.empty() ||
@@ -27310,7 +27337,7 @@ class Checker {
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
           if (!check_expression_child_node(line, env, "field:" + name))
             check_expression(line, value, env, {}, "field:" + name);
-          if (!checked_matches_declared(value, field->type, env))
+          if (!checked_child_matches_declared("field:" + name, value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
         }
