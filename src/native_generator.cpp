@@ -6171,6 +6171,23 @@ class Generator {
                   ".map_err(__moss_raise_fileio)")
               : lowered_call;
         }
+        if (target == "builtin-fileio:sync" &&
+            member->name == "sync" && call->arguments.size() <= 1) {
+          const bool dataonly = !call->arguments.empty() &&
+              tree_identifier_name(expression.child(
+                  call->arguments.front())) ==
+                  std::optional<string>("dataonly");
+          const string lowered_call =
+              method_receiver_place(member_receiver, member->name,
+                  vector<EmitterExpr>{}, d, locals, types) +
+              (phase21_result_context_
+                  ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
+                  : dataonly ? ".sync_dataonly()" : ".sync()");
+          return phase21_result_context_
+              ? phase21_propagate(lowered_call +
+                  ".map_err(__moss_raise_fileio)")
+              : lowered_call;
+        }
         if (target == "builtin-fileio:read" &&
             member->name == "read" && call->arguments.size() == 2) {
           const string rendered = expr(member_receiver, d, locals, types) +

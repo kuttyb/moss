@@ -16771,3 +16771,20 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Fact hooks passed at 38/38 before the byte-identity comparison; diff check
   passes. No full suite, paired whole workload, performance run or Agent 2 audit
   has run.
+
+## C2 checkpoint: FileIO sync lowers from its checked receiver node (2026-11-01)
+
+- The node-aware emitter now handles checked `builtin-fileio:sync` directly,
+  including the optional `dataonly` flag node, and uses the retained receiver
+  node for its place projection. The Phase 21 lock/FileIO fixture dropped from
+  1 expression-view reparse + 1 text lookup per emission to 0/0.
+- Generated Rust is byte-identical to `ab2a78bb`, compiles, and
+  `check_phase21_lock_fileio_adversarial.py` passes. Fact hooks most recently
+  passed with known debt exactly 38/38.
+- The attempted paired whole-corpus run was interrupted: the candidate test
+  binary was rebuilt while the script was still measuring the baseline, so the
+  run is invalid and not reported. Repeat after committing this slice without
+  changing either binary during measurement.
+- Hotspot-set rerun before this final FileIO change showed only this source
+  nonzero. A stable paired corpus measurement is still required; full suites,
+  perf and Agent 2 audit remain pending.
