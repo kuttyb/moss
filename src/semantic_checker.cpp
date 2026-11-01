@@ -28544,7 +28544,9 @@ class Checker {
   }
 
   void check_for_source(int line, const string& source, const TypeEnv& env,
-                        std::string_view root_slot = {}) {
+                        std::string_view root_slot = {},
+                        const Stmt* loop_statement = nullptr,
+                        const string& checked_context = {}) {
     string callee;
     vector<string> arguments;
     if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
@@ -28556,11 +28558,22 @@ class Checker {
       check_expression(line, source, env, root_slot);
     }
     (void)iterator_element_type(line, source, env);
-    for (const Method* method : implicit_iterator_methods(source, env))
+    vector<string> iterator_targets;
+    for (const Method* method : implicit_iterator_methods(source, env)) {
+      iterator_targets.push_back(functional_method_context(*method));
       if (method->observable_effects.unresolved ||
           !method->observable_effects.raise_set.empty())
         err(line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported",
             "RAISING_ITERATOR_UNSUPPORTED");
+    }
+    if (loop_statement && !iterator_targets.empty()) {
+      if (moss_test_drop_fact("call-targets"))
+        iterator_targets.clear();
+      else if (moss_test_perturb_fact("call-targets"))
+        iterator_targets.front() = "method:__moss_test_perturbed_call_target__";
+      const_cast<Stmt*>(loop_statement)->implicit_iterator_targets_by_context[
+          checked_context] = std::move(iterator_targets);
+    }
   }
 
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
@@ -28871,8 +28884,10 @@ class Checker {
         auto prior = current_env.find(statement.a);
         if (prior != current_env.end() && contains_domain_handle(prior->second))
           err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+        const string checked_context = !join_context.empty()
+            ? join_context : current_semantic_context_;
         check_for_source(statement.line, statement.b, current_env,
-                         "for-iterable");
+                         "for-iterable", &statement, checked_context);
         return;
       }
 

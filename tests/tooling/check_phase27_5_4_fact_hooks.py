@@ -22,6 +22,7 @@ CASES = {
         FIXTURES / "call_target_indexed_member.moss",
         ROOT / "examples/collections_and_methods.moss",
         ROOT / "tests/phase27/est/pipeline_shape.moss",
+        ROOT / "tests/phase47_iteration.moss",
     ],
     "specializations": [
         ROOT / "tests/phase27/est/specialized_call_facts.moss",

@@ -10089,16 +10089,28 @@ class Generator {
           if (!source_type)
             throw std::runtime_error("internal error: unresolved static iterator source");
           string concrete = canonical_type_name(*source_type);
-          const Method* next = resolve_object_method(objects_, concrete, "next", {}, true, nullptr);
-          bool direct_iterator = next != nullptr;
-          const Method* iterator_factory = nullptr;
-          if (!direct_iterator) {
-            iterator_factory = resolve_object_method(objects_, concrete, "iter", {}, true, nullptr);
-            if (iterator_factory && iterator_factory->return_type)
-              next = resolve_object_method(
-                  objects_, canonical_type_name(*iterator_factory->return_type),
-                  "next", {}, true, nullptr);
+          const auto iterator_methods = checked_iterator_method_targets(
+              s, functional_context);
+          const Method* factory = nullptr;
+          const Method* next = nullptr;
+          if (iterator_methods.size() == 1 &&
+              iterator_methods.front()->name == "next") {
+            next = iterator_methods.front();
+          } else if (iterator_methods.size() == 2 &&
+                     iterator_methods.front()->name == "iter" &&
+                     iterator_methods.back()->name == "next") {
+            factory = iterator_methods.front();
+            next = iterator_methods.back();
+          } else {
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked implicit iterator target set is invalid");
           }
+          const bool direct_iterator = factory == nullptr;
+          if ((direct_iterator && next->owner != concrete) ||
+              (factory && (factory->owner != concrete || !factory->return_type ||
+                           canonical_type_name(*factory->return_type) != next->owner)))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked implicit iterator targets disagree with source");
           string iterator_expression;
           if (direct_iterator && next->receiver_effect == Effect::Consume)
             iterator_expression = expr(source, d, locals, &types);
@@ -11187,6 +11199,45 @@ class Generator {
       if (method != object->second->methods.end() &&
           std::find(methods.begin(), methods.end(), &*method) == methods.end())
         methods.push_back(&*method);
+    }
+    return methods;
+  }
+
+  vector<const Method*> checked_iterator_method_targets(
+      const Stmt& statement, const string& context) const {
+    if (moss_test_drop_fact("call-targets") ||
+        moss_test_perturb_fact("call-targets"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT dropped or contradictory checked iterator target");
+    auto selected = statement.implicit_iterator_targets_by_context.find(context);
+    if (selected == statement.implicit_iterator_targets_by_context.end())
+      selected = statement.implicit_iterator_targets_by_context.find("");
+    if (selected == statement.implicit_iterator_targets_by_context.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked implicit iterator targets");
+    vector<const Method*> methods;
+    for (const auto& identity : selected->second) {
+      if (!starts_with(identity, "method:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT malformed checked implicit iterator target");
+      const auto separator = identity.rfind('.');
+      if (separator == string::npos)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT malformed checked implicit iterator target");
+      const string owner = identity.substr(7, separator - 7);
+      const string name = identity.substr(separator + 1);
+      auto object = objects_.find(owner);
+      if (object == objects_.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked implicit iterator owner is unavailable");
+      auto method = std::find_if(object->second->methods.begin(),
+          object->second->methods.end(), [&](const Method& candidate) {
+            return candidate.name == name;
+          });
+      if (method == object->second->methods.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked implicit iterator method is unavailable");
+      methods.push_back(&*method);
     }
     return methods;
   }

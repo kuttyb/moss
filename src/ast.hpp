@@ -292,6 +292,10 @@ struct Stmt {
   // context. The emitter may lower this identity but must not choose a target
   // from backend type strings.
   std::unordered_map<string,string> checked_call_targets_by_context;
+  // Checked implicit iterator protocol targets for a custom `for` source,
+  // ordered as [next] or [iter, next] in the owning semantic context.
+  std::unordered_map<string,vector<string>>
+      implicit_iterator_targets_by_context;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;

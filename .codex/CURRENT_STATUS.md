@@ -16423,3 +16423,22 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   `phase106d_specializations` (`11 22`) and `phase106e_domains`; Team A and
   functional-tree harnesses PASS. Feedback validation and `git diff --check`
   PASS. No full C2 gates/corpus counters/perf/Agent 2/merge/tag.
+
+## C2 implicit iterator targets (2026-11-01; ready to checkpoint)
+
+- The checker records the selected custom loop protocol methods on each `For`
+  statement by semantic context (`[next]` or `[iter, next]`). The emitter
+  lowers only those identities; all `resolve_object_method` calls have been
+  removed from `native_generator.cpp`. Fast Debug reads the same facts and
+  fails closed when they are absent, dropped, or perturbed. When a generic
+  Fast Debug frame lacks a concrete function context, it accepts only one
+  unique target vector among that function's checked specializations; multiple
+  vectors fail closed.
+- `tests/phase47_iteration.moss` matches in Fast Debug and freshly emitted,
+  compiled native Rust: `12 1 20 6 9 3 3`. The fact-hook suite now includes
+  this fixture among eight call-target cases; perturb/drop checks pass across
+  Fast Debug, native, and `-O`. Existing class hooks pass and known debt remains
+  `38/38`.
+- Feedback observation recorded and validation still required before commit.
+  Full suite, corpus-wide counters, package/corpus parity, perf, Agent 2,
+  merge, and tag remain pending.

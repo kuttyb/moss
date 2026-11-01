@@ -3524,8 +3524,73 @@ class FastInterpreter {
             for (const auto& element : elements)
               if (!run_iteration(element)) break;
           } else if (iterable.kind == Value::Kind::Struct && iterable.object) {
-            const Method* next = method(iterable.object->type, "next");
-            const Method* factory = next ? nullptr : method(iterable.object->type, "iter");
+            if (moss_test_drop_fact("call-targets") ||
+                moss_test_perturb_fact("call-targets"))
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT dropped or contradictory checked iterator target");
+            auto checked_targets =
+                statement.implicit_iterator_targets_by_context.find(
+                    frame.functional_context);
+            const std::vector<std::string>* selected_targets =
+                checked_targets ==
+                        statement.implicit_iterator_targets_by_context.end()
+                    ? nullptr : &checked_targets->second;
+            if (!selected_targets &&
+                frame.functional_context.rfind("fn:", 0) == 0) {
+              const std::string specialization_prefix =
+                  frame.functional_context + "<";
+              for (const auto& [context, targets] :
+                   statement.implicit_iterator_targets_by_context) {
+                if (context.rfind(specialization_prefix, 0) != 0 ||
+                    targets.empty())
+                  continue;
+                if (selected_targets && *selected_targets != targets)
+                  throw RuntimeError(statement.line,
+                      "MOSS_INTERNAL_INVARIANT ambiguous checked iterator targets");
+                selected_targets = &targets;
+              }
+            }
+            if (!selected_targets || selected_targets->empty())
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked iterator targets context=" +
+                  frame.functional_context);
+            auto checked_method = [&](const std::string& identity) {
+              if (identity.rfind("method:", 0) != 0)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT malformed checked iterator target");
+              const auto separator = identity.rfind('.');
+              if (separator == std::string::npos)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT malformed checked iterator target");
+              const std::string owner = identity.substr(7, separator - 7);
+              const std::string name = identity.substr(separator + 1);
+              const Method* selected = method(owner, name);
+              if (!selected)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT checked iterator method is unavailable");
+              return selected;
+            };
+            const auto& targets = *selected_targets;
+            const Method* factory = nullptr;
+            const Method* next = nullptr;
+            if (targets.size() == 1) {
+              next = checked_method(targets.front());
+              if (next->name != "next" ||
+                  next->owner != iterable.object->type)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT checked iterator target disagrees with source");
+            } else if (targets.size() == 2) {
+              factory = checked_method(targets[0]);
+              next = checked_method(targets[1]);
+              if (factory->name != "iter" ||
+                  factory->owner != iterable.object->type ||
+                  next->name != "next")
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT checked iterator targets disagree with source");
+            } else {
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT checked iterator target set is incomplete");
+            }
             Value iterator = iterable;
             if (factory) {
               iterator = call_method(*factory, iterable, {}, frame, statement.line,
@@ -3534,11 +3599,10 @@ class FastInterpreter {
               if (iterator.kind != Value::Kind::Struct || !iterator.object)
                 throw RuntimeError(statement.line,
                                    "internal error: checked Iterator factory returned no object");
-              next = method(iterator.object->type, "next");
+              if (next->owner != iterator.object->type)
+                throw RuntimeError(statement.line,
+                    "MOSS_INTERNAL_INVARIANT checked iterator next target disagrees with result");
             }
-            if (!next)
-              throw RuntimeError(statement.line,
-                                 "internal error: checked Iterator has no next method");
             if (!statement.semantic_type.empty())
               frame.local_types[statement.a] = statement.semantic_type;
             while (true) {
