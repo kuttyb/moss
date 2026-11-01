@@ -4284,6 +4284,62 @@ class Generator {
         }
       }
     }
+    if (const auto* message = std::get_if<est::Message>(
+            &expression.arena->at(root))) {
+      if (root_ingress_statement_)
+        return expr(expression.text(), d, locals, types,
+                    functional_pipeline_id, message_argument_plans);
+      const auto target = expression.child(message->target);
+      const auto target_root = est::unparenthesized(*target.arena, target.id);
+      const auto* receiver = std::get_if<est::Identifier>(
+          &target.arena->at(target_root));
+      if (!receiver || !types)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message target is not a typed identifier");
+      const auto receiver_type = types->find(receiver->name);
+      if (receiver_type == types->end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message receiver type is missing");
+      const auto domain = domains_.find(
+          canonical_type_name(receiver_type->second));
+      if (domain == domains_.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message receiver is not a domain");
+      const Handler* handler = find_handler(*domain->second, message->handler);
+      if (!handler || handler->params.size() != message->arguments.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message handler is missing");
+      const bool raises = !handler->observable_effects.raise_set.empty();
+      if (raises && !phase21_result_context_)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked raising message lacks outcome context");
+      std::ostringstream rendered;
+      rendered << expr(target, d, locals, types) << "."
+               << (domain->second->exported && !exported_domain_bridge_body_
+                       ? "__moss_message_" : "")
+               << message->handler
+               << (domain->second->exported && !exported_domain_bridge_body_
+                       ? "(" : "_shared(");
+      for (size_t index = 0; index < message->arguments.size(); ++index) {
+        if (index) rendered << ", ";
+        const auto argument = expression.child(message->arguments[index]);
+        const size_t plan = message_argument_plans &&
+                index < message_argument_plans->size()
+            ? message_argument_plans->at(index) : 0;
+        if (domain->second->exported && !exported_domain_bridge_body_)
+          rendered << message_arg(argument, handler->params[index].type,
+                                  d, locals, types, plan);
+        else
+          rendered << shared_message_arg(argument,
+              handler->params[index].type, d, locals, types, plan);
+      }
+      rendered << ")";
+      if (raises) return phase21_propagate(rendered.str());
+      if (handler->reply_type &&
+          !(domain->second->exported && !exported_domain_bridge_body_))
+        rendered << ".unwrap_or_else(|| std::process::abort())";
+      return rendered.str();
+    }
     if (const auto* constructor = std::get_if<est::Constructor>(
             &expression.arena->at(root))) {
       const auto type_id = est::unparenthesized(*expression.arena,
@@ -5719,6 +5775,18 @@ class Generator {
     return "(" + r + ").clone()";
   }
 
+  string message_arg(const EmitterExpr& expression, const string& type,
+                     const Domain* d, const std::set<string>& locals,
+                     const std::unordered_map<string,string>* types = nullptr,
+                     size_t functional_pipeline_id = 0) const {
+    string rendered = nominal_domain_handle_argument(
+        expression, type, d, locals, types, functional_pipeline_id);
+    if (is_object_view(expression, d, locals, types))
+      return "(" + rendered + ").__moss_value()";
+    return copy_type(type) || type == "_" ? rendered
+                                           : "(" + rendered + ").clone()";
+  }
+
   string shared_message_arg(const string& e, const string& type,
                             const Domain* d, const std::set<string>& locals,
                             const std::unordered_map<string,string>* types = nullptr,
@@ -5743,6 +5811,22 @@ class Generator {
         break;
     }
     throw std::runtime_error("internal error: shared message selected owned boundary");
+  }
+
+  string shared_message_arg(const EmitterExpr& expression, const string& type,
+                            const Domain* d, const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types = nullptr,
+                            size_t functional_pipeline_id = 0) const {
+    string rendered = nominal_domain_handle_argument(
+        expression, type, d, locals, types, functional_pipeline_id);
+    if (copy_type(type)) return rendered;
+    if (is_object_view(expression, d, locals, types))
+      return "&(" + rendered + ")";
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    return identifier && borrowed_message_parameters_.count(identifier->name)
+        ? identifier->name : "&(" + rendered + ")";
   }
 
   string value_from_borrowed_message_parameter(

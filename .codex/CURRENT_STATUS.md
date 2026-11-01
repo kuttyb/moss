@@ -14993,3 +14993,15 @@ before and after that unreachable block: pinned parent 44,723 text lookups /
 attributable to that block. Generated Rust was byte-identical for all seven in
 both modes; the three-engine gate and four-class perturb/drop hook matrix
 passed. Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked message expressions accept ExprIds (2026-11-01)
+
+The emitter now has a node-based `Message` expression path, including typed
+receiver/handler lookup and node-based message payload lowering. Root-ingress
+messages retain the existing path because their executor-invocation lowering
+is still string-based. The focused seven-source generated-Rust comparison
+remains byte-identical in default and `-O`; three-engine and the four-class
+perturb/drop harness pass. Paired seven-source counters did not change from the
+prior measurement (parent 44,723 / 24,163; candidate 24,139 / 14,227), so this
+slice is recorded as parity-preserving but not yet demonstrated to reduce the
+measured reparse workload. Full suites and performance remain pending.
