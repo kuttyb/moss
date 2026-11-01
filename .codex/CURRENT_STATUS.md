@@ -16589,3 +16589,17 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   totals were measured at `340af4cd` and are stale. Remaining high samples
   include optimized expression callback lowering, imported module calls, and
   collection/test fixtures. Continue reducing those before final gates.
+
+## C2 checkpoint: checked `replace` operands remain nodes (2026-11-01)
+
+- Latest pushed code `ec09028d` lowers the built-in `replace(place, value)`
+  directly from its checked call node. Both the replacement expression and
+  mutable place retain their child IDs; string-only synthesized expressions
+  keep the compatibility lowering.
+- `tests/tooling/fixtures/builtin_generic_typing/vector_literal_state_replace.moss`
+  fell from 32 emitter reparses / text lookups to 0/0. Generated Rust is
+  byte-identical and compiles; Fast Debug and native both print `old` then
+  `new`. Fact hooks pass with known debt unchanged at 38/38.
+- Full gates/perf remain deferred until the C2 closing checkpoint. Remaining
+  high-count sources include -O functional callbacks, package test sources,
+  and domain/Phase 21 fixtures. No Agent 2 audit or merge yet.
