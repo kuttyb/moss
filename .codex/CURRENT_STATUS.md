@@ -16265,3 +16265,27 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   performance gates remain pending. No Agent 2 audit, merge, or tag yet.
 - Current source edits are in `src/native_generator.cpp` and
   `src/borrowed_views.inc`; rerun feedback validation before checkpointing.
+
+## C2 message/binary subtree checkpoint (2026-11-01; pushed next)
+
+- A temporary test-build fail-fast probe localized the remaining representative
+  hits to: string-only recursive binary lowering; message/reply payload helpers
+  receiving fragments instead of retained IDs; and the synthetic exported
+  domain bridge being passed back through `expr(string)`. These paths now use
+  binary child nodes and message argument nodes; the bridge lowers directly
+  from the checked handler declaration. The temporary probe and its backtrace
+  instrumentation are removed.
+- Targeted counter results are now 0 emitter text lookups and 0 reparses for
+  calculator, phase47 iterator, object/collection/pipeline examples, message and
+  reply examples, ledger, and priority_queue. Paired C1 counts on the two
+  newly exposing examples were ledger 3,106 reparses / 4,000 lookups and
+  priority_queue 17,648 / 34,324; candidate is 0 / 0 for each.
+- Generated Rust is byte-identical to saved pre-slice candidate outputs for
+  ledger, priority_queue, object_pipeline, collections, domain messages,
+  message reply, immutable payload, and phase5_tooling. `margo build` passes
+  for ledger and priority_queue; package native/Fast Debug output matches for
+  both. The targeted functional-tree and checked-fact perturb/drop scripts
+  pass. Feedback validation remains to be rerun after the current record.
+- Still pending: corpus-wide C2 counter measurement; full make check default
+  and shadow, three-engine/parity and performance gates; Agent 2 audit; merge
+  and C2 tag. Closing round remains queued until after C2 merge.

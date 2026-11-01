@@ -1319,6 +1319,14 @@ class Generator {
     return literal && literal->spelling == "\"\"";
   }
 
+  bool tree_empty_string_literal(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* literal = std::get_if<est::Literal>(
+        &expression.arena->at(root));
+    return literal && literal->spelling == "\"\"";
+  }
+
   std::optional<vector<string>> tree_member_path(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
@@ -1482,6 +1490,24 @@ class Generator {
     est::ExpressionView view{nullptr, expression.arena, expression.id,
                              expression.text()};
     return est::project_message(view, target, handler, arguments);
+  }
+
+  bool tree_parse_message_nodes(const EmitterExpr& expression, string& target,
+                                string& handler,
+                                vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* message = std::get_if<est::Message>(
+        &expression.arena->at(root));
+    if (!message) return false;
+    auto target_node = expression.child(message->target);
+    target = target_node.text();
+    handler = message->handler;
+    arguments.clear();
+    arguments.reserve(message->arguments.size());
+    for (const auto argument : message->arguments)
+      arguments.push_back(expression.child(argument));
+    return true;
   }
 
   bool tree_parse_fileio_chunks_source(const string& expression,
@@ -2235,6 +2261,8 @@ class Generator {
     string left;
     string op;
     string right;
+    EmitterExpr checked_left;
+    EmitterExpr checked_right;
   };
 
   struct GeneratedBinaryNode {
@@ -2296,7 +2324,7 @@ class Generator {
       return std::nullopt;
     return GeneratedBinaryExpression{std::move(operands.first),
                                      std::move(operation),
-                                     std::move(operands.second)};
+                                     std::move(operands.second), {}, {}};
   }
 
   std::optional<GeneratedBinaryNode> tree_generated_binary(
@@ -6680,13 +6708,34 @@ class Generator {
       return checked_node ? tree_parse_vector_literal(*checked_node)
                           : tree_parse_vector_literal(e);
     };
+    auto emit_binary_left = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_left.arena
+          ? expr(binary.checked_left, d, locals, types)
+          : expr(binary.left, d, locals, types);
+    };
+    auto emit_binary_right = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_right.arena
+          ? expr(binary.checked_right, d, locals, types)
+          : expr(binary.right, d, locals, types);
+    };
+    auto binary_left_type = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_left.arena
+          ? generated_expr_type(binary.checked_left, types)
+          : generated_expr_type(binary.left, types);
+    };
+    auto binary_right_type = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_right.arena
+          ? generated_expr_type(binary.checked_right, types)
+          : generated_expr_type(binary.right, types);
+    };
     auto parse_root_binary = [&](const vector<string>& operators)
         -> std::optional<GeneratedBinaryExpression> {
       if (!checked_node) return tree_generated_binary(e, operators);
       auto binary = tree_generated_binary(*checked_node, operators);
       if (!binary) return std::nullopt;
       return GeneratedBinaryExpression{binary->left.text(), binary->op,
-                                       binary->right.text()};
+                                       binary->right.text(), binary->left,
+                                       binary->right};
     };
     if (locals.count(e) && !phase21_option_slots_.count(e) &&
         !write_through_parameters_.count(e) && !view_parameters_.count(e))
@@ -6710,7 +6759,10 @@ class Generator {
            phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
-    if (auto place = view_place(e, d, locals, types)) return *place;
+    if (auto place = checked_node
+            ? view_place(*checked_node, d, locals, types)
+            : view_place(e, d, locals, types))
+      return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
       return "*" + *root_name;
@@ -6720,13 +6772,31 @@ class Generator {
     // completion and reply semantics through synchronized handler entry.
     string message_target, message_handler;
     vector<string> message_arguments;
-    if (parse_root_message(message_target, message_handler,
-                           message_arguments)) {
+    vector<EmitterExpr> checked_message_arguments;
+    const bool parsed_message = checked_node
+        ? tree_parse_message_nodes(*checked_node, message_target,
+                                   message_handler,
+                                   checked_message_arguments)
+        : parse_root_message(message_target, message_handler,
+                             message_arguments);
+    if (parsed_message) {
+      if (checked_node) {
+        message_arguments.reserve(checked_message_arguments.size());
+        for (const auto& argument : checked_message_arguments)
+          message_arguments.push_back(argument.text());
+      }
       string receiver = message_target;
       string handler = message_handler;
       vector<string> arguments = std::move(message_arguments);
-      if (!types || !tree_plain_identifier(receiver))
+      const auto receiver_identifier = checked_node
+          ? tree_identifier_name(checked_node->child(
+                std::get<est::Message>(checked_node->arena->at(
+                    est::unparenthesized(*checked_node->arena,
+                                         checked_node->id))).target))
+          : tree_identifier_name(receiver);
+      if (!types || !receiver_identifier)
         throw std::runtime_error("internal error: malformed message expression");
+      receiver = *receiver_identifier;
       auto receiver_type = types->find(receiver);
       if (receiver_type == types->end())
         throw std::runtime_error("internal error: unresolved message receiver");
@@ -6750,8 +6820,13 @@ class Generator {
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
-          call << message_arg(arguments[index], target_handler->params.at(index).type,
-                              d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
+          call << (checked_node
+              ? message_arg(checked_message_arguments.at(index),
+                    target_handler->params.at(index).type, d, locals, types,
+                    message_argument_plans ? message_argument_plans->at(index) : 0)
+              : message_arg(arguments[index],
+                    target_handler->params.at(index).type, d, locals, types,
+                    message_argument_plans ? message_argument_plans->at(index) : 0));
         }
         call << ")";
         return raises ? phase21_propagate(call.str()) : call.str();
@@ -6760,9 +6835,13 @@ class Generator {
       rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
-        rendered << shared_message_arg(arguments[index], target_handler->params.at(index).type,
-                                       d, locals, types,
-                                       message_argument_plans ? message_argument_plans->at(index) : 0);
+        rendered << (checked_node
+            ? shared_message_arg(checked_message_arguments.at(index),
+                  target_handler->params.at(index).type, d, locals, types,
+                  message_argument_plans ? message_argument_plans->at(index) : 0)
+            : shared_message_arg(arguments[index],
+                  target_handler->params.at(index).type, d, locals, types,
+                  message_argument_plans ? message_argument_plans->at(index) : 0));
       }
       rendered << ")";
       if (raises) {
@@ -6806,7 +6885,9 @@ class Generator {
     const auto literal = checked_node ? tree_literal_class(*checked_node)
                                       : tree_literal_class(e);
     if (literal == est::LiteralClass::Boolean) return e;
-    if (tree_identifier_name(e) == std::optional<string>("None")) return "None";
+    if ((checked_node ? tree_identifier_name(*checked_node)
+                      : tree_identifier_name(e)) ==
+        std::optional<string>("None")) return "None";
     // Numeric literals are emitted from the shared decoder's value as a
     // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
     // spelling.
@@ -6829,14 +6910,20 @@ class Generator {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    auto expression_shape = expression_view_from_est(e, nullptr, __func__);
-    if (expression_shape && est::empty_constructor_named(*expression_shape, "Map")) return staged_abi_v10()
+    const bool empty_map = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Map")
+        : tree_empty_constructor_named(e, "Map");
+    const bool empty_set = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Set")
+        : tree_empty_constructor_named(e, "Set");
+    const bool empty_queue = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Queue")
+        : tree_empty_constructor_named(e, "Queue");
+    if (empty_map) return staged_abi_v10()
         ? "std::default::Default::default()"
         : "std::collections::HashMap::new()";
-    if (expression_shape && staged_abi_v10() && est::empty_constructor_named(*expression_shape, "Set"))
-      return "moss_runtime::MossSet::new()";
-    if (expression_shape && est::empty_constructor_named(*expression_shape, "Queue"))
-      return "std::collections::VecDeque::new()";
+    if (staged_abi_v10() && empty_set) return "moss_runtime::MossSet::new()";
+    if (empty_queue) return "std::collections::VecDeque::new()";
     {
       string callee;
       vector<string> arguments;
@@ -6876,9 +6963,9 @@ class Generator {
                                                 {" xor ", "^"},
                                                 {" and ", "&&"}}) {
       if (auto binary = parse_root_binary({boolean_operator.first}))
-        return "(" + expr(binary->left, d, locals, types) + ") " +
+        return "(" + emit_binary_left(*binary) + ") " +
             boolean_operator.second + " (" +
-            expr(binary->right, d, locals, types) + ")";
+            emit_binary_right(*binary) + ")";
     }
     string unary_operation, unary_operand;
     if (parse_root_unary(unary_operation, unary_operand) &&
@@ -6886,12 +6973,14 @@ class Generator {
       return "!(" + expr(unary_operand, d, locals, types) + ")";
     if (auto comparison =
         parse_root_binary({"==", "!=", "<=", ">=", "<", ">"})) {
-      string left = expr(comparison->left, d, locals, types);
-      string right = expr(comparison->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(comparison->left, left, types);
-      right = value_from_borrowed_message_parameter(comparison->right, right, types);
-      auto left_type = generated_expr_type(comparison->left, types);
-      auto right_type = generated_expr_type(comparison->right, types);
+      string left = emit_binary_left(*comparison);
+      string right = emit_binary_right(*comparison);
+      left = value_from_borrowed_message_parameter(
+          comparison->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(
+          comparison->checked_right, right, types);
+      auto left_type = binary_left_type(*comparison);
+      auto right_type = binary_right_type(*comparison);
       if (left_type && canonical_type_name(*left_type) == "string") {
         left = "(" + left + ").as_str()";
       }
@@ -6900,96 +6989,111 @@ class Generator {
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
           right_type && canonical_type_name(*right_type) == "int") {
-        if (generated_integer_literal(comparison->right))
-          right = generated_integer_literal_as_float(comparison->right);
+        if ((comparison->checked_right.arena
+                ? generated_integer_literal(comparison->checked_right)
+                : generated_integer_literal(comparison->right)))
+          right = comparison->checked_right.arena
+              ? generated_integer_literal_as_float(comparison->checked_right)
+              : generated_integer_literal_as_float(comparison->right);
         else
           right = "((" + right + ") as f64)";
       }
       if (right_type && canonical_type_name(*right_type) == "float" &&
           left_type && canonical_type_name(*left_type) == "int") {
-        if (generated_integer_literal(comparison->left))
-          left = generated_integer_literal_as_float(comparison->left);
+        if ((comparison->checked_left.arena
+                ? generated_integer_literal(comparison->checked_left)
+                : generated_integer_literal(comparison->left)))
+          left = comparison->checked_left.arena
+              ? generated_integer_literal_as_float(comparison->checked_left)
+              : generated_integer_literal_as_float(comparison->left);
         else
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
     if (auto binary = parse_root_binary({"|"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") | (" + right + ")";
     }
     if (auto binary = parse_root_binary({"^"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") ^ (" + right + ")";
     }
     if (auto binary = parse_root_binary({"&"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") & (" + right + ")";
     }
     if (auto binary = parse_root_binary({"<<", ">>"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       string fn_name = binary->op == "<<" ? "__moss_shl" : "__moss_shr";
       return fn_name + "(" + left + ", " + right + ")";
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = parse_root_binary(operators);
       if (!binary) continue;
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
-      auto left_type = generated_expr_type(binary->left, types);
-      auto right_type = generated_expr_type(binary->right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
+      auto left_type = binary_left_type(*binary);
+      auto right_type = binary_right_type(*binary);
       bool string_concatenation = binary->op == "+" &&
           left_type && right_type &&
           canonical_type_name(*left_type) == "string" &&
           canonical_type_name(*right_type) == "string";
-      if (string_concatenation && tree_empty_string_literal(binary->right))
+      if (string_concatenation && (binary->checked_right.arena
+              ? tree_empty_string_literal(binary->checked_right)
+              : tree_empty_string_literal(binary->right)))
         return "(" + left + ").clone()";
-      if (string_concatenation && tree_empty_string_literal(binary->left))
+      if (string_concatenation && (binary->checked_left.arena
+              ? tree_empty_string_literal(binary->checked_left)
+              : tree_empty_string_literal(binary->left)))
         return "(" + right + ").clone()";
       if (string_concatenation) {
-        vector<string> operands;
-        std::function<void(string)> collect = [&](string source) {
-          source = tree_strip_expression_grouping(std::move(source));
-          auto nested = tree_generated_binary(source, {"+"});
-          auto nested_left = nested
-              ? generated_expr_type(nested->left, types) : std::nullopt;
-          auto nested_right = nested
-              ? generated_expr_type(nested->right, types) : std::nullopt;
-          if (nested && nested_left && nested_right &&
-              canonical_type_name(*nested_left) == "string" &&
-              canonical_type_name(*nested_right) == "string") {
-            collect(nested->left);
-            collect(nested->right);
-          } else {
-            operands.push_back(std::move(source));
-          }
-        };
-        collect(e);
+        vector<EmitterExpr> operands;
+        if (checked_node && checked_node->arena) {
+          std::function<void(EmitterExpr)> collect = [&](EmitterExpr source) {
+            auto nested = tree_generated_binary(source, {"+"});
+            auto nested_left = nested
+                ? generated_expr_type(nested->left, types) : std::nullopt;
+            auto nested_right = nested
+                ? generated_expr_type(nested->right, types) : std::nullopt;
+            if (nested && nested_left && nested_right &&
+                canonical_type_name(*nested_left) == "string" &&
+                canonical_type_name(*nested_right) == "string") {
+              collect(nested->left);
+              collect(nested->right);
+            } else {
+              operands.push_back(std::move(source));
+            }
+          };
+          collect(*checked_node);
+        } else {
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked concatenation node");
+        }
         std::ostringstream joined;
         joined << "{ ";
         for (size_t index = 0; index < operands.size(); ++index) {
-          const string operand = trim(operands[index]);
+          const auto& operand = operands[index];
           const bool literal = tree_literal_class(operand) ==
               est::LiteralClass::String;
           joined << "let __moss_concat_" << index << " = ";
-          if (literal) joined << operand << "; ";
+          if (literal) joined << operand.text() << "; ";
           else
-            joined << "&(" << expr(operands[index], d, locals, types)
-                   << "); ";
+            joined << "&(" << expr(operand, d, locals, types) << "); ";
         }
         joined << "let mut __moss_concat_result = MossStr::with_capacity(";
         for (size_t index = 0; index < operands.size(); ++index) {
@@ -7018,15 +7122,23 @@ class Generator {
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
           right_type && canonical_type_name(*right_type) == "int") {
-        if (generated_integer_literal(binary->right))
-          right = generated_integer_literal_as_float(binary->right);
+        if ((binary->checked_right.arena
+                ? generated_integer_literal(binary->checked_right)
+                : generated_integer_literal(binary->right)))
+          right = binary->checked_right.arena
+              ? generated_integer_literal_as_float(binary->checked_right)
+              : generated_integer_literal_as_float(binary->right);
         else
           right = "((" + right + ") as f64)";
       }
       if (right_type && canonical_type_name(*right_type) == "float" &&
           left_type && canonical_type_name(*left_type) == "int") {
-        if (generated_integer_literal(binary->left))
-          left = generated_integer_literal_as_float(binary->left);
+        if ((binary->checked_left.arena
+                ? generated_integer_literal(binary->checked_left)
+                : generated_integer_literal(binary->left)))
+          left = binary->checked_left.arena
+              ? generated_integer_literal_as_float(binary->checked_left)
+              : generated_integer_literal_as_float(binary->left);
         else
           left = "((" + left + ") as f64)";
       }
@@ -8773,17 +8885,13 @@ class Generator {
     for (const auto& handler : domain.handlers) {
       std::set<string> locals{"self"};
       std::unordered_map<string,string> types{{"self", domain.name}};
-      string call = "message self." + handler.name + "(";
       out << "    pub fn __moss_message_" << handler.name << "(&self";
       for (size_t index = 0; index < handler.params.size(); ++index) {
         const auto& parameter = handler.params[index];
         out << ", " << parameter.name << ": " << rust_type(parameter.type);
         locals.insert(parameter.name);
         types[parameter.name] = parameter.type;
-        if (index) call += ", ";
-        call += parameter.name;
       }
-      call += ")";
       const bool saved_phase21_result_context = phase21_result_context_;
       phase21_result_context_ = !handler.observable_effects.raise_set.empty();
       out << ") -> " << handler_message_return_type(handler) << " {\n"
@@ -8802,8 +8910,22 @@ class Generator {
         else
           out << ".map_err(__MossRaised::from)";
       } else {
+        std::ostringstream call;
+        call << "self." << handler.name << "_shared(";
+        for (size_t index = 0; index < handler.params.size(); ++index) {
+          if (index) call << ", ";
+          const auto& parameter = handler.params[index];
+          if (copy_type(parameter.type)) call << parameter.name;
+          else call << "&(" << parameter.name << ")";
+        }
+        call << ")";
+        if (!handler.observable_effects.raise_set.empty())
+          call.str(phase21_propagate(call.str()));
+        string rendered = call.str();
+        if (handler.reply_type)
+          rendered += ".unwrap_or_else(|| std::process::abort())";
         if (!handler.observable_effects.raise_set.empty()) out << "Ok(";
-        out << expr(call, nullptr, locals, &types);
+        out << rendered;
         if (!handler.observable_effects.raise_set.empty()) out << ")";
       }
       out << "\n    }\n";
@@ -10740,9 +10862,14 @@ class Generator {
         case Stmt::Kind::Reply:
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
+          {
+          const auto checked_reply = checked_expression_ref(
+              s, s.a, est::ExprSlot::ReturnValue);
           o << indent(level) << reply_slot << " = Some("
-            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+            << message_arg(checked_reply, *current_handler->reply_type,
+                d, locals, &types,
                 statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          }
           o << indent(level) << "break 'handler;\n";
           ++i;
           // `reply` terminates the handler.  Do not emit statements that are
