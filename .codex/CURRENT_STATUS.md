@@ -1,8 +1,8 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
 - Branch: `phase27-5-4-work`; latest pushed commit:
-  `ebd1b293`. A further statement-root route in call collection is
-  uncommitted. Moss bootstrap confirms `moss-0.1`.
+  `d0f03319`. Signature-inference statement context is uncommitted. Moss
+  bootstrap confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
@@ -34,6 +34,11 @@
   routes; default/shadow checks and the functional-tree parity harness pass.
   `functional_materialization.moss` remains at 109 checker reparses (54
   pipeline). No aggregate scan yet.
+- A second signature-inference entry point now forwards the owning statement
+  into the same collector. Current focused measurements did not change
+  (`functional_basics` 94 checker / 17 pipeline; `functional_scope_fusion` 96
+  / 34). Default/shadow checks and the functional-tree parity harness pass;
+  this is structural context plumbing without measured K2 delta so far.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial

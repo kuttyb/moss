@@ -14654,7 +14654,8 @@ class Checker {
       if (signature_caller) {
         for (const auto& expression : statement_expressions(statement))
           record_signature_call_dependencies(*signature_caller, statement.line,
-                                             expression, current_env);
+                                             expression, current_env,
+                                             &statement);
       }
     };
     env = walk_type_environment(statements, env, infer_statement, false);
@@ -19373,7 +19374,8 @@ class Checker {
 
   void record_signature_call_dependencies(size_t caller, int line,
                                           const string& expression,
-                                          const TypeEnv& env) {
+                                          const TypeEnv& env,
+                                          const Stmt* statement_context = nullptr) {
     if (caller >= p_.functions.size()) return;
     if (has_unresolved_local_callable_call(expression, env))
       signature_unresolved_consumers_.insert(caller);
@@ -19388,7 +19390,8 @@ class Checker {
     }
 
     vector<LocalCallSite> call_sites;
-    collect_local_call_sites(line, expression, env, nullptr, call_sites);
+    collect_local_call_sites(line, expression, env, nullptr, call_sites,
+                             statement_context);
     for (const auto& call : call_sites) {
       if (!starts_with(call.target, "fn:")) continue;
       const string callee_name = call.target.substr(3);
