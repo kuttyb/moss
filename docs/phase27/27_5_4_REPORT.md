@@ -489,3 +489,18 @@ text. On the same optimized fixture, C1 -> candidate text lookups fell
 pipeline reparses 1 -> 0. Candidate Rust is byte-identical to C1 and both
 binaries print `semantic space: 68 5 34 3 4 true`. Full paired workload and
 final gates remain pending.
+
+### C2 functional callback node traversal (2026-11-01)
+
+Functional callback rendering now receives each stage's checked callable ExprId.
+Placeholder values are substituted during node traversal, not by rewriting and
+reparsing callback text. Lowered pipeline plans retain the checked source node;
+virtual-upstream lowering switches to the upstream plan's checked source node.
+On `functional_semantic_optimization.moss -O`, focused counters fell from the
+previous candidate's 649 lookups / 628 expression reparses to 35 / 14 after
+checked bound-method recognition also switched to its node. Against C1 they are
+1,844 / 1,166; native functional-pipeline reparses are zero.
+Default and optimized generated Rust are byte-identical to C1, and outputs
+match (`semantic space: 68 5 34 3 4 true`). The Phase 21 placeholder fixture
+compiles and prints four `-2` results. Fact-hook and three-engine checks pass.
+This is targeted validation only; final bulk counts and suites remain pending.

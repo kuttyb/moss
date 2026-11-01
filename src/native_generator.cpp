@@ -126,6 +126,9 @@ struct LoweredFunctionalStage {
 };
 struct LoweredFunctionalPipeline {
   std::string source;
+  const est::Arena* expression_arena = nullptr;
+  est::ExprId source_node = 0;
+  std::string expression_source;
   std::vector<LoweredFunctionalStage> stages;
 };
 
@@ -472,6 +475,7 @@ class Generator {
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
   const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
+  mutable std::unordered_map<string, string> functional_identifier_replacements_;
   struct EmitterExpr {
     const est::Arena* arena = nullptr;
     est::ExprId id = 0;
@@ -2167,8 +2171,24 @@ class Generator {
           : generated_expr_type(callable, &placeholder_types);
     }
     string bound_receiver, bound_method;
-    if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
+    std::optional<EmitterExpr> bound_receiver_node;
+    if (checked_callable && checked_callable->arena) {
+      const auto root = est::unparenthesized(*checked_callable->arena,
+                                              checked_callable->id);
+      if (const auto* member = std::get_if<est::Member>(
+              &checked_callable->arena->at(root))) {
+        bound_receiver_node = checked_callable->child(member->base);
+        bound_receiver = bound_receiver_node->text();
+        bound_method = member->name;
+      }
+    } else if (tree_parse_bound_method_callable(callable, bound_receiver,
+                                                bound_method)) {
+      bound_receiver_node = std::nullopt;
+    }
+    if (!bound_method.empty()) {
+      auto receiver_type = bound_receiver_node
+          ? generated_expr_type(*bound_receiver_node, types)
+          : generated_expr_type(bound_receiver, types);
       const Method* method = receiver_type
           ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
                                   bound_method, input_types, false, nullptr)
@@ -3709,6 +3729,9 @@ class Generator {
       const FunctionalPipeline& planned) {
     LoweredFunctionalPipeline lowered;
     lowered.source = parsed.source;
+    lowered.expression_arena = parsed.expression_arena;
+    lowered.source_node = parsed.source_node;
+    lowered.expression_source = parsed.expression_source;
     for (const auto& semantic_step : planned.semantic_steps) {
       if (semantic_step.kind == FunctionalNodeKind::Source ||
           semantic_step.source_node_indices.empty())
@@ -3765,10 +3788,41 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       bool propagate_raises = true,
-      bool checked_placeholder_result = false) const {
-    if (generated_expression_uses(callable, "_")) {
+      bool checked_placeholder_result = false,
+      const EmitterExpr* checked_callable = nullptr) const {
+    const bool has_checked_callable = checked_callable && checked_callable->arena;
+    const bool uses_placeholder = has_checked_callable
+        ? generated_expression_uses(*checked_callable, "_")
+        : generated_expression_uses(callable, "_");
+    if (uses_placeholder) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
+      if (has_checked_callable) {
+        std::unordered_map<string,string> callback_types = types
+            ? *types : std::unordered_map<string,string>{};
+        callback_types["_"] = arguments.front().type;
+        auto callback_locals = locals;
+        callback_locals.insert("_");
+        const auto previous = functional_identifier_replacements_;
+        functional_identifier_replacements_["_"] =
+            arguments.front().expression;
+        struct RestoreReplacements {
+          std::unordered_map<string, string>& target;
+          std::unordered_map<string, string> saved;
+          ~RestoreReplacements() { target = std::move(saved); }
+        } restore{functional_identifier_replacements_, previous};
+        if (checked_placeholder_result && !propagate_raises) {
+          Generator callback = *this;
+          callback.phase21_try_label_.clear();
+          callback.phase21_capture_handler_ = nullptr;
+          string rendered = callback.expr(*checked_callable, domain,
+              callback_locals, &callback_types);
+          return "(|| { let __moss_callback_value = " + rendered +
+              "; Ok::<_, __MossRaised>(__moss_callback_value) })()";
+        }
+        return expr(*checked_callable, domain, callback_locals,
+                    &callback_types);
+      }
       string replaced = replace_est_placeholders(
           callable, arguments.front().expression);
       std::unordered_map<string,string> callback_types = types
@@ -3794,8 +3848,24 @@ class Generator {
     }
 
     string bound_receiver, bound_method;
-    if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
+    std::optional<EmitterExpr> bound_receiver_node;
+    if (has_checked_callable) {
+      const auto root = est::unparenthesized(*checked_callable->arena,
+                                              checked_callable->id);
+      if (const auto* member = std::get_if<est::Member>(
+              &checked_callable->arena->at(root))) {
+        bound_receiver_node = checked_callable->child(member->base);
+        bound_receiver = bound_receiver_node->text();
+        bound_method = member->name;
+      }
+    } else if (tree_parse_bound_method_callable(callable, bound_receiver,
+                                                bound_method)) {
+      bound_receiver_node = std::nullopt;
+    }
+    if (!bound_method.empty()) {
+      auto receiver_type = bound_receiver_node
+          ? generated_expr_type(*bound_receiver_node, types)
+          : generated_expr_type(bound_receiver, types);
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(argument.type);
@@ -3808,7 +3878,9 @@ class Generator {
             "missing statically resolved functional bound method '" +
             trim(callable) + "'");
       std::ostringstream rendered;
-      rendered << expr(bound_receiver, domain, locals, types) << "."
+      rendered << (bound_receiver_node
+          ? expr(*bound_receiver_node, domain, locals, types)
+          : expr(bound_receiver, domain, locals, types)) << "."
                << bound_method << "(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
@@ -3896,6 +3968,26 @@ class Generator {
     return rendered.str();
   }
 
+  string render_functional_callable(
+      const ParsedFunctionalStage& stage, size_t callable_index,
+      const vector<FunctionalValue>& arguments, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      bool propagate_raises = true,
+      bool checked_placeholder_result = false) const {
+    if (callable_index >= stage.arguments.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional callable");
+    const auto checked_callable = functional_argument_node(stage,
+                                                           callable_index);
+    if (!checked_callable.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional callable node");
+    return render_functional_callable(stage.arguments[callable_index],
+        arguments, domain, locals, types, propagate_raises,
+        checked_placeholder_result, &checked_callable);
+  }
+
   static string functional_zero(const string& type) {
     return canonical_type_name(type) == "float" ? "0.0_f64" : "0_i64";
   }
@@ -3905,8 +3997,13 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
     switch (terminal.kind) {
-      case FunctionalNodeKind::Reduce:
-        return expr(terminal.arguments.front(), domain, locals, types);
+      case FunctionalNodeKind::Reduce: {
+        const auto initial = functional_argument_node(terminal, 0);
+        if (!initial.arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked reduce initializer node");
+        return expr(initial, domain, locals, types);
+      }
       case FunctionalNodeKind::Sum:
         return functional_zero(element_type);
       case FunctionalNodeKind::Count:
@@ -4012,8 +4109,11 @@ class Generator {
         << ", semantic " << group.semantic_identity << "; provenance";
     for (const auto& origin : group.provenance) out << " " << origin;
     out << "\n";
+    const auto& first_pipeline = pipelines.front();
     out << inner << "let __moss_shared_source_" << group.transient_id
-        << " = &(" << expr(group.source_expression, domain, locals, &types)
+        << " = &(" << expr(EmitterExpr{first_pipeline.expression_arena,
+              first_pipeline.source_node, first_pipeline.expression_source},
+              domain, locals, &types)
         << ");\n";
 
     for (size_t index = 0; index < group.consumers.size(); ++index) {
@@ -4088,7 +4188,7 @@ class Generator {
                     std::to_string(++map_number);
                 out << statement_indent << "let " << next << " = "
                     << render_functional_callable(
-                           operation.arguments.front(), {current}, domain,
+                           operation, 0, {current}, domain,
                            locals, &types)
                     << ";\n";
                 auto mapped_type = checked_functional_result_element(operation);
@@ -4106,8 +4206,8 @@ class Generator {
                 if (predicate) out << " && ";
                 out << "("
                     << render_functional_callable(
-                           stage.operations[predicate].arguments.front(),
-                           {current}, domain, locals, &types)
+                           stage.operations[predicate], 0, {current}, domain,
+                           locals, &types)
                     << ")";
               }
               out << ") { break " << label << "; }\n";
@@ -4116,10 +4216,11 @@ class Generator {
             case FunctionalNodeKind::Reduce: {
               const auto& operation = stage.operations.front();
               auto accumulator_type = generated_expr_type(
-                  operation.arguments.front(), &types).value_or(current.type);
+                  functional_argument_node(operation, 0),
+                  &types).value_or(current.type);
               out << statement_indent << result << " = "
                   << render_functional_callable(
-                         operation.arguments[1],
+                         operation, 1,
                          {{result, accumulator_type, false}, current},
                          domain, locals, &types)
                   << ";\n";
@@ -4142,7 +4243,7 @@ class Generator {
               string predicate = operation.arguments.empty()
                   ? current.expression
                   : render_functional_callable(
-                        operation.arguments.front(), {current}, domain,
+                        operation, 0, {current}, domain,
                         locals, &types);
               out << statement_indent << "if " << predicate << " { "
                   << result << " = true; }\n";
@@ -4153,7 +4254,7 @@ class Generator {
               string predicate = operation.arguments.empty()
                   ? current.expression
                   : render_functional_callable(
-                        operation.arguments.front(), {current}, domain,
+                        operation, 0, {current}, domain,
                         locals, &types);
               out << statement_indent << "if !(" << predicate << ") { "
                   << result << " = false; }\n";
@@ -4214,7 +4315,10 @@ class Generator {
           << planned->nodes.front().semantic_identity << "\n";
     out << "        let __moss_pipeline_source = &("
         << (checked_source ? expr(*checked_source, domain, locals, types)
-                           : expr(pipeline.source, domain, locals, types))
+                           : expr(EmitterExpr{pipeline.expression_arena,
+                                 pipeline.source_node,
+                                 pipeline.expression_source},
+                                 domain, locals, types))
         << ");\n";
 
     size_t stage_number = 0;
@@ -4239,7 +4343,7 @@ class Generator {
       FunctionalValue input{value, current_type, !item_copy};
       if (stage.kind == FunctionalNodeKind::Map) {
         string mapped = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage, 0, {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
         std::optional<string> result = planned
             ? checked_functional_result_element(*planned, pipeline_stage + 1)
@@ -4261,7 +4365,7 @@ class Generator {
         current_type = *result;
       } else {
         string predicate = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage, 0, {input}, domain, locals, types);
         out << "            if " << predicate << " { " << output << ".push("
             << value << "); }\n";
       }
@@ -4287,7 +4391,8 @@ class Generator {
           << planned->nodes[pipeline.stages.size()].semantic_identity << "\n";
     if (terminal.kind == FunctionalNodeKind::Reduce)
       out << "        let mut " << accumulator << " = "
-          << expr(terminal.arguments.front(), domain, locals, types) << ";\n";
+          << expr(functional_argument_node(terminal, 0), domain, locals, types)
+          << ";\n";
     else if (terminal.kind == FunctionalNodeKind::Sum)
       out << "        let mut " << accumulator << " = "
           << functional_zero(current_type) << ";\n";
@@ -4307,11 +4412,12 @@ class Generator {
         << (item_copy ? "*" : "") << item_ref << ";\n";
     FunctionalValue input{value, current_type, !item_copy};
     if (terminal.kind == FunctionalNodeKind::Reduce) {
-      auto accumulator_type = generated_expr_type(terminal.arguments.front(), types)
+      auto accumulator_type = generated_expr_type(
+          functional_argument_node(terminal, 0), types)
           .value_or(current_type);
       out << "            " << accumulator << " = "
           << render_functional_callable(
-                 terminal.arguments[1],
+                 terminal, 1,
                  {{accumulator, accumulator_type, false}, input},
                  domain, locals, types)
           << ";\n";
@@ -4327,8 +4433,8 @@ class Generator {
     } else {
       string predicate = terminal.arguments.empty()
           ? value
-          : render_functional_callable(terminal.arguments.front(), {input},
-                                       domain, locals, types);
+          : render_functional_callable(terminal, 0, {input}, domain, locals,
+                                       types);
       if (terminal.kind == FunctionalNodeKind::Any)
         out << "            if " << predicate << " { " << accumulator
             << " = true; }\n";
@@ -4376,12 +4482,15 @@ class Generator {
     }
     out << "\n"
         << "        let __moss_pipeline_source = &("
-        << expr(pipeline.source, domain, locals, types) << ");\n";
+        << expr(EmitterExpr{pipeline.expression_arena, pipeline.source_node,
+                            pipeline.expression_source},
+                domain, locals, types) << ");\n";
     if (!terminal)
       out << "        let mut __moss_result = std::vec::Vec::new();\n";
     else if (last_kind == FunctionalNodeKind::Reduce)
       out << "        let mut __moss_result = "
-          << expr(last->arguments.front(), domain, locals, types) << ";\n";
+          << expr(functional_argument_node(*last, 0), domain, locals, types)
+          << ";\n";
     else if (last_kind == FunctionalNodeKind::Sum)
       out << "        let mut __moss_result = "
           << functional_zero(final_element_type) << ";\n";
@@ -4404,7 +4513,7 @@ class Generator {
             string next = "__moss_value_" + std::to_string(++map_number);
             out << "            let " << next << " = "
                 << render_functional_callable(
-                       operation.arguments.front(), {current}, domain,
+                       operation, 0, {current}, domain,
                        locals, types)
                 << ";\n";
             auto result = checked_functional_result_element(operation);
@@ -4422,8 +4531,8 @@ class Generator {
             if (predicate) out << " && ";
             out << "("
                 << render_functional_callable(
-                       stage.operations[predicate].arguments.front(),
-                       {current}, domain, locals, types)
+                       stage.operations[predicate], 0, {current}, domain,
+                       locals, types)
                 << ")";
           }
           out << ") { continue; }\n";
@@ -4432,10 +4541,11 @@ class Generator {
         case FunctionalNodeKind::Reduce: {
           const auto& operation = stage.operations.front();
           auto accumulator_type = generated_expr_type(
-              operation.arguments.front(), types).value_or(current.type);
+              functional_argument_node(operation, 0),
+              types).value_or(current.type);
           out << "            __moss_result = "
               << render_functional_callable(
-                     operation.arguments[1],
+                     operation, 1,
                      {{"__moss_result", accumulator_type, false}, current},
                      domain, locals, types)
               << ";\n";
@@ -4456,7 +4566,7 @@ class Generator {
           string predicate = operation.arguments.empty()
               ? current.expression
               : render_functional_callable(
-                    operation.arguments.front(), {current}, domain, locals,
+                    operation, 0, {current}, domain, locals,
                     types);
           out << "            if " << predicate
               << " { __moss_result = true;";
@@ -4469,7 +4579,7 @@ class Generator {
           string predicate = operation.arguments.empty()
               ? current.expression
               : render_functional_callable(
-                    operation.arguments.front(), {current}, domain, locals,
+                    operation, 0, {current}, domain, locals,
                     types);
           out << "            if !(" << predicate
               << ") { __moss_result = false;";
@@ -4552,6 +4662,9 @@ class Generator {
           std::move(upstream_lowered.stages);
       stages.insert(stages.end(), lowered.stages.begin(), lowered.stages.end());
       lowered.source = upstream_parsed->source;
+      lowered.expression_arena = upstream_parsed->expression_arena;
+      lowered.source_node = upstream_parsed->source_node;
+      lowered.expression_source = upstream_parsed->expression_source;
       lowered.stages = std::move(stages);
     }
     if (planned->count_uses_exact_length) {
@@ -4569,7 +4682,10 @@ class Generator {
       else
         out << "\n"
             << "        let __moss_pipeline_source = &("
-            << expr(lowered.source, domain, locals, types) << ");\n"
+            << expr(EmitterExpr{lowered.expression_arena,
+                                lowered.source_node,
+                                lowered.expression_source},
+                    domain, locals, types) << ");\n"
             << "        __moss_pipeline_source.len() as i64\n    }";
       return out.str();
     }
@@ -4591,9 +4707,18 @@ class Generator {
     if (auto place = view_place(expression, d, locals, types))
       return *place;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (std::holds_alternative<est::Placeholder>(
+            expression.arena->at(root))) {
+      auto replacement = functional_identifier_replacements_.find("_");
+      if (replacement != functional_identifier_replacements_.end())
+        return replacement->second;
+    }
     if (const auto* identifier = std::get_if<est::Identifier>(
             &expression.arena->at(root))) {
       const string& name = identifier->name;
+      if (auto replacement = functional_identifier_replacements_.find(name);
+          replacement != functional_identifier_replacements_.end())
+        return replacement->second;
       if (phase21_option_slots_.count(name))
         return "__moss_recovery_slot_" + name +
             (phase21_codegen_statement_ &&
@@ -5706,6 +5831,9 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
               const vector<size_t>* message_argument_plans = nullptr) const {
+    if (locals.count(e) && !phase21_option_slots_.count(e) &&
+        !write_through_parameters_.count(e) && !view_parameters_.count(e))
+      return e;
     // Moss parentheses are grouping syntax, not an observable expression node.
     // Remove only complete balanced outer groups before lowering. Nested groups
     // still protect precedence until their recursive expr() call reaches them.

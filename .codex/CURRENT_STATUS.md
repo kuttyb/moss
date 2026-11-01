@@ -15475,3 +15475,17 @@ candidate optimized counters: 1,844 -> 649 text lookups, 1,166 -> 628 native
 expression reparses, and 1 -> 0 native functional-pipeline reparses. Rust is
 byte-identical; both outputs are `semantic space: 68 5 34 3 4 true`. This checkpoint is committed and pushed as `980430af`; full suites, final
 paired workload, parity and perf remain pending.
+
+### C2 functional callback ExprId checkpoint (2026-11-01)
+
+Functional callback rendering now uses each stage's checked callable ExprId.
+Placeholder values substitute during node traversal; lowered functional plans
+carry their source ExprId, including virtual-upstream source selection. The
+optimized `functional_semantic_optimization.moss` fixture fell from the prior
+candidate's 649 lookups / 628 reparses to 35 / 14 after bound-method checks
+used node shape (C1 baseline: 1,844 / 1,166; functional pipeline reparses 0). Default and `-O` Rust are byte-
+identical to C1 and runtime output matches. `phase21_pipeline_try_placeholder`
+compiles/runs with four `-2` results. Four-class perturb/drop and three-engine
+checks pass. This checkpoint is uncommitted after `741ec710`; no full suite,
+paired corpus measurement, or perf run has occurred. Continue migrating the
+remaining emitter text lookup sites.
