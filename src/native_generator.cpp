@@ -9382,11 +9382,13 @@ class Generator {
             emit_domain_construction(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
-            const auto source_name = tree_identifier_name(s.b);
+            const EmitterExpr checked_initializer = checked_expression_ref(
+                s, s.b, est::ExprSlot::Initializer);
+            const auto source_name = tree_identifier_name(checked_initializer);
             auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
             string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+            if (staged_abi_v10() && tree_empty_constructor_named(checked_initializer, "Map") &&
                 !starts_with(statement_type, "map[")) {
               for (size_t next = i + 1; next < ss.size(); ++next) {
                 string map_base, index_expression;
@@ -9394,7 +9396,8 @@ class Generator {
                     !tree_parse_index(ss[next].a, map_base, index_expression) ||
                     map_base != s.a) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(ss[next].b, &types);
+                auto value_type = generated_expr_type(checked_expression_ref(
+                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
                 if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
@@ -9408,15 +9411,15 @@ class Generator {
             o << s.a;
             if (!joined_assignment && !domain_capability &&
                 (canonical_type_name(statement_type) == "float" ||
-                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+                 canonical_type_name(generated_expr_type(
+                     checked_initializer, &types).value_or("")) == "float"))
               o << ": f64";
             else if (!joined_assignment && !domain_capability &&
                      (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
               o << ": " << rust_type(!inferred_map_type.empty()
                   ? inferred_map_type : statement_type);
             o << " = "
-              << expr(checked_expression_ref(s.b, est::ExprSlot::Initializer),
-                      d, locals, &types,
+              << expr(checked_initializer, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
             if (domain_capability) o << ".clone()";
@@ -9498,11 +9501,12 @@ class Generator {
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            string rendered = expr(checked_expression_ref(
-                      s.a, est::ExprSlot::ReturnValue), d, locals, &types,
+            const EmitterExpr checked_return = checked_expression_ref(
+                s, s.a, est::ExprSlot::ReturnValue);
+            string rendered = expr(checked_return, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
-            const auto returned_binding = tree_identifier_name(s.a);
+            const auto returned_binding = tree_identifier_name(checked_return);
             if (returned_binding && view_parameters_.count(*returned_binding)) {
               rendered = *returned_binding + ".__moss_value()";
             } else if (returned_binding && types.count(*returned_binding) &&

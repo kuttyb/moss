@@ -222,6 +222,13 @@ and `-O`; all eight generated Rust files compile and native stdout matches.
 `swarm_044_string_literal_binary_lexing` is rejected by C1 with
 `UNSUPPORTED_STRING_ORDERING`, so it was excluded from this parity set.
 
+Let/Var initializer and Return binding queries also now use their retained
+handles for constructor/type and binding checks. The optimized string-concat
+fixture decreased from 1,678 to 1,624 text lookups; expression-view reparses
+remained 356. Six targeted fixtures compile in default and `-O`, and the
+fact-hook/three-engine checks pass. This is candidate-only instrumentation,
+not a paired corpus measurement.
+
 ## C2 progress — emitter consumes checked call edges on nested nodes
 
 When nested call nodes lacked a retained resolved-target fact, the emitter now

@@ -15402,3 +15402,14 @@ and `repro6_string_concat_native`. All eight generated Rust files compile and
 produce matching native output. `swarm_044_string_literal_binary_lexing` is
 rejected by C1's checker with `UNSUPPORTED_STRING_ORDERING`, so it was not a
 candidate migration input. No full suite or performance run has occurred.
+
+### C2 initializer and return node routing (2026-11-01)
+
+Let/Var initializer checks and Return binding checks now use their checked
+handles directly, including map-constructor and float annotation queries. On
+`tests/phase24_string_concat.moss -O`, text lookups decreased 1,678 -> 1,624;
+expression-view reparses remained 356. Six targeted sources compile in
+default and `-O`; the fact-hook matrix and three-engine check pass. The
+remaining parse count is still substantial and dominated by other string
+shape/type consumers. This checkpoint is not a paired parent report or a
+full-suite result.
