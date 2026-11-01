@@ -1,8 +1,7 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed commit before this slice:
-  `c464a73e`. A checker inference edit is currently uncommitted. Moss bootstrap
-  confirms `moss-0.1`.
+- Branch: `phase27-5-4-work`; latest pushed commit:
+  `e0fe4009`. Working tree is clean. Moss bootstrap confirms `moss-0.1`.
 - The cursor migration now keeps the retained ExprId active for composite
   inference and routes message target checks, member receiver inference, and
   member-call argument inference through checked child nodes where available.
