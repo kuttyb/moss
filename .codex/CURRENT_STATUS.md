@@ -1,7 +1,19 @@
 # Phase 27.5.4 — current handover (2026-10-31)
 
-- Branch: `phase27-5-4-work`; latest pushed commit: `151cd004`; working tree
-  was clean at this checkpoint. Moss bootstrap confirms `moss-0.1`.
+- Branch: `phase27-5-4-work`; latest pushed commit before this slice:
+  `7978bc61`. A checker inference experiment is currently uncommitted.
+  Moss bootstrap confirms `moss-0.1`.
+- Latest checker slice removes the leaf-only gate in
+  `inferred_expr_on_cursor`, so recursive inference keeps the retained ExprId
+  active for composite roots too. Build succeeded; focused default/shadow
+  functional-basics and specialized-call checks pass, as do functional-tree,
+  specialized-facts, Fast Debug/native/optimized parity, generic review probe,
+  and optimizer-expression-uses harnesses. `functional_basics.moss` remains
+  at 98 checker parses and 14,766 text-cache consultations. The
+  `specialized_call_facts.moss` focused sample remains at 44 checker parses;
+  text-cache consultations moved from 24,459 to 24,399 (-60). This is modest
+  lookup progress, not parser-boundary progress. K8 is unchanged; no rewrite
+  migration is included. No full suite, corpus run, or performance run.
 - Most recent K2 slice routes checker pipeline projection through the known
   statement/result root slot before the text-shape filter. Focused
   `functional_basics.moss` checker parses changed 101 -> 98 post-initial

@@ -11883,30 +11883,6 @@ class Checker {
     const auto* node_arena = expression_arena(cursor.arena_index);
     if (!node_arena || cursor.expr >= node_arena->size())
       return inferred_expr(expression, env);
-    const auto root = est::unparenthesized(*node_arena, cursor.expr);
-    bool cursor_projectable = false;
-    if (const auto* literal = std::get_if<est::Literal>(&node_arena->at(root))) {
-      cursor_projectable = literal->literal_class != est::LiteralClass::None;
-    } else if (const auto* identifier =
-                   std::get_if<est::Identifier>(&node_arena->at(root))) {
-      auto binding = env.find(identifier->name);
-      if (binding != env.end()) {
-        auto type = moss::Type::parse_canonical(
-            canonical_type_name(binding->second));
-        cursor_projectable = type && (*type)->is_closed();
-      }
-    } else if (const auto* member =
-                   std::get_if<est::Member>(&node_arena->at(root))) {
-      cursor_projectable = member->name.empty() ||
-          !std::isdigit(static_cast<unsigned char>(member->name.front()));
-    } else if (std::holds_alternative<est::Placeholder>(node_arena->at(root)) &&
-               current_body_types_ &&
-               current_body_types_->active_pipeline_placeholder_type) {
-      auto type = current_body_types_->solver.resolve(
-          current_body_types_->active_pipeline_placeholder_type);
-      cursor_projectable = type && type->is_closed();
-    }
-    if (!cursor_projectable) return inferred_expr(expression, env);
     active_est_expression_cursors_.push_back(cursor);
     ++checked_inference_cursor_depth_;
     struct Scope {
