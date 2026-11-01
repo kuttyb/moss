@@ -1,8 +1,7 @@
 # Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
 
-- Branch `phase27-5-4-work`; latest pushed checkpoint `665e18b7`. The checked
-  member-target slice described here is being checkpointed now; the changes
-  are in `src/native_generator.cpp`,
+- Branch `phase27-5-4-work`; latest pushed checkpoint `f10d8ff9`. The checked member-target slice was
+  committed in `bf0d04cc` across `src/native_generator.cpp`,
   `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
 - The emitter no longer selects a custom method from receiver type in the
   statement call path, functional bound-method path, member-call result-type
@@ -33,18 +32,13 @@
 - The closing-round shadow demotion/runtime ratchet/contract edits remain
   queued until after C2 is merged. No merge/tag has occurred.
 
-### C2 binary-node lowering checkpoint
+### C2 binary-node lowering audit
 
-- Added direct `est::Binary` lowering in the retained-node emitter path,
-  including comparison coercions, wrapping integer operations, bit operations,
-  and flattened string concatenation. Generated Rust compiles with `rustc`;
-  `margo` native output matches Fast Debug on calculator. Functional-tree and
-  Team A focused harnesses pass.
-- The calculator aggregate reparse/text-lookup counters did not move: this
-  measurement is still dominated by legacy string-based type queries and
-  helper paths, which are outside this node-renderer branch. This edit is a
-  lowering-path migration, not a measured reduction. Working-tree change is
-  not yet committed; full gates are pending.
+- The node emitter already had a direct `est::Binary` branch before the recent
+  attempted addition. The duplicate block was unreachable and has been removed
+  in the current working tree; the checkpoint commit containing it is followed
+  by this cleanup. Focused functional-tree and Team A checks had passed while
+  it was present. No behavior or counter change is attributed to that block.
 
 ### C2 checked receiver type slice
 
@@ -55,8 +49,8 @@
   expression-view reparses stayed 15,804, so other text helpers remain the
   dominant issue.
 - Generated Rust compiled and its output matched Fast Debug and the previous
-  generated Rust executable. The change is uncommitted; full gates remain
-  pending.
+  generated Rust executable. The change was committed as `52a6e170`; full gates
+  remain pending.
 
 ### C2 checked call statement slice
 
@@ -64,7 +58,8 @@
   `Stmt::Kind::Call` expression node instead of synthesizing a call string.
   On the same calculator command, text-node lookups decreased a further 210
   (24,462 to 24,252); reparses remain 15,804. Generated Rust compiled and
-  matched Fast Debug. This change is uncommitted and full gates remain pending.
+  matched Fast Debug. The change was committed as `f10d8ff9`; full gates remain
+  pending.
 
 # Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
 
