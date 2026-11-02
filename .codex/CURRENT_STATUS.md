@@ -14510,5 +14510,7 @@ pass. Shapes direct checking returns the module identity error above. Full
 `make check`, `make check-shadow`, three-engine parity and corpus runs have not
 been run. The current AGENTS.md had no general no-push prohibition; its scoped
 authorization now explicitly includes this Round 2 branch. Implementation is
-committed locally as `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`. Handoff-doc
-follow-up and push are pending.
+committed as `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`; handoff docs,
+contract status and feedback are committed as
+`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`. Push of the scoped commits is
+pending.

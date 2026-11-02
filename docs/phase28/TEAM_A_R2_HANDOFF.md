@@ -3,6 +3,7 @@
 **Branch:** `phase28-r2-team-a`  
 **Base:** `phase28-r1-team-a` at `a73d8a6b`  
 **Implementation SHA:** `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`  
+**Handoff documentation SHA:** `bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`
 **Status:** bounded checker facts and fixtures delivered; no engine-consumer migration or Phase 28 completion is claimed.
 
 ## Typed fact contract
