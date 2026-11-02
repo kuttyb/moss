@@ -1526,6 +1526,25 @@ class FastInterpreter {
           callee = stage.raw;
       }
       const auto& args = stage.arguments;
+      std::optional<std::string> checked_map_output_element;
+      if (callee == "map") {
+        auto output_type = checked_pipeline_stage_output_type(
+            parsed, stage_index, frame, line);
+        if (!output_type) {
+#ifndef NDEBUG
+          if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+              count && std::string(count) == "g3")
+            std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
+                      << "|context=" << frame.functional_context << "\n";
+#endif
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline output type");
+        }
+        checked_map_output_element = checked_vector_element_type(*output_type);
+        if (!checked_map_output_element)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT malformed checked map output type");
+      }
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
         Value total = (current.element_type == "Float" || current.element_type == "float")
@@ -1545,7 +1564,6 @@ class FastInterpreter {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
         std::vector<Value> values;
-        std::optional<std::string> inferred_map_element_type;
         if (stage_index - 1 >= pipeline_node.stages.size())
           throw RuntimeError(line,
               "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
@@ -1559,56 +1577,12 @@ class FastInterpreter {
           Value transformed = invoke_pipeline_expression(
               tree, stage_callable, {value}, frame, line, output);
           if (callee == "map") {
-            switch (transformed.kind) {
-              case Value::Kind::Bool: inferred_map_element_type = "bool"; break;
-              case Value::Kind::Int: inferred_map_element_type = "int"; break;
-              case Value::Kind::Float: inferred_map_element_type = "float"; break;
-              case Value::Kind::String: inferred_map_element_type = "string"; break;
-              case Value::Kind::Char: inferred_map_element_type = "char"; break;
-              case Value::Kind::Vector: inferred_map_element_type = "vector[" + transformed.element_type + "]"; break;
-              case Value::Kind::Struct: if (transformed.object) inferred_map_element_type = transformed.object->type; break;
-              default: break;
-            }
             values.push_back(std::move(transformed));
           } else if (transformed.truthy()) values.push_back(value);
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
-          auto output_type = checked_pipeline_stage_output_type(
-              parsed, stage_index, frame, line);
-          if (!output_type) {
-#ifndef NDEBUG
-            if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-                count && std::string(count) == "g3")
-              std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
-                        << "|context=" << frame.functional_context << "\n";
-#endif
-          }
-          if (!output_type && !args.empty()) {
-            std::string callback = trim_copy(args.front());
-            std::string callback_name = callback;
-            std::vector<std::string> callback_args;
-            expression_call(callback, callback_name, callback_args,
-                            "pipeline_callback");
-            for (std::size_t separator = callback_name.find('.');
-                 separator != std::string::npos;
-                 separator = callback_name.find('.', separator + 2))
-              callback_name.replace(separator, 1, "__");
-            auto callback_function = function_signature(callback_name);
-            if (!callback_function) {
-              auto local = frame.locals.find(callback_name);
-              if (local != frame.locals.end() && local->second.kind == Value::Kind::Callable)
-                callback_function = function_signature(local->second.string);
-            }
-            if (callback_function && callback_function->return_type)
-              output_type = "vector[" + *callback_function->return_type + "]";
-          }
-          auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
-          if (!output_element && inferred_map_element_type)
-            output_element = inferred_map_element_type;
-          if (!output_element)
-            throw RuntimeError(line, "internal error: missing checked map output type");
-          element_type = *output_element;
+          element_type = *checked_map_output_element;
         }
         current = Value::vector_value(std::move(values),
                                       std::move(element_type));
