@@ -12,7 +12,7 @@ For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MOD
 
 ## Semantic authority invariant
 
-Only the checker decides Moss semantics. The emitter, Fast Debug and the optimizer read the checker's answers and never compute them. If an answer is missing, the checker must provide it. Log conflicts and continue.
+Only the checker decides Moss semantics. The emitter, Fast Debug and the optimizer read the checker's answers and never compute them. If an answer is missing, the checker must provide it. Log conflicts, continue the phase work, and keep consumers fail-closed until the checker supplies the answer.
 
 Executing and lowering are not deciding (computing a + b, or choosing Rust syntax for a checked decision, is fine; choosing which + or which function is not). Every new semantic decision class ships, in the same change, with its checker-side authority plus perturbation and drop tests registered in make check.
 
@@ -24,7 +24,7 @@ available through the separate target.
 
 ## Moss compiler development
 
-For Moss compiler development (any change under `src/`, the compiler's tests or its build), read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md) before making changes, and keep its statuses and known-debt numbers current in the same delivery. It defines the compiler's architectural invariants, the gates that enforce them, and the declared known debt.
+For Moss compiler development (any change under `src/`, the compiler's tests or its build), read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md) and [docs/COMPILER_ARCHITECTURE.md](docs/COMPILER_ARCHITECTURE.md) before making changes. The contract defines the compiler's architectural invariants, gates and declared known debt; the architecture guide maps the current implementation, data flow and source symbols. Keep contract statuses and known-debt numbers current in the same delivery.
 
 Regular Moss development (writing Moss programs, packages, SDK libraries or examples) does not require it; use the language docs from `moss agent bootstrap --json` instead.
 

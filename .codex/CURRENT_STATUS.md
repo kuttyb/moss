@@ -1,3 +1,31 @@
+# Compiler architecture documentation handover (2026-11-02)
+
+## Current checkpoint
+
+- Branch: `docs-compiler-architecture`, created from current `main` after the
+  `phase27-5-5-m1` delivery. The phase tag is an ancestor; the branch started
+  from main's status-only handover commit `142ea010`.
+- Scope remains documentation plus one checker script: no compiler source has
+  changed. Drafted `docs/COMPILER_ARCHITECTURE.md` with a stage/data-flow map,
+  data-structure ownership and lifetime, contract gate mapping, current Phase
+  27.5.5 debt/performance figures, onboarding guidance, glossary and a citation
+  registry. `tests/tooling/check_architecture_doc.py` validates registry paths
+  and symbols and is registered in `check-preflight`, shared by `make check`
+  and `make check-shadow`.
+- Linked the architecture guide from AGENTS.md and the compiler contract.
+- `python3 tests/tooling/check_architecture_doc.py` passes (22 cited paths at
+  this checkpoint); `python3 -m py_compile` and `git diff --check` pass. A dry
+  run confirms `make check` invokes the validator through `check-preflight`.
+  No full compiler suite has been
+  run in this docs-only branch; Phase 27.5.5's final report records the suite
+  outcomes for the unchanged compiler baseline.
+- Agent 2 generated 15 private questions; the fresh reader scored 15/15 using
+  only the guide. Agent 2 checked the answers against code and returned GO.
+  Its initial wording concern was resolved by clarifying AGENTS.md that phase
+  work continues while consumers remain fail-closed. No source code changed.
+- Next: commit and push the documentation branch, fetch current origin/main,
+  then merge into main per authorization. No tag was requested.
+
 # Phase 27.5.5 handover (2026-11-02)
 
 ## 02:00 UTC checkpoint (cost-run regression repaired)
