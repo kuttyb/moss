@@ -1,5 +1,34 @@
 # Phase 27.5.5 handover (2026-11-02)
 
+## 01:41 UTC checkpoint (corpus measurement)
+
+- Latest pushed code checkpoint remains `2770f632`. The like-for-like tracked
+  source run completed 1,828 `.moss` files, 3,656 compiler invocations
+  (default and `-O`) against both the Phase 27.5.5 parent binary and candidate.
+  Both had exactly 1,410 failed emissions (705 per mode), with no per-file
+  status changes.
+- Candidate consumer counters: expression reparses 0, pipeline reparses 0,
+  text-node lookups 0, consumer type inference 0, both default and `-O`.
+  Checked type coverage: emitter 271,538 PRESENT / 0 ABSENT; optimizer 1 / 0.
+  Current output and counts are in
+  `tmp/phase2754-emitter-counts/1793612062909373328/summary.json`; the parent
+  binary lacks these newer test-build counters, so its displayed zeros are
+  unavailable measurements, not a meaningful zero baseline.
+- Of successful generated Rust files, 39 differ bytewise. Compiling and
+  executing both versions found no stdout/status differences in the 37 files
+  that compile on both; two `Surface/GraphKit` files compile only on the
+  candidate, fixing a parent borrow-check error. Most differences are explicit
+  type annotations on functional reduce accumulators. Full parity gates remain
+  pending.
+- Focused validation also passed: all fact hooks, Fast Debug/native/optimized
+  parity, and `check_phase27_three_engine.py`. Targeted Rust emission passed
+  for the four source cases listed in the previous checkpoint.
+- Still pending: remove all consumer type derivation sites (source audit),
+  paired perf with correct phase baseline/test counters and required workloads,
+  docs/contracts/debt audit, final default+shadow suites once each, full parity,
+  Agent 2 GO, merge/tag. Do not treat the corpus emission count as full-suite
+  parity or perf evidence.
+
 ## 01:35 UTC implementation checkpoint
 
 - Branch is `phase27-5-5-work`; starting code base `cc0615b7`. Working tree
