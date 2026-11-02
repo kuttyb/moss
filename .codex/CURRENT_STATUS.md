@@ -17090,3 +17090,24 @@ future optimizer-isolated proof and must remain explicit in final review.
 - This is targeted validation only. The last full-suite result in this file
   remains 144/165 default with 21 failures; shadow, final parity/counts/perf,
   and the single Agent 2 audit remain outstanding.
+
+
+## C2 checkpoint: checked empty-map receiver type (2026-11-01)
+
+- The Phase 25 G2 `map_get_empty` failure was candidate-only versus pinned
+  C1: the retained emitter required its independently inferred receiver type
+  to agree with the checker-owned target. It then emitted untyped
+  `Default::default()` and Rust reported E0282.
+- Native Map.get lowering now takes `map[K,V]` from the checked builtin target
+  and uses that checked type for an empty Map constructor. The retained receiver
+  node still supplies the expression, while no receiver-type query chooses the
+  map type. Re-running `check_phase25_conformance.py` now passes gates 1–9 and
+  11; gate 10 `compiled_only_custom_key` fails on both candidate and pinned C1,
+  so it is baseline debt. Candidate is 10/11.
+- A separate R2 WP1 check is candidate-red:
+  `check_phase25_r2_wp1_call_chain.py` reaches `MOSS_INTERNAL_INVARIANT emitter
+  specialization is outside checked call edge candidates callee=Service__middle
+  line=6 context=fn:Service__relay<>`; the pinned C1 binary passes all R2 WP1
+  checks. This is the next known candidate regression to fix.
+- Working tree also contains the imported expression-call bridge slice
+  committed/pushed as `fe6da8d2`. No full suites have been rerun.

@@ -6407,25 +6407,22 @@ class Generator {
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, "].get") && member->name == "get" &&
             call->arguments.size() == 2) {
-          const auto receiver = expression.child(member->base);
-          const auto receiver_type = generated_expr_type(receiver, types);
           const string checked_map_type = target.substr(
               std::string("builtin-method:").size(),
               target.size() - std::string("builtin-method:").size() -
                   std::string(".get").size());
-          if (!receiver_type || canonical_type_name(*receiver_type) !=
-              canonical_type_name(checked_map_type))
-            throw std::runtime_error(
-                "MOSS_INTERNAL_INVARIANT checked Map.get receiver type disagrees");
-          const auto map_types = receiver_type
-              ? map_key_value_types(canonical_type_name(*receiver_type))
-              : std::nullopt;
+          const auto map_types = map_key_value_types(
+              canonical_type_name(checked_map_type));
           if (!map_types)
             throw std::runtime_error(
-                "MOSS_INTERNAL_INVARIANT checked Map.get lacks a concrete map type");
+                "MOSS_INTERNAL_INVARIANT checked Map.get target lacks a concrete map type");
           const auto key_node = expression.child(call->arguments[0]);
           const auto fallback_node = expression.child(call->arguments[1]);
-          const string receiver_value = expr(receiver, d, locals, types);
+          const auto receiver_node = expression.child(member->base);
+          const string receiver_value =
+              tree_empty_constructor_named(receiver_node, "Map")
+                  ? "<" + rust_type(checked_map_type) + ">::new()"
+                  : expr(receiver_node, d, locals, types);
           string key = expr(key_node, d, locals, types);
           if (map_types->first == "string") key = "(" + key + ").as_str()";
           else key = "&( " + key + " )";
