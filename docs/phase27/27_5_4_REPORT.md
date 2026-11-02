@@ -652,3 +652,32 @@ measured +10.66% aggregate time against C1. Rebuilding only the checker's
 That configuration is experimental and not integrated or full-suite tested.
 The normal O2 candidate remains at 161/165 in both suite modes and is not
 merge-ready under the single Agent 2 NO-GO.
+
+## C2 cost repair checkpoint (2026-11-01)
+
+The optimized Makefile profile now compiles only `src/semantic_checker.cpp`
+with `-Os`; the other optimized translation units retain `CXXFLAGS_OPT`.
+`COMPILER_CONFIG_OPT` includes this per-TU choice so cached objects from the
+previous profile cannot be reused. The special rule omits the O2 PCH because
+Clang records a conflicting `__OPTIMIZE_SIZE__` definition in it.
+
+The canonical Phase 25.4 performance gate now passes. W2 measured 440.10 ms
+and 24,316 KiB peak RSS (272 specializations). The paired C1-parent/candidate
+best-of-two 10-workload sample totals 818.19 -> 836.11 ms (+2.19%). W4 is
+14.10 -> 14.46 ms (+2.55%); W5 37.86 -> 38.61 ms (+1.98%); W8 44.61 ->
+44.71 ms (+0.22%). The same three-trial comparison across all 23 real-world
+workloads triggered zero slowdowns under the established noise rule. Raw
+records are under `tmp/phase2754-final/perf-integrated/`.
+
+With this build, default and shadow full shards each pass 162/165 jobs. The
+three failures are conformance gate 10 (`compiled_only_custom_key`) and the two
+`swarm_035_nested_mutating_calls.moss` E0499 jobs. No performance gate fails.
+The conformance gate was independently reproduced on C1; the nested-call Rust
+failure is also known C1 baseline debt. Logs:
+`tmp/phase2754-final/make-check-costfix.log` and
+`tmp/phase2754-final/shadow-costfix.log`.
+
+The prior Agent 2 NO-GO applied to the O2-only candidate at `1c9e26fa`; the
+measured RSS issue it identified is now addressed. A new audit of this changed
+candidate is required before merging. The queued post-C2 closing round remains
+unstarted.
