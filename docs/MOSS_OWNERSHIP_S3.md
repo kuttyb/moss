@@ -1,12 +1,12 @@
 # Moss ownership (S3): the problems, simply
 
-Status: design in progress, Nov 1 2026. **Implemented in Phase 28** (Phase 27 closes when 27.5.4 C2 completes). (rev 8: all seven Map ownership/API decisions closed — single-argument erroring `get`, borrowing iteration/views, explicit `remove`, no implicit copies; rev 7: collections and plain fields decided — `=` borrows, consume is the error; `remove`/`pop`/`swap_remove`; rev 6: option[T] closed; rev 5: copy primitive agreed; rev 4: ownership taxonomy agreed; rev 3: P3 decided — option 3, explicit extraction; rev 2: current behavior probed on main `d8f64910`). Replaces the problem framing in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; that doc's frozen decisions S1, S2, D1, D2 stand, M1 is withdrawn (see section 1). Examples are pseudo-Moss unless marked as a probe; probes are real programs checked with `moss check`, run in Fast Debug (`moss run --interp`) and compiled natively (`moss -o` + `rustc -O`).
+Status: Phase 28 ownership design contract, Nov 1 2026. **Rev 9: all twelve issues closed; scoped local borrow inference and message reply restrictions frozen.** Implementation and migration remain pending. Rev 8 closed seven Map decisions. Historical probes below describe old behavior and are not the adopted rules. This supersedes the older unconditional-local-move decision S2 and withdrawn message-consume proposal M1 in `MOSS_PHASE_26_3_OPEN_ISSUES.md`.
 
 ## 0. Agreed principles
 
-1. **The checker decides** read, write or consume for every access to a value. That is language semantics.
+1. **The checker decides** READ, WRITE or CONSUME for every access, including locally inferred assignments and effects propagated through reachable calls.
 2. **The emitter and backend decide how** to implement it: borrow, move, lock, `Arc`, copy elision, fusion. Lowering and optimization live there, not in the checker.
-3. **No implicit clones of non-primitive values.** If a program would need a hidden copy, it is rejected with a clear error. It is never quietly copied.
+3. **No implicit clones of non-primitive values.** Independently owned duplicates require explicit eligible copying or fresh construction; emitters never invent a clone.
 4. **Fast Debug executes the checker's decisions naively.** Single-threaded, no locks, no emitter or pipeline optimizations, eager evaluation. It reads the checker's decisions; it does not re-derive them.
 5. **Known bugs** get one more review before S3 starts.
 
@@ -26,62 +26,80 @@ Classified from the owner's point of view: does a contained value live exactly a
 
 **Gap today:** `option[T]` exists only for the iterator protocol (`next() -> option[T]`). The Gentle Introduction says `Map.get` "does not introduce a new `Option` type." Making `option[T]` a general type usable as a field, with take/put-style methods, is new language work.
 
-## 0c. Copy vs move, and the copy primitive (agreed Nov 1 2026)
+## 0c. Copy, borrow, move and explicit copy (revised Nov 1 2026)
 
-- With single ownership and backend-owned layout, the only observable question after `b = a` is whether `a` is still usable. Primitives: yes. Everything else: no. Bytes copied or pointer moved is the backend's business.
-- `option[T]` is not a primitive, so assigning an option always moves, whatever `T` is.
-- **Assignment never copies a non-primitive value.** The one place a non-primitive source stays usable is a message send, by definition (pass-by-value), not by assignment.
-- **A copy primitive will be added to the language** (name to be decided). It expresses intent only: "give me an independent value with the same contents." Deep, shallow, lazy, copy-on-write or anything else is the backend's choice, invisible to the program. The only guarantee: changes to either value are never visible through the other.
-- **No user-defined copy per type.** Programmers don't implement their own copies; that would bypass the backend's control of layout.
-- The checker rejects the primitive on non-duplicable values (domain handles, FileIO, scoped values). Fast Debug implements it as a plain deep copy.
-- Today: there is no explicit copy at all (`a.clone()` on a vector is rejected with `invalid builtin operation 'vector[int].clone'`). New language work.
+- Only designated primitives are implicitly Copy. Records, Strings, collections and `option[T]` are nonprimitive even when their fields are primitive.
+- Nonprimitive local `b = a` now infers READ borrow, WRITE borrow or CONSUME from all uses of `b` within its lexical local scope and reachable callees (§0e). It is **not** an unconditional move.
+- READ/WRITE means `a` remains owned, subject to borrow exclusivity. CONSUME transfers ownership **at `b = a`**, making `a` unusable. An ownership sink such as `return b`, storing `b` as an owned value or passing `b` to a consuming parameter demands this CONSUME effect.
+- Add an explicit `copy(x)` primitive (final name TBD) to deliberately create an independently owned value. Backend layout/deep vs copy-on-write implementation is invisible; independent mutation is guaranteed. No user-defined copies. Reject nonduplicable types such as domain handles, FileIO and scoped resources; Fast Debug can deep-copy eligible values.
+- Historical behavior: unconditional nonprimitive local moves, and current rejection of Vector `.clone()`, do not establish Phase 28 semantics.
 
-## 0d. `option[T]` (closed Nov 1 2026)
+## 0d. `option[T]` (revised Nov 1 2026)
 
 ```text
 type Job:
   result: option[Report]
 
-x = job.result        # x: option[Report]; job.result is now None
+x = job.result       # READ/WRITE if x only borrows
+return x             # forces CONSUME at assignment; field becomes None
 ```
 
-- `option[T]` becomes a general type, usable as a field (disjoint lifetime, 0..1).
-- **Two things take an option field:** the assignment operator and a consuming function argument. `x = job.result` moves the whole option into `x` (type `option[T]`, possibly `None`) and leaves `None` behind; `f(job.result)`, where `f` is inferred to consume its parameter, does the same.
-- **Parameters follow normal inferred effects.** READ borrows, WRITE mutates the option in place, CONSUME takes (as above). Nothing else is special about options.
-- **Looking doesn't take.** A plain `match job.result:` (or an `if` testing for `Some`) borrows and leaves the field intact. `match consume` is the moving form.
-- **Locals stay ordinary moves.** `x = opt` on a local consumes `opt`; later use is a compile error. Only fields leave `None` behind.
-- **Taking is a write.** `x = job.result` (or a consuming call) modifies `job`, so it is rejected wherever `job` is read-only (an incoming message payload, a parameter inferred read-only).
-- **Writing in needs no new rule.** `job.result = Some(r)` or `job.result = None` overwrites; the old value is dropped.
-- Options always move, whatever `T` is (an option is not a primitive).
+- General-purpose `option[T]` is disjoint lifetime 0..1, usable as a field; this extends today's limited iterator-protocol support.
+- `x = opt` (owned local) and `x = job.result` (field) follow the same inferred READ/WRITE/CONSUME rule. Only CONSUME takes the option. Consuming an owned local invalidates it; consuming an option **field** resets that field to `None`. A consuming function parameter behaves the same.
+- Inspection and ordinary match borrow; `match consume` consumes when legal. Taking an option field counts as WRITE of its owner and is illegal for incoming READ-only payloads. `Some(r)` or `None` assignment overwrites the old value and drops it.
+- An option is never implicitly Copy even if T is primitive; fix the old Option[Copy] exemption.
 
-## 1. Settled: messages are pass-by-value (not a problem)
+
+## 0e. Scoped local borrow inference (closed Nov 1 2026)
+
+```text
+b = a
+echo b                  # READ borrow; a remains owned
+```
+```text
+b = a
+b.cost = 9              # WRITE borrow; changes a.cost
+```
+```text
+fn take(a):
+    b = a               # CONSUME happens at this assignment
+    return b            # returns owned b, not a borrow
+```
+
+**One inferred effect at the assignment**, not a runtime choice: READ for inspection, WRITE for mutation without an ownership sink, CONSUME if any downstream path requires ownership (return, owned storage or consuming call). Statically join the effects across branches. Ordinary flow-sensitive borrow and post-move validity checks remain in force.
+
+**Borrow inference is local only.** A temporary local alias cannot escape its lexical scope, outlive its source, be returned as a borrowed alias, be stored as an owned value or be retained after a synchronous helper returns. The alias borrow may end at last use. If the programmer returns the local, CONSUME is inferred back at the **original assignment** if the source may legally be consumed; otherwise reject. A moved value is never restored at scope exit. No source-level lifetime annotations or globally escaping borrow types.
+
+**Transitive call closure:** while checking that local scope, follow all reachable synchronous calls/specializations that pass the borrowed value, including existing imported `.mossi` formal READ/WRITE/CONSUME effects. Downstream WRITE or CONSUME propagates to the initiating assignment; callees may not hide retention or alias escape.
+
+**Lock correctness:** borrowed local aliases of domain state retain their source field/leaf provenance through calls. Required WRITEs must reach the checker's synchronization plan; existing static 2PL, global lock order, per-record-leaf partitioning and whole-Vector/Map leaves do not need redesign.
+
+## 1. Messages: immutable by-value snapshots; no input reply (revised Nov 1 2026)
 
 ```text
 e = Entry(text = "boot")
 message log.Append(e)
-echo e.text          # legal: the sender keeps its value
+echo e.text               # legal: sender retains e
 ```
 
-- Messages carry values. Incoming payloads are immutable: the handler may read, forward or reply with them, but not write, consume or store them. This is already the spec (`LANGUAGE_SYNTAX.md`, Domain communication).
-- Because the sender is blocked and the receiver can't mutate, a copy and a borrow are indistinguishable. The backend borrows or moves when nobody can tell, and copies only when the language requires it (for example, a reply carrying the payload while the sender still uses it).
-- **M1 (consume at message boundaries) is withdrawn.** It was proposed, never implemented.
-- Kept as a checker rule: synchronous message graphs have no cycles and no re-entry into the sender (a deadlock rule for any implementation).
-
-Everything below is about values **inside** a domain or function.
+- Message parameters are semantic **pass-by-value** and immutable, irrespective of their primitive/nonprimitive type. The handler may **READ** or **FORWARD** an incoming parameter through a synchronous message, but may not WRITE, CONSUME, rebind, or move it into owned state. Local aliases and helpers cannot bypass the restriction.
+- **New Phase 28 rule: `reply payload` is forbidden, even indirectly through an alias, and even for primitives.** Existing `LANGUAGE_SYNTAX.md` and `MODULE_ABI.md` allow input reply and must be reconciled when implementing Phase 28. Replying with an independently computed value (`reply payload.size()`) or explicitly copied eligible value (`reply copy(payload)`) is allowed.
+- For internal synchronous messages the emitter may use `&T` / typed immutable views throughout forwarding; the source and any supporting domain guard remain live until the nested call completes. A physical boundary cannot justify a hidden nonprimitive clone.
+- The old M1 proposal (message CONSUME) is withdrawn. Message graph acyclicity and no reentry into the sender remain required for lock safety.
 
 ## 2. The problems
 
-### P1. Assignment must move, not copy — **already enforced by the checker**
+### P1. Old eager local transfers — **superseded by inferred effects**
 
 ```text
 a = [1, 2, 3]
 b = a
-echo a              # OWNERSHIP_USE_AFTER_CONSUME
+echo a               # Phase 28: allowed when b is READ-only
 ```
 
-**Today:** the checker rejects it (probe, for both a vector and a String): `value 'a' was transferred to 'b' at line 3`. The error comes from `moss check`, so it is the checker, not the emitter. Existing negative tests include `examples/use_after_transfer.moss`, `tests/negative/nontrivial_field_move.moss`, `tests/negative/branch_join_consume.moss`, `tests/negative/functional_reduce_initial_reuse.moss`; 33 corpus sources are rejected with this diagnostic. No action needed beyond keeping these tests.
+**Historical probe:** today's checker rejects this, reporting transfer from `a` to `b`. Existing use-after-transfer negatives include `examples/use_after_transfer.moss`, `tests/negative/nontrivial_field_move.moss`, `tests/negative/branch_join_consume.moss` and `tests/negative/functional_reduce_initial_reuse.moss`. Phase 28 distinguishes legal local borrowing from actual CONSUME. Keep genuinely consuming negative tests and migrate assumptions of automatic local moves (§0e).
 
-### P2. What counts as Copy — **records already move**
+### P2. Primitives-only Copy — **records can borrow but never implicitly copy**
 
 ```text
 type Point:
@@ -90,10 +108,10 @@ type Point:
 
 p = Point(x: 1, y: 2)
 q = p
-echo p.x            # OWNERSHIP_USE_AFTER_CONSUME
+echo p.x             # Phase 28: allowed if q READ-borrows p
 ```
 
-**Today:** the checker rejects it (probe): an all-Int record is moved, not copied. Also covered by `tests/tooling/fixtures/builtin_generic_typing/vector_literal_reuse.moss` (`Payload(value: Int)` moved into a vector literal). Resolved: options always move, whatever `T` is (section 0d); `copy_type_name` treating `Option[Copy]` as Copy is a bug to fix.
+**Historical probe:** today's checker rejects later use of `p` because it always moves into `q`. A record containing only Int fields is still non-Copy; this remains true in Phase 28. The example becomes a borrow, **not** a duplicate. A separately owned `q` needs legal CONSUME or explicit `copy(p)`. `option[T]` is non-Copy regardless of T.
 
 ### P3. Moving an aggregate out of a place — **DECIDED: borrow on `=`, error on consume (revises option 3)**
 
@@ -157,13 +175,14 @@ Today the two places disagree: a field moves and consumes the whole owner (`LANG
 Consequences:
 - The emitter's indexed-read clones (`echo names[0]`, `edges[0].cost`) become borrows.
 - The Fast Debug/native bug in section 3 is decided in Fast Debug's favour (expected output 9, 9).
-- The checker must track local borrow bindings (the largest implementation item).
+- The checker must track scoped local borrow bindings and transitive callee effects (§0e; the largest implementation item).
 
-**One rule across the three lifetime classes:** `=` from a place borrows. What differs is consumption:
-- unified field: consume is a compile error.
-- option field (0..1): consume takes it and leaves `None`.
-- vector/map element (0..n): consume is a compile error; `remove`/`pop` move it out.
-- whole vector/map field: consume takes it and leaves an empty container.
+**One inference rule across lifetime classes:** `=` from a place READ/WRITE borrows unless downstream ownership requires CONSUME; source legality then governs:
+- unified field: CONSUME is forbidden, even if its owner is about to die;
+- option field (0..1): legal CONSUME takes it, leaving `None`;
+- vector/map element (0..n): CONSUME forbidden; use `remove`/`pop`/`swap_remove`;
+- whole vector/map field: legal CONSUME takes it, leaving an empty container;
+- owned local: CONSUME invalidates the source permanently.
 
 ### P4. `keys()` and `values()` copy everything — **decided: borrowed views**
 
@@ -219,19 +238,20 @@ old = replace(names[0], "grace")   # write the slot, consume "grace", return the
 
 **Decided (Nov 1 2026):** neither is provided for now. `replace` would extend a value's lifetime past its unified place; a general `swap` between any two places is `replace` under another name. Vectors get `swap_remove(i)` as a container method instead (P3). Known cost: in-place enum transitions that move an owned payload need an `option` field (section 0b).
 
-### P8. Inferred effects cross package boundaries silently
+### P8. Cross-package inferred effects — **already in .mossi (#11)**
 
 ```text
-# library v1
+# same library v1
 fn total(xs):
-  xs |> sum            # xs inferred READ
-
-# library v2
+  xs |> sum           # READ
+# same library v2
 fn total(xs):
-  keep(xs)             # xs now inferred CONSUME
+  keep(xs)            # CONSUME when keep consumes
 ```
 
-Every caller in another package breaks. Inferred effects must be recorded in `.mossi`, and READ to CONSUME must be flagged as a breaking change.
+A source signature may remain unchanged while inferred effects strengthen. **Existing implementation:** `MODULE_ABI.md` specifies the concrete parameter READ/WRITE/CONSUME modes, `parameter_leaf_effects`, semantic interface hashing and fail-closed missing-effect validation in `.mossi`. Importing callers must respect those recorded facts, including through local alias inference.
+
+A friendly cross-version READ→CONSUME breaking-change diagnostic is optional tooling, **not** a missing Phase 28 language or serialization feature. Callers must still be checked against changed contracts.
 
 ## 3. Known bugs
 
@@ -271,17 +291,32 @@ All known bugs to be reviewed once more before S3 starts.
 - **A generated-Rust audit:** every `.clone()` of a non-primitive value must trace to an explicit source operation.
 - **Engines agree:** Fast Debug, native and `-O` produce the same behavior (the indexed-element probe above is the first fixture).
 
-## 5. Open questions (updated Nov 1 2026)
+## 5. Questions #8–#12: all closed (Nov 1 2026)
 
-Resolved and removed from this list: `Option[Int]` Copy (options always move), taking an element out (`remove`/`pop`/`swap_remove` only), `replace`/`swap` (rejected for now), and **all seven Map questions** (P4–P5). The original numbering 8–12 is retained for existing discussion references.
+Map questions 1–7 are recorded in P4–P5. The remaining five choices:
 
-Lean in italics; **bold** marks the remaining design calls.
+**8 — Conservative collection borrowing.** Overlapping READ+READ borrows are legal. Overlapping READ+WRITE or WRITE+WRITE into the **same collection** are rejected even for different statically evident indices/keys. No index-disjointness proof in Phase 28. Sequential borrowing after the earlier borrow ends remains legal; this is not a change to independent ordinary record-field leaves.
 
-**Beyond maps:**
-8. **Two borrows into one container where one writes:** `x = v[0]; y = v[1]; x.cost = y.cost`. Allowed only when the checker proves the indices differ, or always rejected (today's overlap rule is READ + READ only; Rust always rejects)? *Lean: open.*
-9. **Extracting a field from a value consumed anyway** (`fn f(p: Packet) = p.payload` at its last use): reject like any field consume, or allow a whole-value destructure (`match consume p`)? *Lean: open.*
-10. A reply carrying the payload while the sender still uses its value: a defined copy (section 1)? *Lean: yes.*
-11. P8: record inferred effects in `.mossi` and flag READ → CONSUME as a breaking change? *Lean: yes.*
-12. Migration: rewrite programs that rely on today's copies (`swarm_021`, indexed reads), or a deprecation period? *Lean: rewrite; no outside users.*
+```text
+x = v[0]             # WRITE downstream
+y = v[1]             # READ downstream
+x.cost = y.cost      # ERROR while those borrows overlap
+```
 
-**Not design, but scheduled:** review the known bugs (section 3) once before S3 starts; the checker must now track local borrow bindings (a borrow must end before its container is changed or consumed), which is the largest implementation item.
+**9 — Unified fields never partially move.** Even at an owner's last use, `return p.payload` cannot consume a normal unified field; no whole-record-destructuring escape hatch. Consuming the **whole** owner is allowed. Existing separately specified `match consume` semantics for enum variants remain unchanged.
+
+**10 — No reply of input payload.** READ and synchronous forwarding only; `reply payload` (including aliased or primitive payload) is forbidden. Explicit `copy(payload)` when allowed or an independently computed owned reply remains valid. This is a language change from the current docs (§1).
+
+**11 — .mossi parameter effects already exist.** Retain and enforce existing READ/WRITE/CONSUME / leaf records; do not build redundant serialization. Enhanced cross-version diagnostic is optional tooling (P8).
+
+**12 — Rewrite, no backward-compatibility period.** Rewrite SDK code, examples and tests that relied on silent clones or old Map snapshots/APIs. Retain genuine negative consume tests. After Graph DSL lands, run another **SDK swarm** with realistic graph/collection workloads to expose ergonomic gaps and implementation defects.
+
+### Execution requirements (not unresolved design)
+
+- New language work: scoped local inference, explicit `copy`, general `option[T]`, collection and Map ownership APIs, and input-reply prohibition.
+- Reused infrastructure: checker effect authority, existing `.mossi` effect records, immutable synchronous messages, domain leaf provenance, and lock plans; no emitter locking redesign.
+- Checker: join effects across branches and reachable calls, ensure alias provenance and borrow exclusivity, reject illegal escape, retained-element/unified-field transfer and input reply.
+- Emitter/Fast Debug: follow checked decisions without hidden nonprimitive clones; preserve borrowed guard lifetimes and synchronize valid writes.
+- Migration: reconcile `LANGUAGE_SYNTAX.md`, `MODULE_ABI.md`, Gentle Introduction, SDK/examples/fixtures; no compat shim.
+- Tests: acceptance→rustc, Fast Debug/native/`-O` parity, checker decision perturbation/drop, generated clone provenance, known bugs in §3.
+- Post-Graph DSL: separate SDK swarm for realism; does not defer Phase 28 correctness.
