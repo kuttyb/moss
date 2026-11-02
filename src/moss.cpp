@@ -266,7 +266,26 @@ void build_type_context(Program& program) {
     declaration.declaration_name =
         declaration_name.empty() ? program_name : declaration_name;
     declaration.fields = std::move(fields);
-    context->declare(std::move(declaration));
+    std::vector<string> qualified_aliases;
+    for (const auto& [module_name, module_id] : program.module_identities)
+      if (module_id == declaration.module_id)
+        qualified_aliases.push_back(module_name + "__" +
+                                    declaration.declaration_name);
+    if (qualified_aliases.empty() && !defining_module.empty()) {
+      string alias_module = defining_module;
+      const auto separator = alias_module.rfind("::");
+      if (separator != string::npos)
+        alias_module.erase(0, separator + 2);
+      qualified_aliases.push_back(alias_module + "__" +
+                                  declaration.declaration_name);
+    }
+    context->declare(declaration);
+    for (const auto& alias : qualified_aliases) {
+      if (alias == program_name) continue;
+      auto qualified_alias = declaration;
+      qualified_alias.program_name = alias;
+      context->declare(std::move(qualified_alias));
+    }
   };
   for (const auto& object : program.objects) {
     vector<moss::NominalFieldSlot> fields;
@@ -15004,7 +15023,7 @@ static bool execution_body_read_statement(const string& record,
             std::quoted(fact.canonical_type) >>
             std::quoted(fact.specialization_result) >>
             std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
-          fact.context.empty() || fact.inferred_effect < -1 ||
+          fact.inferred_effect < -1 ||
           fact.inferred_effect > static_cast<int>(Effect::Consume))
         throw CompileError(std::max(statement.line, 0),
             "invalid semantic fact in ABI-v9 execution body",
@@ -15013,6 +15032,32 @@ static bool execution_body_read_statement(const string& record,
     }
   } else {
     fields.clear();  // Backward-compatible Section 2 records have no facts.
+  }
+  string serialized_target_count;
+  if (fields >> serialized_target_count) {
+    size_t target_count = 0;
+    try {
+      std::size_t consumed = 0;
+      target_count = std::stoull(serialized_target_count, &consumed);
+      if (consumed != serialized_target_count.size() || target_count > 100000)
+        throw std::invalid_argument("invalid call target count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid checked call target count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < target_count; ++index) {
+      string context, target;
+      if (!(fields >> std::quoted(context) >> std::quoted(target)) ||
+          target.empty() ||
+          !statement.checked_call_targets_by_context.emplace(
+              std::move(context), std::move(target)).second)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid checked call target in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  } else {
+    fields.clear();
   }
   string trailing;
   if (fields >> trailing)
@@ -16348,6 +16393,10 @@ static ParsedModuleUnit load_module_interface(
   Program provider;
   provider.explicit_module = true;
   provider.module_name = unit.name;
+  provider.main_module = unit.name;
+  provider.package_identities = true;
+  provider.module_identities[""] = unit.module_identity;
+  provider.module_identities[unit.name] = unit.module_identity;
   string line;
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
@@ -21666,6 +21715,10 @@ static void write_execution_body_statement(std::ostream& out,
         << std::quoted(fact.resolved_target) << " "
         << fact.inferred_effect;
   }
+  out << " " << statement.checked_call_targets_by_context.size();
+  for (const auto& [context, target] :
+       statement.checked_call_targets_by_context)
+    out << " " << std::quoted(context) << " " << std::quoted(target);
   out << "\n";
 }
 

@@ -3744,7 +3744,9 @@ class FastInterpreter {
           } else if ((statement.b.empty() && function(statement.a)) ||
                      !statement.b.empty()) {
             throw RuntimeError(statement.line,
-                "MOSS_INTERNAL_INVARIANT missing checked call target");
+                "MOSS_INTERNAL_INVARIANT missing checked call target context=" +
+                    frame.functional_context + " callee=" + statement.a +
+                    " member=" + statement.b);
           }
           if (!statement.text.empty())
             evaluate_expression_source(statement.text, frame, statement.line,

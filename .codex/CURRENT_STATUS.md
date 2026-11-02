@@ -17020,3 +17020,9 @@ future optimizer-isolated proof and must remain explicit in final review.
   The recorded 144/165 full-suite result is stale; its 21 failures remain the
   outstanding regression list above, with the S3 imported-package regression
   now fixed on its targeted harness.
+- Follow-up found and fixed two source-free import edges: empty specialization
+  contexts are valid on facts, and statement-level checked call targets must
+  be serialized alongside node facts. Provider type contexts now carry the
+  loaded module identity and qualified nominal aliases. `check_phase24_...`
+  now passes end-to-end; S3 remains 28/28 and the perturb/drop matrix remains
+  green (known debt 38/38).

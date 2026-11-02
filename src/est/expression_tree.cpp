@@ -2423,50 +2423,6 @@ void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
   moss::TypeContext::Scope type_scope(program.type_context.get());
-  auto normalize_loaded_type = [&](std::string_view raw) {
-    std::string result;
-    auto append_token = [&](std::string_view token) {
-      const auto separator = token.rfind("__");
-      if (separator == std::string_view::npos) {
-        result.append(token);
-        return;
-      }
-      const auto suffix = token.substr(separator + 2);
-      std::string_view unique_name;
-      bool ambiguous = false;
-      bool matched = false;
-      auto consider = [&](const auto& declarations) {
-        for (const auto& declaration : declarations) {
-          const std::string_view name = declaration.name;
-          if (name != suffix) continue;
-          if (matched) ambiguous = true;
-          matched = true;
-          unique_name = name;
-        }
-      };
-      consider(program.objects);
-      consider(program.enums);
-      consider(program.domains);
-      if (unique_name.empty() || ambiguous) result.append(token);
-      else result.append(unique_name);
-    };
-    for (std::size_t begin = 0; begin < raw.size();) {
-      const char ch = raw[begin];
-      if (ch == '[' || ch == ']' || ch == ',' || ch == '=' ||
-          std::isspace(static_cast<unsigned char>(ch))) {
-        result.push_back(ch);
-        ++begin;
-        continue;
-      }
-      std::size_t end = begin + 1;
-      while (end < raw.size() && raw[end] != '[' && raw[end] != ']' &&
-             raw[end] != ',' && raw[end] != '=' &&
-             !std::isspace(static_cast<unsigned char>(raw[end]))) ++end;
-      append_token(raw.substr(begin, end - begin));
-      begin = end;
-    }
-    return result;
-  };
   std::function<void(Stmt&)> restore_facts = [&](Stmt& statement) {
     for (const auto& loaded : statement.loaded_expression_facts) {
       const Handle* selected = nullptr;
@@ -2491,9 +2447,7 @@ void populate_loaded(Program& program, std::vector<Stmt>& statements,
       }
       SemanticFacts facts;
       if (!loaded.canonical_type.empty()) {
-        const auto normalized_type = normalize_loaded_type(
-            loaded.canonical_type);
-        auto type = moss::Type::parse_canonical(normalized_type);
+        auto type = moss::Type::parse_canonical(loaded.canonical_type);
         if (!type || !*type)
           throw std::invalid_argument("invalid loaded expression fact type: " +
                                       loaded.canonical_type);
