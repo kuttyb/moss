@@ -21932,6 +21932,11 @@ static void write_generic_statement_expression_facts(
     std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
         [&](est::ExprId node, vector<std::uint32_t>& path) {
       for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        // Generic semantic fingerprints must not depend on source locations.
+        // Imported generic consumers use stable function/specialization
+        // contexts; source-scoped facts carry line identity and are regenerated
+        // from the caller's own source context.
+        if (starts_with(context, "source:")) continue;
         if (!semantic.type && semantic.specialization_result.empty() &&
             semantic.resolved_target.empty() && !semantic.inferred_effect)
           continue;

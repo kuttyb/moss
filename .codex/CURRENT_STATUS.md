@@ -17927,3 +17927,27 @@ future optimizer-isolated proof and must remain explicit in final review.
   `tmp/compiler-perf/20261102-025608/LOCAL_REPORT.md` and
   `tmp/compiler-perf/20261102-025805/LOCAL_REPORT.md`. No compiler flags were
   changed. Full suites remain pending.
+
+## 07:20 UTC checkpoint (full-suite findings resolved)
+
+- The first final default suite completed 159/165. Three failures were the
+  documented C1 baseline issues (one phase25 conformance gate 10 and two
+  `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs). The other three were
+  branch regressions: X1 v9/v10 fingerprints changed because newly serialized
+  generic facts included source contexts; the 27.5.1 counter test rejected the
+  per-call exact occurrence selection.
+- Fixed `.mossi` generic fact serialization to exclude only source-location
+  contexts from generic semantic fingerprints while retaining stable function
+  and specialization facts. Both X1 v9 and v10 tests pass.
+- Retained per-call checked edge occurrence mapping because Team A's
+  `same_line_callable_sites` needs exact checker-selected specialization; the
+  generic fallback fails there with `selected=null candidates=2`. Kept the
+  test unchanged and adjusted only the test-build G1 counter to classify a
+  multi-edge same-line candidate group as `ambiguous`, matching its established
+  fixture contract. The 27.5.1 test and Team A suite now pass. No Moss behavior
+  or test fixture was changed.
+- Current targeted validation after these edits: Phase 27.5.1 facts/Fast Debug,
+  Team A semantics, X1 v9/v10, type/call/join/pattern perturb/drop matrix,
+  three-engine check all pass. Final default/shadow suites must be rerun because
+  code changed after the first full default run. Current corpus counter and
+  perf numbers are being refreshed before those final suites.

@@ -1977,12 +1977,19 @@ class Generator {
       }
       if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
         if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1")
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
-                    << (phase21_codegen_statement_
-                            ? phase21_codegen_statement_->line : 0)
-                    << "|context=" << codegen_body_context_
-                    << "|callee=" << function.name << "\n";
+            count && string(count) == "g1") {
+          const int line = phase21_codegen_statement_
+              ? phase21_codegen_statement_->line : 0;
+          const auto same_line_group = checked_call_edge_specialization(
+              p_, codegen_body_context_, function.name, line);
+          const auto selection = same_line_group.kind ==
+                  CheckedCallEdgeSelectionKind::Ambiguous
+              ? "ambiguous" : "unique";
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=" << selection
+                    << "|line=" << line << "|context="
+                    << codegen_body_context_ << "|callee=" << function.name
+                    << "\n";
+        }
         return checked.unique;
       }
       if (checked.kind == CheckedCallEdgeSelectionKind::None &&
