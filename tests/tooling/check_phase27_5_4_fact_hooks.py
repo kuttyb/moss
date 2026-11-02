@@ -162,8 +162,9 @@ def type_engine_result(source: Path, engine: str, fact_class: str,
     return run([str(binary)], env)
 
 
-def check_type_fact_contract(work: Path) -> None:
-    for fact_class, sources in TYPE_CASES.items():
+def check_type_fact_contract(work: Path,
+                             cases: dict[str, list[Path]]) -> None:
+    for fact_class, sources in cases.items():
         if len(sources) < 3:
             raise SystemExit(f"{fact_class}: fewer than three type fixtures")
         for index, source in enumerate(sources):
@@ -207,15 +208,19 @@ def main() -> None:
     work = ROOT / "tmp/phase27-5-4-fact-hooks" / str(time.time_ns())
     work.mkdir(parents=True)
     cases = {name: list(sources) for name, sources in CASES.items()}
+    type_cases = {name: list(sources) for name, sources in TYPE_CASES.items()}
     selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURE")
     if selected:
         path = Path(selected)
         if not path.is_absolute():
             path = ROOT / path
         fact_class = os.environ.get("MOSS_TEST_AGENT2_CLASS")
-        if fact_class not in cases:
+        if fact_class in cases:
+            cases[fact_class].append(path)
+        elif fact_class in type_cases:
+            type_cases[fact_class].append(path)
+        else:
             raise SystemExit("MOSS_TEST_AGENT2_CLASS must name one fact class")
-        cases[fact_class].append(path)
     for fact_class, sources in cases.items():
         if len(sources) < 3:
             raise SystemExit(f"{fact_class}: fewer than three fixtures")
@@ -255,7 +260,7 @@ def main() -> None:
                             f"{ignored.stdout}{ignored.stderr}")
         print(f"PASS {fact_class}: {len(sources)} fixtures, perturb/drop, "
               "Fast Debug/native/-O fail closed")
-    check_type_fact_contract(work)
+    check_type_fact_contract(work, type_cases)
     check_known_debt(work)
     print("Phase 27.5.4 checked-fact perturb/drop hooks passed")
 
