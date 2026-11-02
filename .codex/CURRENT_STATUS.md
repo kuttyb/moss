@@ -1,5 +1,39 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
+## 2026-11-01 status checkpoint (commit 9ec8bf49)
+
+- Ran the requested final `make --jobs="$(nproc)" check` default suite once.
+  The parallel regression stage selected 165 jobs: 127 passed, 38 failed,
+  zero skipped, in 330.39s. The Make target stopped on that failed default
+  stage, so shadow has not run as part of this checkpoint. This result is not
+  a green gate.
+- Failure classes observed in the logs: several Fast Debug paths now fail
+  closed on missing checked member/call targets; source-free/package builds
+  also expose missing emitter expression slots and call-edge candidate
+  mismatches. Many independent Rust/Cargo fixture builds inherited
+  `MAKEFLAGS=-j16 --jobserver-auth=3,4` without valid descriptors and failed
+  during compilation. Separate gates report the pre-existing
+  `tests/swarm_035_nested_mutating_calls.moss` Rust borrow-check failure and
+  `w2_spec_distinct_n016` RSS at 25,104 KiB against a 25,000 KiB limit.
+- Baseline spot-check: `tests/phase15_15_string_map.moss` Fast Debug succeeds
+  with `tmp/phase2754-c1-base/moss` and fails on `build/compiler/moss-dev` with
+  `MOSS_INTERNAL_INVARIANT missing checked member-call target` (expr 5).
+  This confirms a branch regression requiring repair. Conversely,
+  `tests/swarm_035_nested_mutating_calls.moss` prints `1` under both binaries;
+  its suite failure is native Rust E0499, not introduced by this target
+  selection change.
+- Full output reported additional missing checked member targets in generic
+  specialization, phase 21/25/26 Fast Debug fixtures; missing emitter slots
+  in phase 25; and an emitter specialization outside checked candidates in a
+  cross-package fixture. Diagnose these against the parent and repair the
+  branch regressions before re-running gates. The paired emitter counter
+  result at `9ec8bf49` remains 0 lookups / 0 expression reparses on its
+  measured workload; it does not establish full C2 completion.
+- Worktree was clean at this checkpoint. Next: inspect the checked fact
+  producers/consumer contexts for member-call targets and reproduce a small
+  targeted failure before changing code. Do not run full suites again until
+  fixes are complete; then rerun default and shadow once. Agent 2 has not run.
+
 - Branch `phase27-5-4-work`; latest pushed checkpoint `ae1b10a9` (checked
   binary-root projection; paired counter report `bcf1861b` precedes it).
   `origin/main` is already merged into this branch via `2cf4abb9`.
