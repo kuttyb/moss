@@ -1115,11 +1115,28 @@ class Generator {
     return copy_type_name(canonical_type_name(type));
   }
 
+  static bool simple_moss_identifier(std::string_view source) {
+    if (source.empty() || source == "true" || source == "false" ||
+        source == "None" ||
+        !(std::isalpha(static_cast<unsigned char>(source.front())) ||
+          source.front() == '_'))
+      return false;
+    return std::all_of(source.begin() + 1, source.end(),
+        [](unsigned char ch) { return std::isalnum(ch) || ch == '_'; });
+  }
+
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr,
       std::string_view query_site = {}) const {
-    if (expression.empty()) return std::nullopt;
+    const string source = trim(string(expression));
+    if (source.empty() || source == "true" || source == "false" ||
+        source == "None" || simple_moss_identifier(source) ||
+        decode_numeric_literal_expression(source) ||
+        (source.size() >= 2 &&
+         ((source.front() == '\'' && source.back() == '\'') ||
+          (source.front() == '"' && source.back() == '"'))))
+      return std::nullopt;
     (void)handles;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT emitter requested an expression view without "
@@ -1130,6 +1147,9 @@ class Generator {
 
   bool tree_plain_identifier(std::string_view expression) const {
     if (generated_call_argument_names_.count(string(expression))) return true;
+    if (expression == "true" || expression == "false" ||
+        expression == "None") return false;
+    if (simple_moss_identifier(expression)) return true;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return false;
     string name;
@@ -1228,6 +1248,13 @@ class Generator {
   }
 
   est::LiteralClass tree_literal_class(std::string_view expression) const {
+    const string source = trim(string(expression));
+    if (source == "true" || source == "false")
+      return est::LiteralClass::Boolean;
+    if (source.size() >= 2 && source.front() == '\'' && source.back() == '\'')
+      return est::LiteralClass::Character;
+    if (source.size() >= 2 && source.front() == '"' && source.back() == '"')
+      return est::LiteralClass::String;
     if (auto decoded = decode_numeric_literal_expression(expression))
       return decoded->kind == NumericLiteral::Kind::Int
           ? est::LiteralClass::Integer : est::LiteralClass::Float;
@@ -1294,7 +1321,9 @@ class Generator {
       std::string_view expression) const {
     string source(expression);
     if (generated_call_argument_names_.count(source)) return source;
-    if (source == "None") return source;
+    if (source == "None" || source == "true" || source == "false")
+      return std::nullopt;
+    if (simple_moss_identifier(source)) return source;
     if (source.empty() ||
         !(std::isalpha(static_cast<unsigned char>(source.front())) ||
           source.front() == '_') ||
@@ -1346,9 +1375,12 @@ class Generator {
 
   std::optional<vector<string>> tree_member_path(
       std::string_view expression) const {
-    if (expression.empty() ||
+    if (simple_moss_identifier(expression))
+      return vector<string>{string(expression)};
+    if (expression == "true" || expression == "false" ||
+        expression == "None" || expression.empty() ||
         !(std::isalpha(static_cast<unsigned char>(expression.front())) ||
-          expression.front() == '_'))
+          expression.front() == '_') || simple_moss_identifier(expression))
       return std::nullopt;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())

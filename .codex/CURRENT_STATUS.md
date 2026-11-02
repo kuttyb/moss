@@ -17328,3 +17328,31 @@ future optimizer-isolated proof and must remain explicit in final review.
   generic/untyped sort callbacks, ordering laws, Char boundaries, and the
   source-free provider. The earlier failure list remains the last full-suite
   measurement and still needs a new final gate run after all fixes.
+
+## 2026-11-01 C2 checkpoint: atom projections and handler state places
+
+- At pushed `80de2dfb`, strict emitter fallback removal still failed a set of
+  previous full-suite jobs on `tree_strip_expression_grouping`. Keeping grouping
+  source slices unchanged avoids reparsing and is safe in Rust.
+- Subsequent focused failures showed additional string-only helpers were queried
+  on backend atomic fragments (`0`, `false`, quoted Char/String) and on binder
+  names stored in statement fields. The emitter now handles identifiers,
+  keywords, scalar literal classes/values, and one-name place paths directly;
+  composite expression text without a retained node remains fail-closed. The
+  existing numeric decoder is used for numeric facts.
+- The message-result fixture demonstrated that the binder name `seen`/`pt` has
+  no independent expression handle. Projecting it as a one-component place
+  restores `*state.seen` and object replacement lowering without building a
+  tree from text. Focused native Rust compilation and runtime match passed.
+- Focused tests passing on the current branch: Phase 25 L7 full harness;
+  G3 ordering; G4 Unicode; S1 checker authority; S2 Char/String; S3 key
+  protocol; S-C safe arithmetic; S4 message-result write; fact perturb/drop
+  (`9/5/4/3` fixtures and debt baseline `38/38`). The development compiler is
+  current. The optimized compiler was last built before the most recent
+  atom/path helper changes and must be rebuilt before final gates.
+- Added a feedback observation for this discovered compatibility gap; feedback
+  validation passed before the latest helper edits. Run it again before the
+  next integration checkpoint. The handover and source changes are currently
+  uncommitted and need a targeted verification pass, then commit/push.
+- No new full suite has run since the prior default suite. Shadow, final paired
+  counters, parity/three-engine/perf, Agent 2 review, merge and tag are pending.
