@@ -17062,3 +17062,31 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Required startup bootstrap is green (`language_version=moss-0.1`). The
   `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` reference from the older session note
   is absent; current `docs/MOSS_COMPILER_CONTRACT.md` is present.
+
+
+## C2 checkpoint: imported expression method call bridge (2026-11-01)
+
+- Reproduced a Phase 21 package failure where `carrier.Flip(set_overflow(error),
+  error)` was accepted and had a checker call edge, but generated Rust passed
+  the consumer `std__ParseError` to the provider's nominally distinct type.
+  `moss-dev calls main --source src/main.moss --json` confirms
+  `method:provider__Carrier.Flip` at line 14. A nested helper edge on that same
+  line made the retained-node emitter's single-edge-only selection reject the
+  available method answer.
+- The emitter now selects a unique checked method candidate by matching the
+  retained member name, then lowers the checked declaration with the same
+  cross-crate standard-error conversion used by statement calls: WRITE params
+  copy back in order, READ/CONSUME params convert to the provider nominal type,
+  and standard-error returns convert back to the consumer type. No receiver or
+  argument type selects the method.
+- Targeted validation passes on the current worktree:
+  `check_phase21_standard_write_order.py`,
+  `check_phase21_standard_error_namespace.py`,
+  `check_phase21_source_free_standard_write_recovery.py`,
+  `check_phase27_5_4_fact_hooks.py` (call targets 8, specializations 4, joins
+  4, patterns 3; known debt 38/38), and the full Phase 25 Team A semantics
+  suite. The Phase 21 namespace and source-free tests include Fast Debug/native
+  or optimized package behavior as defined by their harnesses.
+- This is targeted validation only. The last full-suite result in this file
+  remains 144/165 default with 21 failures; shadow, final parity/counts/perf,
+  and the single Agent 2 audit remain outstanding.

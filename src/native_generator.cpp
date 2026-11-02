@@ -6035,6 +6035,25 @@ class Generator {
               codegen_body_context_,
               static_cast<int>(expression.arena->span(root).line));
           if (targets.size() == 1) target = targets.front();
+          else {
+            // A source line may contain a nested helper call as well as its
+            // receiver method call. Select only the already-checked method
+            // edge whose declaration name matches this retained Member node.
+            // The AST supplies the syntactic callee name; it does not choose
+            // among methods from receiver or argument types.
+            vector<string> matching_methods;
+            const string suffix = "." + member->name;
+            for (const auto& candidate : targets)
+              if (starts_with(candidate, "method:") &&
+                  ends_with(candidate, suffix))
+                matching_methods.push_back(candidate);
+            if (matching_methods.size() == 1)
+              target = matching_methods.front();
+            else if (matching_methods.size() > 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked member-call target name=" +
+                  member->name + " context=" + codegen_body_context_);
+          }
         }
         if (target.empty())
           target = checked_statement_call_target(expression).value_or("");
@@ -6580,35 +6599,109 @@ class Generator {
               rendered_receiver = expr(receiver_expression, d, locals, types);
             if (starts_with(rendered_receiver, "*"))
               rendered_receiver = "(" + rendered_receiver + ")";
-            std::ostringstream rendered;
-            rendered << rendered_receiver << "."
+            const auto external_method_module =
+                phase21_external_module_for_symbol(owner);
+            const bool standard_write_bridge = external_method_module &&
+                std::any_of(checked_method->params.begin(),
+                    checked_method->params.end(), [&](const Param& parameter) {
+                      const size_t index = static_cast<size_t>(
+                          &parameter - checked_method->params.data());
+                      return !standard_error_variants(canonical_type_name(
+                          parameter.type)).empty() &&
+                          method_effect(*checked_method, index) == Effect::Write;
+                    });
+            const string return_type = checked_method->return_type.value_or("");
+            const bool standard_return = external_method_module &&
+                !standard_error_variants(canonical_type_name(
+                    return_type)).empty();
+            std::ostringstream bridge_before, bridge_after, rendered;
+            rendered << (standard_write_bridge
+                    ? "__moss_bridge_receiver" : rendered_receiver) << "."
                      << rust_identifier(viewed_method_name(
                             receiver_expression, method_name, argument_nodes,
                             d, locals, types)) << "(";
             for (size_t index = 0; index < argument_nodes.size(); ++index) {
               if (index) rendered << ", ";
               const auto& argument = argument_nodes[index];
-              auto argument_type = generated_expr_type(argument, types)
-                  .value_or("_");
-              string value = expr(argument, d, locals, types);
-              const Effect effect = method_effect(*checked_method, index);
-              const bool borrow = effect != Effect::Consume &&
-                  (effect == Effect::Write || borrowable_type(argument_type));
-              if (!domains_.count(canonical_type_name(argument_type)) &&
-                  borrow) {
-                value = (effect == Effect::Write ? "&mut (" : "&(") +
-                    value + ")";
+              string value;
+              const bool external_standard_argument = external_method_module &&
+                  index < checked_method->params.size() &&
+                  !standard_error_variants(canonical_type_name(
+                      checked_method->params[index].type)).empty();
+              if (!standard_write_bridge && !external_standard_argument) {
+                auto argument_type = generated_expr_type(argument, types)
+                    .value_or("_");
+                value = expr(argument, d, locals, types);
+                const Effect effect = method_effect(*checked_method, index);
+                const bool borrow = effect != Effect::Consume &&
+                    (effect == Effect::Write || borrowable_type(argument_type));
+                if (!domains_.count(canonical_type_name(argument_type)) &&
+                    borrow) {
+                  value = (effect == Effect::Write ? "&mut (" : "&(") +
+                      value + ")";
+                }
+              } else {
+                value = method_call_argument(*checked_method, index,
+                    argument, d, locals, types);
+                bool standard_error_argument = false;
+                if (external_standard_argument) {
+                  standard_error_argument = true;
+                  const string local_type = canonical_type_name(
+                      checked_method->params[index].type);
+                  const string external_type = tooling_name("moss_" +
+                      *external_method_module) + "::" + local_type;
+                  const Effect effect = method_effect(*checked_method, index);
+                  if (effect == Effect::Write) {
+                    const string prefix = "__moss_standard_write_" +
+                        std::to_string(call_argument_temp_++);
+                    const string local_ref = prefix + "_local";
+                    const string provider_value = prefix + "_provider";
+                    bridge_before << "let " << local_ref << " = " << value
+                      << "; let mut " << provider_value << " = "
+                      << external_type << "::from((*" << local_ref
+                      << ").clone()); ";
+                    bridge_after << "*" << local_ref << " = " << local_type
+                      << "::from(" << provider_value << "); ";
+                    value = "&mut " + provider_value;
+                  } else {
+                    value = effect == Effect::Read
+                        ? "&" + external_type + "::from((* (" + value +
+                            ")).clone())"
+                        : external_type + "::from(" + value + ")";
+                  }
+                }
+                if (standard_write_bridge && !standard_error_argument) {
+                  const string staged = next_call_argument_name();
+                  bridge_before << "let " << staged << " = " << value << "; ";
+                  value = staged;
+                }
               }
               rendered << value;
             }
             rendered << ")";
+            string lowered_call = rendered.str();
+            if (standard_write_bridge) {
+              const string receiver_binding =
+                  checked_method->receiver_effect == Effect::Consume
+                      ? rendered_receiver
+                      : (checked_method->receiver_effect == Effect::Write
+                            ? "&mut (" : "&(") + rendered_receiver + ")";
+              lowered_call = "{ let __moss_bridge_receiver = " +
+                  receiver_binding + "; " + bridge_before.str() +
+                  "let __moss_bridge_result = " + lowered_call + "; " +
+                  bridge_after.str() + "__moss_bridge_result }";
+            }
+            if (standard_return)
+              lowered_call = checked_method->observable_effects.raise_set.empty()
+                  ? return_type + "::from(" + lowered_call + ")"
+                  : "(" + lowered_call + ").map(" + return_type + "::from)";
             if (!checked_method->observable_effects.raise_set.empty()) {
               if (!phase21_result_context_)
                 throw std::runtime_error(
                     "checked raising method lacks a Phase 21 outcome context");
-              return phase21_propagate(rendered.str());
+              return phase21_propagate(lowered_call);
             }
-            return rendered.str();
+            return lowered_call;
           }
         }
         if (target == "builtin:" + member->name ||
