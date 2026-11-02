@@ -1124,7 +1124,8 @@ class Generator {
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT emitter requested an expression view without "
         "a checked node site=" +
-        (query_site.empty() ? std::string("unknown") : string(query_site)));
+        (query_site.empty() ? std::string("unknown") : string(query_site)) +
+        " expression=" + string(expression));
   }
 
   bool tree_plain_identifier(std::string_view expression) const {
@@ -1227,6 +1228,9 @@ class Generator {
   }
 
   est::LiteralClass tree_literal_class(std::string_view expression) const {
+    if (auto decoded = decode_numeric_literal_expression(expression))
+      return decoded->kind == NumericLiteral::Kind::Int
+          ? est::LiteralClass::Integer : est::LiteralClass::Float;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
   }
@@ -1239,15 +1243,20 @@ class Generator {
   }
 
   bool tree_decimal_integer_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression, nullptr, __func__);
-    return syntax && est::decimal_integer_literal(*syntax, true, false);
+    const string source = trim(string(expression));
+    auto decoded = decode_numeric_literal_expression(expression);
+    return decoded && decoded->kind == NumericLiteral::Kind::Int &&
+        !source.empty() &&
+        std::all_of(source.begin() + (source.front() == '-' ||
+                                         source.front() == '+' ? 1 : 0),
+                    source.end(), [](unsigned char ch) {
+                      return std::isdigit(ch) || ch == '_';
+                    });
   }
 
   std::optional<DecodedNumber> tree_numeric_literal_value(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression, nullptr, __func__);
-    return syntax ? est::numeric_literal_value(*syntax)
-                  : std::nullopt;
+    return decode_numeric_literal_expression(expression);
   }
 
   std::optional<DecodedNumber> tree_numeric_literal_value(
@@ -1285,6 +1294,14 @@ class Generator {
       std::string_view expression) const {
     string source(expression);
     if (generated_call_argument_names_.count(source)) return source;
+    if (source == "None") return source;
+    if (source.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(source.front())) ||
+          source.front() == '_') ||
+        !std::all_of(source.begin() + 1, source.end(), [](unsigned char ch) {
+          return std::isalnum(ch) || ch == '_';
+        }))
+      return std::nullopt;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     string name;
@@ -1329,6 +1346,10 @@ class Generator {
 
   std::optional<vector<string>> tree_member_path(
       std::string_view expression) const {
+    if (expression.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(expression.front())) ||
+          expression.front() == '_'))
+      return std::nullopt;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return std::nullopt;
@@ -1508,6 +1529,7 @@ class Generator {
 
   bool tree_parse_message(const string& expression, string& target,
                           string& handler, vector<string>& arguments) const {
+    if (trim(expression).rfind("message", 0) != 0) return false;
     auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_message(
         *syntax, target, handler, arguments);
@@ -1693,8 +1715,9 @@ class Generator {
   }
 
   string tree_strip_expression_grouping(const string& expression) const {
-    auto syntax = expression_view_from_est(expression, nullptr, __func__);
-    return syntax ? est::strip_grouping(*syntax) : expression;
+    // Grouping is retained in Moss source slices; keeping it in emitted Rust
+    // is semantics preserving and avoids reparsing text just to remove it.
+    return expression;
   }
 
 
@@ -2055,9 +2078,10 @@ class Generator {
   // Lowers sort(v), sort(v, by: key), and sort(v, by: Reverse(key)) to a
   // stable in-place Rust sort. The checker has proven the key pure, so each
   // key is lowered as an ordinary specialized Moss call.
-  string sort_call_rust(const vector<string>& args, const Domain* d,
+  string sort_call_rust(const vector<EmitterExpr>& args, const Domain* d,
                         const std::set<string>& locals,
-                        const std::unordered_map<string,string>* types) const {
+                        const std::unordered_map<string,string>* types,
+                        int line) const {
     string target = write_call_place(args[0], d, locals, types);
     auto vector_type = generated_expr_type(args[0], types);
     string canonical = vector_type ? canonical_type_name(*vector_type) : "";
@@ -2066,16 +2090,82 @@ class Generator {
     if (args.size() == 1)
       return "(" + target + ").sort_by(|__moss_a, __moss_b| " +
              total_order_compare_rust(element, "*__moss_a", "*__moss_b") + ")";
-    string label, key;
-    tree_parse_named_argument(args[1], label, key);
+    const auto key_root = est::unparenthesized(*args[1].arena, args[1].id);
+    const auto* named = std::get_if<est::NamedArgument>(
+        &args[1].arena->at(key_root));
+    if (!named || named->name != "by")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT sort callback lacks checked named node");
+    EmitterExpr key_expression = args[1].child(named->value);
+    auto key_value_root = est::unparenthesized(*key_expression.arena,
+                                               key_expression.id);
+    if (const auto* nested = std::get_if<est::NamedArgument>(
+            &key_expression.arena->at(key_value_root)))
+      key_expression = key_expression.child(nested->value);
+    string key = key_expression.text();
     bool reverse = false;
     string reverse_callee;
-    vector<string> reverse_args;
-    if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
-        reverse_callee == "Reverse" && reverse_args.size() == 1) {
-      reverse = true;
-      key = trim(reverse_args.front());
+    EmitterExpr reverse_argument;
+    const auto callback_root = est::unparenthesized(*key_expression.arena,
+                                                     key_expression.id);
+    const est::ExprId* callback_callee = nullptr;
+    const vector<est::ExprId>* callback_arguments = nullptr;
+    if (const auto* key_call = std::get_if<est::Call>(
+            &key_expression.arena->at(callback_root))) {
+      callback_callee = &key_call->callee;
+      callback_arguments = &key_call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &key_expression.arena->at(callback_root))) {
+      callback_callee = &constructor->type;
+      callback_arguments = &constructor->arguments;
     }
+    if (callback_callee && callback_arguments &&
+        callback_arguments->size() == 1) {
+      const auto callee_id = est::unparenthesized(*key_expression.arena,
+                                                   *callback_callee);
+      const auto* identifier = std::get_if<est::Identifier>(
+          &key_expression.arena->at(callee_id));
+      if (identifier) reverse_callee = identifier->name;
+      reverse_argument = key_expression.child(callback_arguments->front());
+      const auto reverse_root = est::unparenthesized(
+          *reverse_argument.arena, reverse_argument.id);
+      if (const auto* positional = std::get_if<est::NamedArgument>(
+              &reverse_argument.arena->at(reverse_root)); positional)
+        reverse_argument = reverse_argument.child(positional->value);
+    }
+    if (reverse_callee == "Reverse" && reverse_argument.arena) {
+      reverse = true;
+      key_expression = reverse_argument;
+      key = key_expression.text();
+    }
+    const auto function_id = est::unparenthesized(*key_expression.arena,
+                                                   key_expression.id);
+    const auto* function_name = std::get_if<est::Identifier>(
+        &key_expression.arena->at(function_id));
+    if (!function_name)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort key is not an identifier: " +
+          key_expression.text() + " node=" +
+          std::to_string(key_expression.arena->at(function_id).index()));
+    const auto function_entry = functions_.find(function_name->name);
+    if (function_entry == functions_.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort callback target unavailable");
+    const FunctionSpecialization* callback_specialization = nullptr;
+    if (function_entry->second->static_dispatch) {
+      const auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function_entry->second->name, line);
+      if (checked.kind != CheckedCallEdgeSelectionKind::Unique)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked sort callback specialization unavailable");
+      callback_specialization = checked.unique;
+    }
+    const string checked_callback_type = callback_specialization
+        ? callback_specialization->return_type
+        : function_entry->second->return_type.value_or("");
+    if (checked_callback_type.empty())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort callback result type unavailable");
     const bool copy = copy_type(element);
     auto key_locals = locals;
     key_locals.insert("__moss_sort_a");
@@ -2084,18 +2174,23 @@ class Generator {
         : std::unordered_map<string,string>{};
     key_types["__moss_sort_a"] = element;
     key_types["__moss_sort_b"] = element;
-    string key_a = expr(key + "(__moss_sort_a)", d, key_locals, &key_types);
-    string key_b = expr(key + "(__moss_sort_b)", d, key_locals, &key_types);
-    string key_type = generated_expr_type(key + "(__moss_sort_a)", &key_types)
-        .value_or("");
+    const string callback_name = callback_specialization
+        ? callback_specialization->generated_name
+        : rust_identifier(function_entry->second->name);
+    string key_a = callback_name +
+        "(__moss_sort_a)";
+    string key_b = callback_name +
+        "(__moss_sort_b)";
+    string key_type = canonical_type_name(checked_callback_type);
     string compare = reverse
         ? total_order_compare_rust(key_type, "__moss_kb", "__moss_ka")
         : total_order_compare_rust(key_type, "__moss_ka", "__moss_kb");
     // A key that consumes its argument receives an owned copy; the vector
     // element itself is never moved out during the sort.
-    auto key_function = functions_.find(key);
-    const bool consumes = !copy && key_function != functions_.end() &&
-        sort_key_effect(*key_function->second, element) == Effect::Consume;
+    const bool consumes = !copy && (callback_specialization
+        ? !callback_specialization->parameter_effects.empty() &&
+            callback_specialization->parameter_effects.front() == Effect::Consume
+        : sort_key_effect(*function_entry->second, element) == Effect::Consume);
     string bind = copy ? "*__moss_a" : consumes ? "(*__moss_a).clone()" : "__moss_a";
     string bind_b = copy ? "*__moss_b" : consumes ? "(*__moss_b).clone()" : "__moss_b";
     return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
@@ -8510,8 +8605,23 @@ class Generator {
             "hash", generated_expr_type(builtin_args[0], types).value_or(""),
             expr(builtin_args.front(), d, locals, types));
       if (builtin == "sort" && !functions_.count(builtin) &&
-          (builtin_args.size() == 1 || builtin_args.size() == 2))
-        return sort_call_rust(builtin_args, d, locals, types);
+          (builtin_args.size() == 1 || builtin_args.size() == 2)) {
+        if (!checked_node || !checked_node->arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT sort lowering lacks checked call node");
+        const auto root = est::unparenthesized(*checked_node->arena,
+                                                checked_node->id);
+        const auto* call = std::get_if<est::Call>(
+            &checked_node->arena->at(root));
+        if (!call || call->arguments.size() != builtin_args.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT sort lowering lacks checked arguments");
+        vector<EmitterExpr> arguments;
+        for (const auto argument : call->arguments)
+          arguments.push_back(checked_node->child(argument));
+        return sort_call_rust(arguments, d, locals, types,
+            static_cast<int>(checked_node->arena->span(root).line));
+      }
     }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
@@ -11166,7 +11276,20 @@ class Generator {
           }
           if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
               (s.args.size() == 1 || s.args.size() == 2)) {
-            o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
+            vector<EmitterExpr> sort_arguments;
+            const EmitterExpr invocation = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            const auto root = est::unparenthesized(*invocation.arena,
+                                                    invocation.id);
+            const auto* sort_call = std::get_if<est::Call>(
+                &invocation.arena->at(root));
+            if (!sort_call || sort_call->arguments.size() != s.args.size())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT sort statement lacks checked call nodes");
+            for (const auto argument : sort_call->arguments)
+              sort_arguments.push_back(invocation.child(argument));
+            o << indent(level) << sort_call_rust(sort_arguments, d, locals,
+                &types, s.line) << ";\n";
             ++i;
             break;
           }

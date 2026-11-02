@@ -25712,6 +25712,32 @@ class Checker {
           "SORT_KEY_CALLABLE");
     auto result = check_functional_callable(line, key, {element}, env, "sort");
     string key_type = result ? canonical_type_name(*result) : "";
+    if (function->second->static_dispatch) {
+      SemanticCallEdge edge{
+          current_semantic_context_, "fn:" + function->second->name, line,
+          {element}, current_check_statement_
+              ? current_check_statement_->source_file : string(),
+          "sort_key", {}, {}, {}};
+      const FunctionSpecialization* selected_key = nullptr;
+      for (const auto& specialization : function->second->specializations) {
+        if (specialization.parameter_types != vector<string>{element} ||
+            canonical_type_name(specialization.return_type) != key_type)
+          continue;
+        if (selected_key) {
+          selected_key = nullptr;
+          break;
+        }
+        selected_key = &specialization;
+      }
+      if (selected_key) edge.specialization_key = selected_key->stable_type_key;
+      if (std::find_if(p_.semantic_call_edges.begin(),
+              p_.semantic_call_edges.end(), [&](const SemanticCallEdge& old) {
+                return old.source == edge.source && old.target == edge.target &&
+                    old.line == edge.line &&
+                    old.invocation_kind == edge.invocation_kind;
+              }) == p_.semantic_call_edges.end())
+        p_.semantic_call_edges.push_back(std::move(edge));
+    }
     if (!total_order_scalar(key_type))
       err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
           (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");

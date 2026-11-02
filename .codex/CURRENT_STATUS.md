@@ -17292,3 +17292,39 @@ future optimizer-isolated proof and must remain explicit in final review.
   `shard_swarm_cases` (both the latter jobs fail on `swarm_035` Rust E0499).
   Full default/shadow suite, three-engine/parity gates, final paired counters,
   performance, and the single Agent 2 review remain outstanding.
+
+## 2026-11-01 live C2 checkpoint: string-only sort lowering exposed after e72
+
+- Resumed at pushed commit `e72cdc74` on `phase27-5-4-work`. The immediate
+  targeted L7 harness failure was `tree_member_path` invoked from sort's
+  string-based mutable-place lowering. The local working tree now routes sort
+  input and callback argument projections from retained call nodes, and keeps
+  expression grouping instead of reparsing to strip it.
+- `make moss-dev moss-opt` passed after the initial node-routing edit. The
+  targeted `check_phase25_l7_repairs.py` still fails at sort callback lowering:
+  the source `Reverse(size)` is not yet projected to a checked identifier in
+  the retained tree (`MOSS_INTERNAL_INVARIANT checked sort key is not an
+  identifier`). I added a small unwrap for named-argument wrappers and am
+  rerunning the focused harness; no pass is claimed yet.
+- Current uncommitted source: `src/native_generator.cpp`. The sort lowering
+  change is incomplete and must be repaired or reverted before any commit.
+  No full suite was run after e72; the last default suite and perf/count results
+  are documented above and stale for this working edit. Shadow suite, three-
+  engine/parity aggregate, final paired counters, and Agent 2 audit remain
+  pending. C2 is not merged/tagged.
+- Follow-up diagnosis: EST represents uppercase `Reverse(size)` as a
+  `Constructor` node (variant index 13), not a `Call`; the current local edit
+  projects both forms and unwraps the argument node. The focused L7 harness is
+  running again. Still no pass claim until its result arrives.
+- The combined L7 run passed sort, generic sort-key specialization, all ordering
+  laws (including Char), and then hit a Char boundary fixture during codegen.
+  Reproducer isolated to negative numeric fragments (`Char(-1)`) reaching
+  string literal classification. Numeric class/value/declaration checks now use
+  the shared numeric decoder, not an EST parse. Direct `Char(-1)` lowering
+  succeeds; the dedicated Char surface test is running once more.
+- Final focused validation after the numeric decoder adjustment: `make
+  --jobs="$(nproc)" moss-dev moss-opt` PASS; full
+  `check_phase25_l7_repairs.py build/compiler/moss-dev` PASS, including
+  generic/untyped sort callbacks, ordering laws, Char boundaries, and the
+  source-free provider. The earlier failure list remains the last full-suite
+  measurement and still needs a new final gate run after all fixes.
