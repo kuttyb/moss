@@ -360,12 +360,21 @@ namespace {
 std::mutex test_coverage_mutex;
 std::array<std::uint64_t, 4> consumer_reparse_counts{};
 std::uint64_t expression_tree_rebuild_count = 0;
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionParseSite::Count)> stage_tree_rebuilds{};
 std::uint64_t expression_text_lookup_count = 0;
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionParseSite::Count)> stage_text_lookups{};
 std::uint64_t expression_text_cache_lookup_count = 0;
 std::array<std::uint64_t,
     static_cast<std::size_t>(ExpressionTextCacheSite::Count)>
     expression_text_cache_lookup_counts{};
-std::array<std::uint64_t, 6> expression_text_parse_counts{};
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionParseSite::Count)> stage_cache_lookups{};
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionParseSite::Count)> expression_text_parse_counts{};
+std::array<std::uint64_t,
+    static_cast<std::size_t>(ExpressionParseSite::Count)> stage_shadow_crosschecks{};
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
@@ -402,6 +411,7 @@ void record_expression_tree_rebuild() noexcept {
   try {
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_tree_rebuild_count;
+    ++stage_tree_rebuilds[static_cast<std::size_t>(active_expression_parse_site)];
   } catch (...) {
   }
 }
@@ -411,6 +421,7 @@ void record_expression_text_lookup() noexcept {
   try {
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_text_lookup_count;
+    ++stage_text_lookups[static_cast<std::size_t>(active_expression_parse_site)];
   } catch (...) {
   }
 }
@@ -431,6 +442,7 @@ void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept 
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_text_cache_lookup_count;
     ++expression_text_cache_lookup_counts[static_cast<std::size_t>(site)];
+    ++stage_cache_lookups[static_cast<std::size_t>(active_expression_parse_site)];
   } catch (...) {
   }
 }
@@ -440,6 +452,16 @@ void record_expression_text_parse() noexcept {
   try {
     std::lock_guard<std::mutex> lock(test_coverage_mutex);
     ++expression_text_parse_counts[
+        static_cast<std::size_t>(active_expression_parse_site)];
+  } catch (...) {
+  }
+}
+
+void record_shadow_crosscheck() noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++stage_shadow_crosschecks[
         static_cast<std::size_t>(active_expression_parse_site)];
   } catch (...) {
   }
@@ -482,9 +504,15 @@ void report_test_coverage_counters() {
   const auto checker_parses = checker_body_parses + checker_view_parses +
       checker_pipeline_parses;
   const auto consumer_parses = expression_text_parse_counts[
-      static_cast<std::size_t>(ExpressionParseSite::Consumer)];
-  const auto other_parses = expression_text_parse_counts[
-      static_cast<std::size_t>(ExpressionParseSite::Other)];
+      static_cast<std::size_t>(ExpressionParseSite::FastDebug)] +
+      expression_text_parse_counts[
+      static_cast<std::size_t>(ExpressionParseSite::Emitter)];
+  std::uint64_t other_parses = 0;
+  for (std::size_t index = static_cast<std::size_t>(ExpressionParseSite::DriverRewrite);
+       index < expression_text_parse_counts.size(); ++index)
+    if (index != static_cast<std::size_t>(ExpressionParseSite::FastDebug) &&
+        index != static_cast<std::size_t>(ExpressionParseSite::Emitter))
+      other_parses += expression_text_parse_counts[index];
   std::cerr << "MOSS_EST_EXPRESSION_TEXT_PARSES initial="
             << expression_text_parse_counts[static_cast<std::size_t>(
                    ExpressionParseSite::InitialSource)]
@@ -502,6 +530,27 @@ void report_test_coverage_counters() {
             << " fastdebug_expression_tree=" << consumer_reparse_counts[2]
             << " fastdebug_functional_pipeline=" << consumer_reparse_counts[3]
             << '\n';
+  static constexpr std::array<std::string_view,
+      static_cast<std::size_t>(ExpressionParseSite::Count)> stage_names{
+      "initial", "checker", "checker_view", "checker_pipeline",
+      "driver_rewrite", "fastdebug", "emitter", "optimizer", "other"};
+  for (std::size_t index = 0; index < stage_names.size(); ++index) {
+    const auto shadow_count = index == static_cast<std::size_t>(
+            ExpressionParseSite::InitialSource) ? 0 :
+        stage_shadow_crosschecks[index] +
+        (index == static_cast<std::size_t>(ExpressionParseSite::Checker)
+            ? stage_shadow_crosschecks[static_cast<std::size_t>(
+                  ExpressionParseSite::InitialSource)] : 0);
+    std::cerr << "MOSS_EST_STAGE stage=" << stage_names[index]
+              << " reparses=" << (index == static_cast<std::size_t>(
+                     ExpressionParseSite::InitialSource)
+                     ? 0 : expression_text_parse_counts[index])
+              << " text_lookups=" << stage_text_lookups[index]
+              << " cache_lookups=" << stage_cache_lookups[index]
+              << " tree_rebuilds=" << stage_tree_rebuilds[index]
+              << " shadow_crosschecks=" << shadow_count
+              << '\n';
+  }
   for (const auto& [kind, counts] : generated_type_fact_counts)
     std::cerr << "MOSS_EST_GENERATED_TYPE_FACT kind=" << kind
               << " PRESENT=" << counts[0] << " ABSENT=" << counts[1]
@@ -1519,7 +1568,12 @@ ExprId parse_expression(Arena& arena, std::string_view source,
   record_expression_text_parse();
 #endif
   const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
-  if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
+  if (mode() == Mode::Shadow) {
+#ifdef MOSS_TEST_BUILD
+    record_shadow_crosscheck();
+#endif
+    compare_string_shape(arena, id, source);
+  }
   return id;
 }
 

@@ -169,3 +169,26 @@ optimized results with the unmodified run. The exact ignored
 `tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`; make check fails only
 if that set grows. This is a bounded known-debt regression baseline, not proof
 that untested consumers are migrated.
+
+## Phase 27.5.4 closeout delivery
+
+The post-C2 closeout is delivered at tag `phase27-5-4-m2`, on top of
+`phase27-5-4-m1`. `make check` runs default mode; `make check-shadow` runs the
+shadow cross-checks and is required at phase checkpoints and before merges to
+main (AGENTS.md). The fixed runtime ratchet gates invariants 1–3; its workload
+and per-stage ceilings are in [the workload](../tests/tooling/fixtures/phase27_5_4_runtime_workload.json)
+and [the baseline](../tests/tooling/fixtures/phase27_5_4_runtime_baseline.json).
+
+On that workload, checker counters are 54,037 reparses and 16,261,580
+text-cache lookups; driver rewrites are 748 reparses and text-to-tree rebuilds.
+Fast Debug, emitter and optimizer remain at zero for reparses, text-node/cache
+lookups and rebuilds. Shadow cross-check counts are checker 64,548 and driver
+rewrites 748, with zero hits in consumer stages. Shadow should retire only when
+invariant 1 is met by the checker and invariant 2 is met by driver rewrites.
+
+Both full suites ran once and each reported 162/165 jobs: conformance gate 10
+(`compiled_only_custom_key`) and the `swarm_035_nested_mutating_calls.moss`
+Rust E0499 lowering defect in two jobs. These are the documented C1-parent
+baseline failures. Agent 2 audited the closeout candidate and returned GO with
+those failures accepted as recorded debt. Details are in the
+[Phase 27.5.4 report](phase27/27_5_4_REPORT.md).

@@ -4,7 +4,9 @@
 
 C1 implementation: `0e150dcef0a0be69c1502710e38c1dabb4f0877e` on
 `phase27-5-4-work`. Agent 2 reviewed that exact implementation and returned
-**GO** before delivery. C2 emitter/optimizer migration is in progress; its final gates have not run.
+**GO** before C1 delivery. C2 and the post-C2 closeout are delivered at
+`phase27-5-4-m2`; see the closeout record below for current gates and baseline
+failures.
 
 Fast Debug expression evaluation now requires a retained checked tree handle;
 `src/interpreter.hpp:639–670` reports `MOSS_INTERNAL_INVARIANT` when the
@@ -678,6 +680,38 @@ failure is also known C1 baseline debt. Logs:
 `tmp/phase2754-final/shadow-costfix.log`.
 
 The prior Agent 2 NO-GO applied to the O2-only candidate at `1c9e26fa`; the
-measured RSS issue it identified is now addressed. A new audit of this changed
-candidate is required before merging. The queued post-C2 closing round remains
-unstarted.
+measured RSS issue was addressed by the `-Os` checker translation unit. C2 was
+then merged/tagged as `phase27-5-4-m1` (`4b5e9880`). The separate closing round
+is now active on `phase27-5-4-closeout-work`.
+
+## Post-C2 closing round delivery (2026-11-01)
+
+Added stage-attributed test-build counters and the committed runtime workload
+ratchet. The workload has 28 checked/emitted sources, including a calculator
+project source, the regex package source and `tests/phase24_string_concat.moss`;
+five representative programs also run through Fast Debug. The counter ceiling
+is recorded in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json`:
+
+- Checker: 54,037 expression reparses and 16,261,580 text-cache lookups.
+- Driver rewrites: 748 reparses and 748 text-to-tree rebuilds.
+- Fast Debug, emitter and optimizer: zero reparses, node/text-cache lookups
+  and rebuilds on this workload.
+- Shadow cross-check hits: checker 64,548; driver rewrites 748; all consumer
+  stages zero.
+
+Targeted checks passed: runtime ratchet in default and shadow, EST coverage
+counters, focused EST tests, agent-feedback validation, and `git diff --check`.
+The dry-run Makefile inspection confirms `make check` selects only default mode
+and `make check-shadow` selects shadow mode. The full default suite then ran
+once: preflight, fact hooks and ratchet passed; the regression shard passed
+162/165 jobs in 352.56s. The three failures are the C1-parent baseline issues
+documented above: conformance gate 10 (`compiled_only_custom_key`) and the
+native Rust E0499 failure in `swarm_035_nested_mutating_calls.moss`, surfaced
+by both `check_phase27_accepts_rustc` and `shard_swarm_cases`. The shadow
+`make check-shadow` then ran once: preflight, hooks and ratchet passed; its
+regression shard also passed 162/165 jobs in 355.92s, with the exact same
+three baseline failures. Shadow counters were checker 64,548, driver rewrites
+748, and zero for consumer stages. Agent 2 audited exact candidate
+`1a4745f02d74cd2f99071df6c39ba179ff04ae3d`, reran the default and shadow
+ratchets, and returned **GO**, accepting the documented C1 baseline failures.
+The status and handover are maintained in `.codex/CURRENT_STATUS.md`.

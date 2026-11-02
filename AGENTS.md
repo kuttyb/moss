@@ -18,6 +18,10 @@ Executing and lowering are not deciding (computing a + b, or choosing Rust synta
 
 At session start, read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md).
 
+Run `make check-shadow` at every phase checkpoint and before every merge to
+`main`. `make check` runs the default non-shadow mode; shadow cross-checks stay
+available through the separate target.
+
 ## Moss compiler development
 
 For Moss compiler development (any change under `src/`, the compiler's tests or its build), read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md) before making changes, and keep its statuses and known-debt numbers current in the same delivery. It defines the compiler's architectural invariants, the gates that enforce them, and the declared known debt.
