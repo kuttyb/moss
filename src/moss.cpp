@@ -15059,6 +15059,83 @@ static bool execution_body_read_statement(const string& record,
   } else {
     fields.clear();
   }
+  string serialized_open_call_count;
+  if (fields >> serialized_open_call_count) {
+    size_t open_call_count = 0;
+    try {
+      std::size_t consumed = 0;
+      open_call_count = std::stoull(serialized_open_call_count, &consumed);
+      if (consumed != serialized_open_call_count.size() ||
+          open_call_count > 100000)
+        throw std::invalid_argument("invalid open-call count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid checked open-call key count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < open_call_count; ++index) {
+      string context, key;
+      if (!(fields >> std::quoted(context) >> std::quoted(key)) ||
+          key.empty() ||
+          !statement.open_call_keys_by_context.emplace(
+              std::move(context), std::move(key)).second)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid checked open-call key in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  } else {
+    fields.clear();
+  }
+  string serialized_nested_context_count;
+  if (fields >> serialized_nested_context_count) {
+    size_t context_count = 0;
+    try {
+      std::size_t consumed = 0;
+      context_count = std::stoull(serialized_nested_context_count, &consumed);
+      if (consumed != serialized_nested_context_count.size() ||
+          context_count > 100000)
+        throw std::invalid_argument("invalid nested context count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid nested checked open-call context count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t context_index = 0; context_index < context_count;
+         ++context_index) {
+      string context;
+      size_t expression_count = 0;
+      if (!(fields >> std::quoted(context) >> expression_count) ||
+          expression_count > 100000)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid nested checked open-call context in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto& expressions =
+          statement.nested_open_call_keys_by_context[context];
+      for (size_t expression_index = 0;
+           expression_index < expression_count; ++expression_index) {
+        string expression;
+        size_t key_count = 0;
+        if (!(fields >> std::quoted(expression) >> key_count) ||
+            key_count > 100000 || expressions.count(expression))
+          throw CompileError(std::max(statement.line, 0),
+              "invalid nested checked open-call expression in ABI-v9 execution body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        vector<string> keys;
+        keys.reserve(key_count);
+        for (size_t key_index = 0; key_index < key_count; ++key_index) {
+          string key;
+          if (!(fields >> std::quoted(key)))
+            throw CompileError(std::max(statement.line, 0),
+                "truncated nested checked open-call keys in ABI-v9 execution body",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          keys.push_back(std::move(key));
+        }
+        expressions.emplace(std::move(expression), std::move(keys));
+      }
+    }
+  } else {
+    fields.clear();
+  }
   string trailing;
   if (fields >> trailing)
     throw CompileError(std::max(statement.line, 0),
@@ -21719,6 +21796,37 @@ static void write_execution_body_statement(std::ostream& out,
   for (const auto& [context, target] :
        statement.checked_call_targets_by_context)
     out << " " << std::quoted(context) << " " << std::quoted(target);
+  vector<string> open_contexts;
+  open_contexts.reserve(statement.open_call_keys_by_context.size());
+  for (const auto& [context, key] : statement.open_call_keys_by_context)
+    open_contexts.push_back(context);
+  std::sort(open_contexts.begin(), open_contexts.end());
+  out << " " << open_contexts.size();
+  for (const auto& context : open_contexts)
+    out << " " << std::quoted(context) << " " << std::quoted(
+        statement.open_call_keys_by_context.at(context));
+  vector<string> nested_contexts;
+  nested_contexts.reserve(statement.nested_open_call_keys_by_context.size());
+  for (const auto& [context, expressions] :
+       statement.nested_open_call_keys_by_context)
+    nested_contexts.push_back(context);
+  std::sort(nested_contexts.begin(), nested_contexts.end());
+  out << " " << nested_contexts.size();
+  for (const auto& context : nested_contexts) {
+    const auto& expressions =
+        statement.nested_open_call_keys_by_context.at(context);
+    vector<string> expression_texts;
+    expression_texts.reserve(expressions.size());
+    for (const auto& [expression, keys] : expressions)
+      expression_texts.push_back(expression);
+    std::sort(expression_texts.begin(), expression_texts.end());
+    out << " " << std::quoted(context) << " " << expression_texts.size();
+    for (const auto& expression : expression_texts) {
+      const auto& keys = expressions.at(expression);
+      out << " " << std::quoted(expression) << " " << keys.size();
+      for (const auto& key : keys) out << " " << std::quoted(key);
+    }
+  }
   out << "\n";
 }
 

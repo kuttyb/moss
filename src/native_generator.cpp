@@ -1822,8 +1822,13 @@ class Generator {
           ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
           : tree_parse_simple_call(*returned_call, direct_callee,
                                    direct_arguments);
+      const size_t module_separator = function.name.rfind("__");
+      const string unqualified_function_name = module_separator == string::npos
+          ? function.name : function.name.substr(module_separator + 2);
       if (parsed_call &&
-          direct_callee == function.name && direct_arguments == arguments) {
+          (direct_callee == function.name ||
+           direct_callee == unqualified_function_name) &&
+          direct_arguments == arguments) {
         auto exact = std::find_if(function.specializations.begin(),
                                   function.specializations.end(),
                                   [&](const FunctionSpecialization& candidate) {
@@ -1838,6 +1843,21 @@ class Generator {
     }
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
+      bool checked_statement_return_call = false;
+      if (call_node && call_node->arena &&
+          statement.kind == Stmt::Kind::Return) {
+        for (const auto& handle : statement.expression_handles) {
+          if (handle.slot != est::ExprSlot::ReturnValue ||
+              handle.arena_index >= p_.expression_arenas.size() ||
+              p_.expression_arenas[handle.arena_index].get() !=
+                  call_node->arena) continue;
+          if (est::unparenthesized(*call_node->arena, handle.expr) ==
+              est::unparenthesized(*call_node->arena, call_node->id)) {
+            checked_statement_return_call = true;
+            break;
+          }
+        }
+      }
       string nested_expression = function.name + "(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) nested_expression += ", ";
@@ -1884,10 +1904,15 @@ class Generator {
           ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
           : tree_parse_simple_call(trim(call_expression), direct_callee,
                                    direct_arguments);
+      const size_t module_separator = function.name.rfind("__");
+      const string unqualified_function_name = module_separator == string::npos
+          ? function.name : function.name.substr(module_separator + 2);
       if (selected != statement.open_call_keys_by_context.end() &&
-          parsed_call &&
-          direct_callee == function.name &&
-          direct_arguments == arguments) {
+          (checked_statement_return_call ||
+           (parsed_call &&
+            (direct_callee == function.name ||
+             direct_callee == unqualified_function_name) &&
+            direct_arguments == arguments))) {
         auto exact = std::find_if(function.specializations.begin(),
                                   function.specializations.end(),
                                   [&](const FunctionSpecialization& candidate) {
@@ -1959,13 +1984,14 @@ class Generator {
           phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
           std::find(checked.candidates.begin(), checked.candidates.end(),
-                    selected) == checked.candidates.end())
+                    selected) == checked.candidates.end()) {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT emitter specialization is outside "
             "checked call edge candidates callee=" + function.name +
             " line=" + std::to_string(phase21_codegen_statement_
                                            ? phase21_codegen_statement_->line : 0) +
             " context=" + codegen_body_context_);
+      }
     }
     return selected;
   }
