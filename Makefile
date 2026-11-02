@@ -27,7 +27,9 @@ COMPILER_SOURCES ?= src/char_string_ordering_runtime.cpp src/checked_body_ir.cpp
 
 # Profiles and command-line configurations use distinct object trees.
 COMPILER_CONFIG_DEV = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_DEV)' '$(CXXFLAGS_PCH)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
-COMPILER_CONFIG_OPT = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_OPT)' '$(CXXFLAGS_PCH)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
+# Size-optimize the checker translation unit in the optimized binary. Its
+# checker-heavy RSS workload is just above the existing bound at all-O2.
+COMPILER_CONFIG_OPT = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_OPT)' 'semantic_checker=-Os' '$(CXXFLAGS_PCH)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
 COMPILER_OBJ_DIR_DEV = $(COMPILER_DIR)/obj/dev-$(COMPILER_CONFIG_DEV)
 COMPILER_OBJ_DIR_OPT = $(COMPILER_DIR)/obj/opt-$(COMPILER_CONFIG_OPT)
 COMPILER_OBJECTS_DEV = $(patsubst %.cpp,$(COMPILER_OBJ_DIR_DEV)/%.o,$(COMPILER_SOURCES))
@@ -134,6 +136,13 @@ $(COMPILER_OBJ_DIR_DEV)/%.o: %.cpp
 $(COMPILER_OBJ_DIR_OPT)/%.o: %.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_OPT) $(CXXFLAGS_PCH) $(COMPILER_PCH_FLAGS_OPT) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	@touch -r $@ $(@:.o=.d)
+
+# The regular optimized PCH defines __OPTIMIZE_SIZE__ differently; compile this
+# one translation unit without it while retaining the configured -Os profile.
+$(COMPILER_OBJ_DIR_OPT)/src/semantic_checker.o: src/semantic_checker.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_OPT) -Os $(CXXFLAGS_PCH) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	@touch -r $@ $(@:.o=.d)
 
 # Missing depfiles make their corresponding objects out of date and are

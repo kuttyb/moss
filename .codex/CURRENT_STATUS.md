@@ -1,3 +1,455 @@
+# Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
+
+## 2026-11-01 follow-up checkpoint (code commit 9fef6d2a)
+
+- The pushed trait-receiver target fix closes the last nonzero emitter counters
+  found by the paired tracked-source sweep. The run compared 1,824 tracked
+  `.moss` files, default and `-O` (3,648 emissions/compiler): C1 parent had
+  14,606,057 text-node lookups, 9,735,229 expression-view reparses, and 7,362
+  pipeline reparses; candidate had 0 for all three and 0 consumer expression
+  parses. Failed emissions were 1,406 parent vs 1,410 candidate.
+- The four candidate-only failed emissions are two default/`-O` pairs:
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`.
+  Both pass `moss check`, but the C1 parent's generated Rust fails `rustc`:
+  the first calls nonexistent `self.return` and has invalid expression-statement
+  result types; the second emits an unmatched `items[`. Candidate stops earlier
+  with missing checked-target / missing checked-slot invariants. These have no
+  runnable parent behavior; do not make the consumer infer semantics to emit
+  the same invalid Rust. Record them as checker-accepted/backend-invalid inputs,
+  not behavior-parity regressions.
+- The earlier full default suite result (127/165) predates these changes and
+  remains non-green. It must not be reported as current. Targeted current-code
+  checks pass: `check_phase27_5_4_fact_hooks.py` (call targets 9, specializations
+  5, joins 4, patterns 3; known debt 38/38), `check_phase25_team_a_semantics.py`,
+  and `check_phase27_est_functional_tree.py`. The exact two source checks,
+  parent Rust compilation failures, and zero-counter paired report were
+  reverified on this checkpoint.
+- Current worktree was clean before this status-only update. No final full
+  default/shadow suite, three-engine/parity aggregate, perf comparison, or
+  Agent 2 audit has been run after the latest code. C2 remains unmerged. Next:
+  check the emitter/optimizer fact-read coverage inventory, refresh the durable
+  delivery report, then run the final gates once and request the one Agent 2
+  audit. The post-C2 closing round remains queued until C2 merges.
+
+## 2026-11-01 status checkpoint (commit 9ec8bf49)
+
+- Ran the requested final `make --jobs="$(nproc)" check` default suite once.
+  The parallel regression stage selected 165 jobs: 127 passed, 38 failed,
+  zero skipped, in 330.39s. The Make target stopped on that failed default
+  stage, so shadow has not run as part of this checkpoint. This result is not
+  a green gate.
+- Failure classes observed in the logs: several Fast Debug paths now fail
+  closed on missing checked member/call targets; source-free/package builds
+  also expose missing emitter expression slots and call-edge candidate
+  mismatches. Many independent Rust/Cargo fixture builds inherited
+  `MAKEFLAGS=-j16 --jobserver-auth=3,4` without valid descriptors and failed
+  during compilation. Separate gates report the pre-existing
+  `tests/swarm_035_nested_mutating_calls.moss` Rust borrow-check failure and
+  `w2_spec_distinct_n016` RSS at 25,104 KiB against a 25,000 KiB limit.
+- Baseline spot-check: `tests/phase15_15_string_map.moss` Fast Debug succeeds
+  with `tmp/phase2754-c1-base/moss` and fails on `build/compiler/moss-dev` with
+  `MOSS_INTERNAL_INVARIANT missing checked member-call target` (expr 5).
+  This confirms a branch regression requiring repair. Conversely,
+  `tests/swarm_035_nested_mutating_calls.moss` prints `1` under both binaries;
+  its suite failure is native Rust E0499, not introduced by this target
+  selection change.
+- Baseline comparison added after this checkpoint: the exact
+  `check_phase21_imported_effects.py` harness passes with the C1 compiler at
+  `tmp/phase2754-c1-base/moss` when given an isolated output directory. The
+  candidate failure in the full suite (`MOSS_INTERNAL_INVARIANT missing
+  checked member-call target for lowering name=Other context=fn:provider__generic<int>`)
+  is therefore another branch regression, not baseline debt.
+- Full output reported additional missing checked member targets in generic
+  specialization, phase 21/25/26 Fast Debug fixtures; missing emitter slots
+  in phase 25; and an emitter specialization outside checked candidates in a
+  cross-package fixture. Diagnose these against the parent and repair the
+  branch regressions before re-running gates. The paired emitter counter
+  result at `9ec8bf49` remains 0 lookups / 0 expression reparses on its
+  measured workload; it does not establish full C2 completion.
+- Worktree was clean at this checkpoint. Next: inspect the checked fact
+  producers/consumer contexts for member-call targets and reproduce a small
+  targeted failure before changing code. Do not run full suites again until
+  fixes are complete; then rerun default and shadow once. Agent 2 has not run.
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `ae1b10a9` (checked
+  binary-root projection; paired counter report `bcf1861b` precedes it).
+  `origin/main` is already merged into this branch via `2cf4abb9`.
+- Added `call_target_receiver_member.moss` (`x.add(2)`) beside the existing
+  indexed receiver fixture (`items[0].value_plus(2)`) and registered the new
+  fixture in `check_phase27_5_4_fact_hooks.py`. The harness now passes seven
+  call-target fixtures, with perturb/drop fail-closed coverage across Fast
+  Debug, native, and `-O`. The direct fixture emits Rust, compiles, and prints
+  `42`. Feedback validation and `git diff --check` pass.
+- The user guardrail for receiver method calls is covered by the prior emitter
+  changes: method declarations are mapped from checker-recorded target IDs;
+  receiver type no longer chooses the target. Both direct and indexed receiver
+  shapes are in the call-target hook suite. Agent 2 should choose/spot-check a
+  receiver fixture in the single final audit.
+- An experiment to also route implicit custom `for` iterator protocol lowering
+  through a newly stored statement target was reverted in full: generic
+  iteration in `tests/phase47_iteration.moss` had no retained iterator fact
+  under `consume<Countdown>` and native generation failed closed. There is no
+  partial iterator fact change. Existing `resolve_object_method` calls in
+  emitter `for` lowering at `src/native_generator.cpp:9597-9603` remain a
+  separate unresolved consumer decision; no claim is made that implicit
+  iterator protocol selection is migrated.
+- No full gates/performance suite or Agent 2 audit has run. C2 remains
+  incomplete: emitter expression-view re-parses/text lookups are nonzero (latest
+  paired calculator measurement: 15,804 re-parses and 24,252 text-node lookups
+  per command after receiver/query slices); optimizer remains zero by source
+  audit. Continue node migration and like-for-like measurement before full
+  gates. Run full suites once at the end, then Agent 2 once.
+- A fresh one-command calculator counter sample on the current pushed code
+  reports 15,360 native expression-view reparses, 22,836 text-node lookups,
+  171 text-to-tree rebuilds, and 19,991 total post-initial expression-text
+  parses across consumers plus other stages. Largest expression-view query
+  families: unary 635, simple-call 465, grouping 452, message 327, enum-case
+  285, identifier 222. This is a diagnostic sample, not the paired parent
+  comparison or a performance suite.
+- Latest slice adds an `EmitterExpr` simple-call projection and
+  uses it when compatibility lowering already has the checked root node. On
+  the same one-command calculator source, text-node lookups fell 22,836 to
+  22,760 while reparses remained 15,360. Generated Rust was byte-identical to
+  the preceding sample; Rust compilation and native/Fast Debug stdout parity
+  passed; fact hooks and feedback validation passed. This does not satisfy the
+  zero-reparse target and is not a full suite result.
+- This slice is now committed and pushed as `1e00496e`; the working tree was
+  clean at push time.
+- Latest committed work adds retained-node unary projection and grouping
+  removal for compatibility lowering. On the same calculator command, text
+  lookups fell again from 22,760 to 22,380 while reparses remained 15,360.
+  Generated Rust stayed byte-identical; Rust compilation, native/Fast Debug
+  stdout parity, fact hooks, and feedback validation passed. This slice is
+  committed and pushed as `d552f32e`.
+- Latest committed slice adds checked-root message and enum-case projections.
+  On the same calculator command, text lookups fell 22,380 to 22,228 and
+  reparses stayed 15,360. Rust is byte-identical, compiles, and matches Fast
+  Debug output; checked-fact perturb/drop hooks and feedback validation pass.
+  It is committed and pushed as `e06c9ed6`.
+- Latest committed slice projects vector, index, member-access, and
+  member-call roots from checked nodes. On the same calculator command, text
+  lookups fell 22,228 to 21,924 while reparses remained 15,360. Generated Rust
+  is identical, compiles, and matches Fast Debug; fact hooks and feedback
+  validation pass. It is committed and pushed as `daa922d3`.
+- Latest committed slice reads literal class and empty typed-vector shape
+  from checked roots. The same calculator command reduced lookups 21,924 to
+  21,620, with 15,360 reparses unchanged. Rust output is identical, compiles,
+  and matches Fast Debug; fact hooks and feedback validation pass. Commit/push
+  It is committed and pushed as `0b07e6c7`.
+- Latest committed slice reads numeric literal class/value from the checked
+  root. The calculator command reduced lookups 21,620 to 21,544 while
+  reparses remained 15,360. Rust is identical, compiles, and matches Fast
+  Debug; focused numeric parsing parity and feedback validation pass. Commit
+  It is committed and pushed as `16f1cf57`.
+- The user-requested closing round (shadow demotion, runtime ratchet, contract
+  status update) remains queued until C2 is merged. Do not start it before that
+  merge. No merge/tag has occurred.
+- Like-for-like focused counter comparison now uses pinned C1 commit `c96bca78`
+  and the identical calculator emission command. The parent predates the
+  lookup counter, so test-only counter calls were added only in the isolated
+  `tmp/phase27-5-4-parent-counter` worktree (no branch commit): parent 181,742
+  reparses / 273,688 text lookups; candidate 15,360 / 21,544. Deltas are
+  -91.55% reparses and -92.13% lookups. Parent, candidate, and Fast Debug
+  stdout match. Keep using these same commands for progress reports.
+- Paired counter report and evidence are committed/pushed in `bcf1861b`;
+  feedback validation passes.
+- Latest committed slice bridges the retained-root binary projection into
+  compatibility lowering. Same-command candidate counters are now 15,360
+  reparses / 20,784 lookups, against parent 181,742 / 273,688 (-91.55% /
+  -92.41%). Generated Rust is byte-identical, compiles, and matches Fast
+  Debug; fact hooks and feedback validation pass. It is committed and pushed
+  as `ae1b10a9`.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checker-bound member requirements)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `c2237b40`. Updated
+  `origin/main` is already an ancestor via merge `2cf4abb9`; its AGENTS.md and
+  compiler-contract edits are present on this branch. Latest `make moss-dev`
+  and `check_phase27_5_4_fact_hooks.py` pass; receiver-call perturb/drop runs
+  across Fast Debug, native and `-O`, including the indexed method fixture.
+  Same calculator default-command counters after the node routes: 15,804
+  emitter reparses, 24,252 text-node lookups, 1,562 string type queries and
+  423 string expression queries. No full C2 gates have run.
+- Current uncommitted receiver-method guardrail slice removes receiver-type
+  method selection from borrowed-view place lowering. Node lowering now reads
+  the statement-level checked target when the exact expression node has no
+  attached target. Team A, including source-free Range provider rebuild, and
+  Phase 27.5.4 fact hooks pass. Remaining emitter method resolution is limited
+  to implicit `for` iterator protocol selection.
+- The checked member-target slice was
+  committed in `bf0d04cc` across `src/native_generator.cpp`,
+  `src/semantic_checker.cpp`, `src/type_ir.hpp`, and `src/moss.cpp`.
+- The emitter no longer selects a custom method from receiver type in the
+  statement call path, functional bound-method path, member-call result-type
+  path, or legacy member-call lowering when an `EmitterExpr` is available. It
+  consumes checked call-edge targets or specialization member requirements,
+  then maps the chosen identity to a declaration. Same-line trait calls are
+  disambiguated by a new checker-retained member requirement subject (the
+  source binder), not by type-based method resolution. Typed semantic JSON
+  now includes that subject.
+- Build and targeted results: `make moss-dev` PASS;
+  `check_phase25_team_a_semantics.py` PASS (including open trait requirements,
+  distinct `left.cost()` / `right.cost()` calls, and source-free package cases);
+  `check_phase27_5_4_fact_hooks.py` PASS (all required classes pass; known debt
+  38/38); `check_phase27_est_functional_tree.py` PASS.
+- Same-source calculator counters, default and `-O` together: 31,608 emitter
+  expression-view reparses, 0 pipeline reparses, 48,924 text-node lookups;
+  1,692 string type queries and 427 string expression queries per command.
+  Compared with the phase27-5-3-c1 parent’s 363,004 reparses on the same command
+  pair, reparses are down 91.3%. The previous candidate measured 32,432
+  reparses / 52,124 lookups; this slice reduces both. This is still far from
+  C2’s zero target and is one workload only.
+- Remaining emitter `resolve_object_method` sites are iterator protocol
+  selection (`for` lowering); the receiver-call resolver sites above now use
+  checked identities. Optimizer expression parsing/lookups are zero by source
+  audit. Phase 25 conformance last returned 9/11 (gates 7 and 10) before the
+  current slice; no parent comparison. No full suites, parity aggregate, or
+  perf suite has run; Agent 2 is reserved for the single final audit.
+- The closing-round shadow demotion/runtime ratchet/contract edits remain
+  queued until after C2 is merged. No merge/tag has occurred.
+
+### C2 binary-node lowering audit
+
+- The node emitter already had a direct `est::Binary` branch before the recent
+  attempted addition. The duplicate block was unreachable and has been removed
+  in the current working tree; the checkpoint commit containing it is followed
+  by this cleanup. Focused functional-tree and Team A checks had passed while
+  it was present. No behavior or counter change is attributed to that block.
+
+### C2 checked receiver type slice
+
+- Statement method lowering now asks `generated_expr_type` on its already
+  retained receiver node. This removes two receiver-type requests from the
+  string-query path. On the same calculator default emission command, string
+  type queries fell from 1,692 to 1,568; text-node lookups stayed 24,462 and
+  expression-view reparses stayed 15,804, so other text helpers remain the
+  dominant issue.
+- Generated Rust compiled and its output matched Fast Debug and the previous
+  generated Rust executable. The change was committed as `52a6e170`; full gates
+  remain pending.
+
+### C2 checked call statement slice
+
+- The emitter now lowers intrinsic receiver-call statements from their retained
+  `Stmt::Kind::Call` expression node instead of synthesizing a call string.
+  On the same calculator command, text-node lookups decreased a further 210
+  (24,462 to 24,252); reparses remain 15,804. Generated Rust compiled and
+  matched Fast Debug. The change was committed as `f10d8ff9`; full gates remain
+  pending.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current
+  uncommitted `src/native_generator.cpp` edits also remove receiver-type method
+  re-resolution from functional bound-method result inference and rendering.
+  Both now require the retained callable node's checked `method:` target and
+  map that target to the declaration. The legacy string-only custom method
+  result-type path now fails closed instead of calling `resolve_object_method`.
+- After these edits, `make moss-dev`,
+  `check_phase27_5_4_fact_hooks.py` (all 4 required classes pass; known debt
+  38/38), `check_phase25_team_a_semantics.py` (PASS), and
+  `check_phase27_est_functional_tree.py` (PASS) succeed. The earlier Team A
+  and fact-hook checks also passed after the statement-call guard. A mistaken
+  test-script filename was corrected; it is not a test failure.
+- `check_phase25_conformance.py` at the prior checkpoint returned 9/11; gates
+  7 and 10 failed, with no parent comparison yet.
+- Remaining emitter `resolve_object_method` occurrences must be audited. The
+  clearly relevant C2 structural migration is still incomplete; calculator
+  profile remains 16,216 attributed reparses (default plus `-O`) and 32,432
+  before/after instrumentation total. No full suites/perf run or Agent 2 audit.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checked functional method targets)
+
+- Branch `phase27-5-4-work`; latest pushed checkpoint `75bf4976`. Current
+  uncommitted `src/native_generator.cpp` edits also remove receiver-type method
+  re-resolution from functional bound-method result inference and rendering.
+  Both now require the retained callable node's checked `method:` target and
+  map that target to the declaration. The legacy string-only custom method
+  result-type path now fails closed instead of calling `resolve_object_method`.
+- After these edits, `make moss-dev`,
+  `check_phase27_5_4_fact_hooks.py` (all 4 required classes pass; known debt
+  38/38), `check_phase25_team_a_semantics.py` (PASS), and
+  `check_phase27_est_functional_tree.py` (PASS) succeed. The earlier Team A
+  and fact-hook checks also passed after the statement-call guard. A mistaken
+  test-script filename was corrected; it is not a test failure.
+- `check_phase25_conformance.py` at the prior checkpoint returned 9/11; gates
+  7 and 10 failed, with no parent comparison yet.
+- Remaining emitter `resolve_object_method` occurrences must be audited. The
+  clearly relevant C2 structural migration is still incomplete; calculator
+  profile remains 16,216 attributed reparses (default plus `-O`) and 32,432
+  before/after instrumentation total. No full suites/perf run or Agent 2 audit.
+
+# Phase 27.5.4 C2 handover (2026-11-01; emitter checked-method guard)
+
+- Branch `phase27-5-4-work`; pushed tip currently follows the profiling
+  checkpoint `a8a95b0b`; the checked-method edit below is not yet committed.
+- Removed the `Stmt::Kind::Call` emitter fallback that selected a method by
+  `resolve_object_method(receiver_type, name, argument_types)` when a checked
+  method target was absent. It now fails with `MOSS_INTERNAL_INVARIANT` and
+  includes receiver, method, line and context. Checked `method:` targets still
+  map mechanically to declarations; builtin/non-method checked targets retain
+  their existing lowering. This enforces the receiver-call guardrail.
+- After the edit: `make moss-dev` passed;
+  `check_phase27_5_4_fact_hooks.py` passed (6 call-target fixtures; perturb/drop
+  fail closed across Fast Debug/native/-O; all four required classes pass;
+  known debt 38/38); `check_phase25_team_a_semantics.py` passed end-to-end. The
+  indexed receiver fixture checks and Fast Debug prints `42`.
+- Targeted Phase 25 conformance passed 9/11; gates 7 (`map_get_empty`) and 10
+  (`compiled_only_custom_key`) fail. These were run after the guard edit; no
+  baseline comparison has been made, so do not label them pre-existing.
+- The native generator still has other `resolve_object_method` references in
+  legacy string inference/bound-method/collection/iterator paths. Audit them
+  against checked target facts before claiming the receiver-call guardrail is
+  complete. No full gate, corpus parity or perf suite has run.
+
+# Phase 27.5.4 C2 handover (2026-11-01; emitter reparse attribution)
+
+- Branch `phase27-5-4-work`; pushed tip `51d1e59a`. This checkpoint adds a
+  test-build-only per-query-family counter for emitter expression-view
+  reparses. Release code/output is unchanged. The current calculator native
+  generator command succeeded.
+- Paired candidate count for
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`
+  together: 16,216 attributed reparses (expression-view category only; pipeline
+  reparses 0). Leading query families: binary 3,500; identifier 1,672; unary
+  1,314; literal-class 1,136; simple-call 1,054; strip-grouping 992;
+  expression-equality 776; decimal-literal 698; pipeline-normalization 698.
+  Counts occur twice per query due to the paired default/optimized commands.
+  The earlier like-for-like 27.5-3-c1 parent count is 363,004 total reparses
+  across these commands; candidate total was 32,432 before this instrumentation.
+- The retained `EmitterExpr` lowering path did not report node fallback on the
+  calculator profile. The remaining parses arise from legacy string-query
+  consumers/type inference paths. No consumer migration has yet reduced the
+  32,432 reparses; next work is to trace and replace the dominant paths with
+  ExprId navigation, preserving emitted behavior.
+- `make moss-dev` passed after instrumentation; generated calculator Rust. No
+  full suite, parity sweep, perf suite, or Agent 2 audit has run. The queued
+  C2-closing-round shadow demotion/runtime ratchet/contract edits remain queued
+  until after C2 merge and have not been started.
+- Startup bootstrap confirmed `moss-0.1`. `docs/MOSS_COMPILER_CONTRACT_DRAFT.md`
+  referenced by session startup is absent in this checkout; the current
+  `docs/MOSS_COMPILER_CONTRACT.md` exists.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checker member-call target slice)
+
+- Branch `phase27-5-4-work`, currently based on merged `origin/main` at
+  `2cf4abb9`. This checkpoint adds checker targets for indexed receivers
+  (`items[0].value_plus(2)`) and named constructor fields, consumes checked
+  member/call-edge/specialization requirements in Fast Debug and the emitter,
+  and removes emitter selection by matching `member->name` against candidate
+  targets or receiver type. Ambiguous/missing checked answers fail closed.
+- New fixture: `tests/tooling/fixtures/phase27_5_1/
+  call_target_indexed_member.moss`; registered in
+  `check_phase27_5_4_fact_hooks.py` (already run by `make check`). It checks
+  `items[0].value_plus(2)` => `42`; call-target perturb/drop both fail with
+  `MOSS_INTERNAL_INVARIANT` in Fast Debug, native and `-O`. The broader
+  fact-hook harness passes: call-targets 6 fixtures; specializations 4; joins
+  4; patterns 3; known-debt remains 38/38.
+- Checker cursor matching now associates a `field:<name>` role with the
+  matching named argument value on both Constructor and Call nodes. This
+  records exact checked targets for nested calls such as `diag.code()` and
+  `diag.pos()` inside constructor fields. Calculator native emission now
+  succeeds; Team A compiler-path semantics passes end to end.
+- `check_phase27_string_debt.py --require-zero fast_debug` passes.
+  `git diff --check` passes. Full suites, three-engine aggregate, parity
+  aggregate and perf suite have not been run for this checkpoint.
+- Paired same-file counter measurement,
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`:
+  phase27-5-3-c1 parent 363,004 reparses (362,644 expression view, 360
+  pipeline), zero emission failures; current candidate 32,432 reparses, zero
+  pipeline, 52,124 text-node lookups, zero emission failures (-91.1% reparses).
+  Parent text-lookup counter is unavailable. Optimizer remains unmeasured by
+  runtime counters and needs the final source audit/count evidence.
+- Next: continue C2 emitter/optimizer consumer migration, add Agent 2-selected
+  receiver-call hook fixture during the single final audit, run full gates only
+  near completion, then Agent 2 once and merge/tag if GO.
+
+# Phase 27.5.4 C2 handover (2026-11-01; primitive type-query slice)
+
+- Branch `phase27-5-4-work`; latest pushed tip before this slice is
+  `6ce8ffa9`. Current uncommitted changes are a primitive-type fast path in
+  `src/native_generator.cpp` and this status update. It uses the existing
+  numeric-literal decoder and recognizes exact primitive literal spellings
+  before expression-tree query helpers; complex expression inference is
+  unchanged.
+- `calc_interpreter` native debug build/run, `margo debug`, and release
+  build/run pass with identical expected output (`= 7`, `= -12`, `= 154`,
+  `= 0`, and four expected errors). `check_phase27_5_4_fact_hooks.py` passes;
+  known debt remains 38/38. `check_phase27_string_debt.py --require-zero
+  fast_debug` passes. No full suite or performance suite was run.
+- Paired `src/main.moss` emitter measurement, phase27-5-3-c1 parent vs
+  candidate, default and `-O`: parent 363,004 reparses (362,644 expression
+  view, 360 pipeline); candidate 32,432 (expression view, 0 pipeline), down
+  91.1%. Both had zero emission failures. Candidate text-node lookups: 52,124;
+  parent counter unavailable. This slice improved the immediately prior
+  candidate (70,292 reparses / 89,984 lookups). Optimizer expression parsing
+  and lookup count remains zero by source inspection but still needs explicit
+  final gate evidence.
+- Next: commit/push this slice, continue migrating expression-shaped
+  generated-type queries to retained ExprIds, and remeasure the exact same
+  source/commands at each C2 checkpoint. Corpus counters, final full suites,
+  three-engine/parity aggregate, performance gate, and Agent 2 audit remain
+  reserved for near completion.
+
+# Phase 27.5.4 C2 handover (2026-11-01; checked member-edge slice)
+
+- Branch `phase27-5-4-work`; pushed through `f39cf47a`. A follow-up emitter
+  diff is in progress: when a Call node has no direct target fact, the emitter
+  checks the callee Member node fact, then can uniquely correlate the retained
+  member-name node with checker-recorded method targets on that source line.
+  The correlation is only among checked edge identities; receiver-type target
+  inference is not used. This restores the zero node-fallback result on the
+  focused calculator workload.
+- Targeted native package rebuild and Fast Debug run for
+  `examples/swarm/modules/calc_interpreter` succeed with identical output
+  (`= 7`, `= -12`, `= 154`, `= 0`, and the same four expected errors).
+- Like-for-like on `src/main.moss`, phase27-5-3-c1 parent vs candidate, default
+  and `-O` together: parent 363,004 reparses (362,644 expression-view, 360
+  pipeline); candidate 70,292 (expression-view, 0 pipeline), down 80.6%.
+  Both binaries had zero emission failures. Candidate text-node lookups are
+  89,984; parent counter unavailable. Per command the candidate has 35,146
+  reparses and 44,992 text lookups. The previous checkpoint candidate count
+  was 73,172 reparses / 92,864 lookups; this targeted slice reduced both.
+- Existing targeted gates from the previous checkpoint remain green: Team A,
+  Fast Debug string debt, and Phase 27.5.4 fact hooks. Current edit still needs
+  `git diff --check`, exact counter recheck after committing, and push. Full
+  suite, corpus counter sweep, three-engine aggregate, parity aggregate, and
+  performance suite remain reserved for near completion. Optimizer counts are
+  unmeasured. Agent 2 remains reserved for the single final audit.
+
+# Phase 27.5.4 C2 handover (2026-11-01; current candidate)
+
+- Branch `phase27-5-4-work`; pushed tip remains `eadc92ab`. Working tree has
+  an uncommitted emitter/source-free-fact slice in `src/ast.hpp`,
+  `src/moss.cpp`, `src/native_generator.cpp`, and `src/semantic_checker.cpp`.
+- The latest Team A run passes end to end, including the source-free ABI-v10
+  imported `Provider.size("abc")` case. Its prior `return ;` regression came
+  from the emitter looking up only the concrete `fn:...<...>` context after
+  source-free checked-body projection had recorded the call target under the
+  generic `fn:...` context. The emitter now tries that generic checked context
+  for checked targets; `generated_expr_type` still rejects open types. The
+  empty imported vector path and exact checked member-requirement mapping also
+  pass Team A. No temporary debug instrumentation remains.
+- Targeted checks after the current edits: `check_phase25_team_a_semantics.py`
+  PASS; `check_phase27_string_debt.py --require-zero fast_debug` PASS;
+  `check_phase27_5_4_fact_hooks.py build/compiler/moss-dev` PASS (classes 2–4
+  pass and known debt remains 38/38); `git diff --check` PASS.
+- Same-source, same-command emitter counters for
+  `examples/swarm/modules/calc_interpreter/src/main.moss`, default and `-O`
+  together: phase27-5-3-c1 parent 363,004 reparses (362,644 expression view,
+  360 pipeline); candidate 73,172 (all expression view, 0 pipeline), a 79.8%
+  reparse reduction. Both had zero emission failures. Candidate text-node
+  lookups: 92,864; the parent binary predates this counter, so its lookup
+  delta is unavailable. This is a one-source targeted measurement, not the
+  required tracked corpus/examples/packages measurement. Optimizer consumer
+  parsing/lookups remain to be verified as zero.
+- No full suites, three-engine aggregate, parity aggregate, or performance
+  suite have run for the current slice. Agent 2 remains reserved for the one
+  audit after the final suite. Next: review and checkpoint this slice, continue
+  C2 emitter/optimizer consumer migration, then run required C2 counts and all
+  final gates near completion.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
 
 Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
@@ -14454,3 +14906,2534 @@ and `-O`. Agent 2 confirmed zero Fast Debug consumer reparse/text-lookup
 counter sites and absence of the fallback branch; the coverage sample was
 also zero. `origin/main` advanced to `3da06d9e`; the authorized C1 merge must
 use that as first parent after the report is committed and pushed.
+
+### Phase 27.5.4 C2 start — emitter/optimizer count baseline
+
+C1 is merged/tagged as `4a04ad40` / `phase27-5-4-c1`; the work branch is
+fast-forwarded to that exact checkpoint. C2 has just started. The common
+baseline source worktree is `tmp/phase27-5-4-parent` at `c96bca78` and includes
+test-build reparse counters. On `examples/functional_basics.moss`, parent and
+C1 candidate both report 814 native expression-view reparses and 0 native
+functional-pipeline reparses. Candidate additionally reports 1,319 text-node
+lookups; the c96 baseline binary does not yet expose this lookup counter, so
+this is not a valid like-for-like lookup comparison. Next is to rebuild the
+baseline with the identical test-only lookup instrumentation, then run the
+same tracked source/package workload on both binaries. No bulk performance
+comparison has started.
+
+### Phase 27.5.4 C2 paired-count checkpoint 1
+
+The first paired sweep completed over the same 1,822 tracked `tests/` and
+`examples/` Moss source files in default and `-O` emission (3,644 invocations
+per binary). The test-build baseline was rebuilt from `c96bca78` with the
+same EST text-node-lookup instrumentation as the candidate. Counts were
+identical: 15,167,953 text-node lookups, 9,733,531 native expression-view
+reparses, and 7,362 native functional-pipeline reparses on each side. Thus
+this first migration attempt yields no measurable reduction. The new
+candidate's aggregate consumer-expression-parse counter is 10,414,090; this
+counter was absent from the parent instrumentation and is not a valid paired
+metric. Each side had 1,406 failed commands, which means raw per-source
+invocations include unsupported/incomplete-context fixtures and are not a
+suite-pass metric. Output summary: `tmp/phase2754-c2-counts-start.json`.
+
+Exploratory `EmitterExpr` plumbing is present in `src/native_generator.cpp`,
+but does not yet reduce the paired counters and has not been built or
+validated. Treat this as an in-progress checkpoint only. Next: isolate a
+representative set of successful emitter paths, connect their expression
+children structurally to retained handles, add targeted Rust-output checks,
+then rerun paired counts using a successful, identical workload. No C2 full
+suite or performance comparison has run.
+
+### Phase 27.5.4 C2 structural attempt checkpoint 2
+
+The first active-root `EmitterExpr` adapter was compiled, then crashed while
+compiling `examples/functional_basics.moss`. It exposed that legacy recursive
+emitter calls pass child-expression strings while an active-root adapter has
+no structural child identity. I reverted the adapter completely and rebuilt
+`moss-dev` from the C1 source; the focused functional-basics native compile
+then succeeded. This is not a candidate improvement and the paired counters
+remain at checkpoint 1: parent/candidate 15,167,953 text-node lookups,
+9,733,531 expression-view reparses, and 7,362 functional-pipeline reparses.
+The paired measurement utility is now checked in as
+`tests/tooling/measure_phase27_5_4_emitter_consumers.py`; its initial sweep
+includes 1,406 standalone compile failures on both sides, so counts are raw
+like-for-like invocation totals rather than successful-only totals. The
+measurement did not invoke each of the 337 package manifests as package
+projects. No C2 suite, three-engine, parity, or performance gate has run.
+
+Next work must carry child ExprIds explicitly through emitter recursion (and
+pipeline node traversal) rather than installing a root node in a string-based
+recursive path. This remains the main C2 blocker. The current source tree is
+back at the clean C1 implementation, plus the paired-count utility.
+
+### Phase 27.5.4 C2 progress report 2 — checked pipeline entry
+
+Added an explicit `EmitterExpr` wrapper selected by semantic handle slot and
+argument index for function/method result expressions, statement returns,
+echo arguments, assignment RHS roots, and Let/Var initializers. The wrapper
+recognizes a retained Pipeline node and gives its checked arena/ExprId to the
+pipeline lowerer; no ambient node state is installed for legacy recursive
+calls. The result contexts are also restored around result lowering.
+
+Targeted paired check: `examples/functional_pipeline.moss`, default and `-O`.
+Parent and candidate generated Rust are byte-identical; both default and
+optimized Rust compile and print `81`. Parent and candidate counters are
+identical: 618 text-node lookups, 476 native expression-view reparses, and 1
+native functional-pipeline reparse. Thus the C2 progress count remains flat on
+this workload; the native test fixture did not provide a measurable reduction.
+The same Fast Debug command times out after 3 seconds on both parent and
+candidate with no output, so it is baseline behavior for this fixture and is
+not used as parity evidence. The broader initial paired sweep also remains
+flat at checkpoint 1. No C2 full gates have run.
+
+### Phase 27.5.4 C2 progress report 3 — direct node lowering
+
+Extended the explicit `EmitterExpr` path so local identifiers and Boolean,
+string, character, numeric literals lower from retained nodes. Binary
+operators now recurse through child IDs (using the emitter's existing type
+logic only for Rust representation choices); string concatenation retains the
+original specialized path. Converted assignment, Let/Var, Return, method and
+function result, and Echo roots to slot/index-based handle selection.
+
+Paired c96 parent vs candidate results on three accepted fixtures:
+
+- `tests/phase5_tooling.moss`: lookups 2,155 -> 1,666; expression-view
+  reparses 1,081 -> 899; pipeline reparses 0 -> 0.
+- `tests/phase4_callable_specialization.moss`: lookups 841 -> 583;
+  expression-view reparses 439 -> 303; pipeline reparses 0 -> 0.
+- `tests/swarm_001_parenthesized_pipeline.moss`: lookups 881 -> 817;
+  expression-view reparses 614 -> 596; pipeline reparses 8 -> 6.
+
+For all three, generated Rust is byte-identical to the c96 parent, Rust
+compiles, and Fast Debug output equals native output. Outputs are respectively
+`6\n7\n5`, `6 8.0`, and `4 2`. Exact candidate counters were reproduced after
+the last edit. The bulk C2 counts remain unchanged because these root kinds
+are a small portion of consumer traffic; next, migrate call/constructor,
+member/index, unary and pipeline child traversals. No full suite or perf pass
+has run.
+
+### Phase 27.5.4 C2 progress report 4 — unary nodes and fact hooks
+
+Added direct retained-node lowering for unary `not`, bitwise complement, and
+negated numeric literals/values, including the checked Int minimum magnitude.
+Kept the prior Rust emission for unsupported unary shapes. Rebuilt
+`build/compiler/moss-dev`; targeted native Rust generation, Rust compilation,
+and Fast Debug/native parity passed for phase5, phase4, and the parenthesized
+pipeline fixtures. Generated Rust is byte-identical to c96 on these fixtures.
+`tests/phase25_integer_overflow.moss` also emits byte-identical Rust and native
+output; its Fast Debug run fails on both parent and candidate at line 48 with
+`FAST_DEBUG_UNCHECKED_EXECUTION` for `sum`, so this is recorded baseline debt.
+
+The registered `check_phase27_5_4_fact_hooks.py` harness passes again for the
+four classes (3 fixtures each; perturb/drop; Fast Debug/native/-O fail closed),
+and non-test `moss-opt` ignores both environment hooks. Latest paired
+candidate counts remain as report 3: phase5 1,666 lookups / 899 view
+reparses; phase4 583 / 303; parenthesized pipeline 817 / 596 / 6 pipeline
+reparses. Parent counts are 2,155 / 1,081; 841 / 439; and 881 / 614 / 8.
+The initial corpus sweep still showed no aggregate change. No full suite or
+performance gate has run.
+
+### Phase 27.5.4 C2 progress report 5 — index and field projections
+
+Added `EmitterExpr` navigation for Index nodes and value-object field Member
+nodes. These paths project base/index ExprIds and recursively lower them;
+remaining representation details still use the emitter's existing type/access
+helpers. Paired native generation for four checked examples is byte-identical
+to c96 and all four compile as Rust. Counters (parent -> candidate):
+
+- `examples/collections.moss`: lookups 1,322 -> 1,142; view reparses
+  481 -> 402.
+- `examples/functional_objects.moss`: 2,596 -> 2,008; 1,426 -> 1,188.
+- `examples/dogfood_index.moss`: 928 -> 766; 457 -> 404.
+- `examples/collections_and_methods.moss`: 2,607 -> 2,173; 1,247 -> 1,081.
+
+Fast Debug/native parity passes for the first three. On the fourth, candidate
+Fast Debug fails closed with a missing checked expression node at generated
+`jobs[1].weighted(3)`; the c96 parent succeeds and prints `lead code: 106 12`
+and `test score: 12`. This is a C1 Fast Debug regression outside current
+emitter edits, discovered by the C2 parity check; it must be resolved or
+classified before final C2 gates. No full suite has run.
+
+### Phase 27.5.4 C2 progress report 6 — checked calls and constructors
+
+The emitter's explicit node path now reads `resolved_target` from checked facts
+for direct known-function Call nodes and renders Object Constructor fields
+from their NamedArgument ExprIds. Other call forms continue through the legacy
+string path. This is a partial consumer migration; not a claim that call
+re-parsing or target reconstruction is eliminated globally.
+
+Targeted c96 parent -> candidate counters after this change:
+
+- `tests/phase5_tooling.moss`: text lookups 2,155 -> 1,590; expression-view
+  reparses 1,081 -> 890.
+- `tests/phase4_callable_specialization.moss`: 841 -> 583; 439 -> 303.
+- `examples/functional_objects.moss`: 2,596 -> 2,008; 1,426 -> 1,188.
+- `examples/object_pipeline.moss`: 2,922 -> 2,025; 1,530 -> 1,369.
+
+For all four, generated Rust remains byte-identical to the parent, compiles,
+and native output matches Fast Debug. The fact-hook test-build harness still
+passes (last run at report 4; no hook implementation changed since). C1
+Fast Debug fixture failure noted in report 5 remains unresolved. No full suite,
+three-engine bulk check, or performance gate has run.
+
+### Phase 27.5.4 C2 progress report 7 — node-based emitter type queries
+
+Added a `generated_expr_type(EmitterExpr)` path that reads checked type facts
+first and structurally handles identifier/literal/unary/binary/member/index,
+constructor, direct-call, and uniquely located pipeline queries. It records
+coverage against the exact queried ExprId in test builds, including
+Parenthesized nodes. This remains emitter-owned type inference where checked
+type facts are unavailable; it does not parse the node's text on these paths.
+The path is used by the corresponding node lowerers.
+
+Focused paired parent -> candidate counts after the change:
+
+- phase5 tool: lookups 2,155 -> 1,433; reparses 1,081 -> 755.
+- phase4 specialization: 841 -> 539; 439 -> 263.
+- functional objects: 2,596 -> 1,855; 1,426 -> 1,048.
+- object pipeline: 2,922 -> 1,755; 1,530 -> 1,159.
+
+All six focused fixtures in report 6 still generate byte-identical Rust and
+pass native compile and Fast Debug/native parity. The perturb/drop hook
+harness passes in its current test build, with non-test `moss-opt` ignoring
+the hooks. Re-parses and lookups remain nonzero, and the initial 1,822-source
+paired sweep has not been rerun after this progress. No full suite or perf
+measurement has run.
+
+### Phase 27.5.4 handover — C1 indexed receiver regression fixed (2026-11-01)
+
+C2 is active on `phase27-5-4-work`, pushed tip `7f48b73e`. In addition to
+ongoing emitter ExprId traversal, fixed a C1 Fast Debug regression discovered
+in C2 parity: struct-method receiver places now use the retained member-base
+ExprId (`jobs[1]`) via `locate_tree_node`, rather than reparsing the receiver
+text. `make --jobs=$(nproc) moss-dev` succeeds; Fast Debug output for
+`examples/collections_and_methods.moss` matches the pinned c96 parent exactly
+(`lead code: 106 12`, `test score: 12`), and `--trace` emits expected local
+writes. `git diff --check` passes. This is not yet committed. Remaining
+uncommitted native-generator work is the continued node-based emitter type /
+constructor traversal from C2 report 7.
+
+Important review note for the newly requested perturb/drop layer: the existing
+`check_phase27_5_4_fact_hooks.py` is not yet sufficient evidence of coherent
+checker-answer perturbation. Although the test-only hook helpers exist, current
+consumers often throw directly when `MOSS_TEST_PERTURB` is set, and the test
+harness expects failure for every perturbed case. Before claiming this request
+is met, reshape it so the declared checked answer is actually altered and each
+consumer follows that altered answer or fails closed; preserve drop tests as
+fail-closed checks. Existing registration is in Makefile default and shadow.
+
+### Phase 27.5.4 handover — emitter node-type slice validated (2026-11-01)
+
+Since `53db981b`, the C2 uncommitted emitter slice extends `generated_expr_type`
+for checked-tree constructors, enum constructors, nonempty vector literals,
+and more node-derived child types. Nine targeted sources were generated with
+both the pinned c96 parent and candidate; generated Rust was byte-identical,
+all candidate Rust compiled, and native output matched Fast Debug. Sources:
+`tests/phase5_tooling.moss`, `tests/phase4_callable_specialization.moss`,
+`tests/phase15_15_enum_message.moss`,
+`tests/tooling/fixtures/phase27_5_1/pattern_local_payload.moss`,
+`examples/collections.moss`, `examples/functional_objects.moss`,
+`examples/dogfood_index.moss`, `examples/object_pipeline.moss`, and
+`examples/collections_and_methods.moss`.
+
+The C1 receiver-place fix is committed/pushed as `53db981b`. The checked-fact
+perturb/drop harness was rerun on the current test build: call-targets,
+specializations, joins, patterns each pass perturb and drop on three accepted
+fixtures, with Fast Debug/native/-O all failing closed. `Makefile` registers it
+in both default and shadow `make check`; its `MOSS_TEST_AGENT2_CLASS` and
+`MOSS_TEST_AGENT2_FIXTURE` inputs allow Agent 2 to add the required adversarial
+fixture. `docs/COMPILER_STATE.md` records fail-closed as expected behavior and
+lists the expression-type, pipeline-type, and ownership known-debt engine set.
+No full suite or perf pass has run for C2. The emitter changes are still
+uncommitted; next checkpoint them, then continue removing emitter parser/view
+and text-lookup consumers structurally.
+
+### Phase 27.5.4 C2 paired-count checkpoint (2026-11-01)
+
+At `dedf45a3`, reran a like-for-like targeted count sample (four sources,
+default and `-O`, parent `tmp/phase27-5-4-parent/moss` versus candidate
+`build/compiler/moss-dev`). Counts are `text-node lookups / native expression
+view reparses / native pipeline reparses`:
+
+- `tests/phase5_tooling.moss`: 4312/2164/0 -> 2662/1368/0.
+- `tests/phase4_callable_specialization.moss`: 1686/882/0 -> 770/338/0.
+- `examples/functional_objects.moss`: 5287/2941/0 -> 3591/2029/0.
+- `examples/object_pipeline.moss`: 5844/3060/0 -> 3510/2318/0.
+
+Both binaries completed all eight commands successfully. This targeted sample
+is not the corpus workload or a perf run; full C2 consumer counts and perf
+remain deferred to near completion. Emitter re-parses and lookups are still
+nonzero; continue replacing string-facing emitter helpers with `EmitterExpr`
+projections and recursive ExprId lowering. No full suite has run since C1.
+
+### Phase 27.5.4 C2 checkpoint — None literal node lowering (2026-11-01)
+
+A direct `est::LiteralClass::None` lowering now emits Rust `None` from the
+retained node, removing its fallback into the string expression emitter. The
+accepted `tests/tooling/fixtures/phase21_iterator_generic_raise.moss` checks,
+generates byte-identical Rust against c96, compiles, and produces native /
+Fast Debug parity. This is a small structural reduction; it does not yet
+change the broad counts. The C2 source remains incomplete and no final suite
+has run.
+
+### Phase 27.5.4 C2 checkpoint — For iterable ExprId route (2026-11-01)
+
+Native `Stmt::Kind::For` lowering now obtains its iterable through the checked
+`ExprSlot::Iterable` handle. Range-call recognition and argument selection use
+the retained Call/Identifier nodes; source typing and rendering use
+`EmitterExpr`, including direct ExprId access for range bounds. This removes
+those For decisions from the string parser path while preserving all native
+lowering branches. `tests/phase47_iteration.moss` checks, generated Rust is
+byte-identical to c96, rustc succeeds, and Fast Debug output matches native.
+No full suite/perf run has occurred.
+
+### Phase 27.5.4 C2 checkpoint — control roots use checked ExprIds (2026-11-01)
+
+Native Raise values, Match scrutinees, If conditions and While conditions now
+enter lowering through their typed retained slots (`RaisedValue`, `Scrutinee`,
+`Condition`). Match constructor parenthesization is derived from the
+Constructor/Member/Identifier nodes rather than reparsing source. Targeted
+Phase 47 iteration, enum payload-pattern, and collections/methods fixtures
+check and compile; Fast Debug/native outputs agree; generated Rust matches the
+c96 parent on all three. Fact perturb/drop still passes for all four classes,
+and the static emitter/optimizer string-debt audit passes. Full corpus counts
+will be refreshed at the next paired-count checkpoint; no full suite/perf.
+
+### Phase 27.5.4 C2 checkpoint — argument slots stay on nodes (2026-11-01)
+
+Emitter Echo, assert, and assertEqual argument lowering now holds the exact
+`ExprSlot::Argument` node through both type queries and rendering. The Phase 5
+tooling fixture checks, generates parent-identical Rust, compiles, and matches
+Fast Debug/native. Paired default + `-O` counts for that source changed from
+parent 4,312 text lookups / 2,164 expression-view reparses / 0 pipeline
+reparses to candidate 2,400 / 1,260 / 0. Full workload and final suites remain
+pending.
+
+### Phase 27.5.4 C2 checkpoint — statement-call target fact (2026-11-01)
+
+The checker now retains statement-level call targets on `Stmt` by semantic
+context, covering direct calls whose expression-tree root has no semantic-fact
+record (the checker already retains their target in its call-invocation
+occurrence). Native lowering reads that checked target and reports
+`MOSS_INTERNAL_INVARIANT` when a known function target is missing/perturbed.
+Fast Debug validates the same context fact before execution and fails closed on
+missing or contradictory targets. `MOSS_TEST_PERTURB=call-targets` and
+`MOSS_TEST_DROP_FACT=call-targets` now mutate/drop this statement fact along
+with EST facts. The Phase 4 and Phase 5 programs still generate parent-identical
+Rust, compile, and match Fast Debug/native; the registered four-class hook
+harness passes all three engines. This is targeted validation only.
+
+### Phase 27.5.4 C2 checkpoint — call target consumers validated (2026-11-01)
+
+After the new checked statement-target fact was wired, Fast Debug validates
+function and object-method call targets from the context-scoped checker record;
+native object-method lowering selects the matching checked method declaration
+instead of calling `resolve_object_method` on backend argument types. Five
+fixtures (Phase 4, Phase 5, functional objects, collections-and-methods, object
+pipeline) check, generate Rust identical to c96, compile, and match Fast
+Debug/native. The four-class perturb/drop harness passes with 3 fixtures each
+across Fast Debug/native/-O, including the updated statement-call fact. No full
+suite or perf run has occurred.
+
+### Phase 27.5.4 C2 checkpoint — call argument type queries (2026-11-01)
+
+Known-function emission now carries its argument ExprIds into parameter-effect,
+ABI and compile-time-callable type queries when the checked invocation is
+available as an `EmitterExpr`. Four-source paired default/`-O` counts versus
+c96 changed after this slice as follows (lookups / expression-view reparses /
+pipeline reparses): Phase 5 `4312/2164/0 -> 2346/1240/0`; Phase 4
+`1686/882/0 -> 726/338/0`; functional objects `5287/2941/0 -> 3145/1929/0`;
+object pipeline `5844/3060/0 -> 2622/2078/0`. Both binaries succeeded for all
+commands. Four targeted fixtures remain parent-identical in Rust, compile, and
+match Fast Debug/native. The four-class hook harness passes all three engines.
+Counts remain nonzero; no full/perf suites yet.
+
+### Phase 27.5.4 C2 checkpoint — typed argument place lowering (2026-11-01)
+
+Known-function argument lowering now uses retained ExprIds for state-read
+classification, sibling-field references, nested-call occurrence equality,
+domain-handle adaptation, and simple identifier read/write places. Four
+targeted sources (Phase 4, Phase 5, functional objects, object pipeline) still
+check, produce byte-identical Rust versus c96, compile, and match Fast
+Debug/native. Paired default/`-O` counts (lookups / expression-view reparses /
+pipeline reparses): Phase 5 `4312/2164/0 -> 2126/1076/0`; Phase 4
+`1686/882/0 -> 726/338/0`; functional objects `5287/2941/0 -> 3145/1929/0`;
+object pipeline `5844/3060/0 -> 2622/2078/0`. Full consumer counts and suites
+remain pending; no performance run.
+
+### Phase 27.5.4 C2 checkpoint — functional pipeline source ExprIds (2026-11-01)
+
+EST functional-pipeline projection now carries its source ExprId and stage
+argument ExprIds. Native eager pipeline lowering uses the retained source node
+for source typing and rendering instead of passing the source slice to string
+type/expression consumers. Four fixtures still check, generate c96-identical
+Rust, compile, and match Fast Debug/native. Paired default/`-O` counts versus
+c96 (lookups / expression-view reparses / pipeline reparses): Phase 5
+`4312/2164/0 -> 2059/1012/0`; Phase 4 `1686/882/0 -> 592/210/0`;
+functional objects `5287/2941/0 -> 2944/1737/0`; object pipeline
+`5844/3060/0 -> 2622/2078/0`. The new expression-tree fields are additive and
+legacy string callers retain their existing behavior. Full gates remain
+pending.
+
+
+### Phase 27.5.4 C2 checkpoint — callback type queries use retained stage ExprIds (2026-11-01)
+
+The EST functional-stage projection now stores each callback argument ExprId,
+arena, and source buffer on `ParsedFunctionalStage`. Emitter callback result
+type queries use those nodes for placeholder detection and recursive
+`generated_expr_type`, instead of reparsing callback source for this query.
+The change built successfully; `check_phase27_est_functional_tree.py` and
+`check_phase27_three_engine.py` passed. Four fixtures (Phase 5, Phase 4,
+functional objects, object pipeline) generated Rust byte-identical to the
+pinned c96 parent in default and `-O`.
+
+Like-for-like default + `-O` emitter counters on those four files: parent
+17,129 text-node lookups / 9,047 native expression-view reparses / 0 pipeline
+reparses; candidate 8,235 / 5,052 / 0. This is a targeted sample, not the
+full corpus. Callback rendering still has source substitution and further
+consumer text paths remain. No full suite or performance run since C1.
+
+The four-class perturb/drop harness remains registered for default and shadow;
+its C1 report documents Agent 2's fixture selections. The upcoming final C2
+audit must verify that perturbation actually changes the checked answer, and
+that each consumer follows the changed answer or fails closed.
+
+### Phase 27.5.4 C2 note — callback rendering boundary (2026-11-01)
+
+A follow-up experiment attempted to render functional callback placeholders
+straight from retained nodes. `examples/functional_objects.moss` showed a
+bound-method callback emitted `_.calibrated()` rather than substituting the
+current item; the candidate Rust differed from the pinned parent. The
+rendering experiment was fully reverted, and the targeted three-engine check
+passed afterward. The committed node-based callback type queries remain. This
+shows callback rendering needs a checked callable/method lowering path before
+its source substitution can be removed; no language behavior was changed.
+
+### Phase 27.5.4 C2 checkpoint — mapped output types from checked functional IR (2026-11-01)
+
+The emitter projection now carries each planned functional stage's checked
+`output_type` into lowering. Mapped element type selection in shared, eager,
+and fused traversals reads this checked stage fact instead of rerunning
+`generated_callable_result` for the callback. If a planned map lacks its output
+type, the emitter reports an internal invariant. The build, functional-tree
+harness, three-engine checks over Phase 4/5 and functional examples, and Rust
+byte-parity (four fixtures, default and `-O`) pass.
+
+Paired targeted counters (four fixtures, default + `-O`): parent
+17,129 text-node lookups / 9,047 expression-view reparses / 0 pipeline
+reparses; latest candidate 7,914 / 4,752 / 0. Relative to the prior candidate
+checkpoint (8,235 / 5,052 / 0), this slice drops 321 lookups and 300 reparses.
+This is not the full workload. Callback rendering retains its text substitution
+path for member-call callbacks, as documented above. No full suite or perf run.
+
+### Phase 27.5.4 C2 checkpoint — raw expression statements use checked roots (2026-11-01)
+
+Native lowering for `Stmt::Kind::Raw` now obtains the expression through the
+statement's checked `ExprSlot::Expression` handle. The build, functional-tree
+harness, three-engine execution of `examples/functional_objects.moss`, and the
+four-class perturb/drop harness pass. The paired four-source C2 counters remain
+7,914 lookups / 4,752 expression reparses / 0 pipeline reparses, unchanged
+because this sample does not exercise a Raw expression statement. No suite or
+perf run.
+
+### Phase 27.5.4 C2 checkpoint — functional lowering accepts the checked pipeline value (2026-11-01)
+
+`functional_expr` now requires a checked `ParsedFunctionalPipeline` input; it no
+longer accepts an expression string and no longer has an internal text fallback
+that parses a pipeline. The EST expression consumer passes the parsed tree
+projection directly. Legacy string `expr` first obtains the projection, then
+calls the same typed API. Functional-tree and three-engine tests pass, the
+four-fixture default/`-O` Rust output remains byte-identical to c96, and the
+four-class perturb/drop harness passes. The paired counters remain
+7,914/4,752/0 because the migrated path already received a checked projection
+in the previous implementation. The legacy string entry to `expr` remains a
+consumer reparse path and C2 is incomplete.
+
+### Phase 27.5.4 C2 checkpoint — string concatenation lowers recursively from nodes (2026-11-01)
+
+`expr(EmitterExpr)` now lowers checked string concatenation directly from the
+Binary tree, flattening checked string `+` nodes and rendering each operand
+from its ExprId. It preserves empty-string clone behavior and borrowed
+message-parameter handling. `tests/phase24_string_concat.moss` passes
+three-engine parity and its generated Rust is byte-identical to c96 in default
+and `-O`. Its paired counts (both profiles) fall from parent 11,550 text-node
+lookups / 4,276 expression reparses to candidate 5,724 / 1,936. The wider
+four-source sample has not yet been rerun after this slice. No full suite/perf.
+
+### Phase 27.5.4 C2 checkpoint — method-call lowering reads checked targets (2026-11-01)
+
+The expression-node emitter now lowers ordinary object method calls from the
+call node's checked `method:Owner.name` target and the matching declaration,
+including argument effect-based borrowing and checked raise propagation. A
+mismatched target/name or missing declaration fails with an internal invariant.
+Targeted functional-object, collections/methods, object-pipeline and functional
+EST checks pass; generated Rust for these three sources is byte-identical to
+c96 in default and `-O`. The four-class perturb/drop harness passes.
+
+The paired four-source/default-plus-`-O` sample is parent 17,129 text-node
+lookups / 9,047 expression reparses / 0 pipeline reparses versus candidate
+7,782 / 4,688 / 0. Counts improved from 7,914 / 4,752 / 0 at the prior broad
+sample. Full corpus counts, suites, and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — method target perturb/drop fixture
+
+Added `examples/collections_and_methods.moss` to the call-target fact-hook
+matrix. This fixture exercises direct object method calls, which exposed a
+legacy emitter path that ignored perturbed/dropped call facts. The node-based
+method-call route now fails with `MOSS_INTERNAL_INVARIANT` when that checked
+target is absent under the hook or has the synthetic contradictory target.
+The registered harness passes: call targets 4 fixtures; specializations,
+joins, and patterns 3 each; Fast Debug/native/`-O` fail closed for perturb and
+drop. Three-engine runs for collections/methods, object pipeline, and
+functional objects pass. C2 full suites/perf remain pending.
+
+### Phase 27.5.4 C2 note — callback method requires an explicit checked target
+
+A second attempt to render `_.calibrated()` / `_.is_valid()` callbacks directly
+from stage argument ExprIds still emitted `_`. The functional checker records
+the stage callable identity as `placeholder:_.method()` rather than attaching a
+resolved method target to the callback call node, so the node emitter cannot
+select the method from a checked call fact. The experiment was reverted and
+`examples/functional_objects.moss` three-engine execution passes. A viable
+follow-up needs a separate checked callable target on functional stage facts;
+changing the existing placeholder identity risks optimizer behavior.
+
+### Phase 27.5.4 C2 checkpoint — binary operands stay as ExprIds
+
+Recursive emitter lowering for binary operators now passes operand ExprIds to
+borrowed-message-parameter checks and integer-literal conversion. This removes
+text-based identifier/literal queries from those nested binary paths. Focused
+three-engine checks for Phase 24 string concatenation and borrowed string
+comparison pass; the EST functional-tree check passes. Six fixtures (Phase 4,
+Phase 5, functional objects, object pipeline, string concatenation, borrowed
+string comparison) generate byte-identical Rust to c96 in default and `-O`.
+
+On the original four-source/default-plus-`-O` sample, counters improved from
+candidate 7,782/4,688 to 6,940 text-node lookups/expression reparses; parent
+remains 17,129/9,047. On an expanded six-source sample including the two new
+string cases, parent is 33,442/16,611 and candidate 14,646/7,340. Pipeline
+reparses are zero in both samples. Perturb/drop hook matrix still passes
+(4 call-target fixtures; 3 each for specialization, joins, patterns). No full
+suite or performance run.
+
+### Phase 27.5.4 C2 checkpoint — borrowed view lowering traverses expression nodes (2026-11-01)
+
+Borrowed-view place detection now walks retained `Member`/`Identifier` nodes
+instead of requiring the expression's text. Index lowering uses this node path
+when deciding whether an indexed borrowed view needs a clone, and direct checked
+method-call lowering selects view method spelling using the receiver/argument
+nodes. This preserves the parent lowering for field access and viewed method
+calls without converting the expression back to source text.
+
+Validation: default and `-O` generated Rust for `tests/swarm_010_map_views.moss`,
+`tests/swarm_011_sibling_field_borrow.moss`, and
+`tests/phase106d1_read_projection.moss` is byte-identical to the pinned c96
+parent. The three-engine gate passes and the call-target/specialization/join/
+pattern perturb/drop harness passes. Full suites, corpus counters, and
+performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint correction — duplicate node lowering removed (2026-11-01)
+
+Review found the prior checkpoint's added binary/unary block was unreachable:
+`expr(EmitterExpr)` already handled these node kinds before its text fallback.
+The duplicate block has been removed. The previously reported seven-source
+counter sample (three-engine conformance, functional objects, object pipeline,
+string concatenation, two borrowed-view fixtures, and numeric-member
+projection), default plus `-O`, remains a valid measurement of the source tree
+before and after that unreachable block: pinned parent 44,723 text lookups /
+24,163 expression-view reparses; candidate 24,139 / 14,227. It is not progress
+attributable to that block. Generated Rust was byte-identical for all seven in
+both modes; the three-engine gate and four-class perturb/drop hook matrix
+passed. Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked message expressions accept ExprIds (2026-11-01)
+
+The emitter now has a node-based `Message` expression path, including typed
+receiver/handler lookup and node-based message payload lowering. Root-ingress
+messages retain the existing path because their executor-invocation lowering
+is still string-based. The focused seven-source generated-Rust comparison
+remains byte-identical in default and `-O`; three-engine and the four-class
+perturb/drop harness pass. Paired seven-source counters did not change from the
+prior measurement (parent 44,723 / 24,163; candidate 24,139 / 14,227), so this
+slice is recorded as parity-preserving but not yet demonstrated to reduce the
+measured reparse workload. Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked function arguments stay as ExprIds (2026-11-01)
+
+Known-function call rendering now selects view wrappers and checks argument
+parameter effects from the retained argument nodes. Static specialization
+selection still consults the checked call edge first; only ambiguous/no-edge
+cases use the existing compatibility derivation. This removes repeated source
+lookups for the normal unique-edge argument path.
+
+On the same seven-source/default-plus-`-O` sample, parent remains 44,723 text
+lookups / 24,163 expression-view reparses. Candidate fell from 24,139 / 14,227
+to 22,951 / 13,885. Generated Rust stayed byte-identical on all seven
+fixtures in both modes. The three-engine gate and four-class perturb/drop
+harness pass. Full workload counts, suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — run Agent 2-selected perturb/drop fixtures
+
+The registered hook harness now includes the fixture selected during the C1
+Agent 2 audit for each class: call targets (`pipeline_shape.moss`),
+specializations (`twice_multi.moss`), joins (`join_recover_binding.moss`), and
+patterns (`pattern_parenthesized.moss`, already present). Default and shadow
+runs pass perturb and drop across 5 call-target, 4 specialization, 4 join, and
+3 pattern fixtures. The same harness checks Fast Debug, native emission, and
+`-O` for fail-closed behavior; test-hook variables remain ignored by
+`moss-opt`. Emitter/optimizer consumer counts are still nonzero and final gates
+remain pending.
+
+### Phase 27.5.4 C2 checkpoint — numeric helper discovery scans retained arenas only (2026-11-01)
+
+Removed `program_uses_numeric_builtins`'s fallback that reparsed every
+expression-shaped string in synthesized statement bodies. The source and
+imported-body expression arenas are scanned directly; these already cover
+checked source calls. A temporary accepted `to_int` fixture verified the
+numeric runtime helper is still emitted, generated Rust compiles, runtime output
+is `1`, and its Rust bytes match the pinned c96 parent. The temporary fixture
+lives under `tmp/` and is not registered. Full suite/perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — empty constructors and checked-call wrapper parity (2026-11-01)
+
+The retained Call path directly lowers empty `Map()`, staged `Set()`, `Queue()`,
+and `Some(value)` constructors. The node-based specialized-call wrapper path
+also now groups borrowed receiver dereferences before method selection; a
+focused diff first caught and fixed the `*job.cost()` precedence regression in
+`examples/mini_application.moss`.
+
+Four-source paired counters (collections, empty-map context, typed string map
+index, and mini application; default plus `-O`) are parent 23,204 text lookups
+/ 14,138 expression-view reparses versus candidate 12,394 / 7,446. Generated
+Rust is byte-identical for all four in both modes. The three-engine gate passes.
+The to_int helper-discovery probe also remains accepted, compiles, and runs with
+identical generated Rust. Full C2 suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — common global builtins lower from Call nodes (2026-11-01)
+
+The retained Call path now lowers `sqrt`, `is_nan`, `is_finite`, numeric
+conversions, `sum`, `Char`, and scalar `less`/`isequal`/`hash` directly from
+argument ExprIds. A temporary accepted fixture with `to_int` and `sum` passes
+`moss check`, generates Rust byte-identical to c96 in default and `-O`,
+compiles, and prints `3`. Its counters fall from 702 text lookups / 557
+expression-view reparses on c96 to 132 / 125 on the candidate, in both modes.
+The registered hook matrix and three-engine conformance gate pass. Full suites
+and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — scalar and string builtins read checked member calls (2026-11-01)
+
+The emitter now lowers checked string and scalar member builtins from the
+receiver and argument ExprIds when the recorded target is `builtin:<name>` or
+`builtin-scalar-protocol:<name>`. Covered operations include string length,
+character extraction, comparison, hash, find, slice, case conversion, split,
+and join; scalar text conversion, comparison, hash, and Char codepoint. The
+string fallback remains for mutating methods and other receiver families.
+
+On four targeted sources (borrowed string comparison, string map, collections
+and collections/methods; default plus `-O`), c96 measured 20,514 text lookups /
+11,124 expression reparses and the candidate measured 11,354 / 6,272. Generated
+Rust is byte-identical for all sources and modes. Fast Debug/native/`-O`
+compile-and-run outputs agree; three-engine and fact-hook checks pass. Full
+C2 suites and perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — checked root handles select by slot identity (2026-11-01)
+
+`checked_expression_ref` no longer selects a retained node by comparing its span
+length with the expression string. It selects by the checked `(slot,
+argument_index)` identity within the active statement handle set, reports an
+internal invariant if that identity is ambiguous or missing, and retains the
+source buffer solely for rendering the selected node. Four focused sources
+(mini application, numeric-member projection, string map, and collections with
+methods) remain Rust-byte-identical to c96 in default and `-O`. Three-engine
+and fact-hook checks pass. This change removes a text-derived node-selection
+condition; the bulk lookup counter does not instrument that span comparison.
+
+### Phase 27.5.4 C2 checkpoint — node type inference has no text fallback (2026-11-01)
+
+`generated_expr_type(EmitterExpr)` now uses its checker fact and recursive node
+rules only. An unsupported node shape returns no emitter type instead of calling
+`generated_expr_type(expression.text(), ...)`. Ten targeted sources (three-
+engine fixture, functional objects, object pipeline, string concatenation,
+borrowed views, numeric-member projection, mini application, string map, and
+collections with methods), default plus `-O`, generate Rust byte-identical to
+the c96 parent. Paired counts: c96 76,824 text lookups / 43,213 expression
+reparses; candidate 41,205 / 25,257. Fast Debug/native/`-O` execution matches
+on nine of the ten; `examples/mini_application.moss` remains a pre-existing
+unsupported user-named pipeline stage on c96 (line 88 unsupported-stage error)
+and fails in the current retained-tree interpreter with missing checked node.
+This behavior gap is recorded as baseline debt; no pipeline acceptance or
+meaning was changed. The three-engine and default/shadow hook matrices pass.
+Full suites and performance remain pending.
+
+### Phase 27.5.4 C2 checkpoint — coverage instrumentation no longer reparses type-query text (2026-11-01)
+
+The test-only coverage path for `generated_expr_type(string)` no longer
+fingerprints text, searches retained handles, or parses a temporary EST solely
+to classify a node. It records `text-query/ABSENT`, since a text-only consumer
+query has no node identity. The EST coverage harness passes and confirms
+counters remain opt-in/output-neutral; three-engine and fact-hook gates pass.
+On the same ten-source/default-plus-`-O` workload, paired lookups fell from
+41,205 to 40,133; expression-view reparses remain 25,257 (c96 parent remains
+76,824 / 43,213).
+
+### Phase 27.5.4 C2 checkpoint — Root-ingress messages lower from expression nodes (2026-11-01)
+
+Root-ingress Message expressions now pass the receiver and payload ExprIds to a
+node-based executor-invocation lowering path. On five focused message sources,
+generated Rust is byte-identical to c96 in default and `-O`; paired counters
+fall from 6,408 lookups / 2,878 expression reparses to 4,503 / 2,015. Four
+sources pass Fast Debug/native/`-O` runtime parity. The FileIO cleanup fixture
+hits the documented Fast Debug unsupported-FileIO error and still passes Rust
+byte parity. Three-engine and fact-hook checks pass.
+
+### Phase 27.5.4 C2 checkpoint — uncovered emitter parse accounting (2026-11-01)
+
+Candidate `2cdb5637` is still the latest pushed code checkpoint. The borrowed
+view string helper now routes through the centralized expression-view lookup,
+and test builds count named-argument parsing as a native expression reparse.
+This was counter coverage only. Build, EST counter opt-in/output-neutral gate,
+and the focused three-engine check for `examples/collections_and_methods.moss`
+pass. Generated Rust is byte-identical to pinned c96 for that fixture. Candidate
+reports 1,244 text lookups / 532 expression-view reparses on its default run.
+The old parent instrumentation did not count these same direct parse sites, so
+that candidate number is not presented as a like-for-like delta. No full suite,
+corpus counter pass, or performance suite has run. The evidence and counter-gap
+limitation are recorded in `agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`.
+
+Next: migrate a real emitter path from EmitterExpr rather than expression text,
+then construct a parent test build with equivalent counters for paired reports.
+Run the required default/shadow full gates and Agent 2 only once after C2 work
+stabilizes.
+
+### Phase 27.5.4 C2 checkpoint — nested checked call edges avoid emitter fallback (2026-11-01)
+
+Uncommitted C2 slice now consumes a unique checker-recorded `SemanticCallEdge`
+for nested function calls when the EST node's resolved-target fact is absent;
+the call is matched by body context and source line. Static specialization
+result types use the checked edge candidate when uniquely available. The direct
+node path restores integer wrapping lowering for
+`tests/phase27/est/specialized_call_facts.moss`, correcting a generated Rust
+text difference found during spot-check. Rust is byte-identical to c96,
+compiles, and runs with `2` / `2`. The three-engine check and C1 four-class
+perturb/drop matrix pass.
+
+Like-for-like default counts for that one source, using a locally rebuilt c96
+parent with equivalent instrumentation for borrowed-view and named-argument
+parser sites: parent 3,387 text-node lookups / 2,685 reparses; candidate 777 /
+728 (−77% / −73%). Candidate's test-only node-fallback diagnostic reports the
+remaining shapes. This does not substitute for the required corpus/examples/
+packages measurement. Full suites and performance remain unrun by design until
+C2 is near completion. The uncommitted code slice is ready for a checkpoint
+commit/push after final targeted verification.
+
+### Phase 27.5.4 C2 checkpoint — checked specialized member dispatch (2026-11-01)
+
+Emitter member-call lowering now reads the active function specialization's
+checked `member_requirements` and `selected_callable_id` when the call node
+lacks a direct resolved-target fact. It maps the checked callable identity to
+its method declaration and lowers the retained node without re-running method
+resolution. This removed `item.measure()` fallback reparses from
+`tests/phase27/est/specialized_call_facts.moss`.
+
+Paired default counts with equivalent parser-site instrumentation on pinned c96:
+parent 3,387 text-node lookups / 2,685 reparses; candidate 519 / 470 (−85% /
+−82%). Generated Rust matches byte-for-byte, compiles and prints `2` / `2`.
+Three-engine parity and the call-target/specialization/join/pattern
+perturb/drop matrix pass. Test-only emitter fallback node-kind accounting now
+shows remaining fallback shapes without printing source text. This is still a
+single fixture; bulk counts, full suites, and perf remain pending.
+
+### Phase 27.5.4 C2 checkpoint — paired mini-application counts (2026-11-01)
+
+Same instrumentation and commands on `examples/mini_application.moss`:
+parent default and `-O` each report 9,497 text-node lookups / 6,122 expression
+reparses; candidate each reports 4,673 / 3,172 (−51% / −48%). Generated Rust
+is byte-identical in both modes. This measures emitter parsing only; the
+fixture's known Fast Debug unsupported user-named pipeline stage remains a
+baseline limitation. The optimizer source scan found no parser entry point;
+all direct `parse_view` entries under `fileio_semantics.inc`,
+`executor_invoke_lowering.inc`, and `static_bounds.inc` belong to the checker
+translation unit and are outside re-scoped C2. Full suites and perf remain
+pending.
+
+### Phase 27.5.4 C2 checkpoint — user-named callable pipelines from nodes (2026-11-01)
+
+The emitter's retained `Pipeline` path now has a direct lowering for pure,
+non-raising user-named function stages. It reads the stage target from checked
+call facts / semantic call edges, and obtains static specialization from the
+checker edge. It declines unsupported effectful, cross-module, view, named-arg,
+or complex explicit-argument shapes. The new path fails closed under call-target
+and specialization perturb/drop hooks.
+
+On `examples/mini_application.moss`, parent counts in default and `-O` are
+9,497 text-node lookups / 6,122 reparses; current candidate counts are 3,507 /
+2,018 (−63% / −67%), with native functional-pipeline reparses 2 -> 0. Generated
+Rust is byte-identical in both modes; compiled output matches in both modes.
+The four-class hook matrix passes, and direct call-target/specialization
+perturb/drop probes all hit `MOSS_INTERNAL_INVARIANT`. The no-parser scan found
+no parser calls in `functional_optimizer.cpp`. C2 still has nonzero emitter
+reparses; no full suites or performance run yet. Evidence is also recorded in
+`agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`.
+
+### Phase 27.5.4 C2 checkpoint — node identifiers (2026-11-01)
+
+Latest work is on `phase27-5-4-work`. Emitter `EmitterExpr` identifiers now
+lower checked local names and non-view domain state/route names directly from
+the node. Mini application output is byte-identical to c96 in default and
+`-O`; paired test-build counts per invocation are 9,497 -> 3,031 text lookups
+and 6,122 -> 1,610 expression reparses (−68% / −74%). Its node fallback
+counter is now empty. Three-engine and the call-target/specialization/join/
+pattern perturb/drop matrix pass.
+
+A direct lowering experiment for `jobs[1].weighted(3)` changed emitted Rust
+by adding a clone. That affects ownership and was reverted; the collections
+fixture's member-call remains a residual fallback. The remaining uncommitted
+slice adds only the node identifier path and fallback-kind test counter labels.
+Targeted native Rust byte comparisons pass; no final suites, bulk corpus count,
+or performance suite has run yet. Next work: continue only with tree paths that
+preserve ownership lowering, then run the corpus count and final C2 gates when
+migration is near completion.
+
+### Phase 27.5.4 C2 checkpoint — checked indexed method receiver (2026-11-01)
+
+Emitter member calls now use a unique checked call-edge target if their node
+lacks a direct target fact. For Vector/Seq indexed receivers, the emitter
+preserves method-place lowering instead of value-index lowering. This avoids
+the extra clone from the first experiment and keeps generated Rust byte-identical
+to c96 for `examples/collections_and_methods.moss` in default and `-O`.
+The generated Rust compiles and runtime output matches. There are no emitter
+node-fallback shapes for this fixture.
+
+Paired counts per command: parent 2,607 lookups / 1,259 reparses; candidate
+855 / 194 (−67% / −85%). Three-engine and all four fact-hook classes pass.
+Map-indexed and other ownership-sensitive method receivers remain unverified.
+No final suites, bulk corpus counts, or performance run yet. Next: continue
+narrow checked-node paths with byte-parity targets, then execute full C2 gates
+when the residual count work is near completion.
+# 27.5.4 current handover — C2 emitter tree migration
+
+Branch `phase27-5-4-work`, based on C1 tag `phase27-5-4-c1` (`4a04ad40`).
+Latest pushed commit before this working slice: `ca03f1ab`. The current slice
+has uncommitted changes in `src/native_generator.cpp`,
+`src/functional_source_pipeline.hpp`, `src/est/expression_tree.cpp`,
+`docs/phase27/27_5_4_REPORT.md`, and this file. No full suite, bulk consumer
+measurement, performance run, or C2 Agent 2 audit has run since the previous
+checkpoint.
+
+This slice adds node-based functional pipeline descriptors with preserved
+ExprIds; parsed compatibility pipelines own their arena, fixing an ASan
+stack-use-after-return in the map-call argument repro. Eager map lowering uses
+the stage node type before callable-result inference. Targeted default and `-O`
+emission, Rust compile and runtime passed for `assoc-grouped.moss` (`3`),
+`swarm_049b_fast_debug_map_call_argument.moss` (`4`), and the trait-parameter
+sample (`10`). `phase21_peer_effects.moss` compiles and its output matches C1
+after using checked exceptional alternatives for missing direct raise-value
+type facts. The earlier trait and raise failures were new relative to C1 and
+are fixed. Fast Debug for the map-call repro fails identically on C1 with a
+missing checked expression node; baseline debt. The incomplete-index
+adversarial probe still fails closed for a missing handle on the candidate,
+while C1 emits it; it is not a complete fixture.
+
+Latest paired bulk counts remain the measurement at `ca03f1ab`, not this tree:
+candidate 5,929,515 text lookups / 3,534,743 reparses versus c96 15,167,953 /
+9,750,215. Candidate standalone per-file emission failures were 1,427 vs
+1,406 parent; some are package-context artifacts. Rerun identical paired
+counts after C2 consumer work is near completion. Next inspect other remaining
+emitter parse sites and ownership-safe node lowering; then run the paired
+measurement, fix all new failures, execute final gates once, request Agent 2
+audit, and merge/tag only on GO. Do not run performance before near-completion.
+
+### C2 paired-count checkpoint (2026-11-01)
+
+Paired measurement at `63156e99`, before the immediately following map-method
+fix: same 1,822 source files / 337 manifests and 3,644 default/`-O` commands
+per compiler. c96 baseline: 15,167,953 text lookups, 9,750,215 expression-view
+reparses, 7,362 functional reparses, 1,406 generation failures. Candidate:
+5,980,690 lookups, 3,514,024 expression-view reparses, 798 functional
+reparses, 1,410 failures. Deltas: −60.6% lookups, −64.0% expression-view
+reparses, −89.2% functional reparses. Candidate failure set contained
+`swarm_049a_fast_debug_map_in_method` (both modes; fixed after measurement)
+and the incomplete-index probe (both modes). C1's generated artifact for the
+probe is invalid Rust (`rustc` reports an unclosed delimiter); current emitter
+fails closed on missing checked RhsValue handle. Current one-fixture paired
+counts for map-method after fix are 1,521/1,173 -> 434/338 (lookups/reparses)
+in default; generated Rust is identical to C1 in default and `-O`, and both
+compile and print 2. Rerun full paired counts after further node migrations.
+
+### C2 checked source-context target checkpoint
+
+Uncommitted `src/native_generator.cpp` now looks up checked expression facts
+under the checker-recorded `source:<file>:<line>` context, besides body and
+specialization contexts. This fixed GraphKit's missing-target tree fallback:
+Map.get uses its checked builtin target, unqualified sibling method calls use
+the checked call edge, and typed empty Vector/Seq constructors lower from type
+argument ExprIds. GraphKit fallback trace reduced from 44 call + 30 constructor
+events to zero. Default and optimized Rust both compile and runtime output
+matches C1; only redundant map-place parentheses differ in Rust text. Targeted
+three-engine and four-class fact hook matrix pass. Current GraphKit counts:
+38,180 lookups / 9,580 expression reparses / zero functional reparses. The
+complete paired corpus count predates this slice; do it when node work is
+stable. Full gates and performance are still not run.
+
+### C2 retained functional-plan node routing
+
+Working tree adds checked pipeline-node resolution by `FunctionalExpressionPlan`
+ID for virtual upstream stages, and shared traversal reads the statement's
+checked RHS ExprId. This eliminates those two `functional_pipeline_from_est`
+sites. Targeted functional-tree test, mini_application and GraphKit emission
+pass. Mini application remains byte-identical to C1; paired default counts
+9,497 -> 3,031 text lookups, 6,090 -> 1,610 total emitter reparses, and
+functional pipeline reparses 2 -> 0. This slice is not yet committed/pushed.
+
+### C2 node argument handoff checkpoint
+
+The uncommitted follow-up adds `method_call_argument(Method, ..., EmitterExpr)`
+and uses it for checked sibling-method calls, avoiding reparsing their argument
+strings. GraphKit's targeted default counters decreased from 38,180 lookups /
+9,580 reparses to 37,596 / 8,996; runtime matches C1 and node fallback events
+remain zero. Full paired recount, make check, parity, perf and Agent2 audit are
+pending. This latest slice is uncommitted.
+
+### C2 optimized virtual-upstream checkpoint (2026-11-01)
+
+The retained functional plan lookup now searches the checked owner statement
+across main, functions, methods, handlers/recovery arms and tests. It carries
+the exact arena/ExprId and source slot into virtual-upstream lowering; it does
+not match plans by source line or reparse expression text. With this change,
+all 30 optimized functional fixtures that failed in the paired count at
+`84c01904` emit successfully. The 12 previously remaining failures now pass,
+and the other 18 remain green. This is targeted validation only. No final
+suite, paired corpus recount, parity gate, performance run or Agent 2 review
+has run for this state. Next continue C2 consumer migrations and fact hooks,
+then repeat the paired corpus measurement before final gates.
+
+### C2 assignment RHS handle checkpoint (2026-11-01)
+
+Added node overloads for identifier, literal, empty-constructor and index
+shape queries, and routed assignment RHS lowering through its statement-owned
+checked handle. On `examples/functional_semantic_optimization.moss -O`, this
+reduced lookups 991 -> 986 but expression-view reparses remained 758, so the
+change does not materially reduce the broad reparse debt. Six targeted
+assignment/collection fixtures compiled in default and `-O`; the 30-fixture
+optimized functional set, four-class perturb/drop hook harness, and three-
+engine check all pass. This slice is uncommitted. Next migrate expression
+consumers that still receive child fragments as strings, then rerun paired
+corpus counts near completion.
+
+Validation after this correction: build passed; `check_phase27_est_functional_tree.py`,
+`check_phase27_5_4_fact_hooks.py` (targets 5, specializations 4, joins 4,
+patterns 3), and `check_phase27_three_engine.py` passed. The earlier first
+attempt omitted the required compiler argument and exited before running; the
+correct invocations above passed. This is not a full-suite run.
+
+### C2 string-concatenation node traversal checkpoint (2026-11-01)
+
+Assignment string-concatenation collection now walks the checked RHS Binary
+nodes and carries operand ExprIds through type checks, equality/mention checks,
+literal selection and emission. The target fixture `tests/phase24_string_concat.moss`
+emits byte-identical Rust to C1 in default and `-O`; rustc compilation and
+native output (`string concat ok`) match in both modes. Its current optimized
+counter sample is 2,161 text lookups and 715 expression-view reparses. No
+paired parent count has been run for this slice. Full suites and perf remain
+deferred until C2 migration is near completion.
+
+Follow-up adds direct retained-node lowering for String append/reserve and
+builtin-method String targets such as `length`, avoiding the old expression
+fallback on `tests/phase24_string_concat.moss`. Its optimized counts fell
+2,161/715 -> 1,678/356 versus the immediately preceding candidate. Default
+and `-O` Rust are byte-identical to C1, both rustc builds run and print
+`string concat ok`; the candidate's test trace reports zero node fallbacks for
+this fixture. The paired corpus count is still pending.
+
+### C2 adjacent string/write-through validation (2026-11-01)
+
+The same retained-node lowering is byte-identical to C1 for four accepted
+string fixtures in default and `-O`: `phase24_string_concat`,
+`swarm_049_string_builtin_operators`, `swarm_030_string_comparison_borrowed`,
+and `repro6_string_concat_native`. All eight generated Rust files compile and
+produce matching native output. `swarm_044_string_literal_binary_lexing` is
+rejected by C1's checker with `UNSUPPORTED_STRING_ORDERING`, so it was not a
+candidate migration input. No full suite or performance run has occurred.
+
+### C2 initializer and return node routing (2026-11-01)
+
+Let/Var initializer checks and Return binding checks now use their checked
+handles directly, including map-constructor and float annotation queries. On
+`tests/phase24_string_concat.moss -O`, text lookups decreased 1,678 -> 1,624;
+expression-view reparses remained 356. Six targeted sources compile in
+default and `-O`; the fact-hook matrix and three-engine check pass. The
+remaining parse count is still substantial and dominated by other string
+shape/type consumers. This checkpoint is not a paired parent report or a
+full-suite result.
+
+Like-for-like targeted C1/candidate `-O` counters (test builds, same compiler
+command and fixtures): `phase24_string_concat` 5,775 lookups / 2,138 reparses
+-> 1,452 / 356; `collections_and_methods` 2,607 / 1,247 -> 688 / 86;
+`phase45_cross_let_result` 641 / 467 total reparses -> 201 / 163;
+`phase15_15_string_map` 3,912 / 2,158 -> 870 / 572. Candidate functional
+reparses are zero on `phase45_cross_let_result`. These are focused fixtures,
+not the required full corpus + examples + packages count.
+
+### C2 checked LHS node lowering (2026-11-01)
+
+Assignment LHS shape, index type, and write-place queries now traverse the
+statement's checked `LhsPlace` handle. Later assignments used to close empty
+Map element types are also inspected through their checked LHS/RHS handles.
+Build passed, 30/30 optimized functional fixtures pass, and the fact-hook and
+three-engine tests pass. Six representative outputs match C1 behavior; the
+String map fixture's generated Rust differs only in redundant grouping and
+both binaries compile and print the same output. Updated focused C1/candidate
+counts are listed above. No full suites, corpus pass, or perf run yet.
+
+### C2 latest local checkpoint (2026-11-01)
+
+At commit `a3e404c6`, assignment LHS/RHS place handling was already pushed.
+The next local slice lowers checked Map.delete Call/Member nodes, including
+the result flag's write-place node, and directly emits remaining local
+Identifier nodes. Targeted optimized `tests/phase15_15_string_map.moss`
+generated Rust compiled and printed `string/map ok`; its test-build counters
+are 274 text lookups and 242 expression reparses, with zero node fallback
+events. Focused C1/candidate optimized counts: `phase24_string_concat`
+5,775/2,138 -> 1,316/356; `collections_and_methods` 2,607/1,247 -> 484/86;
+`phase45_cross_let_result` 641/467 -> 167/163; `phase15_15_string_map`
+3,912/2,158 -> 274/242 (lookups/reparses). Full suites, final paired corpus
+measurement, parity, and perf remain pending. Current worktree contains
+uncommitted `src/native_generator.cpp` plus this status/report update; after
+committing and pushing, continue migrating emitter text consumers. Branch:
+`phase27-5-4-work`.
+
+### C2 checked call-argument handoff (2026-11-01)
+
+The emitter's ordinary call-statement lowering now passes retained argument
+ExprIds into function/method ABI lowering and uses node-based type queries for
+compile-time callable classification. A candidate-local identifier shortcut
+introduced in checkpoint `863d432a` was removed after the optimized
+`collections_and_methods` fixture exposed bare object-field names; the focused
+Rust is now byte-identical to C1 in default and `-O`, compiles, and prints
+`lead code: 106 12` / `test score: 12`. Its focused counters remain 484 text
+lookups / 86 reparses; this is a structural migration, not a measured delta.
+The four-class perturb/drop harness (5/4/4/3 fixtures) and three-engine check
+pass. This checkpoint is committed and pushed as `051434d1`. Continue C2 consumer
+migration; do not run full suite/perf until near completion.
+
+### C2 local-name type query checkpoint (2026-11-01)
+
+A test-build input trace for optimized `functional_semantic_optimization.moss`
+showed repeated parser calls for names already present in the local type map.
+`generated_expr_type(string)` now directly reads a local's existing type before
+calling parser-backed structural helpers. This avoids parse/reparse for that
+exact name without any node lookup by expression text. Like-for-like C1 versus
+candidate optimized counters: 1,844 -> 649 text lookups, 1,166 -> 628 native
+expression reparses, and 1 -> 0 native functional-pipeline reparses. Rust is
+byte-identical; both outputs are `semantic space: 68 5 34 3 4 true`. This checkpoint is committed and pushed as `980430af`; full suites, final
+paired workload, parity and perf remain pending.
+
+### C2 functional callback ExprId checkpoint (2026-11-01)
+
+Functional callback rendering now uses each stage's checked callable ExprId.
+Placeholder values substitute during node traversal; lowered functional plans
+carry their source ExprId, including virtual-upstream source selection. The
+optimized `functional_semantic_optimization.moss` fixture fell from the prior
+candidate's 649 lookups / 628 reparses to 35 / 14 after bound-method checks
+used node shape (C1 baseline: 1,844 / 1,166; functional pipeline reparses 0). Default and `-O` Rust are byte-
+identical to C1 and runtime output matches. `phase21_pipeline_try_placeholder`
+compiles/runs with four `-2` results. Four-class perturb/drop and three-engine
+checks pass. This checkpoint is committed and pushed as `4e94f8be`; no full
+suite, paired corpus measurement, or perf run has occurred. Continue migrating the
+remaining emitter text lookup sites.
+
+### C2 resumed handover (2026-11-01)
+
+Resumed from pushed `39e946d1` on `phase27-5-4-work`. The candidate and
+Phase 27.5.3 baseline directories are available under `tmp/`; no full suite,
+corpus count, or perf run has been started. Local uncommitted emitter work
+switches FileIO `.chunks()` pipeline recognition to retained Call/Member nodes
+and uses the checked result binder directly. `git diff --check` was clean
+before a temporary invariant-context addition.
+
+A targeted fresh-package reproduction currently fails in the candidate:
+`tmp/provider-fresh` copied from the generated FileIO provider has
+`MOSS_INTERNAL_INVARIANT missing checked statement expression slot=2 line=4`
+for `return acc * 10 + len`; `moss-dev check src/folds.moss` succeeds and EST
+initial parse dump shows a ReturnValue handle, while package `build` hits a
+later body lacking the handle. The Phase 27.5.3 baseline had succeeded in the
+original provider directory, so this must be diagnosed as a candidate regression,
+not baseline debt. Added invariant statement context locally to identify the
+missing path; it is uncommitted. Next: trace where provider build replaces or
+projects the checked statement, preserve the checker-owned ExprId/handle, then
+rerun the provider and FileIO harness before committing/pushing. Keep user-added
+C1/C2 perturb/drop scope in view: existing `check_phase27_5_4_fact_hooks.py`
+currently exercises fail-closed hooks for four classes, but perturb is presently
+implemented as fact removal/invalid marker (not a coherent alternate answer);
+new work must make perturbation coherent or clearly identify still-open classes.
+
+The regression was in `module_program`: it projected functions (and their
+checked handles) while leaving both EST arena references behind. Copying the
+primary/shared arena references into the projected program fixed the handle
+lifetime/lookup problem. The candidate now builds the fresh provider package,
+and the focused `check_phase20_executor_fileio.py` harness passes. The invariant
+error retains slot/line and statement context to make any future missing-handle
+report actionable. This migration slice is ready to commit; no full suite or
+performance suite has run.
+
+### C2 checked Map iterator lowering (2026-11-01)
+
+An opt-in emitter fallback trace on optimized `tests/phase15_15_string_map.moss`
+identified `values.keys()` as the remaining Call node re-parsed by string
+lowering. Added direct checked Map `keys`/`values` lowering. Candidate counts
+fell from 97 text-node lookups / 65 expression reparses to 65 / 33 for this
+fixture. Generated Rust compiled with `rustc -D warnings`, and native plus Fast
+Debug both print `string/map ok`. This is a focused sample only. The source and
+delivery report are uncommitted; no full suite/corpus/perf run has occurred.
+
+### C2 empty-fragment query checkpoint (2026-11-01)
+
+The optimized string-map fixture's previous 65 text lookups / 33 expression
+reparses included 25 requests for an empty string. `expression_view_from_est`
+now returns before lookup/parsing for empty input. Counts are 40 / 8 on the
+same fixture. Generated Rust compiled with `rustc -D warnings`; native and Fast
+Debug both print `string/map ok`, and the focused Phase 15.15 API test passes.
+This remains a focused reduction; residual 8 reparses and full-workload counts
+remain open. No full suite or perf run yet.
+
+### C2 domain and subsystem shape queries (2026-11-01)
+
+The remaining 24 text lookups on the optimized string-map fixture came from
+Executor and FileIO shape probes run on every statement, plus the driver’s
+domain-construction scan. Those probes now use checked expression ExprIds;
+domain lowering consumes named-argument nodes. The same fixture reports 0
+emitter text lookups / 0 expression reparses (previously 40 / 8). Rust compiles
+with warnings denied; native and Fast Debug print `string/map ok`. The
+`examples/counter.moss` generated Rust also compiles and prints `counter: 41` /`counter: 42`. The focused executor/FileIO harness passes. A targeted optimized
+FileIO runtime integration fixture remains at 500 lookups / 289 reparses; the
+C2 corpus workload target remains open. Temporary stack tracing was removed.
+
+### C2 FileIO call-node checkpoint (2026-11-01)
+
+FileIO read/write statement emission now passes checked receiver and argument
+ExprIds through its call paths, including mutable receiver-place selection.
+The optimized FileIO runtime fixture declined from 500 text lookups / 289
+reparses to 369 / 230. `check_phase20_executor_fileio.py` passes. The optimized
+string-map fixture remains at 0 / 0. An attempted direct FileIO.open node
+projection changed generated Rust incorrectly (failed native compile); that
+specific edit was reverted, restoring the passing harness. No full suite or
+perf run has occurred; current residual FileIO counts remain open.
+
+### C2 FileIO open node shape (2026-11-01)
+
+The retained member-call projection now handles Constructor as well as Call
+nodes. `FileIO.open` path and mode lowering consume those checked children. The
+optimized FileIO runtime fixture improved from 369 lookups / 230 reparses to
+343 / 204, and the Phase 20 executor/FileIO harness passes. Remaining
+reparses cluster around FileIO coordinate/length expressions (`4`, `offset,
+4`, `item.length()`). Temporary reparse-input tracing was removed. Full suite,
+corpus counts, and perf remain pending.
+
+### C2 FileIO batch checked-node lowering (2026-11-01)
+
+The native emitter now handles both `FileIO.read(offset, size)` and batch
+`FileIO.read(requests)` directly from checked call/argument nodes. Batch lowering
+supports inline tuple request vectors and computed vectors of request records;
+it reads the record type from the checked expression type and traverses tuple
+and constructor children by ExprId. The optimized Phase 20 FileIO fixture now
+reports 0 emitter reparses (down from 204) and 15 text-node lookups (down from
+343); the full `check_phase20_executor_fileio.py` harness passes, including its
+computed-batch native compile/run. Remaining 15 lookups are not yet localized.
+No full suite, corpus count, or perf run has occurred.
+
+### C2 FileIO specialization arguments use checked nodes (2026-11-01)
+
+The last 15 text-node lookups on the optimized FileIO fixture came from
+`call_specialization` re-inferring each argument type from its rendered string.
+Its checked statement-call and known-function-call paths now pass the retained
+argument ExprIds and query their node types. The optimized fixture is now at 0
+emitter reparses / 0 text-node lookups (was 0 / 15), and
+`check_phase20_executor_fileio.py` passes. This targeted sample is not a corpus
+measurement; no full suite or perf run has occurred.
+
+### C2 message and domain initializer checked-node emission (2026-11-01)
+
+Message statements now emit through their retained `ExprSlot::Receiver` Message
+node rather than synthesizing and reparsing `message target.Handler(args)`.
+Domain construction reads omitted state-field initializer expressions from each
+field's checked Initializer handle. On `examples/counter.moss -O`, emitter
+lookups/reparses fell 73/65 -> 4/4. The generated Rust compiles with warnings
+denied and prints `counter: 41` / `counter: 42`. Four lookups of identifier
+`value` remain and are still being traced. Phase 20 FileIO harness passes after
+the Message change. No full suite, corpus count, or perf run.
+
+### C2 checked arguments in borrowed-view function naming (2026-11-01)
+
+The emitter's node-based borrowed-view function-name path now supplies its
+checked argument nodes to specialization selection instead of allowing the
+selector to infer from rendered argument strings. The optimized counter
+fixture remains at 4 emitter lookups / 4 reparses, so this change has no
+measured delta on that sample. The four-class perturb/drop harness passes in
+default and shadow (call targets 5 fixtures, specializations 4, joins 4,
+patterns 3). The four `value` lookups remain open. No full suite, corpus count,
+or perf run has occurred.
+
+Follow-up narrowed those four lookups to `Counter` domain-layout emission using
+a temporary test-build stage trace (removed afterward); the specific helper is
+not yet identified. Native and Fast Debug `examples/counter.moss` both print
+`counter: 41` / `counter: 42`. The string-debt audit initially exited on the
+emitter comparison `statement.a != consumer.result_binding` at
+`src/native_generator.cpp:4142`. This compares a Let binder name, not
+expression text; the source was added in the existing C2 FileIO-chunk
+checkpoint `f6c0c41c`. Its explicit raw-binding classification is now
+registered in the audit script.
+
+### C2 statement-call emission uses checked arguments (2026-11-01)
+
+Ordinary statement-call emission now passes retained receiver and argument
+ExprIds through borrowed-view method/function naming and receiver-place
+selection. This closes additional string-taking consumer paths even though the
+counter example remains unchanged at 4/4. The optimized functional semantic
+optimization fixture and Phase 15 string-map fixture are each at 0 lookups / 0
+reparses; the Phase 20 FileIO harness passes. Four counter `value` queries
+remain unresolved. No corpus count, full suite, or perf run has occurred.
+
+The emitter's path-sensitive handler wrapper now reads its condition through
+the checked Condition slot. Phase 15.3 path-placement checks pass, and the
+counter fixture's generated Rust still compiles and prints the same output;
+its 4/4 count remains unchanged, confirming this was a separate reader.
+
+### C2 physical place path checkpoint (2026-11-01)
+
+Branch `phase27-5-4-work`, after pushed tip `3e5566e7`. The last four emitter
+text lookups/reparses on optimized `examples/counter.moss` were generated
+physical state paths (`value`) entering `tree_member_path` from
+`physical_leaf_binding` during domain layout. These are checked-plan-derived
+place paths, not Moss expression text. `physical_leaf_binding` now splits its
+generated dotted path directly rather than consulting the EST parser/cache.
+Focused result: 0 emitter text-node lookups, 0 expression-view reparses, and
+0 text-cache lookups. Generated Rust compiles with `rustc -D warnings`; native
+and Fast Debug both print `counter: 41` and `counter: 42`. The Phase 27 string
+debt audit and `check_phase20_executor_fileio.py build/compiler/moss-dev` pass.
+No corpus counters, full suite, three-engine/parity gates, or perf run has been
+performed since this change. Next: inspect residual emitter lookup/reparse
+sites with targeted fixtures, complete the C2 emitter perturb/drop side and
+test registration if not already covered, then run corpus measurement and final
+gates near completion. Temporary stack-trace instrumentation was removed.
+
+### C2 package call-fact and emitter progress checkpoint (2026-11-01)
+
+Paired counter sweep against `tmp/phase27-5-3-baseline-moss-dev` covered 1,822
+tracked `tests/` and `examples/` Moss sources, each in default and `-O` mode
+(3,644 commands; 337 package manifests were counted, not built). Parent:
+9,740,893 native expression-view reparses and 7,362 native pipeline reparses;
+candidate at sweep time: 1,184,113 and 9 respectively (total 9,747,255 ->
+1,184,122, -87.8%). Candidate text-node lookups: 1,734,312. The parent binary
+predates the text-node-lookup counter, so its printed zero is not a comparable
+measurement. Emission command nonzero counts were 1,406 parent / 1,408
+candidate; expected negative fixtures are included and the two-command delta
+still needs triage. Per-source ranking identifies the calc_interpreter swarm
+module as the dominant remaining workload; its `src/main.moss` initially had
+48,014 lookups / 37,270 reparses per mode. A test-build trace showed named
+object construction and vector `pop` as checked Call nodes falling through the
+emitter's text path. Work to lower those nodes directly and repair related
+borrowed-view lowering is in progress and not yet checkpointed.
+
+The calculator package revealed a Fast Debug call-target context gap:
+`Stmt::Call` target facts can be stored under the empty context, while runtime
+frames use `method:<owner>.<method>`. Fast Debug now tries the exact context,
+then the checker-recorded empty-context fact, and validates that a member
+fact's target suffix matches the checked member name. `MOSS_TEST_DROP_FACT` and
+`MOSS_TEST_PERTURB=call-targets` both fail closed on
+`examples/swarm/modules/calc_interpreter`; without hooks, `margo debug` matches
+the 27.5.3 parent output. Native `margo build` also passes with the current
+uncommitted emitter changes. No full suite, three-engine check, or perf suite
+has run; C2 corpus counters need refresh after these edits and the two
+additional parent/candidate emission failures need comparison.
+
+### C2 borrowed-view assignment repair (2026-11-01)
+
+A clean 27.5.3 parent build emits mutable object-view accessors (`*_mut()`) for
+state assignments. The C2 node-based `write_call_place(EmitterExpr)` checked
+`view_place` under the current read projection and returned that result
+immediately, unlike its string overload, which calls `place_expr` to enable
+mutable projection. It therefore emitted read accessors for assignments such as
+`vars[slot] = value`. The node overload now routes detected views through
+`place_expr`. A clean `margo build` of `examples/swarm/modules/calc_interpreter`
+passes with this fix isolated; before it, Rust failed on three writes in
+`errors.rs`, `ast.rs`, and `env.rs`. The C2 call-node lowering edits are
+separately saved in `tmp/native-full-current.patch` and will be reapplied after
+this checkpoint.
+
+### C2 checked object constructor and Vector.pop lowering (2026-11-01)
+
+The emitter now lowers named object-constructor `Call` nodes by traversing
+checked `NamedArgument` children and emitting fields in declaration order. It
+also lowers checked `builtin-method:vector[T].pop` calls through the existing
+method receiver-place helper, retaining mutable views and Vector's existing
+empty-pop abort behavior. The focused calculator source
+`examples/swarm/modules/calc_interpreter/src/main.moss` moves from 48,014 text
+lookups / 37,270 reparses to 46,432 / 36,586 per emission. Native package build,
+`margo run`, and `margo debug` pass with matching output. Remaining fallback
+trace for that source is 20 Call nodes, mainly object methods such as
+`Diag.code()` and `Token.value()`; overall corpus target is not met. No full
+suite or perf run has occurred.
+
+### C2 fact-hook debt baseline and policy addendum (2026-11-01)
+
+On `phase27-5-4-work`, the requested AGENTS.md policy addendum is present.
+Test-build hooks now perturb/drop expression types, pipeline output/node types,
+and function/specialization/method/pipeline ownership facts. The existing
+`check_phase27_5_4_fact_hooks.py` gate compares Fast Debug, native, and optimized
+results on three accepted fixtures per debt class against the unmodified
+result. Its checked-in fixture-level baseline records 38 ignored
+class/action/fixture/engine cases; the gate permits the set to shrink and fails
+only if it grows. Default and `MOSS_EST=shadow` targeted harness runs pass.
+
+No full suite, corpus counter sweep, or performance suite has run for this
+slice. Latest pushed code base before this slice: `26859054`; these policy and
+test-baseline edits are not yet committed. Next: commit/push this checkpoint,
+then continue tracing C2 emitter call fallback sites on the calculator source
+and broader residual emitter count; optimizer consumer counts are still
+unmeasured. Agent 2 and final gates remain reserved until C2 is complete.
+
+### C2 same-source emitter progress after call-edge narrowing (2026-11-01)
+
+The emitter now correlates a member-call node with the checker-recorded
+same-line call-edge candidates by the member name. On the calculator's
+`src/main.moss`, this removed all 20 traced expression-call fallbacks (the
+previous cases were `Diag.code`, `Diag.pos`, and `Token.value`). Candidate
+emission reports 0 `MOSS_EST_EMITTER_NODE_FALLBACK` events, 44,992 text-node
+lookups, and 35,146 native expression-view reparses. On the exact same source
+and command, the saved 27.5.3 parent reports 181,742 reparses (181,562
+expression-view + 180 functional-pipeline), so the candidate is down 80.7% in
+reparses on this sample. The parent's binary predates the text-node-lookup
+counter, so that lookup delta is unavailable. Calculator package build, run,
+and Fast Debug pass with matching outputs (`= 7`, `= -12`, `= 154`, `= 0`,
+and four expected errors).
+
+The C2 target remains 0 emitter reparses and text lookups; this one-source
+result does not establish the required corpus + examples + packages target.
+Optimizer parsing remains unmeasured but source search finds no parser calls
+in `src/functional_optimizer.cpp`. No full suite or performance suite has run.
+Latest pushed checkpoint is `69df03c1`; the call-edge change is not yet
+committed. Next: checkpoint this fix and continue reducing the emitter's
+remaining 35k reparses on this source, then measure the same full workload
+against the baseline after the migration stabilizes.
+
+### C2 static-call specialization lookup moved ahead of text probing (2026-11-01)
+
+`call_specialization` now consumes a unique checker call-edge specialization
+before probing returned-call and nested-open-call expression strings. This
+retains the existing string-key path only for calls where no unique checked
+edge is available. On `tests/phase27/est/specialized_call_facts.moss`, candidate
+native reparses fell from 2,681 on the saved 27.5.3 binary to 90; candidate
+text-node lookups are 88 (the parent binary does not report that counter).
+Generated Rust is byte-identical to the parent, and Fast Debug output is also
+byte-identical. The specialized-facts test passes in default and shadow; the
+string-debt audit passes. A broader `specialized_call_facts` invocation also
+exposed that same-name checked targets can remain ambiguous on one line, so
+that case now retains the existing path rather than asserting.
+
+This is a targeted fixture result, not the required corpus measurement. No
+full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
+`658a7ff6`, with this specialization lookup change awaiting commit/push.
+
+## Resume checkpoint (2026-11-01)
+
+- Current branch is `phase27-5-4-work`, based on the already merged `origin/main`;
+  last committed checkpoint before this resume is `5b1743a2`.
+- Diagnosis: while the checker checks a specialization nested inside the caller's
+  call expression, its EST cursor stack still points into that caller tree. The
+  checker has the specialized function's statement handles, but cannot select
+  them as root handles while a caller cursor is active. A local specialization
+  scope now suspends/restores the active cursor stack so specialized body facts
+  can bind to that body's retained nodes. Targeted check now records
+  `Countdown` for the `consume_typed` iterable node in its specialization
+  context. No temporary debug hooks remain in source.
+- The specialization fact mismatch is fixed: after body inference, concrete
+  specialization parameters now clear stale solver terms and retain their
+  selected argument types. `tests/phase47_iteration.moss` generated Rust now
+  compiles, and Fast Debug/native output matches (`12 1 20 6 9 3 3`). This is a
+  targeted parity result; the full parity suite remains pending.
+- Verified after resume: `make moss-dev` PASS;
+  `check_phase27_5_4_fact_hooks.py build/compiler/moss-dev` PASS (7 call-target,
+  4 specialization, 4 joins, 3 patterns; known-debt count 38 unchanged); vector
+  and queue valid push fixtures both check, compile with rustc, and have matching
+  Fast Debug/native stdout (`2` and `1` respectively); calculator Fast
+  Debug/native output matches.
+- Latest identical calculator emission command with test counters: candidate
+  10,246 emitter reparses / 10,822 text-node lookups; pinned C1 counter build
+  181,562 / 273,688. Candidate emits 0 pipeline reparses; these are focused
+  counters, not bulk suite/performance measurements. Candidate generated Rust
+  for calculator compiles and output matches Fast Debug.
+- Checker specialization cursor isolation and restoration of concrete parameter
+  bindings are now committed; node-based emitter lowering for builtin
+  vector/queue push/pop calls is also committed.
+  The latter reduces calculator counters from the previous 15,360/20,784 to
+  10,246/10,822 and its valid vector/queue targets pass parity. No full suite,
+  three-engine aggregate, perf suite, Agent 2 audit, merge, or tag has run.
+- User's closing round (shadow demotion, runtime ratchet, contract status) stays
+  queued until C2 merges.
+
+
+## C2 node-pipeline checkpoint (2026-11-01)
+
+- In `expr(string, ..., checked_node)`, retained nodes now decide whether the
+  expression is a pipeline. Non-pipeline nodes skip the redundant text parse;
+  checked pipeline nodes use `functional_pipeline_from_node` and fail closed if
+  no lowering is available. Text-only backend expressions are trimmed without
+  pipeline reconstruction. The type-query compatibility helper still parses
+  and remains a separate debt.
+- On the same calculator emission command, emitter reparses fell from 10,246
+  to 9,926 and text-node lookups from 10,822 to 10,486. Compared with the
+  pinned C1 counter build (181,562 reparses / 273,688 lookups), the current
+  candidate is down 94.54% / 96.17%. This remains a focused one-source measure.
+- Targeted checks: generated calculator Rust is byte-identical to the prior
+  candidate, compiles, and has Fast Debug/native stdout parity;
+  `check_phase27_est_functional_tree.py build/compiler/moss-dev` PASS;
+  `tests/phase47_iteration.moss` checks, compiles, and has Fast Debug/native
+  output parity. No full suite, three-engine aggregate, performance suite, or
+  Agent 2 audit has run.
+- Remaining major work: eliminate all emitter reparse/text-lookup paths, including
+  string-based generated type inference and compatibility helper recursion;
+  then run the end-of-phase gates once, Agent 2 once, and merge/tag C2. The
+  queued shadow/runtime-ratchet closing round stays deferred until after C2.
+
+## C2 redundant normalization checkpoint (2026-11-01)
+
+- Removed the second emitter text normalization from the generated-type
+  compatibility helper. Pipeline result types still use the preceding
+  functional-pipeline query; the helper no longer rewrites text into another
+  call-shaped spelling.
+- Same calculator command counters are now 9,734 emitter reparses / 10,294
+  text-node lookups, down from 9,926 / 10,486 at `d3d58feb`; paired C1 parent
+  remains 181,562 / 273,688. Generated Rust is byte-identical to the prior
+  candidate and compiles; native output matches Fast Debug.
+- Targeted `check_phase27_est_functional_tree.py build/compiler/moss-dev` PASS;
+  `tests/phase47_iteration.moss` checks, compiles, and matches Fast Debug/native;
+  phase27.5.4 fact hooks PASS; feedback validation PASS. No full gates have run.
+- The emitter target is still 9,734 reparses and 10,294 text-node lookups on
+  this source, so C2 remains incomplete. Continue migrating compatibility
+  consumers to node arguments and checked facts; keep full suites until the
+  final checkpoint.
+
+## C2 zero-consumer-text checkpoint (2026-11-01; uncommitted)
+
+- Retained-node paths now cover READ/WRITE call places (including indexed
+  receiver arguments), borrowed message parameters, direct `Some(value)`
+  constructor rendering, and object method return expressions. Temporary
+  fail-fast probes/backtrace instrumentation have been removed.
+- Focused no-text-counter measurements on the calculator, phase47 iterator,
+  receiver-method, indexed-receiver-method, vector, and queue fixtures report
+  0 emitter expression reparses, 0 pipeline reparses, 0 text-node lookups,
+  and 0 string type/expression queries. Calculator also reports zero consumer
+  parses. Its 171 expression-tree text rebuilds are checker/driver work and
+  outside the C2 emitter/optimizer consumer target.
+- Generated Rust for calculator is byte-identical to the preceding candidate;
+  its Rust compiles and native/Fast Debug output matches. Receiver, indexed,
+  vector, and queue fixtures each check, compile with rustc, and have identical
+  native/Fast Debug stdout. `phase47_iteration.moss` also compiles and has
+  matching output. `check_phase27_est_functional_tree.py` and
+  `check_phase27_5_4_fact_hooks.py` pass.
+- Like-for-like focused calculator counters: pinned C1 parent 181,562 emitter
+  reparses / 273,688 text lookups; current candidate 0 / 0. This is not a
+  corpus-wide C2 gate. Full suites, aggregate parity/three-engine checks, and
+  performance gates remain pending. No Agent 2 audit, merge, or tag yet.
+- Current source edits are in `src/native_generator.cpp` and
+  `src/borrowed_views.inc`; rerun feedback validation before checkpointing.
+
+## C2 message/binary subtree checkpoint (2026-11-01; pushed next)
+
+- A temporary test-build fail-fast probe localized the remaining representative
+  hits to: string-only recursive binary lowering; message/reply payload helpers
+  receiving fragments instead of retained IDs; and the synthetic exported
+  domain bridge being passed back through `expr(string)`. These paths now use
+  binary child nodes and message argument nodes; the bridge lowers directly
+  from the checked handler declaration. The temporary probe and its backtrace
+  instrumentation are removed.
+- Targeted counter results are now 0 emitter text lookups and 0 reparses for
+  calculator, phase47 iterator, object/collection/pipeline examples, message and
+  reply examples, ledger, and priority_queue. Paired C1 counts on the two
+  newly exposing examples were ledger 3,106 reparses / 4,000 lookups and
+  priority_queue 17,648 / 34,324; candidate is 0 / 0 for each.
+- Generated Rust is byte-identical to saved pre-slice candidate outputs for
+  ledger, priority_queue, object_pipeline, collections, domain messages,
+  message reply, immutable payload, and phase5_tooling. `margo build` passes
+  for ledger and priority_queue; package native/Fast Debug output matches for
+  both. The targeted functional-tree and checked-fact perturb/drop scripts
+  pass. Feedback validation remains to be rerun after the current record.
+- Still pending: corpus-wide C2 counter measurement; full make check default
+  and shadow, three-engine/parity and performance gates; Agent 2 audit; merge
+  and C2 tag. Closing round remains queued until after C2 merge.
+
+## C2 failure-fix checkpoint (2026-11-01; uncommitted)
+
+- The corpus counter pass exposed 78 candidate-only emission failures (39
+  sources, default and `-O`) across a workload of 1,824 sources / 337 package
+  manifests. The paired parent/candidate counts remain recorded above in
+  `tmp/phase2754-emitter-counts/1793568984396012849/summary.json`; do not treat
+  those counts as current after the following edits.
+- Checker call resolution now returns the selected implicit method as a checked
+  target, and checked method result bodies retain their result context. Targeted
+  emission passes for FenwickTree, method-tail push examples, `swarm_034`, and
+  `swarm_035`; FenwickTree generated Rust compiles and matches Fast Debug output.
+- Recovery-clause expression fact lookup maps its lowering subcontext back to
+  the owning checked handler. `phase21_capture_method_early_raise`,
+  `phase21_capture_method_local`, and `phase21_pipeline_try_placeholder` now
+  emit. Range-for checking retains the iterable root when checking bounds;
+  `phase21_peer_speculation` now emits with zero consumer reparses/lookups on
+  the focused coverage run.
+- Temporary source debug hooks and backtrace instrumentation were removed.
+  One remaining known candidate-only failure is the formatter fixture
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`;
+  another is `phase21_early_condition_state_write.moss`. Other previously
+  identified residuals include enum module constructors and the adversarial
+  incomplete-index probe. Recheck the full list before repeating the corpus pass.
+- No full `make check`, three-engine/parity, or performance gates have run.
+  Agent 2 has not audited. No merge/tag. Current changes are uncommitted in
+  `src/native_generator.cpp`, `src/semantic_checker.cpp`, and
+  `src/borrowed_views.inc`; temporary build outputs are under `tmp/`.
+
+## C2 checked call target checkpoint (2026-11-01; uncommitted after ca94d1a6)
+
+- Call statements now take a unique checked target across context entries when
+  the exact lowering context is absent; ambiguous target sets remain unresolved
+  rather than being re-derived. Checked expression fact lookup also uses
+  same-line call-edge contexts only when all matching recorded node targets
+  agree. This fixes targeted `phase106d_specializations` emission and the
+  `phase21_early_condition_state_write` emission.
+- Enum constructor targets stored in checked expression occurrences are now
+  copied into arena facts; the emitter lowers the checker-owned enum variant
+  identity directly. The `enum_modules` main/tags sources emit, and the tags
+  Rust compiles. `phase21_peer_speculation` and both capture-method fixtures
+  still emit after the range-root change.
+- Remaining target failures from the previous corpus pass include the
+  formatter-generated `return(...)` spelling and the adversarial incomplete
+  index probe. Re-run the targeted list before the next aggregate counter pass.
+  The focused Fast Debug/native parity check on `phase106d_specializations`
+  currently fails with `MOSS_INTERNAL_INVARIANT checked method target disagrees
+  with receiver`; this is not cleared by emitter emission success.
+- Debug hooks are removed. Changes since ca94d1a6 are not yet committed/pushed;
+  targeted source emissions only. Full suite, three-engine/parity aggregate,
+  perf, Agent 2, and merge/tag remain pending.
+
+## C2 context-collision handoff (2026-11-01; uncommitted after 0e5166d5)
+
+- Reproduced Fast Debug's `phase106d_specializations` mismatch against both
+  current C2 and the intermediate `9144f146` build; the pinned C1 parent emits
+  `11 22`. The current failure is therefore on the C2 branch, not parent debt.
+- `MOSS_EST_FACTS_DUMP=1` on `tests/phase106d_specializations.moss` shows only
+  `handler:Box.Set -> method:Left.fresh` and
+  `handler:Box.Update -> method:Left.step`; it records no `Right` targets.
+  Native codegen emits concrete `Box__left` and `Box__right` bodies, so one
+  shared handler fact cannot serve both. Fast Debug now fails closed when it
+  reaches the Right instance, as intended for a contradictory checked fact.
+  A checker-side per-concrete-domain target answer is needed; do not mask this
+  with runtime receiver re-resolution.
+- Removing the attempted statement-target propagation did not fix this parity
+  issue. With that removed, `phase106d_specializations` still emits. Enum
+  variant facts are now explicitly recorded at the checked expression node;
+  both enum_modules sources emit and the tags artifact compiles.
+- Current uncommitted diff is in `src/semantic_checker.cpp` and contains the
+  enum target recording plus removal of the statement-map propagation. The
+  branch tip is still `0e5166d5`; the earlier source checkpoint commits are
+  pushed. No full suite/perf/Agent 2/merge/tag.
+
+## C2 resume check (2026-11-01; pushed tip 577bc270)
+
+- Confirmed the active checkout is clean on `phase27-5-4-work` at
+  `577bc270`, pushed to `origin/phase27-5-4-work`. Re-ran
+  `./moss run --interp tests/phase106d_specializations.moss`; it still fails at
+  line 23 with `MOSS_INTERNAL_INVARIANT checked method target disagrees with
+  receiver`. This is a current candidate failure, not a newly introduced
+  measurement.
+- Latest focused zero-counter evidence above is fixture-scoped; the required
+  corpus-wide consumer count and final gates have not been run. C2 is not ready
+  for Agent 2 or merge. The next implementation investigation is to align
+  concrete domain-specialization handler fact contexts across checker,
+  emitter, and Fast Debug. The source domain's generic `handler:Box.*` context
+  cannot distinguish the concrete Left and Right method targets in this test.
+- Startup bootstrap reports language version `moss-0.1`. The requested
+  `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` path is absent on this branch; the
+  current contract is `docs/MOSS_COMPILER_CONTRACT.md`.
+
+## C2 concrete handler facts (2026-11-01; working tree)
+
+- Checker now rechecks each materialized domain handler under
+  `handler:<source-domain>.<handler>@<instance>` with that instance's checked
+  state and parameter types. Fast Debug uses this context only for
+  materialized layouts; typed/non-materialized handlers retain the generic
+  context. The emitter maps generated domain aliases back to the same source
+  domain/instance context.
+- Focused validation passes: `phase106d_specializations` prints `11 22` in
+  Fast Debug and in freshly emitted/compiled native Rust; `phase106e_domains`
+  and `phase106d_nested` keep matching prior output. Fact-hook script passes
+  all required classes and known debt `38/38`. An initial attempt to reuse a
+  generic function's `parameter:0.method:add` placeholder in Fast Debug was
+  corrected to read the checked selected specialization member requirement;
+  `generic_method_effects` again prints `12 5`, and its known-debt perturb
+  behavior no longer expands the ignored-engine set.
+- Feedback observation recorded in
+  `agent-feedback/phase27/team-phase27-5-4/emitter-tree/observations.jsonl`;
+  run `check_agent_feedback.py` before committing. No full gates, corpus-wide
+  counters, perf suite, Agent 2 audit, merge, or tag has run.
+
+## C2 context slice validation (2026-11-01; ready to checkpoint)
+
+- The first materialized-context implementation accidentally changed typed
+  handler context selection. Restricting the new context to
+  `DomainSpecialization.materialized_layout` restored `phase106e_domains`.
+  Also key statement receiver facts by the active handler context when no
+  function-specialization join context exists; ordinary function facts retain
+  the empty fallback key.
+- Fast Debug now handles the generic checked target placeholder
+  `parameter:<n>.method:<name>` by reading the active checked function
+  specialization's `MemberDispatchRequirement.selected_callable_id`. It no
+  longer rejects the specialization requirement due to the requirement's
+  origin being the outer call line. This restored unperturbed Fast Debug on
+  `generic_method_effects` (`12 5`); the ownership fact-hook matrix passes
+  without growing the ignored-engine debt set.
+- Tests at this checkpoint: phase 27.5.4 fact-hook script PASS (all required
+  classes; known debt `38/38`), `check_phase106e_domains.py` PASS,
+  `check_phase106f.py` PASS, generated Rust compiles and matches Fast Debug on
+  `phase106d_specializations` (`11 22`) and `phase106e_domains`; Team A and
+  functional-tree harnesses PASS. Feedback validation and `git diff --check`
+  PASS. No full C2 gates/corpus counters/perf/Agent 2/merge/tag.
+
+## C2 implicit iterator targets (2026-11-01; ready to checkpoint)
+
+- The checker records the selected custom loop protocol methods on each `For`
+  statement by semantic context (`[next]` or `[iter, next]`). The emitter
+  lowers only those identities; all `resolve_object_method` calls have been
+  removed from `native_generator.cpp`. Fast Debug reads the same facts and
+  fails closed when they are absent, dropped, or perturbed. When a generic
+  Fast Debug frame lacks a concrete function context, it accepts only one
+  unique target vector among that function's checked specializations; multiple
+  vectors fail closed.
+- `tests/phase47_iteration.moss` matches in Fast Debug and freshly emitted,
+  compiled native Rust: `12 1 20 6 9 3 3`. The fact-hook suite now includes
+  this fixture among eight call-target cases; perturb/drop checks pass across
+  Fast Debug, native, and `-O`. Existing class hooks pass and known debt remains
+  `38/38`.
+- Feedback observation recorded and validation still required before commit.
+  Full suite, corpus-wide counters, package/corpus parity, perf, Agent 2,
+  merge, and tag remain pending.
+
+## C2 checkpoint: checked enum constructor lowering (2026-11-01)
+
+- The emitter now directly lowers enum constructor nodes from checker-recorded
+  `nominal-enum-variant-v1` targets. It handles both retained `Constructor`
+  and `Call` node forms and recursively emits named payload child nodes.
+- Focused `enum_modules/src/tags.moss` emission reports 0 native expression
+  reparses and 0 text-node lookups (preceding focused sample: 18 and 16).
+  Generated Rust compiles; `margo build` and `margo run` pass (`4`, `1`).
+- This is one focused emitter query path only. Full C2 suite, corpus counters,
+  parity, performance, Agent 2 audit, merge, and tag remain pending.
+
+## C2 checkpoint: executor payload nodes (2026-11-01)
+
+- `ExecutorStartPlan` and `RootSubmissionPlan` retain semantic plan decisions;
+  native lowering now pairs their ordered entries with argument child nodes
+  from the statement's checked expression handle. It verifies the node shape
+  and identities against the plans, then emits payloads from those nodes.
+- `tests/phase20_executor_basic.moss`: focused emitter reparses/text lookups
+  fell from 26/26 to 0/0. Rust compilation and execution pass with output
+  `12`, matching Fast Debug. The earlier enum-module fixture is also at 0/0.
+- A deterministic 100-source counter survey found only this nonzero fixture;
+  the remaining source-specific lowering work may still exist outside that
+  sample. No full suite, whole-corpus counters, parity aggregate, perf, Agent 2,
+  merge, or tag has run.
+
+## C2 paired counter checkpoint (2026-11-01; after `d29f7d31`)
+
+- Paired like-for-like measurement ran pinned C1 parent `c96bca78` with
+  matching test counters and candidate `d29f7d31` over 1,824 tracked sources,
+  default and `-O` (3,648 commands each). Parent: 14,606,057 text-node
+  lookups, 9,735,229 native expression-view reparses, 7,362 pipeline reparses,
+  1,406 emission failures. Candidate: 7,344 lookups, 7,295 expression-view
+  reparses, 1 pipeline reparse, 1,412 failures.
+- A per-source paired locator found candidate-only failures in
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`,
+  `tests/implicit_domain_specialization.moss`, and
+  `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`
+  (each default and `-O`). No parent-only failures. The formatter and malformed
+  incomplete-index source were previously identified as baseline-invalid Rust /
+  fail-closed cases; `implicit_domain_specialization` still needs comparison.
+- Most remaining reparses are concentrated in chunk-pipeline lowering. A node
+  migration attempt was reverted after the focused Phase 21 harness showed
+  `_` emitted as a Rust value inside the placeholder callback. No incomplete
+  code remains from that experiment. Evidence and the blocker are in the
+  developer-feedback record.
+- Paired source locator is at
+  `tmp/phase2754-emitter-counts-locations.json`; primary paired counters are at
+  `tmp/phase2754-emitter-counts/1793573346983017897/summary.json`.
+  Both files are disposable; these numbers are summarized here for handoff.
+- The checked-fact perturb/drop script passes: call targets 8 fixtures,
+  specializations 4, joins 4, patterns 3, known debt unchanged at 38/38.
+  No full `make check`, three-engine/parity aggregate, performance suite,
+  Agent 2 audit, merge, or tag has run.
+
+## C2 correction: specialized fact pass preserves acceptance (2026-11-01)
+
+- The per-instance handler recheck at `2de19e45` could reject an otherwise
+  accepted generic domain program when a concrete state type differed from the
+  source-level handler reply contract. `tests/implicit_domain_specialization.moss`
+  reproduced it: parent accepted; candidate rejected `reply value` as int vs
+  float.
+- The per-instance pass now discards `CompileError` diagnostics after recording
+  any facts reached before the diagnostic. The initial generic handler check
+  remains authoritative for source acceptance. The fixture now checks,
+  emits, compiles, and matches native/Fast Debug (`10`, `3.5`); focused emitter
+  reparses and text lookups are 0/0.
+- This removes the two mode failures for that source from the paired sweep's
+  candidate-only list. Remaining candidate-only failures are the formatter
+  return grouping probe and malformed incomplete-index probe (both modes);
+  the former emits invalid Rust on the parent and the latter is malformed
+  accepted syntax. Re-run final paired counters after further changes.
+
+## C2 checkpoint: chunk pipeline expressions are node-backed (2026-11-01)
+
+- FileIO chunk lowering now reads the source receiver/chunk-size argument and
+  map/reduce stage arguments from `ParsedFunctionalPipeline` child nodes. It
+  pairs those children with the checker-owned `ChunkParallelPlan` for
+  eligibility, effects, output types, and ordered lowering decisions.
+- Nested direct calls in a mapper now select the matching checked call edge
+  (`edge.source` context, source line, and declaration identity). If a known
+  direct function call has no unique matching checked edge, native generation
+  fails with `MOSS_INTERNAL_INVARIANT` instead of reparsing its text.
+- The initial node-only attempt exposed this missing edge consumption; the
+  fixed version uses `fn:checked` from the edge. The Phase 21 lexical recovery
+  harness passes, generated Rust compiles and behaves as before. Its emitter
+  reparses/text lookups fell 788/788 to 0/0. Two related chunk fixtures and
+  regular pipeline fixtures are also 0/0.
+- Perturb/drop hooks pass again with known debt unchanged at 38/38. No full
+  suite or paired whole-corpus measurement has run after these changes.
+
+## C2 checkpoint: domain initializer call edges (2026-11-01)
+
+- Latest branch commit `8aee6af0` is pushed on `phase27-5-4-work`. It retains
+  ordinary call edges for domain state initializers after `check_local_call_cycles`
+  rebuilds/clears the edge vector. The emitter matches checker-recorded target
+  identity across initializer source contexts, deduplicating equivalent target
+  edges; it does not use consumer argument types to choose a target.
+- The valid `family09_imported_generic_effects/01_pure_domain_init_pos/case.moss`
+  fixture now checks, Fast Debug prints `42`, and generated Rust compiles and
+  prints `42`. `positive_control.moss` and `tests/swarm_038_effects_loop_helper.moss`
+  both check, emit, compile, and have matching native/Fast Debug output.
+  `check_phase27_5_4_fact_hooks.py` passes: call targets 8, specializations 4,
+  joins 4, patterns 3, known debt 38/38.
+- A diagnostic default emission of `examples/projects/phase10_modules/src/main.moss`
+  on this checkpoint still reports 270 emitter reparses / 270 text-node lookups
+  (including 12 text type queries and 4 text expression queries). The like-for-like
+  paired corpus totals from `340af4cd` are stale after later commits and must be
+  rerun after the next migration slice. No full suites or performance suites
+  have run. C2 remains incomplete; focus next on recurring call/result type
+  queries passed as strings through emitter lowering.
+
+## C2 checkpoint: simple-call arguments stay node-backed (2026-11-01)
+
+- Latest pushed slice `96140985` adds a child-node projection for simple calls
+  and constructors. Where expression lowering has a retained call root,
+  recursive argument rendering and argument type queries use `EmitterExpr`
+  children; synthetic string-only calls retain their old path.
+- On `examples/swarm/Surface/repros/swarm_034b_tail_assert_native.moss`,
+  emitter reparses/text lookups fell 26/26 to 0/0. Generated Rust is byte-
+  identical to the immediately prior candidate. Check passes and Fast Debug
+  prints `done`. This source's generated Rust already fails rustc because it
+  emits `assert(...)` rather than Rust's `assert!(...)`; the emitted file is
+  byte-identical across the change, so this is not introduced here.
+- `examples/projects/phase10_modules/src/main.moss` generated Rust also stayed
+  byte-identical; its unrelated 270/270 sample remains unchanged. Fact hooks
+  pass with known debt 38/38. No full gates/performance suite has run. Next,
+  target remaining high-reparse checked constructor/member paths and rerun paired
+  counters after a broader node migration slice.
+
+## C2 checkpoint: scalar member targets use node lowering (2026-11-01)
+
+- Latest pushed slice `e0da16c0` handles the checked scalar builtin targets
+  (`builtin-method:int|float|char|bool.*`) in the EST node emitter. The prior
+  dispatch covered string methods and scalar protocol builtins but missed these
+  scalar `to_string`/member targets, causing a fallback through source text.
+- `tests/phase27/est/numeric_member.moss` is now 0 emitter reparses / 0 text
+  lookups, down from 35/35; string type/expression queries went 2/2 to 0/0.
+  Generated Rust is byte-identical, compiles, and prints the same output as
+  Fast Debug. The call-argument node migration separately removed 26/26 on
+  `swarm_034b_tail_assert_native.moss`, with identical generated Rust.
+- Fact-hook harness passes; known debt remains 38/38. No full suites or
+  performance suite has run. The like-for-like whole tracked-source paired
+  measurement remains due after more migrations; last complete whole-workload
+  totals were measured at `340af4cd` and are stale. Remaining high samples
+  include optimized expression callback lowering, imported module calls, and
+  collection/test fixtures. Continue reducing those before final gates.
+
+## C2 checkpoint: checked `replace` operands remain nodes (2026-11-01)
+
+- Latest pushed code `ec09028d` lowers the built-in `replace(place, value)`
+  directly from its checked call node. Both the replacement expression and
+  mutable place retain their child IDs; string-only synthesized expressions
+  keep the compatibility lowering.
+- `tests/tooling/fixtures/builtin_generic_typing/vector_literal_state_replace.moss`
+  fell from 32 emitter reparses / text lookups to 0/0. Generated Rust is
+  byte-identical and compiles; Fast Debug and native both print `old` then
+  `new`. Fact hooks pass with known debt unchanged at 38/38.
+- Full gates/perf remain deferred until the C2 closing checkpoint. Remaining
+  high-count sources include -O functional callbacks, package test sources,
+  and domain/Phase 21 fixtures. No Agent 2 audit or merge yet.
+
+## C2 checkpoint: checked Range slicing remains node-backed (2026-11-01)
+
+- Latest pushed slice `9a4cc448` handles the checker-recorded
+  `builtin-fileio:slice` target for a `Range` receiver directly in node lowering.
+  It checks the receiver's checked type and passes both bound nodes to Rust
+  lowering.
+- `tests/tooling/fixtures/phase21c_range_slice_effects.moss` reparses/lookups
+  fell 34/34 to 0/0; generated Rust stayed byte-identical and compiles.
+  Fast Debug intentionally reports its existing unsupported FileIO execution
+  diagnostic for this full fixture, so no runtime parity claim is recorded.
+- The earlier initializer, simple-call, scalar-member and replace slices remain
+  in pushed commits and their evidence above. No final full gates, performance
+  suites, or Agent 2 audit have run. C2 remains incomplete.
+
+## C2 checkpoint: checked FileIO chunk call lowering (2026-11-01)
+
+- Latest pushed slice `c4d41b07` handles `builtin-fileio:chunks` directly from
+  the checked member-call node, passing the receiver and size child nodes into
+  expression lowering.
+- `tests/tooling/fixtures/phase20_domain_fileio_native.moss` reparses/lookups
+  fell 12/12 to 0/0. Generated Rust compiles; native output `100\n4\n` matches
+  the fixture's existing integration harness expectation. Fast Debug reports
+  its existing unsupported FileIO diagnostic.
+- Together, recent targeted decreases include replace 32/32 -> 0/0, numeric
+  member 35/35 -> 0/0, range slicing 34/34 -> 0/0, assert nested call 26/26 ->
+  0/0, and domain chunks 12/12 -> 0/0. Full whole-workload paired counters are
+  due again after more changes. Full suites, perf and Agent 2 audit remain
+  pending.
+
+## C2 paired consumer-count checkpoint (2026-11-01, after `b3b2be47`)
+
+- Like-for-like run: `measure_phase27_5_4_emitter_consumers.py` against the
+  pinned Phase 27.5.3 C1 parent, 1,824 tracked Moss sources and 3,648 commands
+  (default and `-O` each). Evidence: `tmp/phase2754-emitter-counts/1793575559375297262/summary.json`.
+- C1 parent -> candidate: text-node lookups 14,606,057 -> 1,836 (-99.9874%);
+  native expression-view reparses 9,735,229 -> 1,787 (-99.9816%);
+  functional-pipeline reparses 7,362 -> 1. Consumer expression parses total
+  0 -> 1,788 in the counter's reporting scheme (candidate total is the two
+  reparsers above). These counters remain nonzero and C2 is incomplete.
+- Emission failures 1,406 -> 1,410. The only added failures are
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`,
+  each default and optimized. These are the known baseline-invalid Rust and
+  malformed accepted syntax cases recorded above. The valid imported initializer,
+  domain positive control, and effects loop helper are no longer added failures.
+- The latest targeted slices after the last paired run reduced five additional
+  fixture groups to 0/0: `swarm_034b` 26, numeric member 35, vector replace 32,
+  phase21 Range slice 34, and domain FileIO chunks 12. No full suite or perf run
+  has occurred. Continue with optimized functional callbacks and package test
+  sources, then remeasure before final gates.
+
+## C2 checkpoint: qualified module calls lower from checked nodes (2026-11-01)
+
+- Latest pushed slice `c3bf4978` adds a node path for EST `Constructor` nodes
+  that carry a checked `fn:` or `callable-v1:` call target. The selected identity
+  maps to a projected declaration; the original argument child nodes are passed
+  to normal ABI/specialization lowering. No receiver/type or argument-type
+  target selection is added.
+- `examples/swarm/polymorphism/collection_pipeline/data_tools/tests/test_data_tools.moss`
+  fell from 314 emitter reparses / lookups to 0/0. Generated Rust is byte-
+  identical and compiles. Package tests report 8 passed, 0 failed. The standalone
+  test source has no `main`, so direct Fast Debug invocation is inapplicable.
+  Fact hooks pass (known debt 38/38).
+- This new slice occurred after the paired whole-corpus report at `698b1afe`;
+  rerun the paired counters after the next focused migration set. C2 remains
+  incomplete; full gates, perf and Agent 2 audit remain pending.
+
+## C2 checkpoint: last paired sweep and subsequent node routes (2026-11-01)
+
+- Latest like-for-like whole workload evidence remains
+  `tmp/phase2754-emitter-counts/1793575997014396873/summary.json`: on 1,824
+  tracked sources (3,648 emissions), C1 parent -> candidate was 9,735,229 -> 66
+  native reparses, 14,606,057 -> 114 text lookups, and 7,362 -> 0 functional
+  pipeline reparses. Emission failures were 1,406 -> 1,410; only the documented
+  formatter failed-attempt and malformed incomplete-index sources add failures.
+- Subsequent committed changes `34564b6e`, `12186d77`, and `c84213ba` removed
+  additional targeted debt: functional_reductions -O 14/14 -> 0/0; range copy
+  1/1 per mode -> 0/0; recovery/enum capture fixture 3/3 per mode -> 0/0.
+  Generated Rust remained byte-identical on each. The capture fixture compiles
+  and matches native/Fast Debug output. These changes make the 66/114 paired
+  candidate totals stale; rerun the paired whole workload after the next
+  targeted slice.
+- The old hotspot set has many now-zero sources: qualified-module examples,
+  validation-engine tests, natural validation and borrowed reads all report
+  0/0. Remaining known hotspots are small Phase 21/25 effect/ownership probes,
+  swap assignment and nested mutating calls. No full suite/perf or Agent 2 audit
+  has run.
+
+## C2 checkpoint: registered synthetic argument identifiers (2026-11-01)
+
+- Emitter-generated `__moss_call_argument_N` locals are now registered when
+  created. String helper paths recognize only those exact registered temporary
+  names as identifiers, avoiding EST expression lookup/reparse for generated
+  locals while preserving parsing for Moss source names.
+- `tests/swarm_035_nested_mutating_calls.moss` dropped from 2 reparses and 2
+  text lookups per emission to 0/0 (default and `-O`). Generated Rust is
+  byte-identical to the prior branch checkpoint. Fast Debug prints `1`.
+  `rustc` still rejects this fixture's existing nested mutable receiver calls
+  (`self.put(self.take())`); this is present in the previous generated Rust too.
+- `check_phase27_5_4_fact_hooks.py` passes; required classes pass and the
+  known-debt ignore set remains exactly 38/38. `git diff --check` passes.
+- An attempted conversion of the open-result statement call-key text lookup to
+  the retained statement node reduced that hotspot, but caused eight additional
+  expression-type/ownership known-debt ignore observations. That conversion is
+  reverted; no checker/fact hook baseline was changed. Open-result lookups
+  remain 6 per mode in `open_result_multihop` and 2 per mode in
+  `open_result_zero_iteration`. Continue investigating a checked node route
+  that preserves the existing specialization/ownership perturbation behavior.
+- No full suite, paired whole-corpus counter run, performance run, or Agent 2
+  audit has run. C2 remains incomplete. Current pushed base was `aef8c957`;
+  this slice is being checkpointed next.
+
+## C2 checkpoint: return identifier checks use retained result nodes (2026-11-01)
+
+- Function return lowering now reuses its retained `ReturnValue` node both for
+  rendering and for the object-view parameter identity check. This removes the
+  emitter's text-to-node lookup on inferred generic constructor returns.
+- `constructor_expression.moss` and `constructor_multiple.moss` are both 0
+  reparses / 0 text lookups per emission. Their generated Rust is byte-identical
+  to the immediately preceding checkpoint, compiles, and produces output equal
+  to Fast Debug. Fact hooks pass; known debt remains exactly 38/38.
+- No full suite, paired whole-corpus counter run, performance run, or Agent 2
+  audit has run. Continue with the residual static call lookup paths and update
+  paired counts before final gates.
+
+## C2 checkpoint: specialization selection receives its call node (2026-11-01)
+
+- `render_known_function_call` now propagates the retained call node into
+  `call_specialization` from direct-call, qualified-call, constructor-call, and
+  compatibility call lowering. Open-result/result-specialization checks
+  project callee and arguments from that node when available; text-only source
+  remains a compatibility path when no call node exists.
+- On the same focused sources, emitter text lookups per emission changed:
+  `open_result_multihop` 6→3, `open_result_zero_iteration` 2→1,
+  `nested_write` 2→0, `range_fileio` 2→1, `trait_open_forwarding` 4→2,
+  and `probe_swap_assign` 2→1. Reparses remain zero for these samples.
+- Generated Rust is byte-identical to the prior pushed checkpoint for all six
+  sources. Native/Fast Debug output matches for multihop, zero-iteration,
+  trait-open-forwarding, and swap assignment. `nested_write` generated Rust
+  compiles, but Fast Debug reports a missing checked trait-method target on
+  this C2 branch; the immediately preceding pushed checkpoint reproduces it,
+  while the pinned C1 parent prints `1`. `range_fileio` uses FileIO, which Fast
+  Debug does not support. These parity limitations are not caused by this
+  emitter-only slice.
+- `check_phase27_5_4_fact_hooks.py` passes with known debt exactly 38/38;
+  `git diff --check` passes. No full suite, paired whole-workload count,
+  performance run, or Agent 2 audit has run.
+
+## C2 checkpoint: view-name specialization uses the same checked call node (2026-11-01)
+
+- `viewed_function_name(Function, vector<EmitterExpr>, ...)` now forwards the
+  owning call node to checked specialization selection. Previously normal call
+  rendering used the node, but the borrowed-view name calculation repeated the
+  query without it.
+- The six hot fixtures from the prior checkpoint now all emit 0 text lookups / 0
+  reparses per command (both default and `-O`): open-result multihop,
+  open-result zero-iteration, nested-write specialization, FileIO range,
+  trait-open forwarding and swap assignment. Generated Rust is byte-identical
+  to commit `7dd9073d` for all six.
+- Native/Fast Debug output parity passes on multihop, zero-iteration,
+  trait-open-forwarding and swap-assignment fixtures. FileIO is unsupported by
+  Fast Debug. `nested_write` has a pre-existing C2 branch Fast Debug invariant
+  error, reproduced at `7dd9073d`; the pinned C1 parent passes and prints `1`.
+  Its generated Rust compiles and is unchanged.
+- Fact hooks passed at 38/38 before the byte-identity comparison; diff check
+  passes. No full suite, paired whole workload, performance run or Agent 2 audit
+  has run.
+
+## C2 checkpoint: FileIO sync lowers from its checked receiver node (2026-11-01)
+
+- The node-aware emitter now handles checked `builtin-fileio:sync` directly,
+  including the optional `dataonly` flag node, and uses the retained receiver
+  node for its place projection. The Phase 21 lock/FileIO fixture dropped from
+  1 expression-view reparse + 1 text lookup per emission to 0/0.
+- Generated Rust is byte-identical to `ab2a78bb`, compiles, and
+  `check_phase21_lock_fileio_adversarial.py` passes. Fact hooks most recently
+  passed with known debt exactly 38/38.
+- The attempted paired whole-corpus run was interrupted: the candidate test
+  binary was rebuilt while the script was still measuring the baseline, so the
+  run is invalid and not reported. Repeat after committing this slice without
+  changing either binary during measurement.
+- Hotspot-set rerun before this final FileIO change showed only this source
+  nonzero. A stable paired corpus measurement is still required; full suites,
+  perf and Agent 2 audit remain pending.
+
+## C2 paired consumer-count checkpoint (2026-11-01, `0ec01dc2`)
+
+- Stable like-for-like measurement completed with the pinned C1 parent and the
+  candidate binary unchanged throughout. Workload: 1,824 tracked Moss sources,
+  337 package manifests, 3,648 default/`-O` emissions per side. Evidence:
+  `tmp/phase2754-emitter-counts/1793577601694445289/summary.json`.
+- C1 parent → candidate: emitter text-node lookups 14,606,057 → 0; native
+  expression-view reparses 9,735,229 → 0; functional-pipeline reparses 7,362 →
+  0. Consumer-expression parse counter is 0 on both sides. Emission failures
+  are 1,406 → 1,410; a per-index comparison confirms the only new failures are
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`,
+  each in default and `-O`; no old failure recovered.
+- The saved residual-hotspot set is now 0 reparses / 0 lookups, including the
+  Phase 21 FileIO lock fixture. Full suites, three-engine/parity aggregate,
+  performance run and Agent 2 audit remain pending; C2 is not yet complete.
+
+## C2 handover update: invocation-node routing and current gates (2026-11-01)
+
+- Branch remains `phase27-5-4-work`. This checkpoint follows pushed
+  `bf7ac812`; current source edits are not yet committed. No final suite,
+  paired counter sweep, performance run, or Agent 2 audit occurred after the
+  earlier full-suite run (127/165 pass, 38 fail).
+- `make moss-dev` succeeds. `tests/tooling/check_phase25_s2_char_string.py`
+  passes, including its three-engine and Unicode property checks.
+  `check_phase25_l7_repairs.py` passes end-to-end after emitter call argument
+  collection was deferred until after builtin `sort` lowering. This avoids
+  treating the static `by:` sort label as a checked expression slot.
+- `check_phase27_5_4_fact_hooks.py` passes: call-target perturb/drop across 8
+  fixtures, specializations across 4, joins across 4, patterns across 3;
+  known-debt ignored set remains 38/38. Generic-specialization probes pass
+  40/40 and Phase 21 imported effects pass.
+- Still failing targeted checks: `check_phase15_15_string_api.py` native
+  emission fails closed at `text.chars()` inside a functional pipeline with
+  `missing checked member-call target` (emitter node 50). A checker dump shows
+  the same `string.chars` answer recorded on arena 0 node 42, so this is an
+  expression-tree ownership/cursor association mismatch to resolve without
+  consumer text lookup. `check_phase21_on_fail_capture.py` still has the
+  Rust Option nesting mismatch in `root_nested.rs`. `check_phase25_team_a_semantics.py`
+  fails lowering `same_line_nested_open_results` because the emitter chooses a
+  specialization outside checked candidates (`make`, line 9, context `main`).
+  These failures have not been reclassified against C1 in this checkpoint.
+- User added a C2 merge gate: report emitter and optimizer reparse/text-lookup
+  counts over all test programs, and list every checker answer each stage reads
+  with perturbation/drop coverage marked. Existing paired sweep covers 1,824
+  tracked test/example Moss sources and 3,648 default/`-O` emissions; latest
+  completed sweep before the current uncommitted edits reported emitter
+  lookups/reparses/pipeline reparses 0/0/0 on candidate, parent
+  14,606,057/9,735,229/7,362. It does not separately report optimizer counts
+  or fact-by-fact hook coverage; produce that inventory and rerun the paired
+  counts after the code is stable. Do not treat the earlier aggregate as the
+  new requested report.
+- Continue with targeted diagnosis of pipeline-node fact attachment and
+  specialization mismatch. Full suites remain reserved for the final gate run.
+
+## C2 status report: per-stage consumers and checker-answer coverage (2026-11-01)
+
+Latest measured reparsing/text lookup status (the paired emission sweep predates
+`b47208d3`, which changes node routing but adds no parser/query call sites):
+
+| Stage | Re-parses | Text lookups | Basis |
+| --- | ---: | ---: | --- |
+| Fast Debug | 0 | 0 | C1 corpus/examples/packages audit and test-build counters; 100% removed on that workload |
+| Emitter | 0 | 0 | Paired C1-parent/candidate measurement over 1,824 tracked test/example sources, default and `-O` (3,648 emissions); parent was 9,735,229 native expression-view reparses, 7,362 functional-pipeline reparses, and 14,606,057 text-node lookups |
+| Optimizer | 0 | 0 | Test-build counter call-site/source audit of `functional_optimizer.cpp`; it has no parser or EST text-lookup entry points. The emitter counters aggregate the surrounding compiler invocation and remain 0 on the measured candidate workload. |
+
+“Re-interpretation” is not a percentage counter. The remaining static-answer
+coverage is:
+
+| Stage | Checker answers read | Perturb/drop coverage |
+| --- | --- | --- |
+| Fast Debug | Expression type; resolved call/member target; selected specialization; pipeline output/step plan; joined branch types; resolved match/recovery patterns; ownership/effect inputs used by execution | Call targets, specializations, joins and patterns pass the registered fixture matrix. Expression types, pipeline types and ownership are known debt; `phase27_5_4_fact_hook_debt.json` records which Fast Debug fixtures ignore the answer. |
+| Emitter | `SemanticFacts.type`, `resolved_target`, `specialization_result`; `Program.semantic_call_edges`; statement checked call targets, joined types, resolved patterns, functional expression plans/pipeline IR; ownership/effect data used to select ABI and local clone/borrow forms | Call targets, specializations, joins and patterns pass the registered matrix for native and `-O`. Expression types, pipeline types and ownership are known debt; the JSON baseline identifies native and optimized ignored cases. Emitter `generated_expr_type` inference and local ownership lowering decisions remain independent computations allowed by the C2 scope. |
+| Optimizer | Checker-built `FunctionalPipeline` semantic steps, stage kind, input/output type, effects, ownership, fusion eligibility, failure/divergence and source-size facts; retained EST node shape for mechanical matching | It does not directly read `SemanticFacts`, call-edge, join, or pattern accessors. `-O` perturb/drop runs are end-to-end, not optimizer-isolated. Pipeline-type and ownership ignore cases are part of the known-debt list; a dedicated optimizer-boundary perturb/drop harness is still absent. |
+
+Targeted failures after the `b47208d3` checkpoint: `check_phase15_15_string_api.py`
+(candidate fails closed on a checked pipeline tree; parent C1 emits/compiles and
+prints `string/map ok`); `check_phase21_on_fail_capture.py` (nested recovery
+reply has a Rust `Option<i64>` vs `i64` mismatch); and
+`check_phase25_team_a_semantics.py` (same-line nested open-result call selects a
+specialization outside checked candidates). `check_phase25_s2_char_string.py`,
+`check_phase25_l7_repairs.py`, generic specialization (40 probes), imported
+effects, and `check_phase27_5_4_fact_hooks.py` pass. The full-suite result still
+predates these changes: default 127/165, 38 failures, shadow not run. These
+results are not final gates; rerun both suites and a stable paired count after
+fixes. The fact inventory above distinguishes end-to-end `-O` tests from a
+future optimizer-isolated proof and must remain explicit in final review.
+
+## C2 checkpoint: invocation source spans and pipeline callback specialization (2026-11-01)
+
+- `checked_expression_ref(Stmt, Argument)` now preserves the full invocation
+  source buffer when it navigates to an argument ExprId. Child spans are
+  relative to the retained invocation text; pairing them with the shorter
+  argument string made `EmitterExpr::text()` empty and broke pipeline lowering.
+  Non-call Expression slots now fall through to their checked argument handle.
+- Checker pipeline IR closure now attaches the unique matching static
+  specialization key to an existing pipeline callback `SemanticCallEdge`,
+  selected by the callback's concrete input types and checked member
+  requirements. This fixes `map(length)` where two `length<string>` instances
+  existed but the pipeline edge had no key. No runtime values are used to
+  select the specialization.
+- Targeted passes on this state: `check_phase15_15_string_api.py`,
+  `check_phase25_team_a_semantics.py` (entire suite), Phase 25 S2, Phase 25 L7,
+  generic specialization (40 probes), imported effects, and
+  `check_phase27_5_4_fact_hooks.py` (known-debt set remains 38/38).
+- Remaining confirmed failure: `check_phase21_on_fail_capture.py` fails native
+  Rust compilation in `root_nested.rs` (`Option<i64>` vs `i64` and
+  `Option<Option<i64>>` vs `Option<i64>`). The pinned C1 parent passes this
+  exact harness, confirming a branch regression. Generated Rust comparison
+  isolates a missing `.unwrap_or_else(|| std::process::abort())` on the nested
+  `message inner.Run()` value in the outer handler. Diagnose/fix before final
+  gates. No full suite, paired counter sweep, or perf run has occurred since
+  the previous checkpoint.
+
+## C2 checkpoint: nested raising-message reply option (2026-11-01)
+
+- Fixed the retained-tree message lowering path to compose checked raising
+  propagation with the internal handler reply `Option` unwrap. This restores
+  the generated Rust shape from the C1 parent for nested `message inner.Run()`
+  inside a `try` reply.
+- Targeted checks pass on the current development binary:
+  `check_phase21_on_fail_capture.py`, `check_phase15_15_string_api.py`,
+  `check_phase25_team_a_semantics.py`, and `check_phase27_5_4_fact_hooks.py`
+  (known-debt ignored cases remain 38/38). The previous Option mismatch is
+  resolved on the reproducer.
+- No full suite, paired corpus count, three-engine aggregate, performance run,
+  or Agent 2 audit has run after this fix. The last full suite remains the
+  earlier 127/165 result and is stale; final gates remain pending.
+
+## C2 full-suite checkpoint: default run after recovery fix (2026-11-01)
+
+- `make check` rebuilt dev and opt binaries; Fast Debug checked-tree parity,
+  EST checks, both default/shadow perturbation-and-drop hooks, and the targeted
+  test-build checks passed. The default 165-job regression run ended 144 pass,
+  21 fail. Since default failed, the shadow 165-job regression run did not
+  start.
+- Failed jobs: `check_phase15_9_cross_package_specialization`,
+  `check_phase20_executor_fileio`, `check_phase21_source_free_standard_write_recovery`,
+  `check_phase21_standard_error_namespace`, `check_phase21_standard_write_order`,
+  `check_phase24_adversarial_architect`, `check_phase25_4_performance_baseline`,
+  `check_phase25_conformance`, `check_phase25_r2_wp1_call_chain`,
+  `check_phase25_s3_key_protocol`, `check_phase26_0_1_c3_parse_cache`,
+  `check_phase26_1_1_x1_v9`, `check_phase27_accepts_rustc`,
+  `phase25_key_protocol_fixtures`, `sdk_adv_data_margo_debug`,
+  `sdk_adv_data_oracle_fast_debug`, `sdk_foundations`, `sdk_text_encoding`,
+  `shard_enum_modules`, `shard_phase106_runtime`, and `shard_swarm_cases`.
+- Distinct observed causes include missing Fast Debug member/call facts in
+  package fixtures; emitter specialization outside checked edge candidates;
+  cross-crate standard-error type mismatch; native receiver argument ordering;
+  `query_site` becoming unused under the standalone `-Werror` test build;
+  `swarm_035_nested_mutating_calls` generated borrow conflict; and the
+  performance gate's `w2_spec_distinct_n016` peak RSS of 25,224 KiB over its
+  25,000 KiB limit. These failures need targeted triage; no baseline comparison
+  has yet classified them as pre-existing or introduced.
+- Follow-up targeted baseline comparison confirms
+  `check_phase24_adversarial_architect.py` and
+  `check_phase25_s3_key_protocol.py` pass with the pinned C1 parent binary;
+  the S3 candidate failure is the imported path-dependency `keys.size` call
+  `String.length()` lacking a retained member target on the imported execution
+  tree. It remains unresolved.
+- Fixed another candidate regression found in Phase 15.9: while checking a
+  specialization, the checker intentionally has no direct-call expression
+  occurrence, and had therefore written `builtin:<callee>` instead of the
+  selected callable target. The checker now always captures the selected
+  function and records its target in the specialization context; expression
+  occurrence facts remain conditional on an occurrence. Phase 15.9
+  cross-package specialization now passes, as do Team A semantics and the
+  Phase 27.5.4 fact-hook matrix (known debt 38/38). The targeted C3
+  `-Werror` parser-cache test also passes after marking its test-only query
+  label used in non-test builds.
+
+## C2 checkpoint: retain node facts in source-free execution bodies (2026-11-01)
+
+- Extended ABI-v9 Section 2 statement records with optional checked facts for
+  every node reachable from each expression handle: location within the
+  statement tree, specialization context, canonical type, resolved target,
+  specialization result, and inferred effect. Old records without the
+  optional trailing field remain readable.
+- Source-free body loading restores these facts onto the freshly populated
+  retained tree. Canonical provider type names are normalized to provider
+  declarations before constructing `TypeRef`s; this handles the
+  module-qualified `keys__Item` spelling in the imported-package test.
+- Targeted validation passes: the full Phase 25 S3 key-protocol suite (28
+  cases, including path dependency and source-removed provider), and the
+  Phase 27.5.4 perturb/drop matrix (call targets 8, specializations 4, joins
+  4, patterns 3; known debt remains 38/38). `make moss-dev` succeeds.
+- No full-suite rerun, paired all-workload reparse sweep, parity/performance
+  gate, three-engine aggregate, or Agent 2 audit has run after this change.
+  The recorded 144/165 full-suite result is stale; its 21 failures remain the
+  outstanding regression list above, with the S3 imported-package regression
+  now fixed on its targeted harness.
+- Follow-up found and fixed two source-free import edges: empty specialization
+  contexts are valid on facts, and statement-level checked call targets must
+  be serialized alongside node facts. Provider type contexts now carry the
+  loaded module identity and qualified nominal aliases. `check_phase24_...`
+  now passes end-to-end; S3 remains 28/28 and the perturb/drop matrix remains
+  green (known debt 38/38).
+- The Phase 20 full FileIO/executor harness initially failed on candidate
+  generated `positional()` calls where a placeholder map callback should have
+  been `_.length()`. The C1 parent passes that harness, so it was candidate
+  debt. The checker now places pipeline callback and reducer argument checks
+  on their retained stage/argument nodes; the compiler records the member
+  target on the callback node, and the emitter no longer picks the unrelated
+  reducer call edge by source line. Targeted Phase 20, Phase 24, Phase 25 S3
+  (28 cases), and Phase 27.5.4 fact-hook tests all pass after this fix.
+- No full-suite rerun, paired corpus count, parity/performance gate,
+  three-engine aggregate, or Agent 2 audit has run since the latest edits.
+
+
+## C2 continuation checkpoint (2026-11-01; imported expression method edge)
+
+- Active branch `phase27-5-4-work`, pushed tip `c56a2ff3`. Worktree is clean
+  after reverting an unproven emitter experiment; no commit or push was made in
+  this investigation slice.
+- Focused reproducer: `tests/tooling/check_phase21_standard_write_order.py`
+  still fails under `build/compiler/moss-dev` at `carrier.Flip(...)` assigned
+  to a local. Generated Rust passes consumer `std__ParseError` directly where
+  the provider method requires `moss_provider::std__ParseError`. The statement
+  call and direct external function cases already use the bridge.
+- Checker evidence is present: `moss-dev calls main --source src/main.moss
+  --json` reports line 14 target `method:provider__Carrier.Flip`, with checked
+  argument types `[int, std__ParseError]`. Thus the defect is emitter routing of
+  a recorded expression call edge, not checker fact absence. The expression
+  path's compatibility lowering currently falls through to ordinary member-call
+  syntax for this case.
+- Tried and reverted receiver-owner/type fallback edits because output did not
+  change; no semantics or code change is being claimed. Next: route the
+  retained call node to its exact checked edge (context + line + callee) before
+  lowering, then rerun the focused Phase 21 write-order fixture and the adjacent
+  namespace/source-free-recovery tests.
+- Required startup bootstrap is green (`language_version=moss-0.1`). The
+  `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` reference from the older session note
+  is absent; current `docs/MOSS_COMPILER_CONTRACT.md` is present.
+
+
+## C2 checkpoint: imported expression method call bridge (2026-11-01)
+
+- Reproduced a Phase 21 package failure where `carrier.Flip(set_overflow(error),
+  error)` was accepted and had a checker call edge, but generated Rust passed
+  the consumer `std__ParseError` to the provider's nominally distinct type.
+  `moss-dev calls main --source src/main.moss --json` confirms
+  `method:provider__Carrier.Flip` at line 14. A nested helper edge on that same
+  line made the retained-node emitter's single-edge-only selection reject the
+  available method answer.
+- The emitter now selects a unique checked method candidate by matching the
+  retained member name, then lowers the checked declaration with the same
+  cross-crate standard-error conversion used by statement calls: WRITE params
+  copy back in order, READ/CONSUME params convert to the provider nominal type,
+  and standard-error returns convert back to the consumer type. No receiver or
+  argument type selects the method.
+- Targeted validation passes on the current worktree:
+  `check_phase21_standard_write_order.py`,
+  `check_phase21_standard_error_namespace.py`,
+  `check_phase21_source_free_standard_write_recovery.py`,
+  `check_phase27_5_4_fact_hooks.py` (call targets 8, specializations 4, joins
+  4, patterns 3; known debt 38/38), and the full Phase 25 Team A semantics
+  suite. The Phase 21 namespace and source-free tests include Fast Debug/native
+  or optimized package behavior as defined by their harnesses.
+- This is targeted validation only. The last full-suite result in this file
+  remains 144/165 default with 21 failures; shadow, final parity/counts/perf,
+  and the single Agent 2 audit remain outstanding.
+
+
+## C2 checkpoint: checked empty-map receiver type (2026-11-01)
+
+- The Phase 25 G2 `map_get_empty` failure was candidate-only versus pinned
+  C1: the retained emitter required its independently inferred receiver type
+  to agree with the checker-owned target. It then emitted untyped
+  `Default::default()` and Rust reported E0282.
+- Native Map.get lowering now takes `map[K,V]` from the checked builtin target
+  and uses that checked type for an empty Map constructor. The retained receiver
+  node still supplies the expression, while no receiver-type query chooses the
+  map type. Re-running `check_phase25_conformance.py` now passes gates 1–9 and
+  11; gate 10 `compiled_only_custom_key` fails on both candidate and pinned C1,
+  so it is baseline debt. Candidate is 10/11.
+- A separate R2 WP1 check is candidate-red:
+  `check_phase25_r2_wp1_call_chain.py` reaches `MOSS_INTERNAL_INVARIANT emitter
+  specialization is outside checked call edge candidates callee=Service__middle
+  line=6 context=fn:Service__relay<>`; the pinned C1 binary passes all R2 WP1
+  checks. This is the next known candidate regression to fix.
+- Working tree also contains the imported expression-call bridge slice
+  committed/pushed as `fe6da8d2`. No full suites have been rerun.
+
+
+## C2 checkpoint: source-free open-result specialization routing
+
+- Fixed the R2 WP1 candidate regression. Imported generic return calls can have
+  an empty source slice on the retained call node while their Return statement
+  contains one open-call specialization key per caller specialization context.
+  `call_specialization` now matches the node's arena/ExprId to the checked
+  statement `ReturnValue` handle and reads that active context's checked key;
+  this avoids a text/callee lookup and prevents static specialization inference.
+- The Phase 25 R2 WP1 harness now passes in full: source-free ABI-v10,
+  source-backed Debug/Release, ABI-v9 controls, and hostile closure/poisoning
+  checks. Pinned C1 also passed this harness, so the issue was candidate debt.
+- After the fix, targeted gates pass: Phase 27.5.4 fact perturb/drop (known
+  debt 38/38), Phase 24 adversarial, Phase 25 S3 (28 cases), Team A semantics,
+  and G2 conformance gates 1–9 and 11. G2 gate 10 `compiled_only_custom_key`
+  fails on pinned C1 and candidate; it is baseline debt.
+- Section 2 execution-body records now optionally serialize context-scoped
+  open-call keys (including nested occurrence keys) with deterministic ordering,
+  and old records remain readable. The R2 path specifically exercises the
+  generic checked-body route, whose open-call map is regenerated by the
+  downstream checker from the checked return-root handle.
+- Latest code is not yet committed. Full suites and shadow, corpus count/perf,
+  final three-engine/parity sweep, and Agent 2 review remain outstanding.
+
+
+## C2 checkpoint: refreshed optimized compiler and Phase 21 family (2026-11-01)
+
+- The development binary had been rebuilt after the recent emitter changes, but
+  `moss-opt` was stale. The first isolated Phase 21 run therefore executed old
+  optimized code and reported three imported standard-error bridge failures.
+  Rebuilding `moss-opt` resolved them without further source changes.
+- The complete targeted `check_phase21_*` family now passes 43/43 with refreshed
+  dev and optimized binaries. Direct imported expression method calls, source-free
+  recovery, standard-error namespace conversion, and write-order tests all pass.
+- The single-job and direct harness comparisons verified that the earlier red
+  result was a stale optimized binary, not an isolation/worktree discrepancy.
+  Full default/shadow suites remain reserved for final gates.
+- Current branch tip: `cad90fdb`; current working changes in this checkpoint
+  are status documentation only.
+
+
+## C2 checkpoint: source-free private nominal expression facts (2026-11-01)
+
+- Refreshed both `moss-dev` and `moss-opt` after the Section 2 expression-fact
+  work. The prior X1 v9 failure persisted after this rebuild, confirming a
+  source issue rather than stale optimized code.
+- Section 2 can introduce private object/enum declarations after the initial
+  provider TypeContext was built. The reader now rebuilds that declaration
+  projection after parsing Section 2 and before restoring execution-body facts,
+  so checked nominal types such as `x1_library__HiddenBox` bind to their
+  declaration.
+- The direct X1 harness and isolated `check_phase26_1_1_x1_v9` now pass. The
+  full Phase 25 focused family passed 25/26; its sole failure is G2
+  `compiled_only_custom_key`, also failing on pinned C1. Phase 21 passed 43/43;
+  Phase 15.9, Phase 20 and Phase 24 targeted failures also pass with refreshed
+  compilers.
+- The change is in `src/moss.cpp`; current validation does not replace the
+  final default/shadow suites. Current branch tip before this checkpoint is
+  `8930ba5c`.
+
+
+## C2 checkpoint: source-free expression-result facts and unified binding (2026-11-01)
+
+- The Phase 26 X1 v9 source-free check and the three previously failing SDK
+  paths passed after rebuilding both binaries: `sdk_text_encoding`,
+  `sdk_adv_data_oracle_fast_debug`, and `sdk_adv_data_margo_debug`. The Phase
+  27.5.4 fact perturb/drop matrix also passes (call targets 8, specializations
+  4, joins 4, patterns 3; known debt 38/38).
+- Section 2 may represent a concrete provider callable body as a single
+  `execution_result_expression`, not as statement records. Facts for that
+  Function/Method ReturnValue handle are now serialized and restored; statement
+  and result facts are restored after Checker builds the assembled program's
+  TypeContext, so imported dependency-owned nominal types resolve too.
+- This closes the `text.builder_append` Fast Debug miss (`vector.push` target)
+  and invalid type errors for source-free `linalg__Matrix`,
+  `binary__ByteWriter`, and private `x1_library__HiddenBox`. No consumer fallback
+  was reintroduced.
+- The last Phase 25 family remains 25/26 with only G2 conformance gate 10,
+  which fails on pinned C1; the last Phase 21 family passed 43/43 after the
+  `moss-opt` rebuild. Full default/shadow suites, paired consumer count sweep,
+  three-engine/parity checks, perf, and Agent 2 audit remain outstanding.
+- Current uncommitted implementation files: `src/ast.hpp`,
+  `src/est/expression_tree.cpp`, `src/est/expression_tree.hpp`, `src/moss.cpp`,
+  `src/semantic_checker.cpp`, plus the feedback record.
+
+## C2 targeted checkpoint: initializer variant facts and borrowed lowering
+
+- On branch `phase27-5-4-work` at `8c5dec67`, the 20-job recheck of the
+  previous default-suite failures had 15 passes and 5 failures. Two new
+  candidate regressions were identified and fixed: (1) domain-state enum
+  initializer nodes lacked checked variant-target facts, exposed by the
+  EXPRESS-005 C1 transition control; (2) a Phase 15.1 assertion required the
+  prior string-lowered Rust spelling, while retained-node lowering now emits
+  the equivalent borrow `&(*packet)`. The latter still compiles/runs and
+  asserts the path does not clone.
+- The checker now records valid domain initializer enum targets on the retained
+  expression node in the `main` context. Specialized body checking also keeps
+  its active EST cursor so targets and other facts can be written under the
+  specialization context rather than being discarded. The EXPRESS-005 enum
+  shard passes with native and Fast Debug behavior; the Phase 10.6 runtime
+  shard passes after the spelling assertion was made representation-tolerant.
+- Refreshed dev/optimized build, `shard_enum_modules`,
+  `shard_phase106_runtime`, Phase 27.5.4 fact perturb/drop hooks (call targets
+  8, specializations 4, joins 4, patterns 3; known debt 38/38), feedback
+  validator, and `git diff --check` all pass.
+- The targeted batch now has 17 passes and 3 known baseline failures:
+  `check_phase25_conformance` G2 gate 10 (`compiled_only_custom_key`),
+  `check_phase27_accepts_rustc` on `swarm_035_nested_mutating_calls`, and
+  `shard_swarm_cases` on the same Rust E0499 borrow conflict. These are
+  documented C1-parent failures; no full-suite result is claimed from this
+  targeted batch. Other former reds in the batch pass, including Phase 15.9,
+  Phase 20, Phase 21 (three jobs), Phase 24, Phase 25 R2/S3, Phase 26 C3/X1,
+  and the SDK text/data jobs.
+- Next: commit/push this targeted repair; finish the outstanding non-performance
+  failure triage and C2 answer-read/perturb/drop inventory; then run the final
+  default/shadow suites, parity/three-engine checks, paired counters, and perf
+  near completion. Agent 2 remains reserved for the one audit after full gates.
+
+## C2 checkpoint: trait receiver target mapping and reparse hotspot (2026-11-01)
+
+- Paired C1-parent/candidate measurement over the same 1,824 tracked sources
+  (3,648 default/`-O` emissions per compiler) found candidate totals of 112
+  text lookups, 112 native expression-view reparses, 0 pipeline reparses, and
+  112 consumer expression parses. C1 was 14,606,057 / 9,735,229 / 7,362 / 0
+  respectively; failures were 1,406 parent vs 1,446 candidate.
+- A source locator found exactly two commands with counts: default and `-O` for
+  `examples/swarm/modules/domain_services/repro/trait_param/single/src/main.moss`.
+  The compatibility path handled `trait-method:Weighted.weight` by reparsing
+  the four `a.weight()` / `b.weight()` call occurrences. This was a real
+  remaining C2 path, not a broad corpus regression.
+- Fast Debug now associates a trait method call with the checked specialization
+  requirement by receiver binder when present, avoiding the incorrect assumption
+  that a call's same-line ordinal is the global member-requirement ordinal.
+  The emitter maps the same checked requirement to its declaration and lowers
+  from the retained call node. No receiver type selects the method.
+- Focused parity passes: dev/optimized Fast Debug and native/`-O` each print
+  `10`; both native emissions compile; both modes report 0 reparses and 0 text
+  lookups. The source is now included in call-target and specialization
+  perturb/drop coverage. The fact-hook suite passes 9 call-target fixtures,
+  5 specialization fixtures, joins 4, patterns 3, and the known-debt set stays
+  38/38. Phase 27 EST tree check and feedback validation pass.
+- The paired whole-corpus counter sweep above predates this fix and remains the
+  current aggregate measurement until rerun. The four prior targeted failure
+  labels from the last full suite now reduce to three C1 baseline failures:
+  conformance G2 gate 10, `check_phase27_accepts_rustc`, and
+  `shard_swarm_cases` (both the latter jobs fail on `swarm_035` Rust E0499).
+  Full default/shadow suite, three-engine/parity gates, final paired counters,
+  performance, and the single Agent 2 review remain outstanding.
+
+## 2026-11-01 live C2 checkpoint: string-only sort lowering exposed after e72
+
+- Resumed at pushed commit `e72cdc74` on `phase27-5-4-work`. The immediate
+  targeted L7 harness failure was `tree_member_path` invoked from sort's
+  string-based mutable-place lowering. The local working tree now routes sort
+  input and callback argument projections from retained call nodes, and keeps
+  expression grouping instead of reparsing to strip it.
+- `make moss-dev moss-opt` passed after the initial node-routing edit. The
+  targeted `check_phase25_l7_repairs.py` still fails at sort callback lowering:
+  the source `Reverse(size)` is not yet projected to a checked identifier in
+  the retained tree (`MOSS_INTERNAL_INVARIANT checked sort key is not an
+  identifier`). I added a small unwrap for named-argument wrappers and am
+  rerunning the focused harness; no pass is claimed yet.
+- Current uncommitted source: `src/native_generator.cpp`. The sort lowering
+  change is incomplete and must be repaired or reverted before any commit.
+  No full suite was run after e72; the last default suite and perf/count results
+  are documented above and stale for this working edit. Shadow suite, three-
+  engine/parity aggregate, final paired counters, and Agent 2 audit remain
+  pending. C2 is not merged/tagged.
+- Follow-up diagnosis: EST represents uppercase `Reverse(size)` as a
+  `Constructor` node (variant index 13), not a `Call`; the current local edit
+  projects both forms and unwraps the argument node. The focused L7 harness is
+  running again. Still no pass claim until its result arrives.
+- The combined L7 run passed sort, generic sort-key specialization, all ordering
+  laws (including Char), and then hit a Char boundary fixture during codegen.
+  Reproducer isolated to negative numeric fragments (`Char(-1)`) reaching
+  string literal classification. Numeric class/value/declaration checks now use
+  the shared numeric decoder, not an EST parse. Direct `Char(-1)` lowering
+  succeeds; the dedicated Char surface test is running once more.
+- Final focused validation after the numeric decoder adjustment: `make
+  --jobs="$(nproc)" moss-dev moss-opt` PASS; full
+  `check_phase25_l7_repairs.py build/compiler/moss-dev` PASS, including
+  generic/untyped sort callbacks, ordering laws, Char boundaries, and the
+  source-free provider. The earlier failure list remains the last full-suite
+  measurement and still needs a new final gate run after all fixes.
+
+## 2026-11-01 C2 checkpoint: atom projections and handler state places
+
+- At pushed `80de2dfb`, strict emitter fallback removal still failed a set of
+  previous full-suite jobs on `tree_strip_expression_grouping`. Keeping grouping
+  source slices unchanged avoids reparsing and is safe in Rust.
+- Subsequent focused failures showed additional string-only helpers were queried
+  on backend atomic fragments (`0`, `false`, quoted Char/String) and on binder
+  names stored in statement fields. The emitter now handles identifiers,
+  keywords, scalar literal classes/values, and one-name place paths directly;
+  composite expression text without a retained node remains fail-closed. The
+  existing numeric decoder is used for numeric facts.
+- The message-result fixture demonstrated that the binder name `seen`/`pt` has
+  no independent expression handle. Projecting it as a one-component place
+  restores `*state.seen` and object replacement lowering without building a
+  tree from text. Focused native Rust compilation and runtime match passed.
+- Focused tests passing on the current branch: Phase 25 L7 full harness;
+  G3 ordering; G4 Unicode; S1 checker authority; S2 Char/String; S3 key
+  protocol; S-C safe arithmetic; S4 message-result write; fact perturb/drop
+  (`9/5/4/3` fixtures and debt baseline `38/38`). The development compiler is
+  current. The optimized compiler was last built before the most recent
+  atom/path helper changes and must be rebuilt before final gates.
+- Added a feedback observation for this discovered compatibility gap; feedback
+  validation passed before the latest helper edits. Run it again before the
+  next integration checkpoint. The handover and source changes are currently
+  uncommitted and need a targeted verification pass, then commit/push.
+- No new full suite has run since the prior default suite. Shadow, final paired
+  counters, parity/three-engine/perf, Agent 2 review, merge and tag are pending.
+
+## 2026-11-01 C2 paired consumer sweep complete
+
+- The counter-matched pass compared the pinned C1 test build and candidate on
+  1,824 tracked `.moss` sources, default and `-O` (3,648 commands each; 337
+  package manifests). Parent: 14,606,057 emitter text-node lookups, 9,735,229
+  expression-view reparses, 7,362 pipeline reparses, 0 consumer expression
+  parses, 1,406 failed emissions. Candidate: 0/0/0/0 and 1,410 failures.
+  Exact JSON: `tmp/phase2754-emitter-counts/1793593987288347906/summary.json`.
+- Candidate-only emission failure delta is four commands from two sources:
+  the formatter-return grouping failed attempt and incomplete-index adversarial
+  probe. Both pass `moss check`, while C1-generated Rust fails to compile;
+  candidate fails closed on missing checked target/slot. There is no executable
+  parent behavior to compare. Details are in `docs/phase27/27_5_4_REPORT.md`.
+- Fast Debug and optimizer reparse/text-lookup counts are 0 by source audit
+  (no parser/fingerprint/text-node lookup references); these stages have no
+  paired corpus counter. Emitter generated_expr_type inference remains a known
+  allowed area, separate from the 0 text-query counts.
+- Fact-read inventory and coverage matrix are now in the report. Perturb/drop
+  pass: call targets 9, specializations 5, joins 4, patterns 3 fixtures. Known
+  debt remains 38/38 (expression types 12, pipeline types 16, ownership 10).
+- Targeted validation after the last source commit: full Phase 25 S4, S2
+  Char/String, S3 key protocol, G3 ordering, G4 Unicode, S1 checker authority,
+  safe arithmetic, Phase 25 L7 repairs, and Phase 27.5.4 fact hooks pass.
+  Conformance is 10/11 with only pinned-parent gate 10 failing when `MAKEFLAGS`
+  is unset. No full suites have been run after the latest emitter fixes.
+- Next: final source audit and report review; run make check default/shadow,
+  three-engine/parity, and performance once; then request the one Agent 2 audit.
+  If GO, fetch current origin/main, merge C2 with that first parent, tag
+  phase27-5-4-m1, then perform the queued closing round and its gates.
+
+## 2026-11-01 C2 final-gate checkpoint
+
+- The final full default and shadow shards each completed 161/165. The same
+  four failures occurred in each: conformance `compiled_only_custom_key`
+  (confirmed on the pinned C1 parent), Rust E0499 for
+  `tests/swarm_035_nested_mutating_calls.moss` in both
+  `check_phase27_accepts_rustc` and `shard_swarm_cases`, and the W2 RSS limit
+  (default 25,012 KiB; shadow 25,024 KiB vs 25,000). The first three are
+  parent debt; the W2 memory margin is a candidate performance-gate failure.
+  Full logs: `tmp/phase2754-final/make-check-c2.log` and
+  `tmp/phase2754-final/shadow-c2.log`.
+- `check_phase27_three_engine`, Fast Debug/native parity jobs, and the fact
+  perturb/drop harness pass in both modes. The hook harness reports targets
+  9, specializations 5, joins 4, patterns 3, debt baseline 38/38.
+- A paired best-of-two perf pass compared C1 parent
+  `tmp/phase27-5-4-parent-counter/build/compiler/moss-opt` with candidate on
+  the same 10 workloads. Sum of best times 815.75 -> 834.13 ms (+2.25%). W4
+  14.44 -> 14.34 ms (-0.7%), W5 38.23 -> 36.66 ms (-4.1%), W8 41.95 ->
+  44.63 ms (+6.4%). W2 RSS 24,064 -> 25,036 KiB. Raw paired records are under
+  `tmp/phase2754-final/perf-parent-candidate/summary.json`.
+- Current emitter whole-corpus counters remain 0 reparses and 0 text lookups
+  over 3,648 default/`-O` commands; Fast Debug and optimizer have no parser or
+  text-keyed lookup paths by source audit. Emitter type inference remains.
+- Pinned-parent conformance confirmation run is in
+  `tmp/phase2754-final/conformance-parent.log`; candidate no-MAKEFLAGS run is
+  `tmp/phase2754-final/conformance-no-makeflags.log`. Both fail only gate 10.
+- C2 final audit has been requested from Agent 2 and is pending. Do not merge
+  until its GO/NO-GO arrives and the C2 gate disposition is recorded. Report
+  appended to `docs/phase27/27_5_4_REPORT.md`.
+- After C2 merge/tag, perform the queued closing round: default `make check`
+  without shadow, dedicated `make check-shadow`, runtime ratchet, contract
+  status update, then its own Agent 2 gate and m2 merge/tag.
+
+## 2026-11-01 C2 audit and cost blocker
+
+- Agent 2 completed its single audit at C2 HEAD `1c9e26fa7f03bfc34daa633187a67ddde6d911cc` and returned **NO-GO**. It verified composite emitter text fallback fails closed, Fast Debug/optimizer have no reparse/text-lookup routes, and three seeded random accepted fixtures match C1 across Fast Debug/default/optimized Rust and runtime. It also clarified the 1,824-source emitter sweep inventories 337 package manifests but does not run package-context commands.
+- Hard blocker: the normal O2 candidate has W2 RSS about 1 MiB above its C1 parent and is above the permanent 25,000 KiB cap (25,012 default / 25,024 shadow; paired samples include 25,036). Do not merge this C2 head without resolving the performance gate and getting a permitted final audit disposition.
+- The two other suite failures are parent baseline: conformance gate 10 (verified 10/11 on C1 with `MAKEFLAGS` unset) and `swarm_035_nested_mutating_calls.moss` E0499 in two jobs. Full default/shadow totals are 161/165 each. Logs remain `tmp/phase2754-final/make-check-c2.log`, `shadow-c2.log`.
+- Size experiments (not integrated): all-TU `-Os` clears W2 RSS but is +10.66% aggregate; `semantic_checker.cpp` only at `-Os` clears W2 (24,288–24,392 KiB), measures +4.18% aggregate on the ten Phase 25.4 workloads, with W4 +8.86%, W5 +3.12%, W8 -0.05%. Raw records: `tmp/phase2754-final/perf-os-candidate/summary.json` and `perf-semantic-os/summary.json`. No Makefile/source build flags were changed.
+- Since Agent 2 was requested exactly once for this C2 checkpoint, do not request another audit on this same checkpoint. A later user-authorized checkpoint/review may be needed if a cost repair is integrated; a changed candidate would require fresh final suite validation. The queued C2 merge and post-C2 closing round (shadow demotion, runtime ratchet, contract update, m2 tag) have not started.
+- Latest tracked edits are report/status only and should be committed/pushed as a handover checkpoint. `git diff --check` and `check_agent_feedback.py` passed before the final report append; rerun both before commit.
+- Further experiments after that checkpoint did not change tracked source: checker `-O2 -fno-inline-functions -fno-inline-small-functions` reduced its object only 194 KiB, but W2 RSS remained 25,036–25,132 KiB and time rose to about 780 ms. Linker `--icf=safe` retained W2 RSS 25,068–25,160 KiB. Linker `--icf=all` reduced total text versus normal O2 but the canonical perf gate still measured W2 25,024 KiB and failed. None is a repair.
+
+## 2026-11-01 C2 cost-repaired candidate checkpoint
+
+- Integrated the measured per-TU size profile in `Makefile`: only optimized `semantic_checker.cpp` uses `-Os`; all other optimized TUs remain under `CXXFLAGS_OPT`. The compile config hash includes this choice; the special rule intentionally avoids the incompatible O2 PCH. No Moss decision logic changed.
+- `make moss-opt` rebuilt successfully. Canonical performance gate passes: W2 440.10 ms / 24,316 KiB / 272 specs. Paired C1-parent best-of-two on the 10 workloads totals 818.19 -> 836.11 ms (+2.19%), W4 +2.55%, W5 +1.98%, W8 +0.22%. Three-trial C1-parent comparison across all 23 `rw_*` fixtures flags 0 slowdowns by the established noise rule. Raw data: `tmp/phase2754-final/perf-integrated/`.
+- Final `make check` default and explicit shadow shards each pass 162/165. Both now have only conformance gate 10 (`compiled_only_custom_key`) and two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs. The conformance gate is confirmed on C1; E0499 is known C1 debt. The W2 RSS failure is gone. Logs: `tmp/phase2754-final/make-check-costfix.log`, `shadow-costfix.log`.
+- Phase 27.5.4 fact perturb/drop tests pass; three-engine and Fast Debug/native tests pass. Full candidate still needs Agent 2 review at this updated head before C2 merge. Prior NO-GO was for O2 candidate `1c9e26fa`, specifically the now-repaired RSS issue.
+- Once Agent 2 returns GO and the three C1 baseline failures are accepted as recorded debt, merge C2, then start the queued post-C2 round (shadow demotion, runtime ratchet, contract status update) and its own gate/tag. Current source change is Makefile only beyond prior C2 code.

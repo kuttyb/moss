@@ -47,8 +47,17 @@
 
   string physical_leaf_binding(string path) const {
     string result = "__moss_storage_";
-    const auto parts = tree_member_path(path).value_or(vector<string>{});
-    for (const auto& part : parts) result += std::to_string(part.size()) + "_" + part;
+    // Physical paths are generated from checked state/field names above; they
+    // are not Moss expression text and need no EST lookup or temporary parse.
+    size_t begin = 0;
+    while (begin <= path.size()) {
+      const size_t end = path.find('.', begin);
+      const auto part = path.substr(begin, end == string::npos
+          ? string::npos : end - begin);
+      result += std::to_string(part.size()) + "_" + part;
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
     return result;
   }
 
@@ -224,7 +233,7 @@
     phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
     phase21_result_context_ = !h.observable_effects.raise_set.empty();
     gen_stmts(o, body, &d, &h, result, locals, types, 2, true, false,
-              functional_handler_context(d, h));
+              checked_handler_context(d, h));
     phase21_result_context_ = saved_phase21_result_context;
     phase21_capture_handler_ = saved_capture_handler;
     view_domain_ = false; view_domain_access_ = false; borrowed_message_parameters_.clear();
@@ -352,7 +361,10 @@
       borrowed_message_parameters_.insert(p.name);
       if (view_object_type(p.type)) view_parameters_.insert(p.name);
     }
-    o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
+    const Stmt& condition_statement = h.body.front();
+    const auto checked_condition = checked_expression_ref(
+        condition_statement, condition_statement.a, est::ExprSlot::Condition);
+    o << "        " << expr(checked_condition, &d, locals, &types) << "\n        };\n";
     view_domain_ = false; view_domain_access_ = false;
     borrowed_message_parameters_.clear(); view_parameters_.clear();
     write_through_parameters_.clear();
@@ -627,7 +639,7 @@
         gen_stmts(o, arm.body, &d, &h,
                   h.reply_type ? "__moss_failure_reply" : string(),
                   locals, types, needs_label ? 7 : 6, true, false,
-                  functional_handler_context(d, h) + ":on_fail:" +
+                  checked_handler_context(d, h) + ":on_fail:" +
                       std::to_string(arm_index));
         if (needs_label) o << "                        }\n";
         phase21_selected_error_ = saved_selected_error;
@@ -776,7 +788,7 @@
         gen_stmts(o, arm.body, &d, &h,
                   h.reply_type ? "__moss_failure_reply" : string(),
                   locals, types, needs_label ? 4 : 3, true, false,
-                  functional_handler_context(d, h) + ":on_fail:" +
+                  checked_handler_context(d, h) + ":on_fail:" +
                       std::to_string(arm_index));
         if (needs_label) o << "            }\n";
         phase21_selected_error_ = saved_selected_error;
@@ -1081,7 +1093,7 @@
       const Handler* saved_capture_handler = phase21_capture_handler_;
       phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
       phase21_result_context_ = !h.observable_effects.raise_set.empty();
-      gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, functional_handler_context(d, h));
+      gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, checked_handler_context(d, h));
       phase21_result_context_ = saved_phase21_result_context;
       phase21_capture_handler_ = saved_capture_handler;
       view_domain_ = false; view_domain_access_ = false;

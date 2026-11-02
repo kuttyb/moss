@@ -14,6 +14,10 @@ For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MOD
 
 Only the checker decides Moss semantics. The emitter, Fast Debug and the optimizer read the checker's answers and never compute them. If an answer is missing, the checker must provide it. Log conflicts and continue.
 
+Executing and lowering are not deciding (computing a + b, or choosing Rust syntax for a checked decision, is fine; choosing which + or which function is not). Every new semantic decision class ships, in the same change, with its checker-side authority plus perturbation and drop tests registered in make check.
+
+At session start, read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md).
+
 ## Moss compiler development
 
 For Moss compiler development (any change under `src/`, the compiler's tests or its build), read [docs/MOSS_COMPILER_CONTRACT.md](docs/MOSS_COMPILER_CONTRACT.md) before making changes, and keep its statuses and known-debt numbers current in the same delivery. It defines the compiler's architectural invariants, the gates that enforce them, and the declared known debt.

@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -41,6 +42,44 @@ ExprId Arena::append(Node node, SourceSpan source_span) {
 
 const Node& Arena::at(ExprId id) const { return nodes_.at(id); }
 
+std::vector<ExprId> Arena::children(ExprId id) const {
+  std::vector<ExprId> result;
+  std::visit([&](const auto& node) {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, Unary>) result.push_back(node.operand);
+    else if constexpr (std::is_same_v<T, Binary>) {
+      result.push_back(node.left);
+      result.push_back(node.right);
+    } else if constexpr (std::is_same_v<T, Call>) {
+      result.push_back(node.callee);
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, Member>) result.push_back(node.base);
+    else if constexpr (std::is_same_v<T, Index>) {
+      result.push_back(node.base);
+      result.push_back(node.index);
+    } else if constexpr (std::is_same_v<T, Parenthesized>)
+      result.push_back(node.inner);
+    else if constexpr (std::is_same_v<T, Message>) {
+      result.push_back(node.target);
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, NamedArgument>)
+      result.push_back(node.value);
+    else if constexpr (std::is_same_v<T, Collection> ||
+                       std::is_same_v<T, Tuple>)
+      result.insert(result.end(), node.elements.begin(), node.elements.end());
+    else if constexpr (std::is_same_v<T, Constructor>) {
+      result.push_back(node.type);
+      result.insert(result.end(), node.type_arguments.begin(),
+                    node.type_arguments.end());
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      result.push_back(node.input);
+      result.insert(result.end(), node.stages.begin(), node.stages.end());
+    }
+  }, nodes_.at(id));
+  return result;
+}
+
 void Arena::record_facts(ExprId id, std::string specialization_context,
                          SemanticFacts facts) {
   if (id >= nodes_.size())
@@ -65,6 +104,15 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
+std::vector<std::pair<std::string, SemanticFacts>>
+Arena::facts_for_expression(ExprId id) const {
+  std::vector<std::pair<std::string, SemanticFacts>> result;
+  for (const auto& [key, facts] : semantic_facts_)
+    if (key.expression == id)
+      result.emplace_back(key.specialization_context, facts);
+  return result;
+}
+
 #ifdef MOSS_TEST_BUILD
 void Arena::test_mutate_call_targets(bool drop) {
   for (auto& entry : semantic_facts_) {
@@ -72,6 +120,15 @@ void Arena::test_mutate_call_targets(bool drop) {
     if (target.empty()) continue;
     if (drop) target.clear();
     else target = "fn:__moss_test_perturbed_call_target__";
+  }
+}
+
+void Arena::test_mutate_expression_types(bool drop) {
+  const TypeRef perturbed = drop ? nullptr
+      : Type::parse_canonical("bool").value_or(nullptr);
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.type) continue;
+    entry.second.type = perturbed;
   }
 }
 #endif
@@ -103,6 +160,9 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   if (!source_text || source_text->empty()) return std::nullopt;
   ParsedFunctionalPipeline result;
   result.source = std::move(*source_text);
+  result.expression_arena = &arena;
+  result.source_node = pipeline->input;
+  result.expression_source = std::string(source);
   for (const auto stage_id : pipeline->stages) {
     auto raw = source_slice(stage_id);
     if (!raw || raw->empty()) return std::nullopt;
@@ -119,6 +179,10 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
     ParsedFunctionalStage parsed_stage;
     parsed_stage.kind = *kind;
     parsed_stage.raw = std::move(*raw);
+    parsed_stage.expression_node = stage_id;
+    parsed_stage.argument_nodes = arguments;
+    parsed_stage.expression_arena = &arena;
+    parsed_stage.expression_source = std::string(source);
     for (const auto argument : arguments) {
       auto argument_text = source_slice(argument);
       if (!argument_text) return std::nullopt;
@@ -2358,6 +2422,80 @@ void populate(Program& program) { populate_impl(program, nullptr, 0); }
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
+}
+
+void restore_loaded_facts(Program& program) {
+  moss::TypeContext::Scope type_scope(program.type_context.get());
+  auto restore_fact_list = [&](std::vector<Handle>& handles,
+                               std::vector<LoadedExpressionFact>& loaded_facts) {
+    for (const auto& loaded : loaded_facts) {
+      const Handle* selected = nullptr;
+      for (const auto& handle : handles)
+        if (static_cast<std::uint8_t>(handle.slot) == loaded.slot &&
+            handle.argument_index == loaded.argument_index) {
+          if (selected)
+            throw std::invalid_argument(
+                "ambiguous loaded expression fact handle");
+          selected = &handle;
+        }
+      if (!selected || selected->arena_index >= program.expression_arenas.size() ||
+          !program.expression_arenas[selected->arena_index])
+        throw std::invalid_argument("missing loaded expression fact handle");
+      auto& arena = *program.expression_arenas[selected->arena_index];
+      ExprId expression = selected->expr;
+      for (const auto child : loaded.child_path) {
+        const auto children = arena.children(expression);
+        if (child >= children.size())
+          throw std::invalid_argument("invalid loaded expression fact path");
+        expression = children[child];
+      }
+      SemanticFacts facts;
+      if (!loaded.canonical_type.empty()) {
+        auto type = moss::Type::parse_canonical(loaded.canonical_type);
+        if (!type || !*type)
+          throw std::invalid_argument("invalid loaded expression fact type: " +
+                                      loaded.canonical_type);
+        facts.type = *type;
+      }
+      facts.specialization_result = loaded.specialization_result;
+      facts.resolved_target = loaded.resolved_target;
+      if (loaded.inferred_effect >= 0)
+        facts.inferred_effect = static_cast<Effect>(loaded.inferred_effect);
+      arena.record_facts(expression, loaded.context, std::move(facts));
+    }
+    loaded_facts.clear();
+  };
+  std::function<void(Stmt&)> restore_facts = [&](Stmt& statement) {
+    restore_fact_list(statement.expression_handles,
+                      statement.loaded_expression_facts);
+  };
+  auto restore_body = [&](std::vector<Stmt>& statements) {
+    for (auto& statement : statements) restore_facts(statement);
+  };
+  for (auto& function : program.functions) {
+    restore_fact_list(function.expression_handles,
+                      function.loaded_result_expression_facts);
+    restore_body(function.body);
+    if (function.execution_body) restore_body(*function.execution_body);
+  }
+  for (auto& object : program.objects)
+    for (auto& method : object.methods) {
+      restore_fact_list(method.expression_handles,
+                        method.loaded_result_expression_facts);
+      restore_body(method.body);
+      if (method.execution_body) restore_body(*method.execution_body);
+    }
+  for (auto& domain : program.domains)
+    for (auto& handler : domain.handlers) {
+      restore_fact_list(handler.expression_handles,
+                        handler.loaded_result_expression_facts);
+      restore_body(handler.body);
+      if (handler.execution_body) restore_body(*handler.execution_body);
+      for (auto& arm : handler.failure_arms) restore_body(arm.body);
+      if (handler.execution_failure_arms)
+        for (auto& arm : *handler.execution_failure_arms)
+          restore_body(arm.body);
+    }
 }
 
 void populate_loaded_expression(Program& program, std::vector<Handle>& handles,

@@ -56,7 +56,73 @@
     return "*" + rendered;
   }
 
+  std::optional<string> view_place(const EmitterExpr& expression,
+      const Domain* d, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    auto parsed_parts = tree_member_path(expression);
+    if (!parsed_parts || parsed_parts->empty()) return std::nullopt;
+    const auto& parts = *parsed_parts;
+    string root = parts.front(), type, rendered;
+    bool access = false;
+    size_t next = 1;
+    if (view_parameters_.count(root)) {
+      if (!types || !types->count(root)) return std::nullopt;
+      type = types->at(root); rendered = root; access = true;
+    } else if (view_method_ && d && (root == "self" || !locals.count(root))) {
+      if (root == "self") { type = d->name; rendered = "self"; }
+      else {
+        auto field = std::find_if(d->state.begin(), d->state.end(),
+            [&](const auto& f) { return f.name == root; });
+        if (field == d->state.end()) return std::nullopt;
+        type = field->type;
+        rendered = "self.__moss_field_" + root +
+            (mutable_projection_ ? "_mut()" : "()");
+      }
+      access = true;
+    } else if (view_domain_ && d && !locals.count(root)) {
+      auto field = std::find_if(d->state.begin(), d->state.end(),
+          [&](const auto& f) { return f.name == root; });
+      if (field == d->state.end()) {
+        auto route = std::find_if(d->routes.begin(), d->routes.end(),
+            [&](const auto& r) { return r.name == root; });
+        if (route != d->routes.end() && parts.size() == 1)
+          return "state." + rust_identifier(root);
+        return std::nullopt;
+      }
+      type = field->type;
+      rendered = "state." + root;
+      access = view_domain_access_ && view_object_type(type);
+    } else return std::nullopt;
+    for (size_t i = next; i < parts.size(); ++i) {
+      auto object = objects_.find(canonical_type_name(type));
+      if (object == objects_.end()) return std::nullopt;
+      auto field = std::find_if(object->second->fields.begin(),
+          object->second->fields.end(),
+          [&](const auto& f) { return f.name == parts[i]; });
+      if (field == object->second->fields.end()) return std::nullopt;
+      rendered += access
+          ? ".__moss_field_" + parts[i] +
+                (mutable_projection_ ? "_mut()" : "()")
+          : "." + rust_identifier(parts[i]);
+      type = field->type;
+    }
+    if (view_object_type(type) &&
+        (!access || (view_domain_access_ && parts.size() == 1 &&
+                     !view_parameters_.count(root))))
+      return rendered;
+    return "*" + rendered;
+  }
+
   string place_expr(const string& expression, const Domain* d, const std::set<string>& locals,
+                    const std::unordered_map<string,string>* types) const {
+    bool saved = mutable_projection_; mutable_projection_ = true;
+    string result = expr(expression, d, locals, types);
+    mutable_projection_ = saved;
+    return result;
+  }
+
+  string place_expr(const EmitterExpr& expression, const Domain* d,
+                    const std::set<string>& locals,
                     const std::unordered_map<string,string>* types) const {
     bool saved = mutable_projection_; mutable_projection_ = true;
     string result = expr(expression, d, locals, types);
@@ -70,13 +136,31 @@
            view_place(expression, d, locals, types).has_value();
   }
 
+  bool is_object_view(const EmitterExpr& expression, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    return view_object_type(generated_expr_type(expression, types).value_or("")) &&
+           view_place(expression, d, locals, types).has_value();
+  }
+
   bool borrowed_view_expression(const string& expression, const Domain* d, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
     if (view_place(expression, d, locals, types)) return true;
     string base, index;
-    auto syntax = est::parse_view(trim(expression));
+    auto syntax = expression_view_from_est(trim(expression));
     return syntax && est::project_index(*syntax, base, index) &&
         borrowed_view_expression(base, d, locals, types);
+  }
+
+  bool borrowed_view_expression(const EmitterExpr& expression,
+      const Domain* d, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (view_place(expression, d, locals, types)) return true;
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* index = std::get_if<est::Index>(&expression.arena->at(root));
+    return index && borrowed_view_expression(expression.child(index->base),
+                                              d, locals, types);
   }
 
   string viewed_function_name(const string& name, const vector<string>& args, const Domain* d,
@@ -99,20 +183,68 @@
     return emitted;
   }
 
+  string viewed_function_name(const Function& function,
+      const vector<EmitterExpr>& args, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const EmitterExpr* call_node = nullptr) const {
+    vector<string> source_args;
+    source_args.reserve(args.size());
+    for (const auto& argument : args) source_args.push_back(argument.text());
+    const auto* specialization = function.static_dispatch
+        ? call_specialization(function, source_args, types, &args, call_node)
+        : nullptr;
+    string emitted = specialization ? specialization->generated_name
+                                    : function.name;
+    for (size_t index = 0; index < args.size(); ++index) {
+      const string type = generated_expr_type(args[index], types).value_or("");
+      if (function_effect(function, index, type, specialization) !=
+              Effect::Consume &&
+          is_object_view(args[index], d, locals, types))
+        return "__moss_view_" + emitted;
+    }
+    return emitted;
+  }
+
   string method_receiver_place(const string& receiver, const string& name, const vector<string>& args,
-      const Domain* d, const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
+      const Domain* d, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const Method* checked_method = nullptr) const {
+    (void)args;
     auto type = generated_expr_type(receiver, types);
-    vector<string> argument_types;
-    for (const auto& arg : args) argument_types.push_back(generated_expr_type(arg, types).value_or(""));
-    const Method* method = type ? resolve_object_method(objects_, canonical_type_name(*type), name,
-                                                       argument_types, true, nullptr) : nullptr;
-    bool writes = method && method->receiver_effect == Effect::Write;
-    if (!method && type) {
+    bool writes = checked_method &&
+        checked_method->receiver_effect == Effect::Write;
+    if (!checked_method && type) {
       const auto* builtin = builtin_operation(*type,
           name == "push_back" ? "push" : name == "pop_front" ? "pop" : name);
       if (builtin) writes = builtin->receiver_effect == Effect::Write;
+      else if (objects_.count(nominal_template_name(*type)))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked receiver method target");
     }
     string result = writes ? write_call_place(receiver, d, locals, types) : read_call_place(receiver, d, locals, types);
+    return starts_with(result, "*") ? "(" + result + ")" : result;
+  }
+
+  string method_receiver_place(const EmitterExpr& receiver,
+      const string& name, const vector<EmitterExpr>& args,
+      const Domain* d, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const Method* checked_method = nullptr) const {
+    (void)args;
+    auto type = generated_expr_type(receiver, types);
+    bool writes = checked_method &&
+        checked_method->receiver_effect == Effect::Write;
+    if (!checked_method && type) {
+      const auto* builtin = builtin_operation(*type,
+          name == "push_back" ? "push" : name == "pop_front" ? "pop" : name);
+      if (builtin) writes = builtin->receiver_effect == Effect::Write;
+      else if (objects_.count(nominal_template_name(*type)))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked receiver method target");
+    }
+    string result = writes ? write_call_place(receiver, d, locals, types)
+                           : expr(receiver, d, locals, types);
     return starts_with(result, "*") ? "(" + result + ")" : result;
   }
 
@@ -121,6 +253,17 @@
     if (is_object_view(receiver, d, locals, types)) return name;
     for (const auto& argument : args)
       if (is_object_view(argument, d, locals, types)) return "__moss_view_" + name;
+    return name;
+  }
+
+  string viewed_method_name(const EmitterExpr& receiver, const string& name,
+      const vector<EmitterExpr>& args, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (is_object_view(receiver, d, locals, types)) return name;
+    for (const auto& argument : args)
+      if (is_object_view(argument, d, locals, types))
+        return "__moss_view_" + name;
     return name;
   }
 
@@ -186,10 +329,20 @@
         if (method.result_expression) {
           auto context = functional_method_context(t, method);
           auto pipeline = method.result_functional_pipeline_ids.find(context);
+          struct ResultBodyContextScope {
+            string& slot;
+            string prior;
+            ResultBodyContextScope(string& target, const string& current)
+                : slot(target), prior(target) { slot = current; }
+            ~ResultBodyContextScope() { slot = std::move(prior); }
+          } result_body_context(codegen_body_context_, context);
           o << "        ";
           if (raises) o << "Ok(";
-          o << expr(*method.result_expression, &receiver, locals, &types,
-              pipeline == method.result_functional_pipeline_ids.end() ? 0 : pipeline->second);
+          o << expr(checked_expression_ref(method.expression_handles,
+                  *method.result_expression, est::ExprSlot::ReturnValue),
+              &receiver, locals, &types,
+              pipeline == method.result_functional_pipeline_ids.end()
+                  ? 0 : pipeline->second);
           if (raises) o << ")";
           o << "\n";
         }

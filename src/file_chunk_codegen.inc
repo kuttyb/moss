@@ -32,12 +32,22 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   const string pad(spaces, ' ');
   if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
       s.kind == Stmt::Kind::Var) {
-    vector<string> open_arguments;
-    if (tree_parse_fileio_open(s.b, open_arguments)) {
+    const auto slot = s.kind == Stmt::Kind::Assign
+        ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+    const auto checked_source = checked_expression_ref(s, s.b, slot);
+    EmitterExpr open_receiver;
+    string open_method;
+    vector<EmitterExpr> open_arguments;
+    if (tree_parse_member_call_nodes(checked_source, open_receiver,
+                                     open_method, open_arguments) &&
+        tree_identifier_name(open_receiver) ==
+            std::optional<string>("FileIO") && open_method == "open" &&
+        open_arguments.size() == 2) {
       string opened = "FileIO::" + string(phase21_result_context_
           ? "open_checked" : "open") + "(&(" +
           expr(open_arguments[0], d, locals, &types) + "), " +
-          rust_string_literal(trim(open_arguments[1])) + ")";
+          rust_string_literal(tree_identifier_name(open_arguments[1])
+                                  .value_or(open_arguments[1].text())) + ")";
       if (phase21_result_context_)
         opened = phase21_propagate(opened + ".map_err(__moss_raise_fileio)");
       o << pad << "let mut " << s.a << " = " << opened << ";\n";
@@ -45,33 +55,47 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
       types[s.a] = "FileIO";
       return true;
     }
+    EmitterExpr receiver_node;
     string receiver, method;
-    vector<string> arguments;
-    if (tree_parse_member_call(s.b, receiver, method, arguments) &&
-        fileio_typed(types, receiver) && method == "read" &&
-        arguments.size() == 2) {
-      string read = method_receiver_place(
-          receiver, "read", arguments, d, locals, &types) +
-          (phase21_result_context_ ? ".read_checked(" : ".read(") +
-          expr(arguments[0], d, locals, &types) + ", " +
-          expr(arguments[1], d, locals, &types) + ")";
-      if (phase21_result_context_)
-        read = phase21_propagate(read + ".map_err(__moss_raise_fileio)");
-      o << pad << "let " << s.a << " = " << read << ";\n";
-      locals.insert(s.a);
-      types[s.a] = "Range";
-      return true;
+    vector<EmitterExpr> arguments;
+    if (tree_parse_member_call_nodes(checked_source, receiver_node, method,
+                                     arguments)) {
+      receiver = tree_identifier_name(receiver_node).value_or("");
+      if (fileio_typed(types, receiver) && method == "read" &&
+          arguments.size() == 2) {
+        string read = method_receiver_place(receiver_node, method, arguments,
+                                             d, locals, &types) +
+            (phase21_result_context_ ? ".read_checked(" : ".read(") +
+            expr(arguments[0], d, locals, &types) + ", " +
+            expr(arguments[1], d, locals, &types) + ")";
+        if (phase21_result_context_)
+          read = phase21_propagate(read + ".map_err(__moss_raise_fileio)");
+        o << pad << "let " << s.a << " = " << read << ";\n";
+        locals.insert(s.a);
+        types[s.a] = "Range";
+        return true;
+      }
     }
     return false;
   }
   if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
-  string receiver_expr = method_receiver_place(
-      s.a, s.b, s.args, d, locals, &types);
+  const EmitterExpr checked_call = checked_expression_ref(
+      s, s.text, est::ExprSlot::Expression);
+  EmitterExpr call_receiver;
+  string call_method;
+  vector<EmitterExpr> checked_arguments;
+  if (!tree_parse_member_call_nodes(checked_call, call_receiver,
+                                    call_method, checked_arguments) ||
+      call_method != s.b)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked FileIO call node");
+  const string receiver_expr = method_receiver_place(
+      call_receiver, s.b, checked_arguments, d, locals, &types);
   if (s.b == "write" && s.args.size() == 2) {
     string call = receiver_expr + (phase21_result_context_
         ? ".write_checked(" : ".write(") +
-        expr(s.args[0], d, locals, &types) + ", &( " +
-        expr(s.args[1], d, locals, &types) + " ))";
+        expr(checked_arguments[0], d, locals, &types) + ", &( " +
+        expr(checked_arguments[1], d, locals, &types) + " ))";
     if (phase21_result_context_)
       call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
     o << pad << call << ";\n";
@@ -80,16 +104,18 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   if (s.b == "open" && s.args.size() == 2) {
     string call = receiver_expr + (phase21_result_context_
         ? ".open_in_place_checked(&( " : ".open_in_place(&( ") +
-        expr(s.args[0], d, locals, &types) + " ), " +
-        rust_string_literal(trim(s.args[1])) + ")";
+        expr(checked_arguments[0], d, locals, &types) + " ), " +
+        rust_string_literal(tree_identifier_name(checked_arguments[1])
+                                .value_or(checked_arguments[1].text())) + ")";
     if (phase21_result_context_)
       call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
     o << pad << call << ";\n";
     return true;
   }
   if (s.b == "sync" && s.args.size() <= 1) {
-    bool dataonly = !s.args.empty() &&
-        tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
+    bool dataonly = !checked_arguments.empty() &&
+        tree_identifier_name(checked_arguments[0]) ==
+            std::optional<string>("dataonly");
     string call = receiver_expr + (phase21_result_context_
         ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
         : dataonly ? ".sync_dataonly()" : ".sync()");
@@ -121,7 +147,10 @@ bool gen_executor_or_fileio_statement(std::ostringstream& o, const Stmt& s,
 // sec. 20.1): used directly for an ineligible pipeline, and as the worked
 // example the bounded-K lowering below must remain equivalent to.
 string gen_chunk_pipeline_sequential(
-    const FunctionalPipeline::ChunkParallelPlan& plan, const Domain* domain,
+    const FunctionalPipeline::ChunkParallelPlan& plan,
+    const EmitterExpr& fileio_receiver, const EmitterExpr& chunk_size,
+    const ParsedFunctionalStage& mapper, const EmitterExpr& initializer,
+    const ParsedFunctionalStage& reducer, const Domain* domain,
     const std::set<string>& locals, const std::unordered_map<string,string>* types,
     bool combine_raises) const {
   size_t id = fileio_chunk_temp_++;
@@ -136,12 +165,12 @@ string gen_chunk_pipeline_sequential(
   out << "        // Moss backend: FileIO CHUNK PIPELINE -- sequential reference\n";
   out << "        // loop (ineligible for Branch lowering: " << plan.eligibility_reason << ")\n";
   out << "        let " << size_var << ": i64 = "
-      << expr(plan.chunk_size_expression, domain, locals, types) << ";\n";
+      << expr(chunk_size, domain, locals, types) << ";\n";
   out << "        let mut " << offset << ": i64 = 0;\n";
   out << "        let mut " << acc << " = "
-      << expr(plan.initial_expression, domain, locals, types) << ";\n";
+      << expr(initializer, domain, locals, types) << ";\n";
   string receiver_place = method_receiver_place(
-      plan.fileio_receiver, "read", {offset, size_var}, domain, locals, types);
+      fileio_receiver, "read", vector<EmitterExpr>{}, domain, locals, types);
   out << "        loop {\n";
   out << "            let " << bytes << " = match " << receiver_place
       << ".read_checked(" << offset << ", " << size_var << ") {\n";
@@ -153,14 +182,14 @@ string gen_chunk_pipeline_sequential(
       << ".len();\n";
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
   string mapped_call = render_functional_callable(
-      plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
+      mapper, 0, {FunctionalValue{bytes, "Range", false}}, domain,
       locals, types, false, !plan.map_invocation_effects.raise_set.empty());
   if (!plan.map_invocation_effects.raise_set.empty())
     mapped_call = phase21_propagate(mapped_call);
   out << "            let " << mapped << " = " << mapped_call;
   out << ";\n";
   string combined_call = render_functional_callable(
-      plan.combine_callable,
+      reducer, 1,
       {FunctionalValue{acc, plan.accumulator_type, false},
        FunctionalValue{mapped, plan.mapped_type, false}},
       domain, locals, types, false);
@@ -189,7 +218,10 @@ string gen_chunk_pipeline_sequential(
 // only here in the parent, left to right. K comes from the checked
 // ChunkParallelPlan, never from the environment.
 string gen_chunk_pipeline_bounded_k(
-    const FunctionalPipeline::ChunkParallelPlan& plan, const Domain* domain,
+    const FunctionalPipeline::ChunkParallelPlan& plan,
+    const EmitterExpr& fileio_receiver, const EmitterExpr& chunk_size,
+    const ParsedFunctionalStage& mapper, const EmitterExpr& initializer,
+    const ParsedFunctionalStage& reducer, const Domain* domain,
     const std::set<string>& locals, const std::unordered_map<string,string>* types,
     bool combine_raises) const {
   size_t id = fileio_chunk_temp_++;
@@ -220,9 +252,9 @@ string gen_chunk_pipeline_bounded_k(
       << " read/map Branches per join scope,\n";
   out << "        // ordered parent commit, parent-only left-to-right fold\n";
   out << "        let " << size_var << ": i64 = "
-      << expr(plan.chunk_size_expression, domain, locals, types) << ";\n";
+      << expr(chunk_size, domain, locals, types) << ";\n";
   out << "        let mut " << acc << " = "
-      << expr(plan.initial_expression, domain, locals, types) << ";\n";
+      << expr(initializer, domain, locals, types) << ";\n";
   out << "        let mut " << next << ": i64 = 0;\n";
   out << "        enum " << chunk_outcome << "<T> { Value { index: i64, value: T, len: i64, short: bool }, Raised { index: i64, error: __MossRaised }, Eof { index: i64 } }\n";
   out << "        " << label << ": loop {\n";
@@ -237,7 +269,8 @@ string gen_chunk_pipeline_bounded_k(
   out << "                let " << slot << " = std::sync::Arc::new(std::sync::Mutex::new(None));\n";
   out << "                let " << out_slot << " = std::sync::Arc::clone(&" << slot << ");\n";
   out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
-      << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
+      << method_receiver_place(fileio_receiver, "read", vector<EmitterExpr>{},
+                               domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";
   out << "                    let " << outcome << ": " << outcome_type
       << " = match " << index << ".checked_mul(" << size_var
@@ -254,7 +287,7 @@ string gen_chunk_pipeline_bounded_k(
       << bytes << ".len(); if " << len << " == 0 { " << chunk_outcome
       << "::Eof { index: " << index << " } } else { ";
   const string mapped = render_functional_callable(
-      plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
+      mapper, 0, {FunctionalValue{bytes, "Range", false}}, domain,
       locals, types, false, map_raises);
   if (map_raises) {
     out << "match " << mapped << " { Ok(value) => " << chunk_outcome
@@ -297,7 +330,7 @@ string gen_chunk_pipeline_bounded_k(
   out << "                    " << chunk_outcome
       << "::Value { value, short, .. } => {\n";
   string combined_call = render_functional_callable(
-      plan.combine_callable,
+      reducer, 1,
       {FunctionalValue{acc, plan.accumulator_type, false},
        FunctionalValue{"value", plan.mapped_type, false}},
       domain, locals, types, false);
@@ -319,31 +352,63 @@ std::optional<string> gen_fileio_chunk_pipeline(
     const ParsedFunctionalPipeline& pipeline, const Domain* domain,
     const std::set<string>& locals, const std::unordered_map<string,string>* types,
     size_t functional_pipeline_id) const {
-  string fileio_receiver, size_expression;
-  if (!tree_parse_fileio_chunks_source(pipeline.source, fileio_receiver, size_expression))
+  const EmitterExpr checked_source{pipeline.expression_arena,
+      pipeline.source_node, pipeline.expression_source};
+  EmitterExpr fileio_receiver;
+  string source_method;
+  vector<EmitterExpr> source_arguments;
+  if (!tree_parse_member_call_nodes(checked_source, fileio_receiver,
+                                    source_method, source_arguments) ||
+      source_method != "chunks")
     return std::nullopt;
-  if (!types || !fileio_typed(*types, fileio_receiver)) return std::nullopt;
+  const auto receiver_name = tree_identifier_name(fileio_receiver);
+  if (!receiver_name || !types || !fileio_typed(*types, *receiver_name))
+    return std::nullopt;
+  if (source_arguments.size() != 1)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked FileIO chunk source has invalid arity");
   const FunctionalPipeline* planned = planned_functional_pipeline(functional_pipeline_id);
   if (!planned || !planned->chunk_plan.is_chunk_pipeline)
     throw std::runtime_error(
-        "internal error: unchecked FileIO chunk pipeline (no ChunkParallelPlan)");
+        "MOSS_INTERNAL_INVARIANT missing checked FileIO chunk pipeline plan");
   if (!phase21_result_context_)
     throw std::runtime_error(
         "internal error: checked FileIO chunk pipeline lacks a Phase 21 outcome context");
   const auto& plan = planned->chunk_plan;
+  if (*receiver_name != plan.fileio_receiver)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked FileIO chunk source nodes do not match plan");
+  const ParsedFunctionalStage* mapper = nullptr;
+  const ParsedFunctionalStage* reducer = nullptr;
+  for (const auto& stage : pipeline.stages) {
+    if (stage.kind == FunctionalNodeKind::Map) mapper = &stage;
+    if (stage.kind == FunctionalNodeKind::Reduce) reducer = &stage;
+  }
+  if (!mapper || !reducer || mapper->argument_nodes.size() != 1 ||
+      reducer->argument_nodes.size() != 2)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked FileIO chunk pipeline stage nodes are missing");
+  const auto initializer = functional_argument_node(*reducer, 0);
+  if (!initializer.arena)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked FileIO reduce initializer node is missing");
   const bool combine_raises =
       !plan.combine_invocation_effects.raise_set.empty();
   if (!plan.eligible)
     return gen_chunk_pipeline_sequential(
-        plan, domain, locals, types, combine_raises);
+        plan, fileio_receiver, source_arguments.front(), *mapper, initializer,
+        *reducer, domain, locals, types, combine_raises);
   // A helper specialization can execute in either ordinary code or a Root.
   // Executor activity alone is insufficient: only a current Root owns Branch
   // scopes. Select at runtime so the same helper preserves source semantics
   // when called from main and uses bounded Branches when called from a Root.
   return "if current_root_id().is_some() { " +
-      gen_chunk_pipeline_bounded_k(plan, domain, locals, types,
-                                   combine_raises) +
+      gen_chunk_pipeline_bounded_k(plan, fileio_receiver,
+                                   source_arguments.front(), *mapper,
+                                   initializer, *reducer, domain, locals,
+                                   types, combine_raises) +
       " } else { " +
       gen_chunk_pipeline_sequential(
-          plan, domain, locals, types, combine_raises) + " }";
+          plan, fileio_receiver, source_arguments.front(), *mapper, initializer,
+          *reducer, domain, locals, types, combine_raises) + " }";
 }

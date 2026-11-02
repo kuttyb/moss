@@ -623,6 +623,7 @@ class Checker {
     // and stays bound to its identity for the rest of this session.
     build_type_context(p_);
     type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    est::restore_loaded_facts(p_);
     project_imported_h3_checked_bodies(p_);
     for (auto& f : p_.functions) {
       for (auto& param : f.params) {
@@ -786,6 +787,9 @@ class Checker {
           p_.domains.size() + p_.functions.size());
       infer_domain_specializations();
       infer_domain_state_fields(true);
+      for (const auto& domain : p_.domains)
+        for (const auto& field : domain.state)
+          record_domain_initializer_variant_facts(field);
       infer_handler_reply_types(true);
       infer_function_signatures(true);
       {
@@ -796,6 +800,7 @@ class Checker {
       check_objects();
       check_declared_map_key_types();
       check_local_call_cycles();
+      retain_domain_initializer_call_edges();
       // The first summary pass seeds result relations for call-cycle analysis.
       // A second pass can bind straight-line private-call results to the exact
       // call edges retained by that analysis, without guessing from spelling.
@@ -1879,6 +1884,29 @@ class Checker {
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     {
       CompilerStageTimer timer("typed_semantics_export");
+      // Source-free H3 result nodes are projected before call closure creates
+      // concrete specializations. Carry the exact checked result type into
+      // those contexts without reconstructing it from the projected Stmt.
+      for (const auto& function : p_.functions) {
+        if (!function.imported_checked_body_result_handle) continue;
+        const auto& handle = *function.imported_checked_body_result_handle;
+        if (handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        auto& arena = *p_.expression_arenas[handle.arena_index];
+        const auto* generic_facts = arena.facts(
+            handle.expr, functional_function_context(function));
+        if (!generic_facts) continue;
+        for (const auto& specialization : function.specializations) {
+          const string context =
+              "specialization:" + specialization.stable_type_key;
+          auto result = moss::Type::parse_canonical(
+              canonical_type_name(specialization.return_type));
+          if (!result || !(*result)->is_closed()) continue;
+          auto facts = *generic_facts;
+          facts.type = std::move(*result);
+          arena.record_facts(handle.expr, context, std::move(facts));
+        }
+      }
       warn_fileio_blocking_with_shared_write();
       retain_checked_type_uses();
       std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
@@ -6595,6 +6623,7 @@ class Checker {
         moss::MemberDispatchRequirement member;
         member.requirement_id = function.semantic_callable_id + ":member:" +
             std::to_string(ordinal);
+        member.subject = constraint.subject;
         member.receiver = receiver->second;
         member.member_name = constraint.detail;
         member.origin = {summary.origin.module_id, function.source_file,
@@ -9367,13 +9396,25 @@ class Checker {
             });
         if (!method.return_type && !has_value_return) method.set_return_type("unit");
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
+        method_function.expression_handles = method.expression_handles;
+        method_function.result_expression = method.result_expression;
         method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
-        if (method.result_expression)
+        if (method.result_expression) {
+          struct ResultFunctionScope {
+            const Function*& slot;
+            const Function* prior;
+            ResultFunctionScope(const Function*& target,
+                                const Function& current)
+                : slot(target), prior(target) { slot = &current; }
+            ~ResultFunctionScope() { slot = prior; }
+          } result_function_scope(current_check_result_function_,
+                                  method_function);
           check_expression_root_in_body(method.body,
               method.result_line ? method.result_line : method.line,
               *method.result_expression, final_env, "return-value");
+        }
         if (!method.return_type && has_value_return)
           err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -9917,6 +9958,48 @@ class Checker {
         check_ownership(arm.body, std::move(arm_ownership), &d, &h);
         check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
       }
+      // A generic source handler can be instantiated with different concrete
+      // state and payload types. Record checked expression/call facts under a
+      // stable per-instance context for consumers executing the materialized
+      // handler body.
+      for (const auto& specialization : p_.domain_specializations) {
+        if (specialization.source_domain != d.name ||
+            !specialization.materialized_layout)
+          continue;
+        TypeEnv specialized_env;
+        specialized_env["self"] = d.name;
+        for (size_t parameter_index = 0;
+             parameter_index < h.params.size(); ++parameter_index) {
+          const auto& parameter = h.params[parameter_index];
+          auto parameters = specialization.handler_parameter_types.find(h.name);
+          specialized_env[parameter.name] =
+              parameters != specialization.handler_parameter_types.end() &&
+                      parameter_index < parameters->second.size() &&
+                      !parameters->second[parameter_index].empty()
+                  ? parameters->second[parameter_index]
+                  : parameter.type;
+        }
+        for (const auto& field : d.state) {
+          auto concrete = specialization.state_types.find(field.name);
+          specialized_env[field.name] = concrete == specialization.state_types.end()
+              ? field.type : concrete->second;
+        }
+        for (const auto& route : d.routes)
+          specialized_env[route.name] = route.type;
+        try {
+          SourceFileScope instance_context(
+              current_semantic_context_,
+              functional_handler_instance_context(
+                  d, h, specialization.instance));
+          check_stmts(h.body, std::move(specialized_env), &d, &h);
+        } catch (const CompileError&) {
+          // This pass exists only to attach per-instance expression facts for
+          // consumers. The source handler was already checked above under
+          // its authoritative generic contract; diagnostics from the
+          // observational specialization pass must not change which programs
+          // the checker accepts.
+        }
+      }
       const bool has_captures = std::any_of(
           h.failure_arms.begin(), h.failure_arms.end(),
           [](const FailureArm& arm) { return !arm.captures.empty(); });
@@ -10340,6 +10423,14 @@ class Checker {
     check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
                            f.result_expression);
     if (f.result_expression) {
+      struct ResultFunctionScope {
+        const Function*& slot;
+        const Function* prior;
+        ResultFunctionScope(const Function*& target,
+                            const Function& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ResultFunctionScope() { slot = prior; }
+      } result_function_scope(current_check_result_function_, f);
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
                                  Effect::Consume);
@@ -12529,6 +12620,60 @@ class Checker {
             "FIELD_COUNT_MISMATCH");
   }
 
+  void record_domain_initializer_variant_facts(const Field& field) const {
+    for (const auto& handle : field.expression_handles) {
+      if (handle.slot != est::ExprSlot::Initializer) continue;
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+        const auto root = est::unparenthesized(*arena, id);
+        auto variant_member = [&](est::ExprId candidate)
+            -> std::optional<std::pair<string, string>> {
+          candidate = est::unparenthesized(*arena, candidate);
+          const auto* member = std::get_if<est::Member>(&arena->at(candidate));
+          if (!member) return std::nullopt;
+          const auto base = est::unparenthesized(*arena, member->base);
+          const auto* enum_name =
+              std::get_if<est::Identifier>(&arena->at(base));
+          if (!enum_name || !enums_.count(enum_name->name))
+            return std::nullopt;
+          return std::pair<string, string>{enum_name->name, member->name};
+        };
+        std::optional<std::pair<string, string>> variant;
+        const auto& node = arena->at(root);
+        if (std::holds_alternative<est::Member>(node))
+          variant = variant_member(root);
+        else if (const auto* call = std::get_if<est::Call>(&node))
+          variant = variant_member(call->callee);
+        else if (const auto* constructor =
+                     std::get_if<est::Constructor>(&node))
+          variant = variant_member(constructor->type);
+        if (variant) {
+          const auto& declaration = *enums_.at(variant->first);
+          if (std::none_of(declaration.cases.begin(), declaration.cases.end(),
+                  [&](const EnumCase& item) {
+                    return item.name == variant->second;
+                  })) {
+            for (const auto child : arena->children(root)) visit(child);
+            return;
+          }
+          const string enum_name_identity = declaration.declaration_name.empty()
+              ? declaration.name : declaration.declaration_name;
+          const string enum_identity = moss::declaration_identity(
+              moss::DeclarationKind::Enum,
+              program_module_identity(p_, declaration.defining_module),
+              enum_name_identity);
+          est::SemanticFacts facts;
+          facts.resolved_target = "nominal-enum-variant-v1:" + enum_identity +
+              ":case:" + variant->second;
+          arena->record_facts(root, "main", std::move(facts));
+        }
+        for (const auto child : arena->children(root)) visit(child);
+      };
+      visit(handle.expr);
+    }
+  }
+
   static bool concrete_environment_type(const string& type) {
     return !type.empty() && !contains_internal_placeholder(type);
   }
@@ -13311,9 +13456,14 @@ class Checker {
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env)) {
-          const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
+          const string& receiver_context = !join_context.empty()
+              ? join_context
+              : starts_with(current_semantic_context_, "handler:")
+                    ? current_semantic_context_ : join_context;
+          const_cast<Stmt&>(statement).receiver_types_by_context[
+              receiver_context] = *receiver;
           record_statement_type_fact(statement, est::ExprSlot::Receiver, 0,
-              statement.a, join_context, canonical_type_name(*receiver));
+              statement.a, receiver_context, canonical_type_name(*receiver));
         }
       }
       if (record_semantic_types && !join_context.empty() &&
@@ -14758,6 +14908,41 @@ class Checker {
       }
 
       advance_type_environment(statement, main_env, p_.main->body, false);
+    }
+  }
+
+  void retain_domain_initializer_call_edges() {
+    for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name))
+        continue;
+      TypeEnv env;
+      env["self"] = domain.name;
+      for (const auto& field : domain.state)
+        if (!field.type.empty()) env[field.name] = field.type;
+      const string source = "domain:" + domain.name;
+      std::map<std::tuple<string, int, string>, uint32_t> occurrences;
+      for (const auto& field : domain.state) {
+        if (field.init.empty()) continue;
+        vector<LocalCallSite> calls;
+        collect_local_call_sites(field.line, field.init, env, nullptr, calls);
+        for (const auto& call : calls) {
+          auto key = std::make_tuple(field.source_file, field.line, call.target);
+          SemanticCallEdge edge{
+              source, call.target, field.line, call.argument_types,
+              field.source_file.empty() ? domain.source_file : field.source_file,
+              "ordinary_call", {}, {}, {}};
+          edge.occurrence = occurrences[key]++;
+          if (std::find_if(p_.semantic_call_edges.begin(),
+                  p_.semantic_call_edges.end(), [&](const SemanticCallEdge& old) {
+                    return old.source == edge.source && old.target == edge.target &&
+                        old.line == edge.line &&
+                        old.invocation_kind == edge.invocation_kind &&
+                        old.source_file == edge.source_file &&
+                        old.occurrence == edge.occurrence;
+                  }) == p_.semantic_call_edges.end())
+            p_.semantic_call_edges.push_back(std::move(edge));
+        }
+      }
     }
   }
 
@@ -21639,11 +21824,52 @@ class Checker {
             const auto validation_view = imported_method_validation_view(
                 *fn_it->second);
             auto requirements = validate_method_requirements(
-                line, validation_view ? *validation_view : *fn_it->second,
+                stage_line, validation_view ? *validation_view : *fn_it->second,
                 callback_input_types);
-            register_static_specialization(line, *fn_it->second,
+            const auto checked_requirements = requirements;
+            register_static_specialization(stage_line, *fn_it->second,
                                            callback_input_types,
                                            std::move(requirements));
+            std::vector<const FunctionSpecialization*> checked_instances;
+            for (const auto& candidate : fn_it->second->specializations) {
+              if (candidate.parameter_types != callback_input_types ||
+                  candidate.member_requirements.size() !=
+                      checked_requirements.size())
+                continue;
+              bool same_requirements = true;
+              for (const auto& requirement : checked_requirements) {
+                const auto match = std::find_if(
+                    candidate.member_requirements.begin(),
+                    candidate.member_requirements.end(),
+                    [&](const auto& selected) {
+                      return selected.member_name == requirement.member_name &&
+                          selected.origin.line == stage_line &&
+                          (source_file.empty() ||
+                           selected.origin.source_file == source_file) &&
+                          selected.selected_callable_id ==
+                              requirement.selected_callable_id;
+                    });
+                if (match == candidate.member_requirements.end()) {
+                  same_requirements = false;
+                  break;
+                }
+              }
+              if (same_requirements) checked_instances.push_back(&candidate);
+            }
+            if (checked_instances.size() == 1) {
+              const auto& checked_key =
+                  checked_instances.front()->stable_type_key;
+              for (auto& edge : p_.semantic_call_edges) {
+                if (edge.source != context ||
+                    edge.target != "fn:" + fn_it->second->name ||
+                    edge.line != stage_line ||
+                    edge.argument_types != callback_input_types ||
+                    (!source_file.empty() && !edge.source_file.empty() &&
+                     edge.source_file != source_file))
+                  continue;
+                edge.specialization_key = checked_key;
+              }
+            }
           }
         }
         node.effects = functional_stage_effects(
@@ -23615,6 +23841,7 @@ class Checker {
       moss::MemberDispatchRequirement closed;
       closed.requirement_id = function.semantic_callable_id + ":member:" +
           std::to_string(member_ordinal);
+      closed.subject = requirement.subject;
       closed.member_name = requirement.detail;
       closed.receiver = moss::Type::parse_canonical(
           canonical_type_name(receiver->second)).value_or(nullptr);
@@ -24040,6 +24267,14 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
+    auto suspended_expression_cursors = std::move(active_est_expression_cursors_);
+    active_est_expression_cursors_.clear();
+    struct RestoreExpressionCursors {
+      vector<std::optional<EstExpressionCursor>>& target;
+      vector<std::optional<EstExpressionCursor>> saved;
+      ~RestoreExpressionCursors() { target = std::move(saved); }
+    } restore_expression_cursors{
+        active_est_expression_cursors_, std::move(suspended_expression_cursors)};
     SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,
                                            "fn:" + function.name);
@@ -24047,6 +24282,12 @@ class Checker {
     static_bound_bindings_.clear();
     infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
+    // A specialization's parameter arguments are authoritative after generic
+    // body inference has populated the solver-term side table.
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      specialized_env[function.params[index].name] = canonical_types[index];
+      specialized_env.terms.erase(function.params[index].name);
+    }
     Function concrete_function = function;
     concrete_function.set_return_type(specialization.return_type);
     for (size_t index = 0; index < concrete_function.params.size(); ++index)
@@ -24329,7 +24570,8 @@ class Checker {
                            const moss::TypeRef& expected_open_result = nullptr,
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt,
-                           Function** resolved_target = nullptr) {
+                           Function** resolved_target = nullptr,
+                           const Method** resolved_method = nullptr) {
     if (name == "sort" && !functions_.count(name)) {
       check_sort_call(line, args, env);
       return;
@@ -24476,7 +24718,10 @@ class Checker {
         vector<string> argument_types;
         for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         auto method = resolve_method(current_object_->name, name, argument_types);
-        if (method) return;
+        if (method) {
+          if (resolved_method) *resolved_method = method;
+          return;
+        }
       }
       for (const auto& pruned : p_.file_scope_pruned_functions) {
         if (pruned.name != name || pruned.source_file.empty()) continue;
@@ -25467,6 +25712,32 @@ class Checker {
           "SORT_KEY_CALLABLE");
     auto result = check_functional_callable(line, key, {element}, env, "sort");
     string key_type = result ? canonical_type_name(*result) : "";
+    if (function->second->static_dispatch) {
+      SemanticCallEdge edge{
+          current_semantic_context_, "fn:" + function->second->name, line,
+          {element}, current_check_statement_
+              ? current_check_statement_->source_file : string(),
+          "sort_key", {}, {}, {}};
+      const FunctionSpecialization* selected_key = nullptr;
+      for (const auto& specialization : function->second->specializations) {
+        if (specialization.parameter_types != vector<string>{element} ||
+            canonical_type_name(specialization.return_type) != key_type)
+          continue;
+        if (selected_key) {
+          selected_key = nullptr;
+          break;
+        }
+        selected_key = &specialization;
+      }
+      if (selected_key) edge.specialization_key = selected_key->stable_type_key;
+      if (std::find_if(p_.semantic_call_edges.begin(),
+              p_.semantic_call_edges.end(), [&](const SemanticCallEdge& old) {
+                return old.source == edge.source && old.target == edge.target &&
+                    old.line == edge.line &&
+                    old.invocation_kind == edge.invocation_kind;
+              }) == p_.semantic_call_edges.end())
+        p_.semantic_call_edges.push_back(std::move(edge));
+    }
     if (!total_order_scalar(key_type))
       err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
           (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");
@@ -25631,8 +25902,36 @@ class Checker {
           current_body_types_->active_pipeline_placeholder_type = element_type;
           TypeEnv callback_env = env;
           callback_env["_"] = element_type->to_canonical_string();
+          std::optional<EstExpressionCursor> callback_parent_cursor;
+          if (stage.expression_arena &&
+              stage.expression_node != UINT32_MAX) {
+            for (std::uint32_t arena_index = 0;
+                 arena_index < p_.expression_arenas.size(); ++arena_index)
+              if (p_.expression_arenas[arena_index].get() ==
+                  stage.expression_arena) {
+                callback_parent_cursor = EstExpressionCursor{
+                    arena_index, stage.expression_node,
+                    stage.raw};
+                break;
+              }
+          }
+          const bool pushed_callback_parent = callback_parent_cursor.has_value();
+          if (pushed_callback_parent)
+            active_est_expression_cursors_.push_back(*callback_parent_cursor);
+          struct PipelineCallbackCursorScope {
+            vector<std::optional<EstExpressionCursor>>& cursors;
+            bool active;
+            ~PipelineCallbackCursorScope() {
+              if (active) {
+                assert(!cursors.empty());
+                cursors.pop_back();
+              }
+            }
+          } pipeline_callback_cursor_scope{
+              active_est_expression_cursors_, pushed_callback_parent};
           check_expression(line, stage.arguments.front(), callback_env, {},
-                           "callback-expression");
+              pushed_callback_parent ? "call-argument:0"
+                                     : "callback-expression");
           current_body_types_->active_pipeline_placeholder_identity =
               previous_identity;
           current_body_types_->active_pipeline_placeholder_type =
@@ -25842,12 +26141,42 @@ class Checker {
               " argument" + (expected == 1 ? "" : "s") + ", got " +
               std::to_string(stage.arguments.size()));
       };
+      auto in_stage_argument = [&](size_t argument_index, auto&& action)
+          -> decltype(auto) {
+        std::optional<EstExpressionCursor> stage_cursor;
+        if (argument_index < stage.argument_nodes.size() &&
+            stage.expression_arena && stage.expression_node != UINT32_MAX) {
+          for (std::uint32_t arena_index = 0;
+               arena_index < p_.expression_arenas.size(); ++arena_index)
+            if (p_.expression_arenas[arena_index].get() ==
+                stage.expression_arena) {
+              stage_cursor = EstExpressionCursor{arena_index,
+                  stage.expression_node, stage.raw};
+              break;
+            }
+        }
+        const bool pushed = stage_cursor.has_value();
+        if (pushed) active_est_expression_cursors_.push_back(*stage_cursor);
+        struct StageExpressionCursorScope {
+          vector<std::optional<EstExpressionCursor>>& cursors;
+          bool active;
+          ~StageExpressionCursorScope() {
+            if (active) {
+              assert(!cursors.empty());
+              cursors.pop_back();
+            }
+          }
+        } cursor_scope{active_est_expression_cursors_, pushed};
+        return action();
+      };
       switch (stage.kind) {
         case FunctionalNodeKind::Map: {
           require_arity(1);
-          auto result = check_functional_callable(
-              line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(0, [&] {
+            return check_functional_callable(
+                line, stage.arguments.front(), {state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result) {
             state.element_type = canonical_type_name(*result);
             stage_output_type = state.element_type;
@@ -25856,9 +26185,11 @@ class Checker {
         }
         case FunctionalNodeKind::Filter: {
           require_arity(1);
-          auto result = check_functional_callable(
-              line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(0, [&] {
+            return check_functional_callable(
+                line, stage.arguments.front(), {state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result && !unresolved_semantic_type(*result) &&
               canonical_type_name(*result) != "bool")
             err(line, "filter predicate returns '" + *result +
@@ -25867,8 +26198,10 @@ class Checker {
         }
         case FunctionalNodeKind::Reduce: {
           require_arity(2);
-          check_expression(line, stage.arguments.front(), env, {},
-                           "reduce-seed");
+          in_stage_argument(0, [&] {
+            check_expression(line, stage.arguments.front(), env, {},
+                             "call-argument:0");
+          });
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
           if (!accumulator || *accumulator == "vector" || *accumulator == "queue" || *accumulator == "map")
             teaching_err(
@@ -25883,9 +26216,11 @@ class Checker {
                   stage.arguments.front(), {}, 1}},
                 "use-statically-typed-expression",
                 "use a concrete seed expression whose type matches the named reduce callable's accumulator");
-          auto result = check_functional_callable(
-              line, stage.arguments[1], {*accumulator, state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(1, [&] {
+            return check_functional_callable(
+                line, stage.arguments[1], {*accumulator, state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result && !unresolved_semantic_type(*result) &&
               !unresolved_semantic_type(*accumulator) &&
               !same_type(*result, *accumulator))
@@ -26283,6 +26618,12 @@ class Checker {
           candidates.push_back(arg);
           if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg)))
             candidates.push_back(named->value);
+        } else if (role.rfind("field:", 0) == 0) {
+          const auto name = role.substr(6);
+          for (const auto arg : node.arguments)
+            if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg));
+                named && named->name == name)
+              candidates.push_back(named->value);
         } else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Message>) {
         if (role == "target" || role == "receiver") candidates.push_back(node.target);
@@ -26306,7 +26647,7 @@ class Checker {
           for (const auto arg : node.arguments)
             if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg));
                 named && named->name == name) {
-              candidates.push_back(arg); candidates.push_back(named->value);
+              candidates.push_back(named->value);
             }
         } else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Pipeline>) {
@@ -26328,6 +26669,9 @@ class Checker {
       if (source_span_matches(arena, parent, candidate, parent_source,
                               child_source))
         matches.push_back(candidate);
+    if (matches.empty() && role.rfind("field:", 0) == 0 &&
+        candidates.size() == 1)
+      return candidates.front();
     if (matches.empty()) return std::nullopt;
     return matches.size() == 1 ? matches.front()
         : matches[std::min<std::size_t>(child_ordinal, matches.size() - 1)];
@@ -26337,6 +26681,7 @@ class Checker {
       std::string_view source, std::string_view root_slot) const {
     if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
+    std::optional<std::uint32_t> expected_argument_index;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
     else if (root_slot == "for-iterable") expected = est::ExprSlot::Iterable;
@@ -26349,13 +26694,24 @@ class Checker {
       expected = est::ExprSlot::ReturnValue;
     else if (root_slot == "raise-value") expected = est::ExprSlot::RaisedValue;
     else if (root_slot.rfind("message-argument:", 0) == 0 ||
-             root_slot.rfind("echo-argument:", 0) == 0)
+             root_slot.rfind("echo-argument:", 0) == 0 ||
+             root_slot.rfind("call-argument:", 0) == 0) {
       expected = est::ExprSlot::Argument;
+      const auto separator = root_slot.rfind(':');
+      try {
+        expected_argument_index = static_cast<std::uint32_t>(
+            std::stoul(std::string(root_slot.substr(separator + 1))));
+      } catch (...) {
+        expected_argument_index.reset();
+      }
+    }
     const auto source_fingerprint = est::fingerprint(std::string(source));
     auto select = [&](const std::vector<est::Handle>& handles)
         -> std::optional<EstExpressionCursor> {
       for (const auto& handle : handles) {
         if (expected && handle.slot != *expected) continue;
+        if (expected_argument_index &&
+            handle.argument_index != *expected_argument_index) continue;
         if (handle.source_fingerprint != source_fingerprint) continue;
         if (expression_arena(handle.arena_index))
           return EstExpressionCursor{handle.arena_index, handle.expr,
@@ -26713,18 +27069,22 @@ class Checker {
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
         if (item == declaration.cases.end())
           err(line, "unknown enum case '" + enum_name + "." + case_name + "'", "UNKNOWN_ENUM_CASE");
+        const string enum_name_identity = declaration.declaration_name.empty()
+            ? declaration.name : declaration.declaration_name;
+        const string enum_identity = moss::declaration_identity(
+            moss::DeclarationKind::Enum,
+            program_module_identity(p_, declaration.defining_module),
+            enum_name_identity);
+        const string semantic_target_id = "nominal-enum-variant-v1:" +
+            enum_identity + ":case:" + case_name;
+        est::SemanticFacts enum_target_facts;
+        enum_target_facts.resolved_target = semantic_target_id;
+        record_active_expression_facts(std::move(enum_target_facts));
         if (current_body_types_ && !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty()) {
           auto& occurrence = current_body_types_->expression_occurrences.at(
               current_body_types_->active_expression_occurrences.back());
-          const string enum_name_identity = declaration.declaration_name.empty()
-              ? declaration.name : declaration.declaration_name;
-          const string enum_identity = moss::declaration_identity(
-              moss::DeclarationKind::Enum,
-              program_module_identity(p_, declaration.defining_module),
-              enum_name_identity);
-          occurrence.semantic_target_id = "nominal-enum-variant-v1:" +
-              enum_identity + ":case:" + case_name;
+          occurrence.semantic_target_id = semantic_target_id;
           occurrence.source_operands = arguments;
           for (const auto& argument : arguments) {
             string field_name, field_value;
@@ -27476,6 +27836,27 @@ class Checker {
           retain_active_expression_target(
               "method:" + method->owner + "." + method->name);
       }
+      // The receiver may itself be an expression (for example xs[i]), not a
+      // single environment binding. Resolve that method here in the checker
+      // and attach the selected target to this call's checked expression.
+      if (it == env.end()) {
+        auto receiver_type = inferred_expr_type(receiver, env);
+        if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
+          vector<string> argument_types;
+          for (const auto& arg : args)
+            argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          MethodResolutionFailure failure = MethodResolutionFailure::None;
+          const Method* method = resolve_method(
+              canonical_type_name(*receiver_type), handler, argument_types,
+              false, &failure);
+          if (!method && !defer_generic_method_admission(argument_types, failure))
+            err(line, "no matching method '" + canonical_type_name(*receiver_type) +
+                "." + handler + "' for supplied arguments");
+          if (method)
+            retain_active_expression_target(
+                "method:" + method->owner + "." + method->name);
+        }
+      }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
@@ -27795,7 +28176,8 @@ class Checker {
       if (callee == "Reverse" && !functions_.count(callee))
         err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
             "SORT_REVERSE_POSITION");
-      if (callee == "range" && !functions_.count(callee))
+      if (callee == "range" && !functions_.count(callee) &&
+          root_slot != "for-iterable")
         err(line, "range(start, end[, step]) is only valid as a for-loop source, not a value (P25-S-ARCH-017)",
             "RANGE_OUTSIDE_FOR");
       if (callee == "replace" && args.size() == 2) {
@@ -27968,11 +28350,16 @@ class Checker {
           return;
         }
         Function* resolved_target = nullptr;
+        const Method* resolved_method = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
-                            &resolved_target);
+                            &resolved_target, &resolved_method);
         if (resolved_target) {
           retain_active_expression_target(
               resolved_target->semantic_callable_id);
+        } else if (resolved_method) {
+          retain_active_expression_target(
+              "method:" + current_object_->name + "." +
+              resolved_method->name);
         } else if (auto binding = env.find(callee);
                    binding != env.end() && open_generic(binding->second)) {
           retain_active_expression_target("binding:pending:" + callee);
@@ -28284,6 +28671,20 @@ class Checker {
         state.statement_occurrence_ids.erase(&statement);
       }
     } registration{*retained->second, synthetic_return};
+    struct ResultSemanticContextScope {
+      string& slot;
+      string prior;
+      ResultSemanticContextScope(string& target, const Function* function)
+          : slot(target), prior(target) {
+        if (!function) return;
+        const auto separator = function->name.rfind('.');
+        slot = separator == string::npos
+            ? "fn:" + function->name
+            : "method:" + function->name;
+      }
+      ~ResultSemanticContextScope() { slot = std::move(prior); }
+    } result_context_scope(current_semantic_context_,
+                           current_check_result_function_);
     check_expression(line, expression, env, root_slot);
   }
 
@@ -28378,25 +28779,36 @@ class Checker {
   }
 
   void check_for_source(int line, const string& source, const TypeEnv& env,
-                        std::string_view root_slot = {}) {
+                        std::string_view root_slot = {},
+                        const Stmt* loop_statement = nullptr,
+                        const string& checked_context = {}) {
     string callee;
     vector<string> arguments;
     if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
-      check_function_call(line, callee, arguments, env);
-      for (size_t index = 0; index < arguments.size(); ++index) {
-        const string slot = "for-range-argument:" + std::to_string(index);
-        check_expression(line, arguments[index], env,
-            root_slot.empty() ? std::string_view{} : std::string_view(slot));
-      }
+      // Keep the retained iterable root active while checking its children so
+      // every nested call (including calls in range bounds) receives facts on
+      // the corresponding tree node.
+      check_expression(line, source, env, root_slot);
     } else {
       check_expression(line, source, env, root_slot);
     }
     (void)iterator_element_type(line, source, env);
-    for (const Method* method : implicit_iterator_methods(source, env))
+    vector<string> iterator_targets;
+    for (const Method* method : implicit_iterator_methods(source, env)) {
+      iterator_targets.push_back(functional_method_context(*method));
       if (method->observable_effects.unresolved ||
           !method->observable_effects.raise_set.empty())
         err(line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported",
             "RAISING_ITERATOR_UNSUPPORTED");
+    }
+    if (loop_statement && !iterator_targets.empty()) {
+      if (moss_test_drop_fact("call-targets"))
+        iterator_targets.clear();
+      else if (moss_test_perturb_fact("call-targets"))
+        iterator_targets.front() = "method:__moss_test_perturbed_call_target__";
+      const_cast<Stmt*>(loop_statement)->implicit_iterator_targets_by_context[
+          checked_context] = std::move(iterator_targets);
+    }
   }
 
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
@@ -28707,8 +29119,10 @@ class Checker {
         auto prior = current_env.find(statement.a);
         if (prior != current_env.end() && contains_domain_handle(prior->second))
           err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+        const string checked_context = !join_context.empty()
+            ? join_context : current_semantic_context_;
         check_for_source(statement.line, statement.b, current_env,
-                         "for-iterable");
+                         "for-iterable", &statement, checked_context);
         return;
       }
 
@@ -28781,6 +29195,7 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Call) {
         bool fileio_builtin = false;
+        string checked_statement_call_target;
         BodyTypeState* call_occurrence_state = current_body_types_;
         std::uint32_t call_occurrence_id = UINT32_MAX;
         moss::TypeRef statement_call_type;
@@ -28857,6 +29272,10 @@ class Checker {
               const Method* method = resolve_method(
                   canonical_type_name(*receiver_type), statement.b,
                   argument_types, false, &failure);
+              if (method)
+                checked_statement_call_target = "method:" +
+                    canonical_type_name(*receiver_type) + "." +
+                    statement.b;
               if (!method &&
                   !defer_generic_method_admission(argument_types, failure))
                 err(statement.line, "no matching method '" + *receiver_type + "." +
@@ -28886,30 +29305,34 @@ class Checker {
           if (!delayed_assert_check)
             check_function_call(statement.line, statement.a, statement.args,
                                 current_env, nullptr, std::nullopt,
-                                call_occurrence_id == UINT32_MAX
-                                    ? nullptr : &selected_function);
-          if (call_occurrence_id != UINT32_MAX) {
-            if (selected_function) {
+                                &selected_function);
+          if (selected_function) {
+            checked_statement_call_target =
+                selected_function->semantic_callable_id;
+            if (call_occurrence_id != UINT32_MAX) {
               call_occurrence_state->retain_expression_target(
                   call_occurrence_id, selected_function->semantic_callable_id);
               if (selected_function->return_type)
                 statement_call_type = moss::Type::parse_canonical(
                     canonical_type_name(*selected_function->return_type)).value_or(
                         nullptr);
-            } else {
-              auto binding = current_env.find(statement.a);
-              if (binding != current_env.end() && open_generic(binding->second)) {
-                call_occurrence_state->retain_expression_target(
-                    call_occurrence_id,
-                    "binding:pending:" + statement.a);
-              } else {
-                call_occurrence_state->retain_expression_target(
-                    call_occurrence_id, "builtin:" + statement.a);
-              }
-              statement_call_type = inferred_expr_term(
-                  statement.text.empty() ? statement.a : statement.text,
-                  current_env);
             }
+          } else if (call_occurrence_id != UINT32_MAX) {
+            auto binding = current_env.find(statement.a);
+            if (binding != current_env.end() && open_generic(binding->second)) {
+              checked_statement_call_target =
+                  "binding:pending:" + statement.a;
+              call_occurrence_state->retain_expression_target(
+                  call_occurrence_id,
+                  "binding:pending:" + statement.a);
+            } else {
+              checked_statement_call_target = "builtin:" + statement.a;
+              call_occurrence_state->retain_expression_target(
+                  call_occurrence_id, "builtin:" + statement.a);
+            }
+            statement_call_type = inferred_expr_term(
+                statement.text.empty() ? statement.a : statement.text,
+                current_env);
           }
         }
         if (!statement.b.empty()) {
@@ -28931,6 +29354,26 @@ class Checker {
         if (sort_builtin && call_occurrence_id != UINT32_MAX)
           call_occurrence_state->expression_occurrences.at(call_occurrence_id)
               .operation_id = "call:sort";
+        // Direct call statements retain their source expression as one tree,
+        // but the checks below are deliberately routed through the statement's
+        // argument views. Keep that expression root active so recursive
+        // checking records child facts on the same nodes the consumers later
+        // navigate (for example `assertEqual(text.length(), 4)`).
+        std::optional<EstExpressionCursor> invocation_cursor;
+        if (statement.b.empty() && !statement.text.empty())
+          invocation_cursor = root_expression_cursor(statement.text, {});
+        if (invocation_cursor)
+          active_est_expression_cursors_.push_back(invocation_cursor);
+        struct DirectCallExpressionCursorScope {
+          vector<std::optional<EstExpressionCursor>>& stack;
+          bool active;
+          ~DirectCallExpressionCursorScope() {
+            if (!active) return;
+            assert(!stack.empty());
+            stack.pop_back();
+          }
+        } direct_call_cursor_scope{active_est_expression_cursors_,
+                                   invocation_cursor.has_value()};
         for (size_t index = 0; index < statement.args.size(); ++index) {
           const auto& argument = statement.args[index];
           if (sort_builtin) {
@@ -28962,6 +29405,26 @@ class Checker {
                 call_occurrence_id).non_expression_operand_ordinals.push_back(
                     static_cast<std::uint32_t>(index));
           }
+        }
+        if (statement.b.empty() && checked_statement_call_target.empty())
+          checked_statement_call_target = "builtin:" + statement.a;
+        if (!statement.b.empty() && checked_statement_call_target.empty()) {
+          auto receiver = current_env.find(statement.a);
+          auto receiver_type = receiver != current_env.end()
+              ? std::optional<string>(canonical_type_name(receiver->second))
+              : inferred_expr_type(statement.a, current_env);
+          if (receiver_type && (builtin_receiver_family(*receiver_type) ||
+                                fileio_builtin))
+            checked_statement_call_target = "builtin:" +
+                canonical_type_name(*receiver_type) + "." + statement.b;
+        }
+        if (!checked_statement_call_target.empty()) {
+          const string call_context = current_function && checking_specialization_
+              ? functional_function_context(*current_function,
+                                            checking_specialization_)
+              : current_semantic_context_;
+          const_cast<Stmt&>(statement).checked_call_targets_by_context[
+              call_context] = checked_statement_call_target;
         }
         if (statement.b.empty() && statement.a == "assert" &&
             !functions_.count(statement.a))
@@ -31277,6 +31740,47 @@ public:
 #ifdef MOSS_TEST_BUILD
     const bool drop_targets = moss_test_drop_fact("call-targets");
     const bool perturb_targets = moss_test_perturb_fact("call-targets");
+    const bool drop_types = moss_test_drop_fact("expression-types");
+    const bool perturb_types = moss_test_perturb_fact("expression-types");
+    const bool drop_pipelines = moss_test_drop_fact("pipeline-types");
+    const bool perturb_pipelines = moss_test_perturb_fact("pipeline-types");
+    const bool drop_ownership = moss_test_drop_fact("ownership");
+    const bool perturb_ownership = moss_test_perturb_fact("ownership");
+    if (drop_types || perturb_types) {
+      std::set<est::Arena*> visited;
+      for (const auto& arena : p_.expression_arenas)
+        if (arena && visited.insert(arena.get()).second)
+          arena->test_mutate_expression_types(drop_types);
+      if (p_.expression_arena && visited.insert(p_.expression_arena.get()).second)
+        p_.expression_arena->test_mutate_expression_types(drop_types);
+    }
+    if (drop_pipelines || perturb_pipelines) {
+      for (auto& pipeline : p_.functional_pipelines) {
+        if (drop_pipelines) {
+          pipeline.output_type.clear();
+          for (auto& node : pipeline.nodes) node.output_type.clear();
+        } else {
+          pipeline.output_type = "bool";
+          for (auto& node : pipeline.nodes) node.output_type = "bool";
+        }
+      }
+    }
+    if (drop_ownership || perturb_ownership) {
+      const auto altered = [&](Effect effect) {
+        if (drop_ownership) return Effect::Read;
+        return effect == Effect::Read ? Effect::Consume : Effect::Read;
+      };
+      for (auto& function : p_.functions) {
+        for (auto& effect : function.parameter_effects) effect = altered(effect);
+        for (auto& specialization : function.specializations)
+          for (auto& effect : specialization.parameter_effects) effect = altered(effect);
+      }
+      for (auto& object : p_.objects)
+        for (auto& method : object.methods)
+          for (auto& effect : method.parameter_effects) effect = altered(effect);
+      for (auto& pipeline : p_.functional_pipelines)
+        for (auto& node : pipeline.nodes) node.ownership = altered(node.ownership);
+    }
     if (drop_targets || perturb_targets) {
       std::set<est::Arena*> visited;
       for (const auto& arena : p_.expression_arenas)
@@ -31285,6 +31789,10 @@ public:
       if (p_.expression_arena &&
           visited.insert(p_.expression_arena.get()).second)
         p_.expression_arena->test_mutate_call_targets(drop_targets);
+      for (auto& edge : p_.semantic_call_edges) {
+        if (drop_targets) edge.target.clear();
+        else edge.target = "fn:__moss_test_perturbed_call_target__";
+      }
     }
     const bool drop_joins = moss_test_drop_fact("joins");
     const bool perturb_joins = moss_test_perturb_fact("joins");
@@ -31310,6 +31818,12 @@ public:
     };
     auto alter_body = [&](std::vector<Stmt>& body) {
       for (auto& statement : body) {
+        if (drop_targets || perturb_targets) {
+          for (auto& entry : statement.checked_call_targets_by_context) {
+            if (drop_targets) entry.second.clear();
+            else entry.second = "fn:__moss_test_perturbed_call_target__";
+          }
+        }
         if (drop_joins || perturb_joins) {
           statement.joined_types.clear();
           statement.joined_types_by_context.clear();

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -17,18 +18,45 @@ CASES = {
         ROOT / "tests/phase27/est/side_facts.moss",
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
         FIXTURES / "call_edges.moss",
+        FIXTURES / "call_target_receiver_member.moss",
+        FIXTURES / "call_target_indexed_member.moss",
+        ROOT / "examples/collections_and_methods.moss",
+        ROOT / "examples/swarm/modules/domain_services/repro/trait_param/single/src/main.moss",
+        ROOT / "tests/phase27/est/pipeline_shape.moss",
+        ROOT / "tests/phase47_iteration.moss",
     ],
     "specializations": [
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
         FIXTURES / "call_edges.moss",
         ROOT / "tests/tooling/fixtures/generic_specialization/identity.moss",
+        ROOT / "tests/tooling/fixtures/generic_specialization/twice_multi.moss",
+        ROOT / "examples/swarm/modules/domain_services/repro/trait_param/single/src/main.moss",
     ],
     "joins": [FIXTURES / "join_if.moss", FIXTURES / "join_match.moss",
-              FIXTURES / "join_try.moss"],
+              FIXTURES / "join_try.moss",
+              FIXTURES / "join_recover_binding.moss"],
     "patterns": [FIXTURES / "pattern_local_payload.moss",
                  FIXTURES / "pattern_parenthesized.moss",
                  ROOT / "tests/tooling/fixtures/phase27_5_match_copy.moss"],
 }
+DEBT_CASES = {
+    "expression-types": [
+        ROOT / "tests/phase27/est/side_facts.moss",
+        ROOT / "tests/phase27/est/pipeline_shape.moss",
+        ROOT / "examples/collections_and_methods.moss",
+    ],
+    "pipeline-types": [
+        ROOT / "tests/phase27/est/pipeline_shape.moss",
+        ROOT / "examples/functional_basics.moss",
+        ROOT / "examples/collections_and_methods.moss",
+    ],
+    "ownership": [
+        ROOT / "tests/generic_method_effects.moss",
+        ROOT / "tests/phase4_effect_smoke.moss",
+        ROOT / "tests/swarm_028_self_method_argument_borrow.moss",
+    ],
+}
+DEBT_BASELINE = ROOT / "tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json"
 
 
 def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -40,6 +68,64 @@ def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str
 def require_fail_closed(result: subprocess.CompletedProcess[str], label: str) -> None:
     if result.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in result.stderr:
         raise SystemExit(f"{label} did not fail closed:\n{result.stdout}{result.stderr}")
+
+
+def debt_engine_signature(source: Path, engine: str, env: dict[str, str],
+                          work: Path, key: str) -> tuple[int, str, str]:
+    if engine == "fast-debug":
+        result = run([str(COMPILER), "run", "--interp", str(source)], env)
+        return result.returncode, result.stdout, result.stderr
+    rust = work / f"{key}.rs"
+    flags = ["-O"] if engine == "optimized" else []
+    emitted = run([str(COMPILER), str(source), *flags, "-o", str(rust)], env)
+    if emitted.returncode:
+        return emitted.returncode, emitted.stdout, emitted.stderr
+    binary = work / f"{key}.bin"
+    compiled = run(["rustc", "--edition=2021", str(rust), "-o", str(binary)],
+                   env)
+    if compiled.returncode:
+        return compiled.returncode, compiled.stdout, compiled.stderr
+    executed = run([str(binary)], env)
+    return executed.returncode, executed.stdout, executed.stderr
+
+
+def check_known_debt(work: Path) -> None:
+    actual: set[str] = set()
+    for fact_class, sources in DEBT_CASES.items():
+        for index, source in enumerate(sources):
+            checked = run([str(COMPILER), "check", str(source), "--json"],
+                          os.environ.copy())
+            if checked.returncode:
+                raise SystemExit(f"debt fixture rejected: {source}: "
+                                 f"{checked.stdout}{checked.stderr}")
+            for engine in ("fast-debug", "native", "optimized"):
+                baseline_env = os.environ.copy()
+                for name in ("MOSS_TEST_PERTURB", "MOSS_TEST_DROP_FACT"):
+                    baseline_env.pop(name, None)
+                baseline = debt_engine_signature(source, engine, baseline_env,
+                    work, f"debt-{fact_class}-{index}-{engine}")
+                for action, variable in (("perturb", "MOSS_TEST_PERTURB"),
+                                         ("drop", "MOSS_TEST_DROP_FACT")):
+                    altered_env = baseline_env.copy()
+                    altered_env[variable] = fact_class
+                    altered = debt_engine_signature(source, engine, altered_env,
+                        work, f"debt-{fact_class}-{index}-{engine}")
+                    if altered == baseline:
+                        actual.add(f"{fact_class}|{action}|{source.relative_to(ROOT)}|{engine}")
+    observed = sorted(actual)
+    if os.environ.get("MOSS_TEST_RECORD_FACT_DEBT") == "1":
+        DEBT_BASELINE.parent.mkdir(parents=True, exist_ok=True)
+        DEBT_BASELINE.write_text(json.dumps({"ignored": observed}, indent=2) + "\n",
+                                 encoding="utf-8")
+        print(f"recorded known-debt ignore set: {len(observed)} entries")
+        return
+    expected_data = json.loads(DEBT_BASELINE.read_text(encoding="utf-8"))
+    expected = set(expected_data["ignored"])
+    grew = sorted(actual - expected)
+    if grew:
+        raise SystemExit("known-debt ignored-engine set grew:\n  " + "\n  ".join(grew))
+    print(f"PASS known debt: ignored={len(actual)} baseline={len(expected)} "
+          f"(no growth)")
 
 
 def main() -> None:
@@ -94,6 +180,7 @@ def main() -> None:
                             f"{ignored.stdout}{ignored.stderr}")
         print(f"PASS {fact_class}: {len(sources)} fixtures, perturb/drop, "
               "Fast Debug/native/-O fail closed")
+    check_known_debt(work)
     print("Phase 27.5.4 checked-fact perturb/drop hooks passed")
 
 

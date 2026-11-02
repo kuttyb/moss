@@ -136,14 +136,18 @@ class Arena {
   ExprId append(Node node);
   ExprId append(Node node, SourceSpan span);
   const Node& at(ExprId id) const;
+  std::vector<ExprId> children(ExprId id) const;
   SourceSpan span(ExprId id) const { return spans_.at(id); }
   std::size_t size() const { return nodes_.size(); }
   void record_facts(ExprId id, std::string specialization_context,
                     SemanticFacts facts);
   const SemanticFacts* facts(ExprId id,
                              std::string_view specialization_context) const;
+  std::vector<std::pair<std::string, SemanticFacts>>
+  facts_for_expression(ExprId id) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
+  void test_mutate_expression_types(bool drop);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.
@@ -359,6 +363,7 @@ inline bool functional_pipeline_candidate(std::string_view source) {
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);
+void restore_loaded_facts(Program& program);
 void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
                                 std::string_view source, ExprSlot slot,
                                 int line, std::uint64_t origin_id);

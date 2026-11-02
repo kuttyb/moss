@@ -126,6 +126,9 @@ struct LoweredFunctionalStage {
 };
 struct LoweredFunctionalPipeline {
   std::string source;
+  const est::Arena* expression_arena = nullptr;
+  est::ExprId source_node = 0;
+  std::string expression_source;
   std::vector<LoweredFunctionalStage> stages;
 };
 
@@ -203,6 +206,8 @@ class Generator {
       }
       specialized_domains_.push_back(std::move(specialized));
       specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
+      specialization_instances_[specialized_domains_.back().name] =
+          specialization.instance;
       specialization_names_[specialization.source_domain + "\n" +
                             specialization.instance] =
           specialized_domains_.back().name;
@@ -373,10 +378,25 @@ class Generator {
       gen_main(o, *p_.main);
     else
       o << "fn main() {}\n";
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled())
+      for (const auto& [site, count] : expression_view_reparse_sites_)
+        std::cerr << "MOSS_EST_REPARSE_QUERY_SITE=" << site << "|"
+                  << count << '\n';
+    if (est::test_coverage_counters_enabled()) {
+      std::cerr << "MOSS_EST_STRING_TYPE_QUERY=" << string_type_queries_
+                << '\n';
+      std::cerr << "MOSS_EST_STRING_EXPR_QUERY=" << string_expr_queries_
+                << '\n';
+    }
+#endif
     return o.str();
   }
 
  private:
+  mutable std::map<string, std::uint64_t> expression_view_reparse_sites_;
+  mutable std::uint64_t string_type_queries_ = 0;
+  mutable std::uint64_t string_expr_queries_ = 0;
   const Program& p_;
   // Keeps this program's interned declarations bound while lowering.
   moss::TypeContext::Binding type_scope_;
@@ -398,53 +418,6 @@ class Generator {
     if (p_.expression_arena && arena_uses(*p_.expression_arena)) return true;
     for (const auto& arena : p_.expression_arenas)
       if (arena && arena_uses(*arena)) return true;
-    // Some synthesized source bodies have no retained source handles. Rebuild
-    // node views for those bodies instead of searching their spellings.
-    const auto expression_uses = [&](std::string_view source) {
-      if (source.empty()) return false;
-      const auto view = est::parse_view(source);
-      return view && view->arena && arena_uses(*view->arena);
-    };
-    const auto body_uses = [&](const vector<Stmt>& body) {
-      for (const auto& statement : body) {
-        if (expression_uses(statement.a) || expression_uses(statement.b) ||
-            expression_uses(statement.text)) return true;
-        for (const auto& argument : statement.args)
-          if (expression_uses(argument)) return true;
-        if (statement.kind == Stmt::Kind::Call && statement.text.empty()) {
-          string call = statement.a;
-          if (!statement.b.empty()) call += "." + statement.b;
-          call += "(";
-          for (std::size_t index = 0; index < statement.args.size(); ++index) {
-            if (index) call += ", ";
-            call += statement.args[index];
-          }
-          call += ")";
-          if (expression_uses(call)) return true;
-        }
-      }
-      return false;
-    };
-    for (const auto& function : p_.functions)
-      if (body_uses(function.body) ||
-          (function.result_expression &&
-           expression_uses(*function.result_expression))) return true;
-    for (const auto& object : p_.objects)
-      for (const auto& method : object.methods)
-        if (body_uses(method.body) ||
-            (method.result_expression &&
-             expression_uses(*method.result_expression))) return true;
-    for (const auto& domain : p_.domains)
-      for (const auto& handler : domain.handlers)
-        if (body_uses(handler.body)) return true;
-    for (const auto& domain : specialized_domains_)
-      for (const auto& handler : domain.handlers)
-        if (body_uses(handler.body)) return true;
-    if (p_.main && body_uses(p_.main->body)) return true;
-    for (const auto& test : p_.tests)
-      if (body_uses(test.body)) return true;
-    for (const auto& benchmark : p_.benchmarks)
-      if (body_uses(benchmark.body)) return true;
     return false;
   }
   const Program* semantic_program_ = nullptr;
@@ -474,6 +447,7 @@ class Generator {
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
   std::unordered_map<string,string> specialization_sources_;
+  std::unordered_map<string,string> specialization_instances_;
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const EnumType*> enums_;
@@ -503,6 +477,7 @@ class Generator {
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
+  mutable std::set<string> generated_call_argument_names_;
   mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
@@ -513,16 +488,47 @@ class Generator {
   string phase21_selected_carrier_;
   string phase21_try_label_;
   size_t phase21_try_temp_ = 0;
+  string next_call_argument_name() const {
+    string name = "__moss_call_argument_" +
+        std::to_string(call_argument_temp_++);
+    generated_call_argument_names_.insert(name);
+    return name;
+  }
   const Handler* phase21_capture_handler_ = nullptr;
   const std::set<string>* phase21_capture_locals_ = nullptr;
   const RaiseSet* phase21_capture_alternatives_ = nullptr;
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
   const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
+  mutable std::unordered_map<string, string> functional_identifier_replacements_;
+  struct EmitterExpr {
+    const est::Arena* arena = nullptr;
+    est::ExprId id = 0;
+    string source;
+
+    string text() const {
+      if (!arena) return {};
+      const auto span = arena->span(id);
+      if (span.source_begin > span.source_end ||
+          span.source_end > source.size()) return {};
+      return source.substr(span.source_begin,
+                           span.source_end - span.source_begin);
+    }
+    EmitterExpr child(est::ExprId child_id) const {
+      return EmitterExpr{arena, child_id, source};
+    }
+  };
+  static EmitterExpr functional_argument_node(
+      const ParsedFunctionalStage& stage, size_t index) {
+    if (!stage.expression_arena || index >= stage.argument_nodes.size())
+      return {};
+    return EmitterExpr{stage.expression_arena, stage.argument_nodes[index],
+                       stage.expression_source};
+  }
   string codegen_body_context_;
   string codegen_active_specialization_key_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
-  string codegen_result_expression_;
+  const EmitterExpr* codegen_result_node_ = nullptr;
 
   static bool handler_has_failure_captures(const Handler& handler) {
     if (handler.provider_abi)
@@ -956,6 +962,17 @@ class Generator {
         std::to_string(handler.line);
   }
 
+  string checked_handler_context(const Domain& domain,
+                                 const Handler& handler) const {
+    auto source = specialization_sources_.find(domain.name);
+    auto instance = specialization_instances_.find(domain.name);
+    if (source != specialization_sources_.end() &&
+        instance != specialization_instances_.end())
+      return "handler:" + source->second + "." + handler.name + "@" +
+          instance->second;
+    return functional_handler_context(domain, handler);
+  }
+
   // Mirrors Checker::echo_display_class for an already-checked Vector type.
   static bool native_echo_vector_displayable(const string& t) {
     string x = canonical_type_name(t);
@@ -1098,64 +1115,80 @@ class Generator {
     return copy_type_name(canonical_type_name(type));
   }
 
+  static bool simple_moss_identifier(std::string_view source) {
+    if (source.empty() || source == "true" || source == "false" ||
+        source == "None" ||
+        !(std::isalpha(static_cast<unsigned char>(source.front())) ||
+          source.front() == '_'))
+      return false;
+    return std::all_of(source.begin() + 1, source.end(),
+        [](unsigned char ch) { return std::isalnum(ch) || ch == '_'; });
+  }
+
   std::optional<est::ExpressionView> expression_view_from_est(
       std::string_view expression,
-      const vector<est::Handle>* handles = nullptr) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(string(expression));
-    const auto* selected = handles ? handles
-        : active_functional_expression_handles_;
-    if (selected) {
-      for (const auto& handle : *selected) {
-        if (handle.source_fingerprint != fingerprint ||
-            handle.arena_index >= p_.expression_arenas.size() ||
-            !p_.expression_arenas[handle.arena_index]) continue;
-        const auto& arena = *p_.expression_arenas[handle.arena_index];
-        const auto span = arena.span(handle.expr);
-        // A fingerprint can match an identical expression nested in a larger
-        // source slot. Its node spans are relative to that parent buffer, so
-        // pairing it with the child text breaks EST projections (notably
-        // arithmetic in a Root message argument). Reparse unless this handle
-        // is rooted at the complete supplied expression.
-        if (span.source_begin != 0 || span.source_end != expression.size())
-          continue;
-        return est::view(arena, handle.expr, expression);
-      }
-    }
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
-#endif
-    return est::parse_view(expression);
+      const vector<est::Handle>* handles = nullptr,
+      std::string_view query_site = {}) const {
+    const string source = trim(string(expression));
+    if (source.empty() || source == "true" || source == "false" ||
+        source == "None" || simple_moss_identifier(source) ||
+        decode_numeric_literal_expression(source) ||
+        (source.size() >= 2 &&
+         ((source.front() == '\'' && source.back() == '\'') ||
+          (source.front() == '"' && source.back() == '"'))))
+      return std::nullopt;
+    (void)handles;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitter requested an expression view without "
+        "a checked node site=" +
+        (query_site.empty() ? std::string("unknown") : string(query_site)) +
+        " expression=" + string(expression));
   }
 
   bool tree_plain_identifier(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    if (generated_call_argument_names_.count(string(expression))) return true;
+    if (expression == "true" || expression == "false" ||
+        expression == "None") return false;
+    if (simple_moss_identifier(expression)) return true;
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return false;
     string name;
     return est::project_identifier(*syntax, name);
   }
 
+  bool tree_plain_identifier(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    return std::holds_alternative<est::Identifier>(expression.arena->at(
+        est::unparenthesized(*expression.arena, expression.id)));
+  }
+
   bool tree_empty_constructor_named(std::string_view expression,
                                     std::string_view name) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::empty_constructor_named(*syntax, name);
   }
 
+  bool tree_empty_constructor_named(const EmitterExpr& expression,
+                                    std::string_view name) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::empty_constructor_named(view, name);
+  }
+
   bool tree_empty_vector_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::empty_vector_literal(*syntax);
   }
 
   bool tree_placeholder_expression(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::placeholder_expression(*syntax);
   }
 
   string replace_est_placeholders(const string& source,
                                   const string& replacement) const {
-    auto syntax = expression_view_from_est(source);
+    auto syntax = expression_view_from_est(source, nullptr, __func__);
     if (!syntax || !syntax->arena) return source;
     vector<EstSourceEdit> edits;
     visit_est_expression(*syntax, syntax->root,
@@ -1171,7 +1204,7 @@ class Generator {
       const string& source, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
-    auto syntax = expression_view_from_est(source);
+    auto syntax = expression_view_from_est(source, nullptr, __func__);
     if (!syntax || !syntax->arena) return source;
     std::set<string> state_names;
     if (domain && !view_domain_ && !view_method_) {
@@ -1215,25 +1248,55 @@ class Generator {
   }
 
   est::LiteralClass tree_literal_class(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    const string source = trim(string(expression));
+    if (source == "true" || source == "false")
+      return est::LiteralClass::Boolean;
+    if (source.size() >= 2 && source.front() == '\'' && source.back() == '\'')
+      return est::LiteralClass::Character;
+    if (source.size() >= 2 && source.front() == '"' && source.back() == '"')
+      return est::LiteralClass::String;
+    if (auto decoded = decode_numeric_literal_expression(expression))
+      return decoded->kind == NumericLiteral::Kind::Int
+          ? est::LiteralClass::Integer : est::LiteralClass::Float;
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
   }
 
+  est::LiteralClass tree_literal_class(const EmitterExpr& expression) const {
+    if (!expression.arena) return est::LiteralClass::None;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::root_literal_class(view);
+  }
+
   bool tree_decimal_integer_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax && est::decimal_integer_literal(*syntax, true, false);
+    const string source = trim(string(expression));
+    auto decoded = decode_numeric_literal_expression(expression);
+    return decoded && decoded->kind == NumericLiteral::Kind::Int &&
+        !source.empty() &&
+        std::all_of(source.begin() + (source.front() == '-' ||
+                                         source.front() == '+' ? 1 : 0),
+                    source.end(), [](unsigned char ch) {
+                      return std::isdigit(ch) || ch == '_';
+                    });
   }
 
   std::optional<DecodedNumber> tree_numeric_literal_value(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax ? est::numeric_literal_value(*syntax)
-                  : std::nullopt;
+    return decode_numeric_literal_expression(expression);
+  }
+
+  std::optional<DecodedNumber> tree_numeric_literal_value(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::numeric_literal_value(view);
   }
 
   std::optional<string> tree_empty_typed_vector_constructor(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     auto type = est::project_empty_constructor_type(*syntax);
     if (!type) return std::nullopt;
@@ -1242,25 +1305,59 @@ class Generator {
         ? std::optional<string>(std::move(canonical)) : std::nullopt;
   }
 
+  std::optional<string> tree_empty_typed_vector_constructor(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    auto type = est::project_empty_constructor_type(view);
+    if (!type) return std::nullopt;
+    string canonical = canonical_type_name(*type);
+    return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+        ? std::optional<string>(std::move(canonical)) : std::nullopt;
+  }
+
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    string source(expression);
+    if (generated_call_argument_names_.count(source)) return source;
+    if (source == "None" || source == "true" || source == "false")
+      return std::nullopt;
+    if (simple_moss_identifier(source)) return source;
+    if (source.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(source.front())) ||
+          source.front() == '_') ||
+        !std::all_of(source.begin() + 1, source.end(), [](unsigned char ch) {
+          return std::isalnum(ch) || ch == '_';
+        }))
+      return std::nullopt;
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     string name;
     return est::project_identifier(*syntax, name)
         ? std::optional<string>(std::move(name)) : std::nullopt;
   }
 
+  std::optional<string> tree_identifier_name(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(root)))
+      return identifier->name;
+    return std::nullopt;
+  }
+
   bool tree_expressions_equal(std::string_view left,
                               std::string_view right) const {
-    auto left_tree = expression_view_from_est(left);
-    auto right_tree = expression_view_from_est(right);
+    auto left_tree = expression_view_from_est(left, nullptr, __func__);
+    auto right_tree = expression_view_from_est(right, nullptr, __func__);
     return left_tree && right_tree &&
         est::structurally_equal(*left_tree, *right_tree);
   }
 
   bool tree_empty_string_literal(std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return false;
     const auto* literal = std::get_if<est::Literal>(
@@ -1268,9 +1365,24 @@ class Generator {
     return literal && literal->spelling == "\"\"";
   }
 
+  bool tree_empty_string_literal(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* literal = std::get_if<est::Literal>(
+        &expression.arena->at(root));
+    return literal && literal->spelling == "\"\"";
+  }
+
   std::optional<vector<string>> tree_member_path(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    if (simple_moss_identifier(expression))
+      return vector<string>{string(expression)};
+    if (expression == "true" || expression == "false" ||
+        expression == "None" || expression.empty() ||
+        !(std::isalpha(static_cast<unsigned char>(expression.front())) ||
+          expression.front() == '_') || simple_moss_identifier(expression))
+      return std::nullopt;
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return std::nullopt;
     vector<string> reverse;
@@ -1292,22 +1404,82 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<vector<string>> tree_member_path(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    vector<string> reverse;
+    est::ExprId current = expression.id;
+    while (current < expression.arena->size()) {
+      current = est::unparenthesized(*expression.arena, current);
+      const auto& node = expression.arena->at(current);
+      if (const auto* member = std::get_if<est::Member>(&node)) {
+        reverse.push_back(member->name);
+        current = member->base;
+      } else if (const auto* identifier =
+                     std::get_if<est::Identifier>(&node)) {
+        reverse.push_back(identifier->name);
+        std::reverse(reverse.begin(), reverse.end());
+        return reverse;
+      } else {
+        return std::nullopt;
+      }
+    }
+    return std::nullopt;
+  }
+
   std::optional<vector<string>> tree_tuple_elements(
       std::string_view expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::project_tuple_elements(*syntax) : std::nullopt;
   }
 
   bool tree_parse_simple_call(const string& expression, string& callee,
                               vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_simple_call(*syntax, callee, arguments);
+  }
+
+  bool tree_parse_simple_call(const EmitterExpr& expression, string& callee,
+                              vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_simple_call(view, callee, arguments);
+  }
+
+  bool tree_parse_simple_call_nodes(const EmitterExpr& expression,
+                                    string& callee,
+                                    vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const std::vector<est::ExprId>* children = nullptr;
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      callee_id = call->callee;
+      children = &call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &expression.arena->at(root))) {
+      callee_id = constructor->type;
+      children = &constructor->arguments;
+    }
+    if (!children) return false;
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(est::unparenthesized(
+            *expression.arena, callee_id)));
+    if (!identifier) return false;
+    callee = identifier->name;
+    arguments.clear();
+    arguments.reserve(children->size());
+    for (const auto child : *children)
+      arguments.push_back(expression.child(child));
+    return true;
   }
 
   bool tree_parse_member_call(const string& expression, string& receiver,
                               string& member, vector<string>& arguments,
                               bool* outputs_written = nullptr) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) {
       if (outputs_written) *outputs_written = false;
       return false;
@@ -1316,94 +1488,304 @@ class Generator {
                                     outputs_written);
   }
 
+  bool tree_parse_member_call(const EmitterExpr& expression,
+                              string& receiver, string& member,
+                              vector<string>& arguments,
+                              bool* outputs_written = nullptr) const {
+    if (!expression.arena) {
+      if (outputs_written) *outputs_written = false;
+      return false;
+    }
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_member_call(view, receiver, member, arguments,
+                                    outputs_written);
+  }
+
+  bool tree_parse_member_call_nodes(const EmitterExpr& expression,
+                                   EmitterExpr& receiver, string& member,
+                                   vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const std::vector<est::ExprId>* node_arguments = nullptr;
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      callee_id = call->callee;
+      node_arguments = &call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &expression.arena->at(root))) {
+      callee_id = constructor->type;
+      node_arguments = &constructor->arguments;
+    }
+    if (!node_arguments) return false;
+    callee_id = est::unparenthesized(*expression.arena, callee_id);
+    const auto* selected = std::get_if<est::Member>(
+        &expression.arena->at(callee_id));
+    if (!selected) return false;
+    receiver = expression.child(selected->base);
+    member = selected->name;
+    arguments.clear();
+    for (const auto argument : *node_arguments)
+      arguments.push_back(expression.child(argument));
+    return true;
+  }
+
   bool tree_parse_member_access(const string& expression, string& base,
                                string& member) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_member_access(*syntax, base, member);
+  }
+
+  bool tree_parse_member_access(const EmitterExpr& expression, string& base,
+                               string& member) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_member_access(view, base, member);
   }
 
   bool tree_parse_unary(const string& expression, string& operation,
                         string& operand) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_unary(*syntax, operation, operand);
+  }
+
+  bool tree_parse_unary(const EmitterExpr& expression, string& operation,
+                        string& operand) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_unary(view, operation, operand);
   }
 
   bool tree_parse_message(const string& expression, string& target,
                           string& handler, vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
+    if (trim(expression).rfind("message", 0) != 0) return false;
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_message(
         *syntax, target, handler, arguments);
   }
 
-  bool tree_parse_fileio_open(const string& expression,
-                              vector<string>& arguments) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax && est::project_fileio_open(*syntax, arguments);
+  bool tree_parse_message(const EmitterExpr& expression, string& target,
+                          string& handler, vector<string>& arguments) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_message(view, target, handler, arguments);
+  }
+
+  bool tree_parse_message_nodes(const EmitterExpr& expression, string& target,
+                                string& handler,
+                                vector<EmitterExpr>& arguments) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* message = std::get_if<est::Message>(
+        &expression.arena->at(root));
+    if (!message) return false;
+    auto target_node = expression.child(message->target);
+    target = target_node.text();
+    handler = message->handler;
+    arguments.clear();
+    arguments.reserve(message->arguments.size());
+    for (const auto argument : message->arguments)
+      arguments.push_back(expression.child(argument));
+    return true;
   }
 
   bool tree_parse_fileio_chunks_source(const string& expression,
                                        string& receiver,
                                        string& size_expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_fileio_chunks_source(
         *syntax, receiver, size_expression);
   }
 
+  bool tree_parse_fileio_chunks_source(const EmitterExpr& expression,
+                                       string& receiver,
+                                       string& size_expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* call = std::get_if<est::Call>(&expression.arena->at(root));
+    if (!call) return false;
+    const auto callee = est::unparenthesized(*expression.arena, call->callee);
+    const auto* member = std::get_if<est::Member>(
+        &expression.arena->at(callee));
+    if (!member || member->name != "chunks" || call->arguments.size() != 1)
+      return false;
+    receiver = expression.child(member->base).text();
+    size_expression = expression.child(call->arguments.front()).text();
+    return true;
+  }
+
   bool tree_parse_index(const string& expression, string& base,
                         string& index) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_index(*syntax, base, index);
+  }
+
+  bool tree_parse_index(const EmitterExpr& expression, EmitterExpr& base,
+                        EmitterExpr& index) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* node = std::get_if<est::Index>(&expression.arena->at(root));
+    if (!node) return false;
+    base = expression.child(node->base);
+    index = expression.child(node->index);
+    return true;
+  }
+
+  bool tree_parse_index(const EmitterExpr& expression, string& base,
+                        string& index) const {
+    EmitterExpr base_node, index_node;
+    if (!tree_parse_index(expression, base_node, index_node)) return false;
+    base = base_node.text();
+    index = index_node.text();
+    return true;
   }
 
   bool tree_parse_named_argument(const string& expression, string& name,
                                  string& value) const {
-    auto syntax = est::parse_named_argument_view(expression);
-    return syntax && est::project_named_argument(*syntax, name, value);
+    (void)expression;
+    (void)name;
+    (void)value;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitter requested named-argument parsing "
+        "without a checked node");
   }
 
   std::optional<vector<string>> tree_parse_vector_literal(
       const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::project_vector_literal(*syntax) : std::nullopt;
+  }
+
+  std::optional<vector<string>> tree_parse_vector_literal(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_vector_literal(view);
   }
 
   bool tree_parse_enum_case_expression(const string& expression,
                                        string& enum_name, string& case_name,
                                        vector<string>& fields,
                                        bool& called) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_enum_case(*syntax, enum_name, case_name,
                                             fields, &called);
+  }
+
+  bool tree_parse_enum_case_expression(const EmitterExpr& expression,
+                                       string& enum_name, string& case_name,
+                                       vector<string>& fields,
+                                       bool& called) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_enum_case(view, enum_name, case_name, fields, &called);
   }
 
   bool tree_parse_bound_method_callable(const string& expression,
                                         string& receiver,
                                         string& method) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_bound_method(*syntax, receiver, method);
   }
 
   bool tree_parse_executor_chain(
       const string& expression,
       vector<std::pair<string, vector<string>>>& calls) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::project_executor_chain(*syntax, calls);
   }
 
-  string tree_strip_expression_grouping(const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax ? est::strip_grouping(*syntax) : expression;
+  bool tree_parse_executor_chain(
+      const EmitterExpr& expression,
+      vector<std::pair<string, vector<string>>>& calls) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::project_executor_chain(view, calls);
   }
 
+  bool tree_parse_executor_chain_nodes(
+      const EmitterExpr& expression,
+      vector<std::pair<string, vector<EmitterExpr>>>& calls) const {
+    if (!expression.arena) return false;
+    EmitterExpr current = expression;
+    vector<std::pair<string, vector<EmitterExpr>>> reversed;
+    while (true) {
+      const auto root = est::unparenthesized(*current.arena, current.id);
+      if (const auto* constructor = std::get_if<est::Constructor>(
+              &current.arena->at(root))) {
+        const auto type = est::unparenthesized(*current.arena,
+                                                constructor->type);
+        const auto* name = std::get_if<est::Identifier>(
+            &current.arena->at(type));
+        if (!name || name->name != "Executor" ||
+            !constructor->arguments.empty()) return false;
+        break;
+      }
+      const auto* call = std::get_if<est::Call>(&current.arena->at(root));
+      if (!call) return false;
+      const auto callee = est::unparenthesized(*current.arena, call->callee);
+      const auto* member = std::get_if<est::Member>(&current.arena->at(callee));
+      if (!member) {
+        return false;
+      }
+      vector<EmitterExpr> arguments;
+      arguments.reserve(call->arguments.size());
+      for (const auto argument : call->arguments)
+        arguments.push_back(current.child(argument));
+      reversed.emplace_back(member->name, std::move(arguments));
+      current = current.child(member->base);
+    }
+    calls.assign(reversed.rbegin(), reversed.rend());
+    return !calls.empty();
+  }
+
+  string tree_strip_expression_grouping(const string& expression) const {
+    // Grouping is retained in Moss source slices; keeping it in emitted Rust
+    // is semantics preserving and avoids reparsing text just to remove it.
+    return expression;
+  }
+
+
   string tree_normalize_pipeline(const string& expression) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax ? est::normalize_pipeline_tree(*syntax) : expression;
   }
 
   bool tree_expression_mentions_identifier(
       const string& expression, const string& identifier) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::expression_mentions(*syntax, identifier);
+  }
+
+  bool tree_expression_mentions_identifier(
+      const EmitterExpr& expression, const string& identifier) const {
+    if (!expression.arena) return false;
+    est::ExpressionView view{nullptr, expression.arena, expression.id,
+                             expression.text()};
+    return est::expression_mentions(view, identifier);
+  }
+
+  bool tree_expressions_equal(const EmitterExpr& left,
+                              const EmitterExpr& right) const {
+    if (!left.arena || !right.arena) return false;
+    est::ExpressionView left_view{nullptr, left.arena, left.id, left.text()};
+    est::ExpressionView right_view{nullptr, right.arena, right.id,
+                                   right.text()};
+    return est::expressions_equal(left_view, right_view);
+  }
+
+  bool is_pure_state_read_expression(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    return !std::holds_alternative<est::Call>(expression.arena->at(root)) &&
+        !std::holds_alternative<est::Message>(expression.arena->at(root));
   }
 
   std::optional<vector<string>> parsed_type_arguments(
@@ -1454,14 +1836,29 @@ class Generator {
 
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const vector<EmitterExpr>* argument_nodes = nullptr,
+      const EmitterExpr* call_node = nullptr) const {
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
       vector<string> direct_arguments;
-      if (tree_parse_simple_call(trim(codegen_result_expression_), direct_callee,
-                            direct_arguments) &&
-          direct_callee == function.name && direct_arguments == arguments) {
+      const EmitterExpr* returned_call = call_node ? call_node
+                                                   : codegen_result_node_;
+      if (!returned_call || !returned_call->arena)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked returned-call node");
+      const bool parsed_call = call_node
+          ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
+          : tree_parse_simple_call(*returned_call, direct_callee,
+                                   direct_arguments);
+      const size_t module_separator = function.name.rfind("__");
+      const string unqualified_function_name = module_separator == string::npos
+          ? function.name : function.name.substr(module_separator + 2);
+      if (parsed_call &&
+          (direct_callee == function.name ||
+           direct_callee == unqualified_function_name) &&
+          direct_arguments == arguments) {
         auto exact = std::find_if(function.specializations.begin(),
                                   function.specializations.end(),
                                   [&](const FunctionSpecialization& candidate) {
@@ -1476,6 +1873,21 @@ class Generator {
     }
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
+      bool checked_statement_return_call = false;
+      if (call_node && call_node->arena &&
+          statement.kind == Stmt::Kind::Return) {
+        for (const auto& handle : statement.expression_handles) {
+          if (handle.slot != est::ExprSlot::ReturnValue ||
+              handle.arena_index >= p_.expression_arenas.size() ||
+              p_.expression_arenas[handle.arena_index].get() !=
+                  call_node->arena) continue;
+          if (est::unparenthesized(*call_node->arena, handle.expr) ==
+              est::unparenthesized(*call_node->arena, call_node->id)) {
+            checked_statement_return_call = true;
+            break;
+          }
+        }
+      }
       string nested_expression = function.name + "(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) nested_expression += ", ";
@@ -1518,11 +1930,19 @@ class Generator {
       vector<string> direct_arguments;
       const string& call_expression = statement.kind == Stmt::Kind::Return
           ? statement.a : statement.b;
+      const bool parsed_call = call_node
+          ? tree_parse_simple_call(*call_node, direct_callee, direct_arguments)
+          : tree_parse_simple_call(trim(call_expression), direct_callee,
+                                   direct_arguments);
+      const size_t module_separator = function.name.rfind("__");
+      const string unqualified_function_name = module_separator == string::npos
+          ? function.name : function.name.substr(module_separator + 2);
       if (selected != statement.open_call_keys_by_context.end() &&
-          tree_parse_simple_call(trim(call_expression), direct_callee,
-                            direct_arguments) &&
-          direct_callee == function.name &&
-          direct_arguments == arguments) {
+          (checked_statement_return_call ||
+           (parsed_call &&
+            (direct_callee == function.name ||
+             direct_callee == unqualified_function_name) &&
+            direct_arguments == arguments))) {
         auto exact = std::find_if(function.specializations.begin(),
                                   function.specializations.end(),
                                   [&](const FunctionSpecialization& candidate) {
@@ -1567,8 +1987,10 @@ class Generator {
             " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
-    for (const auto& argument : arguments)
-      concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
+    for (size_t index = 0; index < arguments.size(); ++index)
+      concrete_types.push_back(argument_nodes && index < argument_nodes->size()
+          ? generated_expr_type(argument_nodes->at(index), types).value_or("")
+          : generated_expr_type(arguments[index], types).value_or(""));
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
@@ -1592,13 +2014,14 @@ class Generator {
           phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
           std::find(checked.candidates.begin(), checked.candidates.end(),
-                    selected) == checked.candidates.end())
+                    selected) == checked.candidates.end()) {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT emitter specialization is outside "
             "checked call edge candidates callee=" + function.name +
             " line=" + std::to_string(phase21_codegen_statement_
                                            ? phase21_codegen_statement_->line : 0) +
             " context=" + codegen_body_context_);
+      }
     }
     return selected;
   }
@@ -1617,6 +2040,28 @@ class Generator {
         identity->second.source_domain == nominal &&
         is_domain_specialization_instance(nominal, identity->second.instance)) {
       rendered = nominal + "Handle::from(" + rendered + ")";
+    }
+    return rendered;
+  }
+
+  string nominal_domain_handle_argument(
+      const EmitterExpr& expression, const string& type, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      size_t functional_pipeline_id = 0) const {
+    string rendered = expr(expression, d, locals, types,
+                           functional_pipeline_id);
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    const string nominal = canonical_type_name(type);
+    if (identifier && types && domains_.count(nominal)) {
+      auto identity = domain_instance_bindings_.find(identifier->name);
+      if (identity != domain_instance_bindings_.end() &&
+          identity->second.source_domain == nominal &&
+          is_domain_specialization_instance(nominal,
+                                            identity->second.instance))
+        rendered = nominal + "Handle::from(" + rendered + ")";
     }
     return rendered;
   }
@@ -1665,9 +2110,10 @@ class Generator {
   // Lowers sort(v), sort(v, by: key), and sort(v, by: Reverse(key)) to a
   // stable in-place Rust sort. The checker has proven the key pure, so each
   // key is lowered as an ordinary specialized Moss call.
-  string sort_call_rust(const vector<string>& args, const Domain* d,
+  string sort_call_rust(const vector<EmitterExpr>& args, const Domain* d,
                         const std::set<string>& locals,
-                        const std::unordered_map<string,string>* types) const {
+                        const std::unordered_map<string,string>* types,
+                        int line) const {
     string target = write_call_place(args[0], d, locals, types);
     auto vector_type = generated_expr_type(args[0], types);
     string canonical = vector_type ? canonical_type_name(*vector_type) : "";
@@ -1676,16 +2122,82 @@ class Generator {
     if (args.size() == 1)
       return "(" + target + ").sort_by(|__moss_a, __moss_b| " +
              total_order_compare_rust(element, "*__moss_a", "*__moss_b") + ")";
-    string label, key;
-    tree_parse_named_argument(args[1], label, key);
+    const auto key_root = est::unparenthesized(*args[1].arena, args[1].id);
+    const auto* named = std::get_if<est::NamedArgument>(
+        &args[1].arena->at(key_root));
+    if (!named || named->name != "by")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT sort callback lacks checked named node");
+    EmitterExpr key_expression = args[1].child(named->value);
+    auto key_value_root = est::unparenthesized(*key_expression.arena,
+                                               key_expression.id);
+    if (const auto* nested = std::get_if<est::NamedArgument>(
+            &key_expression.arena->at(key_value_root)))
+      key_expression = key_expression.child(nested->value);
+    string key = key_expression.text();
     bool reverse = false;
     string reverse_callee;
-    vector<string> reverse_args;
-    if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
-        reverse_callee == "Reverse" && reverse_args.size() == 1) {
-      reverse = true;
-      key = trim(reverse_args.front());
+    EmitterExpr reverse_argument;
+    const auto callback_root = est::unparenthesized(*key_expression.arena,
+                                                     key_expression.id);
+    const est::ExprId* callback_callee = nullptr;
+    const vector<est::ExprId>* callback_arguments = nullptr;
+    if (const auto* key_call = std::get_if<est::Call>(
+            &key_expression.arena->at(callback_root))) {
+      callback_callee = &key_call->callee;
+      callback_arguments = &key_call->arguments;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(
+                   &key_expression.arena->at(callback_root))) {
+      callback_callee = &constructor->type;
+      callback_arguments = &constructor->arguments;
     }
+    if (callback_callee && callback_arguments &&
+        callback_arguments->size() == 1) {
+      const auto callee_id = est::unparenthesized(*key_expression.arena,
+                                                   *callback_callee);
+      const auto* identifier = std::get_if<est::Identifier>(
+          &key_expression.arena->at(callee_id));
+      if (identifier) reverse_callee = identifier->name;
+      reverse_argument = key_expression.child(callback_arguments->front());
+      const auto reverse_root = est::unparenthesized(
+          *reverse_argument.arena, reverse_argument.id);
+      if (const auto* positional = std::get_if<est::NamedArgument>(
+              &reverse_argument.arena->at(reverse_root)); positional)
+        reverse_argument = reverse_argument.child(positional->value);
+    }
+    if (reverse_callee == "Reverse" && reverse_argument.arena) {
+      reverse = true;
+      key_expression = reverse_argument;
+      key = key_expression.text();
+    }
+    const auto function_id = est::unparenthesized(*key_expression.arena,
+                                                   key_expression.id);
+    const auto* function_name = std::get_if<est::Identifier>(
+        &key_expression.arena->at(function_id));
+    if (!function_name)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort key is not an identifier: " +
+          key_expression.text() + " node=" +
+          std::to_string(key_expression.arena->at(function_id).index()));
+    const auto function_entry = functions_.find(function_name->name);
+    if (function_entry == functions_.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort callback target unavailable");
+    const FunctionSpecialization* callback_specialization = nullptr;
+    if (function_entry->second->static_dispatch) {
+      const auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function_entry->second->name, line);
+      if (checked.kind != CheckedCallEdgeSelectionKind::Unique)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked sort callback specialization unavailable");
+      callback_specialization = checked.unique;
+    }
+    const string checked_callback_type = callback_specialization
+        ? callback_specialization->return_type
+        : function_entry->second->return_type.value_or("");
+    if (checked_callback_type.empty())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked sort callback result type unavailable");
     const bool copy = copy_type(element);
     auto key_locals = locals;
     key_locals.insert("__moss_sort_a");
@@ -1694,18 +2206,23 @@ class Generator {
         : std::unordered_map<string,string>{};
     key_types["__moss_sort_a"] = element;
     key_types["__moss_sort_b"] = element;
-    string key_a = expr(key + "(__moss_sort_a)", d, key_locals, &key_types);
-    string key_b = expr(key + "(__moss_sort_b)", d, key_locals, &key_types);
-    string key_type = generated_expr_type(key + "(__moss_sort_a)", &key_types)
-        .value_or("");
+    const string callback_name = callback_specialization
+        ? callback_specialization->generated_name
+        : rust_identifier(function_entry->second->name);
+    string key_a = callback_name +
+        "(__moss_sort_a)";
+    string key_b = callback_name +
+        "(__moss_sort_b)";
+    string key_type = canonical_type_name(checked_callback_type);
     string compare = reverse
         ? total_order_compare_rust(key_type, "__moss_kb", "__moss_ka")
         : total_order_compare_rust(key_type, "__moss_ka", "__moss_kb");
     // A key that consumes its argument receives an owned copy; the vector
     // element itself is never moved out during the sort.
-    auto key_function = functions_.find(key);
-    const bool consumes = !copy && key_function != functions_.end() &&
-        sort_key_effect(*key_function->second, element) == Effect::Consume;
+    const bool consumes = !copy && (callback_specialization
+        ? !callback_specialization->parameter_effects.empty() &&
+            callback_specialization->parameter_effects.front() == Effect::Consume
+        : sort_key_effect(*function_entry->second, element) == Effect::Consume);
     string bind = copy ? "*__moss_a" : consumes ? "(*__moss_a).clone()" : "__moss_a";
     string bind_b = copy ? "*__moss_b" : consumes ? "(*__moss_b).clone()" : "__moss_b";
     return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
@@ -1749,6 +2266,55 @@ class Generator {
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
+  string write_call_place(const EmitterExpr& expression, const Domain* d,
+                          const std::set<string>& locals,
+                          const std::unordered_map<string,string>* types) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked write-place node");
+    if (view_place(expression, d, locals, types))
+      return place_expr(expression, d, locals, types);
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto& node = expression.arena->at(root);
+    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+      if (write_through_parameters_.count(identifier->name)) {
+        if (types && types->count(identifier->name) &&
+            copy_type(types->at(identifier->name)))
+          return "*" + identifier->name;
+        return "(*" + identifier->name + ")";
+      }
+      return place_expr(expression, d, locals, types);
+    }
+    if (const auto* member = std::get_if<est::Member>(&node))
+      return "(" + write_call_place(expression.child(member->base), d, locals,
+                                     types) + ")." +
+          rust_identifier(member->name);
+    if (const auto* index = std::get_if<est::Index>(&node)) {
+      const auto base = expression.child(index->base);
+      const auto key = expression.child(index->index);
+      const string storage = write_call_place(base, d, locals, types);
+      const string rendered_key = expr(key, d, locals, types);
+      auto type = generated_expr_type(base, types);
+      if (type && shared_protocol_map_key_from_type(*type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*type);
+        return "*({ let __moss_key = " + rendered_key + "; (" + storage +
+            ").get_mut_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", &__moss_key, |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\") })";
+      }
+      if (type && (starts_with(canonical_type_name(*type), "map[") ||
+                   canonical_type_name(*type) == "map"))
+        return "*(" + storage + ").get_mut(&(" + rendered_key +
+            ")).expect(\"Moss missing map key\")";
+      if (type && (canonical_type_name(*type) == "RangeBatch" ||
+                   canonical_type_name(*type) == "Range"))
+        return "(" + storage + ").get(" + rendered_key + ")";
+      return "(" + storage + ")[(" + rendered_key + ") as usize]";
+    }
+    return place_expr(expression, d, locals, types);
+  }
+
   string read_call_place(const string& argument, const Domain* d,
                          const std::set<string>& locals,
                          const std::unordered_map<string,string>* types) const {
@@ -1771,36 +2337,95 @@ class Generator {
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
+  string read_call_place(const EmitterExpr& expression, const Domain* d,
+                         const std::set<string>& locals,
+                         const std::unordered_map<string,string>* types) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked read-place node");
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* index = std::get_if<est::Index>(
+            &expression.arena->at(root))) {
+      const auto base = expression.child(index->base);
+      const auto key = expression.child(index->index);
+      const string storage = read_call_place(base, d, locals, types);
+      const string rendered_key = expr(key, d, locals, types);
+      const auto type = generated_expr_type(base, types);
+      if (type && shared_protocol_map_key_from_type(*type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*type);
+        return "*({ let __moss_key = " + rendered_key + "; (" + storage +
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", &__moss_key, |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\") })";
+      }
+      if (type && (starts_with(canonical_type_name(*type), "map[") ||
+                   canonical_type_name(*type) == "map"))
+        return "*(" + storage + ").get(&(" + rendered_key +
+            ")).expect(\"Moss missing map key\")";
+      if (type && (canonical_type_name(*type) == "RangeBatch" ||
+                   canonical_type_name(*type) == "Range"))
+        return "(" + storage + ").get(" + rendered_key + ")";
+      return "(" + storage + ")[(" + rendered_key + ") as usize]";
+    }
+    return expr(expression, d, locals, types);
+  }
+
   string function_call_argument(const Function& function, size_t index,
                                 const string& argument, const Domain* d,
                                 const std::set<string>& locals,
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0,
-                                const FunctionSpecialization* specialization = nullptr) const {
+                                const FunctionSpecialization* specialization = nullptr,
+                                const EmitterExpr* checked_expression = nullptr) const {
     if (index >= function.params.size())
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
-    string actual_type = generated_expr_type(argument, types).value_or("");
+    string actual_type = (checked_expression
+        ? generated_expr_type(*checked_expression, types)
+        : generated_expr_type(argument, types)).value_or("");
     auto abi = function_parameter_abi(function, index, actual_type, specialization);
     Effect effect = abi.effect;
-    const auto argument_binding = tree_identifier_name(argument);
+    auto argument_binding = checked_expression && checked_expression->arena
+        ? [&]() -> std::optional<string> {
+            const auto root = est::unparenthesized(*checked_expression->arena,
+                                                    checked_expression->id);
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &checked_expression->arena->at(root)))
+              return identifier->name;
+            return std::nullopt;
+          }()
+        : tree_identifier_name(argument);
     if (effect == Effect::Consume &&
         argument_binding && phase21_option_slots_.count(*argument_binding))
       return "__moss_recovery_slot_" + *argument_binding +
           ".take().unwrap_or_else(|| std::process::abort())";
-    string rendered = nominal_domain_handle_argument(
-        argument, function.params[index].type, d, locals, types,
-        functional_pipeline_id);
+    string rendered = checked_expression
+        ? nominal_domain_handle_argument(*checked_expression,
+              function.params[index].type, d, locals, types,
+              functional_pipeline_id)
+        : nominal_domain_handle_argument(argument, function.params[index].type,
+              d, locals, types, functional_pipeline_id);
     if (abi.passing == ParameterPassingMode::Value) return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
     // Preserve that borrow when handing it to a READ helper. Object payloads
     // retain the extra reference below because view helpers take
     // `&impl MossAccess_T`.
-    if (effect == Effect::Read && borrowed_message_parameter(argument) &&
+    if (effect == Effect::Read &&
+        (checked_expression && checked_expression->arena
+             ? borrowed_message_parameter(*checked_expression)
+             : argument_binding
+                 ? borrowed_message_parameters_.count(*argument_binding) != 0
+                 : borrowed_message_parameter(argument)) &&
         !view_object_type(actual_type))
       return rendered;
-    if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
-    return "&(" + read_call_place(argument, d, locals, types) + ")";
+    if (effect == Effect::Write)
+      return "&mut (" + (checked_expression && checked_expression->arena
+          ? write_call_place(*checked_expression, d, locals, types)
+          : write_call_place(argument, d, locals, types)) + ")";
+    return "&(" + (checked_expression && checked_expression->arena
+        ? read_call_place(*checked_expression, d, locals, types)
+        : read_call_place(argument, d, locals, types)) + ")";
   }
 
   string method_call_argument(const Method& method, size_t index,
@@ -1829,14 +2454,63 @@ class Generator {
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
 
+  string method_call_argument(const Method& method, size_t index,
+                              const EmitterExpr& argument, const Domain* d,
+                              const std::set<string>& locals,
+                              const std::unordered_map<string,string>* types,
+                              size_t functional_pipeline_id = 0) const {
+    if (index >= method.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
+    const auto root = est::unparenthesized(*argument.arena, argument.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &argument.arena->at(root));
+    const std::optional<string> binding = identifier
+        ? std::optional<string>(identifier->name) : std::nullopt;
+    const Effect effect = method_effect(method, index);
+    if (effect == Effect::Consume && binding &&
+        phase21_option_slots_.count(*binding))
+      return "__moss_recovery_slot_" + *binding +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    const string actual_type = generated_expr_type(argument, types).value_or("");
+    const string rendered = nominal_domain_handle_argument(
+        argument, method.params[index].type, d, locals, types,
+        functional_pipeline_id);
+    if (effect == Effect::Consume ||
+        (effect != Effect::Write && !borrowable_type(method.params[index].type)))
+      return rendered;
+    if (effect == Effect::Read && binding &&
+        borrowed_message_parameters_.count(*binding) &&
+        !view_object_type(actual_type))
+      return rendered;
+    if (effect == Effect::Write)
+      return "&mut (" + place_expr(argument, d, locals, types) + ")";
+    return "&( " + expr(argument, d, locals, types) + " )";
+  }
+
   struct GeneratedBinaryExpression {
     string left;
     string op;
     string right;
+    EmitterExpr checked_left;
+    EmitterExpr checked_right;
+  };
+
+  struct GeneratedBinaryNode {
+    EmitterExpr left;
+    string op;
+    EmitterExpr right;
   };
 
   bool generated_integer_literal(const string& expression) const {
     return tree_decimal_integer_literal(expression);
+  }
+
+  bool generated_integer_literal(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    return est::decimal_integer_literal(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source}, true, false);
   }
 
   string generated_integer_literal_as_float(string expression) const {
@@ -1851,9 +2525,26 @@ class Generator {
     return rust_numeric_literal(as_float);
   }
 
+  string generated_integer_literal_as_float(
+      const EmitterExpr& expression) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked integer literal node");
+    auto decoded = est::numeric_literal_value(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source});
+    if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked integer literal was not numeric");
+    DecodedNumber as_float;
+    as_float.kind = NumericLiteral::Kind::Float;
+    as_float.floating = static_cast<double>(decoded->integer);
+    return rust_numeric_literal(as_float);
+  }
+
   std::optional<GeneratedBinaryExpression> tree_generated_binary(
       const string& expression, const vector<string>& operators) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     if (!syntax) return std::nullopt;
     vector<string> tree_operators;
     tree_operators.reserve(operators.size());
@@ -1864,7 +2555,21 @@ class Generator {
       return std::nullopt;
     return GeneratedBinaryExpression{std::move(operands.first),
                                      std::move(operation),
-                                     std::move(operands.second)};
+                                     std::move(operands.second), {}, {}};
+  }
+
+  std::optional<GeneratedBinaryNode> tree_generated_binary(
+      const EmitterExpr& expression,
+      const vector<string>& operators) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* binary = std::get_if<est::Binary>(
+        &expression.arena->at(root));
+    if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
+                       operators.end())
+      return std::nullopt;
+    return GeneratedBinaryNode{expression.child(binary->left), binary->op,
+                                expression.child(binary->right)};
   }
 
   static std::optional<string> generated_functional_element_type(
@@ -1896,30 +2601,58 @@ class Generator {
 
   bool generated_expression_uses(const string& expression,
                                 const string& name) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = expression_view_from_est(expression, nullptr, __func__);
     return syntax && est::contains_identifier(*syntax, name);
+  }
+
+  bool generated_expression_uses(const EmitterExpr& expression,
+                                 const string& name) const {
+    if (!expression.arena) return false;
+    return est::contains_identifier(
+        est::ExpressionView{{}, expression.arena, expression.id,
+                            expression.source}, name);
   }
 
   std::optional<string> generated_callable_result(
       const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types) const {
-    if (generated_expression_uses(callable, "_")) {
+      const std::unordered_map<string,string>* types,
+      const EmitterExpr* checked_callable) const {
+    const bool uses_placeholder = checked_callable && checked_callable->arena
+        ? generated_expression_uses(*checked_callable, "_")
+        : generated_expression_uses(callable, "_");
+    if (uses_placeholder) {
       if (input_types.size() != 1) return std::nullopt;
       std::unordered_map<string,string> placeholder_types = types
           ? *types : std::unordered_map<string,string>{};
       placeholder_types["_"] = input_types.front();
-      return generated_expr_type(callable, &placeholder_types);
+      return checked_callable && checked_callable->arena
+          ? generated_expr_type(*checked_callable, &placeholder_types)
+          : generated_expr_type(callable, &placeholder_types);
     }
     string bound_receiver, bound_method;
-    if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, input_types, false, nullptr)
-          : nullptr;
+    std::optional<EmitterExpr> bound_receiver_node;
+    if (checked_callable && checked_callable->arena) {
+      const auto root = est::unparenthesized(*checked_callable->arena,
+                                              checked_callable->id);
+      if (const auto* member = std::get_if<est::Member>(
+              &checked_callable->arena->at(root))) {
+        bound_receiver_node = checked_callable->child(member->base);
+        bound_receiver = bound_receiver_node->text();
+        bound_method = member->name;
+      }
+    } else if (tree_parse_bound_method_callable(callable, bound_receiver,
+                                                bound_method)) {
+      bound_receiver_node = std::nullopt;
+    }
+    if (!bound_method.empty()) {
+      if (!checked_callable || !checked_callable->arena)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
+      const Method* method = checked_method_target(*checked_callable, types);
       if (method && method->return_type)
         return canonical_type_name(*method->return_type);
-      return std::nullopt;
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method target has no result");
     }
     string identity = resolved_callable_identity(callable, types);
     const Function* fn = nullptr;
@@ -1942,51 +2675,555 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<string> generated_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const std::unordered_map<string,string>* types) const {
+    return generated_callable_result(callable, input_types, types, nullptr);
+  }
+
+  std::optional<string> generated_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const std::unordered_map<string,string>* types,
+      const ParsedFunctionalStage& stage, size_t argument_index) const {
+    auto checked = functional_argument_node(stage, argument_index);
+    return generated_callable_result(callable, input_types, types,
+                                     checked.arena ? &checked : nullptr);
+  }
+
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
-    if (!est::functional_pipeline_candidate(expression))
-      return std::nullopt;
-    const auto resolve_stage = [](std::string_view name)
-        -> std::optional<FunctionalNodeKind> {
-      for (const auto& operation : functional_operations())
-        if (name == operation.name) return operation.kind;
-      return std::nullopt;
-    };
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(string(expression));
-    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
-        -> std::optional<ParsedFunctionalPipeline> {
-      if (arena_index >= p_.expression_arenas.size() ||
-          !p_.expression_arenas[arena_index]) return std::nullopt;
-      return est::functional_pipeline(*p_.expression_arenas[arena_index], root,
-                                      expression, resolve_stage);
-    };
-    const auto* selected_handles = handles ? handles
-        : active_functional_expression_handles_;
-    if (selected_handles) {
-      for (const auto& handle : *selected_handles)
-        if (handle.source_fingerprint == fingerprint)
-          if (auto parsed = convert(handle.arena_index, handle.expr))
-            return parsed;
-    }
+    (void)expression;
+    (void)handles;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked functional pipeline node");
+  }
 
-    // Optimizer-created and nested expression occurrences may not retain a
-    // root handle. Parse into EST and consume the Pipeline node.
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(
-        est::ConsumerReparseSite::NativeFunctionalPipeline);
-#endif
-    est::Arena temporary;
-    try {
-      const auto root = est::parse_expression(temporary, expression);
-      return est::functional_pipeline(temporary, root, expression,
-                                      resolve_stage);
-    } catch (const std::invalid_argument&) {
-      return std::nullopt;
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_node(
+      const EmitterExpr& expression,
+      const std::function<std::optional<FunctionalNodeKind>(
+          std::string_view)>& resolve_stage) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* pipeline = std::get_if<est::Pipeline>(
+        &expression.arena->at(root));
+    if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+    ParsedFunctionalPipeline parsed;
+    parsed.expression_arena = expression.arena;
+    parsed.expression_source = expression.source;
+    parsed.source_node = pipeline->input;
+    parsed.source = expression.child(pipeline->input).text();
+    if (parsed.source.empty()) return std::nullopt;
+    for (const auto stage_id : pipeline->stages) {
+      const auto stage_root = est::unparenthesized(*expression.arena, stage_id);
+      const auto stage_node = expression.child(stage_root);
+      ParsedFunctionalStage stage;
+      stage.raw = stage_node.text();
+      stage.expression_node = stage_root;
+      stage.expression_arena = expression.arena;
+      stage.expression_source = expression.source;
+      std::string_view stage_name;
+      if (const auto* call = std::get_if<est::Call>(
+              &expression.arena->at(stage_root))) {
+        const auto callee_root = est::unparenthesized(
+            *expression.arena, call->callee);
+        const auto* callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_root));
+        if (!callee) return std::nullopt;
+        stage_name = callee->name;
+        stage.argument_nodes = call->arguments;
+        for (const auto argument : call->arguments)
+          stage.arguments.push_back(expression.child(argument).text());
+      } else {
+        const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(stage_root));
+        if (!identifier) return std::nullopt;
+        stage_name = identifier->name;
+      }
+      const auto kind = resolve_stage(stage_name);
+      if (!kind) return std::nullopt;
+      stage.kind = *kind;
+      parsed.stages.push_back(std::move(stage));
     }
+    return parsed;
+  }
+
+  std::optional<string> generated_functional_pipeline_type_from_node(
+      const ParsedFunctionalPipeline& pipeline,
+      const std::unordered_map<string,string>* types) const {
+    const EmitterExpr source{pipeline.expression_arena, pipeline.source_node,
+                             pipeline.expression_source};
+    auto source_type = generated_expr_type(source, types);
+    auto element = source_type
+        ? generated_functional_element_type(*source_type) : std::nullopt;
+    if (!element) return std::nullopt;
+    string current = *element;
+    string output = "vector[" + current + "]";
+    for (const auto& stage : pipeline.stages) {
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          if (stage.arguments.size() != 1) return std::nullopt;
+          auto result = generated_callable_result(stage.arguments.front(),
+              {current}, types, stage, 0);
+          if (!result) return std::nullopt;
+          current = *result;
+          output = "vector[" + current + "]";
+          break;
+        }
+        case FunctionalNodeKind::Filter:
+          output = "vector[" + current + "]";
+          break;
+        case FunctionalNodeKind::Reduce:
+          if (stage.argument_nodes.empty()) return std::nullopt;
+          output = generated_expr_type(EmitterExpr{pipeline.expression_arena,
+              stage.argument_nodes.front(), pipeline.expression_source}, types)
+              .value_or("");
+          break;
+        case FunctionalNodeKind::Sum:
+          output = current;
+          break;
+        case FunctionalNodeKind::Count:
+          output = "int";
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All:
+          output = "bool";
+          break;
+        case FunctionalNodeKind::Source:
+          return std::nullopt;
+      }
+    }
+    return output.empty() ? std::nullopt : std::optional<string>(output);
+  }
+
+  EmitterExpr checked_expression_ref(std::string source, est::ExprSlot slot,
+                                    std::uint32_t argument_index = 0) const {
+    const auto* handles = active_functional_expression_handles_;
+    const est::Handle* selected = nullptr;
+    if (handles) {
+      for (const auto& handle : *handles) {
+        if (handle.slot != slot || handle.argument_index != argument_index ||
+            handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        if (selected)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked emitter expression slot=" +
+              std::to_string(static_cast<unsigned>(slot)) + " index=" +
+              std::to_string(argument_index) + " line=" +
+              std::to_string(phase21_codegen_statement_
+                                 ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        selected = &handle;
+      }
+    }
+    if (selected) {
+      return EmitterExpr{
+          p_.expression_arenas[selected->arena_index].get(), selected->expr,
+          std::move(source)};
+    }
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked emitter expression slot=" +
+        std::to_string(static_cast<unsigned>(slot)) + " index=" +
+        std::to_string(argument_index) + " line=" +
+        std::to_string(phase21_codegen_statement_
+                           ? phase21_codegen_statement_->line : 0) +
+        " context=" + codegen_body_context_);
+  }
+
+  EmitterExpr checked_expression_ref(const vector<est::Handle>& handles,
+                                     std::string source,
+                                     est::ExprSlot slot) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : handles) {
+      if (handle.slot != slot ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked result expression");
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked result expression");
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
+  }
+
+  EmitterExpr checked_expression_ref(const Stmt& statement,
+      std::string source, est::ExprSlot slot,
+      std::uint32_t argument_index = 0) const {
+    // Direct call arguments are recursively checked beneath the statement's
+    // retained invocation node. Navigate that same tree so nested target/type
+    // facts are shared with codegen instead of selecting the separately parsed
+    // argument root, which has no checked children.
+    if (slot == est::ExprSlot::Argument &&
+        statement.kind == Stmt::Kind::Call) {
+      const est::Handle* invocation = nullptr;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.slot != est::ExprSlot::Expression ||
+            handle.argument_index != 0 ||
+            handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        if (invocation)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked invocation expression");
+        invocation = &handle;
+      }
+      if (invocation) {
+        const auto* arena = p_.expression_arenas[invocation->arena_index].get();
+        const auto root = est::unparenthesized(*arena, invocation->expr);
+        const auto* call = std::get_if<est::Call>(&arena->at(root));
+        if (call && argument_index < call->arguments.size()) {
+          auto argument = call->arguments[argument_index];
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &arena->at(argument)))
+            argument = named->value;
+          // The child retains source spans relative to the full invocation
+          // string, so keep that source buffer while navigating into the tree.
+          // Pipeline arguments also use this tree: their child call facts live
+          // on the invocation tree even though the functional plan is separate.
+          const EmitterExpr invocation_argument{arena, argument, source};
+          const auto argument_root = est::unparenthesized(*arena, argument);
+          const auto* argument_facts = checked_expression_facts(invocation_argument);
+          const bool call_root = std::holds_alternative<est::Call>(
+                  arena->at(argument_root)) ||
+              std::holds_alternative<est::Member>(arena->at(argument_root));
+          const bool checked_call_root = !call_root ||
+              (argument_facts && !argument_facts->resolved_target.empty());
+          if (std::holds_alternative<est::Pipeline>(arena->at(argument_root)) ||
+              (argument_facts && checked_call_root))
+            return EmitterExpr{arena, argument, statement.text};
+        }
+      }
+    }
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked statement expression slot=" +
+            std::to_string(static_cast<unsigned>(slot)) + " index=" +
+            std::to_string(argument_index) + " line=" +
+            std::to_string(statement.line) + " statement=" + statement.text);
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked statement expression slot=" +
+          std::to_string(static_cast<unsigned>(slot)) + " index=" +
+          std::to_string(argument_index) + " line=" +
+          std::to_string(statement.line) + " handles=" +
+          std::to_string(statement.expression_handles.size()) +
+          " arenas=" + std::to_string(p_.expression_arenas.size()) +
+          " first_handle=" + (statement.expression_handles.empty()
+              ? std::string("none")
+              : std::to_string(static_cast<unsigned>(
+                    statement.expression_handles.front().slot)) + ":" +
+                    std::to_string(statement.expression_handles.front().arena_index)) +
+          " statement=" + statement.text);
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
+  }
+
+  EmitterExpr checked_expression_ref(const Field& field, std::string source,
+                                     est::ExprSlot slot) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : field.expression_handles) {
+      if (handle.slot != slot || handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked field expression line=" +
+            std::to_string(field.line));
+      selected = &handle;
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked field expression line=" +
+          std::to_string(field.line));
+    return EmitterExpr{p_.expression_arenas[selected->arena_index].get(),
+                       selected->expr, std::move(source)};
+  }
+
+  const est::SemanticFacts* checked_expression_facts(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return nullptr;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    vector<string> contexts;
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    if (!codegen_body_context_.empty() &&
+        std::find(contexts.begin(), contexts.end(), codegen_body_context_) ==
+            contexts.end())
+      contexts.push_back(codegen_body_context_);
+    // Recovery clauses have a lowering subcontext so their locals and
+    // outcome state stay isolated, while the checker records source handler
+    // expression facts on the owning handler context.
+    if (starts_with(codegen_body_context_, "handler:")) {
+      const auto recovery = codegen_body_context_.find(":on_fail:");
+      if (recovery != string::npos) {
+        const string owner = codegen_body_context_.substr(0, recovery);
+        if (std::find(contexts.begin(), contexts.end(), owner) == contexts.end())
+          contexts.push_back(owner);
+      }
+    }
+    // Imported checked bodies are projected with their generic function
+    // context before the consumer closes a concrete specialization. Preserve
+    // those checked targets as a fallback when no per-specialization fact was
+    // exported; generated_expr_type still rejects open types below.
+    const auto specialization_open = codegen_body_context_.find('<');
+    if (specialization_open != string::npos) {
+      const string generic_context =
+          codegen_body_context_.substr(0, specialization_open);
+      if (std::find(contexts.begin(), contexts.end(), generic_context) ==
+          contexts.end())
+        contexts.push_back(generic_context);
+    }
+    if (phase21_codegen_statement_ &&
+        !phase21_codegen_statement_->source_file.empty()) {
+      const string source_context = "source:" +
+          phase21_codegen_statement_->source_file + ":" +
+          std::to_string(phase21_codegen_statement_->line);
+      if (std::find(contexts.begin(), contexts.end(), source_context) ==
+          contexts.end()) contexts.push_back(source_context);
+    }
+    vector<string> call_edge_contexts;
+    const int expression_line = static_cast<int>(
+        expression.arena->span(root).line);
+    for (const auto& edge : p_.semantic_call_edges) {
+      if (edge.line != expression_line) continue;
+      if (std::find(call_edge_contexts.begin(), call_edge_contexts.end(),
+                    edge.source) == call_edge_contexts.end())
+        call_edge_contexts.push_back(edge.source);
+    }
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      if (const auto* facts = expression.arena->facts(expression.id, context))
+        return facts;
+      if (root != expression.id)
+        if (const auto* facts = expression.arena->facts(root, context))
+          return facts;
+    }
+    const est::SemanticFacts* selected = nullptr;
+    for (const auto& context : call_edge_contexts) {
+      const est::SemanticFacts* facts = expression.arena->facts(
+          expression.id, context);
+      if (!facts && root != expression.id)
+        facts = expression.arena->facts(root, context);
+      if (!facts || facts->resolved_target.empty()) continue;
+      if (selected && selected->resolved_target != facts->resolved_target)
+        return nullptr;
+      selected = facts;
+    }
+    if (selected) return selected;
+    return nullptr;
+  }
+
+  std::optional<string> checked_statement_call_target(
+      const EmitterExpr& expression) const {
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!statement || !expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    bool is_statement_root = false;
+    for (const auto& handle : statement->expression_handles) {
+      if (handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index]) continue;
+      if (p_.expression_arenas[handle.arena_index].get() == expression.arena &&
+          est::unparenthesized(*expression.arena, handle.expr) == root) {
+        is_statement_root = true;
+        break;
+      }
+    }
+    if (!is_statement_root) return std::nullopt;
+    vector<string> contexts;
+    if (!codegen_body_context_.empty())
+      contexts.push_back(codegen_body_context_);
+    if (!codegen_active_specialization_key_.empty()) {
+      const string specialization =
+          "specialization:" + codegen_active_specialization_key_;
+      if (std::find(contexts.begin(), contexts.end(), specialization) ==
+          contexts.end()) contexts.push_back(specialization);
+    }
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      const auto target = statement->checked_call_targets_by_context.find(context);
+      if (target != statement->checked_call_targets_by_context.end() &&
+          !target->second.empty()) return target->second;
+    }
+    return std::nullopt;
+  }
+
+  const Method* checked_method_target(
+      const EmitterExpr& expression,
+      const std::unordered_map<string,string>* types = nullptr) const {
+    const auto* facts = checked_expression_facts(expression);
+    string target = facts ? facts->resolved_target : string();
+    string member_name;
+    std::optional<string> checked_receiver_type;
+    std::optional<string> checked_receiver_binding;
+    const auto expression_root = expression.arena
+        ? est::unparenthesized(*expression.arena, expression.id) : 0;
+    if (expression.arena) {
+      const auto* call = std::get_if<est::Call>(
+          &expression.arena->at(expression_root));
+      if (call) {
+        const auto callee_root = est::unparenthesized(
+            *expression.arena, call->callee);
+        if (const auto* member = std::get_if<est::Member>(
+                &expression.arena->at(callee_root))) {
+          member_name = member->name;
+          if (target.empty())
+            if (const auto* callee_facts = checked_expression_facts(
+                    expression.child(call->callee)))
+              target = callee_facts->resolved_target;
+        }
+      } else if (const auto* member = std::get_if<est::Member>(
+                     &expression.arena->at(expression_root))) {
+        member_name = member->name;
+      }
+      if (target.empty()) {
+        const auto targets = checked_call_edge_targets(codegen_body_context_,
+            static_cast<int>(expression.arena->span(expression_root).line));
+        if (targets.size() == 1) target = targets.front();
+      }
+    }
+    auto method_target_for_callable = [&](std::string_view selected) {
+      const auto callable = CallableId::parse(selected);
+      if (!callable || callable->kind != "method") return string();
+      for (const auto& object : objects_) {
+        if (!p_.type_context) break;
+        const auto declaration = p_.type_context->find(object.second->name);
+        if (declaration && declaration->id == callable->module_id)
+          return "method:" + object.second->name + "." +
+              callable->declaration_name;
+      }
+      return string();
+    };
+    if ((target.empty() || starts_with(target, "parameter:") ||
+         starts_with(target, "trait-method:")) && !member_name.empty() &&
+        !codegen_active_specialization_key_.empty()) {
+      std::set<string> selected_ids;
+      if (expression.arena) {
+        const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(expression_root));
+        if (call) {
+          const auto callee_root = est::unparenthesized(
+              *expression.arena, call->callee);
+          if (const auto* member = std::get_if<est::Member>(
+                  &expression.arena->at(callee_root))) {
+            const auto receiver = expression.child(member->base);
+            if (auto receiver_type = generated_expr_type(receiver, types))
+              checked_receiver_type = canonical_type_name(*receiver_type);
+            const auto receiver_root = est::unparenthesized(
+                *receiver.arena, receiver.id);
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &receiver.arena->at(receiver_root)))
+              checked_receiver_binding = identifier->name;
+          }
+        }
+      }
+      for (const auto& function_entry : functions_)
+        for (const auto& specialization : function_entry.second->specializations) {
+          if (specialization.stable_type_key !=
+              codegen_active_specialization_key_) continue;
+          for (const auto& requirement : specialization.member_requirements) {
+            if (requirement.member_name != member_name ||
+                (!checked_receiver_binding && checked_receiver_type &&
+                 requirement.receiver &&
+                 canonical_type_name(requirement.receiver) !=
+                     *checked_receiver_type) ||
+                !requirement.selected_callable_id) continue;
+            bool subject_matches = !checked_receiver_binding ||
+                requirement.subject == *checked_receiver_binding;
+            if (checked_receiver_binding && requirement.subject.empty()) {
+              for (size_t ordinal = 0;
+                   ordinal < function_entry.second->constraints.size();
+                   ++ordinal) {
+                const auto& constraint =
+                    function_entry.second->constraints[ordinal];
+                if (constraint.kind != ConstraintKind::Method ||
+                    constraint.subject != *checked_receiver_binding ||
+                    constraint.detail != member_name) continue;
+                const string base = function_entry.second->semantic_callable_id +
+                    ":member:" + std::to_string(ordinal);
+                subject_matches = requirement.requirement_id == base ||
+                    starts_with(requirement.requirement_id, base + ":call-v1:") ||
+                    requirement.parent_requirement_id ==
+                        std::optional<string>(base);
+                if (subject_matches) break;
+              }
+            }
+            if (subject_matches)
+              selected_ids.insert(*requirement.selected_callable_id);
+          }
+        }
+      if (selected_ids.size() == 1) {
+        const auto& selected = *selected_ids.begin();
+        const string mapped = method_target_for_callable(selected);
+        if (!mapped.empty()) target = mapped;
+      }
+    }
+    const string requirement_prefix(checked_ir::kMemberRequirementPrefix);
+    if (starts_with(target, requirement_prefix)) {
+      const string requirement_id = target.substr(requirement_prefix.size());
+      bool found_requirement = false;
+      for (const auto& function_entry : functions_)
+        for (const auto& specialization : function_entry.second->specializations) {
+          if (specialization.stable_type_key !=
+              codegen_active_specialization_key_) continue;
+          for (const auto& requirement : specialization.member_requirements) {
+            if ((requirement.requirement_id != requirement_id &&
+                 !starts_with(requirement.requirement_id,
+                     requirement_id + ":call-v1:")) ||
+                !requirement.selected_callable_id) continue;
+            found_requirement = true;
+            target = method_target_for_callable(
+                *requirement.selected_callable_id);
+          }
+        }
+      if (!found_requirement || !starts_with(target, "method:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked member requirement target");
+    }
+    if (!starts_with(target, "method:"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked bound-method target line=" +
+          std::to_string(expression.arena
+              ? expression.arena->span(expression.id).line : 0) +
+          " context=" + codegen_body_context_ + " target=" + target +
+          " member=" + member_name + " receiver_type=" +
+          checked_receiver_type.value_or("<missing>") +
+          " specialization=" + codegen_active_specialization_key_);
+    return method_for_checked_target(target);
+  }
+
+  const Method* method_for_checked_target(std::string_view target) const {
+    if (target.rfind("method:", 0) != 0)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked method target");
+    const string selected(target.substr(7));
+    const auto separator = selected.rfind('.');
+    if (separator == string::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT malformed checked bound-method target");
+    const string owner = selected.substr(0, separator);
+    const string name = selected.substr(separator + 1);
+    const auto object = objects_.find(owner);
+    if (object == objects_.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method owner is unavailable");
+    const auto method = std::find_if(object->second->methods.begin(),
+        object->second->methods.end(), [&](const Method& candidate) {
+          return candidate.name == name;
+        });
+    if (method == object->second->methods.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked bound-method declaration is unavailable");
+    return &*method;
   }
 
   std::optional<string> generated_functional_pipeline_type(
@@ -2005,7 +3242,7 @@ class Generator {
         case FunctionalNodeKind::Map: {
           if (stage.arguments.size() != 1) return std::nullopt;
           auto result = generated_callable_result(stage.arguments.front(),
-                                                  {current}, types);
+              {current}, types, stage, 0);
           if (!result) return std::nullopt;
           current = *result;
           output = "vector[" + current + "]";
@@ -2039,76 +3276,36 @@ class Generator {
       const string& expression,
       const std::unordered_map<string,string>* types) const {
 #ifdef MOSS_TEST_BUILD
-    if (est::test_coverage_counters_enabled()) {
-      auto record_type_fact_coverage = [&] {
-#ifdef MOSS_TEST_BUILD
-        est::record_expression_text_lookup();
+    if (est::test_coverage_counters_enabled()) ++string_type_queries_;
 #endif
-        const auto fingerprint = est::fingerprint(expression);
-        const vector<est::Handle>* handles =
-            active_functional_expression_handles_;
-        const est::Arena* arena = nullptr;
-        est::ExprId root = 0;
-        if (handles) {
-          for (const auto& handle : *handles) {
-            if (handle.source_fingerprint != fingerprint ||
-                handle.arena_index >= p_.expression_arenas.size() ||
-                !p_.expression_arenas[handle.arena_index]) continue;
-            const auto* candidate = p_.expression_arenas[handle.arena_index].get();
-            const auto span = candidate->span(handle.expr);
-            if (span.source_begin != 0 || span.source_end != expression.size())
-              continue;
-            arena = candidate;
-            root = handle.expr;
-            break;
-          }
-        }
-        est::Arena temporary;
-        if (!arena) {
-          try {
-            root = est::parse_expression(temporary, expression);
-            arena = &temporary;
-          } catch (const std::invalid_argument&) {
-            est::record_generated_type_fact_coverage("unparsed", false);
-            return;
-          }
-        }
-        std::string checker_context;
-        if (!codegen_active_specialization_key_.empty())
-          checker_context = "specialization:" + codegen_active_specialization_key_;
-        else
-          checker_context = codegen_body_context_;
-        const auto* facts = arena->facts(root, checker_context);
-        const bool present = facts && facts->type;
-        const auto& node = arena->at(root);
-        const char* kind = std::visit([](const auto& value) -> const char* {
-          using T = std::decay_t<decltype(value)>;
-          if constexpr (std::is_same_v<T, est::Literal>) return "literal";
-          else if constexpr (std::is_same_v<T, est::Identifier>) return "identifier";
-          else if constexpr (std::is_same_v<T, est::Unary>) return "unary";
-          else if constexpr (std::is_same_v<T, est::Binary>) return "binary";
-          else if constexpr (std::is_same_v<T, est::Call>) return "call";
-          else if constexpr (std::is_same_v<T, est::Member>) return "member";
-          else if constexpr (std::is_same_v<T, est::Index>) return "index";
-          else if constexpr (std::is_same_v<T, est::Parenthesized>) return "parenthesized";
-          else if constexpr (std::is_same_v<T, est::Message>) return "message";
-          else if constexpr (std::is_same_v<T, est::NamedArgument>) return "named_argument";
-          else if constexpr (std::is_same_v<T, est::Placeholder>) return "placeholder";
-          else if constexpr (std::is_same_v<T, est::Collection>) return "collection";
-          else if constexpr (std::is_same_v<T, est::Tuple>) return "tuple";
-          else if constexpr (std::is_same_v<T, est::Constructor>) return "constructor";
-          else if constexpr (std::is_same_v<T, est::Pipeline>) return "pipeline";
-          else return "missing";
-        }, node);
-        est::record_generated_type_fact_coverage(kind, present);
-      };
-      try {
-        record_type_fact_coverage();
-      } catch (...) {
-        // Test-only coverage accounting must not change emission behavior.
-      }
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) {
+      // A text-only type query has no node identity to inspect. Record it as
+      // unavailable rather than reparsing or consulting a text-keyed handle
+      // cache solely for test instrumentation.
+      est::record_generated_type_fact_coverage("text-query", false);
     }
 #endif
+    // Backend-created temporary bindings and simple local-name queries already
+    // have their type in the lexical environment. Resolve that name directly;
+    // do not rebuild an expression tree just to rediscover the same binding.
+    if (types) {
+      const auto local = types->find(string(expression));
+      if (local != types->end() && !local->second.empty() &&
+          !contains_internal_placeholder(local->second))
+        return canonical_type_name(local->second);
+    }
+    // Preserve the old primitive classification without routing these
+    // synthetic backend literals through the Moss expression parser.
+    if (expression == "true" || expression == "false") return string("bool");
+    if (expression == "None") return string("_none");
+    if (!expression.empty() && expression.front() == '"' &&
+        expression.back() == '"') return string("string");
+    if (!expression.empty() && expression.front() == '\'' &&
+        expression.back() == '\'') return string("char");
+    if (auto number = decode_numeric_literal_expression(expression))
+      return number->kind == NumericLiteral::Kind::Int
+          ? std::optional<string>("int") : std::optional<string>("float");
     string original = tree_strip_expression_grouping(expression);
     {
       string callee;
@@ -2143,7 +3340,9 @@ class Generator {
     }
     if (auto pipeline = generated_functional_pipeline_type(original, types))
       return pipeline;
-    string value = tree_strip_expression_grouping(tree_normalize_pipeline(std::move(original)));
+    // The checked functional-pipeline query above handles source pipelines.
+    // Do not normalize text into a second call-shaped expression here.
+    string value = std::move(original);
     {
       string enum_name, case_name;
       vector<string> fields;
@@ -2237,14 +3436,30 @@ class Generator {
         if (auto result = builtin_operation_result(concrete_receiver, method_name,
                                                     method_args.size()))
           return result;
-        vector<string> argument_types;
-        for (const auto& argument : method_args)
-          argument_types.push_back(nominalized_generated_argument_type(
-              argument, generated_expr_type(argument, types).value_or("")));
-        auto match = resolve_object_method(objects_, *receiver_type, method_name,
-                                           argument_types, false, nullptr);
-        if (match && match->return_type)
-          return canonical_type_name(*match->return_type);
+        const int call_line = phase21_codegen_statement_
+            ? phase21_codegen_statement_->line : 0;
+        const auto checked_methods = checked_method_targets(method_name,
+                                                              call_line);
+        std::optional<string> common_return_type;
+        bool common_return_type_agrees = !checked_methods.empty();
+        for (const Method* method : checked_methods) {
+          if (!method->return_type) {
+            common_return_type_agrees = false;
+            break;
+          }
+          const string candidate = canonical_type_name(*method->return_type);
+          if (!common_return_type) common_return_type = candidate;
+          else if (*common_return_type != candidate) {
+            common_return_type_agrees = false;
+            break;
+          }
+        }
+        if (common_return_type_agrees && common_return_type)
+          return *common_return_type;
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing or ambiguous checked member-call "
+            "target for generated type method=" + method_name + " line=" +
+            std::to_string(call_line) + " context=" + codegen_body_context_);
       }
     }
 
@@ -2391,6 +3606,474 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<string> generated_expr_type(
+      const EmitterExpr& expression,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const est::Node& node = expression.arena->at(root);
+    const auto* facts = checked_expression_facts(expression);
+    if (!facts && root != expression.id) {
+      auto root_expression = expression.child(root);
+      facts = checked_expression_facts(root_expression);
+    }
+    const bool has_fact = facts && facts->type;
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) {
+      const est::Node& observed_node = expression.arena->at(expression.id);
+      const char* kind = std::holds_alternative<est::Identifier>(observed_node)
+          ? "identifier"
+          : std::holds_alternative<est::Literal>(observed_node) ? "literal"
+          : std::holds_alternative<est::Call>(observed_node) ? "call"
+          : std::holds_alternative<est::Member>(observed_node) ? "member"
+          : std::holds_alternative<est::Index>(observed_node) ? "index"
+          : std::holds_alternative<est::Binary>(observed_node) ? "binary"
+          : std::holds_alternative<est::Unary>(observed_node) ? "unary"
+          : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
+          : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
+          : std::holds_alternative<est::Collection>(observed_node) ? "collection"
+          : std::holds_alternative<est::Parenthesized>(observed_node)
+              ? "parenthesized"
+          : "other";
+      est::record_generated_type_fact_coverage(kind, has_fact);
+    }
+#endif
+    if (has_fact && facts->type->is_closed())
+      return canonical_type_name(facts->type);
+    const auto legacy_type = []() -> std::optional<string> {
+      return std::nullopt;
+    };
+    const auto type_of = [&](est::ExprId child) {
+      return generated_expr_type(expression.child(child), types);
+    };
+    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+      if (types) {
+        auto found = types->find(identifier->name);
+        if (found != types->end()) return canonical_type_name(found->second);
+      }
+      if (functions_.count(identifier->name))
+        return "callable:" + identifier->name;
+      return legacy_type();
+    }
+    if (std::holds_alternative<est::Placeholder>(node) && types) {
+      auto found = types->find("_");
+      if (found != types->end()) return canonical_type_name(found->second);
+    }
+    if (const auto* literal = std::get_if<est::Literal>(&node)) {
+      switch (literal->literal_class) {
+        case est::LiteralClass::Integer: return string("int");
+        case est::LiteralClass::Float: return string("float");
+        case est::LiteralClass::String: return string("string");
+        case est::LiteralClass::Character: return string("char");
+        case est::LiteralClass::Boolean: return string("bool");
+        case est::LiteralClass::None: return string("option[_]");
+      }
+    }
+    if (const auto* unary = std::get_if<est::Unary>(&node)) {
+      auto operand = type_of(unary->operand);
+      if (unary->op == "not") return string("bool");
+      if (unary->op == "~")
+        return operand && canonical_type_name(*operand) == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      if ((unary->op == "-" || unary->op == "+") && operand &&
+          (canonical_type_name(*operand) == "int" ||
+           canonical_type_name(*operand) == "float"))
+        return operand;
+      return legacy_type();
+    }
+    if (const auto* binary = std::get_if<est::Binary>(&node)) {
+      if (binary->op == "and" || binary->op == "or" ||
+          binary->op == "xor" || binary->op == "==" ||
+          binary->op == "!=" || binary->op == "<" ||
+          binary->op == ">" || binary->op == "<=" ||
+          binary->op == ">=")
+        return string("bool");
+      auto left = type_of(binary->left);
+      auto right = type_of(binary->right);
+      if (!left || !right) return legacy_type();
+      const string left_type = canonical_type_name(*left);
+      const string right_type = canonical_type_name(*right);
+      if (binary->op == "+" && left_type == "string" &&
+          right_type == "string") return string("string");
+      if (binary->op == "|" || binary->op == "^" ||
+          binary->op == "&" || binary->op == "<<" ||
+          binary->op == ">>")
+        return left_type == "int" && right_type == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      if ((binary->op == "+" || binary->op == "-" ||
+           binary->op == "*" || binary->op == "/" ||
+           binary->op == "%") &&
+          (left_type == "int" || left_type == "float") &&
+          (right_type == "int" || right_type == "float"))
+        return left_type == "float" || right_type == "float"
+            ? string("float") : string("int");
+      return legacy_type();
+    }
+    if (const auto* member = std::get_if<est::Member>(&node)) {
+      auto base = type_of(member->base);
+      if (base)
+        if (auto field = nominal_field_type(*base, member->name))
+          return canonical_type_name(*field);
+      return legacy_type();
+    }
+    if (const auto* index = std::get_if<est::Index>(&node)) {
+      auto base = type_of(index->base);
+      if (!base) return legacy_type();
+      const string concrete = canonical_type_name(*base);
+      if (concrete == "RangeBatch") return string("Range");
+      auto element = indexed_element(parsed_type(concrete));
+      return element ? element : legacy_type();
+    }
+    if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+      const auto type_id = est::unparenthesized(*expression.arena,
+                                                constructor->type);
+      if (const auto* identifier = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id))) {
+        if (identifier->name == "Map" || identifier->name == "Set" ||
+            identifier->name == "Queue") {
+          const string base = identifier->name == "Map" ? "map" :
+              identifier->name == "Set" ? "set" : "queue";
+          if (!constructor->type_arguments.empty()) {
+            vector<string> arguments;
+            for (const auto argument : constructor->type_arguments) {
+              const auto argument_id = est::unparenthesized(
+                  *expression.arena, argument);
+              if (const auto* name = std::get_if<est::Identifier>(
+                      &expression.arena->at(argument_id)))
+                arguments.push_back(canonical_type_name(name->name));
+              else
+                return legacy_type();
+            }
+            string rendered = base + "[";
+            for (size_t index = 0; index < arguments.size(); ++index) {
+              if (index) rendered += ",";
+              rendered += arguments[index];
+            }
+            return rendered + "]";
+          }
+          return base;
+        }
+        return identifier->name;
+      }
+      if (const auto* member = std::get_if<est::Member>(
+              &expression.arena->at(type_id))) {
+        const auto base_id = est::unparenthesized(*expression.arena,
+                                                   member->base);
+        if (const auto* base = std::get_if<est::Identifier>(
+                &expression.arena->at(base_id)))
+          return base->name;
+      }
+      return legacy_type();
+    }
+    if (const auto* call = std::get_if<est::Call>(&node)) {
+      const auto callee_id = est::unparenthesized(*expression.arena,
+                                                   call->callee);
+      const auto* callee = std::get_if<est::Identifier>(
+          &expression.arena->at(callee_id));
+      const auto* call_facts = checked_expression_facts(expression);
+      string target = call_facts ? call_facts->resolved_target : string();
+      if (!callee) {
+        const auto* member = std::get_if<est::Member>(
+            &expression.arena->at(callee_id));
+        if (!member) return legacy_type();
+        if (target.empty()) {
+          const auto targets = checked_call_edge_targets(codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+          if (targets.size() == 1) target = targets.front();
+        }
+        if (starts_with(target, "callable-v1:")) {
+          const auto* selected = find_function_by_callable_id(target);
+          if (selected && selected->return_type)
+            return canonical_type_name(*selected->return_type);
+        } else if (starts_with(target, "fn:")) {
+          const auto selected = functions_.find(target.substr(3));
+          if (selected != functions_.end() && selected->second->return_type)
+            return canonical_type_name(*selected->second->return_type);
+        }
+        if (!starts_with(target, "method:"))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target for generated type name=" +
+              member->name + " context=" + codegen_body_context_ +
+              " expr=" + expression.text() + " node=" +
+              std::to_string(root));
+        const auto separator = target.rfind('.');
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked member-call target");
+        const string owner = target.substr(7, separator - 7);
+        for (const auto& object : objects_) {
+          if (canonical_type_name(object.second->name) !=
+              canonical_type_name(owner)) continue;
+          const auto method = std::find_if(object.second->methods.begin(),
+              object.second->methods.end(), [&](const Method& item) {
+                return item.name == target.substr(separator + 1);
+              });
+          if (method != object.second->methods.end() && method->return_type)
+            return canonical_type_name(*method->return_type);
+        }
+        return legacy_type();
+      }
+      const Function* function = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function = find_function_by_callable_id(target);
+      else if (starts_with(target, "fn:")) {
+        auto found = functions_.find(target.substr(3));
+        if (found != functions_.end()) function = found->second;
+      }
+      vector<string> checked_edge_targets;
+      if (!function && callee) {
+        checked_edge_targets = checked_call_edge_targets(
+            codegen_body_context_,
+            static_cast<int>(expression.arena->span(root).line));
+        const string checked_name = "fn:" + callee->name;
+        if (std::find(checked_edge_targets.begin(), checked_edge_targets.end(),
+                      checked_name) != checked_edge_targets.end()) {
+          auto found = functions_.find(callee->name);
+          if (found != functions_.end()) function = found->second;
+        }
+      }
+      CheckedCallEdgeSpecialization checked_edge;
+      if (!function && callee) {
+        auto found = functions_.find(callee->name);
+        if (found != functions_.end() && found->second->static_dispatch) {
+          checked_edge = checked_call_edge_specialization(
+              p_, codegen_body_context_, found->second->name,
+              static_cast<int>(expression.arena->span(root).line),
+              codegen_nested_argument_occurrence_);
+          if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
+            function = found->second;
+        }
+      }
+      if (function && checked_edge.kind == CheckedCallEdgeSelectionKind::None &&
+          !function->specializations.empty())
+        checked_edge = checked_call_edge_specialization(
+            p_, codegen_body_context_, function->name,
+            static_cast<int>(expression.arena->span(root).line),
+            codegen_nested_argument_occurrence_);
+      if (!function) {
+        if (callee->name == "range") return string("range[int]");
+        if (callee->name == "Some" && call->arguments.size() == 1) {
+          auto value = type_of(call->arguments.front());
+          return value ? "option[" + *value + "]" : string("option[_]");
+        }
+        return legacy_type();
+      }
+      if (call_facts && !call_facts->specialization_result.empty()) {
+        auto specialization = std::find_if(function->specializations.begin(),
+            function->specializations.end(), [&](const auto& candidate) {
+              return candidate.stable_type_key ==
+                  call_facts->specialization_result;
+            });
+        if (specialization != function->specializations.end())
+          return specialization->return_type;
+      }
+      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Unique &&
+          checked_edge.unique)
+        return checked_edge.unique->return_type;
+      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
+        std::optional<string> common_result;
+        for (const auto* candidate : checked_edge.candidates) {
+          if (!candidate) continue;
+          const string result = canonical_type_name(candidate->return_type);
+          if (!common_result) common_result = result;
+          else if (*common_result != result) return legacy_type();
+        }
+        if (common_result) return common_result;
+      }
+      if (function->return_type &&
+          !contains_internal_placeholder(*function->return_type))
+        return canonical_type_name(*function->return_type);
+      return legacy_type();
+    }
+    if (std::holds_alternative<est::Pipeline>(node)) {
+      if (auto id = checked_functional_pipeline_id(expression))
+        if (const auto* plan = planned_functional_pipeline(*id);
+            plan && !plan->output_type.empty())
+          return canonical_type_name(plan->output_type);
+      const auto span = expression.arena->span(root);
+      const string context = codegen_body_context_;
+      const FunctionalPipeline* selected = nullptr;
+      for (const auto& pipeline : p_.functional_pipelines) {
+        if (pipeline.line != static_cast<int>(span.line) ||
+            pipeline.context != context) continue;
+        if (selected) return legacy_type();
+        selected = &pipeline;
+      }
+      if (selected && !selected->output_type.empty())
+        return canonical_type_name(selected->output_type);
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      if (auto parsed = functional_pipeline_from_node(expression, resolve_stage))
+        if (auto inferred = generated_functional_pipeline_type_from_node(
+                *parsed, types))
+          return inferred;
+    }
+    if (const auto* collection = std::get_if<est::Collection>(&node);
+        collection && collection->delimiter == '[' &&
+        !collection->elements.empty()) {
+      auto element = type_of(collection->elements.front());
+      if (element) return "vector[" + *element + "]";
+    }
+    return legacy_type();
+  }
+
+  std::optional<string> checked_callable_pipeline_expr(
+      const EmitterExpr& expression, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* pipeline = std::get_if<est::Pipeline>(
+        &expression.arena->at(root));
+    if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+    const bool call_target_fact_hooked =
+        moss_test_drop_fact("call-targets") ||
+        moss_test_perturb_fact("call-targets");
+    if (call_target_fact_hooked)
+      for (const auto stage_id : pipeline->stages) {
+        const auto stage_root = est::unparenthesized(*expression.arena,
+                                                      stage_id);
+        const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(stage_root));
+        if (!call) continue;
+        const auto callee_root = est::unparenthesized(*expression.arena,
+                                                       call->callee);
+        const auto* callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_root));
+        if (callee && functions_.count(callee->name))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline call target");
+      }
+    auto decline = [&](const char* reason) -> std::optional<string> {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_EST_COVERAGE_STATS"))
+        std::cerr << "MOSS_EST_CALLABLE_PIPELINE_DECLINE=" << reason << '\n';
+#else
+      (void)reason;
+#endif
+      return std::nullopt;
+    };
+    auto current_node = expression.child(pipeline->input);
+    auto current_type = generated_expr_type(current_node, types);
+    if (!current_type) return decline("input-type");
+    string rendered = expr(current_node, domain, locals, types);
+    for (const auto stage_id : pipeline->stages) {
+      const auto stage_root = est::unparenthesized(*expression.arena, stage_id);
+      const auto* call = std::get_if<est::Call>(
+          &expression.arena->at(stage_root));
+      const est::Identifier* callee = nullptr;
+      const std::vector<est::ExprId>* explicit_arguments = nullptr;
+      static const std::vector<est::ExprId> no_arguments;
+      if (call) {
+        const auto callee_id = est::unparenthesized(*expression.arena,
+                                                     call->callee);
+        callee = std::get_if<est::Identifier>(
+            &expression.arena->at(callee_id));
+        explicit_arguments = &call->arguments;
+      } else {
+        callee = std::get_if<est::Identifier>(
+            &expression.arena->at(stage_root));
+        explicit_arguments = &no_arguments;
+      }
+      if (!callee) return decline("callee-not-name");
+      const auto* call_facts = expression.arena->facts(
+          stage_root, !codegen_active_specialization_key_.empty()
+              ? "specialization:" + codegen_active_specialization_key_
+              : codegen_body_context_);
+      string target = call_facts ? call_facts->resolved_target : string();
+      if (target.empty()) {
+        const auto targets = checked_call_edge_targets(
+            codegen_body_context_,
+            static_cast<int>(expression.arena->span(stage_root).line));
+        const string expected = "fn:" + callee->name;
+        if (std::find(targets.begin(), targets.end(), expected) == targets.end())
+          return decline("checked-edge-target");
+        target = expected;
+      }
+      const Function* function = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function = find_function_by_callable_id(target);
+      else if (starts_with(target, "fn:")) {
+        auto found = functions_.find(target.substr(3));
+        if (found != functions_.end()) function = found->second;
+      }
+      if (!function || function->name != callee->name ||
+          !function->observable_effects.raise_set.empty() ||
+          phase21_external_module_for_symbol(function->name))
+        return decline("function-unsupported");
+      vector<string> argument_values{rendered};
+      vector<string> argument_types{*current_type};
+      if (is_object_view(current_node, domain, locals, types))
+        return decline("input-view");
+      for (const auto argument_id : *explicit_arguments) {
+        if (std::holds_alternative<est::NamedArgument>(
+                expression.arena->at(argument_id))) return decline("named-arg");
+        auto argument = expression.child(argument_id);
+        const auto argument_root = est::unparenthesized(
+            *argument.arena, argument.id);
+        if (!std::holds_alternative<est::Literal>(
+                argument.arena->at(argument_root)) &&
+            !std::holds_alternative<est::Identifier>(
+                argument.arena->at(argument_root)))
+          return decline("complex-explicit-arg");
+        auto type = generated_expr_type(argument, types);
+        if (!type) return decline("explicit-arg-type");
+        if (is_object_view(argument, domain, locals, types))
+          return decline("explicit-arg-view");
+        argument_values.push_back(expr(argument, domain, locals, types));
+        argument_types.push_back(*type);
+      }
+      if (argument_values.size() != function->params.size())
+        return decline("arity");
+      const FunctionSpecialization* specialization = nullptr;
+      if (function->static_dispatch) {
+        const auto selected = checked_call_edge_specialization(
+            p_, codegen_body_context_, function->name,
+            static_cast<int>(expression.arena->span(stage_root).line));
+        if (selected.test_fact_dropped || selected.test_fact_perturbed)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked pipeline specialization");
+        if (selected.kind != CheckedCallEdgeSelectionKind::Unique ||
+            !selected.unique) return decline("specialization-edge");
+        specialization = selected.unique;
+        if (specialization->parameter_types.size() != argument_values.size())
+          return decline("specialization-arity");
+        argument_types = specialization->parameter_types;
+      }
+      string emitted_name = specialization
+          ? specialization->generated_name : function->name;
+      if (emitted_name.empty()) return decline("empty-name");
+      std::ostringstream next;
+      next << rust_identifier(emitted_name) << "(";
+      for (size_t index = 0; index < argument_values.size(); ++index) {
+        if (index) next << ", ";
+        const Effect effect = function_effect(
+            *function, index, argument_types[index], specialization);
+        if (effect == Effect::Write) return decline("write-effect");
+        string value = argument_values[index];
+        if (effect != Effect::Consume &&
+            !copy_type(argument_types[index]) &&
+            !domains_.count(canonical_type_name(argument_types[index])))
+          value = "&(" + value + ")";
+        next << value;
+      }
+      next << ")";
+      const string result_type = specialization
+          ? specialization->return_type
+          : function->return_type.value_or("");
+      if (result_type.empty() || contains_internal_placeholder(result_type))
+        return decline("result-type");
+      rendered = next.str();
+      current_type = canonical_type_name(result_type);
+      current_node = {};
+    }
+    return rendered;
+  }
+
   static string generated_type_list(const vector<string>& types) {
     std::ostringstream out;
     for (size_t index = 0; index < types.size(); ++index) {
@@ -2416,8 +4099,16 @@ class Generator {
   string render_known_function_call(
       const Function& function, const string& name, const vector<string>& arguments,
       const Domain* domain, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
-    const auto* specialization = call_specialization(function, arguments, types);
+      const std::unordered_map<string,string>* types,
+      const vector<EmitterExpr>* argument_nodes = nullptr,
+      const EmitterExpr* call_node = nullptr) const {
+    const auto* specialization = call_specialization(
+        function, arguments, types, argument_nodes, call_node);
+    auto argument_type = [&](size_t index) {
+      return argument_nodes && index < argument_nodes->size()
+          ? generated_expr_type(argument_nodes->at(index), types)
+          : generated_expr_type(arguments.at(index), types);
+    };
     const auto external_module = function.static_dispatch ? std::nullopt :
         phase21_external_module_for_symbol(name);
     const bool cross_crate = external_module.has_value();
@@ -2438,9 +4129,16 @@ class Generator {
            write_index < arguments.size() && write_index < function.params.size();
            ++write_index) {
         if (function_effect(function, write_index,
-                generated_expr_type(arguments[write_index], types).value_or(""), specialization)
+                argument_type(write_index).value_or(""), specialization)
             != Effect::Write) continue;
-        string written = trim(arguments[write_index]);
+        const auto* written_identifier = argument_nodes &&
+                write_index < argument_nodes->size()
+            ? std::get_if<est::Identifier>(&argument_nodes->at(write_index).arena->at(
+                  est::unparenthesized(*argument_nodes->at(write_index).arena,
+                                       argument_nodes->at(write_index).id)))
+            : nullptr;
+        string written = written_identifier ? written_identifier->name
+                                             : trim(arguments[write_index]);
         bool writes_direct_field = !locals.count(written) &&
             std::any_of(domain->state.begin(), domain->state.end(),
                         [&](const Field& field) { return field.name == written; });
@@ -2448,32 +4146,48 @@ class Generator {
         for (size_t read_index = write_index + 1;
              read_index < arguments.size() && read_index < function.params.size();
              ++read_index) {
-          if (!is_pure_state_read_expression(arguments[read_index]))
+          if (argument_nodes && read_index < argument_nodes->size()
+                  ? !is_pure_state_read_expression(
+                        argument_nodes->at(read_index))
+                  : !is_pure_state_read_expression(arguments[read_index]))
             continue;
-          auto argument_type = generated_expr_type(arguments[read_index], types);
-          if (!argument_type || !copy_type(*argument_type))
+          auto checked_argument_type = argument_type(read_index);
+          if (!checked_argument_type || !copy_type(*checked_argument_type))
             continue;
           bool reads_sibling = false;
           for (const auto& field : domain->state) {
             if (field.name != written &&
-                tree_expression_mentions_identifier(arguments[read_index], field.name)) {
+                (argument_nodes && read_index < argument_nodes->size()
+                    ? tree_expression_mentions_identifier(
+                          argument_nodes->at(read_index), field.name)
+                    : tree_expression_mentions_identifier(
+                          arguments[read_index], field.name))) {
               reads_sibling = true;
               break;
             }
           }
           if (reads_sibling)
-            temporaries[read_index] = "__moss_call_argument_" +
-                std::to_string(call_argument_temp_++);
+            temporaries[read_index] = next_call_argument_name();
         }
       }
     }
 
     std::ostringstream call;
-    call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    const string emitted_name = argument_nodes &&
+            argument_nodes->size() == arguments.size()
+        ? viewed_function_name(function, *argument_nodes, domain, locals,
+                               types, call_node)
+        : viewed_function_name(name, arguments, domain, locals, types);
+    call << emitted_name << "(";
     auto nested_occurrence = [&](size_t index) {
       uint32_t occurrence = 0;
       for (size_t prior = 0; prior < index; ++prior)
-        if (tree_expressions_equal(arguments[prior], arguments[index])) ++occurrence;
+        if (argument_nodes && prior < argument_nodes->size() &&
+            index < argument_nodes->size()
+                ? tree_expressions_equal(argument_nodes->at(prior),
+                                         argument_nodes->at(index))
+                : tree_expressions_equal(arguments[prior], arguments[index]))
+          ++occurrence;
       return occurrence;
     };
     struct NestedArgumentScope {
@@ -2488,19 +4202,21 @@ class Generator {
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(
-          generated_expr_type(arguments[index], types).value_or(""));
+          argument_type(index).value_or(""));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
         string rendered = temporaries[index].empty()
             ? function_call_argument(function, index, arguments[index], domain,
-                                     locals, types, 0, specialization)
+                                     locals, types, 0, specialization,
+                                     argument_nodes && index < argument_nodes->size()
+                                         ? &argument_nodes->at(index) : nullptr)
             : temporaries[index];
         if (cross_crate && index < function.params.size() &&
             !standard_error_variants(
                 canonical_type_name(function.params[index].type)).empty()) {
           const auto abi = function_parameter_abi(function, index,
-              generated_expr_type(arguments[index], types).value_or(""),
+              argument_type(index).value_or(""),
               specialization);
           const string external_type = tooling_name("moss_" +
               *external_module) + "::" +
@@ -2528,10 +4244,9 @@ class Generator {
               !standard_error_variants(canonical_type_name(
                   function.params[index].type)).empty() &&
               function_parameter_abi(function, index,
-                  generated_expr_type(arguments[index], types).value_or(""),
+                  argument_type(index).value_or(""),
                   specialization).effect == Effect::Write)) {
-          const string staged = "__moss_call_argument_" +
-              std::to_string(call_argument_temp_++);
+          const string staged = next_call_argument_name();
           bridge_before << "let " << staged << " = " << rendered << "; ";
           rendered = staged;
         }
@@ -2581,7 +4296,10 @@ class Generator {
         NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                          nested_occurrence(index));
         lowered << "let " << temporaries[index] << " = "
-                << expr(arguments[index], domain, locals, types) << "; ";
+                << (argument_nodes && index < argument_nodes->size()
+                        ? expr(argument_nodes->at(index), domain, locals, types)
+                        : expr(arguments[index], domain, locals, types))
+                << "; ";
       }
     lowered << call.str() << " }";
     return lowered.str();
@@ -2626,6 +4344,180 @@ class Generator {
     return &*planned;
   }
 
+  std::optional<size_t> checked_functional_pipeline_id(
+      const EmitterExpr& expression) const {
+    if (!phase21_codegen_statement_ || !expression.arena)
+      return std::nullopt;
+    std::optional<std::uint32_t> arena_index;
+    for (std::uint32_t index = 0; index < p_.expression_arenas.size(); ++index)
+      if (p_.expression_arenas[index].get() == expression.arena) {
+        arena_index = index;
+        break;
+      }
+    if (!arena_index) return std::nullopt;
+    vector<string> contexts{codegen_body_context_};
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    contexts.push_back("");
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    std::optional<size_t> selected;
+    for (const auto& context : contexts) {
+      const auto found = phase21_codegen_statement_
+          ->functional_expression_plans_by_context.find(context);
+      if (found == phase21_codegen_statement_
+              ->functional_expression_plans_by_context.end()) continue;
+      for (const auto& plan : found->second) {
+        if (plan.arena_index != *arena_index ||
+            (plan.expression != expression.id && plan.expression != root))
+          continue;
+        if (selected && *selected != plan.pipeline_id)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline node");
+        selected = plan.pipeline_id;
+      }
+      if (selected) return selected;
+    }
+    return std::nullopt;
+  }
+
+  std::optional<EmitterExpr> checked_functional_pipeline_node(
+      size_t pipeline_id) const {
+    if (pipeline_id == 0) return std::nullopt;
+    vector<string> contexts{codegen_body_context_};
+    if (!codegen_active_specialization_key_.empty())
+      contexts.push_back("specialization:" +
+                         codegen_active_specialization_key_);
+    contexts.push_back("");
+    struct Candidate {
+      const Stmt* statement = nullptr;
+      const Stmt::FunctionalExpressionPlan* plan = nullptr;
+    };
+    std::optional<Candidate> selected;
+    const auto inspect = [&](const vector<Stmt>& statements) {
+      for (const auto& statement : statements) {
+        for (const auto& context : contexts) {
+          const auto found =
+              statement.functional_expression_plans_by_context.find(context);
+          if (found == statement.functional_expression_plans_by_context.end())
+            continue;
+          for (const auto& plan : found->second) {
+            if (plan.pipeline_id != pipeline_id) continue;
+            if (selected && (selected->statement != &statement ||
+                selected->plan->arena_index != plan.arena_index ||
+                selected->plan->expression != plan.expression))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked functional pipeline id");
+            selected = Candidate{&statement, &plan};
+          }
+          if (selected && selected->statement == &statement) break;
+        }
+      }
+    };
+    if (p_.main) inspect(p_.main->body);
+    for (const auto& function : p_.functions) inspect(function.body);
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods) inspect(method.body);
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers) {
+        inspect(handler.body);
+        for (const auto& arm : handler.failure_arms) inspect(arm.body);
+      }
+    for (const auto& test : p_.tests) inspect(test.body);
+    if (!selected || selected->plan->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[selected->plan->arena_index])
+      return std::nullopt;
+    const auto& statement = *selected->statement;
+    const auto& plan = *selected->plan;
+    string source;
+    switch (plan.slot) {
+      case est::ExprSlot::Expression: source = statement.text; break;
+      case est::ExprSlot::Argument:
+        if (plan.argument_index < statement.args.size())
+          source = statement.args[plan.argument_index];
+        break;
+      case est::ExprSlot::Initializer: case est::ExprSlot::RhsValue:
+      case est::ExprSlot::ReturnValue: case est::ExprSlot::Iterable:
+      case est::ExprSlot::Condition: case est::ExprSlot::Scrutinee:
+      case est::ExprSlot::RaisedValue: source = statement.b; break;
+      default: source = statement.b; break;
+    }
+    return EmitterExpr{p_.expression_arenas[plan.arena_index].get(),
+                       plan.expression, std::move(source)};
+  }
+
+  bool functional_pipeline_matches_plan(
+      const ParsedFunctionalPipeline& parsed,
+      const FunctionalPipeline& planned) const {
+    for (const auto& step : planned.semantic_steps)
+      for (const auto node_index : step.source_node_indices)
+        if (node_index == 0 || node_index > parsed.stages.size() ||
+            node_index >= planned.nodes.size() ||
+            parsed.stages[node_index - 1].kind != step.kind ||
+            planned.nodes[node_index].kind != step.kind)
+          return false;
+    return true;
+  }
+
+  std::optional<ParsedFunctionalPipeline> checked_functional_pipeline_from_tree(
+      const EmitterExpr& expression, const FunctionalPipeline& planned) const {
+    if (!expression.arena) return std::nullopt;
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    std::optional<ParsedFunctionalPipeline> selected;
+    std::set<est::ExprId> visited;
+    std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+      if (!visited.insert(id).second) return;
+      const auto root = est::unparenthesized(*expression.arena, id);
+      const auto& node = expression.arena->at(root);
+      if (std::holds_alternative<est::Pipeline>(node)) {
+        auto candidate = functional_pipeline_from_node(
+            EmitterExpr{expression.arena, root, expression.source},
+            resolve_stage);
+        if (candidate && functional_pipeline_matches_plan(*candidate, planned)) {
+          if (selected)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT ambiguous checked virtual pipeline node");
+          selected = std::move(candidate);
+        }
+      }
+      auto child = [&](est::ExprId nested) { visit(nested); };
+      if (const auto* unary = std::get_if<est::Unary>(&node)) child(unary->operand);
+      else if (const auto* binary = std::get_if<est::Binary>(&node)) {
+        child(binary->left); child(binary->right);
+      } else if (const auto* call = std::get_if<est::Call>(&node)) {
+        child(call->callee); for (const auto arg : call->arguments) child(arg);
+      } else if (const auto* member = std::get_if<est::Member>(&node))
+        child(member->base);
+      else if (const auto* index = std::get_if<est::Index>(&node)) {
+        child(index->base); child(index->index);
+      } else if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+        child(grouped->inner);
+      else if (const auto* message = std::get_if<est::Message>(&node)) {
+        child(message->target); for (const auto arg : message->arguments) child(arg);
+      } else if (const auto* named = std::get_if<est::NamedArgument>(&node))
+        child(named->value);
+      else if (const auto* collection = std::get_if<est::Collection>(&node))
+        for (const auto element : collection->elements) child(element);
+      else if (const auto* tuple = std::get_if<est::Tuple>(&node))
+        for (const auto element : tuple->elements) child(element);
+      else if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+        child(constructor->type);
+        for (const auto arg : constructor->type_arguments) child(arg);
+        for (const auto arg : constructor->arguments) child(arg);
+      } else if (const auto* pipeline = std::get_if<est::Pipeline>(&node)) {
+        child(pipeline->input);
+        for (const auto stage : pipeline->stages) child(stage);
+      }
+    };
+    visit(expression.id);
+    return selected;
+  }
+
   const FunctionalTraversalGroup* functional_traversal_group(
       size_t group_id) const {
     if (!group_id) return nullptr;
@@ -2646,6 +4538,9 @@ class Generator {
       const FunctionalPipeline& planned) {
     LoweredFunctionalPipeline lowered;
     lowered.source = parsed.source;
+    lowered.expression_arena = parsed.expression_arena;
+    lowered.source_node = parsed.source_node;
+    lowered.expression_source = parsed.expression_source;
     for (const auto& semantic_step : planned.semantic_steps) {
       if (semantic_step.kind == FunctionalNodeKind::Source ||
           semantic_step.source_node_indices.empty())
@@ -2664,7 +4559,10 @@ class Generator {
             planned.nodes[node_index].kind != semantic_step.kind)
           throw std::runtime_error(
               "internal error: functional semantic rewrite changed operator kind");
-        stage.operations.push_back(operation);
+        auto lowered_operation = operation;
+        lowered_operation.checked_output_type =
+            planned.nodes[node_index].output_type;
+        stage.operations.push_back(std::move(lowered_operation));
       }
       lowered.stages.push_back(std::move(stage));
     }
@@ -2681,15 +4579,59 @@ class Generator {
     return pipeline.stages.back().operations.front();
   }
 
+  std::optional<string> checked_functional_result_element(
+      const ParsedFunctionalStage& stage) const {
+    if (stage.checked_output_type.empty()) return std::nullopt;
+    return generated_functional_element_type(stage.checked_output_type);
+  }
+
+  std::optional<string> checked_functional_result_element(
+      const FunctionalPipeline& pipeline, size_t node_index) const {
+    if (node_index >= pipeline.nodes.size()) return std::nullopt;
+    return generated_functional_element_type(
+        pipeline.nodes[node_index].output_type);
+  }
+
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       bool propagate_raises = true,
-      bool checked_placeholder_result = false) const {
-    if (generated_expression_uses(callable, "_")) {
+      bool checked_placeholder_result = false,
+      const EmitterExpr* checked_callable = nullptr) const {
+    const bool has_checked_callable = checked_callable && checked_callable->arena;
+    const bool uses_placeholder = has_checked_callable
+        ? generated_expression_uses(*checked_callable, "_")
+        : generated_expression_uses(callable, "_");
+    if (uses_placeholder) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
+      if (has_checked_callable) {
+        std::unordered_map<string,string> callback_types = types
+            ? *types : std::unordered_map<string,string>{};
+        callback_types["_"] = arguments.front().type;
+        auto callback_locals = locals;
+        callback_locals.insert("_");
+        const auto previous = functional_identifier_replacements_;
+        functional_identifier_replacements_["_"] =
+            arguments.front().expression;
+        struct RestoreReplacements {
+          std::unordered_map<string, string>& target;
+          std::unordered_map<string, string> saved;
+          ~RestoreReplacements() { target = std::move(saved); }
+        } restore{functional_identifier_replacements_, previous};
+        if (checked_placeholder_result && !propagate_raises) {
+          Generator callback = *this;
+          callback.phase21_try_label_.clear();
+          callback.phase21_capture_handler_ = nullptr;
+          string rendered = callback.expr(*checked_callable, domain,
+              callback_locals, &callback_types);
+          return "(|| { let __moss_callback_value = " + rendered +
+              "; Ok::<_, __MossRaised>(__moss_callback_value) })()";
+        }
+        return expr(*checked_callable, domain, callback_locals,
+                    &callback_types);
+      }
       string replaced = replace_est_placeholders(
           callable, arguments.front().expression);
       std::unordered_map<string,string> callback_types = types
@@ -2715,21 +4657,29 @@ class Generator {
     }
 
     string bound_receiver, bound_method;
-    if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
-      vector<string> argument_types;
-      for (const auto& argument : arguments)
-        argument_types.push_back(argument.type);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, argument_types, false, nullptr)
-          : nullptr;
-      if (!method)
+    std::optional<EmitterExpr> bound_receiver_node;
+    if (has_checked_callable) {
+      const auto root = est::unparenthesized(*checked_callable->arena,
+                                              checked_callable->id);
+      if (const auto* member = std::get_if<est::Member>(
+              &checked_callable->arena->at(root))) {
+        bound_receiver_node = checked_callable->child(member->base);
+        bound_receiver = bound_receiver_node->text();
+        bound_method = member->name;
+      }
+    } else if (tree_parse_bound_method_callable(callable, bound_receiver,
+                                                bound_method)) {
+      bound_receiver_node = std::nullopt;
+    }
+    if (!bound_method.empty()) {
+      if (!checked_callable || !checked_callable->arena)
         throw std::runtime_error(
-            "missing statically resolved functional bound method '" +
-            trim(callable) + "'");
+            "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
+      const Method* method = checked_method_target(*checked_callable, types);
       std::ostringstream rendered;
-      rendered << expr(bound_receiver, domain, locals, types) << "."
+      rendered << (bound_receiver_node
+          ? expr(*bound_receiver_node, domain, locals, types)
+          : expr(bound_receiver, domain, locals, types)) << "."
                << bound_method << "(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
@@ -2817,6 +4767,26 @@ class Generator {
     return rendered.str();
   }
 
+  string render_functional_callable(
+      const ParsedFunctionalStage& stage, size_t callable_index,
+      const vector<FunctionalValue>& arguments, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      bool propagate_raises = true,
+      bool checked_placeholder_result = false) const {
+    if (callable_index >= stage.arguments.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional callable");
+    const auto checked_callable = functional_argument_node(stage,
+                                                           callable_index);
+    if (!checked_callable.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional callable node");
+    return render_functional_callable(stage.arguments[callable_index],
+        arguments, domain, locals, types, propagate_raises,
+        checked_placeholder_result, &checked_callable);
+  }
+
   static string functional_zero(const string& type) {
     return canonical_type_name(type) == "float" ? "0.0_f64" : "0_i64";
   }
@@ -2826,8 +4796,13 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
     switch (terminal.kind) {
-      case FunctionalNodeKind::Reduce:
-        return expr(terminal.arguments.front(), domain, locals, types);
+      case FunctionalNodeKind::Reduce: {
+        const auto initial = functional_argument_node(terminal, 0);
+        if (!initial.arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked reduce initializer node");
+        return expr(initial, domain, locals, types);
+      }
       case FunctionalNodeKind::Sum:
         return functional_zero(element_type);
       case FunctionalNodeKind::Count:
@@ -2866,14 +4841,21 @@ class Generator {
       const auto& consumer = group.consumers[index];
       const Stmt& statement = statements[statement_index + index];
       size_t exact_id = statement_functional_pipeline_id(statement, context, 0);
-      const auto result_binding = tree_identifier_name(statement.a);
-      if (exact_id != consumer.pipeline_id || !result_binding ||
-          *result_binding != consumer.result_binding)
+      if (exact_id != consumer.pipeline_id || statement.a.empty() ||
+          statement.a != consumer.result_binding)
         throw std::runtime_error(
             "internal error: stale shared functional traversal region");
       const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
-      auto parsed = functional_pipeline_from_est(
-          statement.b, &statement.expression_handles);
+      const auto checked_expression = checked_expression_ref(
+          statement, statement.b, est::ExprSlot::RhsValue);
+      const auto resolve_stage = [](std::string_view name)
+          -> std::optional<FunctionalNodeKind> {
+        for (const auto& operation : functional_operations())
+          if (name == operation.name) return operation.kind;
+        return std::nullopt;
+      };
+      auto parsed = functional_pipeline_from_node(checked_expression,
+                                                  resolve_stage);
       if (!plan || !parsed || parsed->stages.empty() ||
           !functional_terminal_kind(parsed->stages.back().kind))
         throw std::runtime_error(
@@ -2892,11 +4874,10 @@ class Generator {
       for (const auto& stage : lowered.stages) {
         if (stage.kind != FunctionalNodeKind::Map) continue;
         for (const auto& operation : stage.operations) {
-          auto result = generated_callable_result(
-              operation.arguments.front(), {element_type}, &types);
+          auto result = checked_functional_result_element(operation);
           if (!result)
             throw std::runtime_error(
-                "internal error: untyped shared functional map");
+                "MOSS_INTERNAL_INVARIANT missing checked shared map output type");
           element_type = *result;
         }
       }
@@ -2926,8 +4907,11 @@ class Generator {
         << ", semantic " << group.semantic_identity << "; provenance";
     for (const auto& origin : group.provenance) out << " " << origin;
     out << "\n";
+    const auto& first_pipeline = pipelines.front();
     out << inner << "let __moss_shared_source_" << group.transient_id
-        << " = &(" << expr(group.source_expression, domain, locals, &types)
+        << " = &(" << expr(EmitterExpr{first_pipeline.expression_arena,
+              first_pipeline.source_node, first_pipeline.expression_source},
+              domain, locals, &types)
         << ");\n";
 
     for (size_t index = 0; index < group.consumers.size(); ++index) {
@@ -3002,14 +4986,13 @@ class Generator {
                     std::to_string(++map_number);
                 out << statement_indent << "let " << next << " = "
                     << render_functional_callable(
-                           operation.arguments.front(), {current}, domain,
+                           operation, 0, {current}, domain,
                            locals, &types)
                     << ";\n";
-                auto mapped_type = generated_callable_result(
-                    operation.arguments.front(), {current.type}, &types);
+                auto mapped_type = checked_functional_result_element(operation);
                 if (!mapped_type)
                   throw std::runtime_error(
-                      "internal error: untyped shared functional map result");
+                      "MOSS_INTERNAL_INVARIANT missing checked shared map output type");
                 current = {next, *mapped_type, false};
               }
               break;
@@ -3021,8 +5004,8 @@ class Generator {
                 if (predicate) out << " && ";
                 out << "("
                     << render_functional_callable(
-                           stage.operations[predicate].arguments.front(),
-                           {current}, domain, locals, &types)
+                           stage.operations[predicate], 0, {current}, domain,
+                           locals, &types)
                     << ")";
               }
               out << ") { break " << label << "; }\n";
@@ -3031,10 +5014,11 @@ class Generator {
             case FunctionalNodeKind::Reduce: {
               const auto& operation = stage.operations.front();
               auto accumulator_type = generated_expr_type(
-                  operation.arguments.front(), &types).value_or(current.type);
+                  functional_argument_node(operation, 0),
+                  &types).value_or(current.type);
               out << statement_indent << result << " = "
                   << render_functional_callable(
-                         operation.arguments[1],
+                         operation, 1,
                          {{result, accumulator_type, false}, current},
                          domain, locals, &types)
                   << ";\n";
@@ -3057,7 +5041,7 @@ class Generator {
               string predicate = operation.arguments.empty()
                   ? current.expression
                   : render_functional_callable(
-                        operation.arguments.front(), {current}, domain,
+                        operation, 0, {current}, domain,
                         locals, &types);
               out << statement_indent << "if " << predicate << " { "
                   << result << " = true; }\n";
@@ -3068,7 +5052,7 @@ class Generator {
               string predicate = operation.arguments.empty()
                   ? current.expression
                   : render_functional_callable(
-                        operation.arguments.front(), {current}, domain,
+                        operation, 0, {current}, domain,
                         locals, &types);
               out << statement_indent << "if !(" << predicate << ") { "
                   << result << " = false; }\n";
@@ -3102,7 +5086,15 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
-    auto source_type = generated_expr_type(pipeline.source, types);
+    const std::optional<EmitterExpr> checked_source =
+        pipeline.expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  pipeline.expression_arena, pipeline.source_node,
+                  pipeline.expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(pipeline.source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
@@ -3120,7 +5112,12 @@ class Generator {
       out << "        // Moss functional origin|"
           << planned->nodes.front().semantic_identity << "\n";
     out << "        let __moss_pipeline_source = &("
-        << expr(pipeline.source, domain, locals, types) << ");\n";
+        << (checked_source ? expr(*checked_source, domain, locals, types)
+                           : expr(EmitterExpr{pipeline.expression_arena,
+                                 pipeline.source_node,
+                                 pipeline.expression_source},
+                                 domain, locals, types))
+        << ");\n";
 
     size_t stage_number = 0;
     for (size_t pipeline_stage = 0; pipeline_stage < pipeline.stages.size();
@@ -3144,16 +5141,29 @@ class Generator {
       FunctionalValue input{value, current_type, !item_copy};
       if (stage.kind == FunctionalNodeKind::Map) {
         string mapped = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage, 0, {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
-        auto result = generated_callable_result(stage.arguments.front(),
-                                                {current_type}, types);
+        std::optional<string> result = planned
+            ? checked_functional_result_element(*planned, pipeline_stage + 1)
+            : std::nullopt;
+        if (!result && stage.expression_arena &&
+            stage.expression_node != UINT32_MAX) {
+          auto stage_type = generated_expr_type(EmitterExpr{
+              stage.expression_arena, stage.expression_node,
+              stage.expression_source}, types);
+          if (stage_type)
+            result = generated_functional_element_type(*stage_type);
+        }
         if (!result)
-          throw std::runtime_error("internal error: untyped eager map result");
+          result = generated_callable_result(stage.arguments.front(),
+              {current_type}, types, stage, 0);
+        if (!result)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked eager map output type");
         current_type = *result;
       } else {
         string predicate = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage, 0, {input}, domain, locals, types);
         out << "            if " << predicate << " { " << output << ".push("
             << value << "); }\n";
       }
@@ -3179,7 +5189,8 @@ class Generator {
           << planned->nodes[pipeline.stages.size()].semantic_identity << "\n";
     if (terminal.kind == FunctionalNodeKind::Reduce)
       out << "        let mut " << accumulator << " = "
-          << expr(terminal.arguments.front(), domain, locals, types) << ";\n";
+          << expr(functional_argument_node(terminal, 0), domain, locals, types)
+          << ";\n";
     else if (terminal.kind == FunctionalNodeKind::Sum)
       out << "        let mut " << accumulator << " = "
           << functional_zero(current_type) << ";\n";
@@ -3199,11 +5210,12 @@ class Generator {
         << (item_copy ? "*" : "") << item_ref << ";\n";
     FunctionalValue input{value, current_type, !item_copy};
     if (terminal.kind == FunctionalNodeKind::Reduce) {
-      auto accumulator_type = generated_expr_type(terminal.arguments.front(), types)
+      auto accumulator_type = generated_expr_type(
+          functional_argument_node(terminal, 0), types)
           .value_or(current_type);
       out << "            " << accumulator << " = "
           << render_functional_callable(
-                 terminal.arguments[1],
+                 terminal, 1,
                  {{accumulator, accumulator_type, false}, input},
                  domain, locals, types)
           << ";\n";
@@ -3219,8 +5231,8 @@ class Generator {
     } else {
       string predicate = terminal.arguments.empty()
           ? value
-          : render_functional_callable(terminal.arguments.front(), {input},
-                                       domain, locals, types);
+          : render_functional_callable(terminal, 0, {input}, domain, locals,
+                                       types);
       if (terminal.kind == FunctionalNodeKind::Any)
         out << "            if " << predicate << " { " << accumulator
             << " = true; }\n";
@@ -3237,7 +5249,15 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
-    auto source_type = generated_expr_type(pipeline.source, types);
+    const std::optional<EmitterExpr> checked_source =
+        pipeline.expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  pipeline.expression_arena, pipeline.source_node,
+                  pipeline.expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(pipeline.source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
@@ -3247,8 +5267,7 @@ class Generator {
     for (const auto& stage : pipeline.stages) {
       if (stage.kind != FunctionalNodeKind::Map) continue;
       for (const auto& operation : stage.operations) {
-        auto result = generated_callable_result(
-            operation.arguments.front(), {final_element_type}, types);
+        auto result = checked_functional_result_element(operation);
         if (!result)
           throw std::runtime_error("internal error: untyped fused map result");
         final_element_type = *result;
@@ -3269,12 +5288,15 @@ class Generator {
     }
     out << "\n"
         << "        let __moss_pipeline_source = &("
-        << expr(pipeline.source, domain, locals, types) << ");\n";
+        << expr(EmitterExpr{pipeline.expression_arena, pipeline.source_node,
+                            pipeline.expression_source},
+                domain, locals, types) << ");\n";
     if (!terminal)
       out << "        let mut __moss_result = std::vec::Vec::new();\n";
     else if (last_kind == FunctionalNodeKind::Reduce)
       out << "        let mut __moss_result = "
-          << expr(last->arguments.front(), domain, locals, types) << ";\n";
+          << expr(functional_argument_node(*last, 0), domain, locals, types)
+          << ";\n";
     else if (last_kind == FunctionalNodeKind::Sum)
       out << "        let mut __moss_result = "
           << functional_zero(final_element_type) << ";\n";
@@ -3297,14 +5319,13 @@ class Generator {
             string next = "__moss_value_" + std::to_string(++map_number);
             out << "            let " << next << " = "
                 << render_functional_callable(
-                       operation.arguments.front(), {current}, domain,
+                       operation, 0, {current}, domain,
                        locals, types)
                 << ";\n";
-            auto result = generated_callable_result(
-                operation.arguments.front(), {current.type}, types);
+            auto result = checked_functional_result_element(operation);
             if (!result)
               throw std::runtime_error(
-                  "internal error: untyped fused map result");
+                  "MOSS_INTERNAL_INVARIANT missing checked fused map output type");
             current = {next, *result, false};
           }
           break;
@@ -3316,8 +5337,8 @@ class Generator {
             if (predicate) out << " && ";
             out << "("
                 << render_functional_callable(
-                       stage.operations[predicate].arguments.front(),
-                       {current}, domain, locals, types)
+                       stage.operations[predicate], 0, {current}, domain,
+                       locals, types)
                 << ")";
           }
           out << ") { continue; }\n";
@@ -3326,10 +5347,11 @@ class Generator {
         case FunctionalNodeKind::Reduce: {
           const auto& operation = stage.operations.front();
           auto accumulator_type = generated_expr_type(
-              operation.arguments.front(), types).value_or(current.type);
+              functional_argument_node(operation, 0),
+              types).value_or(current.type);
           out << "            __moss_result = "
               << render_functional_callable(
-                     operation.arguments[1],
+                     operation, 1,
                      {{"__moss_result", accumulator_type, false}, current},
                      domain, locals, types)
               << ";\n";
@@ -3350,7 +5372,7 @@ class Generator {
           string predicate = operation.arguments.empty()
               ? current.expression
               : render_functional_callable(
-                    operation.arguments.front(), {current}, domain, locals,
+                    operation, 0, {current}, domain, locals,
                     types);
           out << "            if " << predicate
               << " { __moss_result = true;";
@@ -3363,7 +5385,7 @@ class Generator {
           string predicate = operation.arguments.empty()
               ? current.expression
               : render_functional_callable(
-                    operation.arguments.front(), {current}, domain, locals,
+                    operation, 0, {current}, domain, locals,
                     types);
           out << "            if !(" << predicate
               << ") { __moss_result = false;";
@@ -3382,16 +5404,39 @@ class Generator {
   }
 
   std::optional<string> functional_expr(
-      const string& expression, const Domain* domain,
+      const ParsedFunctionalPipeline& checked_pipeline, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       size_t functional_pipeline_id) const {
-    auto pipeline = functional_pipeline_from_est(expression);
-    if (!pipeline) return std::nullopt;
+    if ((moss_test_drop_fact("call-targets") ||
+         moss_test_perturb_fact("call-targets")) &&
+        std::any_of(checked_pipeline.stages.begin(),
+            checked_pipeline.stages.end(), [&](const auto& stage) {
+              if (!stage.expression_arena) return false;
+              return std::any_of(stage.argument_nodes.begin(),
+                  stage.argument_nodes.end(), [&](est::ExprId argument) {
+                    const auto root = est::unparenthesized(
+                        *stage.expression_arena, argument);
+                    const auto* identifier = std::get_if<est::Identifier>(
+                        &stage.expression_arena->at(root));
+                    return identifier && functions_.count(identifier->name);
+                  });
+            }))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional call target");
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
-            *pipeline, domain, locals, types, functional_pipeline_id))
+            checked_pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
-    auto source_type = generated_expr_type(pipeline->source, types);
+    const std::optional<EmitterExpr> checked_source =
+        checked_pipeline.expression_arena
+            ? std::optional<EmitterExpr>(EmitterExpr{
+                  checked_pipeline.expression_arena,
+                  checked_pipeline.source_node,
+                  checked_pipeline.expression_source})
+            : std::nullopt;
+    auto source_type = checked_source
+        ? generated_expr_type(*checked_source, types)
+        : generated_expr_type(checked_pipeline.source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       return std::nullopt;
     const FunctionalPipeline* planned =
@@ -3401,15 +5446,18 @@ class Generator {
     // baseline eager lowering rather than requiring an unrelated outer
     // expression to masquerade as a pipeline statement.
     if (!planned)
-      return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+      return gen_eager_functional_pipeline(checked_pipeline, domain, locals, types,
                                            nullptr);
     LoweredFunctionalPipeline lowered =
-        lower_functional_semantic_plan(*pipeline, *planned);
+        lower_functional_semantic_plan(checked_pipeline, *planned);
     if (planned->virtual_upstream_pipeline_id) {
       const FunctionalPipeline* upstream = planned_functional_pipeline(
           planned->virtual_upstream_pipeline_id);
-      auto upstream_parsed = upstream
-          ? functional_pipeline_from_est(upstream->expression) : std::nullopt;
+      auto upstream_node = checked_functional_pipeline_node(
+          planned->virtual_upstream_pipeline_id);
+      auto upstream_parsed = upstream_node && upstream
+          ? checked_functional_pipeline_from_tree(*upstream_node, *upstream)
+          : std::nullopt;
       if (!upstream_parsed || upstream_parsed->stages.empty() ||
           functional_terminal_kind(upstream_parsed->stages.back().kind))
         throw std::runtime_error(
@@ -3420,6 +5468,9 @@ class Generator {
           std::move(upstream_lowered.stages);
       stages.insert(stages.end(), lowered.stages.begin(), lowered.stages.end());
       lowered.source = upstream_parsed->source;
+      lowered.expression_arena = upstream_parsed->expression_arena;
+      lowered.source_node = upstream_parsed->source_node;
+      lowered.expression_source = upstream_parsed->expression_source;
       lowered.stages = std::move(stages);
     }
     if (planned->count_uses_exact_length) {
@@ -3437,33 +5488,1939 @@ class Generator {
       else
         out << "\n"
             << "        let __moss_pipeline_source = &("
-            << expr(lowered.source, domain, locals, types) << ");\n"
+            << expr(EmitterExpr{lowered.expression_arena,
+                                lowered.source_node,
+                                lowered.expression_source},
+                    domain, locals, types) << ");\n"
             << "        __moss_pipeline_source.len() as i64\n    }";
       return out.str();
     }
     if (planned && planned->fused)
       return gen_fused_functional_pipeline(lowered, domain, locals, types,
                                            planned);
-    return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+    return gen_eager_functional_pipeline(checked_pipeline, domain, locals, types,
                                          planned);
+  }
+
+  string expr(const EmitterExpr& expression, const Domain* d,
+              const std::set<string>& locals,
+              const std::unordered_map<string,string>* types = nullptr,
+              size_t functional_pipeline_id = 0,
+              const vector<size_t>* message_argument_plans = nullptr,
+              std::string_view checked_target_override = {}) const {
+    if (!expression.arena)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
+    if (auto place = view_place(expression, d, locals, types))
+      return *place;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* checked_facts = checked_expression_facts(expression);
+    const string checked_target = checked_facts
+        ? checked_facts->resolved_target : string();
+    const string enum_case_prefix = "nominal-enum-variant-v1:";
+    if (starts_with(checked_target, enum_case_prefix)) {
+      const std::vector<est::ExprId>* enum_arguments = nullptr;
+      if (const auto* constructor = std::get_if<est::Constructor>(
+              &expression.arena->at(root)))
+        enum_arguments = &constructor->arguments;
+      else if (const auto* call = std::get_if<est::Call>(
+                   &expression.arena->at(root)))
+        enum_arguments = &call->arguments;
+      if (enum_arguments) {
+        const auto separator = checked_target.rfind(":case:");
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked enum constructor target");
+        const string declaration_id = checked_target.substr(
+            enum_case_prefix.size(), separator - enum_case_prefix.size());
+        const string case_name = checked_target.substr(separator + 6);
+        const EnumType* selected_enum = nullptr;
+        for (const auto& candidate : enums_) {
+          if (!p_.type_context) break;
+          const auto declaration = p_.type_context->find(candidate.second->name);
+          if (declaration && declaration->id == declaration_id) {
+            selected_enum = candidate.second;
+            break;
+          }
+        }
+        if (!selected_enum)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked enum constructor declaration is unavailable");
+        std::ostringstream rendered;
+        rendered << selected_enum->name << "::" << rust_identifier(case_name);
+        if (!enum_arguments->empty()) {
+          rendered << " { ";
+          for (size_t index = 0; index < enum_arguments->size(); ++index) {
+            const auto* field = std::get_if<est::NamedArgument>(
+                &expression.arena->at(enum_arguments->at(index)));
+            if (!field)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked enum constructor field is not named");
+            if (index) rendered << ", ";
+            rendered << rust_identifier(field->name) << ": "
+                     << expr(expression.child(field->value), d, locals, types);
+          }
+          rendered << " }";
+        }
+        return rendered.str();
+      }
+    }
+    if (std::holds_alternative<est::Placeholder>(
+            expression.arena->at(root))) {
+      auto replacement = functional_identifier_replacements_.find("_");
+      if (replacement != functional_identifier_replacements_.end())
+        return replacement->second;
+    }
+    if (const auto* identifier = std::get_if<est::Identifier>(
+            &expression.arena->at(root))) {
+      const string& name = identifier->name;
+      if (auto replacement = functional_identifier_replacements_.find(name);
+          replacement != functional_identifier_replacements_.end())
+        return replacement->second;
+      if (phase21_option_slots_.count(name))
+        return "__moss_recovery_slot_" + name +
+            (phase21_codegen_statement_ &&
+             phase21_codegen_statement_->ownership_consumed_bindings.count(name)
+                 ? ".take()" : ".as_ref()") +
+            ".unwrap_or_else(|| std::process::abort())";
+      if (write_through_parameters_.count(name)) {
+        if (types && types->count(name) && copy_type(types->at(name)))
+          return "*" + name;
+        return "(*" + name + ")";
+      }
+      // `view_place` above has already handled representation-sensitive
+      // borrowed views. Any remaining local identifier is emitted as its
+      // checked local binding; the old text rewriter left these unchanged.
+      if (locals.count(name)) return name;
+      if (d && !view_domain_ && !view_method_ &&
+          (std::any_of(d->state.begin(), d->state.end(),
+                       [&](const Field& field) { return field.name == name; }) ||
+           std::any_of(d->routes.begin(), d->routes.end(),
+                       [&](const DomainRoute& route) { return route.name == name; })))
+        return (objects_.count(d->name) ? "self." : "state.") + name;
+      if (name == "None") return "None";
+      if (!functions_.count(name)) return name;
+    }
+    if (const auto* literal = std::get_if<est::Literal>(
+            &expression.arena->at(root))) {
+      switch (literal->literal_class) {
+        case est::LiteralClass::Boolean:
+          return literal->spelling;
+        case est::LiteralClass::String:
+          return "MossStr::from(" + literal->spelling + ")";
+        case est::LiteralClass::Character:
+          return literal->spelling;
+        case est::LiteralClass::Integer:
+        case est::LiteralClass::Float: {
+          DecodedNumber decoded;
+          decoded.kind = literal->numeric.kind;
+          if (decoded.kind == NumericLiteral::Kind::Int) {
+            if (literal->numeric.magnitude_overflow ||
+                literal->numeric.magnitude > static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked integer literal is out of range");
+            decoded.integer = static_cast<std::int64_t>(
+                literal->numeric.magnitude);
+          } else {
+            decoded.floating = literal->numeric.floating;
+          }
+          return rust_numeric_literal(decoded);
+        }
+        case est::LiteralClass::None:
+          return "None";
+      }
+    }
+    if (const auto* unary = std::get_if<est::Unary>(
+            &expression.arena->at(root))) {
+      const auto operand = expression.child(unary->operand);
+      if (unary->op == "not" || unary->op == "~")
+        return "!(" + expr(operand, d, locals, types) + ")";
+      if (unary->op == "-") {
+        if (const auto* literal = std::get_if<est::Literal>(
+                &operand.arena->at(operand.id));
+            literal && (literal->literal_class == est::LiteralClass::Integer ||
+                        literal->literal_class == est::LiteralClass::Float)) {
+          DecodedNumber decoded;
+          decoded.kind = literal->numeric.kind;
+          if (decoded.kind == NumericLiteral::Kind::Int) {
+            if (literal->numeric.magnitude_overflow ||
+                literal->numeric.magnitude > kNumericIntMinMagnitude)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked negative integer literal is out of range");
+            decoded.integer = literal->numeric.magnitude ==
+                    kNumericIntMinMagnitude
+                ? std::numeric_limits<std::int64_t>::min()
+                : -static_cast<std::int64_t>(literal->numeric.magnitude);
+          } else {
+            decoded.floating = -literal->numeric.floating;
+          }
+          return rust_numeric_literal(decoded);
+        }
+        auto operand_type = generated_expr_type(operand, types);
+        if (operand_type && canonical_type_name(*operand_type) == "int")
+          return "(" + expr(operand, d, locals, types) + ").wrapping_neg()";
+        if (operand_type && canonical_type_name(*operand_type) == "float")
+          return "-(" + expr(operand, d, locals, types) + ")";
+      }
+    }
+    if (const auto* binary = std::get_if<est::Binary>(
+            &expression.arena->at(root))) {
+      const auto left_expr = expression.child(binary->left);
+      const auto right_expr = expression.child(binary->right);
+      const string op = binary->op;
+      if (op == "and" || op == "or" || op == "xor")
+        return "(" + expr(left_expr, d, locals, types) + ") " +
+            (op == "and" ? "&&" : op == "or" ? "||" : "^") + " (" +
+            expr(right_expr, d, locals, types) + ")";
+      if (op == "==" || op == "!=" || op == "<" || op == ">" ||
+          op == "<=" || op == ">=") {
+        string left = expr(left_expr, d, locals, types);
+        string right = expr(right_expr, d, locals, types);
+        left = value_from_borrowed_message_parameter(left_expr, left, types);
+        right = value_from_borrowed_message_parameter(right_expr, right, types);
+        auto left_type = generated_expr_type(left_expr, types);
+        auto right_type = generated_expr_type(right_expr, types);
+        if (left_type && canonical_type_name(*left_type) == "string")
+          left = "(" + left + ").as_str()";
+        if (right_type && canonical_type_name(*right_type) == "string")
+          right = "(" + right + ").as_str()";
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          right = generated_integer_literal(right_expr)
+              ? generated_integer_literal_as_float(right_expr)
+              : "((" + right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          left = generated_integer_literal(left_expr)
+              ? generated_integer_literal_as_float(left_expr)
+              : "((" + left + ") as f64)";
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+      if (op == "|" || op == "^" || op == "&") {
+        string left = value_from_borrowed_message_parameter(
+            left_expr, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_expr, expr(right_expr, d, locals, types), types);
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+      if (op == "<<" || op == ">>") {
+        string left = value_from_borrowed_message_parameter(
+            left_expr, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_expr, expr(right_expr, d, locals, types), types);
+        return string(op == "<<" ? "__moss_shl(" : "__moss_shr(") +
+            left + ", " + right + ")";
+      }
+      if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
+        auto left_type = generated_expr_type(left_expr, types);
+        auto right_type = generated_expr_type(right_expr, types);
+        if (left_type && right_type && op == "+" &&
+            canonical_type_name(*left_type) == "string" &&
+            canonical_type_name(*right_type) == "string") {
+          const auto* right_literal = std::get_if<est::Literal>(
+              &right_expr.arena->at(est::unparenthesized(
+                  *right_expr.arena, right_expr.id)));
+          const auto* left_literal = std::get_if<est::Literal>(
+              &left_expr.arena->at(est::unparenthesized(
+                  *left_expr.arena, left_expr.id)));
+          if (right_literal &&
+              right_literal->literal_class == est::LiteralClass::String &&
+              right_literal->spelling == "\"\"")
+            return "(" + value_from_borrowed_message_parameter(
+                left_expr, expr(left_expr, d, locals, types), types) +
+                ").clone()";
+          if (left_literal &&
+              left_literal->literal_class == est::LiteralClass::String &&
+              left_literal->spelling == "\"\"")
+            return "(" + value_from_borrowed_message_parameter(
+                right_expr, expr(right_expr, d, locals, types), types) +
+                ").clone()";
+          vector<EmitterExpr> operands;
+          std::function<void(EmitterExpr)> collect = [&](EmitterExpr part) {
+            const auto part_root = est::unparenthesized(*part.arena, part.id);
+            const auto* nested = std::get_if<est::Binary>(
+                &part.arena->at(part_root));
+            if (nested && nested->op == "+") {
+              auto nested_left = part.child(nested->left);
+              auto nested_right = part.child(nested->right);
+              auto nested_left_type = generated_expr_type(nested_left, types);
+              auto nested_right_type = generated_expr_type(nested_right, types);
+              if (nested_left_type && nested_right_type &&
+                  canonical_type_name(*nested_left_type) == "string" &&
+                  canonical_type_name(*nested_right_type) == "string") {
+                collect(nested_left);
+                collect(nested_right);
+                return;
+              }
+            }
+            operands.push_back(std::move(part));
+          };
+          collect(expression);
+          std::ostringstream joined;
+          joined << "{ ";
+          vector<bool> literals;
+          for (size_t index = 0; index < operands.size(); ++index) {
+            const auto operand_root = est::unparenthesized(
+                *operands[index].arena, operands[index].id);
+            const auto* operand_literal = std::get_if<est::Literal>(
+                &operands[index].arena->at(operand_root));
+            const bool literal = operand_literal &&
+                operand_literal->literal_class == est::LiteralClass::String;
+            literals.push_back(literal);
+            string rendered = literal ? operands[index].text()
+                : value_from_borrowed_message_parameter(
+                      operands[index], expr(operands[index], d, locals, types),
+                      types);
+            joined << "let __moss_concat_" << index << " = ";
+            if (literal) joined << rendered << "; ";
+            else joined << "&(" << rendered << "); ";
+          }
+          joined << "let mut __moss_concat_result = MossStr::with_capacity(";
+          for (size_t index = 0; index < operands.size(); ++index) {
+            if (index) joined << ".saturating_add(";
+            joined << "__moss_concat_" << index << ".len()";
+          }
+          for (size_t index = 1; index < operands.size(); ++index)
+            joined << ")";
+          joined << "); ";
+          for (size_t index = 0; index < operands.size(); ++index)
+            joined << "__moss_concat_result.push_str(__moss_concat_"
+                    << index << (literals[index] ? "); " : ".as_str()); ");
+          joined << "__moss_concat_result }";
+          return joined.str();
+        }
+        string left = value_from_borrowed_message_parameter(
+            left_expr, expr(left_expr, d, locals, types), types);
+        string right = value_from_borrowed_message_parameter(
+            right_expr, expr(right_expr, d, locals, types), types);
+        if (left_type && right_type &&
+            canonical_type_name(*left_type) == "int" &&
+            canonical_type_name(*right_type) == "int") {
+          const string method = op == "+" ? "wrapping_add"
+              : op == "-" ? "wrapping_sub" : op == "*" ? "wrapping_mul"
+              : op == "/" ? "wrapping_div" : "wrapping_rem";
+          return "(" + left + ")." + method + "(" + right + ")";
+        }
+        if (left_type && canonical_type_name(*left_type) == "float" &&
+            right_type && canonical_type_name(*right_type) == "int")
+          right = generated_integer_literal(right_expr)
+              ? generated_integer_literal_as_float(right_expr)
+              : "((" + right + ") as f64)";
+        if (right_type && canonical_type_name(*right_type) == "float" &&
+            left_type && canonical_type_name(*left_type) == "int")
+          left = generated_integer_literal(left_expr)
+              ? generated_integer_literal_as_float(left_expr)
+              : "((" + left + ") as f64)";
+        return "(" + left + ") " + op + " (" + right + ")";
+      }
+    }
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      const auto callee_id = est::unparenthesized(*expression.arena,
+                                                   call->callee);
+      if (const auto* callee = std::get_if<est::Identifier>(
+              &expression.arena->at(callee_id))) {
+        auto object = objects_.find(callee->name);
+        if (object != objects_.end() && !call->arguments.empty()) {
+          std::unordered_map<string, EmitterExpr> values;
+          bool named = true;
+          for (const auto argument_id : call->arguments) {
+            const auto* argument = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (!argument) { named = false; break; }
+            values[argument->name] = expression.child(argument->value);
+          }
+          if (named) {
+            std::ostringstream rendered;
+            rendered << callee->name << " { ";
+            bool first = true;
+            for (const auto& field : object->second->fields) {
+              const auto value = values.find(field.name);
+              if (value == values.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked object constructor field is missing");
+              if (!first) rendered << ", ";
+              first = false;
+              rendered << rust_identifier(field.name) << ": "
+                       << expr(value->second, d, locals, types);
+            }
+            return rendered.str() + " }";
+          }
+        }
+        if (call->arguments.empty() && !functions_.count(callee->name)) {
+          if (callee->name == "Map")
+            return staged_abi_v10()
+                ? "std::default::Default::default()"
+                : "std::collections::HashMap::new()";
+          if (callee->name == "Set" && staged_abi_v10())
+            return "moss_runtime::MossSet::new()";
+          if (callee->name == "Queue")
+            return "std::collections::VecDeque::new()";
+        }
+        if (callee->name == "Some" && call->arguments.size() == 1 &&
+            !std::holds_alternative<est::NamedArgument>(
+                expression.arena->at(call->arguments.front())))
+          return "Some(" + expr(expression.child(call->arguments.front()),
+                                  d, locals, types) + ")";
+        vector<EmitterExpr> builtin_arguments;
+        for (const auto argument_id : call->arguments) {
+          if (std::holds_alternative<est::NamedArgument>(
+                  expression.arena->at(argument_id))) {
+            builtin_arguments.clear();
+            break;
+          }
+          builtin_arguments.push_back(expression.child(argument_id));
+        }
+        if (!functions_.count(callee->name)) {
+          auto builtin_arg = [&](size_t index) {
+            return expr(builtin_arguments.at(index), d, locals, types);
+          };
+          if (callee->name == "sqrt" && builtin_arguments.size() == 1)
+            return "{ let __moss_sqrt_value: f64 = " + builtin_arg(0) +
+                "; __moss_sqrt_value.sqrt() }";
+          if ((callee->name == "is_nan" || callee->name == "is_finite") &&
+              builtin_arguments.size() == 1)
+            return "{ let __moss_float_value: f64 = " + builtin_arg(0) +
+                "; __moss_float_value." + callee->name + "() }";
+          const std::string_view numeric_name =
+              numeric_builtin_base(callee->name);
+          if (!numeric_name.empty() && builtin_arguments.size() == 1) {
+            if (!phase21_result_context_)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT numeric raise lacks outcome context");
+            const string error_type = numeric_builtin_error_type(callee->name);
+            const string invalid = numeric_name == "to_int" ? "NonFinite" : "Invalid";
+            const string overflow = "Overflow";
+            const string first_variant = phase21_rust_variant(
+                RaisedIdentity::enum_variant(error_type, invalid));
+            const string second_variant = phase21_rust_variant(
+                RaisedIdentity::enum_variant(error_type, overflow));
+            const string call_expression = "__moss_" + string(numeric_name) +
+                "(" + builtin_arg(0) +
+                (numeric_name == "to_int" ? "" : ".as_str()") + ")";
+            string mapping = call_expression +
+                ".map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { "
+                "__MossRaised::" + first_variant + "(" + error_type + "::" +
+                invalid + ") } else { __MossRaised::" + second_variant + "(" +
+                error_type + "::" + overflow + ") })";
+            if (numeric_name == "parse_float")
+              mapping = call_expression + ".map_err(|_| __MossRaised::" +
+                  first_variant + "(" + error_type + "::" + invalid + "))";
+            return phase21_propagate(mapping);
+          }
+          if (callee->name == "sum" && builtin_arguments.size() == 1) {
+            auto argument_type = generated_expr_type(builtin_arguments.front(),
+                                                      types);
+            string element_type;
+            if (argument_type && starts_with(*argument_type, "vector[") &&
+                ends_with(*argument_type, "]"))
+              element_type = canonical_type_name(argument_type->substr(
+                  7, argument_type->size() - 8));
+            else if (argument_type && starts_with(*argument_type, "seq[") &&
+                     ends_with(*argument_type, "]"))
+              element_type = canonical_type_name(argument_type->substr(
+                  4, argument_type->size() - 5));
+            const string result = builtin_arg(0) + ".iter().copied()";
+            if (element_type == "int")
+              return result +
+                  ".fold(0_i64, |__moss_sum, __moss_value| "
+                  "__moss_sum.wrapping_add(__moss_value))";
+            return element_type.empty() ? result + ".sum()"
+                : result + ".sum::<" + rust_type(element_type) + ">()";
+          }
+          if (callee->name == "Char" && builtin_arguments.size() == 1)
+            return "__moss_char_from_codepoint(" + builtin_arg(0) + ")";
+          if ((callee->name == "less" || callee->name == "isequal") &&
+              builtin_arguments.size() == 2)
+            return scalar_protocol_rust(callee->name,
+                generated_expr_type(builtin_arguments[0], types).value_or(""),
+                builtin_arg(0), builtin_arg(1));
+          if (callee->name == "hash" && builtin_arguments.size() == 1)
+            return scalar_protocol_rust("hash",
+                generated_expr_type(builtin_arguments.front(), types).value_or(""),
+                builtin_arg(0));
+        }
+        const auto* facts = checked_expression_facts(expression);
+        string checked_target = facts ? facts->resolved_target : string();
+        if (checked_target.empty()) {
+          const auto declared = functions_.find(callee->name);
+          if (declared != functions_.end() && declared->second) {
+            const int call_line = static_cast<int>(
+                expression.arena->span(root).line);
+            std::set<string> matching_targets;
+            for (const auto& target : checked_call_edge_targets(
+                     codegen_body_context_, call_line)) {
+              if (target == "fn:" + declared->second->name ||
+                  (!declared->second->semantic_callable_id.empty() &&
+                   target == declared->second->semantic_callable_id))
+                matching_targets.insert(target);
+            }
+            // Some checked calls originate in a field initializer whose
+            // source context is the declaring domain, while codegen runs
+            // under `main`. The exact declaration identity plus source line
+            // is sufficient to select the same checker edge; argument types
+            // are deliberately not consulted here.
+            if (matching_targets.empty()) {
+              for (const auto& edge : p_.semantic_call_edges) {
+                if (edge.line != call_line ||
+                    edge.invocation_kind != "ordinary_call") continue;
+                if (edge.target == "fn:" + declared->second->name ||
+                    (!declared->second->semantic_callable_id.empty() &&
+                     edge.target == declared->second->semantic_callable_id))
+                  matching_targets.insert(edge.target);
+              }
+            }
+            if (matching_targets.size() == 1)
+              checked_target = *matching_targets.begin();
+            else
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked call edge for " +
+                  callee->name + " line=" + std::to_string(call_line) +
+                  " context=" + codegen_body_context_);
+          }
+        }
+        const string enum_case_prefix = "nominal-enum-variant-v1:";
+        if (starts_with(checked_target, enum_case_prefix)) {
+          const auto separator = checked_target.rfind(":case:");
+          if (separator == string::npos)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT malformed checked enum constructor target");
+          const string declaration_id = checked_target.substr(
+              enum_case_prefix.size(), separator - enum_case_prefix.size());
+          const string case_name = checked_target.substr(separator + 6);
+          const EnumType* selected_enum = nullptr;
+          for (const auto& candidate : enums_) {
+            if (!p_.type_context) break;
+            const auto declaration = p_.type_context->find(candidate.second->name);
+            if (declaration && declaration->id == declaration_id) {
+              selected_enum = candidate.second;
+              break;
+            }
+          }
+          if (!selected_enum)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked enum constructor declaration is unavailable");
+          std::ostringstream rendered;
+          rendered << selected_enum->name << "::" << rust_identifier(case_name);
+          if (!call->arguments.empty()) {
+            rendered << " { ";
+            for (size_t index = 0; index < call->arguments.size(); ++index) {
+              const auto* field = std::get_if<est::NamedArgument>(
+                  &expression.arena->at(call->arguments[index]));
+              if (!field)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked enum constructor field is not named");
+              if (index) rendered << ", ";
+              rendered << rust_identifier(field->name) << ": "
+                       << expr(expression.child(field->value), d, locals, types);
+            }
+            rendered << " }";
+          }
+          return rendered.str();
+        }
+        const bool call_target_hooked =
+            moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets");
+        if (call_target_hooked &&
+            (functions_.count(callee->name) || !checked_target.empty()))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing or contradictory checked call target");
+        const Function* function = nullptr;
+        if (starts_with(checked_target, "callable-v1:"))
+          function = find_function_by_callable_id(checked_target);
+        else if (starts_with(checked_target, "fn:")) {
+          const string name = checked_target.substr(3);
+          auto found = functions_.find(name);
+          if (found != functions_.end()) function = found->second;
+        }
+        bool simple_arguments = true;
+        vector<string> arguments;
+        vector<EmitterExpr> argument_nodes;
+        for (const auto argument_id : call->arguments) {
+          if (std::holds_alternative<est::NamedArgument>(
+                  expression.arena->at(argument_id))) {
+            simple_arguments = false;
+            break;
+          }
+          argument_nodes.push_back(expression.child(argument_id));
+          arguments.push_back(argument_nodes.back().text());
+        }
+        if (function && simple_arguments)
+          return render_known_function_call(*function, function->name,
+              arguments, d, locals, types, &argument_nodes, &expression);
+        // The checker retains the legacy `return(...)` spelling produced by
+        // the formatter as a builtin-tagged call. Preserve the emitter's
+        // established Rust projection for this already-accepted form.
+        if (checked_target == "builtin:return" && simple_arguments) {
+          std::ostringstream rendered;
+          rendered << "self.return(";
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            if (index) rendered << ", ";
+            rendered << expr(argument_nodes[index], d, locals, types);
+          }
+          rendered << ")";
+          return rendered.str();
+        }
+        if (starts_with(checked_target, "method:") && simple_arguments) {
+          const auto separator = checked_target.rfind('.');
+          const string owner = separator == string::npos ? string()
+              : checked_target.substr(7, separator - 7);
+          const string method_name = separator == string::npos ? string()
+              : checked_target.substr(separator + 1);
+          const ObjectType* checked_owner = nullptr;
+          const Method* checked_method = nullptr;
+          for (const auto& object : objects_) {
+            if (canonical_type_name(object.second->name) !=
+                canonical_type_name(owner)) continue;
+            const auto found = std::find_if(object.second->methods.begin(),
+                object.second->methods.end(), [&](const Method& method) {
+                  return method.name == method_name;
+                });
+            if (found != object.second->methods.end()) {
+              checked_owner = object.second;
+              checked_method = &*found;
+              break;
+            }
+          }
+          if (!checked_owner || !checked_method)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked sibling method target has no declaration");
+          std::ostringstream rendered;
+          rendered << "self." << rust_identifier(method_name) << "(";
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            if (index) rendered << ", ";
+            rendered << method_call_argument(*checked_method, index,
+                argument_nodes[index], d, locals, types,
+                functional_pipeline_id);
+          }
+          rendered << ")";
+          if (!checked_method->observable_effects.raise_set.empty())
+            return phase21_propagate(rendered.str());
+          return rendered.str();
+        }
+        (void)callee;
+      } else if (const auto* member = std::get_if<est::Member>(
+                     &expression.arena->at(callee_id))) {
+        const auto* facts = checked_expression_facts(expression);
+        string target = facts ? facts->resolved_target : string();
+        if (target.empty() && !checked_target_override.empty())
+          target.assign(checked_target_override);
+        if (target.empty()) {
+          const auto* callee_facts = checked_expression_facts(
+              expression.child(callee_id));
+          if (callee_facts) target = callee_facts->resolved_target;
+        }
+        if (target.empty()) {
+          const auto targets = checked_call_edge_targets(
+              codegen_body_context_,
+              static_cast<int>(expression.arena->span(root).line));
+          if (targets.size() == 1) target = targets.front();
+          else {
+            // A source line may contain a nested helper call as well as its
+            // receiver method call. Select only the already-checked method
+            // edge whose declaration name matches this retained Member node.
+            // The AST supplies the syntactic callee name; it does not choose
+            // among methods from receiver or argument types.
+            vector<string> matching_methods;
+            const string suffix = "." + member->name;
+            for (const auto& candidate : targets)
+              if (starts_with(candidate, "method:") &&
+                  ends_with(candidate, suffix))
+                matching_methods.push_back(candidate);
+            if (matching_methods.size() == 1)
+              target = matching_methods.front();
+            else if (matching_methods.size() > 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked member-call target name=" +
+                  member->name + " context=" + codegen_body_context_);
+          }
+        }
+        if (target.empty())
+          target = checked_statement_call_target(expression).value_or("");
+        const bool call_target_fact_hooked =
+            moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets");
+        if (call_target_fact_hooked)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target");
+        const string member_requirement_prefix(
+            checked_ir::kMemberRequirementPrefix);
+        if (starts_with(target, member_requirement_prefix)) {
+          const string requirement_id =
+              target.substr(member_requirement_prefix.size());
+          bool matched_requirement = false;
+          for (const auto& function_entry : functions_)
+            for (const auto& specialization :
+                 function_entry.second->specializations) {
+              if (specialization.stable_type_key !=
+                  codegen_active_specialization_key_) continue;
+              for (const auto& requirement : specialization.member_requirements) {
+                if ((requirement.requirement_id != requirement_id &&
+                     !starts_with(requirement.requirement_id,
+                         requirement_id + ":call-v1:")) ||
+                    requirement.member_name != member->name) continue;
+                matched_requirement = true;
+                if (!requirement.selected_callable_id)
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT checked member requirement has no selected target");
+                const string& selected = *requirement.selected_callable_id;
+                if (starts_with(selected, "builtin:FileIO.")) {
+                  target = "builtin-fileio:" +
+                      selected.substr(string("builtin:FileIO.").size());
+                } else if (starts_with(selected, "builtin:")) {
+                  const string receiver_type = requirement.receiver
+                      ? canonical_type_name(requirement.receiver) : string();
+                  if (receiver_type.empty())
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT checked builtin member receiver type is missing");
+                  target = "builtin-method:" + receiver_type + "." +
+                      member->name;
+                } else {
+                  const auto callable = CallableId::parse(selected);
+                  if (!callable)
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT malformed checked member callable identity");
+                  if (callable->kind == "method") {
+                    bool mapped = false;
+                    for (const auto& object : objects_) {
+                      if (!p_.type_context) break;
+                      const auto declaration = p_.type_context->find(
+                          object.second->name);
+                      if (!declaration || declaration->id != callable->module_id)
+                        continue;
+                      target = "method:" + object.second->name + "." +
+                          callable->declaration_name;
+                      mapped = true;
+                      break;
+                    }
+                    if (!mapped)
+                      throw std::runtime_error(
+                          "MOSS_INTERNAL_INVARIANT checked member method declaration is unavailable");
+                  } else {
+                    target = selected;
+                  }
+                }
+              }
+            }
+          if (!matched_requirement)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked member requirement");
+        }
+        if ((target.empty() || starts_with(target, "parameter:") ||
+             starts_with(target, "trait-method:")) &&
+            !codegen_active_specialization_key_.empty()) {
+          std::set<string> selected_ids;
+          for (const auto& function_entry : functions_)
+            for (const auto& specialization :
+                 function_entry.second->specializations) {
+              if (specialization.stable_type_key !=
+                  codegen_active_specialization_key_) continue;
+              for (const auto& requirement : specialization.member_requirements)
+                if (requirement.member_name == member->name &&
+                    requirement.selected_callable_id)
+                  selected_ids.insert(*requirement.selected_callable_id);
+            }
+          if (selected_ids.size() == 1) {
+            const string& selected = *selected_ids.begin();
+            if (starts_with(selected, "builtin:FileIO.")) {
+              target = "builtin-fileio:" +
+                  selected.substr(string("builtin:FileIO.").size());
+            } else if (starts_with(selected, "builtin:")) {
+              // The concrete receiver type is part of this checker-owned
+              // requirement; use it only to lower the selected builtin.
+              for (const auto& function_entry : functions_)
+                for (const auto& specialization :
+                     function_entry.second->specializations) {
+                  if (specialization.stable_type_key !=
+                      codegen_active_specialization_key_) continue;
+                  for (const auto& requirement :
+                       specialization.member_requirements) {
+                    if (requirement.member_name != member->name ||
+                        !requirement.selected_callable_id ||
+                        *requirement.selected_callable_id != selected ||
+                        !requirement.receiver) continue;
+                    target = "builtin-method:" +
+                        canonical_type_name(requirement.receiver) + "." +
+                        member->name;
+                  }
+                }
+            } else if (const auto callable = CallableId::parse(selected);
+                       callable && callable->kind == "method") {
+              for (const auto& object : objects_) {
+                if (!p_.type_context) break;
+                const auto declaration = p_.type_context->find(
+                    object.second->name);
+                if (!declaration || declaration->id != callable->module_id)
+                  continue;
+                target = "method:" + object.second->name + "." +
+                    callable->declaration_name;
+              }
+            } else {
+              target = selected;
+            }
+          }
+        }
+        if (starts_with(target, "trait-method:") ||
+            starts_with(target, "parameter:")) {
+          const Method* selected_method = checked_method_target(expression,
+                                                                 types);
+          bool mapped = false;
+          for (const auto& object : objects_) {
+            const auto method = std::find_if(object.second->methods.begin(),
+                object.second->methods.end(), [&](const Method& candidate) {
+                  return &candidate == selected_method;
+                });
+            if (method == object.second->methods.end()) continue;
+            target = "method:" + object.second->name + "." + method->name;
+            mapped = true;
+            break;
+          }
+          if (!mapped)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked trait method target has no declaration");
+        }
+        if (starts_with(target, "callable-v1:") || starts_with(target, "fn:")) {
+          const Function* selected = starts_with(target, "callable-v1:")
+              ? find_function_by_callable_id(target) : nullptr;
+          if (!selected && starts_with(target, "fn:")) {
+            const auto found = functions_.find(target.substr(3));
+            if (found != functions_.end()) selected = found->second;
+          }
+          if (!selected)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked qualified callable has no declaration");
+          vector<string> arguments;
+          vector<EmitterExpr> argument_nodes;
+          for (const auto argument_id : call->arguments) {
+            const auto* named = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (named) {
+              arguments.push_back(named->name + " = " +
+                  expression.child(named->value).text());
+              argument_nodes.push_back(expression.child(named->value));
+            } else {
+              argument_nodes.push_back(expression.child(argument_id));
+              arguments.push_back(argument_nodes.back().text());
+            }
+          }
+          return render_known_function_call(*selected, selected->name,
+              arguments, d, locals, types, &argument_nodes, &expression);
+        }
+        if (target.empty()) {
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target for lowering name=" +
+              member->name + " context=" + codegen_body_context_);
+        }
+        if (target == "fn:__moss_test_perturbed_call_target__")
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT contradictory checked member-call target");
+        const auto member_receiver = expression.child(member->base);
+        if (target == "builtin-fileio:slice" &&
+            member->name == "slice" && call->arguments.size() == 2) {
+          const auto receiver_type = generated_expr_type(member_receiver,
+                                                          types);
+          if (!receiver_type || canonical_type_name(*receiver_type) != "Range")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked range slice receiver type is missing");
+          return "(" + expr(member_receiver, d, locals, types) + ").slice(" +
+              expr(expression.child(call->arguments[0]), d, locals, types) +
+              ", " +
+              expr(expression.child(call->arguments[1]), d, locals, types) +
+              ")";
+        }
+        if (target == "builtin-fileio:chunks" &&
+            member->name == "chunks" && call->arguments.size() == 1) {
+          return "(" + expr(member_receiver, d, locals, types) + ").chunks(" +
+              expr(expression.child(call->arguments.front()), d, locals,
+                   types) + ")";
+        }
+        if (target == "builtin-fileio:close" &&
+            member->name == "close" && call->arguments.empty()) {
+          const string lowered_call = expr(member_receiver, d, locals, types) +
+              (phase21_result_context_ ? ".close_checked()" : ".close()");
+          return phase21_result_context_
+              ? phase21_propagate(lowered_call +
+                  ".map_err(__moss_raise_fileio)")
+              : lowered_call;
+        }
+        if (target == "builtin-fileio:sync" &&
+            member->name == "sync" && call->arguments.size() <= 1) {
+          const bool dataonly = !call->arguments.empty() &&
+              tree_identifier_name(expression.child(
+                  call->arguments.front())) ==
+                  std::optional<string>("dataonly");
+          const string lowered_call =
+              method_receiver_place(member_receiver, member->name,
+                  vector<EmitterExpr>{}, d, locals, types) +
+              (phase21_result_context_
+                  ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
+                  : dataonly ? ".sync_dataonly()" : ".sync()");
+          return phase21_result_context_
+              ? phase21_propagate(lowered_call +
+                  ".map_err(__moss_raise_fileio)")
+              : lowered_call;
+        }
+        if (target == "builtin-fileio:read" &&
+            member->name == "read" && call->arguments.size() == 2) {
+          const string rendered = expr(member_receiver, d, locals, types) +
+              (phase21_result_context_ ? ".read_checked(" : ".read(") +
+              expr(expression.child(call->arguments[0]), d, locals, types) +
+              ", " +
+              expr(expression.child(call->arguments[1]), d, locals, types) +
+              ")";
+          return phase21_result_context_
+              ? phase21_propagate(rendered + ".map_err(__moss_raise_fileio)")
+              : rendered;
+        }
+        if (target == "builtin-fileio:read" &&
+            member->name == "read" && call->arguments.size() == 1) {
+          const auto requests = expression.child(call->arguments.front());
+          const auto requests_root = est::unparenthesized(
+              *requests.arena, requests.id);
+          const auto* collection = std::get_if<est::Collection>(
+              &requests.arena->at(requests_root));
+          const size_t batch_id = fileio_chunk_temp_++;
+          std::ostringstream batch;
+          const string receiver_temp = "__moss_fileio_batch_receiver_" +
+              std::to_string(batch_id);
+          batch << "{ let " << receiver_temp << " = &("
+                << expr(member_receiver, d, locals, types) << "); ";
+          if (!collection || collection->delimiter != '[') {
+            auto request_type = generated_expr_type(requests, types);
+            const string concrete_type = request_type
+                ? canonical_type_name(*request_type) : string();
+            if (!starts_with(concrete_type, "vector[") ||
+                !ends_with(concrete_type, "]"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch lost its vector type");
+            const string record_name = concrete_type.substr(
+                7, concrete_type.size() - 8);
+            auto record = objects_.find(record_name);
+            if (record == objects_.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch lost its request record");
+            const auto offset_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "offset";
+                });
+            const auto size_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "size";
+                });
+            if (offset_field == record->second->fields.end() ||
+                size_field == record->second->fields.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO request fields are unavailable");
+            const string requests_temp = "__moss_fileio_batch_records_" +
+                std::to_string(batch_id);
+            const string pairs_temp = "__moss_fileio_batch_pairs_" +
+                std::to_string(batch_id);
+            batch << "let " << requests_temp << " = &("
+                  << expr(requests, d, locals, types) << "); let "
+                  << pairs_temp << " = " << requests_temp
+                  << ".iter().map(|__moss_request| (__moss_request."
+                  << rust_identifier(offset_field->name)
+                  << ", __moss_request."
+                  << rust_identifier(size_field->name)
+                  << ")).collect::<std::vec::Vec<_>>(); "
+                  << receiver_temp
+                  << (phase21_result_context_ ? ".read_batch_checked(&"
+                                              : ".read_batch(&")
+                  << pairs_temp << ") }";
+            return phase21_result_context_
+                ? phase21_propagate("(" + batch.str() +
+                    ").map_err(__moss_raise_fileio)")
+                : batch.str();
+          }
+          vector<std::pair<string, string>> pairs;
+          for (size_t index = 0; index < collection->elements.size(); ++index) {
+            const auto entry = requests.child(collection->elements[index]);
+            const auto entry_root = est::unparenthesized(
+                *entry.arena, entry.id);
+            const auto* tuple = std::get_if<est::Tuple>(
+                &entry.arena->at(entry_root));
+            if (!tuple || tuple->elements.size() != 2)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked FileIO batch entry lost its pair node");
+            const string offset = "__moss_fileio_offset_" +
+                std::to_string(batch_id) + "_" + std::to_string(index);
+            const string size = "__moss_fileio_size_" +
+                std::to_string(batch_id) + "_" + std::to_string(index);
+            batch << "let " << offset << " = "
+                  << expr(entry.child(tuple->elements[0]), d, locals, types)
+                  << "; let " << size << " = "
+                  << expr(entry.child(tuple->elements[1]), d, locals, types)
+                  << "; ";
+            pairs.emplace_back(offset, size);
+          }
+          batch << receiver_temp
+                << (phase21_result_context_ ? ".read_batch_checked(&["
+                                            : ".read_batch(&[");
+          for (size_t index = 0; index < pairs.size(); ++index) {
+            if (index) batch << ", ";
+            batch << "(" << pairs[index].first << ", "
+                  << pairs[index].second << ")";
+          }
+          batch << "]) }";
+          return phase21_result_context_
+              ? phase21_propagate("(" + batch.str() +
+                  ").map_err(__moss_raise_fileio)")
+              : batch.str();
+        }
+        if (member->name == "length" && call->arguments.empty()) {
+          const auto receiver_type = generated_expr_type(member_receiver, types);
+          if (receiver_type &&
+              (canonical_type_name(*receiver_type) == "Range" ||
+               canonical_type_name(*receiver_type) == "RangeBatch"))
+            return "(" + expr(member_receiver, d, locals, types) + ").len()";
+        }
+        if (member->name == "push" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].push")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              member->name, vector<EmitterExpr>{argument}, d, locals, types);
+          return receiver + ".push(" + expr(argument, d, locals, types) + ")";
+        }
+        if (member->name == "push" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:queue[") &&
+            ends_with(target, "].push")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              "push_back", vector<EmitterExpr>{argument}, d, locals, types);
+          return receiver + ".push_back(" +
+              expr(argument, d, locals, types) + ")";
+        }
+        if (member->name == "pop" && call->arguments.empty() &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].pop"))
+          return method_receiver_place(member_receiver, member->name,
+              vector<EmitterExpr>{}, d, locals, types) +
+              ".pop().unwrap_or_else(|| std::process::abort())";
+        if (member->name == "pop" && call->arguments.empty() &&
+            starts_with(target, "builtin-method:queue[") &&
+            ends_with(target, "].pop"))
+          return method_receiver_place(member_receiver, "pop_front",
+              vector<EmitterExpr>{}, d, locals, types) +
+              ".pop_front().unwrap_or_else(|| std::process::abort())";
+        if (starts_with(target, "builtin-method:map[") &&
+            ends_with(target, "].get") && member->name == "get" &&
+            call->arguments.size() == 2) {
+          const string checked_map_type = target.substr(
+              std::string("builtin-method:").size(),
+              target.size() - std::string("builtin-method:").size() -
+                  std::string(".get").size());
+          const auto map_types = map_key_value_types(
+              canonical_type_name(checked_map_type));
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.get target lacks a concrete map type");
+          const auto key_node = expression.child(call->arguments[0]);
+          const auto fallback_node = expression.child(call->arguments[1]);
+          const auto receiver_node = expression.child(member->base);
+          const string receiver_value =
+              tree_empty_constructor_named(receiver_node, "Map")
+                  ? "<" + rust_type(checked_map_type) + ">::new()"
+                  : expr(receiver_node, d, locals, types);
+          string key = expr(key_node, d, locals, types);
+          if (map_types->first == "string") key = "(" + key + ").as_str()";
+          else key = "&( " + key + " )";
+          string fallback = expr(fallback_node, d, locals, types);
+          if (!copy_type(map_types->second)) fallback = "(" + fallback + ").clone()";
+          return "(" + receiver_value + ").get(" + key + ").cloned().unwrap_or(" +
+              fallback + ")";
+        }
+        if (starts_with(target, "builtin-method:map[") &&
+            ends_with(target, ".delete") && member->name == "delete" &&
+            call->arguments.size() == 3) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.delete lacks a concrete map type");
+          string key = expr(expression.child(call->arguments[0]), d, locals, types);
+          string fallback = expr(expression.child(call->arguments[1]),
+                                 d, locals, types);
+          const string flag = write_call_place(
+              expression.child(call->arguments[2]), d, locals, types);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
+          if (shared_key) {
+            const auto key_node = expression.child(call->arguments[0]);
+            const bool view_key = is_object_view(key_node, d, locals, types);
+            if (view_key) key = "(" + key + ").__moss_value()";
+            const auto key_binding = tree_identifier_name(key_node);
+            const string borrowed = !view_key && key_binding &&
+                borrowed_function_parameters_.count(*key_binding)
+                ? "__moss_key" : "&__moss_key";
+            return "{ let __moss_key = " + key +
+                "; let __moss_fallback = " + fallback +
+                "; let __moss_removed = (" +
+                expr(receiver_expression, d, locals, types) +
+                ").remove_with(" + shared_map_hash(map_types->first,
+                    "__moss_key") + ", " + borrowed + ", |a, b| " +
+                shared_map_equal(map_types->first, "a", "b") +
+                "); let _ = &( " + flag + " ); " + flag +
+                " = __moss_removed.is_some(); __moss_removed.unwrap_or(" +
+                "__moss_fallback) }";
+          }
+          const string lookup = map_types->first == "string"
+              ? "__moss_key.as_str()" : "&__moss_key";
+          return "{ let __moss_key = " + key +
+              "; let __moss_fallback = " + fallback +
+              "; let __moss_removed = (" +
+              expr(receiver_expression, d, locals, types) +
+              ").remove(" + lookup + "); let _ = &(" + flag +
+              "); " + flag + " = __moss_removed.is_some(); "
+              "__moss_removed.unwrap_or(__moss_fallback) }";
+        }
+        if (starts_with(target, "builtin-method:map[") &&
+            (ends_with(target, ".keys") || ends_with(target, ".values")) &&
+            call->arguments.empty() &&
+            (member->name == "keys" || member->name == "values")) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map iterator lacks a concrete map type");
+          const string rendered_receiver =
+              expr(receiver_expression, d, locals, types);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
+          if (member->name == "keys") {
+            if (shared_key) return "(" + rendered_receiver + ").keys()";
+            if (map_types->first == "float")
+              return "(" + rendered_receiver + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
+            return "(" + rendered_receiver + ").keys().cloned().collect::<std::vec::Vec<_>>()";
+          }
+          if (shared_key) return "(" + rendered_receiver + ").values()";
+          return "(" + rendered_receiver + ").values().cloned().collect::<std::vec::Vec<_>>()";
+        }
+        if ((target.empty() || target == "builtin-method:string." +
+                                      member->name) &&
+            member->name == "append" && call->arguments.size() == 1) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          if (receiver_type && canonical_type_name(*receiver_type) == "string") {
+            const auto argument = expression.child(call->arguments.front());
+            const bool literal = tree_literal_class(argument) ==
+                est::LiteralClass::String;
+            const string value = literal ? argument.text()
+                : "&(" + expr(argument, d, locals, types) + ")";
+            return "{ let __moss_string = &mut (" +
+                place_expr(receiver_expression, d, locals, types) +
+                "); let __moss_part = " + value +
+                "; __moss_string.push_str(__moss_part" +
+                (literal ? "" : ".as_str()") + "); }";
+          }
+        }
+        if ((target.empty() || target == "builtin-method:string." +
+                                      member->name) &&
+            member->name == "reserve" && call->arguments.size() == 1) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          if (receiver_type && canonical_type_name(*receiver_type) == "string")
+            return "{ let __moss_string = &mut (" +
+                place_expr(receiver_expression, d, locals, types) +
+                "); let __moss_additional = " +
+                expr(expression.child(call->arguments.front()), d, locals, types) +
+                "; if __moss_additional > 0 { __moss_string.reserve(__moss_additional as usize); } }";
+        }
+        if (starts_with(target, "method:")) {
+          const auto separator = target.rfind('.');
+          const string owner = separator == string::npos
+              ? string() : target.substr(7, separator - 7);
+          const string method_name = separator == string::npos
+              ? string() : target.substr(separator + 1);
+          if (method_name != member->name)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked method target disagrees with call node");
+          const ObjectType* owner_object = nullptr;
+          const Method* checked_method = nullptr;
+          for (const auto& entry : objects_) {
+            if (entry.second->name != owner) continue;
+            auto found = std::find_if(entry.second->methods.begin(),
+                entry.second->methods.end(), [&](const Method& candidate) {
+                  return candidate.name == method_name;
+                });
+            if (found != entry.second->methods.end()) {
+              owner_object = entry.second;
+              checked_method = &*found;
+              break;
+            }
+          }
+          if (!checked_method || !owner_object)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked method target has no declaration");
+          vector<EmitterExpr> argument_nodes;
+          bool simple_arguments = true;
+          for (const auto argument_id : call->arguments) {
+            if (std::holds_alternative<est::NamedArgument>(
+                    expression.arena->at(argument_id))) {
+              simple_arguments = false;
+              break;
+            }
+            argument_nodes.push_back(expression.child(argument_id));
+          }
+          if (simple_arguments) {
+            const auto receiver_expression = expression.child(member->base);
+            string rendered_receiver;
+            const auto receiver_root = est::unparenthesized(
+                *receiver_expression.arena, receiver_expression.id);
+            if (const auto* indexed_receiver = std::get_if<est::Index>(
+                    &receiver_expression.arena->at(receiver_root))) {
+              const auto indexed_base =
+                  receiver_expression.child(indexed_receiver->base);
+              const auto indexed_value =
+                  receiver_expression.child(indexed_receiver->index);
+              const auto indexed_type = generated_expr_type(indexed_base, types);
+              const string indexed_type_name = indexed_type
+                  ? canonical_type_name(*indexed_type) : string();
+              if (starts_with(indexed_type_name, "vector[") ||
+                  starts_with(indexed_type_name, "seq[")) {
+                rendered_receiver = "(" + expr(indexed_base, d, locals, types) +
+                    ")[(" + expr(indexed_value, d, locals, types) +
+                    ") as usize]";
+              }
+            }
+            if (rendered_receiver.empty())
+              rendered_receiver = expr(receiver_expression, d, locals, types);
+            if (starts_with(rendered_receiver, "*"))
+              rendered_receiver = "(" + rendered_receiver + ")";
+            const auto external_method_module =
+                phase21_external_module_for_symbol(owner);
+            const bool standard_write_bridge = external_method_module &&
+                std::any_of(checked_method->params.begin(),
+                    checked_method->params.end(), [&](const Param& parameter) {
+                      const size_t index = static_cast<size_t>(
+                          &parameter - checked_method->params.data());
+                      return !standard_error_variants(canonical_type_name(
+                          parameter.type)).empty() &&
+                          method_effect(*checked_method, index) == Effect::Write;
+                    });
+            const string return_type = checked_method->return_type.value_or("");
+            const bool standard_return = external_method_module &&
+                !standard_error_variants(canonical_type_name(
+                    return_type)).empty();
+            std::ostringstream bridge_before, bridge_after, rendered;
+            rendered << (standard_write_bridge
+                    ? "__moss_bridge_receiver" : rendered_receiver) << "."
+                     << rust_identifier(viewed_method_name(
+                            receiver_expression, method_name, argument_nodes,
+                            d, locals, types)) << "(";
+            for (size_t index = 0; index < argument_nodes.size(); ++index) {
+              if (index) rendered << ", ";
+              const auto& argument = argument_nodes[index];
+              string value;
+              const bool external_standard_argument = external_method_module &&
+                  index < checked_method->params.size() &&
+                  !standard_error_variants(canonical_type_name(
+                      checked_method->params[index].type)).empty();
+              if (!standard_write_bridge && !external_standard_argument) {
+                auto argument_type = generated_expr_type(argument, types)
+                    .value_or("_");
+                value = expr(argument, d, locals, types);
+                const Effect effect = method_effect(*checked_method, index);
+                const bool borrow = effect != Effect::Consume &&
+                    (effect == Effect::Write || borrowable_type(argument_type));
+                if (!domains_.count(canonical_type_name(argument_type)) &&
+                    borrow) {
+                  value = (effect == Effect::Write ? "&mut (" : "&(") +
+                      value + ")";
+                }
+              } else {
+                value = method_call_argument(*checked_method, index,
+                    argument, d, locals, types);
+                bool standard_error_argument = false;
+                if (external_standard_argument) {
+                  standard_error_argument = true;
+                  const string local_type = canonical_type_name(
+                      checked_method->params[index].type);
+                  const string external_type = tooling_name("moss_" +
+                      *external_method_module) + "::" + local_type;
+                  const Effect effect = method_effect(*checked_method, index);
+                  if (effect == Effect::Write) {
+                    const string prefix = "__moss_standard_write_" +
+                        std::to_string(call_argument_temp_++);
+                    const string local_ref = prefix + "_local";
+                    const string provider_value = prefix + "_provider";
+                    bridge_before << "let " << local_ref << " = " << value
+                      << "; let mut " << provider_value << " = "
+                      << external_type << "::from((*" << local_ref
+                      << ").clone()); ";
+                    bridge_after << "*" << local_ref << " = " << local_type
+                      << "::from(" << provider_value << "); ";
+                    value = "&mut " + provider_value;
+                  } else {
+                    value = effect == Effect::Read
+                        ? "&" + external_type + "::from((* (" + value +
+                            ")).clone())"
+                        : external_type + "::from(" + value + ")";
+                  }
+                }
+                if (standard_write_bridge && !standard_error_argument) {
+                  const string staged = next_call_argument_name();
+                  bridge_before << "let " << staged << " = " << value << "; ";
+                  value = staged;
+                }
+              }
+              rendered << value;
+            }
+            rendered << ")";
+            string lowered_call = rendered.str();
+            if (standard_write_bridge) {
+              const string receiver_binding =
+                  checked_method->receiver_effect == Effect::Consume
+                      ? rendered_receiver
+                      : (checked_method->receiver_effect == Effect::Write
+                            ? "&mut (" : "&(") + rendered_receiver + ")";
+              lowered_call = "{ let __moss_bridge_receiver = " +
+                  receiver_binding + "; " + bridge_before.str() +
+                  "let __moss_bridge_result = " + lowered_call + "; " +
+                  bridge_after.str() + "__moss_bridge_result }";
+            }
+            if (standard_return)
+              lowered_call = checked_method->observable_effects.raise_set.empty()
+                  ? return_type + "::from(" + lowered_call + ")"
+                  : "(" + lowered_call + ").map(" + return_type + "::from)";
+            if (!checked_method->observable_effects.raise_set.empty()) {
+              if (!phase21_result_context_)
+                throw std::runtime_error(
+                    "checked raising method lacks a Phase 21 outcome context");
+              return phase21_propagate(lowered_call);
+            }
+            return lowered_call;
+          }
+        }
+        if (target == "builtin:" + member->name ||
+            (starts_with(target, "builtin-method:string.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:int.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:float.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:char.") &&
+             ends_with(target, "." + member->name)) ||
+            (starts_with(target, "builtin-method:bool.") &&
+             ends_with(target, "." + member->name)) ||
+            target == "builtin-scalar-protocol:" + member->name) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                          types);
+          vector<EmitterExpr> arguments;
+          bool simple_arguments = true;
+          for (const auto argument_id : call->arguments) {
+            if (std::holds_alternative<est::NamedArgument>(
+                    expression.arena->at(argument_id))) {
+              simple_arguments = false;
+              break;
+            }
+            arguments.push_back(expression.child(argument_id));
+          }
+          if (receiver_type && simple_arguments) {
+            const string concrete = canonical_type_name(*receiver_type);
+            string receiver = expr(receiver_expression, d, locals, types);
+            if (starts_with(receiver, "*")) receiver = "(" + receiver + ")";
+            const string source = "(" + receiver + ")";
+            auto argument = [&](size_t index) {
+              return expr(arguments.at(index), d, locals, types);
+            };
+            if (concrete == "string" || starts_with(target,
+                                                    "builtin-method:string.")) {
+              if (member->name == "length" && arguments.empty())
+                return "__moss_string_length(&" + source + ")";
+              if (member->name == "chars" && arguments.empty())
+                return source + ".chars().collect::<std::vec::Vec<char>>()";
+              if (member->name == "char_at" && arguments.size() == 1)
+                return "__moss_string_char_at(&" + source + ", " +
+                    argument(0) + ")";
+              if ((member->name == "less" || member->name == "isequal") &&
+                  arguments.size() == 1)
+                return scalar_protocol_rust(member->name, concrete, source,
+                                            argument(0));
+              if (member->name == "hash" && arguments.empty())
+                return scalar_protocol_rust("hash", concrete, source);
+              if (member->name == "find" && arguments.size() == 1)
+                return "{ let __moss_pattern = " + argument(0) +
+                    "; __moss_string_find(&" + source +
+                    ", __moss_pattern.as_str()) }";
+              if (member->name == "slice" && arguments.size() == 2)
+                return "__moss_string_slice(&" + source + ", " +
+                    argument(0) + ", " + argument(1) + ")";
+              if (member->name == "ascii_lower" && arguments.empty())
+                return "MossStr::from(" + source + ".to_ascii_lowercase())";
+              if (member->name == "ascii_upper" && arguments.empty())
+                return "MossStr::from(" + source + ".to_ascii_uppercase())";
+              if (member->name == "split" && arguments.size() == 1)
+                return "{ let __moss_separator = " + argument(0) +
+                    "; if __moss_separator.is_empty() { std::process::abort(); } " +
+                    source + ".split(__moss_separator.as_str()).map(MossStr::from).collect::<std::vec::Vec<MossStr>>() }";
+              if (member->name == "join" && arguments.size() == 1)
+                return "MossStr::from((" + argument(0) + ").join(" +
+                    source + ".as_str()))";
+            }
+            if (concrete == "int" || concrete == "float" ||
+                concrete == "char" || concrete == "bool") {
+              if (member->name == "to_string" && arguments.empty())
+                return "MossStr::from(" + source + ".to_string())";
+              if ((member->name == "less" || member->name == "isequal") &&
+                  arguments.size() == 1)
+                return scalar_protocol_rust(member->name, concrete, source,
+                                            argument(0));
+              if (member->name == "hash" && arguments.empty())
+                return scalar_protocol_rust("hash", concrete, source);
+              if (concrete == "char" && member->name == "codepoint" &&
+                  arguments.empty())
+                return "((" + source + ") as u32 as i64)";
+            }
+            if ((concrete == "Range" || concrete == "RangeBatch") &&
+                member->name == "length" && arguments.empty())
+              return source + ".len()";
+          }
+        }
+      }
+    }
+    if (const auto* message = std::get_if<est::Message>(
+            &expression.arena->at(root))) {
+      const auto target = expression.child(message->target);
+      const auto target_root = est::unparenthesized(*target.arena, target.id);
+      const auto* receiver = std::get_if<est::Identifier>(
+          &target.arena->at(target_root));
+      if (!receiver || !types)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message target is not a typed identifier");
+      const auto receiver_type = types->find(receiver->name);
+      if (receiver_type == types->end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message receiver type is missing");
+      const auto domain = domains_.find(
+          canonical_type_name(receiver_type->second));
+      if (domain == domains_.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message receiver is not a domain");
+      const Handler* handler = find_handler(*domain->second, message->handler);
+      if (!handler || handler->params.size() != message->arguments.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked message handler is missing");
+      if (root_ingress_statement_) {
+        vector<EmitterExpr> arguments;
+        arguments.reserve(message->arguments.size());
+        for (const auto argument : message->arguments)
+          arguments.push_back(expression.child(argument));
+        return root_ingress_message(target, message->handler, arguments,
+            *domain->second, *handler, d, locals, types,
+            message_argument_plans);
+      }
+      const bool raises = !handler->observable_effects.raise_set.empty();
+      if (raises && !phase21_result_context_)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked raising message lacks outcome context");
+      std::ostringstream rendered;
+      rendered << expr(target, d, locals, types) << "."
+               << (domain->second->exported && !exported_domain_bridge_body_
+                       ? "__moss_message_" : "")
+               << message->handler
+               << (domain->second->exported && !exported_domain_bridge_body_
+                       ? "(" : "_shared(");
+      for (size_t index = 0; index < message->arguments.size(); ++index) {
+        if (index) rendered << ", ";
+        const auto argument = expression.child(message->arguments[index]);
+        const size_t plan = message_argument_plans &&
+                index < message_argument_plans->size()
+            ? message_argument_plans->at(index) : 0;
+        if (domain->second->exported && !exported_domain_bridge_body_)
+          rendered << message_arg(argument, handler->params[index].type,
+                                  d, locals, types, plan);
+        else
+          rendered << shared_message_arg(argument,
+              handler->params[index].type, d, locals, types, plan);
+      }
+      rendered << ")";
+      if (raises) {
+        string propagated = phase21_propagate(rendered.str());
+        if (handler->reply_type &&
+            !(domain->second->exported && !exported_domain_bridge_body_))
+          propagated +=
+              ".unwrap_or_else(|| std::process::abort())";
+        return propagated;
+      }
+      if (handler->reply_type &&
+          !(domain->second->exported && !exported_domain_bridge_body_))
+        rendered << ".unwrap_or_else(|| std::process::abort())";
+      return rendered.str();
+    }
+    if (const auto* constructor = std::get_if<est::Constructor>(
+            &expression.arena->at(root))) {
+      const auto type_id = est::unparenthesized(*expression.arena,
+                                                  constructor->type);
+      if (const auto* facts = checked_expression_facts(expression);
+          facts && (!facts->resolved_target.empty()) &&
+          (starts_with(facts->resolved_target, "fn:") ||
+           starts_with(facts->resolved_target, "callable-v1:"))) {
+        const Function* function =
+            starts_with(facts->resolved_target, "callable-v1:")
+                ? find_function_by_callable_id(facts->resolved_target)
+                : nullptr;
+        if (!function && starts_with(facts->resolved_target, "fn:")) {
+          const auto found = functions_.find(
+              facts->resolved_target.substr(3));
+          if (found != functions_.end()) function = found->second;
+        }
+        if (!function)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked constructor-call target has no declaration");
+        vector<string> arguments;
+        vector<EmitterExpr> argument_nodes;
+        for (const auto argument_id : constructor->arguments) {
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &expression.arena->at(argument_id))) {
+            const auto value = expression.child(named->value);
+            arguments.push_back(named->name + " = " + value.text());
+            argument_nodes.push_back(value);
+          } else {
+            argument_nodes.push_back(expression.child(argument_id));
+            arguments.push_back(argument_nodes.back().text());
+          }
+        }
+        return render_known_function_call(*function, function->name,
+            arguments, d, locals, types, &argument_nodes, &expression);
+      }
+      if (const auto* builtin = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id));
+          builtin && constructor->arguments.empty()) {
+        if (builtin->name == "Map")
+          return staged_abi_v10()
+              ? "std::default::Default::default()"
+              : "std::collections::HashMap::new()";
+        if (builtin->name == "Set" && staged_abi_v10())
+          return "moss_runtime::MossSet::new()";
+        if (builtin->name == "Queue")
+          return "std::collections::VecDeque::new()";
+        if ((builtin->name == "Vector" || builtin->name == "Seq") &&
+            constructor->type_arguments.size() == 1) {
+          const auto element = expression.child(
+              constructor->type_arguments.front());
+          return "std::vec::Vec::<" + rust_type(element.text()) +
+              ">::new()";
+        }
+      }
+      if (const auto* case_member = std::get_if<est::Member>(
+              &expression.arena->at(type_id))) {
+        const auto enum_id = est::unparenthesized(*expression.arena,
+                                                   case_member->base);
+        if (const auto* enum_name = std::get_if<est::Identifier>(
+                &expression.arena->at(enum_id))) {
+          auto declaration = enums_.find(enum_name->name);
+          if (declaration != enums_.end()) {
+            auto item = std::find_if(declaration->second->cases.begin(),
+                declaration->second->cases.end(), [&](const EnumCase& candidate) {
+                  return candidate.name == case_member->name;
+                });
+            if (item != declaration->second->cases.end()) {
+              std::unordered_map<string, EmitterExpr> values;
+              bool named = true;
+              for (const auto argument_id : constructor->arguments) {
+                const auto* argument = std::get_if<est::NamedArgument>(
+                    &expression.arena->at(argument_id));
+                if (!argument) { named = false; break; }
+                values[argument->name] = expression.child(argument->value);
+              }
+              if (named) {
+                std::ostringstream rendered;
+                rendered << enum_name->name << "::"
+                         << rust_identifier(case_member->name);
+                if (!item->fields.empty()) {
+                  rendered << " { ";
+                  for (size_t index = 0; index < item->fields.size(); ++index) {
+                    if (index) rendered << ", ";
+                    const auto value = values.find(item->fields[index].name);
+                    if (value == values.end())
+                      throw std::runtime_error(
+                          "missing enum constructor field: " + enum_name->name +
+                          "." + item->fields[index].name);
+                    rendered << rust_identifier(item->fields[index].name)
+                             << ": "
+                             << expr(value->second, d, locals, types);
+                  }
+                  rendered << " }";
+                }
+                return rendered.str();
+              }
+            }
+          }
+        }
+      }
+      if (const auto* type_name = std::get_if<est::Identifier>(
+              &expression.arena->at(type_id))) {
+        if (type_name->name == "Some" && constructor->arguments.size() == 1) {
+          const auto value = expression.child(constructor->arguments.front());
+          return "Some(" + expr(value, d, locals, types) + ")";
+        }
+        auto object = objects_.find(type_name->name);
+        if (object != objects_.end()) {
+          std::unordered_map<string, EmitterExpr> values;
+          bool named = true;
+          for (const auto argument_id : constructor->arguments) {
+            const auto* argument = std::get_if<est::NamedArgument>(
+                &expression.arena->at(argument_id));
+            if (!argument) { named = false; break; }
+            values[argument->name] = expression.child(argument->value);
+          }
+          if (named) {
+            std::ostringstream rendered;
+            rendered << type_name->name << " { ";
+            bool first = true;
+            for (const auto& field : object->second->fields) {
+              auto value = values.find(field.name);
+              if (value == values.end())
+                throw std::runtime_error(
+                    "missing object constructor field: " + type_name->name +
+                    "." + field.name);
+              if (!first) rendered << ", ";
+              first = false;
+              rendered << rust_identifier(field.name) << ": "
+                       << expr(value->second, d, locals, types);
+            }
+            rendered << " }";
+            return rendered.str();
+          }
+        }
+      }
+    }
+    if (const auto* collection = std::get_if<est::Collection>(
+            &expression.arena->at(root));
+        collection && collection->delimiter == '[' &&
+        collection->elements.empty() && expression.text().empty()) {
+      auto checked_type = generated_expr_type(expression, types);
+      if (!checked_type || !starts_with(canonical_type_name(*checked_type),
+                                        "vector["))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked empty-vector element type");
+      const string canonical = canonical_type_name(*checked_type);
+      return "std::vec::Vec::<" + rust_type(canonical.substr(
+          7, canonical.size() - 8)) + ">::new()";
+    }
+    if (const auto* collection = std::get_if<est::Collection>(
+            &expression.arena->at(root));
+        collection && collection->delimiter == '[' &&
+        !collection->elements.empty()) {
+      std::ostringstream rendered;
+      rendered << "vec![";
+      for (size_t index = 0; index < collection->elements.size(); ++index) {
+        if (index) rendered << ", ";
+        const auto value = expression.child(collection->elements[index]);
+        string element = expr(value, d, locals, types);
+        auto type = generated_expr_type(value, types);
+        if (type && domains_.count(canonical_type_name(*type)))
+          element = "(" + element + ").clone()";
+        rendered << element;
+      }
+      rendered << "]";
+      return rendered.str();
+    }
+    if (const auto* index = std::get_if<est::Index>(
+            &expression.arena->at(root))) {
+      const auto base_expr = expression.child(index->base);
+      const auto index_expr = expression.child(index->index);
+      const string index_source = index_expr.text();
+      auto base_type = generated_expr_type(base_expr, types);
+      if (base_type && shared_protocol_map_key_from_type(*base_type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*base_type);
+        const string key = expr(index_expr, d, locals, types);
+        const auto* key_identifier = std::get_if<est::Identifier>(
+            &index_expr.arena->at(est::unparenthesized(
+                *index_expr.arena, index_expr.id)));
+        const string borrowed = key_identifier &&
+            borrowed_function_parameters_.count(key_identifier->name)
+                ? "__moss_key" : "&__moss_key";
+        return "{ let __moss_key = " + key + "; (" +
+            expr(base_expr, d, locals, types) +
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", " + borrowed + ", |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\").clone() }";
+      }
+      if (base_type && (canonical_type_name(*base_type) == "RangeBatch" ||
+                        canonical_type_name(*base_type) == "Range"))
+        return "(" + expr(base_expr, d, locals, types) + ").get(" +
+            expr(index_expr, d, locals, types) + ")";
+      const auto index_root = est::unparenthesized(
+          *index_expr.arena, index_expr.id);
+      const auto* index_literal = std::get_if<est::Literal>(
+          &index_expr.arena->at(index_root));
+      const bool string_index = index_literal &&
+          index_literal->literal_class == est::LiteralClass::String;
+      string rendered_index = string_index
+          ? index_source : expr(index_expr, d, locals, types);
+      const bool map_index = base_type &&
+          (canonical_type_name(*base_type) == "map" ||
+           starts_with(canonical_type_name(*base_type), "map["));
+      if (!string_index && !map_index)
+        rendered_index = "(" + rendered_index + ") as usize";
+      else if (map_index && !string_index) {
+        const auto* key_identifier = std::get_if<est::Identifier>(
+            &index_expr.arena->at(index_root));
+        auto key_type = generated_expr_type(index_expr, types);
+        if (key_type && canonical_type_name(*key_type) == "string")
+          rendered_index = "(" + rendered_index + ").as_str()";
+        else if (!key_identifier || !borrowed_function_parameters_.count(
+                                        key_identifier->name))
+          rendered_index = "&(" + rendered_index + ")";
+      }
+      string indexed = "(" + expr(base_expr, d, locals, types) + ")[" +
+          rendered_index + "]";
+      return borrowed_view_expression(base_expr, d, locals, types)
+          ? indexed : "(" + indexed + ").clone()";
+    }
+    if (const auto* member = std::get_if<est::Member>(
+            &expression.arena->at(root))) {
+      const auto* facts = checked_expression_facts(expression);
+      const string enum_case_prefix = "nominal-enum-variant-v1:";
+      const string checked_target = facts ? facts->resolved_target : string();
+      const string target = checked_target.empty() &&
+              !checked_target_override.empty()
+          ? string(checked_target_override) : checked_target;
+      if (starts_with(target, enum_case_prefix)) {
+        const auto separator = target.rfind(":case:");
+        if (separator == string::npos)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT malformed checked enum variant target");
+        const string declaration_id = target.substr(
+            enum_case_prefix.size(), separator - enum_case_prefix.size());
+        const string case_name =
+            target.substr(separator + 6);
+        for (const auto& candidate : enums_) {
+          if (!p_.type_context) break;
+          const auto declaration = p_.type_context->find(candidate.second->name);
+          if (declaration && declaration->id == declaration_id)
+            return candidate.second->name + "::" +
+                rust_identifier(case_name);
+        }
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked enum variant declaration is unavailable");
+      }
+      const auto base_expr = expression.child(member->base);
+      const auto base_root = est::unparenthesized(
+          *base_expr.arena, base_expr.id);
+      if (const auto* enum_name = std::get_if<est::Identifier>(
+              &base_expr.arena->at(base_root));
+          enum_name && enums_.count(enum_name->name))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked enum variant target");
+      auto projection_type = generated_expr_type(base_expr, types);
+      if (projection_type) {
+        auto object = objects_.find(nominal_template_name(*projection_type));
+        if (object != objects_.end()) {
+          auto field = std::find_if(object->second->fields.begin(),
+              object->second->fields.end(), [&](const Field& candidate) {
+                return candidate.name == member->name;
+              });
+          if (field != object->second->fields.end())
+            return "(" + expr(base_expr, d, locals, types) + ")." +
+                rust_identifier(member->name);
+        }
+      }
+    }
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    if (std::holds_alternative<est::Pipeline>(expression.arena->at(root))) {
+      auto pipeline = functional_pipeline_from_node(expression, resolve_stage);
+      if (pipeline) {
+        if (auto checked_id = checked_functional_pipeline_id(expression))
+          functional_pipeline_id = *checked_id;
+        if (const auto* planned = planned_functional_pipeline(
+                functional_pipeline_id))
+          pipeline = checked_functional_pipeline_from_tree(
+              expression, *planned);
+        if (pipeline)
+          if (auto rendered = functional_expr(*pipeline, d, locals, types,
+                                               functional_pipeline_id))
+            return *rendered;
+      }
+      if (auto rendered = checked_callable_pipeline_expr(
+              expression, d, locals, types))
+        return *rendered;
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_EST_COVERAGE_STATS")) {
+      const char* kind = std::holds_alternative<est::NamedArgument>(
+                             expression.arena->at(root)) ? "named_argument"
+          : std::holds_alternative<est::Identifier>(
+                expression.arena->at(root)) ? "identifier"
+          : std::holds_alternative<est::Message>(expression.arena->at(root))
+                ? "message"
+          : std::holds_alternative<est::Placeholder>(
+                expression.arena->at(root)) ? "placeholder"
+          : std::holds_alternative<est::Tuple>(expression.arena->at(root))
+                ? "tuple"
+          : std::holds_alternative<est::MissingExpression>(
+                expression.arena->at(root)) ? "missing"
+          : std::holds_alternative<est::Collection>(expression.arena->at(root))
+                ? "collection"
+          : std::holds_alternative<est::Constructor>(expression.arena->at(root))
+                ? "constructor"
+          : std::holds_alternative<est::Member>(expression.arena->at(root))
+                ? "member"
+          : std::holds_alternative<est::Call>(expression.arena->at(root))
+                ? "call"
+          : std::holds_alternative<est::Pipeline>(expression.arena->at(root))
+                ? "pipeline"
+          : std::holds_alternative<est::Index>(expression.arena->at(root))
+                ? "index"
+          : std::holds_alternative<est::Binary>(expression.arena->at(root))
+                ? "binary"
+          : std::holds_alternative<est::Unary>(expression.arena->at(root))
+                ? "unary" : "other";
+      std::cerr << "MOSS_EST_EMITTER_NODE_FALLBACK=" << kind
+                << "|line=" << expression.arena->span(root).line
+                << "|text=" << expression.text() << '\n';
+      if (const auto* facts = checked_expression_facts(expression))
+        std::cerr << "MOSS_EST_EMITTER_NODE_TARGET="
+                  << facts->resolved_target << '\n';
+      if (phase21_codegen_statement_)
+        for (const auto& [context, target] :
+             phase21_codegen_statement_->checked_call_targets_by_context)
+          std::cerr << "MOSS_EST_EMITTER_STMT_TARGET=" << context << "|"
+                    << target << '\n';
+      if (const auto* pipeline = std::get_if<est::Pipeline>(
+              &expression.arena->at(root))) {
+        const auto input_type = generated_expr_type(
+            expression.child(pipeline->input), types);
+        const auto* plan = planned_functional_pipeline(
+            functional_pipeline_id);
+        std::cerr << "MOSS_EST_EMITTER_PIPELINE_FALLBACK|line="
+                  << expression.arena->span(root).line << "|input="
+                  << input_type.value_or("<missing>") << "|plan="
+                  << (plan ? "present" : "absent") << '\n';
+      }
+    }
+#endif
+    return expr(expression.text(), d, locals, types, functional_pipeline_id,
+                message_argument_plans, &expression);
   }
 
   string expr(string e, const Domain* d, const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
-              const vector<size_t>* message_argument_plans = nullptr) const {
+              const vector<size_t>* message_argument_plans = nullptr,
+              const EmitterExpr* checked_node = nullptr) const {
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) ++string_expr_queries_;
+#endif
+    auto parse_root_simple_call = [&](string& callee,
+                                      vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_simple_call(*checked_node, callee, arguments);
+      return tree_parse_simple_call(e, callee, arguments);
+    };
+    auto parse_root_unary = [&](string& operation, string& operand) {
+      if (checked_node)
+        return tree_parse_unary(*checked_node, operation, operand);
+      return tree_parse_unary(e, operation, operand);
+    };
+    auto parse_root_message = [&](string& target, string& handler,
+                                  vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_message(*checked_node, target, handler, arguments);
+      return tree_parse_message(e, target, handler, arguments);
+    };
+    auto parse_root_enum_case = [&](string& enum_name, string& case_name,
+                                    vector<string>& fields, bool& called) {
+      if (checked_node)
+        return tree_parse_enum_case_expression(
+            *checked_node, enum_name, case_name, fields, called);
+      return tree_parse_enum_case_expression(
+          e, enum_name, case_name, fields, called);
+    };
+    auto parse_root_member_call = [&](string& receiver, string& member,
+                                      vector<string>& arguments) {
+      if (checked_node)
+        return tree_parse_member_call(*checked_node, receiver, member,
+                                      arguments);
+      return tree_parse_member_call(e, receiver, member, arguments);
+    };
+    auto parse_root_member_access = [&](string& base, string& member) {
+      if (checked_node)
+        return tree_parse_member_access(*checked_node, base, member);
+      return tree_parse_member_access(e, base, member);
+    };
+    auto parse_root_index = [&](string& base, string& index) {
+      if (checked_node)
+        return tree_parse_index(*checked_node, base, index);
+      return tree_parse_index(e, base, index);
+    };
+    auto parse_root_vector = [&]() {
+      return checked_node ? tree_parse_vector_literal(*checked_node)
+                          : tree_parse_vector_literal(e);
+    };
+    auto emit_binary_left = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_left.arena
+          ? expr(binary.checked_left, d, locals, types)
+          : expr(binary.left, d, locals, types);
+    };
+    auto emit_binary_right = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_right.arena
+          ? expr(binary.checked_right, d, locals, types)
+          : expr(binary.right, d, locals, types);
+    };
+    auto binary_left_type = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_left.arena
+          ? generated_expr_type(binary.checked_left, types)
+          : generated_expr_type(binary.left, types);
+    };
+    auto binary_right_type = [&](const GeneratedBinaryExpression& binary) {
+      return binary.checked_right.arena
+          ? generated_expr_type(binary.checked_right, types)
+          : generated_expr_type(binary.right, types);
+    };
+    auto parse_root_binary = [&](const vector<string>& operators)
+        -> std::optional<GeneratedBinaryExpression> {
+      if (!checked_node) return tree_generated_binary(e, operators);
+      auto binary = tree_generated_binary(*checked_node, operators);
+      if (!binary) return std::nullopt;
+      return GeneratedBinaryExpression{binary->left.text(), binary->op,
+                                       binary->right.text(), binary->left,
+                                       binary->right};
+    };
+    if (locals.count(e) && !phase21_option_slots_.count(e) &&
+        !write_through_parameters_.count(e) && !view_parameters_.count(e))
+      return e;
     // Moss parentheses are grouping syntax, not an observable expression node.
-    // Remove only complete balanced outer groups before lowering. Nested groups
-    // still protect precedence until their recursive expr() call reaches them.
-    e = tree_strip_expression_grouping(std::move(e));
-    const auto root_name = tree_identifier_name(e);
+    // When the checked root is available, move to its unparenthesized node and
+    // use that node's source slice; do not rediscover the grouping from text.
+    // String-only synthetic expressions retain the legacy projection path.
+    if (checked_node && checked_node->arena) {
+      EmitterExpr ungrouped = *checked_node;
+      ungrouped.id = est::unparenthesized(*ungrouped.arena, ungrouped.id);
+      e = ungrouped.text();
+    } else {
+      e = tree_strip_expression_grouping(std::move(e));
+    }
+    const auto root_name = checked_node
+        ? tree_identifier_name(*checked_node) : tree_identifier_name(e);
     if (root_name && phase21_option_slots_.count(*root_name))
       return "__moss_recovery_slot_" + *root_name +
           (phase21_codegen_statement_ &&
            phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
-    if (auto place = view_place(e, d, locals, types)) return *place;
+    if (auto place = checked_node
+            ? view_place(*checked_node, d, locals, types)
+            : view_place(e, d, locals, types))
+      return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
       return "*" + *root_name;
@@ -3473,13 +7430,31 @@ class Generator {
     // completion and reply semantics through synchronized handler entry.
     string message_target, message_handler;
     vector<string> message_arguments;
-    if (tree_parse_message(e, message_target, message_handler,
-                           message_arguments)) {
+    vector<EmitterExpr> checked_message_arguments;
+    const bool parsed_message = checked_node
+        ? tree_parse_message_nodes(*checked_node, message_target,
+                                   message_handler,
+                                   checked_message_arguments)
+        : parse_root_message(message_target, message_handler,
+                             message_arguments);
+    if (parsed_message) {
+      if (checked_node) {
+        message_arguments.reserve(checked_message_arguments.size());
+        for (const auto& argument : checked_message_arguments)
+          message_arguments.push_back(argument.text());
+      }
       string receiver = message_target;
       string handler = message_handler;
       vector<string> arguments = std::move(message_arguments);
-      if (!types || !tree_plain_identifier(receiver))
+      const auto receiver_identifier = checked_node
+          ? tree_identifier_name(checked_node->child(
+                std::get<est::Message>(checked_node->arena->at(
+                    est::unparenthesized(*checked_node->arena,
+                                         checked_node->id))).target))
+          : tree_identifier_name(receiver);
+      if (!types || !receiver_identifier)
         throw std::runtime_error("internal error: malformed message expression");
+      receiver = *receiver_identifier;
       auto receiver_type = types->find(receiver);
       if (receiver_type == types->end())
         throw std::runtime_error("internal error: unresolved message receiver");
@@ -3503,8 +7478,13 @@ class Generator {
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
-          call << message_arg(arguments[index], target_handler->params.at(index).type,
-                              d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
+          call << (checked_node
+              ? message_arg(checked_message_arguments.at(index),
+                    target_handler->params.at(index).type, d, locals, types,
+                    message_argument_plans ? message_argument_plans->at(index) : 0)
+              : message_arg(arguments[index],
+                    target_handler->params.at(index).type, d, locals, types,
+                    message_argument_plans ? message_argument_plans->at(index) : 0));
         }
         call << ")";
         return raises ? phase21_propagate(call.str()) : call.str();
@@ -3513,9 +7493,13 @@ class Generator {
       rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
-        rendered << shared_message_arg(arguments[index], target_handler->params.at(index).type,
-                                       d, locals, types,
-                                       message_argument_plans ? message_argument_plans->at(index) : 0);
+        rendered << (checked_node
+            ? shared_message_arg(checked_message_arguments.at(index),
+                  target_handler->params.at(index).type, d, locals, types,
+                  message_argument_plans ? message_argument_plans->at(index) : 0)
+            : shared_message_arg(arguments[index],
+                  target_handler->params.at(index).type, d, locals, types,
+                  message_argument_plans ? message_argument_plans->at(index) : 0));
       }
       rendered << ")";
       if (raises) {
@@ -3528,51 +7512,104 @@ class Generator {
         rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
     }
-    if (auto functional = functional_expr(
-            e, d, locals, types, functional_pipeline_id))
-      return *functional;
-    e = tree_normalize_pipeline(std::move(e));
+    if (checked_node && checked_node->arena) {
+      const auto checked_root = est::unparenthesized(
+          *checked_node->arena, checked_node->id);
+      if (std::holds_alternative<est::Pipeline>(
+              checked_node->arena->at(checked_root))) {
+        const auto resolve_stage = [](std::string_view name)
+            -> std::optional<FunctionalNodeKind> {
+          for (const auto& operation : functional_operations())
+            if (name == operation.name) return operation.kind;
+          return std::nullopt;
+        };
+        auto pipeline = functional_pipeline_from_node(*checked_node,
+                                                       resolve_stage);
+        if (pipeline)
+          if (auto functional = functional_expr(*pipeline, d, locals, types,
+                                                 functional_pipeline_id))
+            return *functional;
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked pipeline lacks a native lowering");
+      }
+      e = trim(std::move(e));
+    } else {
+      // Source-backed expressions must retain a node. Text-only expressions
+      // reaching this point are backend temporaries and are not pipeline
+      // source; pipeline lowering is never rediscovered from their spelling.
+      e = trim(std::move(e));
+    }
     // Minimal surface rewrites.
-    const auto literal = tree_literal_class(e);
+    const auto literal = checked_node ? tree_literal_class(*checked_node)
+                                      : tree_literal_class(e);
     if (literal == est::LiteralClass::Boolean) return e;
-    if (tree_identifier_name(e) == std::optional<string>("None")) return "None";
+    if ((checked_node ? tree_identifier_name(*checked_node)
+                      : tree_identifier_name(e)) ==
+        std::optional<string>("None")) return "None";
     // Numeric literals are emitted from the shared decoder's value as a
     // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
     // spelling.
-    if (generated_integer_literal(e) || literal == est::LiteralClass::Float) {
-      if (auto numeric = tree_numeric_literal_value(e))
+    const bool checked_integer = checked_node
+        ? generated_integer_literal(*checked_node)
+        : generated_integer_literal(e);
+    if (checked_integer || literal == est::LiteralClass::Float) {
+      auto numeric = checked_node
+          ? tree_numeric_literal_value(*checked_node)
+          : tree_numeric_literal_value(e);
+      if (numeric)
         return rust_numeric_literal(*numeric);
       throw std::runtime_error("internal error: numeric literal '" + e +
                                "' was not validated by the lexer");
     }
-    if (auto typed_vector = tree_empty_typed_vector_constructor(e)) {
+    auto typed_vector = checked_node
+        ? tree_empty_typed_vector_constructor(*checked_node)
+        : tree_empty_typed_vector_constructor(e);
+    if (typed_vector) {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    auto expression_shape = expression_view_from_est(e);
-    if (expression_shape && est::empty_constructor_named(*expression_shape, "Map")) return staged_abi_v10()
+    const bool empty_map = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Map")
+        : tree_empty_constructor_named(e, "Map");
+    const bool empty_set = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Set")
+        : tree_empty_constructor_named(e, "Set");
+    const bool empty_queue = checked_node
+        ? tree_empty_constructor_named(*checked_node, "Queue")
+        : tree_empty_constructor_named(e, "Queue");
+    if (empty_map) return staged_abi_v10()
         ? "std::default::Default::default()"
         : "std::collections::HashMap::new()";
-    if (expression_shape && staged_abi_v10() && est::empty_constructor_named(*expression_shape, "Set"))
-      return "moss_runtime::MossSet::new()";
-    if (expression_shape && est::empty_constructor_named(*expression_shape, "Queue"))
-      return "std::collections::VecDeque::new()";
+    if (staged_abi_v10() && empty_set) return "moss_runtime::MossSet::new()";
+    if (empty_queue) return "std::collections::VecDeque::new()";
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(e, callee, arguments) && callee == "replace" &&
-          arguments.size() == 2)
+      if (parse_root_simple_call(callee, arguments) && callee == "replace" &&
+          arguments.size() == 2) {
+        if (checked_node) {
+          string node_callee;
+          vector<EmitterExpr> node_arguments;
+          if (tree_parse_simple_call_nodes(*checked_node, node_callee,
+                                           node_arguments) &&
+              node_callee == "replace" && node_arguments.size() == 2)
+            return "{ let __moss_replacement = " +
+                expr(node_arguments[1], d, locals, types) +
+                "; std::mem::replace(&mut " +
+                write_call_place(node_arguments[0], d, locals, types) +
+                ", __moss_replacement) }";
+        }
         return "{ let __moss_replacement = " +
             expr(arguments[1], d, locals, types) + "; std::mem::replace(&mut " +
             write_call_place(arguments[0], d, locals, types) +
             ", __moss_replacement) }";
+      }
     }
     {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (tree_parse_enum_case_expression(e, enum_name, case_name,
-                                          fields, called) &&
+      if (parse_root_enum_case(enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         std::ostringstream rendered;
         rendered << enum_name << "::" << rust_identifier(case_name);
@@ -3596,23 +7633,25 @@ class Generator {
          vector<std::pair<string, string>>{{" or ", "||"},
                                                 {" xor ", "^"},
                                                 {" and ", "&&"}}) {
-      if (auto binary = tree_generated_binary(e, {boolean_operator.first}))
-        return "(" + expr(binary->left, d, locals, types) + ") " +
+      if (auto binary = parse_root_binary({boolean_operator.first}))
+        return "(" + emit_binary_left(*binary) + ") " +
             boolean_operator.second + " (" +
-            expr(binary->right, d, locals, types) + ")";
+            emit_binary_right(*binary) + ")";
     }
     string unary_operation, unary_operand;
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "not")
       return "!(" + expr(unary_operand, d, locals, types) + ")";
     if (auto comparison =
-            tree_generated_binary(e, {"==", "!=", "<=", ">=", "<", ">"})) {
-      string left = expr(comparison->left, d, locals, types);
-      string right = expr(comparison->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(comparison->left, left, types);
-      right = value_from_borrowed_message_parameter(comparison->right, right, types);
-      auto left_type = generated_expr_type(comparison->left, types);
-      auto right_type = generated_expr_type(comparison->right, types);
+        parse_root_binary({"==", "!=", "<=", ">=", "<", ">"})) {
+      string left = emit_binary_left(*comparison);
+      string right = emit_binary_right(*comparison);
+      left = value_from_borrowed_message_parameter(
+          comparison->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(
+          comparison->checked_right, right, types);
+      auto left_type = binary_left_type(*comparison);
+      auto right_type = binary_right_type(*comparison);
       if (left_type && canonical_type_name(*left_type) == "string") {
         left = "(" + left + ").as_str()";
       }
@@ -3621,96 +7660,111 @@ class Generator {
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
           right_type && canonical_type_name(*right_type) == "int") {
-        if (generated_integer_literal(comparison->right))
-          right = generated_integer_literal_as_float(comparison->right);
+        if ((comparison->checked_right.arena
+                ? generated_integer_literal(comparison->checked_right)
+                : generated_integer_literal(comparison->right)))
+          right = comparison->checked_right.arena
+              ? generated_integer_literal_as_float(comparison->checked_right)
+              : generated_integer_literal_as_float(comparison->right);
         else
           right = "((" + right + ") as f64)";
       }
       if (right_type && canonical_type_name(*right_type) == "float" &&
           left_type && canonical_type_name(*left_type) == "int") {
-        if (generated_integer_literal(comparison->left))
-          left = generated_integer_literal_as_float(comparison->left);
+        if ((comparison->checked_left.arena
+                ? generated_integer_literal(comparison->checked_left)
+                : generated_integer_literal(comparison->left)))
+          left = comparison->checked_left.arena
+              ? generated_integer_literal_as_float(comparison->checked_left)
+              : generated_integer_literal_as_float(comparison->left);
         else
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"|"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+    if (auto binary = parse_root_binary({"|"})) {
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") | (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"^"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+    if (auto binary = parse_root_binary({"^"})) {
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") ^ (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"&"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+    if (auto binary = parse_root_binary({"&"})) {
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       return "(" + left + ") & (" + right + ")";
     }
-    if (auto binary = tree_generated_binary(e, {"<<", ">>"})) {
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
+    if (auto binary = parse_root_binary({"<<", ">>"})) {
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
       string fn_name = binary->op == "<<" ? "__moss_shl" : "__moss_shr";
       return fn_name + "(" + left + ", " + right + ")";
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
-      auto binary = tree_generated_binary(e, operators);
+      auto binary = parse_root_binary(operators);
       if (!binary) continue;
-      string left = expr(binary->left, d, locals, types);
-      string right = expr(binary->right, d, locals, types);
-      left = value_from_borrowed_message_parameter(binary->left, left, types);
-      right = value_from_borrowed_message_parameter(binary->right, right, types);
-      auto left_type = generated_expr_type(binary->left, types);
-      auto right_type = generated_expr_type(binary->right, types);
+      string left = emit_binary_left(*binary);
+      string right = emit_binary_right(*binary);
+      left = value_from_borrowed_message_parameter(binary->checked_left, left, types);
+      right = value_from_borrowed_message_parameter(binary->checked_right, right, types);
+      auto left_type = binary_left_type(*binary);
+      auto right_type = binary_right_type(*binary);
       bool string_concatenation = binary->op == "+" &&
           left_type && right_type &&
           canonical_type_name(*left_type) == "string" &&
           canonical_type_name(*right_type) == "string";
-      if (string_concatenation && tree_empty_string_literal(binary->right))
+      if (string_concatenation && (binary->checked_right.arena
+              ? tree_empty_string_literal(binary->checked_right)
+              : tree_empty_string_literal(binary->right)))
         return "(" + left + ").clone()";
-      if (string_concatenation && tree_empty_string_literal(binary->left))
+      if (string_concatenation && (binary->checked_left.arena
+              ? tree_empty_string_literal(binary->checked_left)
+              : tree_empty_string_literal(binary->left)))
         return "(" + right + ").clone()";
       if (string_concatenation) {
-        vector<string> operands;
-        std::function<void(string)> collect = [&](string source) {
-          source = tree_strip_expression_grouping(std::move(source));
-          auto nested = tree_generated_binary(source, {"+"});
-          auto nested_left = nested
-              ? generated_expr_type(nested->left, types) : std::nullopt;
-          auto nested_right = nested
-              ? generated_expr_type(nested->right, types) : std::nullopt;
-          if (nested && nested_left && nested_right &&
-              canonical_type_name(*nested_left) == "string" &&
-              canonical_type_name(*nested_right) == "string") {
-            collect(nested->left);
-            collect(nested->right);
-          } else {
-            operands.push_back(std::move(source));
-          }
-        };
-        collect(e);
+        vector<EmitterExpr> operands;
+        if (checked_node && checked_node->arena) {
+          std::function<void(EmitterExpr)> collect = [&](EmitterExpr source) {
+            auto nested = tree_generated_binary(source, {"+"});
+            auto nested_left = nested
+                ? generated_expr_type(nested->left, types) : std::nullopt;
+            auto nested_right = nested
+                ? generated_expr_type(nested->right, types) : std::nullopt;
+            if (nested && nested_left && nested_right &&
+                canonical_type_name(*nested_left) == "string" &&
+                canonical_type_name(*nested_right) == "string") {
+              collect(nested->left);
+              collect(nested->right);
+            } else {
+              operands.push_back(std::move(source));
+            }
+          };
+          collect(*checked_node);
+        } else {
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked concatenation node");
+        }
         std::ostringstream joined;
         joined << "{ ";
         for (size_t index = 0; index < operands.size(); ++index) {
-          const string operand = trim(operands[index]);
+          const auto& operand = operands[index];
           const bool literal = tree_literal_class(operand) ==
               est::LiteralClass::String;
           joined << "let __moss_concat_" << index << " = ";
-          if (literal) joined << operand << "; ";
+          if (literal) joined << operand.text() << "; ";
           else
-            joined << "&(" << expr(operands[index], d, locals, types)
-                   << "); ";
+            joined << "&(" << expr(operand, d, locals, types) << "); ";
         }
         joined << "let mut __moss_concat_result = MossStr::with_capacity(";
         for (size_t index = 0; index < operands.size(); ++index) {
@@ -3739,22 +7793,30 @@ class Generator {
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
           right_type && canonical_type_name(*right_type) == "int") {
-        if (generated_integer_literal(binary->right))
-          right = generated_integer_literal_as_float(binary->right);
+        if ((binary->checked_right.arena
+                ? generated_integer_literal(binary->checked_right)
+                : generated_integer_literal(binary->right)))
+          right = binary->checked_right.arena
+              ? generated_integer_literal_as_float(binary->checked_right)
+              : generated_integer_literal_as_float(binary->right);
         else
           right = "((" + right + ") as f64)";
       }
       if (right_type && canonical_type_name(*right_type) == "float" &&
           left_type && canonical_type_name(*left_type) == "int") {
-        if (generated_integer_literal(binary->left))
-          left = generated_integer_literal_as_float(binary->left);
+        if ((binary->checked_left.arena
+                ? generated_integer_literal(binary->checked_left)
+                : generated_integer_literal(binary->left)))
+          left = binary->checked_left.arena
+              ? generated_integer_literal_as_float(binary->checked_left)
+              : generated_integer_literal_as_float(binary->left);
         else
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
     // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "-") {
       const string inner = unary_operand;
       if (generated_integer_literal(inner))
@@ -3774,7 +7836,7 @@ class Generator {
         return "-(" + operand + ")";
       }
     }
-    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+    if (parse_root_unary(unary_operation, unary_operand) &&
         unary_operation == "~") {
       string operand = expr(unary_operand, d, locals, types);
       operand = value_from_borrowed_message_parameter(unary_operand, operand, types);
@@ -3783,11 +7845,13 @@ class Generator {
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
-    if (tree_literal_class(e) == est::LiteralClass::String)
+    if ((checked_node ? tree_literal_class(*checked_node)
+                      : tree_literal_class(e)) == est::LiteralClass::String)
       return "MossStr::from(" + e + ")";
-    if (tree_literal_class(e) == est::LiteralClass::Character)
+    if ((checked_node ? tree_literal_class(*checked_node)
+                      : tree_literal_class(e)) == est::LiteralClass::Character)
       return e;
-    if (auto parts = tree_parse_vector_literal(e)) {
+    if (auto parts = parse_root_vector()) {
       std::ostringstream r; r << "vec![";
       for (size_t i=0;i<parts->size();++i) {
         if (i) r << ", ";
@@ -3800,7 +7864,7 @@ class Generator {
       r << "]"; return r.str();
     }
     string ib, ii;
-    if (tree_parse_index(e, ib, ii)) {
+    if (parse_root_index(ib, ii)) {
       auto base_type = generated_expr_type(ib, types);
       if (base_type && shared_protocol_map_key_from_type(*base_type)) {
         const string key_type = *shared_protocol_map_key_from_type(*base_type);
@@ -3844,7 +7908,7 @@ class Generator {
     }
 
     string projection_base, projection_field;
-    if (tree_parse_member_access(e, projection_base, projection_field)) {
+    if (parse_root_member_access(projection_base, projection_field)) {
       if (tree_plain_identifier(projection_field)) {
         auto projection_type = generated_expr_type(projection_base, types);
         if (projection_type) {
@@ -3865,8 +7929,29 @@ class Generator {
 
     string member_receiver, member_name;
     vector<string> member_arguments;
-    if (tree_parse_member_call(e, member_receiver, member_name, member_arguments)) {
-      string canon_recv = canonical_type_name(member_receiver);
+    if (parse_root_member_call(member_receiver, member_name, member_arguments)) {
+      EmitterExpr member_receiver_node;
+      vector<EmitterExpr> member_argument_nodes;
+      if (checked_node) {
+        string node_member;
+        if (!tree_parse_member_call_nodes(*checked_node,
+                                          member_receiver_node,
+                                          node_member,
+                                          member_argument_nodes) ||
+            node_member != member_name ||
+            member_argument_nodes.size() != member_arguments.size()) {
+          member_receiver_node = {};
+          member_argument_nodes.clear();
+        }
+      }
+      auto type_member_receiver = [&]() {
+        return member_receiver_node.arena
+            ? generated_expr_type(member_receiver_node, types)
+            : generated_expr_type(member_receiver, types);
+      };
+      string canon_recv = type_member_receiver().value_or(
+          canonical_type_name(member_receiver));
+      canon_recv = canonical_type_name(canon_recv);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
         if ((member_name == "less" || member_name == "isequal") &&
             member_arguments.size() == 2)
@@ -3883,9 +7968,35 @@ class Generator {
           return "((" + expr(member_arguments[0], d, locals, types) + ") as u32 as i64)";
         }
       }
-      string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
+      const Method* checked_receiver_method = nullptr;
+      if (checked_node && checked_node->arena) {
+        const auto checked_root = est::unparenthesized(
+            *checked_node->arena, checked_node->id);
+        const auto* checked_call = std::get_if<est::Call>(
+            &checked_node->arena->at(checked_root));
+        const auto* checked_facts = checked_expression_facts(*checked_node);
+        if (checked_call && checked_facts &&
+            (starts_with(checked_facts->resolved_target, "method:") ||
+             starts_with(checked_facts->resolved_target,
+                         string(checked_ir::kMemberRequirementPrefix)) ||
+             starts_with(checked_facts->resolved_target, "trait-method:") ||
+             starts_with(checked_facts->resolved_target, "parameter:")))
+          checked_receiver_method = checked_method_target(*checked_node, types);
+      }
+      if (!checked_receiver_method) {
+        const auto candidates = checked_method_targets(member_name,
+            phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+        if (candidates.size() > 1)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked receiver method target=" +
+              member_name + " context=" + codegen_body_context_);
+        if (!candidates.empty()) checked_receiver_method = candidates.front();
+      }
+      string receiver_expression = method_receiver_place(member_receiver,
+          member_name, member_arguments, d, locals, types,
+          checked_receiver_method);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
-      auto receiver_type = generated_expr_type(member_receiver, types);
+      auto receiver_type = type_member_receiver();
       if (staged_abi_v10() && tree_empty_constructor_named(member_receiver, "Map") &&
           member_name == "get" &&
           member_arguments.size() == 2) {
@@ -4273,13 +8384,45 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
-        if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
-                                                [&]() {
-                                                  vector<string> result;
-                                                  for (const auto& argument : member_arguments)
-                                                    result.push_back(generated_expr_type(argument, types).value_or(""));
-                                                  return result;
-                                                }(), true, nullptr)) {
+        const string checked_method_name = member_name == "push_back" ? "push"
+            : member_name == "pop_front" ? "pop" : member_name;
+        auto checked_methods = checked_method_targets(
+            checked_method_name, phase21_codegen_statement_
+                ? phase21_codegen_statement_->line : 0);
+        const auto concrete_object = objects_.find(
+            nominal_template_name(concrete));
+        if (concrete_object == objects_.end()) checked_methods.clear();
+        const Method* checked_node_method = nullptr;
+        if (concrete_object != objects_.end() && checked_node &&
+            checked_node->arena) {
+          const auto checked_root = est::unparenthesized(
+              *checked_node->arena, checked_node->id);
+          const auto* checked_call = std::get_if<est::Call>(
+              &checked_node->arena->at(checked_root));
+          if (checked_call) {
+            const auto callee_root = est::unparenthesized(
+                *checked_node->arena, checked_call->callee);
+            const auto* checked_member = std::get_if<est::Member>(
+                &checked_node->arena->at(callee_root));
+            if (checked_member && checked_member->name == checked_method_name)
+              checked_node_method = checked_method_target(*checked_node, types);
+          }
+        }
+        if (!checked_node_method && checked_methods.size() > 1)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked member-call target method=" +
+              checked_method_name);
+        const Method* method = checked_node_method ? checked_node_method
+            : checked_methods.empty()
+            ? nullptr : checked_methods.front();
+        if (!method && concrete_object != objects_.end())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked member-call target method=" +
+              checked_method_name + " line=" + std::to_string(
+                  phase21_codegen_statement_
+                      ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        if (method) {
           const auto external_method_module =
               phase21_external_module_for_symbol(concrete);
           // A consuming concrete method cannot be invoked through either a
@@ -4303,8 +8446,7 @@ class Generator {
               if (tree_parse_member_call(member_arguments[index], nested_receiver,
                                     nested_method, nested_arguments) &&
                   tree_expressions_equal(nested_receiver, member_receiver))
-                argument_temporaries[index] = "__moss_call_argument_" +
-                    std::to_string(call_argument_temp_++);
+                argument_temporaries[index] = next_call_argument_name();
             }
           }
           const bool standard_write_bridge = external_method_module &&
@@ -4354,8 +8496,7 @@ class Generator {
                     : external_type + "::from(" + argument + ")";
             }
             if (standard_write_bridge && !standard_write_argument) {
-              const string staged = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+              const string staged = next_call_argument_name();
               bridge_before << "let " << staged << " = " << argument << "; ";
               argument = staged;
             }
@@ -4426,7 +8567,7 @@ class Generator {
 
     string builtin;
     vector<string> builtin_args;
-    if (tree_parse_simple_call(e, builtin, builtin_args)) {
+    if (parse_root_simple_call(builtin, builtin_args)) {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
@@ -4496,15 +8637,30 @@ class Generator {
             "hash", generated_expr_type(builtin_args[0], types).value_or(""),
             expr(builtin_args.front(), d, locals, types));
       if (builtin == "sort" && !functions_.count(builtin) &&
-          (builtin_args.size() == 1 || builtin_args.size() == 2))
-        return sort_call_rust(builtin_args, d, locals, types);
+          (builtin_args.size() == 1 || builtin_args.size() == 2)) {
+        if (!checked_node || !checked_node->arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT sort lowering lacks checked call node");
+        const auto root = est::unparenthesized(*checked_node->arena,
+                                                checked_node->id);
+        const auto* call = std::get_if<est::Call>(
+            &checked_node->arena->at(root));
+        if (!call || call->arguments.size() != builtin_args.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT sort lowering lacks checked arguments");
+        vector<EmitterExpr> arguments;
+        for (const auto argument : call->arguments)
+          arguments.push_back(checked_node->child(argument));
+        return sort_call_rust(arguments, d, locals, types,
+            static_cast<int>(checked_node->arena->span(root).line));
+      }
     }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
     // compatibility spelling for existing sources.
     string head;
     vector<string> parts;
-    if (tree_parse_simple_call(e, head, parts)) {
+    if (parse_root_simple_call(head, parts)) {
       auto oit = objects_.find(head);
       if (oit != objects_.end()) {
         std::unordered_map<string,string> values;
@@ -4530,7 +8686,26 @@ class Generator {
         return r.str();
       }
       vector<string> call_args;
-      if (tree_parse_simple_call(e, head, call_args)) {
+      if (parse_root_simple_call(head, call_args)) {
+        vector<EmitterExpr> call_argument_nodes;
+        if (checked_node) {
+          string node_callee;
+          if (!tree_parse_simple_call_nodes(*checked_node, node_callee,
+                                            call_argument_nodes) ||
+              node_callee != head ||
+              call_argument_nodes.size() != call_args.size())
+            call_argument_nodes.clear();
+        }
+        auto render_call_argument = [&](size_t index) {
+          return index < call_argument_nodes.size()
+              ? expr(call_argument_nodes[index], d, locals, types)
+              : expr(call_args[index], d, locals, types);
+        };
+        auto type_call_argument = [&](size_t index) {
+          return index < call_argument_nodes.size()
+              ? generated_expr_type(call_argument_nodes[index], types)
+              : generated_expr_type(call_args[index], types);
+        };
         head = resolved_callable_identity(head, types);
         const Function* function_target = nullptr;
         if (starts_with(head, "callable-v1:")) {
@@ -4542,30 +8717,36 @@ class Generator {
         bool known_function = (function_target != nullptr);
         if (known_function)
           return render_known_function_call(*function_target, function_target->name, call_args,
-                                            d, locals, types);
+                                            d, locals, types,
+                                            call_argument_nodes.empty()
+                                                ? nullptr : &call_argument_nodes,
+                                            checked_node);
         const Method* sibling_method = nullptr;
         if (d && objects_.count(d->name) && !known_function) {
-          vector<string> arg_types;
-          for (const auto& argument : call_args)
-            arg_types.push_back(nominalized_generated_argument_type(
-                argument, generated_expr_type(argument, types).value_or("")));
-          sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
+          const auto checked_methods = checked_method_targets(
+              head, phase21_codegen_statement_
+                  ? phase21_codegen_statement_->line : 0);
+          if (checked_methods.size() != 1)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing or ambiguous checked implicit-method target=" +
+                head + " context=" + codegen_body_context_);
+          sibling_method = checked_methods.front();
         }
         vector<string> sibling_temporaries(call_args.size());
         if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
           for (size_t i = 0; i < call_args.size(); ++i) {
             string nested_name; vector<string> nested_args;
-            if (tree_parse_simple_call(call_args[i], nested_name, nested_args) &&
-                objects_.count(d->name) &&
-                resolve_object_method(objects_, d->name, nested_name,
-                    [&]() {
-                      vector<string> result;
-                      for (const auto& argument : nested_args)
-                        result.push_back(generated_expr_type(argument, types).value_or(""));
-                      return result;
-                    }(), true, nullptr))
-              sibling_temporaries[i] = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+            if (!tree_parse_simple_call(call_args[i], nested_name, nested_args))
+              continue;
+            const auto nested_methods = checked_method_targets(nested_name,
+                phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+            if (nested_methods.size() > 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT ambiguous checked nested implicit-method target=" +
+                  nested_name);
+            if (!nested_methods.empty() &&
+                nested_methods.front()->receiver_effect != Effect::Read)
+              sibling_temporaries[i] = next_call_argument_name();
           }
         }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
@@ -4573,7 +8754,7 @@ class Generator {
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
-              is_compile_time_callable(generated_expr_type(call_args[i], types).value_or(""));
+              is_compile_time_callable(type_call_argument(i).value_or(""));
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
@@ -4582,7 +8763,7 @@ class Generator {
                                                : sibling_temporaries[i],
                 d, locals, types);
           else
-            r << expr(call_args[i], d, locals, types);
+            r << render_call_argument(i);
         }
         r << ")";
         if (sibling_method &&
@@ -4602,7 +8783,7 @@ class Generator {
           for (size_t i = 0; i < call_args.size(); ++i)
             if (!sibling_temporaries[i].empty())
               sequenced << "let " << sibling_temporaries[i] << " = "
-                        << expr(call_args[i], d, locals, types) << "; ";
+                        << render_call_argument(i) << "; ";
           sequenced << r.str() << " }";
           return sequenced.str();
         }
@@ -4637,6 +8818,14 @@ class Generator {
   bool borrowed_message_parameter(const string& expression) const {
     const auto binding = tree_identifier_name(expression);
     return binding && borrowed_message_parameters_.count(*binding);
+  }
+
+  bool borrowed_message_parameter(const EmitterExpr& expression) const {
+    if (!expression.arena) return false;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* binding = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    return binding && borrowed_message_parameters_.count(binding->name);
   }
 
   bool borrowed_message_type(const string& type) const {
@@ -4693,6 +8882,18 @@ class Generator {
     return "(" + r + ").clone()";
   }
 
+  string message_arg(const EmitterExpr& expression, const string& type,
+                     const Domain* d, const std::set<string>& locals,
+                     const std::unordered_map<string,string>* types = nullptr,
+                     size_t functional_pipeline_id = 0) const {
+    string rendered = nominal_domain_handle_argument(
+        expression, type, d, locals, types, functional_pipeline_id);
+    if (is_object_view(expression, d, locals, types))
+      return "(" + rendered + ").__moss_value()";
+    return copy_type(type) || type == "_" ? rendered
+                                           : "(" + rendered + ").clone()";
+  }
+
   string shared_message_arg(const string& e, const string& type,
                             const Domain* d, const std::set<string>& locals,
                             const std::unordered_map<string,string>* types = nullptr,
@@ -4719,6 +8920,22 @@ class Generator {
     throw std::runtime_error("internal error: shared message selected owned boundary");
   }
 
+  string shared_message_arg(const EmitterExpr& expression, const string& type,
+                            const Domain* d, const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types = nullptr,
+                            size_t functional_pipeline_id = 0) const {
+    string rendered = nominal_domain_handle_argument(
+        expression, type, d, locals, types, functional_pipeline_id);
+    if (copy_type(type)) return rendered;
+    if (is_object_view(expression, d, locals, types))
+      return "&(" + rendered + ")";
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    return identifier && borrowed_message_parameters_.count(identifier->name)
+        ? identifier->name : "&(" + rendered + ")";
+  }
+
   string value_from_borrowed_message_parameter(
       const string& source, const string& rendered,
       const std::unordered_map<string,string>* types) const {
@@ -4726,6 +8943,20 @@ class Generator {
     if (borrowed_message_parameter(source) && type &&
         !view_object_type(*type))
       return "*(" + rendered + ")";
+    return rendered;
+  }
+
+  string value_from_borrowed_message_parameter(
+      const EmitterExpr& expression, const string& rendered,
+      const std::unordered_map<string,string>* types) const {
+    if (!expression.arena) return rendered;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const auto* identifier = std::get_if<est::Identifier>(
+        &expression.arena->at(root));
+    if (!identifier || !borrowed_message_parameters_.count(identifier->name))
+      return rendered;
+    auto type = generated_expr_type(expression, types);
+    if (type && !view_object_type(*type)) return "*(" + rendered + ")";
     return rendered;
   }
 
@@ -4933,12 +9164,21 @@ class Generator {
         FunctionalExpressionHandlesScope result_handles_scope(
             active_functional_expression_handles_,
             &method.expression_handles);
+        struct ResultFactsContextScope {
+          string& slot;
+          string prior;
+          ResultFactsContextScope(string& target, const string& current)
+              : slot(target), prior(target) { slot = current; }
+          ~ResultFactsContextScope() { slot = std::move(prior); }
+        } result_facts_context_scope(codegen_body_context_, context);
         source_comment(o, 8,
                        method.result_line ? method.result_line : method.line,
                        *method.result_expression);
         o << "        ";
         if (raises) o << "Ok(";
-        o << expr(*method.result_expression, &receiver, locals, &types,
+        o << expr(checked_expression_ref(*method.result_expression,
+                                         est::ExprSlot::ReturnValue),
+                  &receiver, locals, &types,
                   plan == method.result_functional_pipeline_ids.end()
                       ? 0 : plan->second)
           ;
@@ -5125,35 +9365,47 @@ class Generator {
     phase21_result_context_ = raises;
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
+      const EmitterExpr checked_result = checked_expression_ref(
+          f.expression_handles, *f.result_expression,
+          est::ExprSlot::ReturnValue);
       struct ResultCodegenScope {
         const FunctionSpecialization*& specialization_slot;
-        string& expression_slot;
+        const EmitterExpr*& expression_slot;
         const FunctionSpecialization* prior_specialization;
-        string prior_expression;
+        const EmitterExpr* prior_expression;
         ResultCodegenScope(const FunctionSpecialization*& selected,
-                           string& source, const FunctionSpecialization* current,
-                           const string& expression)
-            : specialization_slot(selected), expression_slot(source),
-              prior_specialization(selected), prior_expression(source) {
+                           const EmitterExpr*& node,
+                           const FunctionSpecialization* current,
+                           const EmitterExpr* expression)
+            : specialization_slot(selected), expression_slot(node),
+              prior_specialization(selected), prior_expression(node) {
           specialization_slot = current;
           expression_slot = expression;
         }
         ~ResultCodegenScope() {
           specialization_slot = prior_specialization;
-          expression_slot = std::move(prior_expression);
+          expression_slot = prior_expression;
         }
       } result_scope(codegen_result_specialization_,
-                     codegen_result_expression_, specialization,
-                     *f.result_expression);
+                     codegen_result_node_, specialization,
+                     &checked_result);
       FunctionalExpressionHandlesScope result_handles_scope(
           active_functional_expression_handles_, &f.expression_handles);
+      struct ResultFactsContextScope {
+        string& slot;
+        string prior;
+        ResultFactsContextScope(string& target, const string& current)
+            : slot(target), prior(target) { slot = current; }
+        ~ResultFactsContextScope() { slot = std::move(prior); }
+      } result_facts_context_scope(codegen_body_context_, functional_context);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
-      string rendered = expr(*f.result_expression, nullptr, locals, &types,
+      string rendered = expr(checked_result,
+                             nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
                                 ? 0 : plan->second);
       if (view_object_type(return_type)) {
-        const auto expr_binding = tree_identifier_name(*f.result_expression);
+        const auto expr_binding = tree_identifier_name(checked_result);
         auto param_it = std::find_if(f.params.begin(), f.params.end(),
                                      [&](const Param& p) {
           return expr_binding && p.name == *expr_binding;
@@ -5361,17 +9613,13 @@ class Generator {
     for (const auto& handler : domain.handlers) {
       std::set<string> locals{"self"};
       std::unordered_map<string,string> types{{"self", domain.name}};
-      string call = "message self." + handler.name + "(";
       out << "    pub fn __moss_message_" << handler.name << "(&self";
       for (size_t index = 0; index < handler.params.size(); ++index) {
         const auto& parameter = handler.params[index];
         out << ", " << parameter.name << ": " << rust_type(parameter.type);
         locals.insert(parameter.name);
         types[parameter.name] = parameter.type;
-        if (index) call += ", ";
-        call += parameter.name;
       }
-      call += ")";
       const bool saved_phase21_result_context = phase21_result_context_;
       phase21_result_context_ = !handler.observable_effects.raise_set.empty();
       out << ") -> " << handler_message_return_type(handler) << " {\n"
@@ -5390,8 +9638,22 @@ class Generator {
         else
           out << ".map_err(__MossRaised::from)";
       } else {
+        std::ostringstream call;
+        call << "self." << handler.name << "_shared(";
+        for (size_t index = 0; index < handler.params.size(); ++index) {
+          if (index) call << ", ";
+          const auto& parameter = handler.params[index];
+          if (copy_type(parameter.type)) call << parameter.name;
+          else call << "&(" << parameter.name << ")";
+        }
+        call << ")";
+        if (!handler.observable_effects.raise_set.empty())
+          call.str(phase21_propagate(call.str()));
+        string rendered = call.str();
+        if (handler.reply_type)
+          rendered += ".unwrap_or_else(|| std::process::abort())";
         if (!handler.observable_effects.raise_set.empty()) out << "Ok(";
-        out << expr(call, nullptr, locals, &types);
+        out << rendered;
         if (!handler.observable_effects.raise_set.empty()) out << ")";
       }
       out << "\n    }\n";
@@ -5595,7 +9857,15 @@ class Generator {
     vector<Stmt> constructions;
     vector<Stmt> executable;
     for (const auto& statement : m.body) {
-      if (domain_construction(statement.b)) constructions.push_back(statement);
+      const bool has_initializer = statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign;
+      const auto slot = statement.kind == Stmt::Kind::Assign
+          ? est::ExprSlot::RhsValue : est::ExprSlot::Initializer;
+      if (has_initializer && !statement.b.empty() &&
+          domain_construction(checked_expression_ref(
+              statement, statement.b, slot)))
+        constructions.push_back(statement);
       else executable.push_back(statement);
     }
     std::unordered_map<string,int> domain_ranks;
@@ -5787,14 +10057,97 @@ class Generator {
                 continue;
               for (size_t read = attempt_end; read < recover_end; ++read) {
                 const Stmt& recovered = ss[read];
-                bool mentions = tree_expression_mentions_identifier(
-                    recovered.b, binding);
-                if (recovered.kind != Stmt::Kind::Assign)
-                  mentions |= tree_expression_mentions_identifier(
-                      recovered.a, binding);
-                for (const auto& argument : recovered.args)
-                  mentions |= tree_expression_mentions_identifier(
-                      argument, binding);
+                // The recovery header is a checked pattern, not a value
+                // expression that can read an outer local. Its binder names
+                // are declarations and must not be scanned as expression
+                // text when deciding which consumed locals need slots.
+                if (recovered.kind == Stmt::Kind::Recover) continue;
+                auto mentions_slot = [&](const string& source,
+                                         est::ExprSlot slot,
+                                         std::uint32_t argument_index = 0) {
+                  return tree_expression_mentions_identifier(
+                      checked_expression_ref(recovered, source, slot,
+                                             argument_index), binding);
+                };
+                bool mentions = false;
+                switch (recovered.kind) {
+                  case Stmt::Kind::Assign:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::LhsPlace);
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::RhsValue);
+                    break;
+                  case Stmt::Kind::Let:
+                  case Stmt::Kind::Var:
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::Initializer);
+                    break;
+                  case Stmt::Kind::Call:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Receiver);
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  case Stmt::Kind::Message: {
+                    string message_expression = "message " + recovered.a +
+                        "." + recovered.b + "(";
+                    for (size_t argument = 0;
+                         argument < recovered.args.size(); ++argument) {
+                      if (argument) message_expression += ", ";
+                      message_expression += recovered.args[argument];
+                    }
+                    message_expression += ")";
+                    mentions |= mentions_slot(message_expression,
+                                               est::ExprSlot::Receiver);
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  }
+                  case Stmt::Kind::Echo:
+                    for (std::uint32_t argument = 0;
+                         argument < recovered.args.size(); ++argument)
+                      mentions |= mentions_slot(recovered.args[argument],
+                          est::ExprSlot::Argument, argument);
+                    break;
+                  case Stmt::Kind::If:
+                  case Stmt::Kind::While:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Condition);
+                    break;
+                  case Stmt::Kind::Match:
+                    mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::Scrutinee);
+                    break;
+                  case Stmt::Kind::For:
+                    mentions |= mentions_slot(recovered.b,
+                                               est::ExprSlot::Iterable);
+                    break;
+                  case Stmt::Kind::Reply:
+                  case Stmt::Kind::Return:
+                    if (!recovered.a.empty())
+                      mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::ReturnValue);
+                    break;
+                  case Stmt::Kind::Raise:
+                    if (!recovered.a.empty())
+                      mentions |= mentions_slot(recovered.a,
+                                               est::ExprSlot::RaisedValue);
+                    break;
+                  case Stmt::Kind::Raw:
+                    mentions |= mentions_slot(recovered.text,
+                                               est::ExprSlot::Expression);
+                    break;
+                  case Stmt::Kind::Pass:
+                  case Stmt::Kind::Else:
+                  case Stmt::Kind::Case:
+                  case Stmt::Kind::Try:
+                  case Stmt::Kind::Recover:
+                    break;
+                }
                 if (mentions) {
                   recovery_slots.insert(binding);
                   break;
@@ -6052,14 +10405,67 @@ class Generator {
                 << " Err(" << phase21_selected_carrier_ << ");\n";
             }
           } else {
-            auto type = generated_expr_type(s.a, &types);
+            const EmitterExpr raise_value = checked_expression_ref(
+                s.a, est::ExprSlot::RaisedValue);
+            auto type = generated_expr_type(raise_value, &types);
+            if (!type && !s.exceptional_alternatives.empty()) {
+              std::optional<string> checked_error_type;
+              bool one_type = true;
+              for (const auto& identity : s.exceptional_alternatives) {
+                if (identity.kind != RaisedIdentityKind::EnumVariant) {
+                  one_type = false;
+                  break;
+                }
+                const string candidate = canonical_type_name(identity.type);
+                if (checked_error_type && *checked_error_type != candidate) {
+                  one_type = false;
+                  break;
+                }
+                checked_error_type = candidate;
+              }
+              if (one_type) type = checked_error_type;
+            }
             if (!type)
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
-            const string value = expr(s.a, d, locals, &types,
+            string checked_raise_target;
+            if (s.exceptional_alternatives.size() == 1) {
+              const auto& identity = *s.exceptional_alternatives.begin();
+              if (identity.kind == RaisedIdentityKind::EnumVariant) {
+                auto enum_type = enums_.find(
+                    canonical_type_name(identity.type));
+                if (enum_type != enums_.end() && p_.type_context) {
+                  const auto root = est::unparenthesized(
+                      *raise_value.arena, raise_value.id);
+                  est::ExprId callee = root;
+                  if (const auto* call = std::get_if<est::Call>(
+                          &raise_value.arena->at(root)))
+                    callee = est::unparenthesized(*raise_value.arena,
+                                                   call->callee);
+                  const auto* member = std::get_if<est::Member>(
+                      &raise_value.arena->at(callee));
+                  const auto base = member
+                      ? est::unparenthesized(*raise_value.arena, member->base)
+                      : 0;
+                  const auto* enum_name = member
+                      ? std::get_if<est::Identifier>(
+                            &raise_value.arena->at(base)) : nullptr;
+                  const auto declaration = p_.type_context->find(
+                      enum_type->second->name);
+                  if (enum_name && enum_name->name == enum_type->second->name &&
+                      member->name == identity.variant && declaration &&
+                      canonical_type_name(identity.type) == concrete)
+                    checked_raise_target =
+                        "nominal-enum-variant-v1:" + declaration->id +
+                        ":case:" + identity.variant;
+                }
+              }
+            }
+            const string value = expr(raise_value, d, locals, &types,
                 statement_functional_pipeline_id(
-                    s, functional_context, 0));
+                    s, functional_context, 0), nullptr,
+                checked_raise_target);
             if (enums_.count(concrete)) {
               const string raised_value = "__moss_error_value_" +
                   std::to_string(phase21_try_temp_++);
@@ -6108,7 +10514,9 @@ class Generator {
           break;
         }
         case Stmt::Kind::Match: {
-          auto scrutinee_type = generated_expr_type(s.a, &types);
+          const EmitterExpr scrutinee = checked_expression_ref(
+              s.a, est::ExprSlot::Scrutinee);
+          auto scrutinee_type = generated_expr_type(scrutinee, &types);
           if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
             throw std::runtime_error("unchecked enum match");
           const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
@@ -6129,20 +10537,26 @@ class Generator {
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
           }
-          string match_callee;
-          vector<string> match_arguments;
+          const auto scrutinee_root = est::unparenthesized(
+              *scrutinee.arena, scrutinee.id);
           bool struct_literal = false;
-          // A Rust struct literal is not allowed as a bare scrutinee.
-          if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
-            for (const auto& candidate : declaration.cases) {
-              const string suffix = declaration.name + "." + candidate.name;
-              if (!candidate.fields.empty() &&
-                  (match_callee == suffix ||
-                   (match_callee.size() > suffix.size() &&
-                    match_callee.compare(match_callee.size() - suffix.size(), suffix.size(), suffix) == 0 &&
-                    match_callee[match_callee.size() - suffix.size() - 1] == '.'))) {
-                struct_literal = true;
-                break;
+          if (const auto* constructor = std::get_if<est::Constructor>(
+                  &scrutinee.arena->at(scrutinee_root))) {
+            const auto type_root = est::unparenthesized(*scrutinee.arena,
+                                                         constructor->type);
+            if (const auto* case_member = std::get_if<est::Member>(
+                    &scrutinee.arena->at(type_root))) {
+              const auto enum_root = est::unparenthesized(*scrutinee.arena,
+                                                           case_member->base);
+              const auto* enum_name = std::get_if<est::Identifier>(
+                  &scrutinee.arena->at(enum_root));
+              if (enum_name && enum_name->name == declaration.name) {
+                auto item = std::find_if(declaration.cases.begin(),
+                    declaration.cases.end(), [&](const EnumCase& candidate) {
+                      return candidate.name == case_member->name;
+                    });
+                struct_literal = item != declaration.cases.end() &&
+                    !item->fields.empty();
               }
             }
           }
@@ -6154,7 +10568,7 @@ class Generator {
             o << "__moss_recovery_slot_" << s.a
               << ".take().unwrap_or_else(|| std::process::abort())";
           else
-            o << expr(s.a, d, locals, &types);
+            o << expr(scrutinee, d, locals, &types);
           if (struct_literal) o << ")";
           o << " {\n";
           ++i;
@@ -6247,7 +10661,8 @@ class Generator {
             types[binding] = type;
           }
           o << indent(level) << "if "
-            << expr(s.a, d, locals, &types,
+            << expr(checked_expression_ref(s.a, est::ExprSlot::Condition),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0))
             << " {\n";
@@ -6279,7 +10694,8 @@ class Generator {
         }
         case Stmt::Kind::While: {
           o << indent(level) << "while "
-            << expr(s.a, d, locals, &types,
+            << expr(checked_expression_ref(s.a, est::ExprSlot::Condition),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0))
             << " {\n";
@@ -6293,11 +10709,20 @@ class Generator {
           break;
         }
         case Stmt::Kind::For: {
-          string source = trim(s.b);
-          string range_name;
-          vector<string> range_args;
-          bool is_range = tree_parse_simple_call(source, range_name, range_args) &&
-              range_name == "range";
+          const EmitterExpr source = checked_expression_ref(
+              s.b, est::ExprSlot::Iterable);
+          const auto source_root = est::unparenthesized(
+              *source.arena, source.id);
+          const auto* range_call = std::get_if<est::Call>(
+              &source.arena->at(source_root));
+          const auto* range_callee = range_call
+              ? std::get_if<est::Identifier>(&source.arena->at(
+                    est::unparenthesized(*source.arena, range_call->callee)))
+              : nullptr;
+          const bool is_range = range_callee &&
+              range_callee->name == "range" &&
+              (range_call->arguments.size() == 2 ||
+               range_call->arguments.size() == 3);
           auto source_type = generated_expr_type(source, &types);
           string element_type = source_type ? canonical_type_name(*source_type) : "";
           if (is_range) {
@@ -6311,13 +10736,16 @@ class Generator {
             string start_var = "__moss_range_start_" + std::to_string(s.line);
             string end_var   = "__moss_range_end_"   + std::to_string(s.line);
             o << indent(level) << "let " << start_var << ": i64 = "
-              << expr(range_args[0], d, locals, &types) << ";\n";
+              << expr(source.child(range_call->arguments[0]), d, locals, &types)
+              << ";\n";
             o << indent(level) << "let " << end_var << ": i64 = "
-              << expr(range_args[1], d, locals, &types) << ";\n";
-            if (range_args.size() == 3) {
+              << expr(source.child(range_call->arguments[1]), d, locals, &types)
+              << ";\n";
+            if (range_call->arguments.size() == 3) {
               string step_var = "__moss_range_step_" + std::to_string(s.line);
               o << indent(level) << "let " << step_var << ": i64 = "
-                << expr(range_args[2], d, locals, &types) << ";\n";
+                << expr(source.child(range_call->arguments[2]), d, locals,
+                        &types) << ";\n";
               o << indent(level) << "for " << s.a << " in ("
                 << start_var << ".." << end_var
                 << ").step_by(" << step_var << " as usize) {\n";
@@ -6399,16 +10827,28 @@ class Generator {
           if (!source_type)
             throw std::runtime_error("internal error: unresolved static iterator source");
           string concrete = canonical_type_name(*source_type);
-          const Method* next = resolve_object_method(objects_, concrete, "next", {}, true, nullptr);
-          bool direct_iterator = next != nullptr;
-          const Method* iterator_factory = nullptr;
-          if (!direct_iterator) {
-            iterator_factory = resolve_object_method(objects_, concrete, "iter", {}, true, nullptr);
-            if (iterator_factory && iterator_factory->return_type)
-              next = resolve_object_method(
-                  objects_, canonical_type_name(*iterator_factory->return_type),
-                  "next", {}, true, nullptr);
+          const auto iterator_methods = checked_iterator_method_targets(
+              s, functional_context);
+          const Method* factory = nullptr;
+          const Method* next = nullptr;
+          if (iterator_methods.size() == 1 &&
+              iterator_methods.front()->name == "next") {
+            next = iterator_methods.front();
+          } else if (iterator_methods.size() == 2 &&
+                     iterator_methods.front()->name == "iter" &&
+                     iterator_methods.back()->name == "next") {
+            factory = iterator_methods.front();
+            next = iterator_methods.back();
+          } else {
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked implicit iterator target set is invalid");
           }
+          const bool direct_iterator = factory == nullptr;
+          if ((direct_iterator && next->owner != concrete) ||
+              (factory && (factory->owner != concrete || !factory->return_type ||
+                           canonical_type_name(*factory->return_type) != next->owner)))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked implicit iterator targets disagree with source");
           string iterator_expression;
           if (direct_iterator && next->receiver_effect == Effect::Consume)
             iterator_expression = expr(source, d, locals, &types);
@@ -6447,11 +10887,15 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              const EmitterExpr argument_expression = checked_expression_ref(
+                  s.args[argument], est::ExprSlot::Argument,
+                  static_cast<std::uint32_t>(argument));
               string rendered = expr(
-                  s.args[argument], d, locals, &types,
+                  argument_expression,
+                  d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
-              auto type = generated_expr_type(s.args[argument], &types);
+              auto type = generated_expr_type(argument_expression, &types);
               auto resolved = [](const std::optional<string>& t) {
                 if (!t) return false;
                 const string c = canonical_type_name(*t);
@@ -6511,9 +10955,13 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          const EmitterExpr checked_lhs = checked_expression_ref(
+              s, s.a, est::ExprSlot::LhsPlace);
+          const EmitterExpr checked_rhs = checked_expression_ref(
+              s, s.b, est::ExprSlot::RhsValue);
           if (s.a == "_") {
             o << indent(level) << "let _ = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_rhs, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
@@ -6522,13 +10970,13 @@ class Generator {
           }
           if (phase21_option_slots_.count(s.a)) {
             o << indent(level) << "__moss_recovery_slot_" << s.a
-              << " = Some(" << expr(s.b, d, locals, &types,
+              << " = Some(" << expr(checked_rhs, d, locals, &types,
                      statement_functional_pipeline_id(
                          s, functional_context, 0)) << ");\n";
             ++i;
             break;
           }
-          if (auto sd = domain_construction(s.b)) {
+          if (auto sd = domain_construction(checked_rhs)) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
             remember_domain_instance_binding(s.a, source_domain, s.a);
@@ -6536,25 +10984,32 @@ class Generator {
             if (specialized != specialization_names_.end()) *sd = specialized->second;
             bool existing_binding = locals.count(s.a);
             o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
-            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+            emit_domain_construction(o, *sd, checked_rhs, d, locals, &types);
             locals.insert(s.a);
             types[s.a] = *sd;
             ++i;
             break;
           }
           string lhs;
-          string lhs_base, lhs_index;
+          EmitterExpr lhs_base_node, lhs_index_node;
+          const bool indexed_lhs = tree_parse_index(
+              checked_lhs, lhs_base_node, lhs_index_node);
+          const string lhs_base = indexed_lhs ? lhs_base_node.text() : string();
+          const string lhs_index = indexed_lhs ? lhs_index_node.text() : string();
           string index_temporary;
-          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+          if (indexed_lhs) {
             string root_id = lhs_base;
             auto dot_pos = root_id.find('.');
             if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
-            bool conflicts_with_base = !root_id.empty() && tree_expression_mentions_identifier(lhs_index, root_id);
+            bool conflicts_with_base = !root_id.empty() &&
+                tree_expression_mentions_identifier(lhs_index_node, root_id);
             bool reads_sibling = false;
-            if (view_method_ && d && is_pure_state_read_expression(lhs_index)) {
+            if (view_method_ && d &&
+                is_pure_state_read_expression(lhs_index_node)) {
               for (const auto& field : d->state) {
                 if (field.name != lhs_base &&
-                    tree_expression_mentions_identifier(lhs_index, field.name)) {
+                    tree_expression_mentions_identifier(lhs_index_node,
+                                                        field.name)) {
                   reads_sibling = true;
                   break;
                 }
@@ -6564,25 +11019,25 @@ class Generator {
               index_temporary = "__moss_index_" +
                   std::to_string(call_argument_temp_++);
               o << indent(level) << "let " << index_temporary << " = "
-                << expr(lhs_index, d, locals, &types) << ";\n";
+                << expr(lhs_index_node, d, locals, &types) << ";\n";
             }
           }
-          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
-            bool string_index = tree_literal_class(lhs_index) ==
+          if (indexed_lhs) {
+            bool string_index = tree_literal_class(lhs_index_node) ==
                 est::LiteralClass::String;
             string ir = !index_temporary.empty() ? index_temporary :
-                (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
-            auto base_type = generated_expr_type(lhs_base, &types);
+                (string_index ? lhs_index : expr(lhs_index_node, d, locals, &types));
+            auto base_type = generated_expr_type(lhs_base_node, &types);
             bool map_index = base_type &&
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-            lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
+            lhs = "(" + write_call_place(lhs_base_node, d, locals, &types) + ")[" + ir + "]";
           }
-          else lhs = write_call_place(s.a, d, locals, &types);
+          else lhs = write_call_place(checked_lhs, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
-          if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+          if (tree_plain_identifier(checked_lhs) && !locals.count(s.a) && !state_field) {
             if (statement_type.empty())
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
@@ -6591,18 +11046,22 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
             string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+            if (staged_abi_v10() && tree_empty_constructor_named(checked_rhs, "Map") &&
                 !starts_with(statement_type, "map[")) {
               // A bare Map constructor has no intrinsic element types. The
               // checked body may close it at a later indexed assignment;
               // preserve that evidence before emitting its Rust declaration.
               for (size_t next = i + 1; next < ss.size(); ++next) {
-                string map_base, index_expression;
-                if (ss[next].kind != Stmt::Kind::Assign ||
-                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
-                    map_base != s.a) continue;
+                if (ss[next].kind != Stmt::Kind::Assign) continue;
+                const auto next_lhs = checked_expression_ref(
+                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
+                EmitterExpr map_base, index_expression;
+                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
+                    tree_identifier_name(map_base) !=
+                        std::optional<string>(s.a)) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(ss[next].b, &types);
+                auto value_type = generated_expr_type(checked_expression_ref(
+                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
                 if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
@@ -6618,14 +11077,14 @@ class Generator {
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_rhs, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ";\n";
             locals.insert(s.a);
             types[s.a] = !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
-            const auto source_name = tree_identifier_name(s.b);
+            const auto source_name = tree_identifier_name(checked_rhs);
             auto source_binding = source_name
                 ? domain_instance_bindings_.find(*source_name)
                 : domain_instance_bindings_.end();
@@ -6637,50 +11096,61 @@ class Generator {
               forget_domain_instance_binding(s.a);
           } else {
             string mb, mi;
-            bool map_assignment = tree_parse_index(s.a, mb, mi);
+            EmitterExpr map_base_node, map_index_node;
+            bool map_assignment = tree_parse_index(
+                checked_lhs, map_base_node, map_index_node);
+            if (map_assignment) {
+              mb = map_base_node.text();
+              mi = map_index_node.text();
+            }
             auto map_assignment_type = map_assignment
-                ? generated_expr_type(mb, &types) : std::optional<string>{};
+                ? generated_expr_type(map_base_node, &types)
+                : std::optional<string>{};
             if (map_assignment && map_assignment_type &&
                 (canonical_type_name(*map_assignment_type) == "map" ||
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
-              const bool string_key = tree_literal_class(mi) ==
+              const bool string_key = tree_literal_class(map_index_node) ==
                   est::LiteralClass::String;
               string key = string_key
-                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
-              auto key_type = generated_expr_type(mi, &types);
+                  ? "MossStr::from(" + mi + ")"
+                  : expr(map_index_node, d, locals, &types);
+              auto key_type = generated_expr_type(map_index_node, &types);
               if (key_type && shared_nominal_map_key(*key_type) &&
-                  is_object_view(mi, d, locals, &types))
+                  is_object_view(map_index_node, d, locals, &types))
                 key = "(" + key + ").__moss_value()";
               else if (key_type && !copy_type(*key_type) &&
                   !string_key)
                 key = "(" + key + ").clone()";
-              string inserted = expr(s.b, d, locals, &types,
+              string inserted = expr(checked_rhs, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
-              const auto source_binding = tree_identifier_name(s.b);
+              const auto source_binding = tree_identifier_name(checked_rhs);
               if (source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 inserted = "(" + inserted + ").clone()";
               if (auto shared_key =
                       shared_protocol_map_key_from_type(*map_assignment_type)) {
                 o << indent(level) << "{ let __moss_key = " << key
-                  << "; (" << write_call_place(mb, d, locals, &types)
+                  << "; (" << write_call_place(map_base_node, d, locals, &types)
                   << ").insert_with(" << shared_map_hash(*shared_key, "__moss_key")
                   << ", __moss_key, " << inserted << ", |a, b| "
                   << shared_map_equal(*shared_key, "a", "b") << "); }\n";
               } else {
-                o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
+                o << indent(level) << "(" << write_call_place(map_base_node, d, locals, &types)
                   << ").insert(" << key << ", "
                   << inserted
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types))
-              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+            else if (is_object_view(checked_lhs, d, locals, &types))
+              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(
+                  checked_rhs, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0))
+                  << ");\n";
             else {
               string assigned;
-              vector<string> concat_operands;
-              std::function<void(string)> collect_concat = [&](string source) {
-                source = tree_strip_expression_grouping(std::move(source));
+              vector<EmitterExpr> concat_operands;
+              std::function<void(EmitterExpr)> collect_concat =
+                  [&](EmitterExpr source) {
                 auto binary = tree_generated_binary(source, {"+"});
                 auto left_type = binary
                     ? generated_expr_type(binary->left, &types) : std::nullopt;
@@ -6689,16 +11159,17 @@ class Generator {
                 if (binary && left_type && right_type &&
                     canonical_type_name(*left_type) == "string" &&
                     canonical_type_name(*right_type) == "string") {
-                  collect_concat(binary->left);
-                  collect_concat(binary->right);
+                  collect_concat(std::move(binary->left));
+                  collect_concat(std::move(binary->right));
                 } else {
                   concat_operands.push_back(std::move(source));
                 }
               };
-              collect_concat(s.b);
-              bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+              collect_concat(checked_rhs);
+              bool reuse_string_buffer =
                   locals.count(s.a) && concat_operands.size() > 1 &&
-                  tree_expressions_equal(concat_operands.front(), s.a) &&
+                  tree_identifier_name(concat_operands.front()) ==
+                      std::optional<string>(s.a) &&
                   canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
                       "string";
               for (size_t operand = 1;
@@ -6710,16 +11181,16 @@ class Generator {
                 std::ostringstream reused;
                 reused << "{ ";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
-                  const string part = trim(concat_operands[operand]);
+                  const auto& part = concat_operands[operand];
                   const bool literal = tree_literal_class(part) ==
                       est::LiteralClass::String;
                   reused << "let __moss_append_" << operand << " = ";
-                  if (literal) reused << part << "; ";
+                  if (literal) reused << part.text() << "; ";
                   else
-                    reused << "&(" << expr(concat_operands[operand], d, locals, &types)
+                    reused << "&(" << expr(part, d, locals, &types)
                            << "); ";
                 }
-                string place = write_call_place(s.a, d, locals, &types);
+                string place = write_call_place(checked_lhs, d, locals, &types);
                 reused << "(" << place << ").reserve(";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
                   if (operand > 1) reused << ".saturating_add(";
@@ -6737,10 +11208,10 @@ class Generator {
                 reused << "}";
                 assigned = reused.str();
               } else {
-                assigned = expr(s.b, d, locals, &types,
+                assigned = expr(checked_rhs, d, locals, &types,
                     statement_functional_pipeline_id(s, functional_context, 0));
               }
-              const auto source_binding = tree_identifier_name(s.b);
+              const auto source_binding = tree_identifier_name(checked_rhs);
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
@@ -6749,19 +11220,29 @@ class Generator {
               else
                 o << indent(level) << lhs << " = " << assigned << ";\n";
             }
-            if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+            if (tree_plain_identifier(checked_lhs))
+              forget_domain_instance_binding(s.a);
           }
           ++i;
           break;
         }
         case Stmt::Kind::Call: {
+          auto argument_node = [&](size_t index) {
+            return checked_expression_ref(s, s.args.at(index),
+                est::ExprSlot::Argument,
+                static_cast<std::uint32_t>(index));
+          };
+          vector<EmitterExpr> checked_call_arguments;
+          const EmitterExpr receiver_expression = checked_expression_ref(
+              s.a, est::ExprSlot::Receiver);
           auto checked_receiver = s.receiver_types_by_context.find(functional_context);
           if (checked_receiver == s.receiver_types_by_context.end())
             checked_receiver = s.receiver_types_by_context.find("");
           if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
             types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
-              ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+              ? canonical_type_name(generated_expr_type(
+                    receiver_expression, &types).value_or("")) : "";
           if (!s.b.empty() &&
               (statement_receiver_type == "string" ||
                statement_receiver_type == "vector" ||
@@ -6773,19 +11254,16 @@ class Generator {
                  starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
-            string call = s.a + "." + s.b + "(";
-            for (size_t argument = 0; argument < s.args.size(); ++argument) {
-              if (argument) call += ", ";
-              call += s.args[argument];
-            }
-            call += ")";
-            o << indent(level) << expr(call, d, locals, &types) << ";\n";
+            const EmitterExpr checked_call = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            o << indent(level) << expr(checked_call, d, locals, &types) << ";\n";
             ++i;
             break;
           }
           if (s.b.empty() && s.a == "assert") {
+            const EmitterExpr condition = argument_node(0);
             o << indent(level) << "if !("
-              << expr(s.args.front(), d, locals, &types,
+              << expr(condition, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ") { panic!(\"{}\", "
@@ -6800,13 +11278,15 @@ class Generator {
             size_t id = assertion_temp_++;
             string actual = "__moss_assert_actual_" + std::to_string(id);
             string expected = "__moss_assert_expected_" + std::to_string(id);
+            const EmitterExpr actual_expression = argument_node(0);
+            const EmitterExpr expected_expression = argument_node(1);
             o << indent(level) << "let " << actual << " = &("
-              << expr(s.args[0], d, locals, &types,
+              << expr(actual_expression, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
               << ");\n";
             o << indent(level) << "let " << expected << " = &("
-              << expr(s.args[1], d, locals, &types,
+              << expr(expected_expression, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 1))
               << ");\n";
@@ -6828,11 +11308,63 @@ class Generator {
           }
           if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
               (s.args.size() == 1 || s.args.size() == 2)) {
-            o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
+            vector<EmitterExpr> sort_arguments;
+            const EmitterExpr invocation = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            const auto root = est::unparenthesized(*invocation.arena,
+                                                    invocation.id);
+            const auto* sort_call = std::get_if<est::Call>(
+                &invocation.arena->at(root));
+            if (!sort_call || sort_call->arguments.size() != s.args.size())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT sort statement lacks checked call nodes");
+            for (const auto argument : sort_call->arguments)
+              sort_arguments.push_back(invocation.child(argument));
+            o << indent(level) << sort_call_rust(sort_arguments, d, locals,
+                &types, s.line) << ";\n";
             ++i;
             break;
           }
-          string function_name = resolved_callable_identity(s.a, &types);
+          checked_call_arguments.reserve(s.args.size());
+          for (size_t index = 0; index < s.args.size(); ++index)
+            checked_call_arguments.push_back(argument_node(index));
+          auto checked_target_fact =
+              s.checked_call_targets_by_context.find(codegen_body_context_);
+          if (checked_target_fact == s.checked_call_targets_by_context.end() &&
+              !codegen_active_specialization_key_.empty())
+            checked_target_fact = s.checked_call_targets_by_context.find(
+                "specialization:" + codegen_active_specialization_key_);
+          if (checked_target_fact == s.checked_call_targets_by_context.end())
+            checked_target_fact = s.checked_call_targets_by_context.find("");
+          string checked_target =
+              checked_target_fact == s.checked_call_targets_by_context.end()
+                  ? string() : checked_target_fact->second;
+          if (checked_target.empty() && !s.checked_call_targets_by_context.empty()) {
+            std::set<string> recorded_targets;
+            for (const auto& entry : s.checked_call_targets_by_context)
+              if (!entry.second.empty()) recorded_targets.insert(entry.second);
+            if (recorded_targets.size() == 1)
+              checked_target = *recorded_targets.begin();
+          }
+          if (checked_target.empty() && !s.b.empty()) {
+            const EmitterExpr invocation = checked_expression_ref(
+                s, s.text, est::ExprSlot::Expression);
+            const auto* facts = checked_expression_facts(invocation);
+            if (facts) checked_target = facts->resolved_target;
+          }
+          const bool looks_like_checked_function = functions_.count(s.a) != 0 ||
+              (types.count(s.a) && callable_identity(types.at(s.a)));
+          if (looks_like_checked_function && checked_target.empty())
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked call target callee=" +
+                s.a + " line=" + std::to_string(s.line) +
+                " context=" + codegen_body_context_);
+          if (looks_like_checked_function &&
+              starts_with(checked_target, "fn:") &&
+              checked_target == "fn:__moss_test_perturbed_call_target__")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked call target was perturbed");
+          string function_name = checked_target.empty() ? s.a : checked_target;
           const Function* function_target = nullptr;
           if (starts_with(function_name, "callable-v1:")) {
             function_target = find_function_by_callable_id(function_name);
@@ -6844,7 +11376,8 @@ class Generator {
           if (s.b.empty() && known_function && !benchmark_body_) {
             o << indent(level)
               << render_known_function_call(*function_target, function_target->name, s.args,
-                                           d, locals, &types)
+                                           d, locals, &types,
+                                           &checked_call_arguments)
               << ";\n";
             ++i;
             break;
@@ -6853,19 +11386,40 @@ class Generator {
               s.b.empty() && !known_function;
           auto call_receiver_type = implicit_method
               ? std::optional<string>(d->name)
-              : !s.b.empty() ? generated_expr_type(s.a, &types)
+              : !s.b.empty() ? generated_expr_type(receiver_expression, &types)
                              : std::optional<string>{};
           const Method* call_method = nullptr;
-          if (call_receiver_type && (!s.b.empty() || implicit_method))
-            call_method = resolve_object_method(
-                objects_, canonical_type_name(*call_receiver_type),
-                implicit_method ? s.a : s.b, [&]() {
-                  vector<string> result;
-                  for (const auto& argument : s.args)
-                    result.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
-                  return result;
-                }(), true, nullptr);
+          if (call_receiver_type && (!s.b.empty() || implicit_method)) {
+            const string method_name = implicit_method ? s.a : s.b;
+            if (starts_with(checked_target, "method:")) {
+              const string selected = checked_target.substr(7);
+              const auto separator = selected.rfind('.');
+              if (separator == string::npos)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT malformed checked method target");
+              const string owner = selected.substr(0, separator);
+              const string name = selected.substr(separator + 1);
+              auto object = objects_.find(owner);
+              if (name != method_name || object == objects_.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked method target is unavailable");
+              auto method = std::find_if(object->second->methods.begin(),
+                  object->second->methods.end(), [&](const Method& candidate) {
+                    return candidate.name == name;
+                  });
+              if (method == object->second->methods.end())
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked method target is unavailable");
+              call_method = &*method;
+            } else if (checked_target.empty()) {
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked method target receiver=" +
+                  (implicit_method ? std::string("self") : s.a) +
+                  " method=" + method_name + " line=" +
+                  std::to_string(s.line) + " context=" +
+                  codegen_body_context_);
+            }
+          }
           const auto external_method_module = call_method && call_receiver_type
               ? phase21_external_module_for_symbol(
                     canonical_type_name(*call_receiver_type))
@@ -6883,33 +11437,40 @@ class Generator {
           if (call_method && call_method->receiver_effect != Effect::Read) {
             for (size_t k = 0; k < s.args.size(); ++k) {
               bool same_receiver_mutating_argument = false;
+              const EmitterExpr nested_call = argument_node(k);
+              const auto* nested_facts = checked_expression_facts(nested_call);
+              const Method* nested_method = nested_facts &&
+                      starts_with(nested_facts->resolved_target, "method:")
+                  ? method_for_checked_target(nested_facts->resolved_target)
+                  : nullptr;
+              if (nested_method && nested_method->receiver_effect != Effect::Read) {
               if (!s.b.empty()) {
-                string nested_receiver, nested_method;
-                vector<string> nested_args;
-                same_receiver_mutating_argument =
-                    tree_parse_member_call(s.args[k], nested_receiver, nested_method,
-                                      nested_args) &&
-                    tree_expressions_equal(nested_receiver, s.a);
+                  EmitterExpr nested_receiver;
+                  string nested_name;
+                  vector<EmitterExpr> nested_args;
+                  if (tree_parse_member_call_nodes(nested_call, nested_receiver,
+                                                   nested_name, nested_args)) {
+                    est::ExpressionView nested_view{nullptr,
+                        nested_receiver.arena, nested_receiver.id,
+                        nested_receiver.source};
+                    est::ExpressionView receiver_view{nullptr,
+                        receiver_expression.arena, receiver_expression.id,
+                        receiver_expression.source};
+                    same_receiver_mutating_argument =
+                        est::structurally_equal(nested_view, receiver_view);
+                  }
               } else if (implicit_method) {
-                string nested_name;
-                vector<string> nested_args;
-                if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
-                  vector<string> nested_types;
-                  for (const auto& argument : nested_args)
-                    nested_types.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
                   same_receiver_mutating_argument =
-                      resolve_object_method(objects_, d->name, nested_name,
-                                            nested_types, true, nullptr) != nullptr;
+                      nested_method->owner == call_method->owner;
                 }
               }
               if (!same_receiver_mutating_argument) continue;
-              argument_temporaries[k] = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+              argument_temporaries[k] = next_call_argument_name();
               string temporary_type =
-                  generated_expr_type(s.args[k], &types).value_or("_value");
+                  generated_expr_type(argument_node(k), &types)
+                      .value_or("_value");
               o << indent(level) << "let " << argument_temporaries[k] << " = "
-                << expr(s.args[k], d, locals, &types,
+                << expr(argument_node(k), d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k))
                 << ";\n";
@@ -6919,9 +11480,12 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
-                    : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
-                    : expr(s.a, d, locals, &types));
+                    ? viewed_function_name(*function_target,
+                          checked_call_arguments, d, locals, &types)
+                    : !s.b.empty() ? method_receiver_place(receiver_expression,
+                          s.b, checked_call_arguments, d, locals, &types,
+                          call_method)
+                    : expr(receiver_expression, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
           call_output << (standard_write_bridge ? "__moss_bridge_receiver" :
               method_receiver_expression);
@@ -6930,13 +11494,16 @@ class Generator {
             auto it = types.find(s.a);
             if (it != types.end() && collection_named(parsed_type(it->second), {"queue"}))
               method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
-            call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+            call_output << "." << viewed_method_name(receiver_expression,
+                method, checked_call_arguments, d, locals, &types);
           }
           call_output << "(";
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
+            const EmitterExpr checked_argument = argument_node(k);
             bool compile_time_callable = known_function &&
-                is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
+                is_compile_time_callable(generated_expr_type(
+                    checked_argument, &types).value_or(""));
             if (compile_time_callable) continue;
             if (emitted_arguments++) call_output << ", ";
             if (benchmark_body_) call_output << "std::hint::black_box(";
@@ -6948,13 +11515,21 @@ class Generator {
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
                                           call_specialization(*function_target,
-                                                              s.args, &types));
+                                                              s.args, &types,
+                                                              &checked_call_arguments),
+                                          argument_temporaries[k].empty()
+                                              ? &checked_argument : nullptr);
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
-                string rendered = method_call_argument(
-                    *call_method, k, argument_expression, d, locals, &types,
-                    statement_functional_pipeline_id(
-                        s, functional_context, k));
+                string rendered = argument_temporaries[k].empty()
+                    ? method_call_argument(
+                          *call_method, k, checked_argument, d, locals, &types,
+                          statement_functional_pipeline_id(
+                              s, functional_context, k))
+                    : method_call_argument(
+                          *call_method, k, argument_expression, d, locals,
+                          &types, statement_functional_pipeline_id(
+                              s, functional_context, k));
                 bool standard_write_argument = false;
                 if (external_method_module && k < call_method->params.size() &&
                     !standard_error_variants(canonical_type_name(
@@ -6984,19 +11559,18 @@ class Generator {
                         : external_type + "::from(" + rendered + ")";
                 }
                 if (standard_write_bridge && !standard_write_argument) {
-                  const string staged = "__moss_call_argument_" +
-                      std::to_string(call_argument_temp_++);
+                  const string staged = next_call_argument_name();
                   bridge_before << "let " << staged << " = " << rendered
                     << "; ";
                   rendered = staged;
                 }
                 call_output << rendered;
               } else
-                call_output << expr(argument_expression, d, locals, &types,
+                call_output << expr(argument_node(k), d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
-              call_output << expr(s.args[k], d, locals, &types,
+              call_output << expr(argument_node(k), d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k));
             }
@@ -7024,7 +11598,8 @@ class Generator {
           if (benchmark_body_) o << "std::hint::black_box(";
           o << lowered_call;
           auto receiver_type = !s.b.empty()
-              ? generated_expr_type(s.a, &types) : std::optional<string>{};
+              ? generated_expr_type(receiver_expression, &types)
+              : std::optional<string>{};
           if (!s.b.empty() && s.b == "pop" && receiver_type &&
               (starts_with(canonical_type_name(*receiver_type), "vector[") ||
                starts_with(canonical_type_name(*receiver_type), "queue[")))
@@ -7041,7 +11616,9 @@ class Generator {
                 "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
                 std::to_string(s.line) + " context=" + functional_context);
           bool joined_assignment = join_assignments.erase(s.a) != 0;
-          auto sd = domain_construction(s.b);
+          const EmitterExpr checked_initializer = checked_expression_ref(
+              s, s.b, est::ExprSlot::Initializer);
+          auto sd = domain_construction(checked_initializer);
           if (sd) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
@@ -7052,22 +11629,27 @@ class Generator {
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
             o << s.a << " = ";
-            emit_domain_construction(o, *sd, s.b, d, locals, &types);
+            emit_domain_construction(o, *sd, checked_initializer, d, locals,
+                                     &types);
             types[s.a] = *sd;
           } else {
-            const auto source_name = tree_identifier_name(s.b);
+            const auto source_name = tree_identifier_name(checked_initializer);
             auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
             string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+            if (staged_abi_v10() && tree_empty_constructor_named(checked_initializer, "Map") &&
                 !starts_with(statement_type, "map[")) {
               for (size_t next = i + 1; next < ss.size(); ++next) {
-                string map_base, index_expression;
-                if (ss[next].kind != Stmt::Kind::Assign ||
-                    !tree_parse_index(ss[next].a, map_base, index_expression) ||
-                    map_base != s.a) continue;
+                if (ss[next].kind != Stmt::Kind::Assign) continue;
+                const auto next_lhs = checked_expression_ref(
+                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
+                EmitterExpr map_base, index_expression;
+                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
+                    tree_identifier_name(map_base) !=
+                        std::optional<string>(s.a)) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(ss[next].b, &types);
+                auto value_type = generated_expr_type(checked_expression_ref(
+                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
                 if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
@@ -7081,14 +11663,15 @@ class Generator {
             o << s.a;
             if (!joined_assignment && !domain_capability &&
                 (canonical_type_name(statement_type) == "float" ||
-                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+                 canonical_type_name(generated_expr_type(
+                     checked_initializer, &types).value_or("")) == "float"))
               o << ": f64";
             else if (!joined_assignment && !domain_capability &&
                      (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
               o << ": " << rust_type(!inferred_map_type.empty()
                   ? inferred_map_type : statement_type);
             o << " = "
-              << expr(s.b, d, locals, &types,
+              << expr(checked_initializer, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
             if (domain_capability) o << ".clone()";
@@ -7143,7 +11726,8 @@ class Generator {
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans)
+          o << expr(checked_expression_ref(s, call, est::ExprSlot::Receiver),
+                    d, locals, &types, 0, &argument_plans)
             << (state_view ? ")" : "") << ";\n";
           if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
@@ -7156,9 +11740,14 @@ class Generator {
         case Stmt::Kind::Reply:
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
+          {
+          const auto checked_reply = checked_expression_ref(
+              s, s.a, est::ExprSlot::ReturnValue);
           o << indent(level) << reply_slot << " = Some("
-            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+            << message_arg(checked_reply, *current_handler->reply_type,
+                d, locals, &types,
                 statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          }
           o << indent(level) << "break 'handler;\n";
           ++i;
           // `reply` terminates the handler.  Do not emit statements that are
@@ -7170,10 +11759,12 @@ class Generator {
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            string rendered = expr(s.a, d, locals, &types,
+            const EmitterExpr checked_return = checked_expression_ref(
+                s, s.a, est::ExprSlot::ReturnValue);
+            string rendered = expr(checked_return, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
-            const auto returned_binding = tree_identifier_name(s.a);
+            const auto returned_binding = tree_identifier_name(checked_return);
             if (returned_binding && view_parameters_.count(*returned_binding)) {
               rendered = *returned_binding + ".__moss_value()";
             } else if (returned_binding && types.count(*returned_binding) &&
@@ -7202,7 +11793,8 @@ class Generator {
           // just like an ordinary call result; otherwise rustc may erase the
           // very arithmetic or functional pipeline being measured.
           if (benchmark_body_) o << "std::hint::black_box(";
-          o << expr(s.text, d, locals, &types,
+          o << expr(checked_expression_ref(s.text, est::ExprSlot::Expression),
+                    d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, 0));
           if (benchmark_body_) o << ")";
@@ -7215,15 +11807,27 @@ class Generator {
     }
   }
 
-  std::optional<string> domain_construction(const string& expr) const {
-    string e = trim(expr);
-    string callee; vector<string> args;
-    if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
-    return domains_.count(callee) ? std::optional<string>(callee) : std::nullopt;
+  std::optional<string> domain_construction(
+      const EmitterExpr& expression) const {
+    if (!expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    est::ExprId callee_id = 0;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root)))
+      callee_id = call->callee;
+    else if (const auto* constructor = std::get_if<est::Constructor>(
+                 &expression.arena->at(root)))
+      callee_id = constructor->type;
+    else return std::nullopt;
+    callee_id = est::unparenthesized(*expression.arena, callee_id);
+    const auto* callee = std::get_if<est::Identifier>(
+        &expression.arena->at(callee_id));
+    return callee && domains_.count(callee->name)
+        ? std::optional<string>(callee->name) : std::nullopt;
   }
 
   void emit_domain_construction(std::ostringstream& o, const string& domain,
-                       const string& expression, const Domain* context,
+                       const EmitterExpr& expression, const Domain* context,
                        const std::set<string>& locals,
                        const std::unordered_map<string,string>* types) const {
     auto found = domains_.find(domain);
@@ -7232,14 +11836,25 @@ class Generator {
     }
     const Domain& definition = *found->second;
     o << "construct_" << snake_case(domain) << "(";
-    string constructor = trim(expression);
-    string callee; vector<string> arguments;
-    std::unordered_map<string,string> named;
-    if (tree_parse_simple_call(constructor, callee, arguments)) {
-      for (const auto& argument : arguments) {
-        string name, value;
-        if (tree_parse_named_argument(argument, name, value)) named[name] = value;
-      }
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    const std::vector<est::ExprId>* arguments = nullptr;
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root)))
+      arguments = &call->arguments;
+    else if (const auto* constructor = std::get_if<est::Constructor>(
+                 &expression.arena->at(root)))
+      arguments = &constructor->arguments;
+    if (!arguments)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked domain constructor is not a call");
+    std::unordered_map<string, EmitterExpr> named;
+    for (const auto argument_id : *arguments) {
+      const auto* argument = std::get_if<est::NamedArgument>(
+          &expression.arena->at(argument_id));
+      if (!argument)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked domain constructor argument is not named");
+      named.emplace(argument->name, expression.child(argument->value));
     }
     bool constructor_argument = false;
     {
@@ -7260,7 +11875,8 @@ class Generator {
         constructor_argument = true;
         o << (value == named.end()
             ? (field.init.empty() ? default_value(field.type)
-                                  : expr(field.init, context, locals, types))
+            : expr(checked_expression_ref(field, field.init,
+                  est::ExprSlot::Initializer), context, locals, types))
             : expr(value->second, context, locals, types));
       }
     }
@@ -7279,6 +11895,97 @@ class Generator {
   const Handler* find_handler(const Domain& d, const string& name) const {
     for (const auto& h : d.handlers) if (h.name == name) return &h;
     return nullptr;
+  }
+
+  vector<string> checked_call_edge_targets(const string& context,
+                                           int line) const {
+    vector<string> sources{context};
+    if (context.rfind("fn:", 0) == 0) {
+      const auto specialization = context.find('<');
+      if (specialization != string::npos)
+        sources.push_back(context.substr(0, specialization));
+    }
+    vector<string> targets;
+    for (const auto& edge : p_.semantic_call_edges) {
+      if (std::find(sources.begin(), sources.end(), edge.source) == sources.end())
+        continue;
+      if (edge.line != line || edge.invocation_kind != "ordinary_call") continue;
+      if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
+        targets.push_back(edge.target);
+    }
+    if (targets.empty() && phase21_codegen_statement_ &&
+        !phase21_codegen_statement_->source_file.empty()) {
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.line != line || edge.invocation_kind != "ordinary_call" ||
+            edge.source_file != phase21_codegen_statement_->source_file ||
+            edge.target.empty()) continue;
+        if (std::find(targets.begin(), targets.end(), edge.target) == targets.end())
+          targets.push_back(edge.target);
+      }
+    }
+    return targets;
+  }
+
+  vector<const Method*> checked_method_targets(const string& name,
+                                               int line) const {
+    vector<const Method*> methods;
+    for (const auto& target : checked_call_edge_targets(
+             codegen_body_context_, line)) {
+      if (!starts_with(target, "method:")) continue;
+      const string selected = target.substr(7);
+      const auto separator = selected.rfind('.');
+      if (separator == string::npos ||
+          selected.substr(separator + 1) != name) continue;
+      const auto object = objects_.find(selected.substr(0, separator));
+      if (object == objects_.end()) continue;
+      const auto method = std::find_if(object->second->methods.begin(),
+          object->second->methods.end(), [&](const Method& candidate) {
+            return candidate.name == name;
+          });
+      if (method != object->second->methods.end() &&
+          std::find(methods.begin(), methods.end(), &*method) == methods.end())
+        methods.push_back(&*method);
+    }
+    return methods;
+  }
+
+  vector<const Method*> checked_iterator_method_targets(
+      const Stmt& statement, const string& context) const {
+    if (moss_test_drop_fact("call-targets") ||
+        moss_test_perturb_fact("call-targets"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT dropped or contradictory checked iterator target");
+    auto selected = statement.implicit_iterator_targets_by_context.find(context);
+    if (selected == statement.implicit_iterator_targets_by_context.end())
+      selected = statement.implicit_iterator_targets_by_context.find("");
+    if (selected == statement.implicit_iterator_targets_by_context.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked implicit iterator targets");
+    vector<const Method*> methods;
+    for (const auto& identity : selected->second) {
+      if (!starts_with(identity, "method:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT malformed checked implicit iterator target");
+      const auto separator = identity.rfind('.');
+      if (separator == string::npos)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT malformed checked implicit iterator target");
+      const string owner = identity.substr(7, separator - 7);
+      const string name = identity.substr(separator + 1);
+      auto object = objects_.find(owner);
+      if (object == objects_.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked implicit iterator owner is unavailable");
+      auto method = std::find_if(object->second->methods.begin(),
+          object->second->methods.end(), [&](const Method& candidate) {
+            return candidate.name == name;
+          });
+      if (method == object->second->methods.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked implicit iterator method is unavailable");
+      methods.push_back(&*method);
+    }
+    return methods;
   }
 
 };

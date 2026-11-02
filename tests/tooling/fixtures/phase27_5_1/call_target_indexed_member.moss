@@ -1,0 +1,9 @@
+type Item:
+  value: Int
+
+  fn value_plus(amount: Int):
+    return value + amount
+
+fn main():
+  items = [Item(value = 40)]
+  echo items[0].value_plus(2)

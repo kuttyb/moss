@@ -266,7 +266,26 @@ void build_type_context(Program& program) {
     declaration.declaration_name =
         declaration_name.empty() ? program_name : declaration_name;
     declaration.fields = std::move(fields);
-    context->declare(std::move(declaration));
+    std::vector<string> qualified_aliases;
+    for (const auto& [module_name, module_id] : program.module_identities)
+      if (module_id == declaration.module_id)
+        qualified_aliases.push_back(module_name + "__" +
+                                    declaration.declaration_name);
+    if (qualified_aliases.empty() && !defining_module.empty()) {
+      string alias_module = defining_module;
+      const auto separator = alias_module.rfind("::");
+      if (separator != string::npos)
+        alias_module.erase(0, separator + 2);
+      qualified_aliases.push_back(alias_module + "__" +
+                                  declaration.declaration_name);
+    }
+    context->declare(declaration);
+    for (const auto& alias : qualified_aliases) {
+      if (alias == program_name) continue;
+      auto qualified_alias = declaration;
+      qualified_alias.program_name = alias;
+      context->declare(std::move(qualified_alias));
+    }
   };
   for (const auto& object : program.objects) {
     vector<moss::NominalFieldSlot> fields;
@@ -4315,6 +4334,64 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
       target = expression.semantic_target_id;
       break;
     }
+    case checked_ir::ExprKind::EnumConstruct: {
+      if (!expression.type || expression.type->kind != moss::TypeKind::Enum ||
+          !expression.type->declaration ||
+          expression.type->declaration->kind != moss::DeclarationKind::Enum ||
+          expression.semantic_target_id.rfind(
+              "nominal-enum-variant-v1:" +
+                  expression.type->declaration->id + ":case:", 0) != 0)
+        return std::nullopt;
+      const auto declaration = program.type_context
+          ? program.type_context->find_id(expression.type->declaration->id)
+          : nullptr;
+      if (!declaration || declaration->kind != moss::DeclarationKind::Enum)
+        return std::nullopt;
+      const auto case_name = expression.semantic_target_id.substr(
+          std::string("nominal-enum-variant-v1:").size() +
+          expression.type->declaration->id.size() +
+          std::string(":case:").size());
+      const EnumType* enumeration = nullptr;
+      for (const auto& candidate : program.enums) {
+        const string module_id = program_module_identity(
+            program, candidate.defining_module);
+        const string declaration_name = candidate.declaration_name.empty()
+            ? candidate.name : candidate.declaration_name;
+        if (moss::declaration_identity(moss::DeclarationKind::Enum,
+                module_id, declaration_name) != declaration->id) continue;
+        if (enumeration) return std::nullopt;
+        enumeration = &candidate;
+      }
+      if (!enumeration) return std::nullopt;
+      const auto variant = std::find_if(enumeration->cases.begin(),
+          enumeration->cases.end(), [&](const EnumCase& candidate) {
+            return candidate.name == case_name;
+          });
+      if (variant == enumeration->cases.end() ||
+          variant->fields.size() != expression.operands.size() ||
+          expression.payload_ordinals.size() != expression.operands.size())
+        return std::nullopt;
+      const auto type_id = append_auxiliary(
+          est::Identifier{declaration->program_name});
+      const auto case_member = append_auxiliary(
+          est::Member{type_id, case_name});
+      if (expression.operands.empty()) {
+        node = est::Member{type_id, case_name};
+      } else {
+        std::vector<est::ExprId> arguments;
+        arguments.reserve(expression.operands.size());
+        for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+          if (expression.payload_ordinals[index] != index) return std::nullopt;
+          auto value = child(expression.operands[index]);
+          if (!value) return std::nullopt;
+          arguments.push_back(append_auxiliary(est::NamedArgument{
+              variant->fields[index].name, *value, ':'}));
+        }
+        node = est::Call{case_member, std::move(arguments)};
+      }
+      target = expression.semantic_target_id;
+      break;
+    }
     case checked_ir::ExprKind::CollectionCount: {
       if (expression.operands.size() != 1) return std::nullopt;
       auto input = child(expression.operands.front());
@@ -4334,9 +4411,18 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
   facts.resolved_target = std::move(target);
   const auto context = functional_function_context(function);
   arena_owner->record_facts(id, context, facts);
-  for (const auto& specialization : function.specializations)
+  for (const auto& specialization : function.specializations) {
+    auto specialized_facts = facts;
+    if (auto result = moss::Type::parse_canonical(
+            canonical_type_name(specialization.return_type)))
+      specialized_facts.type = std::move(*result);
     arena_owner->record_facts(id,
-        functional_function_context(function, &specialization), facts);
+        "specialization:" + specialization.stable_type_key,
+        specialized_facts);
+    arena_owner->record_facts(id,
+        functional_function_context(function, &specialization),
+        std::move(specialized_facts));
+  }
   return id;
 }
 
@@ -6670,6 +6756,9 @@ void project_imported_h3_checked_bodies(Program& program) {
     attach_imported_checked_body_expression(
         program, function, bind, est::ExprSlot::Initializer, expression,
         {});
+    if (!bind.expression_handles.empty())
+      function.imported_checked_body_result_handle =
+          bind.expression_handles.back();
     Stmt returned;
     returned.kind = Stmt::Kind::Return;
     returned.line = bind.line + 1;
@@ -10384,6 +10473,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
       else out << "null";
       out << ", \"member_name\": ";
       write_debug_json_string(out, requirement.member_name);
+      out << ", \"subject\": ";
+      write_debug_json_string(out, requirement.subject);
       out << ", \"receiver\": ";
       write_typed_open_type_json(out, requirement.receiver);
       out << ", \"argument_types\": [";
@@ -14837,6 +14928,16 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       if (!(input >> std::quoted(argument))) return;
       statement.args.push_back(std::move(argument));
     }
+    size_t raised_count = 0;
+    if (input >> raised_count) {
+      if (raised_count > 256) return;
+      for (size_t index = 0; index < raised_count; ++index) {
+        string identity;
+        if (!(input >> std::quoted(identity))) return;
+        statement.exceptional_alternatives.insert(
+            parse_interface_raise_identity(identity));
+      }
+    }
     function.body.push_back(std::move(statement));
   } else if (record == "generic_source") {
     input >> std::quoted(function.provider_origin_file);
@@ -14886,12 +14987,189 @@ static bool execution_body_read_statement(const string& record,
           "invalid or duplicate statement raise identity in ABI-v9 execution-body section",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
+  string serialized_fact_count;
+  if (fields >> serialized_fact_count) {
+    size_t fact_count = 0;
+    try {
+      std::size_t consumed = 0;
+      fact_count = std::stoull(serialized_fact_count, &consumed);
+      if (consumed != serialized_fact_count.size() || fact_count > 100000)
+        throw std::invalid_argument("invalid fact count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid expression fact count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < fact_count; ++index) {
+      LoadedExpressionFact fact;
+      size_t path_count = 0;
+      unsigned serialized_slot = 0;
+      if (!(fields >> serialized_slot >> fact.argument_index >> path_count) ||
+          serialized_slot >= est::Arena::slot_count || path_count > 100000)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid expression fact location in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      fact.slot = static_cast<std::uint8_t>(serialized_slot);
+      fact.child_path.reserve(path_count);
+      for (size_t path = 0; path < path_count; ++path) {
+        std::uint32_t child = 0;
+        if (!(fields >> child))
+          throw CompileError(std::max(statement.line, 0),
+              "truncated expression fact path in ABI-v9 execution body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        fact.child_path.push_back(child);
+      }
+      if (!(fields >> std::quoted(fact.context) >>
+            std::quoted(fact.canonical_type) >>
+            std::quoted(fact.specialization_result) >>
+            std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
+          fact.inferred_effect < -1 ||
+          fact.inferred_effect > static_cast<int>(Effect::Consume))
+        throw CompileError(std::max(statement.line, 0),
+            "invalid semantic fact in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      statement.loaded_expression_facts.push_back(std::move(fact));
+    }
+  } else {
+    fields.clear();  // Backward-compatible Section 2 records have no facts.
+  }
+  string serialized_target_count;
+  if (fields >> serialized_target_count) {
+    size_t target_count = 0;
+    try {
+      std::size_t consumed = 0;
+      target_count = std::stoull(serialized_target_count, &consumed);
+      if (consumed != serialized_target_count.size() || target_count > 100000)
+        throw std::invalid_argument("invalid call target count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid checked call target count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < target_count; ++index) {
+      string context, target;
+      if (!(fields >> std::quoted(context) >> std::quoted(target)) ||
+          target.empty() ||
+          !statement.checked_call_targets_by_context.emplace(
+              std::move(context), std::move(target)).second)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid checked call target in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  } else {
+    fields.clear();
+  }
+  string serialized_open_call_count;
+  if (fields >> serialized_open_call_count) {
+    size_t open_call_count = 0;
+    try {
+      std::size_t consumed = 0;
+      open_call_count = std::stoull(serialized_open_call_count, &consumed);
+      if (consumed != serialized_open_call_count.size() ||
+          open_call_count > 100000)
+        throw std::invalid_argument("invalid open-call count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid checked open-call key count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < open_call_count; ++index) {
+      string context, key;
+      if (!(fields >> std::quoted(context) >> std::quoted(key)) ||
+          key.empty() ||
+          !statement.open_call_keys_by_context.emplace(
+              std::move(context), std::move(key)).second)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid checked open-call key in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  } else {
+    fields.clear();
+  }
+  string serialized_nested_context_count;
+  if (fields >> serialized_nested_context_count) {
+    size_t context_count = 0;
+    try {
+      std::size_t consumed = 0;
+      context_count = std::stoull(serialized_nested_context_count, &consumed);
+      if (consumed != serialized_nested_context_count.size() ||
+          context_count > 100000)
+        throw std::invalid_argument("invalid nested context count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid nested checked open-call context count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t context_index = 0; context_index < context_count;
+         ++context_index) {
+      string context;
+      size_t expression_count = 0;
+      if (!(fields >> std::quoted(context) >> expression_count) ||
+          expression_count > 100000)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid nested checked open-call context in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto& expressions =
+          statement.nested_open_call_keys_by_context[context];
+      for (size_t expression_index = 0;
+           expression_index < expression_count; ++expression_index) {
+        string expression;
+        size_t key_count = 0;
+        if (!(fields >> std::quoted(expression) >> key_count) ||
+            key_count > 100000 || expressions.count(expression))
+          throw CompileError(std::max(statement.line, 0),
+              "invalid nested checked open-call expression in ABI-v9 execution body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        vector<string> keys;
+        keys.reserve(key_count);
+        for (size_t key_index = 0; key_index < key_count; ++key_index) {
+          string key;
+          if (!(fields >> std::quoted(key)))
+            throw CompileError(std::max(statement.line, 0),
+                "truncated nested checked open-call keys in ABI-v9 execution body",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          keys.push_back(std::move(key));
+        }
+        expressions.emplace(std::move(expression), std::move(keys));
+      }
+    }
+  } else {
+    fields.clear();
+  }
   string trailing;
   if (fields >> trailing)
     throw CompileError(std::max(statement.line, 0),
         "trailing data in ABI-v9 execution-body statement",
         "SOURCE_FREE_EXECUTION_BODY_INVALID");
   return true;
+}
+
+static bool execution_body_read_result_fact(const string& record,
+                                             LoadedExpressionFact& fact) {
+  std::istringstream fields(record);
+  string tag;
+  size_t path_count = 0;
+  unsigned slot = 0;
+  if (!(fields >> tag) || tag != "result_fact" ||
+      !(fields >> slot >> fact.argument_index >> path_count) ||
+      slot >= est::Arena::slot_count || path_count > 100000)
+    return false;
+  fact.slot = static_cast<std::uint8_t>(slot);
+  fact.child_path.reserve(path_count);
+  for (size_t index = 0; index < path_count; ++index) {
+    std::uint32_t child = 0;
+    if (!(fields >> child)) return false;
+    fact.child_path.push_back(child);
+  }
+  if (!(fields >> std::quoted(fact.context) >>
+        std::quoted(fact.canonical_type) >>
+        std::quoted(fact.specialization_result) >>
+        std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
+      fact.inferred_effect < -1 ||
+      fact.inferred_effect > static_cast<int>(Effect::Consume))
+    return false;
+  string trailing;
+  return !(fields >> trailing);
 }
 
 static string execution_body_short_name(const string& qualified) {
@@ -15166,6 +15444,16 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       }
       vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "function_end") {
+        if (starts_with(line, "result_fact ")) {
+          LoadedExpressionFact fact;
+          if (!execution_body_read_result_fact(line, fact))
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid function result expression fact",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          function->loaded_result_expression_facts.push_back(
+              std::move(fact));
+          continue;
+        }
         Stmt statement;
         std::istringstream statement_input(line);
         string tag;
@@ -15297,6 +15585,16 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         method->execution_result_expression = std::move(result_expression);
       vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "method_end") {
+        if (starts_with(line, "result_fact ")) {
+          LoadedExpressionFact fact;
+          if (!execution_body_read_result_fact(line, fact))
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid method result expression fact",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          method->loaded_result_expression_facts.push_back(
+              std::move(fact));
+          continue;
+        }
         Stmt statement;
         std::istringstream statement_input(line);
         string tag;
@@ -16220,6 +16518,10 @@ static ParsedModuleUnit load_module_interface(
   Program provider;
   provider.explicit_module = true;
   provider.module_name = unit.name;
+  provider.main_module = unit.name;
+  provider.package_identities = true;
+  provider.module_identities[""] = unit.module_identity;
+  provider.module_identities[unit.name] = unit.module_identity;
   string line;
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
@@ -18989,6 +19291,10 @@ static Program module_program(const Program& whole, const string& module,
   result.key_proof_ids_by_type = whole.key_proof_ids_by_type;
   result.key_operation_specialization_ids =
       whole.key_operation_specialization_ids;
+  // Projected functions keep their checked ExprIds. The module-specific
+  // Program must carry the arenas those handles index into.
+  result.expression_arena = whole.expression_arena;
+  result.expression_arenas = whole.expression_arenas;
   result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
@@ -21474,6 +21780,7 @@ static void validate_imported_nominal_key_proofs(
 }
 
 static void write_execution_body_statement(std::ostream& out,
+                                           const Program& program,
                                            const Stmt& statement) {
   out << "stmt " << static_cast<int>(statement.kind) << " "
       << statement.line << " " << statement.indent << " "
@@ -21487,7 +21794,124 @@ static void write_execution_body_statement(std::ostream& out,
   out << " " << statement.exceptional_alternatives.size();
   for (const auto& raised : statement.exceptional_alternatives)
     out << " " << std::quoted(raised.canonical());
+  vector<LoadedExpressionFact> facts;
+  for (const auto& handle : statement.expression_handles) {
+    if (handle.arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle.arena_index]) continue;
+    const auto& arena = *program.expression_arenas[handle.arena_index];
+    std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
+        [&](est::ExprId node, vector<std::uint32_t>& path) {
+      for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        if (!semantic.type && semantic.specialization_result.empty() &&
+            semantic.resolved_target.empty() && !semantic.inferred_effect)
+          continue;
+        LoadedExpressionFact fact;
+        fact.slot = static_cast<std::uint8_t>(handle.slot);
+        fact.argument_index = handle.argument_index;
+        fact.child_path = path;
+        fact.context = context;
+        if (semantic.type)
+          fact.canonical_type = semantic.type->to_canonical_string();
+        fact.specialization_result = semantic.specialization_result;
+        fact.resolved_target = semantic.resolved_target;
+        if (semantic.inferred_effect)
+          fact.inferred_effect = static_cast<int>(*semantic.inferred_effect);
+        facts.push_back(std::move(fact));
+      }
+      const auto children = arena.children(node);
+      for (std::size_t index = 0; index < children.size(); ++index) {
+        path.push_back(static_cast<std::uint32_t>(index));
+        visit(children[index], path);
+        path.pop_back();
+      }
+    };
+    vector<std::uint32_t> path;
+    visit(handle.expr, path);
+  }
+  out << " " << facts.size();
+  for (const auto& fact : facts) {
+    out << " " << static_cast<unsigned>(fact.slot) << " "
+        << fact.argument_index << " " << fact.child_path.size();
+    for (const auto child : fact.child_path) out << " " << child;
+    out << " " << std::quoted(fact.context) << " "
+        << std::quoted(fact.canonical_type) << " "
+        << std::quoted(fact.specialization_result) << " "
+        << std::quoted(fact.resolved_target) << " "
+        << fact.inferred_effect;
+  }
+  out << " " << statement.checked_call_targets_by_context.size();
+  for (const auto& [context, target] :
+       statement.checked_call_targets_by_context)
+    out << " " << std::quoted(context) << " " << std::quoted(target);
+  vector<string> open_contexts;
+  open_contexts.reserve(statement.open_call_keys_by_context.size());
+  for (const auto& [context, key] : statement.open_call_keys_by_context)
+    open_contexts.push_back(context);
+  std::sort(open_contexts.begin(), open_contexts.end());
+  out << " " << open_contexts.size();
+  for (const auto& context : open_contexts)
+    out << " " << std::quoted(context) << " " << std::quoted(
+        statement.open_call_keys_by_context.at(context));
+  vector<string> nested_contexts;
+  nested_contexts.reserve(statement.nested_open_call_keys_by_context.size());
+  for (const auto& [context, expressions] :
+       statement.nested_open_call_keys_by_context)
+    nested_contexts.push_back(context);
+  std::sort(nested_contexts.begin(), nested_contexts.end());
+  out << " " << nested_contexts.size();
+  for (const auto& context : nested_contexts) {
+    const auto& expressions =
+        statement.nested_open_call_keys_by_context.at(context);
+    vector<string> expression_texts;
+    expression_texts.reserve(expressions.size());
+    for (const auto& [expression, keys] : expressions)
+      expression_texts.push_back(expression);
+    std::sort(expression_texts.begin(), expression_texts.end());
+    out << " " << std::quoted(context) << " " << expression_texts.size();
+    for (const auto& expression : expression_texts) {
+      const auto& keys = expressions.at(expression);
+      out << " " << std::quoted(expression) << " " << keys.size();
+      for (const auto& key : keys) out << " " << std::quoted(key);
+    }
+  }
   out << "\n";
+}
+
+static void write_execution_body_result_facts(
+    std::ostream& out, const Program& program,
+    const vector<est::Handle>& handles) {
+  for (const auto& handle : handles) {
+    if (handle.slot != est::ExprSlot::ReturnValue ||
+        handle.arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle.arena_index]) continue;
+    const auto& arena = *program.expression_arenas[handle.arena_index];
+    std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
+        [&](est::ExprId node, vector<std::uint32_t>& path) {
+      for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        if (!semantic.type && semantic.specialization_result.empty() &&
+            semantic.resolved_target.empty() && !semantic.inferred_effect)
+          continue;
+        out << "result_fact " << static_cast<unsigned>(handle.slot) << " "
+            << handle.argument_index << " " << path.size();
+        for (const auto child : path) out << " " << child;
+        out << " " << std::quoted(context) << " "
+            << std::quoted(semantic.type
+                ? semantic.type->to_canonical_string() : string()) << " "
+            << std::quoted(semantic.specialization_result) << " "
+            << std::quoted(semantic.resolved_target) << " "
+            << (semantic.inferred_effect
+                ? static_cast<int>(*semantic.inferred_effect) : -1) << "\n";
+      }
+      const auto children = arena.children(node);
+      for (std::size_t index = 0; index < children.size(); ++index) {
+        path.push_back(static_cast<std::uint32_t>(index));
+        visit(children[index], path);
+        path.pop_back();
+      }
+    };
+    vector<std::uint32_t> path;
+    visit(handle.expr, path);
+  }
 }
 
 static string execution_body_package_fingerprint(
@@ -21817,8 +22241,11 @@ static string encode_execution_body_payload(
               << std::quoted(function->params[index].type) << " "
               << ownership_effect_name(effect) << "\n";
     }
+    if (function->result_expression)
+      write_execution_body_result_facts(
+          payload, program, function->expression_handles);
     for (const auto& statement : function->body)
-      write_execution_body_statement(payload, statement);
+      write_execution_body_statement(payload, program, statement);
     payload << "function_end\n";
   }
 
@@ -21862,8 +22289,11 @@ static string encode_execution_body_payload(
                 << std::quoted(method->params[index].type) << " "
                 << ownership_effect_name(effect) << "\n";
       }
+      if (method->result_expression)
+        write_execution_body_result_facts(
+            payload, program, method->expression_handles);
       for (const auto& statement : method->body)
-        write_execution_body_statement(payload, statement);
+        write_execution_body_statement(payload, program, statement);
       payload << "method_end\n";
     }
   }
@@ -21900,13 +22330,13 @@ static string encode_execution_body_payload(
               << handler->body.size() << " "
               << handler->failure_arms.size() << "\n";
       for (const auto& statement : handler->body)
-        write_execution_body_statement(payload, statement);
+        write_execution_body_statement(payload, program, statement);
       for (size_t index = 0; index < handler->failure_arms.size(); ++index) {
         const auto& arm = handler->failure_arms[index];
         payload << "failure_arm " << index << " " << arm.line << " "
                 << arm.body.size() << "\n";
         for (const auto& statement : arm.body)
-          write_execution_body_statement(payload, statement);
+          write_execution_body_statement(payload, program, statement);
         payload << "failure_arm_end\n";
       }
       payload << "handler_end\n";
@@ -22082,6 +22512,9 @@ static vector<std::filesystem::path> write_module_interfaces(
             << statement.args.size();
         for (const auto& argument : statement.args)
           out << " " << std::quoted(argument);
+        out << " " << statement.exceptional_alternatives.size();
+        for (const auto& identity : statement.exceptional_alternatives)
+          out << " " << std::quoted(identity.canonical());
         out << "\n";
       }
       if (function.result_expression)
@@ -22128,6 +22561,9 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " " << std::quoted(statement.semantic_type) << " "
           << statement.args.size();
       for (const auto& argument : statement.args) out << " " << std::quoted(argument);
+      out << " " << statement.exceptional_alternatives.size();
+      for (const auto& identity : statement.exceptional_alternatives)
+        out << " " << std::quoted(identity.canonical());
       out << "\n";
     }
     if (function.result_expression)

@@ -121,18 +121,51 @@ and `src/semantic_checker.cpp`); `moss-dev` defines it in `Makefile:18`.
  Agent 2 selected and ran an additional fixture per class during the C1 audit;
  paths and outcomes are listed in `docs/phase27/27_5_4_REPORT.md`.
 
-The current hook coverage is limited to call targets, specializations, joins,
-and patterns. It does not establish that expression-type, pipeline-type, or
-ownership decisions are consumed from checked facts. Known downstream debt at
-this checkpoint:
+The passing perturb/drop hook set is call targets, specializations, joins,
+and patterns; it runs on Fast Debug, native emission, and `-O`. The registered
+fixture counts are 5, 4, 4, and 3 respectively, including each C1 Agent 2
+selected fixture. The expected result for both perturb and drop is
+`MOSS_INTERNAL_INVARIANT` in every engine. No passing perturb/drop proof exists
+for expression-type, pipeline-type, or ownership facts. Those remain explicit
+known consumer debt:
 
 | Decision | Fast Debug | Native emitter | Optimizer |
 | --- | --- | --- | --- |
-| Expression types | Executes expressions from runtime values; exact checked-type coverage is not established. | Re-infers types in `generated_expr_type` (`src/native_generator.cpp:2024`). | No perturbation coverage yet; consumer authority is not established. |
-| Pipeline stage/output types | Has a runtime output-type fallback (`src/interpreter.hpp:1300–1331`, 12 prior firings). | Callable and type selection still depend on emitter-side inference (`src/native_generator.cpp:1978–2015, 3367–3388`). | No perturbation coverage yet; consumer authority is not established. |
-| Ownership / clone-move-borrow | Executes runtime values; no ownership-fact perturbation coverage yet. | Makes local borrow/clone/recovery-slot choices (`src/native_generator.cpp:1417–1438, 1690–1708, 1774–1823`). | No perturbation coverage yet; consumer authority is not established. |
+| Expression types | Runtime behavior ignores the perturbed answer on all three registered fixtures. | Ignores it on `side_facts.moss`; other fixture outcomes are in the baseline JSON. | Ignores it on `side_facts.moss`; other fixture outcomes are in the baseline JSON. |
+| Pipeline stage/output types | Runtime behavior ignores it on all three fixtures. | Ignores it on `pipeline_shape.moss` and `collections_and_methods.moss`. | Ignores it on `collections_and_methods.moss`. |
+| Ownership / clone-move-borrow | Runtime behavior ignores it on `phase4_effect_smoke.moss`. | Ignores it on `phase4_effect_smoke.moss`. | Ignores it on `phase4_effect_smoke.moss`. |
 
 This table records known gaps and missing evidence, not a claim that each
 engine ignores every fact in that class. K1 remains report-only in the current
 re-scoped phase. C1's default and shadow suites pass 165/165, and Agent 2
 returned GO on the candidate recorded in `docs/phase27/27_5_4_REPORT.md`.
+
+## Phase 27.5.4 C2 delivery
+
+The retained-tree emitter/optimizer C2 implementation is delivered at tag
+`phase27-5-4-m1`, first-parented on the fetched `origin/main`. Fast Debug,
+emitter, and optimizer consumer expression reparses and text-keyed node lookups
+are zero by the C2 corpus counters and source audits; the emitter measurement
+covers 1,824 tracked test/example files in default and `-O`, while package
+manifests are inventoried but not run as package-context commands. The
+string-based compatibility type inference in
+`src/native_generator.cpp:3275–3609` remains reported debt.
+
+The fact perturb/drop matrix passes for call targets, specializations, joins,
+and patterns; expression types, pipeline types, and ownership retain the
+38-entry explicit-probe ignore baseline. Default and shadow suites each pass
+162/165; the three failures are the pinned-parent conformance gate 10 and the
+two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs. The canonical W2
+performance gate passes at 24,316 KiB peak RSS. Paired C1-parent performance is
++2.19% aggregate, W4 +2.55%, W5 +1.98%, W8 +0.22%; all 23 real-world workloads
+remain within the established slowdown noise rule. Agent 2 returned GO for the
+cost-repaired candidate. Full test and measurement details are in the
+[Phase 27.5.4 report](phase27/27_5_4_REPORT.md).
+
+`tests/tooling/check_phase27_5_4_fact_hooks.py` perturbs and drops these three
+classes on three accepted fixtures each, then compares Fast Debug, native, and
+optimized results with the unmodified run. The exact ignored
+`(class, action, fixture, engine)` cases are stored in
+`tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`; make check fails only
+if that set grows. This is a bounded known-debt regression baseline, not proof
+that untested consumers are migrated.

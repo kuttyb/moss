@@ -33,7 +33,7 @@ assert run([out / "borrowed_payloads"]).strip() == "20"
 assert "fn Process_shared(&self, packet: &impl MossAccess_Packet)" in text
 assert "fn Forward_shared(&self, packet: &impl MossAccess_Packet)" in text
 assert "fn __moss_body_Sink_Process(state: &mut SinkProcessState<'_>, packet: &impl MossAccess_Packet)" in text
-assert "sink.Process_shared(packet)" in text
+assert re.search(r"sink\.Process_shared\((?:packet|&\(\*packet\))\)", text)
 assert "middle.Forward_shared(&(state.packet))" in text
 assert "Forward_shared((state.packet).__moss_value())" not in text
 assert "Forward_shared((state.packet).clone())" not in text

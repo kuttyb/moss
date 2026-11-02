@@ -248,6 +248,20 @@ struct CheckedBodyV1 {
   vector<CheckedBodyStmtV1> statements;
   string semantic_hash;
 };
+// Checked per-node facts retained across the one permitted initial load of a
+// compiled .mossi execution body. The child path is relative to an expression
+// handle root; consumers receive the same tree facts after loading without
+// consulting source text or resolving the operation again.
+struct LoadedExpressionFact {
+  std::uint8_t slot = 0;
+  std::uint32_t argument_index = 0;
+  vector<std::uint32_t> child_path;
+  string context;
+  string canonical_type;
+  string specialization_result;
+  string resolved_target;
+  int inferred_effect = -1;
+};
 struct Stmt {
   enum class Kind {
     Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
@@ -262,6 +276,7 @@ struct Stmt {
   // statement's syntax is converted into its expression/statement tree.
   string est_binding_name;
   vector<est::Handle> expression_handles;
+  vector<LoadedExpressionFact> loaded_expression_facts;
   std::optional<est::RawForm> est_raw_form;
   // EST pattern node for match/recover syntax. Pattern source remains on the
   // legacy AST fields for diagnostics and serialization only.
@@ -288,6 +303,14 @@ struct Stmt {
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
+  // Checked target of a statement-level invocation, keyed by semantic body
+  // context. The emitter may lower this identity but must not choose a target
+  // from backend type strings.
+  std::unordered_map<string,string> checked_call_targets_by_context;
+  // Checked implicit iterator protocol targets for a custom `for` source,
+  // ordered as [next] or [iter, next] in the owning semantic context.
+  std::unordered_map<string,vector<string>>
+      implicit_iterator_targets_by_context;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;
@@ -426,6 +449,7 @@ struct Method {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   string execution_source_file;
   std::optional<string> result_expression;
   vector<est::Handle> expression_handles;
@@ -529,6 +553,7 @@ struct Handler {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   std::optional<vector<FailureArm>> execution_failure_arms;
   string execution_source_file;
   vector<FailureArm> failure_arms;
@@ -656,6 +681,7 @@ struct Function {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   string execution_source_file;
   // Bound at module name resolution, before checking. Source-free functions
   // retain the same defining package/module/declaration identity.
@@ -714,6 +740,9 @@ struct Function {
   // True once a validated ABI-v10 checked body replaced the imported legacy
   // generic_stmt projection for this callable.
   bool imported_checked_body_projected = false;
+  // Exact checked result node for H3 projections whose result type is closed
+  // by a concrete consumer specialization.
+  std::optional<est::Handle> imported_checked_body_result_handle;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
@@ -968,7 +997,7 @@ struct CheckedCallEdgeSpecialization {
 // call edge. They must not infer argument types from generated/runtime values.
 inline CheckedCallEdgeSpecialization checked_call_edge_specialization(
     const Program& program, const string& context, const string& callee,
-    int line) {
+    int line, std::optional<std::uint32_t> occurrence = std::nullopt) {
   CheckedCallEdgeSpecialization result;
   result.test_fact_dropped = moss_test_drop_fact("specializations");
   result.test_fact_perturbed = moss_test_perturb_fact("specializations");
@@ -1000,13 +1029,18 @@ inline CheckedCallEdgeSpecialization checked_call_edge_specialization(
         ? edge.source == context
         : std::find(edge_sources.begin() + 1, edge_sources.end(), edge.source) !=
               edge_sources.end();
-    if (!source_matches || edge.target != target || edge.line != line)
+    if (!source_matches || edge.target != target || edge.line != line ||
+        (occurrence && edge.occurrence != *occurrence))
       continue;
     for (const auto& specialization : program.functions) {
       if (specialization.name != callee || !specialization.static_dispatch)
         continue;
       for (const auto& candidate : specialization.specializations) {
-        if (candidate.parameter_types != edge.argument_types) continue;
+        if (!edge.specialization_key.empty()) {
+          if (candidate.stable_type_key != edge.specialization_key) continue;
+        } else if (candidate.parameter_types != edge.argument_types) {
+          continue;
+        }
         if (std::find(result.candidates.begin(), result.candidates.end(),
                       &candidate) == result.candidates.end())
           result.candidates.push_back(&candidate);
@@ -1045,6 +1079,12 @@ inline string functional_method_context(const ObjectType&, const Method& method)
 inline string functional_handler_context(const Domain& domain,
                                          const Handler& handler) {
   return "handler:" + domain.name + "." + handler.name;
+}
+
+inline string functional_handler_instance_context(const Domain& domain,
+                                                  const Handler& handler,
+                                                  const string& instance) {
+  return functional_handler_context(domain, handler) + "@" + instance;
 }
 
 } // namespace moss
