@@ -17036,3 +17036,29 @@ future optimizer-isolated proof and must remain explicit in final review.
   (28 cases), and Phase 27.5.4 fact-hook tests all pass after this fix.
 - No full-suite rerun, paired corpus count, parity/performance gate,
   three-engine aggregate, or Agent 2 audit has run since the latest edits.
+
+
+## C2 continuation checkpoint (2026-11-01; imported expression method edge)
+
+- Active branch `phase27-5-4-work`, pushed tip `c56a2ff3`. Worktree is clean
+  after reverting an unproven emitter experiment; no commit or push was made in
+  this investigation slice.
+- Focused reproducer: `tests/tooling/check_phase21_standard_write_order.py`
+  still fails under `build/compiler/moss-dev` at `carrier.Flip(...)` assigned
+  to a local. Generated Rust passes consumer `std__ParseError` directly where
+  the provider method requires `moss_provider::std__ParseError`. The statement
+  call and direct external function cases already use the bridge.
+- Checker evidence is present: `moss-dev calls main --source src/main.moss
+  --json` reports line 14 target `method:provider__Carrier.Flip`, with checked
+  argument types `[int, std__ParseError]`. Thus the defect is emitter routing of
+  a recorded expression call edge, not checker fact absence. The expression
+  path's compatibility lowering currently falls through to ordinary member-call
+  syntax for this case.
+- Tried and reverted receiver-owner/type fallback edits because output did not
+  change; no semantics or code change is being claimed. Next: route the
+  retained call node to its exact checked edge (context + line + callee) before
+  lowering, then rerun the focused Phase 21 write-order fixture and the adjacent
+  namespace/source-free-recovery tests.
+- Required startup bootstrap is green (`language_version=moss-0.1`). The
+  `docs/MOSS_COMPILER_CONTRACT_DRAFT.md` reference from the older session note
+  is absent; current `docs/MOSS_COMPILER_CONTRACT.md` is present.
