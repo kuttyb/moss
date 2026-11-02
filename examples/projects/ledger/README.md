@@ -27,7 +27,7 @@ Both engines print:
 The replies expose final ledger balance and journal state. Change prices, add
 requests, or extend the journal during Phase 15. Related seeds are
 `examples/dogfood_index.moss` and `examples/dogfood_pipeline.moss`; the latter
-uses functional analytics in production. Fast Debug does not yet execute pipelines.
+uses functional analytics in production. Fast Debug executes the package pipeline as well.
 
 The v0.1 exercise found real module friction, recorded rather than redesigned:
 

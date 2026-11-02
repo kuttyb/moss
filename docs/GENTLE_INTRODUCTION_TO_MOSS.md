@@ -1538,10 +1538,10 @@ the resolved package graph.
 
 Fast Debug intentionally runs Moss semantics directly rather than simulating the production locking implementation.
 
-Current v0.1 Fast Debug also does not yet execute every production construct. `for`
-traversal still requires the production backend. Supported collection operations,
-including those reached through object fields, and the current eager functional
-pipeline surface execute directly in Fast Debug.
+Current v0.1 Fast Debug does not yet execute every production construct. `for`
+traversal over ranges, Vectors, and Queues runs in Fast Debug. Supported collection
+operations, including those reached through object fields, and the current eager
+functional pipeline surface execute directly in Fast Debug.
 
 FileIO requires native execution; Fast Debug does not perform FileIO operations.
 

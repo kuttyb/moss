@@ -42,8 +42,9 @@ Written by a fresh agent (Claude) as a SWARM "Surface" exercise, core language o
 - **Determinant is iterative Gaussian elimination with row swaps** over exact
   rationals (no recursion in v0.1). `det2` is the closed 2x2 formula; tests check
   they agree and that `det(BC) = det(B) det(C)`.
-- **All loops are `while`** — `for ... in range(...)` fails to type-check inside an
-  explicit module in a project, and Fast Debug does not run `for` anyway.
+- **All loops are `while`** by implementation choice. The historical report that
+  range `for` failed inside an explicit module and in Fast Debug predates Phase 27;
+  both the checker and Fast Debug accept that form now.
 - **No string building.** `String + String`, `str()`, `to_string()` are not usable in
   both engines, so printing is `echo` with several arguments (`5 / 6`).
 
@@ -150,10 +151,9 @@ Sorted by COST (edit/check cycles consumed), highest first. Reproducers are in
 13. **Fast Debug for `test` blocks**
     - WANTED: `margo debug` running the tests.
     - HAD TO: generate a scratch package that turns tests into functions (`fdtests/`).
-    - WHY: Margo has no project-wide interpreted test discovery/orchestration
-      equivalent to `margo test`; standalone test sources can use
-      `moss test --interp` (SWARM-039).
-    - CLASS: Fast Debug gap
+    - WHY: this workaround predates project-wide `margo test --interp`, added
+      after the original experiment (SWARM-039).
+    - CLASS: historical tooling gap
     - COST: 1
 14. **`moss edit rename` in a module project**
     - WANTED: rename private `rational__abs_int`.

@@ -143,14 +143,11 @@ Margo resolves `data_tools` as a path dependency, compiles `data_tools` to emit 
 | **Native Compilation** | `margo build` | Lowers Moss to Rust crates, compiles via `rustc` | **Full Success**. Both packages compile cleanly with optimized native binaries. Cross-package static specialization monomorphizes callables and data structures without runtime overhead. |
 | **Native Execution** | `margo run` | Executes native binary | **Full Success**. Output matches mathematical expectation for all windowed and batched calculations. |
 | **Native Tests** | `margo test` | Builds and runs native test binary | **Full Success (16/16 tests pass)**: 8 passed in `data_tools`, 8 passed in `log_analytics`. |
-| **Fast Debug** | `margo debug` | Resolves source closure, interprets reachable Moss AST | **Fails on Higher-Order Functions**: Fails at line 77 with `interpreter error: unknown local 'LogAnalytics__add_latency'`. Fast Debug does not yet support function identifiers passed as callable parameters. |
-| **Fast Debug Trace** | `margo debug --trace` | Emits NDJSON execution events on stderr | Streams events up to the callable argument evaluation failure. |
+| **Fast Debug** | `margo debug` | Resolves source closure, interprets reachable Moss AST | **Passes**: the checked `log_analytics` package runs its named callable arguments, pipelines, and loop traversal. |
+| **Fast Debug Trace** | `margo debug --trace` | Emits NDJSON execution events on stderr | Completes the same package run and emits its trace. |
 
-### Fast Debug Limitations Identified
-1. **No Callable Arguments**: The Fast Debug interpreter evaluates function argument expressions as local variables. When a named function (`LogAnalytics.add_latency`) is passed as an argument, the interpreter looks for a local binding named `'LogAnalytics__add_latency'` and aborts.
-2. **No `for` Iteration**: Fast Debug aborts with `Fast Debug does not support for iteration yet` on `for` loops (as documented in bootstrap capability notes).
-3. **No Project-Wide Interpreted Test Orchestration**: Standalone test sources can run through `moss test --interp`. Project-wide interpreted test discovery is not available through Margo: `margo test` provides native discovery/orchestration, while `margo test --interp` and `margo debug --tests` are unsupported. If a native lowering defect blocks `margo test`, individual test source files may still be exercised manually with `moss test --interp`, but there is no single project-level interpreted test command mirroring native `margo test` (see SWARM-039).
-
+### Fast Debug and test orchestration
+Fast Debug now runs the documented `log_analytics` package, including named callable arguments and `for` traversal. Margo supports project-wide interpreted test execution with `margo test --interp`; the separate `margo debug --tests` option is not supported. Historical failures in this README describe the pre-Phase-27 implementation.
 ---
 
 ## Summary of Reproducers
@@ -230,4 +227,4 @@ Sliding window metric averages (size 3): 20 30 40 50
 2. **Inferred Access Modes Work for Struct Pipelines**: `fold_left` effortlessly traversed collections of nontrivial heap-allocated structs (`RequestLog` with `path: String`) by inferring borrowed `READ` access for the accumulator step function.
 3. **Container Polymorphism Gaps**: Because Moss lacks source-level generic type parameters (`Vector[T]()`), creating empty collections in untyped functions is restricted. Untyped container indexing (`items[i]`) is also rejected at check time, requiring algorithms to be structured either around pipeline primitives or concrete container signatures.
 4. **Boundary Ergonomics**: Sibling callable arguments across module boundaries must be explicitly qualified (`App.is_positive`), and struct fields across separate module crates require `pub` visibility in lowering.
-5. **Tooling Maturity**: Native compilation (`margo build`, `margo run`, `margo test`) is robust, fully verified, and production-ready for cross-package static polymorphism. Fast Debug (`margo debug`) provides immediate iteration for scalar/pipeline code but lags behind in handling higher-order callable parameters and loop traversals.
+5. **Tooling Maturity**: Native compilation (`margo build`, `margo run`, `margo test`) is robust, fully verified, and production-ready for cross-package static polymorphism. Fast Debug (`margo debug`) also runs the checked cross-package pipeline example, including higher-order callable parameters and loop traversals.

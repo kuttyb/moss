@@ -179,9 +179,9 @@ count of 3 1
 This matches CPython: `deque([3, 4, 0, 1, 2])`; `deque(maxlen=3)` extended with
 1..5 gives `[3, 4, 5]`, and `pop()` returns 5.
 
-The Fast Debug test harness was used here because there is no project-wide Margo
-command for interpreted test discovery/orchestration. Standalone test sources can
-instead be exercised with `moss test --interp`; this harness is a generated scratch
+The Fast Debug test harness was used here before project-wide interpreted test
+discovery was available. Margo now provides `margo test --interp`; standalone test
+sources can also be exercised with `moss test --interp`. This harness is a generated scratch
 copy of `src/main.moss` (`tmp/deque_fastdebug_tests.moss`) in which each `test
 "..."` block becomes a function called from `main`. `assertEqual` works in
 ordinary functions, so the bodies run unchanged. A deliberately wrong expectation

@@ -2,6 +2,12 @@
 
 This records the compiler's checked facts, remaining independent decisions, text-reader inventory, and verification boundaries at Phase 27.5.2. It describes existing behavior and evidence; it does not specify a refactor.
 
+## Phase 27 closeout cost (phase27-5-5-m1)
+
+The paired phase-start comparison uses baseline `274f8485` and the final Phase 27 candidate. The W2 `w2_spec_distinct_n032` build peak rose from **34,748 KiB** (34.7 MB) to **64,624 KiB** (64.6 MB), an increase of 29,876 KiB. These are the exact phase-start and candidate measurements from the [Phase 27.5.5 report](phase27/27_5_5_REPORT.md); the plain-`-O2` candidate was 65,404 KiB.
+
+The five small real-world workloads total **11.96 ms** at phase start and **13.15 ms** on the candidate, about **10.0% slower**. Paired values (phase start → candidate): checkout 3.67 → 3.92 ms; collections 3.21 → 3.63 ms; counter 1.69 → 1.88 ms; domains 1.88 → 2.02 ms; pipeline 1.51 → 1.70 ms. The full paired workload table and methodology are in the linked report.
+
 ## EST mode and the original 39 mode gates
 
 Default mode is `On`: expression handles and semantic facts are retained without legacy-parser comparisons. `MOSS_EST=shadow` adds those comparisons. `off` is rejected. `Makefile` runs `tests/run_parallel.py` with `MOSS_EST` unset and with `MOSS_EST=shadow`.
