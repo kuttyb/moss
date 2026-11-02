@@ -92,4 +92,30 @@ Each cell gives baseline median and candidate median with percentage change. Col
 
 ## Gates and known suite failures
 
-Final default and shadow suites, three-engine parity, no-regression parity, reviewer-selected unseen fixtures, and Agent 2 outcome are pending. Previously documented C1 failures were 3/165: conformance gate 10 (`compiled_only_custom_key`) and the two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs; final suite results must show no additions. Current paired raw performance data: `tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` and `tmp/compiler-perf/20261102-033618/LOCAL_REPORT.md`.
+Final `make check` and `make check-shadow` each ran all 165 jobs: 162 passed,
+3 failed, 0 skipped. Both runs had exactly the same three documented C1-parent
+failures and no new failure:
+
+- `check_phase25_conformance`, gate 10 `compiled_only_custom_key`: Cargo could
+  not open jobserver FD 3 under the parallel runner (`Bad file descriptor`).
+- `check_phase27_accepts_rustc` and `shard_swarm_cases`:
+  `tests/swarm_035_nested_mutating_calls.moss` triggers Rust E0499 for nested
+  mutable borrows.
+
+The registered phase27 type/call/specialization/join/pattern perturb/drop
+matrix passes in both modes; type facts are exercised across Fast Debug, native
+and `-O`. The unchanged debt set is 10 ownership entries. Three-engine output
+parity and targeted Fast Debug/native/optimized output parity pass. The fixed
+runtime ratchet passes: consumer reparses, text lookups and tree rebuilds are
+zero; driver rewrites remain at their recorded 748. Shadow cross-check hits
+are checker=65,626, driver-rewrite=748, Fast Debug=0, emitter=0, optimizer=0.
+
+Performance: aggregate is +3.2% vs phase27-5-4-m2 and -60.3% vs
+phase-start `274f8485`; exact W2/W4/W5/W8 results and all 23 real-world rows are
+above. The W2 peak RSS comparison is 64,624 KiB normal vs 65,404 KiB plain
+`-O2` (+1.2%). No tracked compiler-flag change was made. The phase report's
+lowering-only Rust type list is submitted to Agent 2 for audit.
+
+Agent 2's unseen fixture paths/results and GO/NO-GO are pending. Current paired
+raw performance data: `tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` and
+`tmp/compiler-perf/20261102-033618/LOCAL_REPORT.md`.

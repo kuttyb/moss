@@ -17980,3 +17980,20 @@ future optimizer-isolated proof and must remain explicit in final review.
   final default and shadow suites once; perform the one
   Agent 2 audit (including three unseen sources per type class); if GO, fetch,
   merge, tag and update delivery records.
+
+## 09:05 UTC checkpoint (final full suites)
+
+- Final `make --jobs="$(nproc)" check`: 162/165 passed. The three failures
+  exactly match the documented C1 baseline: `check_phase25_conformance`
+  gate 10 fails because Cargo cannot access inherited jobserver FD 3;
+  `check_phase27_accepts_rustc` and `shard_swarm_cases` fail on the known
+  `swarm_035_nested_mutating_calls.moss` E0499. No new failure.
+- Final `make --jobs="$(nproc)" check-shadow`: 162/165 with exactly the same
+  three failures. Shadow counters: checker 65,626, driver rewrite 748,
+  Fast Debug/emitter/optimizer 0. Runtime ratchet passed in both modes.
+- Both full outputs are in `build/tests/parallel/` and summarized durably in
+  `docs/phase27/27_5_5_REPORT.md`. No further source changes are planned.
+- Next: commit/push final gate documentation; run Agent 2 once for unseen
+  fixture selection, all-engine perturb/drop, lowering-type review and GO/NO-GO.
+  If GO, fetch current origin/main, merge with that first parent, tag
+  `phase27-5-5-m1`, and update the report/delivery entry.

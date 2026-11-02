@@ -228,7 +228,11 @@ Paired performance against phase-start `274f8485` was 5.967s vs 15.029s
 aggregate (-60.3%); against phase27-5-4-m2 it was 5.976s vs 5.789s (+3.2%).
 The W2 n032 candidate peaked at 64,624 KiB using the normal per-translation
 unit flags and 65,404 KiB with plain `-O2` everywhere. Full default/shadow
-suite results and Agent 2 review are recorded in the report after final gates.
+unit flags and 65,404 KiB with plain `-O2` everywhere. Final `make check` and
+`make check-shadow` each completed at 162/165, with exactly the same three
+documented C1 failures and no new failures. Shadow cross-check totals were
+checker=65,626, driver rewrites=748, and zero in consumers. Agent 2 review is
+recorded in the report after its single final audit.
 
 Rust-only lowering forms remain distinct from Moss type answers: effect
 borrows and the `MossRead`/`MossWrite`/`MossAbsent` wrappers encode checked
