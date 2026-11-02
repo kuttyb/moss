@@ -16983,3 +16983,19 @@ future optimizer-isolated proof and must remain explicit in final review.
   performance gate's `w2_spec_distinct_n016` peak RSS of 25,224 KiB over its
   25,000 KiB limit. These failures need targeted triage; no baseline comparison
   has yet classified them as pre-existing or introduced.
+- Follow-up targeted baseline comparison confirms
+  `check_phase24_adversarial_architect.py` and
+  `check_phase25_s3_key_protocol.py` pass with the pinned C1 parent binary;
+  the S3 candidate failure is the imported path-dependency `keys.size` call
+  `String.length()` lacking a retained member target on the imported execution
+  tree. It remains unresolved.
+- Fixed another candidate regression found in Phase 15.9: while checking a
+  specialization, the checker intentionally has no direct-call expression
+  occurrence, and had therefore written `builtin:<callee>` instead of the
+  selected callable target. The checker now always captures the selected
+  function and records its target in the specialization context; expression
+  occurrence facts remain conditional on an occurrence. Phase 15.9
+  cross-package specialization now passes, as do Team A semantics and the
+  Phase 27.5.4 fact-hook matrix (known debt 38/38). The targeted C3
+  `-Werror` parser-cache test also passes after marking its test-only query
+  label used in non-test builds.

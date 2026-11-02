@@ -29156,35 +29156,34 @@ class Checker {
           if (!delayed_assert_check)
             check_function_call(statement.line, statement.a, statement.args,
                                 current_env, nullptr, std::nullopt,
-                                call_occurrence_id == UINT32_MAX
-                                    ? nullptr : &selected_function);
-          if (call_occurrence_id != UINT32_MAX) {
-            if (selected_function) {
-              checked_statement_call_target =
-                  selected_function->semantic_callable_id;
+                                &selected_function);
+          if (selected_function) {
+            checked_statement_call_target =
+                selected_function->semantic_callable_id;
+            if (call_occurrence_id != UINT32_MAX) {
               call_occurrence_state->retain_expression_target(
                   call_occurrence_id, selected_function->semantic_callable_id);
               if (selected_function->return_type)
                 statement_call_type = moss::Type::parse_canonical(
                     canonical_type_name(*selected_function->return_type)).value_or(
                         nullptr);
-            } else {
-              auto binding = current_env.find(statement.a);
-              if (binding != current_env.end() && open_generic(binding->second)) {
-                checked_statement_call_target =
-                    "binding:pending:" + statement.a;
-                call_occurrence_state->retain_expression_target(
-                    call_occurrence_id,
-                    "binding:pending:" + statement.a);
-              } else {
-                checked_statement_call_target = "builtin:" + statement.a;
-                call_occurrence_state->retain_expression_target(
-                    call_occurrence_id, "builtin:" + statement.a);
-              }
-              statement_call_type = inferred_expr_term(
-                  statement.text.empty() ? statement.a : statement.text,
-                  current_env);
             }
+          } else if (call_occurrence_id != UINT32_MAX) {
+            auto binding = current_env.find(statement.a);
+            if (binding != current_env.end() && open_generic(binding->second)) {
+              checked_statement_call_target =
+                  "binding:pending:" + statement.a;
+              call_occurrence_state->retain_expression_target(
+                  call_occurrence_id,
+                  "binding:pending:" + statement.a);
+            } else {
+              checked_statement_call_target = "builtin:" + statement.a;
+              call_occurrence_state->retain_expression_target(
+                  call_occurrence_id, "builtin:" + statement.a);
+            }
+            statement_call_type = inferred_expr_term(
+                statement.text.empty() ? statement.a : statement.text,
+                current_env);
           }
         }
         if (!statement.b.empty()) {
