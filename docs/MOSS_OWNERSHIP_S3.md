@@ -1,6 +1,6 @@
 # Moss ownership (S3): the problems, simply
 
-Status: Phase 28 ownership design contract, Nov 1 2026. **Rev 9: all twelve issues closed; scoped local borrow inference and message reply restrictions frozen.** Implementation and migration remain pending. Rev 8 closed seven Map decisions. Historical probes below describe old behavior and are not the adopted rules. This supersedes the older unconditional-local-move decision S2 and withdrawn message-consume proposal M1 in `MOSS_PHASE_26_3_OPEN_ISSUES.md`.
+Status: Phase 28 ownership design contract, Nov 1 2026. **Rev 10: twelve original issues closed; two additional review gaps (local rebinding and mixed-provenance control-flow joins) now closed conservatively.** Implementation and migration remain pending. Rev 9 introduced scoped borrow inference; Rev 8 closed seven Map decisions. Historical probes below describe old behavior, not adopted rules. This supersedes the earlier unconditional-local-move decision S2, message-consume proposal M1, and D1's particular `.clone()` source spelling in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; the explicit-copy *intent* remains, with final spelling to be chosen.
 
 ## 0. Agreed principles
 
@@ -31,7 +31,7 @@ Classified from the owner's point of view: does a contained value live exactly a
 - Only designated primitives are implicitly Copy. Records, Strings, collections and `option[T]` are nonprimitive even when their fields are primitive.
 - Nonprimitive local `b = a` now infers READ borrow, WRITE borrow or CONSUME from all uses of `b` within its lexical local scope and reachable callees (§0e). It is **not** an unconditional move.
 - READ/WRITE means `a` remains owned, subject to borrow exclusivity. CONSUME transfers ownership **at `b = a`**, making `a` unusable. An ownership sink such as `return b`, storing `b` as an owned value or passing `b` to a consuming parameter demands this CONSUME effect.
-- Add an explicit `copy(x)` primitive (final name TBD) to deliberately create an independently owned value. Backend layout/deep vs copy-on-write implementation is invisible; independent mutation is guaranteed. No user-defined copies. Reject nonduplicable types such as domain handles, FileIO and scoped resources; Fast Debug can deep-copy eligible values.
+- Add an explicit `copy(x)` primitive (final name TBD) to deliberately create an independently owned value. Backend layout/deep vs copy-on-write implementation is invisible; independent mutation is guaranteed. No user-defined copies. Reject nonduplicable types such as domain handles, FileIO and scoped resources; Fast Debug can deep-copy eligible values. **This supersedes the old D1 choice of `.clone()` as a fixed source spelling;** if `.clone()` is retained as an alias, it must obey the same explicit-copy eligibility and semantics. No hidden emitter `.clone()` is authorized.
 - Historical behavior: unconditional nonprimitive local moves, and current rejection of Vector `.clone()`, do not establish Phase 28 semantics.
 
 ## 0d. `option[T]` (revised Nov 1 2026)
@@ -45,34 +45,55 @@ return x             # forces CONSUME at assignment; field becomes None
 ```
 
 - General-purpose `option[T]` is disjoint lifetime 0..1, usable as a field; this extends today's limited iterator-protocol support.
-- `x = opt` (owned local) and `x = job.result` (field) follow the same inferred READ/WRITE/CONSUME rule. Only CONSUME takes the option. Consuming an owned local invalidates it; consuming an option **field** resets that field to `None`. A consuming function parameter behaves the same.
+- `x = opt` (owned local) and `x = job.result` (field) follow the same inferred READ/WRITE/CONSUME rule. Only CONSUME takes the option. Consuming an owned local invalidates it; consuming an option **field** resets that field to `None`. A consuming function parameter behaves the same. **This is observable state:** inference changes an option field to `None` (or a whole Vector/Map field to empty; see P3) at the source assignment, even if CONSUME originates from a helper's changed effect summary several calls away. The checker must expose the inferred consume point; a future IDE/info diagnostic could highlight field resets without changing the semantics.
 - Inspection and ordinary match borrow; `match consume` consumes when legal. Taking an option field counts as WRITE of its owner and is illegal for incoming READ-only payloads. `Some(r)` or `None` assignment overwrites the old value and drops it.
 - An option is never implicitly Copy even if T is primitive; fix the old Option[Copy] exemption.
 
 
-## 0e. Scoped local borrow inference (closed Nov 1 2026)
+## 0e. Scoped local borrow inference, rebinding and control-flow joins (closed Nov 1 2026)
 
 ```text
 b = a
-echo b                  # READ borrow; a remains owned
+echo b                    # READ borrow; a remains owned
 ```
+
 ```text
 b = a
-b.cost = 9              # WRITE borrow; changes a.cost
+b.cost = 9                # WRITE borrow; modifies a.cost
+b = Point(x: 0, y: 0)    # REBIND local b to a fresh owned value; does not overwrite a
+return b                  # returns new owned value, not original a
 ```
+
 ```text
 fn take(a):
-    b = a               # CONSUME happens at this assignment
-    return b            # returns owned b, not a borrow
+    b = a                 # CONSUME happens here at the assignment
+    return b              # owned return, not escaping borrow
 ```
 
-**One inferred effect at the assignment**, not a runtime choice: READ for inspection, WRITE for mutation without an ownership sink, CONSUME if any downstream path requires ownership (return, owned storage or consuming call). Statically join the effects across branches. Ordinary flow-sensitive borrow and post-move validity checks remain in force.
+**Per-assignment definitions (reaching definitions / SSA-style model):** each assignment to a local creates a new definition with its own inferred effect, owner/borrow provenance, and downstream reaching uses. A whole-local assignment such as `b = Point(...)` **rebinds** the local; it does not write through a previous `b` borrow. Earlier borrows may end when no longer live. This follows Python/Java local-variable rebinding, **not C++ reference assignment**. An assignment to a *projection*, `b.cost = 9`, instead writes through a WRITE borrow to the original source.
 
-**Borrow inference is local only.** A temporary local alias cannot escape its lexical scope, outlive its source, be returned as a borrowed alias, be stored as an owned value or be retained after a synchronous helper returns. The alias borrow may end at last use. If the programmer returns the local, CONSUME is inferred back at the **original assignment** if the source may legally be consumed; otherwise reject. A moved value is never restored at scope exit. No source-level lifetime annotations or globally escaping borrow types.
+**One statically chosen effect per definition:** infer READ for inspection-only, WRITE for mutation without owned sinks, and CONSUME if any use reached by that definition requires ownership (e.g. return, owned storage, consuming call). The transfer happens at the *source assignment*, never deferred until return or scope end. Use a conservative READ < WRITE < CONSUME join across relevant uses and control-flow paths; there is no runtime choice of effect. Later rebindings are separate definitions and must not retroactively change earlier ones.
 
-**Transitive call closure:** while checking that local scope, follow all reachable synchronous calls/specializations that pass the borrowed value, including existing imported `.mossi` formal READ/WRITE/CONSUME effects. Downstream WRITE or CONSUME propagates to the initiating assignment; callees may not hide retention or alias escape.
+**Local-only lifetime:** a borrowed definition cannot escape its lexical local scope, outlive the original source, be stored as owned state, be retained by a helper, or be returned *as a borrow*. Returning a local forces CONSUME at the definition reaching that return, if the original source is consumable; otherwise reject. A consumed binding never returns to its old owner when scope ends.
 
-**Lock correctness:** borrowed local aliases of domain state retain their source field/leaf provenance through calls. Required WRITEs must reach the checker's synchronization plan; existing static 2PL, global lock order, per-record-leaf partitioning and whole-Vector/Map leaves do not need redesign.
+**Borrow/owner provenance at every control-flow merge:** any use of the same local reached by both a **borrowed** definition (READ or WRITE) and an **owned** definition is **rejected**, without implicitly copying or creating a tagged runtime representation. This applies to expression-level `if`/`match` joins, statement-level branches, and loop headers/backedges, not just conditional expressions. Borrow-only merges still require valid source provenance and exclusivity; ordinary type/definite-assignment checks also apply.
+
+```text
+b = v[0]                       # borrowed on the fallthrough path
+if c:
+    b = Edge(cost: 1)          # owned in this branch
+echo b.cost                    # ERROR: borrowed/owned reaching definitions merge
+```
+
+```text
+x = if c: v[0] else: Edge(cost: 1)    # ERROR: mixed borrow/owned result
+```
+
+A future implementation may relax this if real SDK workloads justify it (for example by placing owned branch values in stable outer storage and borrowing them), but **not** during Phase 28.
+
+**Transitive effects use summaries, never re-walking callee bodies per local:** the local checker consumes already-checked/specialized parameter-effect summaries, including imported `.mossi` contracts. A callee's WRITE/CONSUME demand reaches the caller's local definition and may force an owned transfer at that assignment. Build a monotone dependency/fixpoint solution for interdependent parameter and local effects; do not rely on a fixed three-round iteration limit. The existing `inference_rounds_cap_reached` counter must be **zero** on the Phase 28 acceptance gates. A finite effect lattice supports convergence, but missing or contradictory summaries are not permission to invent an effect.
+
+**Lock-footprint provenance:** borrowed aliases of domain state retain their source field/leaf provenance, including through summarized calls, so WRITEs reach the checker's synchronization plan. Existing static 2PL, global lock order, per-record-leaf partitioning and whole-Vector/Map leaves require no redesign.
 
 ## 1. Messages: immutable by-value snapshots; no input reply (revised Nov 1 2026)
 
@@ -83,7 +104,7 @@ echo e.text               # legal: sender retains e
 ```
 
 - Message parameters are semantic **pass-by-value** and immutable, irrespective of their primitive/nonprimitive type. The handler may **READ** or **FORWARD** an incoming parameter through a synchronous message, but may not WRITE, CONSUME, rebind, or move it into owned state. Local aliases and helpers cannot bypass the restriction.
-- **New Phase 28 rule: `reply payload` is forbidden, even indirectly through an alias, and even for primitives.** Existing `LANGUAGE_SYNTAX.md` and `MODULE_ABI.md` allow input reply and must be reconciled when implementing Phase 28. Replying with an independently computed value (`reply payload.size()`) or explicitly copied eligible value (`reply copy(payload)`) is allowed.
+- **New Phase 28 message-capability rule: `reply payload` is forbidden, even indirectly through an alias, and even for primitives.** This is a uniform **READ/forward-only capability restriction on incoming message parameters**, not a consequence of nonprimitive ownership: primitives remain Copy, but the incoming binding itself may not be replied. Existing `LANGUAGE_SYNTAX.md` and `MODULE_ABI.md` allow input reply and must be reconciled when implementing Phase 28. Replying with an independently computed value (`reply payload.size()`) or explicitly copied eligible value (`reply copy(payload)`) is allowed.
 - For internal synchronous messages the emitter may use `&T` / typed immutable views throughout forwarding; the source and any supporting domain guard remain live until the nested call completes. A physical boundary cannot justify a hidden nonprimitive clone.
 - The old M1 proposal (message CONSUME) is withdrawn. Message graph acyclicity and no reentry into the sender remain required for lock safety.
 
@@ -203,7 +224,7 @@ vs = data.values()             # borrowed view; no cloned values
 1. **`m.remove(key)`:** removes the entry and transfers ownership of its value to the caller, without copying. Missing key raises an ordinary catchable error. This replaces the legacy fallback/`found` `delete` API.
 2. **`m[key]`:** borrows the stored value with inferred READ or WRITE effect. WRITE modifies the value in place; trying to consume an individual Map element is rejected. Missing key raises an ordinary catchable error.
 3. **`m[key] = value`:** inserts or overwrites, consuming the incoming non-primitive value into the Map. If there was a previous value, it is dropped, not returned. Use `remove` first when the old value must be retained. Normal borrow exclusivity applies.
-4. **`m.get(key)`:** exactly **one argument**, no fallback. Returns a READ/WRITE borrow of the entry, just like `m[key]`; missing key raises an ordinary catchable error. `get(key, fallback)` is removed. `get(key)` and indexing are intentionally equivalent in Phase 28; this is no longer an ownership-design question.
+4. **`m.get(key)`:** exactly **one argument**, no fallback. Returns a READ/WRITE borrow of the entry, just like `m[key]`; missing key raises an ordinary catchable error. `get(key, fallback)` is removed. `get(key)` and indexing are intentionally equivalent in Phase 28; the method spelling is retained for call-style ergonomics, not different semantics. This redundancy may be cleaned up later and is no longer an ownership-design question.
 5. **`keys()` / `values()`:** borrowed views, not owned copies. They cannot be stored or returned and cannot remain live across structural Map mutation or consumption (P4).
 6. **Map keys:** read-borrowed only while stored in the Map. No in-place key mutation, which would invalidate lookup.
 7. **`for (k, v) in m`:** borrowing iteration only; `k` is READ and `v` is READ/WRITE as inferred from the body. Neither can be consumed from the Map. Iteration does **not** implicitly consume the entire Map to transfer entries. To transfer an entry, explicitly call `remove(key)` and then pass the owned result to a consuming operation, outside any live conflicting iteration borrow. Structural mutation of the iterated Map while its iterator is live is rejected.
@@ -280,7 +301,7 @@ fn main():
 - **Native:** prints `9`, then `7` (the emitter cloned the element; the vector is unchanged).
 - **Fast Debug:** prints `9`, then `9` (it aliased the element; the write changed the vector).
 
-The debugger disagrees with the binary. **Decided (Nov 1 2026):** `ed` is a write borrow of `edges[0]` (its last use is the write), so the correct output is `9`, then `9`. Fast Debug is right; native is the bug (the emitter's silent `.clone()` on an indexed read). This becomes a regression fixture with expected output 9, 9.
+The debugger disagrees with the binary. **Decided (Nov 1 2026):** `ed` is a WRITE borrow of `edges[0]`, inferred from **all uses reached by that assignment**, not merely its last use. The correct output is `9`, then `9`. Fast Debug is right; native is the bug (the emitter's silent `.clone()` on an indexed read). This becomes a regression fixture with expected output 9, 9.
 
 All known bugs to be reviewed once more before S3 starts.
 
@@ -305,17 +326,22 @@ x.cost = y.cost      # ERROR while those borrows overlap
 
 **9 — Unified fields never partially move.** Even at an owner's last use, `return p.payload` cannot consume a normal unified field; no whole-record-destructuring escape hatch. Consuming the **whole** owner is allowed. Existing separately specified `match consume` semantics for enum variants remain unchanged.
 
-**10 — No reply of input payload.** READ and synchronous forwarding only; `reply payload` (including aliased or primitive payload) is forbidden. Explicit `copy(payload)` when allowed or an independently computed owned reply remains valid. This is a language change from the current docs (§1).
+**10 — No reply of input payload.** READ and synchronous forwarding only; `reply payload` (including aliased or primitive payload) is forbidden **as a message capability rule**, not an inferred ownership consequence. Explicit `copy(payload)` when allowed or an independently computed owned reply remains valid. This is a language change from the current docs (§1).
 
 **11 — .mossi parameter effects already exist.** Retain and enforce existing READ/WRITE/CONSUME / leaf records; do not build redundant serialization. Enhanced cross-version diagnostic is optional tooling (P8).
 
-**12 — Rewrite, no backward-compatibility period.** Rewrite SDK code, examples and tests that relied on silent clones or old Map snapshots/APIs. Retain genuine negative consume tests. After Graph DSL lands, run another **SDK swarm** with realistic graph/collection workloads to expose ergonomic gaps and implementation defects.
+**12 — Rewrite, no backward-compatibility period.** Rewrite SDK code, examples and tests that relied on silent clones or old Map snapshots/APIs. Retain genuine negative consume tests. After Graph DSL lands, run another **SDK swarm** with realistic graph/collection workloads to expose ergonomic gaps and implementation defects. The v0.9 stability claim concerns the frozen ownership model, **not a frozen SDK API**; post-Graph-DSL ergonomic changes may land later.
+
+### Review follow-ups beyond the original twelve: rebinding and joins — closed
+
+- **#13 Whole-local rebinding:** creates a new reaching definition and ends the previous borrow when dead; does not overwrite the borrowed source. Projection assignment still writes through. See §0e.
+- **#14 Mixed ownership provenance at merges:** reject any use reached by both borrowed and owned definitions at expression joins, branch joins or loop headers. No implicit representation conversion. See §0e.
 
 ### Execution requirements (not unresolved design)
 
 - New language work: scoped local inference, explicit `copy`, general `option[T]`, collection and Map ownership APIs, and input-reply prohibition.
 - Reused infrastructure: checker effect authority, existing `.mossi` effect records, immutable synchronous messages, domain leaf provenance, and lock plans; no emitter locking redesign.
-- Checker: join effects across branches and reachable calls, ensure alias provenance and borrow exclusivity, reject illegal escape, retained-element/unified-field transfer and input reply.
+- Checker: model per-assignment reaching definitions, infer effects from cached interprocedural summaries, reject mixed borrowed/owned provenance at every CFG merge (including loops), ensure alias provenance and borrow exclusivity, and reject illegal escape, retained-element/unified-field transfer and input reply. Enforce `inference_rounds_cap_reached == 0` as a Phase 28 gate.
 - Emitter/Fast Debug: follow checked decisions without hidden nonprimitive clones; preserve borrowed guard lifetimes and synchronize valid writes.
 - Migration: reconcile `LANGUAGE_SYNTAX.md`, `MODULE_ABI.md`, Gentle Introduction, SDK/examples/fixtures; no compat shim.
 - Tests: acceptance→rustc, Fast Debug/native/`-O` parity, checker decision perturbation/drop, generated clone provenance, known bugs in §3.
