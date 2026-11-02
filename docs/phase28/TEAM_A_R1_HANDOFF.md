@@ -2,7 +2,8 @@
 
 **Branch:** `phase28-r1-team-a`  
 **Base:** `origin/phase28-work` at `569d3092`  
-**Commit:** pending  
+**Implementation commit:** `df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`
+**Handoff commit:** pending
 **Status:** bounded checker slice delivered; not a claim that Phase 28.1/28.2 or engine parity is complete.
 
 ## Inspected checker and EST path
@@ -58,4 +59,4 @@ Targeted validation run: `make --jobs="$(nproc)" moss-dev`; `python3 tests/tooli
 
 ## Async Team B handoff
 
-Team B may read `TypedLocalOwnershipFactV1` and `TypedSemanticModuleV1::local_ownership_facts` in `src/typed_semantic_api.hpp` on branch `phase28-r1-team-a`. The facts are exact-EST-backed and checker-owned; a consumer must require `Availability::Present` and use `access` as the semantic answer. Unsupported or unavailable definitions have no authority to infer an effect. No consumer files were modified by Team A. Exact implementation and handoff SHAs are recorded after publication below.
+Team B may read `TypedLocalOwnershipFactV1` and `TypedSemanticModuleV1::local_ownership_facts` in `src/typed_semantic_api.hpp` on branch `phase28-r1-team-a`. The facts are exact-EST-backed and checker-owned; a consumer must require `Availability::Present` and use `access` as the semantic answer. Unsupported or unavailable definitions have no authority to infer an effect. No consumer files were modified by Team A. Implementation commit: `df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`. The follow-up handoff commit SHA is recorded in the repository status after publication.

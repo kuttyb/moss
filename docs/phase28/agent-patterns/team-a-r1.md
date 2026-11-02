@@ -10,6 +10,6 @@
 | **Other review events** | Architect: 0. Adversarial: 0. L7: 0 recorded review events; user granted the explicit shared `typed_semantic_api.hpp` lease. |
 | **Defects** | One observed baseline ownership limitation: a read-only local alias consumed its source before its later READ use (`OWNERSHIP_USE_AFTER_CONSUME`); the bounded checker slice now accepts that straight-line case. No independently discovered external defect is claimed. |
 | **Test evidence** | Unique cases: 5 source fixtures (READ, WRITE, CONSUME positives; use-after-move and surviving-field negatives), plus two hook actions (drop and perturb). `make moss-dev` and the focused harness ran once; default/shadow suites and engine parity were not run. |
-| **Review provenance** | Reviewed implementation SHA: pending commit. Verdict: Coordinator self-review complete; Agent 2 CP1 review pending. Final delivered SHA: pending push. |
+| **Review provenance** | Reviewed implementation SHA: pending commit. Verdict: Coordinator self-review complete; Agent 2 CP1 review pending. Final delivered SHA: pending handoff-doc commit and push. |
 | **Usage** | Tokens and billed costs: unknown. |
 | **Value** | The checker now publishes concrete, exact-EST ownership effects for a bounded local alias path, and targeted hook cases show missing or changed facts fail closed. The handoff gives Team B a typed effect plus exact definition/source identity without editing consumer code. |

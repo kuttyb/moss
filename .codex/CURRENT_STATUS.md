@@ -14472,5 +14472,6 @@ Validation completed: `make --jobs="$(nproc)" moss-dev`, focused
 `MOSS_EST=shadow`, Python compilation of the harness and `tests/run_parallel.py`,
 `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`.
 Full `make check` / `make check-shadow`, native/optimizer parity and corpus
-suites were not run; no result for those gates is claimed. The work is pending
-commit/push and the exact handoff SHA will be recorded in the phase handoff.
+suites were not run; no result for those gates is claimed. Implementation is committed as
+`df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`; the handoff-document follow-up
+and push are pending.
