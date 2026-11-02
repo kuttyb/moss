@@ -1,0 +1,13 @@
+type Box:
+  value: Int
+
+domain Owner:
+  item = Box(value = 7)
+
+  fn Invalid() -> Box:
+    alias = item
+    reply alias
+
+fn main():
+  owner = Owner()
+  _ = message owner.Invalid()

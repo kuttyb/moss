@@ -2,6 +2,7 @@
 
 #include <map>
 #include <optional>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -64,6 +65,30 @@ struct TypedSpecializationV1 {
   ObservableEffects observable_effects;
   std::vector<MemberDispatchRequirement> member_requirements;
   std::vector<TypedSemanticDependencyV1> dependencies;
+  TypedSourceProvenanceV1 provenance;
+};
+
+// Checker-owned ownership access for one straight-line local-to-local
+// definition. The EST occurrence is the RHS evaluated by this definition;
+// definition_identity distinguishes rebinding versions of one source name.
+// Consumers must treat unavailable records as missing semantic authority.
+struct TypedLocalOwnershipFactV1 {
+  enum class SourceKind { LocalBinding };
+  enum class Availability {
+    Present, MissingEstOccurrence, MissingStatementOccurrence,
+    MissingBindingIdentity, ContradictoryEffect
+  };
+
+  std::string definition_identity;
+  std::string source_binding_identity;
+  std::string specialization_context;
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId expression_occurrence_id{UINT32_MAX};
+  Effect access{Effect::Read};
+  SourceKind source_kind{SourceKind::LocalBinding};
+  Availability availability{Availability::MissingEstOccurrence};
+  TypeRef value_type;
   TypedSourceProvenanceV1 provenance;
 };
 
@@ -135,6 +160,10 @@ struct TypedSemanticModuleV1 {
   // Structured absence keeps ABI consumers from parsing diagnostic prose.
   std::map<std::string, TypedOpenSummaryGapV1> unavailable_open_summaries;
   std::map<std::string, TypedSpecializationV1> specializations;
+  // Facts for the bounded local-to-local ownership slice. Absence means the
+  // definition is outside this slice; a listed unavailable fact is explicit
+  // missing authority and must fail closed.
+  std::vector<TypedLocalOwnershipFactV1> local_ownership_facts;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.

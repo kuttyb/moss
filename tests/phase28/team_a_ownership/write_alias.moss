@@ -1,0 +1,8 @@
+type Box:
+  value: Int
+
+fn main():
+  origin = Box(value = 7)
+  var alias = origin
+  alias.value = 9
+  echo origin.value
