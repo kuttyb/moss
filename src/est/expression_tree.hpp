@@ -298,7 +298,8 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
                   std::uint32_t argument_index, const std::string& new_text);
 #ifdef MOSS_TEST_BUILD
 enum class ExpressionParseSite : std::uint8_t {
-  InitialSource, Checker, CheckerView, CheckerPipeline, Consumer, Other
+  InitialSource, Checker, CheckerView, CheckerPipeline, DriverRewrite,
+  FastDebug, Emitter, Optimizer, Other, Count
 };
 enum class ExpressionTextCacheSite : std::uint8_t {
   EstViewEntry, EstView, NamedArgumentView, SimpleCall, MemberCall,
@@ -316,6 +317,7 @@ class ExpressionParseSiteScope {
 };
 void record_expression_text_parse() noexcept;
 void record_expression_text_cache_lookup(ExpressionTextCacheSite site) noexcept;
+void record_shadow_crosscheck() noexcept;
 void record_expression_tree_rebuild() noexcept;
 void record_expression_text_lookup() noexcept;
 #endif

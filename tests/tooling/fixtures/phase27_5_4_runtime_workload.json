@@ -1,0 +1,39 @@
+{
+  "sources": [
+    "examples/hi.moss",
+    "examples/collections.moss",
+    "examples/collections_and_methods.moss",
+    "examples/counter.moss",
+    "examples/dogfood_index.moss",
+    "examples/dogfood_pipeline.moss",
+    "examples/domain_typing.moss",
+    "examples/functional_basics.moss",
+    "examples/functional_dataflow.moss",
+    "examples/functional_objects.moss",
+    "examples/functional_pipeline.moss",
+    "examples/functional_reductions.moss",
+    "examples/functional_scope_fusion.moss",
+    "examples/functional_static_callables.moss",
+    "examples/message_payload_reply.moss",
+    "examples/mini_application.moss",
+    "examples/object_pipeline.moss",
+    "examples/shared_memory.moss",
+    "examples/static_duck_typing.moss",
+    "examples/traits.moss",
+    "tests/phase10_interpreter_basic.moss",
+    "tests/phase24_string_concat.moss",
+    "tests/phase26_w2_pipeline_callback.moss",
+    "tests/swarm_001_parenthesized_pipeline.moss",
+    "tests/swarm_023_pipeline_test_context.moss",
+    "tests/swarm_066_for_range_lowering.moss",
+    "packages/regex/src/main.moss",
+    "examples/swarm/modules/calc_interpreter/repro/natural_full/src/main.moss"
+  ],
+  "fastdebug_sources": [
+    "examples/hi.moss",
+    "examples/counter.moss",
+    "tests/phase10_interpreter_basic.moss",
+    "tests/phase24_string_concat.moss",
+    "tests/swarm_066_for_range_lowering.moss"
+  ]
+}

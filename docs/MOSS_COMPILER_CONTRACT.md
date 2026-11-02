@@ -1,4 +1,4 @@
-# Moss compiler contract (DRAFT, rev 2, Nov 1 2026)
+# Moss compiler contract (DRAFT, rev 3, Nov 1 2026)
 
 The compiler counterpart to the Moss language docs: the architectural invariants every stage must hold. Each invariant names the gate that enforces it and its current status. Where an invariant is not yet met, the gap is recorded as **declared known debt** with its current measurement. Debt may shrink; it must not grow.
 
@@ -10,17 +10,17 @@ Terms:
 ## Invariants
 
 1. **One parse (consumers).** Consumers never parse expression text. Each expression is parsed once, at the initial parse of its source file or the initial load of an imported .mossi body; consumers navigate the retained tree. Diagnostics, fmt and edit tools are exempt.
-   - Gate: string-debt gate (`check_phase27_string_debt.py`) and consumer re-parse counter.
-   - Status: Fast Debug **met** (zero, enforced by require-zero, Phase 27.5.4 C1). Emitter and optimizer **in progress** (Phase 27.5.4 C2; allowlist ratchet may only shrink).
-   - Known debt: the checker's internal string passes and text-keyed parse caches (≈670k re-parses, ≈255M cache lookups on the 27.5.4 corpus measurement). Accepted by decision on Nov 1 2026.
+   - Gate: string-debt gate (`check_phase27_string_debt.py`) plus the stage counter ratchet (`check_phase27_5_4_runtime_ratchet.py`). `make check` runs default mode; `make check-shadow` runs the separate cross-check mode.
+   - Status after C2: Fast Debug, emitter and optimizer **met** for consumer parsing (zero on the fixed 28-source workload; Fast Debug executes its 5-source slice). C2's paired 1,824-source emission sweep also measured zero emitter reparses. Checker parsing is intentionally still string-based.
+   - Measured debt on the fixed workload: checker 54,037 expression reparses and 16,261,580 text-cache lookups; stage limits are committed in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json` and cannot rise. The workload includes calculator, regex and string-concatenation programs.
 
 2. **The tree is the source of truth.** Rewrites after parsing should operate on tree nodes; expression text should be derived from the tree, never the reverse.
-   - Gate: text-to-tree rebuild counter.
-   - Status: **not met.** Known debt: driver rewrites (desugaring, renaming, specialization substitution) still edit text and rebuild trees (≈10k rebuilds on the 27.5.2 corpus). Consumers still receive fresh trees because rebuild-after-rewrite is on by default (27.5.2). Out of scope until the checker/driver redesign.
+   - Gate: text-to-tree rebuild counter in the runtime ratchet.
+   - Status: **not met.** Driver rewrites still edit text and rebuild expression trees. The fixed workload records 748 driver rebuilds; the committed baseline prevents increases. The C2 retained-tree consumer migration does not change the driver's rewrite representation.
 
 3. **Nodes are passed, not text (consumers).** Consumers pass node IDs, never look up a node by expression text or text fingerprint, and never consult a text-keyed cache.
-   - Gate: consumer text-lookup counter = 0.
-   - Status: Fast Debug **met** (C1). Emitter **in progress** (C2; ≈12M lookups on the 27.5.4 corpus at C2 start). Checker text-keyed caches are covered by the debt in invariant 1.
+   - Gate: stage text-lookup counters in the runtime ratchet; consumer stages must remain zero.
+   - Status after C2: Fast Debug, emitter and optimizer **met** (zero text lookups and zero text-cache lookups on the fixed workload; emitter also zero on the 1,824-source sweep). The checker still consults text-keyed caches; its 16,261,580 lookups are measured under invariant 1 and ratcheted.
 
 4. **The checker is the only semantic authority.** Only the checker decides: expression types, call targets, specializations, pipeline types, parameter effects and passing, clone/move/borrow, control-flow joins, pattern meaning, lock requirements. Consumers execute or lower those decisions; they never make them.
    - Gate: per decision class, a perturbation test (change the checker's answer; every engine follows or fails closed) and a drop test (remove the answer; every engine fails closed), registered in make check (`check_phase27_5_4_fact_hooks.py`, both EST modes).
@@ -33,7 +33,7 @@ Terms:
 
 6. **Code created after checking carries answers.** Desugaring, optimizer rewrites and Fast Debug invocations are built as nodes and are either checked or carry checker-consistent answers.
    - Gate: covered by the consumer gates of invariants 1, 3 and 4.
-   - Status: Fast Debug met (C1); emitter/optimizer in progress (C2).
+   - Status after C2: Fast Debug, emitter and optimizer have zero expression-text reparses and text lookups on the fixed workload. The tree-to-text-to-tree driver rewrite debt remains under invariant 2.
 
 7. **Engines agree.** Fast Debug, native and optimized native produce the same observable behavior: output, exit status, failures and trace events.
    - Gate: three-engine check, Fast Debug/native parity, .mossi parity (in make check).
@@ -47,4 +47,17 @@ Terms:
 
 - Kept current like the language docs. Required reading for Moss compiler development (see AGENTS.md); not required for regular Moss development. Fed to cold-start reviewers alongside the language docs.
 - Every phase that changes a status or a debt number updates this file in the same delivery.
-- CI should verify that every gate named here exists in make check (pending).
+- `make check` runs the default gates and runtime ratchet. `make check-shadow`
+  runs the same suites with shadow cross-checks and is required at every phase
+  checkpoint and before every merge to `main` (recorded in AGENTS.md).
+- The runtime ratchet gates invariants 1–3. It records re-parses, text-node and
+  text-cache lookups, and text-to-tree rebuilds per stage on a fixed committed
+  workload; Fast Debug, emitter and optimizer counters must remain zero. A
+  counter increase fails; a decrease requires lowering the committed baseline
+  in the same change.
+- Retire shadow cross-check mode only after invariant 1 is met by the checker
+  and invariant 2 is met by driver rewrites. Until then, shadow remains
+  available separately and its measured cross-checks are limited to checker
+  work and driver rewrites.
+- CI should verify that every gate named here exists in make check or
+  make check-shadow.

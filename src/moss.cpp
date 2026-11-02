@@ -14155,6 +14155,10 @@ static void rewrite_module_program(
                                      est::ExprSlot slot, uint32_t argument,
                                      const string& old_text,
                                      const string& new_text) {
+#ifdef MOSS_TEST_BUILD
+    moss::est::ExpressionParseSiteScope parse_site(
+        moss::est::ExpressionParseSite::DriverRewrite);
+#endif
     if (old_text == new_text || !program.expression_arena) return;
     const auto prior = handles;
     for (const auto& handle : prior) {
@@ -14174,6 +14178,10 @@ static void rewrite_module_program(
     }
   };
   auto rebuild_changed_slots = [&](const Stmt& before, Stmt& after) {
+#ifdef MOSS_TEST_BUILD
+    moss::est::ExpressionParseSiteScope parse_site(
+        moss::est::ExpressionParseSite::DriverRewrite);
+#endif
     if (!program.expression_arena) return;
     const auto old_handles = before.expression_handles;
     for (const auto& handle : old_handles) {
@@ -26920,6 +26928,9 @@ static moss::Program load_checked_interpreter_program(
       }
       if (!test_mode) reject_fast_debug_fileio(checked.program);
       else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(checked.program);
+#ifdef MOSS_TEST_BUILD
+      moss::est::ExpressionParseSiteScope parse_site(moss::est::ExpressionParseSite::Optimizer);
+#endif
       moss::optimize_program(checked.program, false);
       return std::move(checked.program);
     }
@@ -26958,6 +26969,9 @@ static moss::Program load_checked_interpreter_program(
     checker.run();
     if (!test_mode) reject_fast_debug_fileio(program);
     else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(program);
+#ifdef MOSS_TEST_BUILD
+    moss::est::ExpressionParseSiteScope parse_site(moss::est::ExpressionParseSite::Optimizer);
+#endif
     moss::optimize_program(program, false);
     return program;
   } catch (const moss::ProjectError& error) {
@@ -28254,6 +28268,9 @@ int main(int argc, char** argv) {
           std::cerr << diagnostic_source << ":" << warning.line
                     << ": warning: " << warning.message << "\n";
       }
+#ifdef MOSS_TEST_BUILD
+      moss::est::ExpressionParseSiteScope parse_site(moss::est::ExpressionParseSite::Optimizer);
+#endif
       moss::optimize_program(standalone_program, optimize_shared_memory);
       plan = moss::OptimizationPlan{optimize_shared_memory};
     }
@@ -28300,6 +28317,9 @@ int main(int argc, char** argv) {
               // analysis path before persisting it.
               moss::Program snapshot_program = program;
               if (!optimize_shared_memory)
+#ifdef MOSS_TEST_BUILD
+                moss::est::ExpressionParseSiteScope parse_site(moss::est::ExpressionParseSite::Optimizer);
+#endif
                 moss::optimize_program(snapshot_program, true);
               moss::OptimizationPlan snapshot_plan{true};
               (void)moss::generate_native(

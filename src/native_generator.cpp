@@ -11996,7 +11996,7 @@ std::string generate_native(
     const Program* resolution_program, bool project_module_artifact,
     bool emit_static_specializations, bool public_specializations) {
 #ifdef MOSS_TEST_BUILD
-  est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Consumer);
+  est::ExpressionParseSiteScope parse_site(est::ExpressionParseSite::Emitter);
 #endif
   return Generator(program, plan, debug_build, mode,
                    std::move(rust_dependencies), resolution_program,

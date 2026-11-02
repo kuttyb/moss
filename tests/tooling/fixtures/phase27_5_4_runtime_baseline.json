@@ -1,0 +1,68 @@
+{
+  "workload": "tests/tooling/fixtures/phase27_5_4_runtime_workload.json",
+  "counts": {
+    "initial": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "checker": {
+      "reparses": 54037,
+      "text_lookups": 0,
+      "cache_lookups": 16261580,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "checker_view": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "checker_pipeline": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "driver_rewrite": {
+      "reparses": 748,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 748,
+      "shadow_crosschecks": 0
+    },
+    "fastdebug": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "emitter": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "optimizer": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    },
+    "other": {
+      "reparses": 0,
+      "text_lookups": 0,
+      "cache_lookups": 0,
+      "tree_rebuilds": 0,
+      "shadow_crosschecks": 0
+    }
+  }
+}

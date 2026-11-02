@@ -68,7 +68,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -154,18 +154,24 @@ $(foreach object,$(COMPILER_OBJECTS_OPT),$(eval $(object): $(object:.o=.d)))
 
 -include $(COMPILER_DEPFILES_DEV) $(COMPILER_DEPFILES_OPT) $(COMPILER_PCH_DEPFILES)
 
-check: check-parallel
-
-check-parallel: moss-dev moss-opt
-	python3 tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py $(MOSS_DEV)
-	python3 tests/tooling/check_phase27_string_debt.py
-	python3 tests/tooling/check_phase27_est.py $(MOSS_DEV)
-	python3 tests/tooling/check_phase27_est_specialized_facts.py $(MOSS_DEV)
-	python3 tests/tooling/check_phase27_est_coverage.py $(MOSS_DEV) $(MOSS_OPT)
+check: check-preflight
 	env -u MOSS_EST python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
-	MOSS_EST=shadow python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
+	env -u MOSS_EST python3 tests/tooling/check_phase27_5_4_runtime_ratchet.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
+
+check-parallel: check
+
+check-shadow: check-preflight
+	MOSS_EST=shadow python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
+	MOSS_EST=shadow python3 tests/tooling/check_phase27_5_4_runtime_ratchet.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
+
+check-preflight: moss-dev moss-opt
+	env -u MOSS_EST python3 tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py $(MOSS_DEV)
+	python3 tests/tooling/check_phase27_string_debt.py
+	env -u MOSS_EST python3 tests/tooling/check_phase27_est.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase27_est_specialized_facts.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase27_est_coverage.py $(MOSS_DEV) $(MOSS_OPT)
 
 check-serial: moss
 	sh tests/run.sh ./moss build/tests
@@ -215,8 +221,8 @@ help:
 	@echo "  make moss-dev     - Build development compiler (-O0) in build/compiler/moss-dev"
 	@echo "  make moss-opt     - Build optimized compiler (-O2) in build/compiler/moss-opt"
 	@echo "  make moss-release - Alias for moss-opt"
-	@echo "  make check        - Run parallel test suite (check-parallel)"
-	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
+	@echo "  make check        - Run default-mode gates and parallel suite (TEST_JOBS=N)"
+	@echo "  make check-shadow - Run shadow cross-check gates and parallel suite (TEST_JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
 	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
 	@echo "  make compiler-perf - Run compiler timing/profiling; MOSS_PERF_INCLUDE_REAL_WORLD=1 adds curated Moss workloads; MOSS_PERF_CERTIFY=1 enables certification"

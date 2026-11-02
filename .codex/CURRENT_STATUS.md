@@ -1,4 +1,32 @@
-# Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
+# Phase 27.5.4 closeout handover (2026-11-01)
+
+## Active checkpoint (post-C2 closing round)
+
+- C2 is already merged to `main` and tagged `phase27-5-4-m1` at
+  `4b5e98805c072fa4625560fb7bf9e297bcda80e9`. Current branch is
+  `phase27-5-4-closeout-work`, tracking its remote, based on that merge.
+- Current worktree changes split `make check` (default only) from
+  `make check-shadow`, add a fixed runtime counter workload/ratchet, attribute
+  expression parsing, text lookups/cache lookups, tree rebuilds and shadow
+  cross-checks by stage, update AGENTS.md and the compiler contract, and add a
+  developer-experience observation. These changes are not yet committed.
+- Fixed workload: 28 sources include calculator, regex and string concatenation;
+  5 sources also run in Fast Debug. Current committed-to-be baseline is
+  checker 54,037 reparses / 16,261,580 text-cache lookups; driver rewrites 748
+  reparses / 748 rebuilds; Fast Debug/emitter/optimizer are zero for reparses,
+  node/cache lookups and rebuilds. Shadow run: checker 64,548 cross-checks,
+  driver rewrites 748, and all consumer stages zero.
+- Targeted validation passed: default and shadow runtime ratchet, EST counter
+  coverage, focused EST checks, `check_agent_feedback.py`, and `git diff
+  --check`. `make -n check` showed default mode only; `make -n check-shadow`
+  showed shadow mode. No full closeout suite has run yet.
+- Next steps: commit/push this instrumentation and ratchet checkpoint; then run
+  `make check` and `make check-shadow` once each, review all failures, invoke
+  Agent 2 once, and merge/tag `phase27-5-4-m2` only if the gates and audit pass.
+  Before ending a session, refresh this section with exact test results and
+  commit IDs. No L7 input is needed.
+
+## Historical C2 handover notes
 
 ## 2026-11-01 follow-up checkpoint (code commit 9fef6d2a)
 
