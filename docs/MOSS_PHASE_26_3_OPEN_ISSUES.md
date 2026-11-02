@@ -1,8 +1,10 @@
 # Moss: Phase 27 (Language Stabilization) — the ownership invariant and open issues
 
+> **Historical Phase 27 decisions / superseded roadmap (Nov 2, 2026):** This records the earlier S3 freeze and the historical assignment of Graph DSL to Phase 28. Both are superseded for current planning by [MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md). **Phase 28 now covers LOL ownership, local inference and explicit moves; Graph DSL is a separate later workstream.** Keep the dated decisions, defect histories, and evidence below intact as historical source material; do not use their old scheduling or conflicting ownership rules as current acceptance criteria.
+
 Status: Oct 28 2026, round 4. **The ownership model is frozen** (round 3; both peer reviewers GO). Round 4 records Phase 27 ownership of this work and the serial D3 order. This file keeps its Phase 26.3 name until renamed in git; it is the Phase 27 ownership doc. Companion to `MOSS_PHASE_26_2_DECISIONS.md` and `MOSS_LAZY_EXPRESSION_TREE.md`.
 
-**Phase 27 scope:** implement the frozen model below; update the spec, the other language docs, the examples, the Gentle Introduction and the SDK libraries (written under copy-snapshot semantics, some will be rejected rather than silently changed); move Moss from v0.1 to v0.9. The language version is a language contract (spec, docs, `moss --version`) and is kept separate from the ABI and `.mossi` format versions, which have their own compatibility rules. A language change may *cause* an ABI format change (per-parameter inferred effects in `.mossi`, M1); a documentation change never does. The Graph DSL is Phase 28.
+**Phase 27 scope:** implement the frozen model below; update the spec, the other language docs, the examples, the Gentle Introduction and the SDK libraries (written under copy-snapshot semantics, some will be rejected rather than silently changed); move Moss from v0.1 to v0.9. The language version is a language contract (spec, docs, `moss --version`) and is kept separate from the ABI and `.mossi` format versions, which have their own compatibility rules. A language change may *cause* an ABI format change (per-parameter inferred effects in `.mossi`, M1); a documentation change never does. The Graph DSL is Phase 28. **[Historical scheduling; superseded—see note above.]**
 
 **Bottom line:**
 - **No open issue is Phase 26 fallout.** All of them predate Phase 26 code changes. Phase 26 work *surfaced* them: the 26.1.1 reachability audit found the borrow-checker rows, and the 26.3 `let` change found the optimizer's reliance on `let`. The one Phase 26 gap is in a gate: the corpus differential didn't compare `-O` output.
@@ -33,7 +35,7 @@ Status: Oct 28 2026, round 4. **The ownership model is frozen** (round 3; both p
   - **27.1:** expression tree — syntax and per-occurrence identity, validated in shadow mode, no consumer cut over (`MOSS_LAZY_EXPRESSION_TREE.md` §10).
   - **27.2:** semantic side-table API keyed by (occurrence, specialization context) with usable, validated facts: specialization results, `TypeRef`s and the S3 ownership effect per occurrence. Empty infrastructure does not satisfy it. Consumer migration begins here.
   - **S3 enforcement** (Phase 27), consuming those facts.
-  - **Phase 28:** the Graph DSL, built tree-first on a finished tree and a finished S3.
+  - **Phase 28:** the Graph DSL, built tree-first on a finished tree and a finished S3. **[Historical scheduling; superseded.]**
   - D3's prerequisite is the tree **plus** the side tables; 27.1 alone does not satisfy it. Neither track defines ownership rules on its own: Graph DSL lowering consumes the same checked ownership facts as every other Moss feature. Graph construction is exactly the indexed-borrow workload (`nxt.push(head[u])` is how adjacency lists are built), which makes the Graph DSL a natural validation target for S3.
 - **M1. Ownership at call boundaries follows the callee's inferred effect.** No boundary ever duplicates a value.
 
@@ -182,7 +184,7 @@ Three separate gates, made permanent parts of `make check`:
 6. S3 enforcement: checker first (reclassify or reject operations that need duplication), then remove emitter workarounds (collection, accessor, ABI, callback, message, return and recovery paths), with tests spanning source-backed and cross-package builds; SDK libraries migrated to the new semantics.
 7. Independent adversarial review: Rust borrow correctness, cross-domain locking and re-entry, ownership on exceptional paths, and duplication introduced by optimization.
 8. Spec, docs, examples, Gentle Introduction updated; `moss --version` to v0.9.
-9. **Phase 28:** the Graph DSL.
+9. **Phase 28:** the Graph DSL. **[Historical scheduling; superseded.]**
 
 Steps 2–3 are independent of 27.1 and can run beside it.
 
