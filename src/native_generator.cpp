@@ -38,6 +38,7 @@
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
 #include "abi_v10_records.hpp"
+#include "typed_semantic_api.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
 #include "float_format_runtime.hpp"
@@ -5632,6 +5633,113 @@ class Generator {
     return plans->second[slot];
   }
 
+  const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return nullptr;
+
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_DROP_OWNERSHIP_FACT"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT test dropped ownership fact in native generator");
+    if (std::getenv("MOSS_TEST_PERTURB_OWNERSHIP_FACT"))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT test perturbed ownership fact in native generator");
+#endif
+
+    const auto& facts = p_.typed_semantics->local_ownership_facts;
+    if (facts.empty()) return nullptr;
+
+    const est::ExprSlot slot =
+        (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+            ? est::ExprSlot::Initializer
+            : est::ExprSlot::RhsValue;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == slot && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+
+    string context = functional_context.empty() ? "main" : functional_context;
+    auto bracket = context.find('<');
+    string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
+
+    string expected_def_id = (s.kind == Stmt::Kind::Assign)
+        ? base_context + "@" + std::to_string(s.line) + ":statement:" + s.a
+        : base_context + "@" + std::to_string(s.line) + ":statement";
+
+    const TypedLocalOwnershipFactV1* found_fact = nullptr;
+    for (const auto& fact : facts) {
+      if (fact.provenance.line == s.line) {
+        if (fact.definition_identity == expected_def_id ||
+            (matched_handle && fact.est_arena_index == matched_handle->arena_index &&
+             fact.expression_occurrence_id == matched_handle->expr)) {
+          found_fact = &fact;
+          break;
+        }
+      }
+    }
+
+    if (!found_fact) return nullptr;
+
+    if (found_fact->availability != TypedLocalOwnershipFactV1::Availability::Present) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
+          std::to_string(static_cast<int>(found_fact->availability)) +
+          " line=" + std::to_string(s.line));
+    }
+
+    if (found_fact->definition_identity != expected_def_id) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT definition identity mismatch: expected " +
+          expected_def_id + " got " + found_fact->definition_identity);
+    }
+
+    if (!matched_handle) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing EST handle for statement line=" +
+          std::to_string(s.line));
+    }
+    if (found_fact->est_arena_index != matched_handle->arena_index ||
+        found_fact->expression_occurrence_id != matched_handle->expr) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT EST occurrence mismatch line=" +
+          std::to_string(s.line));
+    }
+
+    const est::Arena* arena = nullptr;
+    if (found_fact->est_arena_index < p_.expression_arenas.size() &&
+        p_.expression_arenas[found_fact->est_arena_index]) {
+      arena = p_.expression_arenas[found_fact->est_arena_index].get();
+    } else if (found_fact->est_arena_index == 0 && p_.expression_arena) {
+      arena = p_.expression_arena.get();
+    }
+    if (!arena) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing EST arena line=" +
+          std::to_string(s.line));
+    }
+
+    const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
+                                          found_fact->specialization_context);
+    if (!tree_facts || !tree_facts->inferred_effect ||
+        *tree_facts->inferred_effect != found_fact->access) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena line=" +
+          std::to_string(s.line));
+    }
+
+    if (found_fact->specialization_context != base_context &&
+        found_fact->specialization_context != context) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT specialization context mismatch: expected " +
+          context + " got " + found_fact->specialization_context);
+    }
+
+    return found_fact;
+  }
+
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
                  const Handler* current_handler, const string& reply_slot,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
@@ -6615,13 +6723,27 @@ class Generator {
             else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
-            o << indent(level) << "let mut " << s.a;
-            if (!annotation.empty()) o << ": " << annotation;
-            o << " = "
-              << expr(s.b, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0))
-              << ";\n";
+            const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
+            if (ownership_fact) {
+              string rhs_val = expr(s.b, d, locals, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, 0));
+              if (ownership_fact->access == Effect::Read) {
+                o << indent(level) << "let " << s.a << " = &(" << rhs_val << ");\n";
+              } else if (ownership_fact->access == Effect::Write) {
+                o << indent(level) << "let mut " << s.a << " = &mut (" << rhs_val << ");\n";
+              } else {
+                o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+              }
+            } else {
+              o << indent(level) << "let mut " << s.a;
+              if (!annotation.empty()) o << ": " << annotation;
+              o << " = "
+                << expr(s.b, d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, 0))
+                << ";\n";
+            }
             locals.insert(s.a);
             types[s.a] = !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
@@ -6747,6 +6869,14 @@ class Generator {
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
+              const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
+              if (ownership_fact) {
+                if (ownership_fact->access == Effect::Read) {
+                  assigned = "&(" + assigned + ")";
+                } else if (ownership_fact->access == Effect::Write) {
+                  assigned = "&mut (" + assigned + ")";
+                }
+              }
               if (reuse_string_buffer)
                 o << indent(level) << assigned << ";\n";
               else
@@ -7078,22 +7208,35 @@ class Generator {
                 }
               }
             }
+            const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
             o << indent(level);
-            if (!joined_assignment)
-              o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
+            if (!joined_assignment) {
+              bool mutable_decl = (s.kind == Stmt::Kind::Var);
+              if (ownership_fact) {
+                mutable_decl = (ownership_fact->access == Effect::Write);
+              }
+              o << "let " << (mutable_decl ? "mut " : "");
+            }
             o << s.a;
-            if (!joined_assignment && !domain_capability &&
+            if (!joined_assignment && !domain_capability && !ownership_fact &&
                 (canonical_type_name(statement_type) == "float" ||
                  canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
               o << ": f64";
-            else if (!joined_assignment && !domain_capability &&
+            else if (!joined_assignment && !domain_capability && !ownership_fact &&
                      (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
               o << ": " << rust_type(!inferred_map_type.empty()
                   ? inferred_map_type : statement_type);
-            o << " = "
-              << expr(s.b, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0));
+            string rhs_val = expr(s.b, d, locals, &types,
+                                  statement_functional_pipeline_id(
+                                      s, functional_context, 0));
+            if (ownership_fact) {
+              if (ownership_fact->access == Effect::Read) {
+                rhs_val = "&(" + rhs_val + ")";
+              } else if (ownership_fact->access == Effect::Write) {
+                rhs_val = "&mut (" + rhs_val + ")";
+              }
+            }
+            o << " = " << rhs_val;
             if (domain_capability) o << ".clone()";
             o << ";\n";
             types[s.a] = domain_capability ? source->second

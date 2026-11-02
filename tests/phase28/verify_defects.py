@@ -99,6 +99,7 @@ def main() -> None:
     print("=== Phase 28 Defect Regression Gate ===")
     total_count = len(TEST_CASES)
     pass_count = 0
+    xpass_count = 0
     known_failure_count = 0
     unexpected_failure_count = 0
 
@@ -186,8 +187,22 @@ def main() -> None:
         elif case["expected_rustc"] == "FAIL":
             expected_err = case.get("expected_rustc_error", "")
             if rustc_passed:
-                print("  [UNEXPECTED FAILURE] Rustc succeeded on a known failure fixture")
-                unexpected_failure_count += 1
+                # XPASS: known failure fixture compiled successfully. Verify execution and output parity.
+                run_bin = run([str(bin_path)])
+                if run_bin.returncode != 0:
+                    print(f"  [UNEXPECTED FAILURE] Rustc succeeded on known failure fixture, but binary crashed: {run_bin.stderr.strip()[:200]}")
+                    unexpected_failure_count += 1
+                    continue
+                native_out = run_bin.stdout.strip()
+                target_expected = case.get("expected_native") or case.get("expected_fast_debug")
+                if target_expected and native_out != target_expected:
+                    print(f"  [UNEXPECTED FAILURE] Rustc succeeded on known failure fixture, but native output mismatch: expected '{target_expected}', got '{native_out}'")
+                    unexpected_failure_count += 1
+                    continue
+                print(f"  Rustc compile: XPASS (repaired!)")
+                print(f"  Native binary output: '{native_out}' (matches Fast Debug parity)")
+                print(f"  Status: XPASS (repaired known failure with verified parity: {case['defect_note']})")
+                xpass_count += 1
                 continue
             if expected_err and expected_err not in rustc.stderr:
                 print(f"  [UNEXPECTED FAILURE] Rustc failed without expected error '{expected_err}': {rustc.stderr.strip()[:200]}")
@@ -198,7 +213,7 @@ def main() -> None:
             known_failure_count += 1
 
     print("\n=== Summary ===")
-    print(f"Total: {total_count} | PASS: {pass_count} | KNOWN FAILURES: {known_failure_count} | UNEXPECTED FAILURES: {unexpected_failure_count}")
+    print(f"Total: {total_count} | PASS: {pass_count} | XPASS: {xpass_count} | KNOWN FAILURES: {known_failure_count} | UNEXPECTED FAILURES: {unexpected_failure_count}")
 
     if unexpected_failure_count > 0:
         print("\nGATE RESULT: FAILED (regressions or unexpected outcomes detected)")

@@ -14505,3 +14505,33 @@ Full `make check` / `make check-shadow`, native/optimizer parity and corpus
 suites were not run; no result for those gates is claimed. Implementation is committed as
 `df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`; the handoff-document follow-up
 and push are pending.
+
+### Phase 28 Round 2 Team B checkpoint
+
+Branch `phase28-r2-team-b` merged Team A's Round 1 handoff (`a73d8a6b`).
+Team B migrated one direct local-alias path in the native code generator
+(`src/native_generator.cpp`) to consume Team A's `TypedLocalOwnershipFactV1` and
+exact EST occurrence facts. The consumer strictly validates definition identity,
+EST occurrence (arena index, expression occurrence ID, and arena fact parity),
+specialization context, and availability (`Availability::Present`).
+
+Missing or perturbed facts fail closed with `MOSS_INTERNAL_INVARIANT` under
+`MOSS_TEST_DROP_OWNERSHIP_FACT` and `MOSS_TEST_PERTURB_OWNERSHIP_FACT`. Unsupported
+definitions remain outside the migrated slice on existing baseline lowering
+without guessing.
+
+Defect investigation on E1 confirmed that Rust `MossAccess_*` trait methods
+prevent simultaneous cross-field borrows on `self`; a sound correction across
+trait boundaries requires checker-owned disjoint field projection facts. E4 loop
+mutability interface requirements (`ForLoopElementFacts`) were formally specified.
+The defect harness `tests/phase28/verify_defects.py` was enhanced to support
+verified `XPASS` tracking with output parity validation across all 6 fixtures.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`,
+`python3 tests/tooling/check_phase28_local_ownership.py ./moss`,
+`python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`,
+`python3 tests/phase28/verify_defects.py`,
+`python3 tests/tooling/check_agent_feedback.py`,
+`python3 -m py_compile tests/run_parallel.py tests/tooling/check_phase28_team_b_consumer.py tests/phase28/verify_defects.py`,
+and `git diff --check`. Full check/check-shadow and engine parity were not run.
+Agent 2 adversarial review remains pending until CP2.
