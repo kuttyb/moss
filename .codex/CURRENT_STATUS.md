@@ -1,3 +1,13 @@
+### Phase 28 Round 1 Team B fan-in corrections (2026-11-02, defect gate and handoff alignment)
+
+Branch `phase28-r1-team-b`. Completed bounded fan-in corrections requested by L7:
+1. Restored canonical `docs/Phase28-team.md` from `origin/phase28-work` (`569d3092`). Team B execution details moved to `docs/phase28/TEAM_B_R1_RECONNAISSANCE.md`.
+2. Enhanced `tests/phase28/verify_defects.py` into a strict regression gate asserting expected outcomes (3 PASS, 3 KNOWN FAILURES, 0 UNEXPECTED FAILURES, returns nonzero on regression).
+3. Evaluated canonical `tests/swarm_035_nested_mutating_calls.moss` (E2) directly: passes with parity (`1`) under native and -O via existing `call_argument_temp_` in emitter.
+4. Isolated E3 (T6) in Shapes (`examples/swarm/Surface/Shapes/src/main.moss`): confirmed checker-level failure (`synchronization_require` / `unresolved callable argument`) versus historical native E0596 lowering.
+5. Reconciled Team A fact handoff (`docs/phase28/TEAM_A_R1_HANDOFF.md`): acknowledged published `TypedSemanticModuleV1::local_ownership_facts` in `src/typed_semantic_api.hpp` for straight-line aliases. Documented additional Round 2 requirements (loops, disjoint projections, take facts) without premature consumer integration.
+6. Preserved RHS-before-LHS assignment evaluation-order fix in `src/native_generator.cpp:6677-6681`. Fact hooks, string debt, agent feedback, and defect gates pass.
+
 ### Phase 28 Round 1 Team B checkpoint (2026-11-02, consumer migration reconnaissance and defect analysis)
 
 Branch `phase28-r1-team-b` branched from `origin/phase28-work`. Team B (Agent 1 L6 Coordinator/Implementer/Reviewer). Completed mandatory bootstrap: `result.language_version` is `moss-0.1`.
