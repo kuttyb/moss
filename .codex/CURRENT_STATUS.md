@@ -14512,5 +14512,9 @@ been run. The current AGENTS.md had no general no-push prohibition; its scoped
 authorization now explicitly includes this Round 2 branch. Implementation is
 committed as `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`; handoff docs,
 contract status and feedback are committed as
-`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`. Push of the scoped commits is
-pending.
+`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`. SHA/status follow-up is
+`2f310c2b0ff518269a87c17ba28006cdf4edc063`; all three commits are pushed to
+`origin/phase28-r2-team-a` and `git ls-remote` confirmed that exact ref. Agent 2
+CP1 adversarial review is now in progress against frozen implementation SHA
+`37028a7f3f33a6a4d79b9ef3c7b14b777bee47df` (branch handoff SHA above); no code
+changes are being made during the review.
