@@ -16788,3 +16788,20 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - Hotspot-set rerun before this final FileIO change showed only this source
   nonzero. A stable paired corpus measurement is still required; full suites,
   perf and Agent 2 audit remain pending.
+
+## C2 paired consumer-count checkpoint (2026-11-01, `0ec01dc2`)
+
+- Stable like-for-like measurement completed with the pinned C1 parent and the
+  candidate binary unchanged throughout. Workload: 1,824 tracked Moss sources,
+  337 package manifests, 3,648 default/`-O` emissions per side. Evidence:
+  `tmp/phase2754-emitter-counts/1793577601694445289/summary.json`.
+- C1 parent → candidate: emitter text-node lookups 14,606,057 → 0; native
+  expression-view reparses 9,735,229 → 0; functional-pipeline reparses 7,362 →
+  0. Consumer-expression parse counter is 0 on both sides. Emission failures
+  are 1,406 → 1,410; a per-index comparison confirms the only new failures are
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`,
+  each in default and `-O`; no old failure recovered.
+- The saved residual-hotspot set is now 0 reparses / 0 lookups, including the
+  Phase 21 FileIO lock fixture. Full suites, three-engine/parity aggregate,
+  performance run and Agent 2 audit remain pending; C2 is not yet complete.
