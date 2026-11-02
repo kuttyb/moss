@@ -3189,24 +3189,16 @@ class Generator {
       auto root_expression = expression.child(root);
       facts = checked_expression_facts(root_expression, true);
     }
-    const bool has_fact = facts && facts->type;
-    if (has_fact && facts->type->is_closed() && types) {
-      if (const auto* identifier = std::get_if<est::Identifier>(
-              &expression.arena->at(root))) {
-        const auto binding = types->find(identifier->name);
-        if (binding != types->end() && !binding->second.empty() &&
-            !contains_internal_placeholder(binding->second)) {
-          const auto checked_binding = parsed_type(binding->second);
-          if (checked_binding && checked_binding->is_closed() &&
-              !checked_binding->structurally_equal(*facts->type))
-            throw std::runtime_error(
-                "MOSS_INTERNAL_INVARIANT checked expression type conflicts "
-                "with checked local type context=" + codegen_body_context_ +
-                " name=" + identifier->name);
-        }
-      }
+    if (!facts) {
+      const auto* target_facts = checked_expression_facts(expression, false);
+      const auto* identifier = std::get_if<est::Identifier>(
+          &expression.arena->at(root));
+      if (identifier && target_facts &&
+          CallableId::parse(target_facts->resolved_target))
+        return std::nullopt;  // checked callable identity has no Moss value type
     }
-    if (has_fact && facts->type->is_closed()) {
+    const bool has_fact = facts && facts->type;
+    if (has_fact) {
       record_type_fact_coverage(true);
       return canonical_type_name(facts->type);
     }
@@ -3554,8 +3546,14 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
-      bool compile_time_callable = is_compile_time_callable(
-          argument_type(index).value_or(""));
+      // The selected specialization carries the checker's parameter answer.
+      // Callable parameters are compile-time inputs and are not emitted as
+      // Rust runtime arguments; do not ask the expression type consumer to
+      // invent a Moss type for a callable identifier (it has no value type).
+      const bool compile_time_callable = specialization &&
+          index < specialization->parameter_types.size() &&
+          is_compile_time_callable(
+              canonical_type_name(specialization->parameter_types[index]));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
@@ -4022,6 +4020,17 @@ class Generator {
         auto lowered_operation = operation;
         lowered_operation.checked_output_type =
             planned.nodes[node_index].output_type;
+        if (semantic_step.kind == FunctionalNodeKind::Map ||
+            semantic_step.kind == FunctionalNodeKind::Filter ||
+            semantic_step.kind == FunctionalNodeKind::Any ||
+            semantic_step.kind == FunctionalNodeKind::All) {
+          auto checked_input = generated_functional_element_type(
+              planned.nodes[node_index].input_type);
+          if (!checked_input)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked functional callback input type");
+          lowered_operation.checked_callable_argument_types = {*checked_input};
+        }
         stage.operations.push_back(std::move(lowered_operation));
       }
       lowered.stages.push_back(std::move(stage));
@@ -4058,7 +4067,8 @@ class Generator {
       const std::unordered_map<string,string>* types,
       bool propagate_raises = true,
       bool checked_placeholder_result = false,
-      const EmitterExpr* checked_callable = nullptr) const {
+      const EmitterExpr* checked_callable = nullptr,
+      const vector<string>* checked_argument_types = nullptr) const {
     const bool has_checked_callable = checked_callable && checked_callable->arena;
     const bool uses_placeholder = has_checked_callable
         ? generated_expression_uses(*checked_callable, "_")
@@ -4182,16 +4192,39 @@ class Generator {
                                identity + "'");
     string emitted = function_target->name;
     vector<string> argument_types;
-    for (const auto& argument : arguments) argument_types.push_back(argument.type);
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (checked_argument_types && index < checked_argument_types->size())
+        argument_types.push_back((*checked_argument_types)[index]);
+      else
+        argument_types.push_back(arguments[index].type);
+    }
     const FunctionSpecialization* concrete = nullptr;
     if (function_target->static_dispatch) {
       // Functional callbacks register the key with no receiver or open-result
       // binding. Select that exact checked key even when a separate ordinary
       // call of the same callable and arguments has a bound result key.
       concrete = functional_specialization(*function_target, argument_types);
-      if (!concrete)
-        throw std::runtime_error("missing functional specialization for '" +
-                                 identity + "'");
+      if (!concrete) {
+        string candidates;
+        for (const auto& candidate : function_target->specializations) {
+          if (!candidates.empty()) candidates += ";";
+          candidates += candidate.stable_type_key + "(";
+          for (size_t index = 0; index < candidate.parameter_types.size(); ++index) {
+            if (index) candidates += ",";
+            candidates += candidate.parameter_types[index];
+          }
+          candidates += ")";
+        }
+        string actual;
+        for (const auto& type : argument_types) {
+          if (!actual.empty()) actual += ",";
+          actual += type;
+        }
+        throw std::runtime_error(
+            string("MOSS_INTERNAL_INVARIANT missing checked functional specialization ") +
+            "for '" + identity + "' args=(" + actual + ") candidates=" +
+            candidates);
+      }
       emitted = concrete->generated_name;
     } else concrete = concrete_specialization(*function_target, argument_types);
     std::ostringstream rendered;
@@ -4199,7 +4232,9 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      auto abi = function_parameter_abi(*function_target, index, argument.type, concrete);
+      const string& argument_type = index < argument_types.size()
+          ? argument_types[index] : argument.type;
+      auto abi = function_parameter_abi(*function_target, index, argument_type, concrete);
       Effect effect = abi.effect;
       bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
@@ -4244,7 +4279,9 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT missing checked functional callable node");
     return render_functional_callable(stage.arguments[callable_index],
         arguments, domain, locals, types, propagate_raises,
-        checked_placeholder_result, &checked_callable);
+        checked_placeholder_result, &checked_callable,
+        stage.checked_callable_argument_types.empty()
+            ? nullptr : &stage.checked_callable_argument_types);
   }
 
   static string functional_zero(const string& type) {
@@ -4742,7 +4779,8 @@ class Generator {
     if (!element)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked fused functional source type");
-    string current_type = *element;
+    const string source_element_type = *element;
+    string current_type = source_element_type;
     string final_element_type = current_type;
     for (const auto& stage : pipeline.stages) {
       for (const auto& operation : stage.operations) {
@@ -4818,11 +4856,12 @@ class Generator {
       out << "        let mut __moss_result = "
           << (last_kind == FunctionalNodeKind::All ? "true" : "false")
           << ";\n";
-    bool source_copy = copy_type(current_type);
+    bool source_copy = copy_type(source_element_type);
     out << "        for __moss_item_ref in __moss_pipeline_source.iter() {\n"
         << "            let __moss_value_0 = "
         << (source_copy ? "*" : "") << "__moss_item_ref;\n";
-    FunctionalValue current{"__moss_value_0", current_type, !source_copy};
+    FunctionalValue current{"__moss_value_0", source_element_type,
+                             !source_copy};
     size_t map_number = 0;
     for (const auto& stage : pipeline.stages) {
       switch (stage.kind) {

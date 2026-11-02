@@ -17611,3 +17611,23 @@ future optimizer-isolated proof and must remain explicit in final review.
   avoid duplicate type queries in checked pipeline lowering. Continue by
   locating the checker entry/context that owns each missing node and add facts
   only from checker-resolved types. Re-run the seven targets and hook suite.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (optimized functional callback facts)
+
+- The last three candidate-only optimized source failures were functional
+  callback specialization mismatches (`area_of`, `one`, `size`). The emitter
+  selected from transient loop-value types that could disagree with the
+  checker-recorded functional stage input type. Lowered functional stages now
+  carry checked callback argument types from `FunctionalNode.input_type`; the
+  emitter uses those types for specialization and parameter ABI selection.
+- Fixed source iteration ownership metadata in fused pipelines to classify the
+  original source element type, rather than the final mapped element type.
+- Targeted validation: rebuilt `moss-dev` and `moss-opt`; all three optimized
+  fixtures now generate Rust and each generated file compiles with `rustc`.
+  The previous paired corpus measurement is invalidated by this fix and still
+  needs a final rerun. Full suites and performance remain deferred.
+- Uncommitted changes are limited to `native_generator.cpp` and
+  `functional_source_pipeline.hpp` plus this checkpoint record (alongside the
+  prior uncommitted checker/Fast Debug edits). Next: rerun targeted native / -O
+  behavior parity and fact-hook tests, then refresh whole-corpus counters and
+  continue closing any absent checker type facts.
