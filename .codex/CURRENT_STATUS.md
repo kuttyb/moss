@@ -23,8 +23,11 @@
   only the guide. Agent 2 checked the answers against code and returned GO.
   Its initial wording concern was resolved by clarifying AGENTS.md that phase
   work continues while consumers remain fail-closed. No source code changed.
-- Next: commit and push the documentation branch, fetch current origin/main,
-  then merge into main per authorization. No tag was requested.
+- Delivered: documentation commit `9904f243` was pushed on
+  `docs-compiler-architecture` and merged into `main` by merge commit
+  `b953d313` with `142ea010` as first parent. The branch remains published.
+  No tag was requested. Final push of the merge and this status completion is
+  pending.
 
 # Phase 27.5.5 handover (2026-11-02)
 
