@@ -59,7 +59,41 @@ The AST's expression strings remain useful source data, diagnostic text, and rew
 
 The checker decides type and overload selection, member/method targets, generic specialization, pipeline typing and eligibility facts, flow joins, pattern resolution, effects/ownership, and lock requirements. Those answers live in the structures above. In the emitter, `generated_expr_type` is a checked-fact access point; Rust borrow forms, result wrappers, runtime container types, and syntax are lowering choices. Fast Debug chooses a runtime operation only after reading the checker-selected target/operator. The optimizer may conservatively skip an optimization when its checked proof is unavailable.
 
-Do not “help” a consumer by recomputing a missing type from operand/runtime values, resolving a member from receiver type, selecting a specialization from consumer-derived argument types, joining branch environments, or parsing a pattern spelling. Extend the checker’s recorded answer and its typed accessor instead. The ownership fact-hook ignore list is known debt; do not enlarge it without updating the contract and the required tests.
+Do not “help” a consumer by recomputing a missing type from operand/runtime values, resolving a member from receiver type, selecting a specialization from consumer-derived argument types, joining branch environments, or parsing a pattern spelling. Extend the checker’s recorded answer and its typed accessor instead. The known ownership fact-hook gaps are linked below; do not enlarge them without updating the contract and required tests.
+
+## Gaps, by stage
+
+These are the current shortfalls. Each link names the matching entry in the contract’s [Declared debt](MOSS_COMPILER_CONTRACT.md#declared-debt). The contract retains the measurements; this guide does not repeat them.
+
+<!-- architecture-gaps:start -->
+| Stage | Contract invariant | What happens and why it remains | Owner and contract entry |
+| --- | --- | --- | --- |
+| Driver | 2 | Some post-parse rewrites still edit expression text and rebuild retained trees. The rewrite passes predate the tree representation and only refresh handles after changing their text. | Unscheduled — [D-DRIVER-TREE](MOSS_COMPILER_CONTRACT.md#d-driver-tree). |
+| Checker | 1, 3 | Recursive checking still reparses expression fragments and consults text-keyed caches. The consumer-scoped migration retained these internal passes; no later checker-tree conversion phase is assigned. Lock-requirement perturb/drop coverage is also still pending because that decision class has not been added to the fact-hook matrix. | Unscheduled — [D-CHECKER-TEXT](MOSS_COMPILER_CONTRACT.md#d-checker-text), [D-LOCK-TEST](MOSS_COMPILER_CONTRACT.md#d-lock-test). |
+| Fast Debug | 4, 6 | Some ownership perturbations still leave runtime copy/move/borrow behavior unchanged. The recorded test-build debt remains because Phase 27 migrated other fact classes first. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| Native emitter | 4, 7, 9 | Some ownership perturbations still leave lowering unchanged; the nested-mutation baseline source also reaches Rust that rustc rejects. | Planned, Phase 28 for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the baseline source — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite), [D-ACCEPTED-RUST](MOSS_COMPILER_CONTRACT.md#d-accepted-rust). |
+| Optimizer | 4, 6 | Some ownership perturbations still leave optimized execution unchanged. The checked type and pipeline paths are migrated, while this ownership gap remains recorded debt. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| `.mossi` | 4, 6 | Imported provider paths do not yet propagate and consume all ownership-related facts. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| Packages | 4, 7, 9 | Package builds exercise the incomplete imported ownership path; one conformance job also has a Cargo jobserver failure. | Planned, Phase 28 for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the suite failure — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite). |
+| Cross-engine validation | 7 | Trace-event parity is not compared, and a seeded program generator is not registered. | Unscheduled — [D-TRACE-PARITY](MOSS_COMPILER_CONTRACT.md#d-trace-parity); planned, after Phase 28 — [D-PROGRAM-GENERATOR](MOSS_COMPILER_CONTRACT.md#d-program-generator). |
+| Native compilation gate | 9 | Checker-accepted programs can still produce Rust rejected by rustc; the ratcheting allowlist and current failures document the cases. | Unscheduled — [D-ACCEPTED-RUST](MOSS_COMPILER_CONTRACT.md#d-accepted-rust). |
+<!-- architecture-gaps:end -->
+
+## Phase map
+
+### Phase 27 — closed at `phase27-5-5-m1`
+
+Phase 27 added retained expression nodes and checked fact/plan handoffs for the migrated decisions. Fast Debug, the emitter, and optimizer navigate those trees and read checker answers; perturb/drop tests and the runtime counter ratchet are registered. The residual work is listed above rather than treated as completed.
+
+### Planned, Phase 28 — ownership debt
+
+Phase 28 owns the ownership and parameter-effect debt listed in the contract. This guide does not specify ownership decisions or language rules for that phase.
+
+### Other recorded work
+
+- The checker/driver tree-first rewrite was planned in Phase 27’s lazy expression-tree design. Phase 27 is closed; the remaining checker string passes and driver text rewrites are currently **unscheduled**.
+- **Planned, after Phase 28:** the seeded program generator is recorded validation work.
+- **Planned, Phase 28:** the Graph DSL is recorded as a tree-first consumer after S3.
 
 ## Contract gates in this architecture
 
@@ -78,17 +112,9 @@ The numbered invariant definitions stay in the [contract](MOSS_COMPILER_CONTRACT
 
 To run the runtime/counter checks directly, use `python3 tests/tooling/check_phase27_5_4_runtime_ratchet.py build/compiler/moss-dev`. To run the fact perturb/drop matrix, use `python3 tests/tooling/check_phase27_5_4_fact_hooks.py build/compiler/moss-dev build/compiler/moss-opt`. `make check-shadow` sets `MOSS_EST=shadow` for both. The fixed ratchet fixtures are recorded in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json`.
 
-## Known debt and measured cost
+## Measurements
 
-These numbers are the current Phase 27.5.5 contract/report values, not targets inferred from this guide:
-
-- The checker still reparses expression fragments: 55,160 reparses and 16,456,102 text-cache lookups on the fixed ratchet workload. These checker-internal counts are report-only under the consumer-scoped gate.
-- Driver text rewrites rebuild expression trees 748 times on the fixed workload. This is measured and ratcheted against increases.
-- Ownership/effects fact-hook debt is frozen at 10 entries for parameter effects/passing and clone/move/borrow (Phase 27.6). No expression-type or pipeline-type debt entries remain.
-- Both final suites ran 165 jobs: 162 passed and the same 3 documented C1 failures remained. One is `check_phase25_conformance` gate 10 (`compiled_only_custom_key`) failing to open Cargo jobserver FD 3 in the parallel runner. The other two are `check_phase27_accepts_rustc` and `shard_swarm_cases`, both exposing Rust E0499 on `tests/swarm_035_nested_mutating_calls.moss`.
-- Aggregate compiler time was +3.2% against `phase27-5-4-m2` and -60.3% against phase-start `274f8485`. W2 `w2_spec_distinct_n032` peak RSS was 64,624 KiB with the normal optimized flags and 65,404 KiB with plain `-O2` everywhere; phase-start was 34,748 KiB. W4 was +1.5%, W5 +6.0%, and W8 +7.2% vs m2. Across the 23 real-world workloads, several small inputs had larger percentage increases because their baseline times are short; e.g. `rw_example_domains` +28.2%, `rw_example_pipeline` +27.3%, and `rw_phase24_string_concat` +25.0% vs m2. The full paired table and noise analysis are in `docs/phase27/27_5_5_REPORT.md`.
-
-The fixed workload used by the ratchet is a gate; the larger phase report sweeps are measurements. Consult the contract for which debt is allowed and which status is met.
+Current debt values, baseline suite outcomes, runtime ratchet measurements, and Phase 27.5.5 timing/memory results are maintained in the [contract](MOSS_COMPILER_CONTRACT.md) and [Phase 27.5.5 report](phase27/27_5_5_REPORT.md). This guide intentionally points to those sources rather than duplicating their numbers.
 
 ## Adding a language decision
 
@@ -141,6 +167,7 @@ The checker validates every source citation below by path and symbol. Citations 
 | `tests/tooling/check_architecture_doc.py` | `main` |
 | `tests/run_parallel.py` | `main` |
 | `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json` | `counts`, `workload` |
+| `docs/MOSS_COMPILER_CONTRACT.md` | `Declared debt`, `D-CHECKER-TEXT`, `D-DRIVER-TREE`, `D-OWNERSHIP-FACTS`, `D-LOCK-TEST`, `D-TRACE-PARITY`, `D-PROGRAM-GENERATOR`, `D-BASELINE-SUITE`, `D-ACCEPTED-RUST` |
 | `docs/phase27/27_5_5_REPORT.md` | `Type facts and consumer fallbacks`, `Paired performance` |
 | `tests/swarm_035_nested_mutating_calls.moss` | `Box2`, `take`, `put` |
 <!-- architecture-citations:end -->

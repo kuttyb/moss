@@ -152,8 +152,7 @@ Sorted by cost (edit/check cycles consumed), highest first.
 ### T8 — `for` loops (COST 1, large rewrite)
 - WANTED: `for i in range(0, n)` and `for edge in edges`.
 - HAD TO: `while` loops with manual counters everywhere.
-- WHY: documented: "Fast Debug does not support for iteration yet" — even
-  `range`.
+- WHY: historical Fast Debug limitation; `for` traversal now runs in Fast Debug (verified in Phase 27).
 - CLASS: Fast Debug gap (documented)
 - COST: 1
 
@@ -188,8 +187,8 @@ Sorted by cost (edit/check cycles consumed), highest first.
 - WANTED: run the `test` blocks in Fast Debug.
 - HAD TO: generate `tmp/surface_graphkit/fd_tests.moss`, rewriting each
   `test` into a function called from `main`.
-- CLASS: no project-wide interpreted test discovery/orchestration through Margo;
-  standalone test sources can use `moss test --interp` (matches SWARM-039)
+- CLASS: historical Margo interpreted-test discovery gap, resolved by
+  `margo test --interp` (SWARM-039; historical)
 - COST: 1
 
 ### T1 — deleting from a Map (COST 0)
@@ -215,7 +214,7 @@ All in `tmp/surface_graphkit/repro/`; `matrix.sh` regenerates `matrix.txt`.
 | d01_string_literal_compare (`x = "a" < "b"`) | ok (type string!) | ok | prints `a" < "b` | rustc E0308 | new |
 | d02_interp_string_less (`s < t`) | ok | ok | `false` (wrong) | `true` | new |
 | d03_interp_and_or | ok | ok | unsupported expression | ok | SWARM-037 |
-| d04_interp_for | ok | ok | unsupported (documented) | ok | documented limit |
+| d04_interp_for | ok | ok | historical unsupported result (pre-Phase 27) | ok | Fast Debug `for` support added in Phase 27 |
 | d05_native_struct_index_field (`edges[i].dst`) | ok | ok | ok | rustc E0277 i64 index | new (cousin of SWARM-027) |
 | d06_native_string_concat (`a + b`) | ok | ok | ok | rustc E0308 | new |
 | d07_native_echo_vector | ok | ok | `[p, q]` | rustc E0277 Display | new |
@@ -291,9 +290,9 @@ partial topological order ( 4 nodes )
 
 | # | Invocation | Helped? |
 |---|---|---|
-| 1 | `moss agent bootstrap --json` | yes: `source_surface` told me Map has no deletion and Fast Debug has no `for` before I wrote code |
+| 1 | `moss agent bootstrap --json` | historical note: current Fast Debug supports `for`; the old capability snapshot predated Phase 27 |
 | 2 | moss-language + moss-agent-workflow skills | yes: collection ops, `Vector[T]()`, no recursion |
-| 3 | Gentle Introduction sections 1-9, 12-17 | yes: types/methods, pipelines, `for` limit |
+| 3 | Gentle Introduction sections 1-9, 12-17 | historical note: its old `for` limit was corrected after Phase 27 |
 | 4 | TESTING.md (first 120 lines) | partly: test placement; lowercase `int` confused me |
 | 5 | ~20 `moss check --json` runs | yes: codes/lines were accurate; `legal_alternatives` generic; `fixes` always empty |
 | 6 | `moss type x --source probe2.moss` | yes: proved `"a" < "b"` was typed `string` (D1) |

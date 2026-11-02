@@ -1,3 +1,64 @@
+# Phase 27 closeout docs handover (2026-11-02)
+
+## Current checkpoint
+
+- Branch `docs-phase27-close` starts from current `origin/main` at
+  `e7668792`, as requested. This continues the uncommitted documentation-only
+  architecture gaps work; no compiler source has changed.
+- Read `docs/MOSS_COMPILER_CONTRACT.md` and refreshed `./moss agent bootstrap
+  --json` (language version `moss-0.1`; canonical docs: Gentle Introduction,
+  language design, project workflow, testing). Inspected `LANGUAGE_SYNTAX.md`,
+  both Moss agent skills, AGENTS.md and example READMEs for stale compiler and
+  Fast Debug statements.
+- Verified current behavior: a range `for` runs in Fast Debug and native; an
+  explicit-module `for` is accepted and runs; ledger pipelines run in package
+  Fast Debug; GraphKit package Fast Debug runs; multi-package analytics runs
+  Fast Debug and `margo test --interp` (8 tests). These contradict the old
+  documented unsupported-for/pipeline/callable/test-orchestration claims.
+- The contract is now rev 5, closed at `phase27-5-5-m1`, with a single declared
+  debt registry, invariant 9, and `check_contract_gates.py` registered in shared
+  preflight. Phase 27 cost pairs are recorded here, and the closeout report lists
+  corrected statements with evidence. The docs change only; no compiler source
+  or language rule changed.
+- Targeted gates pass: contract gate registration, architecture citations,
+  feedback schema, and `git diff --check`.
+- Full `make check`: 162/165; full `make check-shadow`: 162/165. Both have the
+  same three baseline failures: `check_phase25_conformance` gate
+  `compiled_only_custom_key` (Cargo jobserver FD 3), and `check_phase27_accepts_rustc`
+  plus `shard_swarm_cases` on `swarm_035_nested_mutating_calls.moss` (E0499).
+  The contract gate-existence and architecture citation checks passed in both.
+- Agent 2 completed the single final audit: cold read 5/5, statement spot
+  checks PASS, no S3 rule leakage, and gate registration checker PASS after its
+  per-target coverage correction. Agent 2 returned GO.
+- The Phase 27.5.5 report remains the authority for parity and cost. This docs
+  closeout independently ran default and shadow full suites once each; both
+  were 162/165 with the same three baseline failures. The new gate check passed
+  in both runs. No language rule changed.
+- Branch commit `dda8fa49` was pushed. The remaining delivery action is to merge
+  it into `main` with `origin/main` as first parent and push `main`.
+
+# Compiler architecture gaps handover (2026-11-02)
+
+## Current checkpoint
+
+- New branch `docs-architecture-gaps` starts at current `origin/main` (`e7668792`).
+  `docs-phase27-close` does not exist locally or on origin; the previous
+  architecture guide delivery is already an ancestor of main.
+- Scope: docs and doc-check tooling only; no compiler sources changed.
+- Read `docs/MOSS_COMPILER_CONTRACT.md`. The current contract had debt facts
+  inline under invariants but no `Declared debt` section, so this change will
+  add stable debt entry IDs there and have the architecture guide link to them.
+- `docs/MOSS_OWNERSHIP_S3.md` is absent from current main. Its latest design
+  text is available in repository history at commit `2dbcf692`; that source
+  says Phase 28 ownership design is frozen and implementation/migration are
+  pending. Use only its architecture-level checker/emitter/Fast Debug and
+  test implications, not language rule text.
+- Next: add debt IDs and stage gap map, phase map and future labels; extend
+  `check_architecture_doc.py` to compare the two ID sets and guard against
+  duplicated debt measurements; run the checker and full `make check` once;
+  Agent 2 then runs the five-question blind read and final audit. Commit/push
+  and merge only on GO.
+
 # Compiler architecture documentation handover (2026-11-02)
 
 ## Current checkpoint

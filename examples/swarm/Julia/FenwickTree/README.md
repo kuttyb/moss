@@ -71,8 +71,7 @@ lowbit forward as `start`, and the total doubling work across one `inc` or
   When the tree is used as a difference array, `prefixsum(k)` is the point value and
   `left <= k < right` is raised by `val`. The half-open `right` is Julia's, and a
   test pins it.
-- All loops use `while`, not `for`, because Fast Debug does not yet execute `for`
-  traversal.
+- This implementation uses `while` loops for explicit Fenwick index updates; Fast Debug also supports `for` traversal.
 
 ## What worked well
 
@@ -125,9 +124,9 @@ Ledger mapping: 1 → SWARM-031, 2 → SWARM-032, 3 → SWARM-033, 4 → SWARM-0
    surface)* `if a and b:` on `Bool` builds and runs natively but Fast Debug reports
    `unsupported expression 'a and b'`. `source_surface` documents only `not`. Not
    used here. Repro: `bool_andor.moss`.
-6. **No project-wide Fast Debug test discovery/orchestration.** *(tooling gap)*
-   Standalone test sources can run through `moss test --interp`, but Margo has no
-   project-level interpreted test command mirroring native `margo test`. For test
+6. **Historical project-wide Fast Debug test-discovery gap.** *(resolved in Phase 27)*
+   Standalone test sources and Margo's project-level `margo test --interp` command
+   can run interpreted tests. For test
    parity here I mechanically rewrote each `test` block into a function called from
    a generated `main` (scratch file `tmp/fw_tests_interp.moss`), and all 8 passed
    in the interpreter.

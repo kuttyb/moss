@@ -70,7 +70,7 @@ for i, s in enumerate(stats[:3], 1):
    insertion sort over indices, like Julia's `sortperm(rev=true)`. Swapping
    objects inside a `Vector` consumes the vector (T3), so the program sorts
    `Int` indices and reads `stats[order[k]]`.
-7. **`while` loops only.** Fast Debug cannot execute `for`. Loops never use
+7. **`while` loops in this implementation.** Fast Debug supports `for`; these loops never use
    `and`/`or` because Fast Debug mis-parses them (T11).
 8. Pipelines in use: `map`, `sum`, `count`, `reduce`, `any` (`_ == name`,
    `_.units > 15`), `all` (`is_digit`, `_.price_cents > 0`, `_.units > 0`),
@@ -101,7 +101,7 @@ for i, s in enumerate(stats[:3], 1):
 | T20 | 1 | diagnostic quality | Semantic queries refuse to run while the program has any error |
 | T23 | 1 | docs gap | TESTING.md is stale; `moss test --interp <file>` exists but is undocumented |
 | T24 | 1 | docs gap | `reduce(init, fn)` argument order undocumented |
-| T13 | 0 | Fast Debug gap (documented) | No `for` in Fast Debug |
+| T13 | 0 | Historical Fast Debug gap, fixed in Phase 27 | Fast Debug now supports `for` |
 | T17 | 0 | Fast Debug bug (new) | `y == "\n"` gives "unsupported expression"; `"\n" == y` works |
 | T18 | 0 | Fast Debug bug (new, wrong result) | `"apple" < "banana"` is `false` in Fast Debug, `true` natively |
 | T19 | 0 | native-lowering bug (new) | `echo mk("y").s` with a consuming String param passes `&str` |

@@ -167,6 +167,7 @@ check-shadow: check-preflight
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-preflight: moss-dev moss-opt
+	python3 tests/tooling/check_contract_gates.py
 	python3 tests/tooling/check_architecture_doc.py
 	env -u MOSS_EST python3 tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py $(MOSS_DEV)
 	python3 tests/tooling/check_phase27_string_debt.py
