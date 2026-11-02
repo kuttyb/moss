@@ -544,3 +544,30 @@ from 369 / 230 to 343 text lookups / 204 reparses, and the Phase 20
 executor/FileIO harness passes. Remaining reparses are concentrated in checked
 FileIO coordinate/length expressions (`4`, `offset, 4`, `item.length()`); the
 C2 zero-count target remains open.
+
+### C2 corpus counter closure (2026-11-01)
+
+After the retained trait-receiver call fix (`9fef6d2a`), the paired test-build
+measurement ran identical default and `-O` emission commands for all 1,824
+tracked test/example `.moss` files (3,648 commands per compiler). The pinned
+C1 parent reported 14,606,057 text-node lookups, 9,735,229 native expression
+view reparses, 7,362 native pipeline reparses, and zero consumer expression
+parses. The candidate reported zero in all four counters. This is the current
+corpus measurement; it is not the final suite/parity gate.
+
+Parent and candidate differed by four emission failures (1,406 vs 1,410).
+The two candidate-only sources are the formatter-return grouping failed
+attempt and the intentionally incomplete index probe. Both are accepted by
+`moss check`, but the parent's Rust does not compile: it emits a nonexistent
+`self.return(...)` method with an invalid expression-statement result, or an
+unclosed `items[` expression. The candidate instead reports missing checked
+target/slot invariants. Neither source has a runnable parent behavior, so this
+is documented as checker-accepted/backend-invalid input rather than a runtime
+parity difference. No consumer fallback was restored.
+
+Current targeted gates pass: call-target perturb/drop (including direct,
+indexed, and trait receiver methods), specialization, joins, and patterns;
+the known-debt ignore set remains 38/38; Team A semantics and EST functional
+tree checks pass. Earlier full-suite output predates recent repairs and is not
+a current gate result. Final default/shadow suites, aggregate three-engine and
+parity gates, performance, and the single Agent 2 audit remain pending.

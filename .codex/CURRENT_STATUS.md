@@ -1,5 +1,37 @@
 # Phase 27.5.4 C2 handover (2026-11-01; direct receiver target coverage)
 
+## 2026-11-01 follow-up checkpoint (code commit 9fef6d2a)
+
+- The pushed trait-receiver target fix closes the last nonzero emitter counters
+  found by the paired tracked-source sweep. The run compared 1,824 tracked
+  `.moss` files, default and `-O` (3,648 emissions/compiler): C1 parent had
+  14,606,057 text-node lookups, 9,735,229 expression-view reparses, and 7,362
+  pipeline reparses; candidate had 0 for all three and 0 consumer expression
+  parses. Failed emissions were 1,406 parent vs 1,410 candidate.
+- The four candidate-only failed emissions are two default/`-O` pairs:
+  `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss`
+  and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`.
+  Both pass `moss check`, but the C1 parent's generated Rust fails `rustc`:
+  the first calls nonexistent `self.return` and has invalid expression-statement
+  result types; the second emits an unmatched `items[`. Candidate stops earlier
+  with missing checked-target / missing checked-slot invariants. These have no
+  runnable parent behavior; do not make the consumer infer semantics to emit
+  the same invalid Rust. Record them as checker-accepted/backend-invalid inputs,
+  not behavior-parity regressions.
+- The earlier full default suite result (127/165) predates these changes and
+  remains non-green. It must not be reported as current. Targeted current-code
+  checks pass: `check_phase27_5_4_fact_hooks.py` (call targets 9, specializations
+  5, joins 4, patterns 3; known debt 38/38), `check_phase25_team_a_semantics.py`,
+  and `check_phase27_est_functional_tree.py`. The exact two source checks,
+  parent Rust compilation failures, and zero-counter paired report were
+  reverified on this checkpoint.
+- Current worktree was clean before this status-only update. No final full
+  default/shadow suite, three-engine/parity aggregate, perf comparison, or
+  Agent 2 audit has been run after the latest code. C2 remains unmerged. Next:
+  check the emitter/optimizer fact-read coverage inventory, refresh the durable
+  delivery report, then run the final gates once and request the one Agent 2
+  audit. The post-C2 closing round remains queued until C2 merges.
+
 ## 2026-11-01 status checkpoint (commit 9ec8bf49)
 
 - Ran the requested final `make --jobs="$(nproc)" check` default suite once.
