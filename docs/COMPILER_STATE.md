@@ -216,6 +216,12 @@ mode); no status-count regression occurred. The machine-readable result is
 phase report is [27.5.5](phase27/27_5_5_REPORT.md). This replaces the earlier
 23,452/282,668 (8.3%) coverage measurement above.
 
+On the fixed 27.5.4 workload, checker reparses were 55,160 and checker
+text-cache lookups 16,456,102, compared with prior measurements 54,037 and
+16,261,580. The explicit 27.5.4 consumer-only re-scope makes these checker
+counts report-only; the ratchet gates driver rewrites and consumer stages.
+Those consumer stages remain zero and driver rewrite counts remain at baseline.
+
 Paired performance against phase-start `274f8485` was 6.100s vs 15.000s
 aggregate (-59.3%); against phase27-5-4-m2 it was 6.092s vs 5.925s (+2.8%).
 The W2 n032 candidate peaked at 64,800 KiB using the normal per-translation

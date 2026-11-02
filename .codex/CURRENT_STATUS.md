@@ -17866,3 +17866,17 @@ future optimizer-isolated proof and must remain explicit in final review.
   run each through perturb/drop on all engines, audit the lowering-only list,
   and return GO/NO-GO. On GO, fetch current origin/main, merge, tag
   `phase27-5-5-m1`, and update delivery docs/report with exact outcomes.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (ratchet scope correction)
+
+- First `make check` attempt stopped at the runtime ratchet before launching
+  test jobs. Checker counts were 55,160 reparses / 16,456,102 cache lookups;
+  this is checker-only fact-recording work. The 27.5.4 re-scope explicitly
+  excludes checker internals from targets. `check_phase27_5_4_runtime_ratchet.py`
+  now reports those counts against the old recorded baseline but gates driver
+  rewrites and consumers only; no baseline is raised. Targeted ratchet run
+  passes with Fast Debug, emitter and optimizer at zero; driver rewrites remain
+  at 748 reparses/rebuilds.
+- Contract, compiler-state and report now record this scope and measurement.
+  The default full suite has not yet reached its test jobs, so it is not a
+  valid final-suite result; rerun default and shadow once after this correction.

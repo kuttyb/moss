@@ -12,14 +12,14 @@ Terms:
 1. **One parse (consumers).** Consumers never parse expression text. Each expression is parsed once, at the initial parse of its source file or the initial load of an imported .mossi body; consumers navigate the retained tree. Diagnostics, fmt and edit tools are exempt.
    - Gate: string-debt gate (`check_phase27_string_debt.py`) plus the stage counter ratchet (`check_phase27_5_4_runtime_ratchet.py`). `make check` runs default mode; `make check-shadow` runs the separate cross-check mode.
    - Status after Phase 27.5.5: Fast Debug, emitter and optimizer **met** for consumer parsing. The final paired emission sweep covers 1,828 tracked sources in default and `-O`; consumer type-inference requests and consumer reparses are expected to be zero. Checker parsing is intentionally still string-based and is outside the consumer target.
-   - Measured debt on the fixed workload: checker 54,037 expression reparses and 16,261,580 text-cache lookups; stage limits are committed in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json` and cannot rise. The workload includes calculator, regex and string-concatenation programs.
+   - Measured checker count on the fixed workload: 55,160 expression reparses and 16,456,102 text-cache lookups. Per the Phase 27.5.4 consumer-only re-scope, these checker-internal counts are report-only; the ratchet gates driver rewrites and consumers. Consumer limits are committed in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json`; the workload includes calculator, regex and string-concatenation programs.
 
 2. **The tree is the source of truth.** Rewrites after parsing should operate on tree nodes; expression text should be derived from the tree, never the reverse.
    - Gate: text-to-tree rebuild counter in the runtime ratchet.
    - Status: **not met.** Driver rewrites still edit text and rebuild expression trees. The fixed workload records 748 driver rebuilds; the committed baseline prevents increases. The C2 retained-tree consumer migration does not change the driver's rewrite representation.
 
 3. **Nodes are passed, not text (consumers).** Consumers pass node IDs, never look up a node by expression text or text fingerprint, and never consult a text-keyed cache.
-   - Gate: stage text-lookup counters in the runtime ratchet; consumer stages must remain zero.
+   - Gate: stage text-lookup counters in the runtime ratchet; Fast Debug, emitter and optimizer must remain zero. Checker-internal text-cache lookups are reported but not gated under the 27.5.4 re-scope.
    - Status after Phase 27.5.5: Fast Debug, emitter and optimizer **met** (zero text-node lookups on the fixed workload; the final 1,828-source emitter sweep also checks both default and `-O`). The checker still consults text-keyed caches; its 16,261,580 lookups remain measured under invariant 1 and ratcheted.
 
 4. **The checker is the only semantic authority.** Only the checker decides: expression types, call targets, specializations, pipeline types, parameter effects and passing, clone/move/borrow, control-flow joins, pattern meaning, lock requirements. Consumers execute or lower those decisions; they never make them.

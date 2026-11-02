@@ -14,6 +14,12 @@ The emitter's string-only `generated_expr_type` entry point now throws `MOSS_INT
 
 Workload: 1,828 tracked `.moss` files from tests and examples, 337 package manifests inventoried, 3,656 default/`-O` source-emission commands. Both Phase 27.5.3 baseline and candidate have 1,410 failed emissions (705 each mode); no status-count regression. Candidate counters are all zero for reparses, functional-pipeline reparses, consumer expression parses, text-node lookups, and consumer type inference. The coverage counter only counts consumer type requests; it does not claim package-context emission, as the package manifests are inventoried but not separately run here. Raw result: `tmp/phase2754-emitter-counts/1793613540050453503/summary.json`.
 
+The fixed Phase 27.5.4 ratchet workload reports checker-internal expression
+reparses=55,160 and text-cache lookups=16,456,102 (previous recorded values
+54,037 and 16,261,580). Under the explicit 27.5.4 re-scope these checker
+counts are report-only; the runtime ratchet continues to gate driver rewrites
+and all consumers, with Fast Debug, emitter and optimizer at zero.
+
 No type entries remain in `tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`; its 10 ownership entries are unchanged. Built-in expression type and pipeline type perturb/drop fixtures pass through Fast Debug, native and `-O`. Agent 2 must select three additional unseen, accepted sources for each class and run them through the same registered harness before approval; record exact paths and results here.
 
 ## Lowering-only Rust types

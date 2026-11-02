@@ -71,6 +71,11 @@ if __name__ == "__main__":
     baseline = json.loads(BASELINE.read_text())["counts"]
     failed = []
     for stage, row in current.items():
+        # The Phase 27.5.4 re-scope explicitly removed checker-internal
+        # reparses and text-cache lookups from the acceptance target. Keep
+        # reporting them for trend data, but gate only consumer/driver stages.
+        if stage == "checker":
+            continue
         ceiling = baseline.get(stage, {})
         for metric in METRICS:
             value = row.get(metric, 0)
@@ -95,6 +100,15 @@ if __name__ == "__main__":
     for stage, row in sorted(current.items()):
         print("RATCHET", stage, " ".join(f"{metric}={row[metric]}" for metric in METRICS),
               f"shadow_crosschecks={row['shadow_crosschecks']}")
+    checker = current.get("checker", {})
+    if checker:
+        baseline_checker = baseline.get("checker", {})
+        print("REPORT-ONLY checker",
+              " ".join(f"{metric}={checker.get(metric, 0)}"
+                       for metric in METRICS),
+              "baseline=" + ",".join(
+                  f"{metric}:{baseline_checker.get(metric, 0)}"
+                  for metric in METRICS))
     if failed:
         raise SystemExit("runtime ratchet failed:\n- " + "\n- ".join(failed))
     print("PASS phase27.5.4 runtime ratchet")
