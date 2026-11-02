@@ -1,5 +1,7 @@
 # Moss ownership (S3): the problems, simply
 
+> **Historical design record — superseded for Phase 28.** The current ownership proposal is [MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md) (Nov 2, 2026). This Rev 10 document is retained for historical probes and decisions, **not** as the active Phase 28 ownership contract. In particular, the current proposal permits legal live-path widening, uses explicit `take` on eligible surviving fields, allows inferred READ/WRITE ordinary match bindings, permits primitive input replies while keeping all incoming parameter bindings immutable, and freezes `copy(x)` without a source `.clone()` alias. Historical claims below that conflict with these decisions are superseded.
+
 Status: Phase 28 ownership design contract, Nov 1 2026. **Rev 10: twelve original issues closed; two additional review gaps (local rebinding and mixed-provenance control-flow joins) now closed conservatively.** Implementation and migration remain pending. Rev 9 introduced scoped borrow inference; Rev 8 closed seven Map decisions. Historical probes below describe old behavior, not adopted rules. This supersedes the earlier unconditional-local-move decision S2, message-consume proposal M1, and D1's particular `.clone()` source spelling in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; the explicit-copy *intent* remains, with final spelling to be chosen.
 
 ## 0. Agreed principles
