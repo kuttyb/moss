@@ -700,6 +700,11 @@ is recorded in `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json`:
 Targeted checks passed: runtime ratchet in default and shadow, EST coverage
 counters, focused EST tests, agent-feedback validation, and `git diff --check`.
 The dry-run Makefile inspection confirms `make check` selects only default mode
-and `make check-shadow` selects shadow mode. The full default and shadow suites
-have not yet run for this closeout; Agent 2 has not yet audited it. The status
-and handover are maintained in `.codex/CURRENT_STATUS.md`.
+and `make check-shadow` selects shadow mode. The full default suite then ran
+once: preflight, fact hooks and ratchet passed; the regression shard passed
+162/165 jobs in 352.56s. The three failures are the C1-parent baseline issues
+documented above: conformance gate 10 (`compiled_only_custom_key`) and the
+native Rust E0499 failure in `swarm_035_nested_mutating_calls.moss`, surfaced
+by both `check_phase27_accepts_rustc` and `shard_swarm_cases`. The shadow full
+suite and closeout Agent 2 audit remain pending. The status and handover are
+maintained in `.codex/CURRENT_STATUS.md`.

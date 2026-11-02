@@ -11,7 +11,7 @@
   ratchet and stage-attributed counters, updates AGENTS.md/compiler contract,
   and records the feedback observation. Worktree was clean at push.
 - Fixed workload: 28 sources include calculator, regex and string concatenation;
-  5 sources also run in Fast Debug. Current committed-to-be baseline is
+  5 sources also run in Fast Debug. Committed baseline is
   checker 54,037 reparses / 16,261,580 text-cache lookups; driver rewrites 748
   reparses / 748 rebuilds; Fast Debug/emitter/optimizer are zero for reparses,
   node/cache lookups and rebuilds. Shadow run: checker 64,548 cross-checks,
@@ -19,12 +19,24 @@
 - Targeted validation passed on the pushed code: default and shadow runtime
   ratchet, EST counter coverage, focused EST checks, `check_agent_feedback.py`,
   and `git diff --check`. `make -n check` showed default mode only;
-  `make -n check-shadow` showed shadow mode. No full closeout suite has run yet.
-- Next steps: run `make check` and `make check-shadow` once each, review all
-  failures, invoke
+  `make -n check-shadow` showed shadow mode.
+- Full default `make --jobs="$(nproc)" check` has now run once. Preflight,
+  hooks and ratchet passed; regression shard was 162/165 jobs (352.56 s).
+  Failures: conformance gate 10 (`compiled_only_custom_key`),
+  `check_phase27_accepts_rustc`, and `shard_swarm_cases`. The latter two are
+  the documented C1-parent Rust E0499 baseline for
+  `tests/swarm_035_nested_mutating_calls.moss`; gate 10 is the documented
+  C1-parent conformance baseline. Full log: disposable
+  `tmp/phase2754-closeout-check.log`.
+- Next steps: run `make check-shadow` once, review its failures, invoke
   Agent 2 once, and merge/tag `phase27-5-4-m2` only if the gates and audit pass.
-  Before ending a session, refresh this section with exact test results and
-  commit IDs. No L7 input is needed.
+  No L7 input is needed.
+
+## Historical C2 handover detail
+
+The earlier next-step instruction was to run both suites; default is now
+complete as recorded above. Do not rerun it. After shadow, review all failures,
+invoke Agent 2 once, and merge/tag only if the gates and audit pass.
 
 ## Historical C2 handover notes
 
