@@ -1,10 +1,12 @@
 # Phase 27 — Language Stabilization: team execution file
 
+> **Historical execution plan / roadmap correction (Nov 2, 2026):** This Oct 28 Phase 27 file assigned Graph DSL to Phase 28. That assignment is **superseded**: Phase 28 is the [LOL ownership proposal](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md), and Graph DSL is a separate later workstream. Earlier S3 rules in this plan are historical, not current Phase 28 language authority. The original team plan below is preserved for auditability.
+
 Date: Oct 28 2026. Base: `main` at `72d8252`. Read `AGENTS.md`, then `docs/AGENT_TEAM_OPERATING_MODEL.md`, then this file, then `.codex/CURRENT_STATUS.md`. Design contracts, in precedence order: `docs/MOSS_PHASE_26_3_OPEN_ISSUES.md` (the Phase 27 ownership doc; frozen model S1–S3, D1–D3, M1), `docs/MOSS_LAZY_EXPRESSION_TREE.md`, `docs/MOSS_PHASE_27_1A_EST_KICKOFF.md`. Nothing in this file changes those contracts.
 
 ## Mission
 
-Implement the frozen ownership model; update the spec, language docs, examples, Gentle Introduction and SDK libraries; move Moss from v0.1 to v0.9. The language version is separate from the ABI and `.mossi` format versions. Order (ownership doc, "Workstream order"): 27.1 expression tree → 27.2 semantic side tables → S3 enforcement → docs/spec/SDK → v0.9. The accepts-vs-rustc gate and the Fast Debug ↔ native ↔ `-O` equivalence gate (ownership doc, issue 5) are independent of 27.1 and run beside it. The Graph DSL is Phase 28 and is out of scope.
+Implement the frozen ownership model; update the spec, language docs, examples, Gentle Introduction and SDK libraries; move Moss from v0.1 to v0.9. The language version is separate from the ABI and `.mossi` format versions. Order (ownership doc, "Workstream order"): 27.1 expression tree → 27.2 semantic side tables → S3 enforcement → docs/spec/SDK → v0.9. The accepts-vs-rustc gate and the Fast Debug ↔ native ↔ `-O` equivalence gate (ownership doc, issue 5) are independent of 27.1 and run beside it. The Graph DSL is Phase 28 and is out of scope. **[Historical scheduling; superseded.]**
 
 ## Team
 
