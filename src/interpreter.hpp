@@ -173,6 +173,7 @@ class FastInterpreter {
     Frame frame;
     frame.function = "main";
     frame.functional_context = "main";
+    frame.checked_fact_context = frame.functional_context;
     frame.source_file = program_.main->source_file;
     frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
@@ -209,6 +210,7 @@ class FastInterpreter {
       Frame frame;
       frame.function = "test:" + test.name;
       frame.functional_context = frame.function;
+      frame.checked_fact_context = frame.functional_context;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
       std::ostringstream test_output;
@@ -342,6 +344,7 @@ class FastInterpreter {
   struct Frame {
     std::string function;
     std::string functional_context;
+    std::string checked_fact_context;
     std::string source_file;
     std::string semantic_identity;
     std::string specialization_identity;
@@ -683,7 +686,10 @@ class FastInterpreter {
 #ifdef MOSS_TEST_BUILD
       if (moss_test_drop_fact("expression-types") ||
           moss_test_perturb_fact("expression-types")) {
-        const auto* facts = tree.arena->facts(node, frame.functional_context);
+        const auto* facts = !frame.checked_fact_context.empty()
+            ? tree.arena->facts(node, frame.checked_fact_context) : nullptr;
+        if (!facts)
+          facts = tree.arena->facts(node, frame.functional_context);
         if (!facts || !facts->type || !facts->type->is_closed())
           throw RuntimeError(line,
               "MOSS_INTERNAL_INVARIANT missing checked expression type");
@@ -1542,7 +1548,10 @@ class FastInterpreter {
     const auto stage = est::unparenthesized(*tree.arena,
         pipeline_node.stages[stage_index - 1]);
     const est::SemanticFacts* facts = nullptr;
-    std::vector<std::string> contexts{frame.functional_context};
+    std::vector<std::string> contexts;
+    if (!frame.checked_fact_context.empty())
+      contexts.push_back(frame.checked_fact_context);
+    contexts.push_back(frame.functional_context);
     const auto specialization = frame.functional_context.find('<');
     if (specialization != std::string::npos)
       contexts.push_back(frame.functional_context.substr(0, specialization));
@@ -1579,7 +1588,10 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT missing checked expression tree");
     }
     const auto root = est::unparenthesized(*tree.arena, expression);
-    std::vector<std::string> contexts{frame.functional_context};
+    std::vector<std::string> contexts;
+    if (!frame.checked_fact_context.empty())
+      contexts.push_back(frame.checked_fact_context);
+    contexts.push_back(frame.functional_context);
     if (frame.functional_context.rfind("handler:", 0) == 0) {
       const auto recovery = frame.functional_context.find(":on_fail:");
       if (recovery != std::string::npos)
@@ -3231,6 +3243,9 @@ class FastInterpreter {
 #endif
     }
     frame.functional_context = functional_function_context(target, specialization);
+    frame.checked_fact_context = specialization
+        ? "specialization:" + specialization->stable_type_key
+        : frame.functional_context;
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +

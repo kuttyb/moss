@@ -17631,3 +17631,20 @@ future optimizer-isolated proof and must remain explicit in final review.
   prior uncommitted checker/Fast Debug edits). Next: rerun targeted native / -O
   behavior parity and fact-hook tests, then refresh whole-corpus counters and
   continue closing any absent checker type facts.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (type perturbation is fail-closed)
+
+- The expression-type perturb hook changes checked arithmetic operand facts to
+  Bool. Fast Debug already rejects that unsupported checked arithmetic fact;
+  native lowering previously emitted ordinary Rust `+` and could retain the
+  baseline output. Native arithmetic lowering now fails closed when checked
+  operand facts do not describe supported numeric operands (after the checked
+  String `+` case).
+- Targeted validation: fact hooks pass all call target, specialization, join,
+  pattern, expression-type and pipeline-type perturb/drop cases; known ownership
+  debt remains exactly 10/10. Three-engine and focused Fast Debug/native/-O
+  parity pass. No full suite or performance run.
+- This checkpoint includes earlier uncommitted checker and Fast Debug checked
+  fact producer/context fixes. Next: run the full corpus counters and resolve
+  any candidate-only consumer failures; then update contract/report and perform
+  all final gates.

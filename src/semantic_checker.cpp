@@ -799,9 +799,17 @@ class Checker {
           p_.domains.size() + p_.functions.size());
       infer_domain_specializations();
       infer_domain_state_fields(true);
-      for (const auto& domain : p_.domains)
+      for (const auto& domain : p_.domains) {
+        TypeEnv initializer_env;
+        initializer_env["self"] = domain.name;
         for (const auto& field : domain.state)
+          if (!field.type.empty()) initializer_env[field.name] = field.type;
+        for (const auto& field : domain.state) {
           record_domain_initializer_variant_facts(field);
+          record_domain_initializer_type_facts(domain, field,
+                                                initializer_env);
+        }
+      }
       infer_handler_reply_types(true);
       infer_function_signatures(true);
       {
@@ -10369,6 +10377,25 @@ class Checker {
             "duplicate benchmark name '" + benchmark.name + "'");
       TypeEnv env;
       env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
+      // Benchmark bodies admit bare value expressions. They do not affect
+      // source acceptance, but the emitter still needs the checker-owned type
+      // to lower the expression and its black-box wrapper.
+      for (const auto& statement : benchmark.body) {
+        if (statement.kind != Stmt::Kind::Raw || statement.text.empty())
+          continue;
+        auto type = checked_expression_term(statement.text, env);
+        if (type && type->is_closed()) {
+          est::SemanticFacts facts;
+          facts.type = type;
+          const auto fingerprint = est::fingerprint(statement.text);
+          for (const auto& handle : statement.expression_handles) {
+            if (handle.source_fingerprint != fingerprint) continue;
+            if (auto* arena = expression_arena(handle.arena_index))
+              arena->record_facts(handle.expr, "bench:" + benchmark.name,
+                                  facts);
+          }
+        }
+      }
       check_closed_body_types(benchmark.body, env, benchmark.line);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
@@ -12710,6 +12737,49 @@ class Checker {
     }
   }
 
+  void record_domain_initializer_type_facts(
+      const Domain& domain, const Field& field, const TypeEnv& env) const {
+    if (field.init.empty() || field.type.empty()) return;
+    auto declared = moss::Type::parse_canonical(canonical_type_name(field.type));
+    if (!declared) return;
+    const auto fingerprint = est::fingerprint(field.init);
+    for (const auto& handle : field.expression_handles) {
+      if (handle.slot != est::ExprSlot::Initializer ||
+          handle.source_fingerprint != fingerprint) continue;
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      std::set<est::ExprId> visited;
+      std::function<void(est::ExprId, std::string_view)> retain =
+          [&](est::ExprId id, std::string_view text) {
+        if (!visited.insert(id).second) return;
+        const auto* existing = arena->facts(id, "main");
+        if (!existing || !existing->type) {
+          auto type = id == handle.expr ? *declared
+              : checked_expression_term(std::string(text), env);
+          if (type) {
+            est::SemanticFacts facts = existing
+                ? *existing : est::SemanticFacts{};
+            facts.type = std::move(type);
+            arena->record_facts(id, "main", std::move(facts));
+          }
+        }
+        const auto parent_span = arena->span(id);
+        for (const auto child : arena->children(id)) {
+          const auto child_span = arena->span(child);
+          if (child_span.source_begin < parent_span.source_begin ||
+              child_span.source_end < child_span.source_begin ||
+              child_span.source_end > parent_span.source_end) continue;
+          const auto begin = child_span.source_begin - parent_span.source_begin;
+          const auto length = child_span.source_end - child_span.source_begin;
+          if (begin > text.size() || length > text.size() - begin) continue;
+          retain(child, trim(std::string(text.substr(begin, length))));
+        }
+      };
+      retain(handle.expr, field.init);
+    }
+    (void)domain;
+  }
+
   static bool concrete_environment_type(const string& type) {
     return !type.empty() && !contains_internal_placeholder(type);
   }
@@ -12963,6 +13033,15 @@ class Checker {
         }
         if (record_semantic_types)
           const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+        if (record_semantic_types && !statement.b.empty()) {
+          const string fact_context = join_context.empty()
+              ? expression_fact_context() : join_context;
+          const auto slot = statement.kind == Stmt::Kind::Let ||
+                                    statement.kind == Stmt::Kind::Var
+              ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+          record_statement_type_fact(statement, slot, 0, statement.b,
+              fact_context, canonical_type_name(env[statement.a]));
+        }
       } else {
         string base, index_expression;
         if (tree_parse_index(statement.a, base, index_expression)) {
@@ -12976,10 +13055,16 @@ class Checker {
               for (auto& prior : const_cast<vector<Stmt>&>(statements))
                 if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                   prior.semantic_type = canonical_type_name(retained);
-                  if (!join_context.empty()) {
-                    prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
-                    record_statement_type_fact(prior, est::ExprSlot::RhsValue,
-                        0, prior.b, join_context,
+                  {
+                    const string fact_context = join_context.empty()
+                        ? expression_fact_context() : join_context;
+                    prior.semantic_types_by_context[fact_context] = canonical_type_name(retained);
+                    record_statement_type_fact(prior,
+                        prior.kind == Stmt::Kind::Let ||
+                                prior.kind == Stmt::Kind::Var
+                            ? est::ExprSlot::Initializer
+                            : est::ExprSlot::RhsValue,
+                        0, prior.b, fact_context,
                         canonical_type_name(retained));
                   }
                 }
@@ -12997,10 +13082,16 @@ class Checker {
                   for (auto& prior : const_cast<vector<Stmt>&>(statements))
                     if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                       prior.semantic_type = *refined;
-                      if (!join_context.empty()) {
-                        prior.semantic_types_by_context[join_context] = *refined;
-                        record_statement_type_fact(prior, est::ExprSlot::RhsValue,
-                            0, prior.b, join_context, *refined);
+                      {
+                        const string fact_context = join_context.empty()
+                            ? expression_fact_context() : join_context;
+                        prior.semantic_types_by_context[fact_context] = *refined;
+                        record_statement_type_fact(prior,
+                            prior.kind == Stmt::Kind::Let ||
+                                    prior.kind == Stmt::Kind::Var
+                                ? est::ExprSlot::Initializer
+                                : est::ExprSlot::RhsValue,
+                            0, prior.b, fact_context, *refined);
                       }
                     }
                 }
@@ -13022,10 +13113,13 @@ class Checker {
         if (domain != domains_.end())
           if (const Handler* handler = find_handler(*domain->second, statement.b))
             if (handler->reply_type) {
-              env[statement.message_result] = *handler->reply_type;
+              const auto specialized = specialized_handler_reply_type(
+                  statement.a, statement.b, env);
+              env[statement.message_result] =
+                  specialized.value_or(*handler->reply_type);
               if (record_semantic_types)
                 const_cast<Stmt&>(statement).semantic_type =
-                    canonical_type_name(*handler->reply_type);
+                    canonical_type_name(env[statement.message_result]);
             }
       }
       return;
@@ -13052,10 +13146,15 @@ class Checker {
                  starts_with(prior.semantic_type, "queue") ||
                  (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
               prior.semantic_type = canonical_type_name(retained);
-              if (!join_context.empty()) {
-                prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
-                record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
-                    prior.b, join_context, canonical_type_name(retained));
+              {
+                const string fact_context = join_context.empty()
+                    ? expression_fact_context() : join_context;
+                prior.semantic_types_by_context[fact_context] = canonical_type_name(retained);
+                record_statement_type_fact(prior,
+                    prior.kind == Stmt::Kind::Let ||
+                            prior.kind == Stmt::Kind::Var
+                        ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue,
+                    0, prior.b, fact_context, canonical_type_name(retained));
               }
             }
         return;
@@ -13076,10 +13175,15 @@ class Checker {
                    starts_with(prior.semantic_type, "queue") ||
                    (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
                 prior.semantic_type = *refined;
-                if (!join_context.empty()) {
-                  prior.semantic_types_by_context[join_context] = *refined;
-                  record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
-                      prior.b, join_context, *refined);
+                {
+                  const string fact_context = join_context.empty()
+                      ? expression_fact_context() : join_context;
+                  prior.semantic_types_by_context[fact_context] = *refined;
+                  record_statement_type_fact(prior,
+                      prior.kind == Stmt::Kind::Let ||
+                              prior.kind == Stmt::Kind::Var
+                          ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue,
+                      0, prior.b, fact_context, *refined);
                 }
               }
             }
@@ -26833,12 +26937,13 @@ class Checker {
         active_est_expression_cursors_.back()) {
       const auto& parent = *active_est_expression_cursors_.back();
       auto* arena = expression_arena(parent.arena_index);
-      if (!arena) return std::nullopt;
-      auto child = matching_expression_child(*arena, parent.expr, child_role,
-          child_ordinal, parent.source, source);
-      if (!child) return std::nullopt;
-      return EstExpressionCursor{parent.arena_index, *child,
-                                 std::string(source)};
+      if (arena) {
+        auto child = matching_expression_child(*arena, parent.expr, child_role,
+            child_ordinal, parent.source, source);
+        if (child)
+          return EstExpressionCursor{parent.arena_index, *child,
+                                     std::string(source)};
+      }
     }
     return root_expression_cursor(source, root_slot);
   }
@@ -26963,6 +27068,12 @@ class Checker {
                   est::SemanticFacts facts = existing
                       ? *existing : est::SemanticFacts{};
                   facts.type = std::move(type);
+                  arena->record_facts(id, fact_context, std::move(facts));
+                } else if (auto inferred = inferred_expr(std::string(text), env);
+                           inferred && inferred->is_callable()) {
+                  est::SemanticFacts facts = existing
+                      ? *existing : est::SemanticFacts{};
+                  facts.resolved_target = inferred->callable_id;
                   arena->record_facts(id, fact_context, std::move(facts));
                 }
               } catch (...) {
@@ -29080,6 +29191,104 @@ class Checker {
                                 current_check_body_context_, statement,
                                 join_context);
       checked_types.statement_occurrence_id(statement);
+      if (statement.kind == Stmt::Kind::Raw && !statement.text.empty() &&
+          starts_with(current_semantic_context_, "bench:")) {
+        if (starts_with(current_semantic_context_, "bench:") &&
+            trim(statement.text) != "pass" &&
+            !tree_plain_identifier(statement.text))
+          check_expression(statement.line, statement.text, current_env,
+                           "expression");
+      }
+      if (!statement.expression_handles.empty()) {
+        std::vector<std::string> checked_sources;
+        auto add_source = [&](const std::string& source) {
+          if (!source.empty() && std::find(checked_sources.begin(),
+                  checked_sources.end(), source) == checked_sources.end())
+            checked_sources.push_back(source);
+        };
+        add_source(statement.text);
+        switch (statement.kind) {
+          case Stmt::Kind::Let:
+          case Stmt::Kind::Var:
+            add_source(statement.b);
+            break;
+          case Stmt::Kind::Assign:
+            if (!tree_simple_identifier(statement.a))
+              add_source(statement.a);
+            add_source(statement.b);
+            break;
+          case Stmt::Kind::Call:
+          case Stmt::Kind::Message:
+            add_source(statement.a);
+            add_source(statement.b);
+            break;
+          case Stmt::Kind::If:
+          case Stmt::Kind::While:
+          case Stmt::Kind::Match:
+          case Stmt::Kind::Case:
+          case Stmt::Kind::Return:
+          case Stmt::Kind::Reply:
+          case Stmt::Kind::Raise:
+            add_source(statement.a);
+            break;
+          case Stmt::Kind::For:
+            add_source(statement.b);
+            break;
+          default:
+            break;
+        }
+        for (const auto& argument : statement.args) {
+          add_source(argument);
+          std::string name, value;
+          if (tree_parse_named_argument(argument, name, value))
+            add_source(value);
+        }
+        const string fact_context = expression_fact_context();
+        for (const auto& source : checked_sources) {
+          const auto fingerprint = est::fingerprint(source);
+          for (const auto& handle : statement.expression_handles) {
+            if (handle.source_fingerprint != fingerprint) continue;
+            auto* arena = expression_arena(handle.arena_index);
+            if (!arena) continue;
+            std::set<est::ExprId> visited;
+            std::function<void(est::ExprId, std::string_view)> retain_tree_facts =
+                [&](est::ExprId id, std::string_view text) {
+            if (!visited.insert(id).second) return;
+            const auto* existing = arena->facts(id, fact_context);
+            if (!existing || !existing->type) {
+              auto type = checked_expression_term(std::string(text), current_env);
+              if (type) {
+                est::SemanticFacts facts = existing
+                    ? *existing : est::SemanticFacts{};
+                facts.type = std::move(type);
+                arena->record_facts(id, fact_context, std::move(facts));
+              } else if (auto inferred = inferred_expr(std::string(text),
+                                                       current_env);
+                         inferred && inferred->is_callable()) {
+                est::SemanticFacts facts = existing
+                    ? *existing : est::SemanticFacts{};
+                facts.resolved_target = inferred->callable_id;
+                arena->record_facts(id, fact_context, std::move(facts));
+              }
+            }
+            const auto parent_span = arena->span(id);
+            for (const auto child : arena->children(id)) {
+              const auto child_span = arena->span(child);
+              if (child_span.source_begin < parent_span.source_begin ||
+                  child_span.source_end < child_span.source_begin ||
+                  child_span.source_end > parent_span.source_end) continue;
+              const auto begin = child_span.source_begin -
+                  parent_span.source_begin;
+              const auto length = child_span.source_end - child_span.source_begin;
+              if (begin > text.size() || length > text.size() - begin) continue;
+              retain_tree_facts(child, trim(std::string(text.substr(begin,
+                                                                    length))));
+            }
+          };
+            retain_tree_facts(handle.expr, source);
+          }
+        }
+      }
       if (auto snapshot = bound_snapshots.find(&statement);
           snapshot != bound_snapshots.end())
         static_bound_bindings_ = snapshot->second;
@@ -29134,10 +29343,21 @@ class Checker {
         if (statement.kind == Stmt::Kind::Assign &&
             tree_simple_identifier(statement.a)) {
           auto checked_binding = current_env.find(statement.a);
-          if (checked_binding != current_env.end())
+          auto checked_type = checked_binding != current_env.end()
+              ? checked_expression_term(statement.a, current_env)
+              : checked_expression_term(statement.b, current_env);
+          if (checked_type && checked_type->is_closed())
             record_statement_type_fact(statement, est::ExprSlot::LhsPlace, 0,
                 statement.a, current_check_body_context_,
-                canonical_type_name(checked_binding->second));
+                checked_type->to_canonical_string());
+        }
+        if (statement.kind == Stmt::Kind::Assign &&
+            !tree_simple_identifier(statement.a)) {
+          auto checked_place = checked_expression_term(statement.a, current_env);
+          if (checked_place && checked_place->is_closed())
+            record_statement_type_fact(statement, est::ExprSlot::LhsPlace, 0,
+                statement.a, current_check_body_context_,
+                checked_place->to_canonical_string());
         }
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env,
@@ -29595,13 +29815,59 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (tree_parse_named_argument(argument, name, val))
+            string checked_argument_source = argument;
+            if (tree_parse_named_argument(argument, name, val)) {
+              checked_argument_source = val;
               check_expression(statement.line, val, current_env, occurrence_slot,
                                "call-argument:" + std::to_string(index));
-            else
+            } else {
               check_expression(statement.line, argument, current_env,
                                occurrence_slot,
                                "call-argument:" + std::to_string(index));
+            }
+            auto argument_type = checked_expression_term(
+                checked_argument_source, current_env);
+            if (argument_type && argument_type->is_closed())
+              record_statement_type_fact(statement, est::ExprSlot::Argument,
+                  static_cast<std::uint32_t>(index), checked_argument_source,
+                  current_check_body_context_,
+                  argument_type->to_canonical_string());
+            if (argument_type && argument_type->is_closed()) {
+              const auto fingerprint = est::fingerprint(
+                  checked_argument_source);
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::Argument ||
+                    handle.argument_index != index ||
+                    handle.source_fingerprint != fingerprint) continue;
+                auto* arena = expression_arena(handle.arena_index);
+                if (!arena) continue;
+                const auto root = est::unparenthesized(*arena, handle.expr);
+                est::ExprId receiver = UINT32_MAX;
+                if (const auto* member =
+                        std::get_if<est::Member>(&arena->at(root)))
+                  receiver = member->base;
+                else if (const auto* call =
+                             std::get_if<est::Call>(&arena->at(root))) {
+                  const auto callee = est::unparenthesized(*arena,
+                                                          call->callee);
+                  if (const auto* member =
+                          std::get_if<est::Member>(&arena->at(callee)))
+                    receiver = member->base;
+                }
+                if (receiver == UINT32_MAX) continue;
+                receiver = est::unparenthesized(*arena, receiver);
+                const auto* identifier =
+                    std::get_if<est::Identifier>(&arena->at(receiver));
+                if (!identifier) continue;
+                auto binding = current_env.find(identifier->name);
+                if (binding == current_env.end() || !binding->second ||
+                    !binding->second->is_closed()) continue;
+                est::SemanticFacts receiver_facts;
+                receiver_facts.type = binding->second;
+                arena->record_facts(receiver, current_check_body_context_,
+                                    std::move(receiver_facts));
+              }
+            }
           } else if (call_occurrence_id != UINT32_MAX &&
                      statement.b.empty()) {
             call_occurrence_state->expression_occurrences.at(
@@ -29645,8 +29911,10 @@ class Checker {
             err(statement.line, "message assignment requires a value-returning handler");
           if (current_env.count(statement.message_result)) {
             auto destination = checked_types.resolved_local(statement.message_result);
-            auto reply = moss::Type::parse_canonical(
-                canonical_type_name(*handler->reply_type));
+            const auto specialized_reply = specialized_handler_reply_type(
+                statement.a, statement.b, current_env);
+            auto reply = moss::Type::parse_canonical(canonical_type_name(
+                specialized_reply.value_or(*handler->reply_type)));
             if (!destination) {
               auto projected = moss::Type::parse_canonical(
                   canonical_type_name(current_env.at(statement.message_result)));
