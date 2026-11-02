@@ -17993,7 +17993,18 @@ future optimizer-isolated proof and must remain explicit in final review.
   Fast Debug/emitter/optimizer 0. Runtime ratchet passed in both modes.
 - Both full outputs are in `build/tests/parallel/` and summarized durably in
   `docs/phase27/27_5_5_REPORT.md`. No further source changes are planned.
-- Next: commit/push final gate documentation; run Agent 2 once for unseen
-  fixture selection, all-engine perturb/drop, lowering-type review and GO/NO-GO.
-  If GO, fetch current origin/main, merge with that first parent, tag
-  `phase27-5-5-m1`, and update the report/delivery entry.
+- Final gate documentation is committed/pushed below; Agent 2's unseen fixture
+  selection, audit and GO/NO-GO follow in the next checkpoint.
+
+## Final review checkpoint (Agent 2 GO)
+
+- Agent 2 selected and passed three unseen expression-type and three unseen
+  pipeline-type programs through baseline/perturb/drop on Fast Debug, native,
+  and `-O`. It confirmed the 10 ownership entries, no consumer type fallback,
+  and no weakened tests.
+- Initial review returned NO-GO on two lowering-list citations. The report
+  citations were corrected in two focused commits; the same reviewer then
+  confirmed the source locations and returned GO on `6e7199f9`.
+- Final suite gates are still exactly 162/165 in default and shadow with only
+  the three C1 baseline failures. Branch is ready to merge after fetch with
+  first parent `origin/main` at `e35bace1`; tag `phase27-5-5-m1` is authorized.

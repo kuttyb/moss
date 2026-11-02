@@ -113,8 +113,8 @@ are checker=65,626, driver-rewrite=748, Fast Debug=0, emitter=0, optimizer=0.
 Performance: aggregate is +3.2% vs phase27-5-4-m2 and -60.3% vs
 phase-start `274f8485`; exact W2/W4/W5/W8 results and all 23 real-world rows are
 above. The W2 peak RSS comparison is 64,624 KiB normal vs 65,404 KiB plain
-`-O2` (+1.2%). No tracked compiler-flag change was made. The phase report's
-lowering-only Rust type list is submitted to Agent 2 for audit.
+`-O2` (+1.2%). No tracked compiler-flag change was made. Agent 2 reviewed the
+lowering-only Rust type list and its citations.
 
 Agent 2's six additional fixture selections passed the all-engine
 baseline/perturb/drop harness:
@@ -130,8 +130,18 @@ Fast Debug/native/`-O`, and failed closed on dropped facts. The reviewer tried
 prolonged Fast Debug run; it is not counted. It reviewed the type consumer
 code, frozen debt and test integrity without finding an implementation issue.
 Its first review returned NO-GO because the `Result` and `Arc` citations above
-were inaccurate; the references have been corrected to the generator's
-handler return-type and domain reference declarations. A targeted follow-up is
-pending. Current paired raw performance data:
+were inaccurate. The corrected report now cites the generator's handler
+return-type, raised-enum, captured-carrier and domain-reference declarations.
+The same reviewer confirmed the corrections and returned **GO** at
+`6e7199f94bb9bb7ea17a8cf005d1f986a6a4f3de`. It confirmed all six additional
+fixtures pass, found no remaining lowering-only type classification issue,
+confirmed no consumer Moss type fallback remains, and found ownership debt
+unchanged at 10 entries. Current paired raw performance data:
 `tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` and
 `tmp/compiler-perf/20261102-033618/LOCAL_REPORT.md`.
+
+## Delivery
+
+Phase 27.5.5 passed its acceptance gates with the three documented C1 suite
+failures, and Agent 2 returned GO. Merge to `main` uses first parent
+`e35bace1b9597451cc08e20ec1f517669386c243`; release tag: `phase27-5-5-m1`.
