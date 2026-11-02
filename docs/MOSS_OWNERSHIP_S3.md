@@ -1,6 +1,6 @@
 # Moss ownership (S3): the problems, simply
 
-Status: DRAFT for discussion, Nov 1 2026 (rev 6: option[T] closed; rev 5: copy primitive agreed; rev 4: ownership taxonomy agreed; rev 3: P3 decided — option 3, explicit extraction; rev 2: current behavior probed on main `d8f64910`). Replaces the problem framing in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; that doc's frozen decisions S1, S2, D1, D2 stand, M1 is withdrawn (see section 1). Examples are pseudo-Moss unless marked as a probe; probes are real programs checked with `moss check`, run in Fast Debug (`moss run --interp`) and compiled natively (`moss -o` + `rustc -O`).
+Status: design in progress, Nov 1 2026. **Implemented in Phase 28** (Phase 27 closes when 27.5.4 C2 completes). (rev 7: collections and plain fields decided — `=` borrows, consume is the error; `remove`/`pop`/`swap_remove`; rev 6: option[T] closed; rev 5: copy primitive agreed; rev 4: ownership taxonomy agreed; rev 3: P3 decided — option 3, explicit extraction; rev 2: current behavior probed on main `d8f64910`). Replaces the problem framing in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; that doc's frozen decisions S1, S2, D1, D2 stand, M1 is withdrawn (see section 1). Examples are pseudo-Moss unless marked as a probe; probes are real programs checked with `moss check`, run in Fast Debug (`moss run --interp`) and compiled natively (`moss -o` + `rustc -O`).
 
 ## 0. Agreed principles
 
@@ -18,7 +18,7 @@ Classified from the owner's point of view: does a contained value live exactly a
 
 - **Unified lifetime:** plain fields. A field exists from the owner's construction to its destruction and is never absent. It can be read, mutated in place (through its own methods) or overwritten, but never moved out.
 - **Disjoint lifetime, 0..1:** `option[T]`. The value may be absent or present at any point; moving it in and out goes through the option's own methods.
-- **Disjoint lifetime, 0..n:** `Vector` and `Map`. Elements come and go through the collection's own methods (push, pop, swap, drain and similar). The collection itself is a unified field of its owner; its elements are disjoint.
+- **Disjoint lifetime, 0..n:** `Vector` and `Map`. Elements come and go only through the collection's own methods (`push`, `remove`, `pop`, `swap_remove`; see P3). The collection itself always exists (it is never absent; only its element count is 0..n); its elements are disjoint.
 - **Layout is the backend's choice.** Inline or heap, the language does not say (Moss has no recursive types, so inline is always possible).
 - **Sharing is excluded.** Every value has exactly one owner. No reference-counted or shared ownership at the language level (the backend may use `Arc` internally, invisibly).
 - **Borrowing stays temporary** (views, message payloads); never stored in a type.
@@ -93,7 +93,7 @@ q = p
 echo p.x            # OWNERSHIP_USE_AFTER_CONSUME
 ```
 
-**Today:** the checker rejects it (probe): an all-Int record is moved, not copied. Also covered by `tests/tooling/fixtures/builtin_generic_typing/vector_literal_reuse.moss` (`Payload(value: Int)` moved into a vector literal). Remaining open question: `copy_type_name` also treats `Option[Copy]` as Copy.
+**Today:** the checker rejects it (probe): an all-Int record is moved, not copied. Also covered by `tests/tooling/fixtures/builtin_generic_typing/vector_literal_reuse.moss` (`Payload(value: Int)` moved into a vector literal). Resolved: options always move, whatever `T` is (section 0d); `copy_type_name` treating `Option[Copy]` as Copy is a bug to fix.
 
 ### P3. Moving an aggregate out of a place — **DECIDED: borrow on `=`, error on consume (revises option 3)**
 
@@ -139,30 +139,25 @@ Today the two places disagree: a field moves and consumes the whole owner (`LANG
 | **3. No assignment out of a place** | rejected | rejected |
 | 4. Copy | — | violates principle 3 |
 
-**Decision (Nov 1 2026): option 3.** `=` never moves an aggregate out of a field or an element. Reading through a place stays legal. To get the value out, the programmer writes it explicitly:
+**Decision history (Nov 1 2026).** Option 3 was chosen first, then revised the same day: the assignment is not the problem, the intent to consume is. Option 3's `replace` and `swap` were dropped (P7).
 
-```text
-x = replace(p.payload, Payload(value: 0))   # move out, leave a new value in place
-y = copy(v[0])                               # explicit, independent copy
-swap(v, 0, 1)                               # reorder in place
-```
+**Decided rules:**
+- **`=` from a place borrows.** `x = v[i]` or `r = job.report` with a local on the left makes it a borrow, exactly like passing the place to a function. Read or write borrow follows from how it is used (inferred effects, as for parameters). The borrow must end before the container or owner is changed or consumed.
+- **A write through the borrow changes the place.** `ed = edges[0]; ed.cost = 9` leaves `edges[0].cost == 9`; `r = job.report; r.score = 9` leaves `job.report.score == 9`.
+- **Consuming a unified field or an individual element is a compile error** (storing the borrow in a field, sending it, passing it to a consuming parameter). Today's "moving a non-Copy field consumes the whole binding" rule goes away (it had no practical meaning); `tests/negative/nontrivial_field_move.moss` stays negative with a new diagnostic.
+- **`nxt.push(head[u])` is a compile error** (push consumes its argument). Write `nxt.push(copy(head[u]))` or `nxt.push(head.remove(u))`. Today it compiles with a silent clone.
+- **Two ways to get an element out:** `copy(v[i])` (explicit intent; the backend chooses how) or removal.
+- **Removal is the only way an element leaves a container**, for vectors and maps. `remove` is not just a delete: it returns the removed element, moved out to the caller.
+  - `Vector.pop()` and `Queue.pop()` are `remove` at an end: move out and shrink.
+  - `Vector.swap_remove(i)`: moves element `i` out, moves the last element into its slot, shrinks. O(1), changes order. The programmer chooses it because order is observable; the backend can't substitute it.
+  - Popping an empty container is a run-time error handled by the normal error mechanism (Phase 21: the caller catches it). No option-returning variant.
+  - No `v.swap(i, j)` and no general `swap` for now: a general swap between any two places is `replace` under another name (`swap(job.report, tmp)` moves a value out of a unified field).
+- **The whole container may be consumed** (lifetime class 0..n); every element goes with it. A consumed local is gone (later use is a compile error). A consumed container *field* leaves a new, empty container behind, never `None`: only an option can be absent under LOL, so no program ever null-checks a container. (Rust backend equivalent: `mem::take`.)
 
 Consequences:
-- The field rule changes: `x = p.payload` is rejected (today it is legal and consumes `p`). `tests/negative/nontrivial_field_move.moss` stays negative with a new diagnostic.
-- P7 (`swap`, `replace`) becomes required, not a follow-on.
 - The emitter's indexed-read clones (`echo names[0]`, `edges[0].cost`) become borrows.
-- The Fast Debug/native bug in section 3 disappears: `ed = edges[0]` is rejected.
-
-**Revised for elements (Nov 1 2026): assignment borrows; consuming is the error.** Option 3 rejected `y = v[i]` outright. Bank's refinement: the assignment is not the problem, the intent to consume is.
-- `x = v[i]` with `x` a local makes `x` a borrow of the element, exactly like passing `v[i]` to a function. Whether it is a read or write borrow follows from how `x` is used (inferred effects, as for parameters).
-- A write through the borrow changes the element: `ed = edges[0]; ed.cost = 9` leaves `edges[0].cost == 9`.
-- If the checker proves `x` is consumed (stored in a field, sent, passed to a consuming parameter), it is a compile error: you cannot consume individual elements of a vector.
-- Agreed ways to get an element out: `copy(v[i])` (explicit intent; the backend chooses how) or `v.remove(i)` (moves out, the vector shrinks).
-- **Decided:** `remove` is the only way an element leaves a vector or a map, for now. Vectors also get `swap_remove(i)` (Nov 1): it moves element `i` out, moves the last element into its slot and shrinks; O(1), order changes. It is a performance choice the programmer makes because order is observable. No `v.swap(i, j)` and no general `swap` for now: a general swap between any two places is `replace` under another name (`swap(job.report, tmp)` moves a value out of a unified field). `remove` is not just a delete: it returns the removed element, moved out to the caller. It is the one way a container moves an element out. `Vector.pop()` and `Queue.pop()` are `remove` at an end: they move the element out and shrink the container Popping an empty container is a run-time error handled by the normal error mechanism (Phase 21: the caller catches it); no option-returning variant is mixed in.
-- **Decided:** `nxt.push(head[u])` is a compile error (push consumes its argument; consuming an element is the error). Write `nxt.push(copy(head[u]))` or `nxt.push(head.remove(u))`. Today it compiles with a silent clone.
-- **Decided:** you may consume the whole container (its lifetime class is 0..n). Consuming it takes every element with it.
-- **Decided:** a consumed local is gone (use is a compile error, like any local). A consumed container *field* leaves a new, empty container behind, never `None`. A vector or map always exists; only its element count is 0..n. The only thing that can be absent under LOL is an option (0..1), so no program ever null-checks a container. (Rust backend equivalent: `mem::take`.)
-- **Decided (fields too):** a plain field is unified lifetime, so the same rule applies. `r = job.report` borrows; `r.score = 9` as the last use of `r` is a write borrow and changes `job.report.score`. Proving `r` is consumed is a compile error: you cannot consume out of a unified field. This replaces option 3 for fields as well; today's "moving a non-Copy field consumes the whole binding" rule goes away (`tests/negative/nontrivial_field_move.moss` stays negative with a new diagnostic).
+- The Fast Debug/native bug in section 3 is decided in Fast Debug's favour (expected output 9, 9).
+- The checker must track local borrow bindings (the largest implementation item).
 
 **One rule across the three lifetime classes:** `=` from a place borrows. What differs is consumption:
 - unified field: consume is a compile error.
@@ -206,7 +201,7 @@ swap(names, 0, 1)                  # one write on names
 old = replace(names[0], "grace")   # write the slot, consume "grace", return the old value
 ```
 
-With P3 decided, these are the only ways to move an aggregate out of a place (alongside explicit `.clone()`). `replace` works on fields and elements. Implementation note: it is a compiler intrinsic, not an ordinary `&mut` call (evaluate `new_value` and indices before borrowing the place).
+**Decided (Nov 1 2026):** neither is provided for now. `replace` would extend a value's lifetime past its unified place; a general `swap` between any two places is `replace` under another name. Vectors get `swap_remove(i)` as a container method instead (P3). Known cost: in-place enum transitions that move an owned payload need an `option` field (section 0b).
 
 ### P8. Inferred effects cross package boundaries silently
 
@@ -228,7 +223,7 @@ Every caller in another package breaks. Inferred effects must be recorded in `.m
 
 | Bug | Smallest shape | What goes wrong |
 |---|---|---|
-| Group A (E0502) | `nxt.push(head[u])` inside a method using two fields | Field accessors borrow all of `self`; candidate fix is a per-type projection view |
+| Group A (E0502) | `nxt.push(head[u])` inside a method using two fields | Field accessors borrow all of `self`; candidate fix is a per-type projection view. Under P3 the shape itself becomes a compile error; the underlying E0502 can still occur with `copy(head[u])` or `head.remove(u)` and must be re-probed |
 | T6 (E0596) | `fn f(xs): for x in xs: echo x` with untyped `xs` | A read-only loop parameter is inferred as WRITE |
 | `mutate_loop_element` (E0596) | `for item in items: item.bump()` | Emitted with read-only iteration where mutation is needed |
 
@@ -264,20 +259,22 @@ All known bugs to be reviewed once more before S3 starts.
 
 Resolved and removed from this list: `Option[Int]` Copy (options always move), taking an element out (`remove`/`pop`/`swap_remove` only), `replace`/`swap` (rejected for now).
 
+Lean in italics; **bold** marks the three real design calls.
+
 **Maps (next):**
-1. `map.remove(key)` on a missing key: ordinary error, replacing `delete(key, fallback, found)`?
-2. `m[key]` is a borrow like `v[i]` (write-through changes the entry, consume is an error, missing key is an error)?
-3. `m[key] = value` consumes `value` and silently drops any old value?
-4. Does `get(key, default)` stay at all? If so, what keeps an inline default alive (P5)?
-5. `keys()`/`values()` views are temporary borrows: not stored, not returned, map not mutated while in use (P4)?
-6. Keys are only ever read-borrowed?
-7. `for (k, v) in m`: `k` read, `v` as the body needs; consuming the map hands entries out by value?
+1. `map.remove(key)` on a missing key: ordinary error, replacing `delete(key, fallback, found)`? *Lean: yes to both.*
+2. `m[key]` is a borrow like `v[i]` (write-through changes the entry, consume is an error, missing key is an error)? *Lean: yes.*
+3. `m[key] = value` consumes `value` and silently drops any old value? *Lean: yes; `remove` first to keep it.*
+4. **Does `get(key, default)` stay at all?** With strict `m[key]` plus error handling it may be redundant. If it stays, what keeps an inline default alive (P5)? *Lean: open.*
+5. `keys()`/`values()` views are temporary borrows: not stored, not returned, map not mutated while in use (P4)? *Lean: yes.*
+6. Keys are only ever read-borrowed (writing a key would break lookup)? *Lean: yes.*
+7. `for (k, v) in m`: `k` read, `v` as the body needs; consuming the map hands entries out by value? *Lean: yes.*
 
 **Beyond maps:**
-8. Two borrows into one container where one writes: `x = v[0]; y = v[1]; x.cost = y.cost`. Allowed only when the checker proves the indices differ, or always rejected (today's overlap rule is READ + READ only)?
-9. Extracting a field from a value consumed anyway (`fn f(p: Packet) = p.payload` at its last use): reject, or allow a whole-value destructure (`match consume p`)?
-10. A reply carrying the payload while the sender still uses its value: a defined copy (section 1)?
-11. P8: record inferred effects in `.mossi` and flag READ → CONSUME as a breaking change?
-12. Migration: rewrite programs that rely on today's copies (`swarm_021`, indexed reads), or a deprecation period?
+8. **Two borrows into one container where one writes:** `x = v[0]; y = v[1]; x.cost = y.cost`. Allowed only when the checker proves the indices differ, or always rejected (today's overlap rule is READ + READ only; Rust always rejects)? *Lean: open.*
+9. **Extracting a field from a value consumed anyway** (`fn f(p: Packet) = p.payload` at its last use): reject like any field consume, or allow a whole-value destructure (`match consume p`)? *Lean: open.*
+10. A reply carrying the payload while the sender still uses its value: a defined copy (section 1)? *Lean: yes.*
+11. P8: record inferred effects in `.mossi` and flag READ → CONSUME as a breaking change? *Lean: yes.*
+12. Migration: rewrite programs that rely on today's copies (`swarm_021`, indexed reads), or a deprecation period? *Lean: rewrite; no outside users.*
 
 **Not design, but scheduled:** review the known bugs (section 3) once before S3 starts; the checker must now track local borrow bindings (a borrow must end before its container is changed or consumed), which is the largest implementation item.
