@@ -17675,3 +17675,21 @@ future optimizer-isolated proof and must remain explicit in final review.
   pass after this guard. Paired whole-corpus counters must be refreshed; the
   previous summary was before the arithmetic guard was narrowed and this
   missing-target ordering fix.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (whole-corpus type coverage)
+
+- Paired Phase 27.5.4-m2 parent vs candidate measurement completed on 1,828
+  tracked sources, 337 package manifests, and 3,656 default/-O emission
+  commands per revision. Both revisions have 1,410 failed emission commands
+  (705/profile); the candidate has no exit-status regression.
+- Candidate counters: emitter and optimizer text-node lookups 0; expression
+  reparses 0; functional-pipeline reparses 0; total consumer expression parses
+  0; consumer type inference 0 in both default and `-O`. Emitter type facts
+  PRESENT=271,538, ABSENT=0; optimizer PRESENT=1, ABSENT=0. The checker baseline
+  binary reports no consumer coverage counters. The measurement artifact is
+  `tmp/phase2754-emitter-counts/1793610529648384082/summary.json`.
+- The corpus-wide failure set matched parent counts; earlier candidate-only
+  String `+` failures were removed by narrowing the test perturbation guard.
+  Targeted source parity, three-engine behavior, and fact-hook perturb/drop
+  checks pass. Full `make check`, `make check-shadow`, performance comparisons,
+  documentation closeout, and Agent 2 review remain outstanding.
