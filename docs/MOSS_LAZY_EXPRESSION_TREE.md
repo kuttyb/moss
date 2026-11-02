@@ -1,5 +1,7 @@
 # Moss: Lazy Expression Tree (EST) — incremental adoption plan
 
+> **Roadmap correction (Nov 2, 2026):** Graph DSL was historically scheduled as Phase 28 in this Phase 27 plan. **That schedule is superseded:** Phase 28 is now the [LOL ownership and explicit-move proposal](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md); Graph DSL remains a separate later workstream. The EST design remains historical context and the original scheduling language below is retained for traceability.
+
 Status: **owned by Phase 27 (Language Stabilization).** Base: `main` at `0ecfa51` (after the 26.3 `let`-alias merge). Phase 27.1 builds the tree and validates it in shadow mode with no consumer cut over; Phase 27.2 adds the semantic side tables (§10). Agreed direction Oct 27 2026; revised Oct 28 after Phase 27.1 review by both peers. Adopt piecemeal alongside feature work; no big-bang rewrite.
 
 Primary justification: one authoritative expression grammar and per-occurrence identity (correctness). W1/C3 already removed much repeated parsing, so any further speedup is a by-product, not the reason.
@@ -69,7 +71,7 @@ Whether the emitter may read EST facts for migrated slots before the checker has
 
 **Boundary of the criterion:** ABI record decoding, source lexing and source-text preservation are separate operations and stay. But expression strings *stored inside* `.mossi` (ABI-v9 `generic_stmt` bodies, Section 2 execution bodies) are source expressions: on load they must go through the same expression-tree grammar into the arena, not through a separate splitter. Existing `.mossi` contracts stay compatible unless deliberately versioned.
 
-New features (e.g. the Graph DSL, Phase 28) are built tree-first.
+New features (e.g. the Graph DSL, Phase 28) are built tree-first. **[Historical schedule; superseded by the roadmap correction above.]**
 
 ## 6. Rules and non-goals
 
@@ -105,7 +107,7 @@ Track "string debt": count of call sites using string expression splitters (`par
 
 **27.2 — semantic side tables.** The (node ID, specialization context) side-table API with usable, validated facts: specialization results, `TypeRef`s, and the S3 ownership effect per occurrence. Empty infrastructure does not satisfy 27.2; S3 needs authoritative facts. Consumer migration (§5) starts here.
 
-Then S3 enforcement (Phase 27), then the Graph DSL (Phase 28) on a finished tree and finished S3.
+Then S3 enforcement (Phase 27), then the Graph DSL (Phase 28) on a finished tree and finished S3. **[Historical schedule; superseded by the roadmap correction above.]**
 
 ## 9. Revision log
 
