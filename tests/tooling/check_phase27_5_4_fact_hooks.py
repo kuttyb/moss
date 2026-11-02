@@ -211,18 +211,29 @@ def main() -> None:
     work.mkdir(parents=True)
     cases = {name: list(sources) for name, sources in CASES.items()}
     type_cases = {name: list(sources) for name, sources in TYPE_CASES.items()}
-    selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURE")
+    selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURES")
+    if not selected and os.environ.get("MOSS_TEST_AGENT2_FIXTURE"):
+        selected = os.environ["MOSS_TEST_AGENT2_FIXTURE"]
     if selected:
-        path = Path(selected)
-        if not path.is_absolute():
-            path = ROOT / path
+        paths = [Path(item.strip()) for item in selected.split(",")
+                 if item.strip()]
+        paths = [path if path.is_absolute() else ROOT / path
+                 for path in paths]
         fact_class = os.environ.get("MOSS_TEST_AGENT2_CLASS")
         if fact_class in cases:
-            cases[fact_class].append(path)
+            destination = cases[fact_class]
         elif fact_class in type_cases:
-            type_cases[fact_class].append(path)
+            destination = type_cases[fact_class]
         else:
             raise SystemExit("MOSS_TEST_AGENT2_CLASS must name one fact class")
+        if len(set(paths)) != len(paths):
+            raise SystemExit("Agent 2 fixture list contains duplicates")
+        existing = {path.resolve() for path in destination}
+        overlap = sorted(str(path) for path in paths if path.resolve() in existing)
+        if overlap:
+            raise SystemExit("Agent 2 fixtures must be additional programs: " +
+                             ", ".join(overlap))
+        destination.extend(paths)
     for fact_class, sources in cases.items():
         if len(sources) < 3:
             raise SystemExit(f"{fact_class}: fewer than three fixtures")

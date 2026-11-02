@@ -23,6 +23,11 @@
 - Focused validation also passed: all fact hooks, Fast Debug/native/optimized
   parity, and `check_phase27_three_engine.py`. Targeted Rust emission passed
   for the four source cases listed in the previous checkpoint.
+- Expanded `check_phase27_5_4_fact_hooks.py` to accept a comma-separated set of
+  Agent 2-selected extra fixtures for one class while rejecting duplicate or
+  overlapping baseline fixtures. `py_compile`, the duplicate guard, and the
+  existing full hook matrix passed. This lets the one final audit add the
+  required three unseen programs per type class in a single harness pass.
 - Still pending: remove all consumer type derivation sites (source audit),
   paired perf with correct phase baseline/test counters and required workloads,
   docs/contracts/debt audit, final default+shadow suites once each, full parity,
