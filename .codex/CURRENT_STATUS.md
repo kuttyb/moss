@@ -17565,3 +17565,27 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Changes in checker, Fast Debug and this status file are ready to commit/push.
   Next: inventory all checked type reads vs remaining consumer type decisions,
   run corpus counters, then final gates and one Agent 2 audit.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (checker records nested node types)
+
+- Checker `check_expression` now traverses the exact EST subtree after checking
+  an expression, maps each child to its source slice using the retained node
+  spans, and records any resolved child type in that checker context. Existing
+  richer facts are preserved. Child nodes with a type fact are not revisited,
+  avoiding repeated subtree walks. This is checker-side inference only.
+- The type fixture comments now state the perturbation contract: checked types
+  are changed to Bool; every engine must either visibly follow or fail closed
+  (including Rust rejecting contradictory emitted code). The harness enforces
+  changed output or a nonzero failure, and dropped facts still specifically
+  require `MOSS_INTERNAL_INVARIANT`.
+- Targeted validation after these edits: focused Fast Debug/native/-O parity
+  passes; type and other fact perturb/drop suites pass (3 expression-type,
+  5 pipeline-type fixtures; ownership debt 10/10); previous optimized Rust
+  generation and rustc compile of `phase46_semantic_rewrites.moss` passed
+  before this final checker subtree change. Rebuild `moss-opt` and rerun that
+  targeted compile now. No full suites/performance run.
+- Current checker, hook documentation and status edits need checkpoint commit
+  and push. Next: measure whole-corpus consumer type inference/fact coverage,
+  fix any missing checker facts or disclose whether accepted source semantics
+  would be affected, then update compiler contract and phase report before the
+  one final full-gate run and Agent 2 audit.

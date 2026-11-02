@@ -26950,20 +26950,42 @@ class Checker {
                                              &env] {
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
-          const auto* existing = arena->facts(cursor.expr, fact_context);
-          if (!existing || !existing->type) {
-            try {
-              auto type = inferred_expr_term(source, env);
-              if (type) {
-                est::SemanticFacts facts;
-                facts.type = std::move(type);
-                arena->record_facts(cursor.expr, fact_context, std::move(facts));
+          std::set<est::ExprId> visited;
+          std::function<void(est::ExprId, std::string_view)> record_subtree =
+              [&](est::ExprId id, std::string_view text) {
+            if (!visited.insert(id).second) return;
+            const auto* existing = arena->facts(id, fact_context);
+            if (existing && existing->type) return;
+            if (!existing || !existing->type) {
+              try {
+                auto type = inferred_expr_term(std::string(text), env);
+                if (type) {
+                  est::SemanticFacts facts = existing
+                      ? *existing : est::SemanticFacts{};
+                  facts.type = std::move(type);
+                  arena->record_facts(id, fact_context, std::move(facts));
+                }
+              } catch (...) {
+                // Facts are observational side-table data. Never replace a
+                // checker diagnostic or alter the accepted source path.
               }
-            } catch (...) {
-              // Facts are an observational side table. Never replace a checker
-              // diagnostic or alter the string path while recording them.
             }
-          }
+            const auto parent_span = arena->span(id);
+            for (const auto child : arena->children(id)) {
+              const auto child_span = arena->span(child);
+              if (child_span.source_begin < parent_span.source_begin ||
+                  child_span.source_end < child_span.source_begin ||
+                  child_span.source_end > parent_span.source_end) continue;
+              const auto begin = child_span.source_begin -
+                  parent_span.source_begin;
+              const auto length = child_span.source_end -
+                  child_span.source_begin;
+              if (begin > text.size() || length > text.size() - begin) continue;
+              record_subtree(child, trim(std::string(text.substr(begin,
+                                                                  length))));
+            }
+          };
+          record_subtree(cursor.expr, source);
           if (const char* dump = std::getenv("MOSS_EST_FACTS_DUMP");
               dump && std::string_view(dump) == "1") {
             if (const auto* facts = arena->facts(cursor.expr, fact_context)) {

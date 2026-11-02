@@ -49,18 +49,20 @@ DEBT_CASES = {
     ],
 }
 TYPE_CASES = {
-    # Perturbed expression types turn the checker facts into Bool. Each
-    # fixture makes an engine follow the changed type visibly or fail closed
-    # (including a rustc rejection of contradictory generated Rust). Drops
-    # must fail at a checked-fact boundary.
+    # Perturbed expression types turn the checker facts into Bool. Expected
+    # behavior on every fixture and engine: never retain baseline behavior;
+    # either follow the changed type observably or fail closed (including Rust
+    # rejecting contradictory generated code). Drops fail at a checked-fact
+    # boundary.
     "expression-types": [
         ROOT / "examples/collections_and_methods.moss",
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
         ROOT / "tests/phase27/est/expression_type_arithmetic.moss",
     ],
     # Pipeline types are changed to Bool in both the FunctionalPipeline plan
-    # and retained pipeline/stage EST facts. A map result then cannot be
-    # silently reconstructed as Vector[T].
+    # and retained pipeline/stage EST facts. Expected behavior on every
+    # fixture and engine: never reconstruct the baseline output type; follow
+    # Bool observably or fail closed, including generated-Rust rejection.
     "pipeline-types": [
         ROOT / "examples/functional_basics.moss",
         ROOT / "tests/phase27/est/pipeline_shape.moss",
@@ -191,8 +193,8 @@ def check_type_fact_contract(work: Path,
                 perturbed = type_engine_result(source, engine, fact_class,
                     "perturb", work,
                     f"{fact_class}-{index}-{engine}-perturb")
-                if (perturbed.returncode == 0 and
-                        perturbed.stdout == base.stdout):
+                if perturbed.returncode == 0 and \
+                        perturbed.stdout == base.stdout:
                     raise SystemExit(f"{engine} ignored perturbed {fact_class} "
                         f"for {source}; expected changed output or fail-closed")
             if len(set(baseline_outputs.values())) != 1:
