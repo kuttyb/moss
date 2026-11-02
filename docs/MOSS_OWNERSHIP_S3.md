@@ -1,6 +1,6 @@
 # Moss ownership (S3): the problems, simply
 
-Status: design in progress, Nov 1 2026. **Implemented in Phase 28** (Phase 27 closes when 27.5.4 C2 completes). (rev 7: collections and plain fields decided — `=` borrows, consume is the error; `remove`/`pop`/`swap_remove`; rev 6: option[T] closed; rev 5: copy primitive agreed; rev 4: ownership taxonomy agreed; rev 3: P3 decided — option 3, explicit extraction; rev 2: current behavior probed on main `d8f64910`). Replaces the problem framing in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; that doc's frozen decisions S1, S2, D1, D2 stand, M1 is withdrawn (see section 1). Examples are pseudo-Moss unless marked as a probe; probes are real programs checked with `moss check`, run in Fast Debug (`moss run --interp`) and compiled natively (`moss -o` + `rustc -O`).
+Status: design in progress, Nov 1 2026. **Implemented in Phase 28** (Phase 27 closes when 27.5.4 C2 completes). (rev 8: all seven Map ownership/API decisions closed — single-argument erroring `get`, borrowing iteration/views, explicit `remove`, no implicit copies; rev 7: collections and plain fields decided — `=` borrows, consume is the error; `remove`/`pop`/`swap_remove`; rev 6: option[T] closed; rev 5: copy primitive agreed; rev 4: ownership taxonomy agreed; rev 3: P3 decided — option 3, explicit extraction; rev 2: current behavior probed on main `d8f64910`). Replaces the problem framing in `MOSS_PHASE_26_3_OPEN_ISSUES.md`; that doc's frozen decisions S1, S2, D1, D2 stand, M1 is withdrawn (see section 1). Examples are pseudo-Moss unless marked as a probe; probes are real programs checked with `moss check`, run in Fast Debug (`moss run --interp`) and compiled natively (`moss -o` + `rustc -O`).
 
 ## 0. Agreed principles
 
@@ -165,24 +165,40 @@ Consequences:
 - vector/map element (0..n): consume is a compile error; `remove`/`pop` move it out.
 - whole vector/map field: consume takes it and leaves an empty container.
 
-### P4. `keys()` and `values()` copy everything — **agreed: become borrowed views**
+### P4. `keys()` and `values()` copy everything — **decided: borrowed views**
 
 ```text
-vs = data.values()
+vs = data.values()             # borrowed view; no cloned values
 ```
 
-**Today:** the spec says `keys()` and `values()` return "eager owned `Vector` snapshots" (`LANGUAGE_SYNTAX.md`, Built-in collections). The probe emits `data.values().cloned().collect()`: every value is copied. `tests/swarm_021_map_value_semantics.moss` relies on mutating such a snapshot without affecting the map; under borrowed views that program must be rejected or rewritten.
+**Today:** the spec says `keys()` and `values()` return "eager owned `Vector` snapshots" (`LANGUAGE_SYNTAX.md`, Built-in collections). The probe emits `data.values().cloned().collect()`: every value is copied. `tests/swarm_021_map_value_semantics.moss` relies on mutating such a snapshot without affecting the map; that program must be rejected or rewritten.
 
-### P5. Map fallbacks — **agreed: `get` borrows**
+**Phase 28:** views are temporary borrows of the Map, not owned snapshots. They cannot be stored or returned; their borrow must end before structurally modifying or consuming the Map. Map keys are read-only. Values may be read or written through a permitted WRITE borrow, but cannot be consumed individually.
+
+### P5. Map API and ownership — **seven decisions closed (Nov 1 2026)**
+
+**Today (legacy probe):** `get(key, fallback)` returns an owned copy of the stored value or fallback, emitting `data.get(k).cloned().unwrap_or(fb.clone())`. The fallback binding remains usable. `tests/swarm_021_map_value_semantics.moss` relies on returned copies being independent. The old `delete(key, fallback, found)` also has fallback-consuming behavior. These describe current implementation, **not** Phase 28 semantics.
+
+**Phase 28 decisions:**
+
+1. **`m.remove(key)`:** removes the entry and transfers ownership of its value to the caller, without copying. Missing key raises an ordinary catchable error. This replaces the legacy fallback/`found` `delete` API.
+2. **`m[key]`:** borrows the stored value with inferred READ or WRITE effect. WRITE modifies the value in place; trying to consume an individual Map element is rejected. Missing key raises an ordinary catchable error.
+3. **`m[key] = value`:** inserts or overwrites, consuming the incoming non-primitive value into the Map. If there was a previous value, it is dropped, not returned. Use `remove` first when the old value must be retained. Normal borrow exclusivity applies.
+4. **`m.get(key)`:** exactly **one argument**, no fallback. Returns a READ/WRITE borrow of the entry, just like `m[key]`; missing key raises an ordinary catchable error. `get(key, fallback)` is removed. `get(key)` and indexing are intentionally equivalent in Phase 28; this is no longer an ownership-design question.
+5. **`keys()` / `values()`:** borrowed views, not owned copies. They cannot be stored or returned and cannot remain live across structural Map mutation or consumption (P4).
+6. **Map keys:** read-borrowed only while stored in the Map. No in-place key mutation, which would invalidate lookup.
+7. **`for (k, v) in m`:** borrowing iteration only; `k` is READ and `v` is READ/WRITE as inferred from the body. Neither can be consumed from the Map. Iteration does **not** implicitly consume the entire Map to transfer entries. To transfer an entry, explicitly call `remove(key)` and then pass the owned result to a consuming operation, outside any live conflicting iteration borrow. Structural mutation of the iterated Map while its iterator is live is rejected.
 
 ```text
-v = data.get("a", Vector[Int]())
-v.push(3)                         # does not change the map
-w = data.get("x", fb)
-echo fb |> count                  # fb still usable
+m = {"a": [1, 2]}
+x = m.get("a")                # borrow; missing key raises
+y = m.remove("a")             # owned value; entry removed
+archive.put("a", y)           # consumes y
+
+m["b"] = [3, 4]               # Map owns new value
 ```
 
-**Today (probe):** `get` returns an owned copy of the stored value and clones the fallback: `data.get(k).cloned().unwrap_or(fb.clone())`. The fallback binding is not consumed. `tests/swarm_021_map_value_semantics.moss` relies on the returned copy being independent. `delete` consumes its fallback on both paths (already the spec). An inline fallback must outlive a borrowed result: that needs a language rule, not an emitter convention.
+**No fallback-lifetime problem remains:** the two-argument `get` API is removed. No Map read, view, or iteration introduces an implicit non-primitive copy. Map elements remain one synchronization leaf for locking; Phase 28 does not introduce per-key locks.
 
 ### P6. Hidden clones in the emitter — **agreed: remove**
 
@@ -257,18 +273,9 @@ All known bugs to be reviewed once more before S3 starts.
 
 ## 5. Open questions (updated Nov 1 2026)
 
-Resolved and removed from this list: `Option[Int]` Copy (options always move), taking an element out (`remove`/`pop`/`swap_remove` only), `replace`/`swap` (rejected for now).
+Resolved and removed from this list: `Option[Int]` Copy (options always move), taking an element out (`remove`/`pop`/`swap_remove` only), `replace`/`swap` (rejected for now), and **all seven Map questions** (P4–P5). The original numbering 8–12 is retained for existing discussion references.
 
-Lean in italics; **bold** marks the three real design calls.
-
-**Maps (next):**
-1. `map.remove(key)` on a missing key: ordinary error, replacing `delete(key, fallback, found)`? *Lean: yes to both.*
-2. `m[key]` is a borrow like `v[i]` (write-through changes the entry, consume is an error, missing key is an error)? *Lean: yes.*
-3. `m[key] = value` consumes `value` and silently drops any old value? *Lean: yes; `remove` first to keep it.*
-4. **Does `get(key, default)` stay at all?** With strict `m[key]` plus error handling it may be redundant. If it stays, what keeps an inline default alive (P5)? *Lean: open.*
-5. `keys()`/`values()` views are temporary borrows: not stored, not returned, map not mutated while in use (P4)? *Lean: yes.*
-6. Keys are only ever read-borrowed (writing a key would break lookup)? *Lean: yes.*
-7. `for (k, v) in m`: `k` read, `v` as the body needs; consuming the map hands entries out by value? *Lean: yes.*
+Lean in italics; **bold** marks the remaining design calls.
 
 **Beyond maps:**
 8. **Two borrows into one container where one writes:** `x = v[0]; y = v[1]; x.cost = y.cost`. Allowed only when the checker proves the indices differ, or always rejected (today's overlap rule is READ + READ only; Rust always rejects)? *Lean: open.*
