@@ -1,0 +1,18 @@
+type Point:
+  x: Float
+  y: Float
+
+fn offset(p: Point, d: Float) -> Point:
+  return Point(x: p.x + d, y: p.y + d)
+
+type Container:
+  pt: Point
+
+  fn shift(d: Float):
+    pt = offset(pt, d)
+    return
+
+fn main():
+  c = Container(pt: Point(x: 1.0, y: 2.0))
+  c.shift(1.0)
+  echo 1

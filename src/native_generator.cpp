@@ -6674,8 +6674,11 @@ class Generator {
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types))
-              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+            else if (is_object_view(s.a, d, locals, &types)) {
+              string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
+              o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
+                << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
+            }
             else {
               string assigned;
               vector<string> concat_operands;

@@ -1,3 +1,23 @@
+### Phase 28 Round 1 Team B checkpoint (2026-11-02, consumer migration reconnaissance and defect analysis)
+
+Branch `phase28-r1-team-b` branched from `origin/phase28-work`. Team B (Agent 1 L6 Coordinator/Implementer/Reviewer). Completed mandatory bootstrap: `result.language_version` is `moss-0.1`.
+
+Completed scope:
+1. Native emitter, Fast Debug, and optimizer duplication/clone census:
+   - Identified 28+ hidden `.clone()` sites in native generator (`src/native_generator.cpp`) across call arguments, indexing, struct constructors, binary operators, and returns.
+   - Identified duplicated ownership decisions in emitter (`function_parameter_abi`, `borrowable_type`, `borrowed_views.inc`, `view_place`, `is_object_view`) and Fast Debug (dynamic `frame.consumed` simulation and full-vector copy `*source` in `for` loops).
+   - Identified remaining expression-string parsing in `native_generator.cpp` (`expression_view_from_est` parsing strings on demand into temporary views).
+2. Four compiler defects investigated with focused reproducers in `tests/phase28/reproducers/` and verification harness `tests/phase28/verify_defects.py`:
+   - E1 Group A `push_self_field_read` (Rust E0502): Confirmed borrow conflict due to whole-`self` borrowing in `MossAccess_*` field accessor trait methods. Fast Debug PASS (0), Rustc FAIL.
+   - E1 Group A `field_self_assign_struct` (Rust E0502): Successfully diagnosed and corrected independently via RHS-before-LHS temporary binding in `src/native_generator.cpp:6677`. Fast Debug PASS (1), Native PASS (1).
+   - E2 `swarm_035` nested mutating calls (Rust E0499): Passes with parity in current compiler; temporary argument binding `__moss_call_argument_2` already serializes evaluation. Fast Debug PASS (1), Native PASS (1).
+   - E3 T6 untyped read-only `for` (Rust E0596): Minimal untyped `for` loop passes; complex `Scene` methods trigger checker-level `unresolved callable argument` on `moss ownership`. Fast Debug PASS (3), Native PASS (3).
+   - E4 `mutate_loop_element` (Rust E0596): Diagnosed: checker infers receiver as READ instead of WRITE, and native emitter hardcodes `.iter()` and non-`mut` element binding. Fast Debug PASS (7 17), Rustc FAIL.
+3. Created `docs/Phase28-team.md`, `tests/phase28/verify_defects.py`, and developer-experience record in `agent-feedback/phase28/team-b-consumer-migration/reconnaissance/observations.jsonl`.
+4. Fact hook test `check_phase27_5_4_fact_hooks.py` and string debt check `check_phase27_string_debt.py` pass cleanly.
+
+Remaining for Round 2: Consumer migration to Team A's checked ownership facts (`ForLoopElementFacts`, `BindingOwnershipFacts`, `ExprOccurrenceFacts`) once Team A publishes the checker-fact interface.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
 
 Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
