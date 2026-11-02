@@ -17135,3 +17135,19 @@ future optimizer-isolated proof and must remain explicit in final review.
   downstream checker from the checked return-root handle.
 - Latest code is not yet committed. Full suites and shadow, corpus count/perf,
   final three-engine/parity sweep, and Agent 2 review remain outstanding.
+
+
+## C2 checkpoint: refreshed optimized compiler and Phase 21 family (2026-11-01)
+
+- The development binary had been rebuilt after the recent emitter changes, but
+  `moss-opt` was stale. The first isolated Phase 21 run therefore executed old
+  optimized code and reported three imported standard-error bridge failures.
+  Rebuilding `moss-opt` resolved them without further source changes.
+- The complete targeted `check_phase21_*` family now passes 43/43 with refreshed
+  dev and optimized binaries. Direct imported expression method calls, source-free
+  recovery, standard-error namespace conversion, and write-order tests all pass.
+- The single-job and direct harness comparisons verified that the earlier red
+  result was a stale optimized binary, not an isolation/worktree discrepancy.
+  Full default/shadow suites remain reserved for final gates.
+- Current branch tip: `cad90fdb`; current working changes in this checkpoint
+  are status documentation only.
