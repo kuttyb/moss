@@ -450,6 +450,38 @@ class FastInterpreter {
     ~ExpressionHandlesScope() { slot = prior; }
   };
 
+  struct FunctionalPlansScope {
+    const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>*& slot;
+    const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>* prior;
+    FunctionalPlansScope(const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>*& target,
+        const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~FunctionalPlansScope() { slot = prior; }
+  };
+  struct FunctionResultPlansScope {
+    const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>*& slot;
+    const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>* prior;
+    FunctionResultPlansScope(const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>*& target,
+        const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~FunctionResultPlansScope() { slot = prior; }
+  };
+  struct StatementScope {
+    const Stmt*& slot;
+    const Stmt* prior;
+    StatementScope(const Stmt*& target, const Stmt* current)
+        : slot(target), prior(target) { slot = current; }
+    ~StatementScope() { slot = prior; }
+  };
+
   struct RaisedSignal {
     RaisedIdentity identity;
     Value value;
@@ -462,6 +494,11 @@ class FastInterpreter {
 
   const Program& program_;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
+  const std::unordered_map<std::string,
+      std::vector<Stmt::FunctionalExpressionPlan>>* active_functional_plans_ = nullptr;
+  const std::unordered_map<std::string,
+      Stmt::FunctionalExpressionPlan>* active_function_result_plans_ = nullptr;
+  const Stmt* active_statement_ = nullptr;
   Options options_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
@@ -1563,6 +1600,76 @@ class FastInterpreter {
       facts = tree.arena->facts(stage, context);
       if (facts) break;
     }
+    if ((!facts || !facts->type || !facts->type->is_closed()) &&
+        tree.arena) {
+      if (stage_index == pipeline_node.stages.size() &&
+          active_statement_ && !active_statement_->semantic_type.empty()) {
+        const bool owns_pipeline = active_expression_handles_ &&
+            std::any_of(active_expression_handles_->begin(),
+                active_expression_handles_->end(), [&](const est::Handle& handle) {
+                  if (handle.arena_index >= program_.expression_arenas.size() ||
+                      program_.expression_arenas[handle.arena_index].get() !=
+                          tree.arena)
+                    return false;
+                  const auto root = est::unparenthesized(*tree.arena, handle.expr);
+                  return std::get_if<est::Pipeline>(&tree.arena->at(root)) ==
+                      &pipeline_node;
+                });
+        auto checked_type = Type::parse_canonical(
+            active_statement_->semantic_type);
+        if (owns_pipeline && checked_type && (*checked_type)->is_closed()) {
+          record_type_coverage("pipeline-stage", true);
+          return (*checked_type)->to_canonical_string();
+        }
+      }
+      std::size_t arena_index = 0;
+      while (arena_index < program_.expression_arenas.size() &&
+             program_.expression_arenas[arena_index].get() != tree.arena)
+        ++arena_index;
+      if (arena_index < program_.expression_arenas.size()) {
+        std::vector<std::string> plan_contexts{frame.checked_fact_context,
+                                                frame.functional_context};
+        const auto specialization = frame.functional_context.find('<');
+        if (specialization != std::string::npos)
+          plan_contexts.push_back(
+              frame.functional_context.substr(0, specialization));
+        const auto output_for_plan = [&](
+            const Stmt::FunctionalExpressionPlan& plan)
+            -> std::optional<std::string> {
+          if (plan.arena_index != arena_index ||
+              plan.expression >= tree.arena->size() ||
+              std::get_if<est::Pipeline>(
+                  &tree.arena->at(plan.expression)) != &pipeline_node ||
+              plan.pipeline_id >= program_.functional_pipelines.size())
+            return std::nullopt;
+          const auto& checked_plan =
+              program_.functional_pipelines[plan.pipeline_id];
+          if (stage_index >= checked_plan.nodes.size() ||
+              checked_plan.nodes[stage_index].output_type.empty())
+            return std::nullopt;
+          return checked_plan.nodes[stage_index].output_type;
+        };
+        for (const auto& context : plan_contexts) {
+          if (active_functional_plans_) {
+            const auto found = active_functional_plans_->find(context);
+            if (found != active_functional_plans_->end())
+              for (const auto& plan : found->second)
+                if (auto output = output_for_plan(plan)) {
+                  record_type_coverage("pipeline-stage", true);
+                  return output;
+                }
+          }
+          if (active_function_result_plans_) {
+            const auto found = active_function_result_plans_->find(context);
+            if (found != active_function_result_plans_->end())
+              if (auto output = output_for_plan(found->second)) {
+                record_type_coverage("pipeline-stage", true);
+                return output;
+              }
+          }
+        }
+      }
+    }
     if (!facts || !facts->type || !facts->type->is_closed()) {
       record_type_coverage("pipeline-stage", false);
       std::string recorded_contexts;
@@ -1613,10 +1720,34 @@ class FastInterpreter {
         return facts->type->to_canonical_string();
       }
     }
+    // A function can be entered through a call whose checker edge has no
+    // unique specialization mapping. In that case the unspecialized context
+    // may contain an open type variable while every checked specialization
+    // records the same closed type for this node. Reuse that checked answer
+    // only when it is unambiguous; never infer from runtime values.
+    std::optional<std::string> common_checked_type;
+    bool conflicting_checked_types = false;
+    for (const auto& entry : tree.arena->facts_for_expression(root)) {
+      const auto& facts = entry.second;
+      if (!facts.type || !facts.type->is_closed()) continue;
+      const auto type = facts.type->to_canonical_string();
+      if (common_checked_type && *common_checked_type != type) {
+        conflicting_checked_types = true;
+        break;
+      }
+      common_checked_type = type;
+    }
+    if (common_checked_type && !conflicting_checked_types) {
+      record_type_coverage("expression", true);
+      return *common_checked_type;
+    }
     record_type_coverage("expression", false);
     throw RuntimeError(line,
         "MOSS_INTERNAL_INVARIANT missing checked expression type node=" +
-        std::to_string(root) + " context=" + frame.functional_context);
+        std::to_string(root) + " kind=" +
+        std::to_string(tree.arena->at(root).index()) + " expression=" +
+        std::string(expression_node_text(tree, root)) + " context=" +
+        frame.functional_context);
   }
 
   static std::optional<std::string> checked_vector_element_type(
@@ -3265,6 +3396,9 @@ class FastInterpreter {
     Flow flow = execute(executable_body, frame, output);
     ExpressionHandlesScope result_handles_scope(
         active_expression_handles_, &target.expression_handles);
+    FunctionResultPlansScope result_plans_scope(
+        active_function_result_plans_,
+        &target.result_functional_expression_plans_by_context);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
              ? evaluate_expression_source(*target.execution_result_expression,
@@ -3436,8 +3570,12 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      StatementScope statement_scope(active_statement_, &statement);
       ExpressionHandlesScope expression_handles_scope(
           active_expression_handles_, &statement.expression_handles);
+      FunctionalPlansScope functional_plans_scope(
+          active_functional_plans_,
+          &statement.functional_expression_plans_by_context);
       if (statement.kind == Stmt::Kind::Try) {
         size_t try_end = index + 1;
         while (try_end < end && statements[try_end].indent > statement.indent)

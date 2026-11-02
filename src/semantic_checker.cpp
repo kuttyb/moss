@@ -2890,7 +2890,9 @@ class Checker {
         if (!starts_with(occurrence.operation_id, "call:")) return false;
         const string called_name = occurrence.operation_id.substr(5);
         if ((target_id != "builtin:" + called_name &&
-             target_id != "builtin-scalar-protocol:" + called_name))
+             target_id != "builtin-scalar-protocol:" + called_name &&
+             !(starts_with(target_id, "builtin-scalar-protocol:") &&
+               ends_with(target_id, "." + called_name))))
           return false;
       }
       for (const auto& callable : occurrence.linked_callables) {
@@ -24408,6 +24410,48 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
+    // A sealed generic provider can expose its retained expression facts but
+    // omit source and the legacy statement body. In that case the ordinary
+    // specialization recheck below has no statements to visit. Project the
+    // checker-known concrete parameter types onto identifier nodes that the
+    // generic checker identified as open. This is a checked binding fact, not
+    // consumer-side substitution.
+    {
+      const string specialization_context =
+          "specialization:" + checking_specialization_->stable_type_key;
+      std::function<void(const vector<Stmt>&)> project_parameter_facts =
+          [&](const vector<Stmt>& statements) {
+        for (const auto& statement : statements) {
+          for (const auto& handle : statement.expression_handles) {
+            auto* arena = expression_arena(handle.arena_index);
+            if (!arena) continue;
+            std::function<void(est::ExprId)> visit = [&](est::ExprId node_id) {
+              const auto* identifier = std::get_if<est::Identifier>(
+                  &arena->at(node_id));
+              if (identifier) {
+                for (size_t index = 0; index < function.params.size(); ++index) {
+                  if (identifier->name != function.params[index].name ||
+                      index >= checking_specialization_->parameter_type_refs.size())
+                    continue;
+                  const auto* generic = arena->facts(node_id,
+                      "fn:" + function.name);
+                  if (!generic || !generic->type || generic->type->is_closed())
+                    continue;
+                  auto facts = *generic;
+                  facts.type = checking_specialization_->parameter_type_refs[index];
+                  arena->record_facts(node_id, specialization_context,
+                                      std::move(facts));
+                  break;
+                }
+              }
+              arena->for_each_child(node_id, visit);
+            };
+            visit(handle.expr);
+          }
+        }
+      };
+      project_parameter_facts(function.body);
+    }
     auto suspended_expression_cursors = std::move(active_est_expression_cursors_);
     active_est_expression_cursors_.clear();
     struct RestoreExpressionCursors {
@@ -27053,18 +27097,32 @@ class Checker {
     } tree_cursor_scope{active_est_expression_cursors_,
         tree_cursor ? std::function<void()>([this, cursor = *tree_cursor,
                                              fact_context, source = original,
+                                             root_slot = std::string(root_slot),
                                              &env] {
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
-          std::function<void(est::ExprId, std::string_view)> record_subtree =
-              [&](est::ExprId id, std::string_view text) {
+          std::function<void(est::ExprId, std::string_view,
+                             moss::TypeRef, moss::TypeRef)> record_subtree =
+              [&](est::ExprId id, std::string_view text,
+                  moss::TypeRef expected_type,
+                  moss::TypeRef expected_member_receiver) {
             const auto* existing = arena->facts(id, fact_context);
-            if (!existing || !existing->type) {
+            moss::TypeRef checked_type = existing ? existing->type : nullptr;
+            if (checked_type && !checked_type->is_closed() &&
+                expected_type && expected_type->is_closed())
+              checked_type = expected_type;
+            if (!existing || !existing->type ||
+                (!existing->type->is_closed() && expected_type &&
+                 expected_type->is_closed())) {
               try {
                 std::optional<InferredExpr> inferred;
                 auto type = checked_expression_term(std::string(text), env,
                                                     &inferred);
+                if ((!type || !type->is_closed()) && expected_type &&
+                    expected_type->is_closed())
+                  type = std::move(expected_type);
                 if (type) {
+                  checked_type = type;
                   est::SemanticFacts facts = existing
                       ? *existing : est::SemanticFacts{};
                   facts.type = std::move(type);
@@ -27081,9 +27139,99 @@ class Checker {
               }
             }
             const auto parent_span = arena->span(id);
+            const auto& node = arena->at(id);
+            const auto checked_member_receiver_type = [&]() -> moss::TypeRef {
+              const auto* call = std::get_if<est::Call>(&node);
+              if (!call) return nullptr;
+              const auto callee_id = est::unparenthesized(*arena, call->callee);
+              if (!std::holds_alternative<est::Member>(arena->at(callee_id)))
+                return nullptr;
+              const auto* call_facts = arena->facts(id, fact_context);
+              if (!call_facts) return nullptr;
+              const auto& target = call_facts->resolved_target;
+              if (checking_specialization_ &&
+                  starts_with(target, "parameter:")) {
+                const auto separator = target.find('.', 10);
+                if (separator != std::string::npos) {
+                  try {
+                    const auto parameter = static_cast<std::size_t>(
+                        std::stoul(target.substr(10, separator - 10)));
+                    if (parameter <
+                        checking_specialization_->parameter_type_refs.size()) {
+                      auto type = checking_specialization_->parameter_type_refs[
+                          parameter];
+                      if (type && type->is_closed()) return type;
+                    }
+                  } catch (...) {
+                  }
+                }
+              }
+              std::string receiver_type;
+              for (const std::string prefix : {"builtin-method:",
+                       "builtin-scalar-protocol:", "method:"}) {
+                if (!starts_with(target, prefix)) continue;
+                const auto identity = target.substr(prefix.size());
+                const auto separator = identity.rfind('.');
+                if (separator != std::string::npos)
+                  receiver_type = identity.substr(0, separator);
+                break;
+              }
+              if (receiver_type.empty()) return nullptr;
+              auto parsed = moss::Type::parse_canonical(receiver_type);
+              return parsed ? *parsed : nullptr;
+            };
+            const auto child_type = [&](std::size_t index) -> moss::TypeRef {
+              if (std::holds_alternative<est::Member>(node) && index == 0 &&
+                  expected_member_receiver &&
+                  expected_member_receiver->is_closed())
+                return expected_member_receiver;
+              if (!checked_type || !checked_type->is_closed() ||
+                  checked_type->kind != moss::TypeKind::Builtin ||
+                  checked_type->type_args.empty()) return nullptr;
+              if (const auto* collection = std::get_if<est::Collection>(&node)) {
+                if ((checked_type->name == "vector" ||
+                     checked_type->name == "set" ||
+                     checked_type->name == "queue") &&
+                    collection->delimiter == '[')
+                  return checked_type->type_args.front();
+                if (checked_type->name == "map" &&
+                    collection->delimiter == '{' &&
+                    checked_type->type_args.size() == 2)
+                  return checked_type->type_args[index % 2];
+              }
+              if (const auto* call = std::get_if<est::Call>(&node)) {
+                if (index == 0 || index > call->arguments.size()) return nullptr;
+                const auto* call_facts = arena->facts(id, fact_context);
+                const auto callable = call_facts
+                    ? CallableId::parse(call_facts->resolved_target)
+                    : std::nullopt;
+                if (!callable) return nullptr;
+                const Function* target = nullptr;
+                for (const auto& candidate : p_.functions)
+                  if (candidate.semantic_callable_id == callable->str()) {
+                    target = &candidate;
+                    break;
+                  }
+                const auto parameter_index = index - 1;
+                if (!target || parameter_index >= target->params.size())
+                  return nullptr;
+                auto expected = target->params[parameter_index].type_ref;
+                if ((!expected || !expected->is_closed()) &&
+                    !target->params[parameter_index].type.empty()) {
+                  auto parsed = moss::Type::parse_canonical(
+                      target->params[parameter_index].type);
+                  if (parsed) expected = *parsed;
+                }
+                if (expected && expected->is_closed()) return expected;
+              }
+              return nullptr;
+            };
+            std::size_t child_index = 0;
             arena->for_each_child(id, [&](const auto child) {
+              const auto current_child_index = child_index++;
               if (const auto* child_facts = arena->facts(child, fact_context);
-                  child_facts && child_facts->type) return;
+                  child_facts && child_facts->type &&
+                  child_facts->type->is_closed()) return;
               const auto child_span = arena->span(child);
               if (child_span.source_begin < parent_span.source_begin ||
                   child_span.source_end < child_span.source_begin ||
@@ -27093,11 +27241,24 @@ class Checker {
               const auto length = child_span.source_end -
                   child_span.source_begin;
               if (begin > text.size() || length > text.size() - begin) return;
+              auto nested_member_receiver =
+                  std::holds_alternative<est::Call>(node) &&
+                      current_child_index == 0
+                  ? checked_member_receiver_type() : nullptr;
               record_subtree(child, trim(std::string(text.substr(begin,
-                                                                  length))));
+                                                                  length))),
+                  child_type(current_child_index),
+                  std::move(nested_member_receiver));
             });
           };
-          record_subtree(cursor.expr, source);
+          moss::TypeRef checked_root_expected;
+          if (checking_specialization_ && root_slot == "return-value" &&
+              checking_specialization_->return_type_ref &&
+              checking_specialization_->return_type_ref->is_closed())
+            checked_root_expected =
+                checking_specialization_->return_type_ref;
+          record_subtree(cursor.expr, source,
+                         std::move(checked_root_expected), nullptr);
           if (const char* dump = std::getenv("MOSS_EST_FACTS_DUMP");
               dump && std::string_view(dump) == "1") {
             if (const auto* facts = arena->facts(cursor.expr, fact_context)) {
@@ -28011,7 +28172,8 @@ class Checker {
       if (scalar_type_name(receiver) &&
           (handler == "less" || handler == "isequal" || handler == "hash")) {
         retain_active_expression_target(
-            "builtin-scalar-protocol:" + handler);
+            "builtin-scalar-protocol:" +
+            canonical_type_name(receiver) + "." + handler);
         check_scalar_protocol_call(line, handler, canonical_type_name(receiver),
                                    args, env);
         return;
@@ -31886,7 +32048,11 @@ class Checker {
           target_identity_valid = true;
         } else if (linked.semantic_target_id == "builtin:" + called_name ||
                    linked.semantic_target_id ==
-                       "builtin-scalar-protocol:" + called_name) {
+                       "builtin-scalar-protocol:" + called_name ||
+                   (starts_with(linked.semantic_target_id,
+                                "builtin-scalar-protocol:") &&
+                    ends_with(linked.semantic_target_id,
+                              "." + called_name))) {
           target_identity_valid = true;
         }
         bool valid =
@@ -32352,6 +32518,28 @@ public:
         if (drop_joins || perturb_joins) {
           statement.joined_types.clear();
           statement.joined_types_by_context.clear();
+        }
+        if (drop_pipelines || perturb_pipelines) {
+          const bool owns_pipeline = std::any_of(
+              statement.expression_handles.begin(),
+              statement.expression_handles.end(), [&](const est::Handle& handle) {
+            if (handle.arena_index >= p_.expression_arenas.size() ||
+                !p_.expression_arenas[handle.arena_index]) return false;
+            const auto& arena = *p_.expression_arenas[handle.arena_index];
+            if (handle.expr >= arena.size()) return false;
+            return std::holds_alternative<est::Pipeline>(arena.at(
+                est::unparenthesized(arena, handle.expr)));
+          });
+          if (owns_pipeline) {
+            if (drop_pipelines) {
+              statement.semantic_type.clear();
+              statement.semantic_types_by_context.clear();
+            } else {
+              statement.semantic_type = "bool";
+              for (auto& entry : statement.semantic_types_by_context)
+                entry.second = "bool";
+            }
+          }
         }
         if (drop_patterns || perturb_patterns)
           alter_pattern(statement.est_pattern);

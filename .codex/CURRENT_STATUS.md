@@ -17880,3 +17880,28 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Contract, compiler-state and report now record this scope and measurement.
   The default full suite has not yet reached its test jobs, so it is not a
   valid final-suite result; rerun default and shadow once after this correction.
+
+## 06:10 UTC checkpoint (source-free type fact and pipeline hook)
+
+- Resumed on `phase27-5-5-work` from `335d1d15`; the worktree contained the
+  retained-tree/type-fact changes described above. The contract is present and
+  was read. The separately referenced `docs/MOSS_COMPILER_CONTRACT_DRAFT.md`
+  is not present in this checkout.
+- Reproduced the staged ABI-v10 source-free `Provider.size("abc")` failure in
+  `check_phase25_team_a_semantics.py`: emitter requested the `value` identifier
+  type in `fn:Provider__size<string>`, while `.mossi` retained only the open
+  generic fact. The checker now projects its concrete specialization parameter
+  type onto matching retained identifier nodes in the specialization fact
+  context. No consumer inference was added. Full targeted Team A semantics
+  test now passes, including `Provider.size` returning `3` and expected relay
+  rejection.
+- The first fact-hook rerun exposed a bypass in pipeline-type dropping: Fast
+  Debug consumed the owning statement's checked pipeline result type after the
+  plan facts were dropped. Extended test-build perturb/drop to mutate that
+  owning statement answer too. Rebuilt `moss-dev` and `moss-opt`; the full
+  targeted call-target, specialization, join, pattern, expression-type,
+  pipeline-type and debt matrix passes (ownership ignored set remains 10/10).
+- `git diff --check` passed before the latest hook edit; rerun before commit.
+  No full default/shadow suite or final performance run has occurred on these
+  edits. Continue targeted consumer/type checks, checkpoint and push, then the
+  final gates, one Agent 2 audit, and merge/tag if GO.

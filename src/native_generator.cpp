@@ -1841,6 +1841,10 @@ class Generator {
       const std::unordered_map<string,string>* types,
       const vector<EmitterExpr>* argument_nodes = nullptr,
       const EmitterExpr* call_node = nullptr) const {
+    const auto edge_occurrence = call_node && call_node->arena
+        ? checked_call_edge_occurrence(*call_node->arena, call_node->id,
+              codegen_body_context_, function.name)
+        : std::optional<std::uint32_t>{};
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
@@ -1873,6 +1877,7 @@ class Generator {
         return &*exact;
       }
     }
+    if (!function.static_dispatch) return nullptr;
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
       bool checked_statement_return_call = false;
@@ -1959,7 +1964,8 @@ class Generator {
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.test_fact_dropped || checked.test_fact_perturbed)
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
@@ -2008,7 +2014,8 @@ class Generator {
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
         if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
             count && string(count) == "g1") {
@@ -2025,7 +2032,8 @@ class Generator {
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
           std::find(checked.candidates.begin(), checked.candidates.end(),
                     selected) == checked.candidates.end()) {
@@ -2034,7 +2042,9 @@ class Generator {
             "checked call edge candidates callee=" + function.name +
             " line=" + std::to_string(phase21_codegen_statement_
                                            ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
+            " context=" + codegen_body_context_ + " selected=" +
+            (selected ? selected->stable_type_key : std::string("null")) +
+            " candidates=" + std::to_string(checked.candidates.size()));
       }
     }
     return selected;
@@ -2395,10 +2405,16 @@ class Generator {
     if (index >= function.params.size())
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
-    string actual_type = (checked_expression
-        ? generated_expr_type(*checked_expression, types)
-        : generated_expr_type(argument, types)).value_or("");
-    auto abi = function_parameter_abi(function, index, actual_type, specialization);
+    // An open result at this call site may still be passed to a declaration
+    // with a closed checked parameter type (for example make() -> Vector[Int]).
+    // ABI borrowing follows the callee's checked parameter/specialization type
+    // when the argument fact is intentionally open; it does not infer the
+    // argument's Moss type.
+    string abi_type = specialization &&
+        index < specialization->parameter_types.size()
+        ? specialization->parameter_types[index]
+        : function.params[index].type;
+    auto abi = function_parameter_abi(function, index, abi_type, specialization);
     Effect effect = abi.effect;
     auto argument_binding = checked_expression && checked_expression->arena
         ? [&]() -> std::optional<string> {
@@ -2431,7 +2447,7 @@ class Generator {
              : argument_binding
                  ? borrowed_message_parameters_.count(*argument_binding) != 0
                  : borrowed_message_parameter(argument)) &&
-        !view_object_type(actual_type))
+        !view_object_type(abi_type))
       return rendered;
     if (effect == Effect::Write)
       return "&mut (" + (checked_expression && checked_expression->arena
@@ -3197,7 +3213,7 @@ class Generator {
           CallableId::parse(target_facts->resolved_target))
         return std::nullopt;  // checked callable identity has no Moss value type
     }
-    const bool has_fact = facts && facts->type;
+    const bool has_fact = facts && facts->type && facts->type->is_closed();
     if (has_fact) {
       record_type_fact_coverage(true);
       return canonical_type_name(facts->type);
@@ -6398,10 +6414,24 @@ class Generator {
              ends_with(target, "." + member->name)) ||
             (starts_with(target, "builtin-method:bool.") &&
              ends_with(target, "." + member->name)) ||
-            target == "builtin-scalar-protocol:" + member->name) {
+            target == "builtin-scalar-protocol:" + member->name ||
+            (starts_with(target, "builtin-scalar-protocol:") &&
+             ends_with(target, "." + member->name))) {
           const auto receiver_expression = expression.child(member->base);
-          const auto receiver_type = generated_expr_type(receiver_expression,
-                                                          types);
+          std::optional<string> receiver_type;
+          constexpr std::string_view scalar_target_prefix =
+              "builtin-scalar-protocol:";
+          if (starts_with(target, std::string(scalar_target_prefix)) &&
+              target != "builtin-scalar-protocol:" + member->name) {
+            const string typed_receiver = target.substr(
+                scalar_target_prefix.size());
+            const auto separator = typed_receiver.rfind('.');
+            if (separator != string::npos &&
+                typed_receiver.substr(separator + 1) == member->name)
+              receiver_type = typed_receiver.substr(0, separator);
+          }
+          if (!receiver_type)
+            receiver_type = generated_expr_type(receiver_expression, types);
           vector<EmitterExpr> arguments;
           bool simple_arguments = true;
           for (const auto argument_id : call->arguments) {
@@ -7530,7 +7560,26 @@ class Generator {
           member_argument_nodes.clear();
         }
       }
+      auto checked_scalar_receiver_type = [&]() -> std::optional<string> {
+        if (!checked_node || !checked_node->arena) return std::nullopt;
+        const auto* facts = checked_expression_facts(*checked_node);
+        const string prefix = "builtin-scalar-protocol:";
+        if (!facts || !starts_with(facts->resolved_target, prefix))
+          return std::nullopt;
+        const string receiver = facts->resolved_target.substr(prefix.size());
+        const auto separator = receiver.rfind('.');
+        if (separator == string::npos ||
+            receiver.substr(separator + 1) != member_name)
+          return std::nullopt;
+        const string type = receiver.substr(0, separator);
+        if (type == "int" || type == "float" || type == "char" ||
+            type == "string" || type == "bool")
+          return type;
+        return std::nullopt;
+      };
       auto type_member_receiver = [&]() {
+        if (auto checked_type = checked_scalar_receiver_type())
+          return checked_type;
         return member_receiver_node.arena
             ? generated_expr_type(member_receiver_node, types)
             : generated_expr_type(member_receiver, types);
@@ -11258,8 +11307,19 @@ class Generator {
               std::any_of(d->state.begin(), d->state.end(), [&](const Field& field) {
                 return field.name == s.message_result;
               });
+          const Field* state_field = nullptr;
+          if (state_result) {
+            auto found_state = std::find_if(d->state.begin(), d->state.end(),
+                [&](const Field& field) {
+                  return field.name == s.message_result;
+                });
+            if (found_state == d->state.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked message state field is unavailable");
+            state_field = &*found_state;
+          }
           const bool state_view = state_result &&
-              is_object_view(s.message_result, d, locals, &types);
+              view_object_type(state_field->type);
           if (state_view) {
             o << "(" << write_call_place(s.message_result, d, locals, &types)
               << ").__moss_replace(";

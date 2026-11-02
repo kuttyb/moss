@@ -14946,6 +14946,33 @@ static void parse_generic_ir_line(const string& line, Function& function) {
             parse_interface_raise_identity(identity));
       }
     }
+    size_t fact_count = 0;
+    if (input >> fact_count) {
+      if (fact_count > 100000) return;
+      for (size_t index = 0; index < fact_count; ++index) {
+        LoadedExpressionFact fact;
+        size_t path_count = 0;
+        unsigned slot = 0;
+        if (!(input >> slot >> fact.argument_index >> path_count) ||
+            slot >= est::Arena::slot_count || path_count > 100000)
+          return;
+        fact.slot = static_cast<std::uint8_t>(slot);
+        fact.child_path.reserve(path_count);
+        for (size_t path = 0; path < path_count; ++path) {
+          std::uint32_t child = 0;
+          if (!(input >> child)) return;
+          fact.child_path.push_back(child);
+        }
+        if (!(input >> std::quoted(fact.context) >>
+              std::quoted(fact.canonical_type) >>
+              std::quoted(fact.specialization_result) >>
+              std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
+            fact.inferred_effect < -1 ||
+            fact.inferred_effect > static_cast<int>(Effect::Consume))
+          return;
+        statement.loaded_expression_facts.push_back(std::move(fact));
+      }
+    }
     function.body.push_back(std::move(statement));
   } else if (record == "generic_source") {
     input >> std::quoted(function.provider_origin_file);
@@ -17744,6 +17771,16 @@ static ParsedModuleUnit load_module_interface(
   for (auto& function : provider.functions)
   {
     build_loaded_body(function.body, "generic-function:" + function.name);
+    if (function.result_expression && std::none_of(
+            function.expression_handles.begin(),
+            function.expression_handles.end(), [](const est::Handle& handle) {
+              return handle.slot == est::ExprSlot::ReturnValue &&
+                  handle.argument_index == 0;
+            }))
+      est::populate_loaded_expression(provider, function.expression_handles,
+          *function.result_expression, est::ExprSlot::ReturnValue,
+          function.result_line, est::stable_origin_id(
+              file.string() + "\ngeneric-function-result:" + function.name));
     if (function.execution_body)
       build_loaded_body(*function.execution_body,
                         "execution-function:" + function.name);
@@ -21885,6 +21922,55 @@ static void write_execution_body_statement(std::ostream& out,
   out << "\n";
 }
 
+static void write_generic_statement_expression_facts(
+    std::ostream& out, const Program& program, const Stmt& statement) {
+  vector<LoadedExpressionFact> facts;
+  for (const auto& handle : statement.expression_handles) {
+    if (handle.arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle.arena_index]) continue;
+    const auto& arena = *program.expression_arenas[handle.arena_index];
+    std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
+        [&](est::ExprId node, vector<std::uint32_t>& path) {
+      for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        if (!semantic.type && semantic.specialization_result.empty() &&
+            semantic.resolved_target.empty() && !semantic.inferred_effect)
+          continue;
+        LoadedExpressionFact fact;
+        fact.slot = static_cast<std::uint8_t>(handle.slot);
+        fact.argument_index = handle.argument_index;
+        fact.child_path = path;
+        fact.context = context;
+        if (semantic.type)
+          fact.canonical_type = semantic.type->to_canonical_string();
+        fact.specialization_result = semantic.specialization_result;
+        fact.resolved_target = semantic.resolved_target;
+        if (semantic.inferred_effect)
+          fact.inferred_effect = static_cast<int>(*semantic.inferred_effect);
+        facts.push_back(std::move(fact));
+      }
+      const auto children = arena.children(node);
+      for (std::size_t index = 0; index < children.size(); ++index) {
+        path.push_back(static_cast<std::uint32_t>(index));
+        visit(children[index], path);
+        path.pop_back();
+      }
+    };
+    vector<std::uint32_t> path;
+    visit(handle.expr, path);
+  }
+  out << " " << facts.size();
+  for (const auto& fact : facts) {
+    out << " " << static_cast<unsigned>(fact.slot) << " "
+        << fact.argument_index << " " << fact.child_path.size();
+    for (const auto child : fact.child_path) out << " " << child;
+    out << " " << std::quoted(fact.context) << " "
+        << std::quoted(fact.canonical_type) << " "
+        << std::quoted(fact.specialization_result) << " "
+        << std::quoted(fact.resolved_target) << " "
+        << fact.inferred_effect;
+  }
+}
+
 static void write_execution_body_result_facts(
     std::ostream& out, const Program& program,
     const vector<est::Handle>& handles) {
@@ -22523,6 +22609,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         out << " " << statement.exceptional_alternatives.size();
         for (const auto& identity : statement.exceptional_alternatives)
           out << " " << std::quoted(identity.canonical());
+        write_generic_statement_expression_facts(out, program, statement);
         out << "\n";
       }
       if (function.result_expression)
@@ -22572,6 +22659,7 @@ static vector<std::filesystem::path> write_module_interfaces(
       out << " " << statement.exceptional_alternatives.size();
       for (const auto& identity : statement.exceptional_alternatives)
         out << " " << std::quoted(identity.canonical());
+      write_generic_statement_expression_facts(out, program, statement);
       out << "\n";
     }
     if (function.result_expression)

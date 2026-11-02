@@ -993,6 +993,37 @@ struct CheckedCallEdgeSpecialization {
   bool test_fact_perturbed = false;
 };
 
+// The checker numbers same-line calls to one target in source order. Retained
+// call nodes preserve that order and each node carries its checked target, so
+// consumers can address the exact edge without rebuilding argument types.
+inline std::optional<std::uint32_t> checked_call_edge_occurrence(
+    const est::Arena& arena, est::ExprId call_node, const string& context,
+    const string& callee) {
+  if (call_node >= arena.size() ||
+      !std::holds_alternative<est::Call>(arena.at(call_node)))
+    return std::nullopt;
+  const auto matches_target = [&](est::ExprId id) {
+    if (!std::holds_alternative<est::Call>(arena.at(id))) return false;
+    const auto span = arena.span(id);
+    if (span.line != arena.span(call_node).line) return false;
+    for (const auto& [fact_context, facts] : arena.facts_for_expression(id)) {
+      if (fact_context != context) continue;
+      const auto& target = facts.resolved_target;
+      if (target.empty()) continue;
+      const string suffix = ":fn:" + callee;
+      if (target.size() >= suffix.size() &&
+          target.compare(target.size() - suffix.size(), suffix.size(), suffix) == 0)
+        return true;
+    }
+    return false;
+  };
+  if (!matches_target(call_node)) return std::nullopt;
+  std::uint32_t occurrence = 0;
+  for (est::ExprId id = 0; id < call_node; ++id)
+    if (matches_target(id)) ++occurrence;
+  return occurrence;
+}
+
 // Consumers select only the specialization attached to a checker-recorded
 // call edge. They must not infer argument types from generated/runtime values.
 inline CheckedCallEdgeSpecialization checked_call_edge_specialization(
