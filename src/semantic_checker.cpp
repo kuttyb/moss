@@ -21766,11 +21766,52 @@ class Checker {
             const auto validation_view = imported_method_validation_view(
                 *fn_it->second);
             auto requirements = validate_method_requirements(
-                line, validation_view ? *validation_view : *fn_it->second,
+                stage_line, validation_view ? *validation_view : *fn_it->second,
                 callback_input_types);
-            register_static_specialization(line, *fn_it->second,
+            const auto checked_requirements = requirements;
+            register_static_specialization(stage_line, *fn_it->second,
                                            callback_input_types,
                                            std::move(requirements));
+            std::vector<const FunctionSpecialization*> checked_instances;
+            for (const auto& candidate : fn_it->second->specializations) {
+              if (candidate.parameter_types != callback_input_types ||
+                  candidate.member_requirements.size() !=
+                      checked_requirements.size())
+                continue;
+              bool same_requirements = true;
+              for (const auto& requirement : checked_requirements) {
+                const auto match = std::find_if(
+                    candidate.member_requirements.begin(),
+                    candidate.member_requirements.end(),
+                    [&](const auto& selected) {
+                      return selected.member_name == requirement.member_name &&
+                          selected.origin.line == stage_line &&
+                          (source_file.empty() ||
+                           selected.origin.source_file == source_file) &&
+                          selected.selected_callable_id ==
+                              requirement.selected_callable_id;
+                    });
+                if (match == candidate.member_requirements.end()) {
+                  same_requirements = false;
+                  break;
+                }
+              }
+              if (same_requirements) checked_instances.push_back(&candidate);
+            }
+            if (checked_instances.size() == 1) {
+              const auto& checked_key =
+                  checked_instances.front()->stable_type_key;
+              for (auto& edge : p_.semantic_call_edges) {
+                if (edge.source != context ||
+                    edge.target != "fn:" + fn_it->second->name ||
+                    edge.line != stage_line ||
+                    edge.argument_types != callback_input_types ||
+                    (!source_file.empty() && !edge.source_file.empty() &&
+                     edge.source_file != source_file))
+                  continue;
+                edge.specialization_key = checked_key;
+              }
+            }
           }
         }
         node.effects = functional_stage_effects(

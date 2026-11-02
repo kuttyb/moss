@@ -2791,28 +2791,27 @@ class Generator {
         const auto* arena = p_.expression_arenas[invocation->arena_index].get();
         const auto root = est::unparenthesized(*arena, invocation->expr);
         const auto* call = std::get_if<est::Call>(&arena->at(root));
-        if (!call || argument_index >= call->arguments.size())
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT checked invocation argument is missing");
-        auto argument = call->arguments[argument_index];
-        if (const auto* named = std::get_if<est::NamedArgument>(
-                &arena->at(argument)))
-          argument = named->value;
-        // Functional pipeline lowering is attached to the checked argument
-        // handle by the checker. Keep that root so the emitter reads the
-        // recorded pipeline plan; ordinary nested calls use invocation nodes
-        // to retain their recursively checked child facts.
-        const EmitterExpr invocation_argument{arena, argument, source};
-        const auto argument_root = est::unparenthesized(*arena, argument);
-        const auto* argument_facts = checked_expression_facts(invocation_argument);
-        const bool call_root = std::holds_alternative<est::Call>(
-                arena->at(argument_root)) ||
-            std::holds_alternative<est::Member>(arena->at(argument_root));
-        const bool checked_call_root = !call_root ||
-            (argument_facts && !argument_facts->resolved_target.empty());
-        if (!std::holds_alternative<est::Pipeline>(arena->at(argument_root)) &&
-            argument_facts && checked_call_root)
-          return EmitterExpr{arena, argument, std::move(source)};
+        if (call && argument_index < call->arguments.size()) {
+          auto argument = call->arguments[argument_index];
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &arena->at(argument)))
+            argument = named->value;
+          // The child retains source spans relative to the full invocation
+          // string, so keep that source buffer while navigating into the tree.
+          // Pipeline arguments also use this tree: their child call facts live
+          // on the invocation tree even though the functional plan is separate.
+          const EmitterExpr invocation_argument{arena, argument, source};
+          const auto argument_root = est::unparenthesized(*arena, argument);
+          const auto* argument_facts = checked_expression_facts(invocation_argument);
+          const bool call_root = std::holds_alternative<est::Call>(
+                  arena->at(argument_root)) ||
+              std::holds_alternative<est::Member>(arena->at(argument_root));
+          const bool checked_call_root = !call_root ||
+              (argument_facts && !argument_facts->resolved_target.empty());
+          if (std::holds_alternative<est::Pipeline>(arena->at(argument_root)) ||
+              (argument_facts && checked_call_root))
+            return EmitterExpr{arena, argument, statement.text};
+        }
       }
     }
     const est::Handle* selected = nullptr;
@@ -6754,7 +6753,14 @@ class Generator {
               handler->params[index].type, d, locals, types, plan);
       }
       rendered << ")";
-      if (raises) return phase21_propagate(rendered.str());
+      if (raises) {
+        string propagated = phase21_propagate(rendered.str());
+        if (handler->reply_type &&
+            !(domain->second->exported && !exported_domain_bridge_body_))
+          propagated +=
+              ".unwrap_or_else(|| std::process::abort())";
+        return propagated;
+      }
       if (handler->reply_type &&
           !(domain->second->exported && !exported_domain_bridge_body_))
         rendered << ".unwrap_or_else(|| std::process::abort())";

@@ -16916,3 +16916,44 @@ predates these changes: default 127/165, 38 failures, shadow not run. These
 results are not final gates; rerun both suites and a stable paired count after
 fixes. The fact inventory above distinguishes end-to-end `-O` tests from a
 future optimizer-isolated proof and must remain explicit in final review.
+
+## C2 checkpoint: invocation source spans and pipeline callback specialization (2026-11-01)
+
+- `checked_expression_ref(Stmt, Argument)` now preserves the full invocation
+  source buffer when it navigates to an argument ExprId. Child spans are
+  relative to the retained invocation text; pairing them with the shorter
+  argument string made `EmitterExpr::text()` empty and broke pipeline lowering.
+  Non-call Expression slots now fall through to their checked argument handle.
+- Checker pipeline IR closure now attaches the unique matching static
+  specialization key to an existing pipeline callback `SemanticCallEdge`,
+  selected by the callback's concrete input types and checked member
+  requirements. This fixes `map(length)` where two `length<string>` instances
+  existed but the pipeline edge had no key. No runtime values are used to
+  select the specialization.
+- Targeted passes on this state: `check_phase15_15_string_api.py`,
+  `check_phase25_team_a_semantics.py` (entire suite), Phase 25 S2, Phase 25 L7,
+  generic specialization (40 probes), imported effects, and
+  `check_phase27_5_4_fact_hooks.py` (known-debt set remains 38/38).
+- Remaining confirmed failure: `check_phase21_on_fail_capture.py` fails native
+  Rust compilation in `root_nested.rs` (`Option<i64>` vs `i64` and
+  `Option<Option<i64>>` vs `Option<i64>`). The pinned C1 parent passes this
+  exact harness, confirming a branch regression. Generated Rust comparison
+  isolates a missing `.unwrap_or_else(|| std::process::abort())` on the nested
+  `message inner.Run()` value in the outer handler. Diagnose/fix before final
+  gates. No full suite, paired counter sweep, or perf run has occurred since
+  the previous checkpoint.
+
+## C2 checkpoint: nested raising-message reply option (2026-11-01)
+
+- Fixed the retained-tree message lowering path to compose checked raising
+  propagation with the internal handler reply `Option` unwrap. This restores
+  the generated Rust shape from the C1 parent for nested `message inner.Run()`
+  inside a `try` reply.
+- Targeted checks pass on the current development binary:
+  `check_phase21_on_fail_capture.py`, `check_phase15_15_string_api.py`,
+  `check_phase25_team_a_semantics.py`, and `check_phase27_5_4_fact_hooks.py`
+  (known-debt ignored cases remain 38/38). The previous Option mismatch is
+  resolved on the reproducer.
+- No full suite, paired corpus count, three-engine aggregate, performance run,
+  or Agent 2 audit has run after this fix. The last full suite remains the
+  earlier 127/165 result and is stale; final gates remain pending.
