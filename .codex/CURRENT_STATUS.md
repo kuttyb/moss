@@ -17386,3 +17386,45 @@ future optimizer-isolated proof and must remain explicit in final review.
   three-engine/parity, and performance once; then request the one Agent 2 audit.
   If GO, fetch current origin/main, merge C2 with that first parent, tag
   phase27-5-4-m1, then perform the queued closing round and its gates.
+
+## 2026-11-01 C2 final-gate checkpoint
+
+- The final full default and shadow shards each completed 161/165. The same
+  four failures occurred in each: conformance `compiled_only_custom_key`
+  (confirmed on the pinned C1 parent), Rust E0499 for
+  `tests/swarm_035_nested_mutating_calls.moss` in both
+  `check_phase27_accepts_rustc` and `shard_swarm_cases`, and the W2 RSS limit
+  (default 25,012 KiB; shadow 25,024 KiB vs 25,000). The first three are
+  parent debt; the W2 memory margin is a candidate performance-gate failure.
+  Full logs: `tmp/phase2754-final/make-check-c2.log` and
+  `tmp/phase2754-final/shadow-c2.log`.
+- `check_phase27_three_engine`, Fast Debug/native parity jobs, and the fact
+  perturb/drop harness pass in both modes. The hook harness reports targets
+  9, specializations 5, joins 4, patterns 3, debt baseline 38/38.
+- A paired best-of-two perf pass compared C1 parent
+  `tmp/phase27-5-4-parent-counter/build/compiler/moss-opt` with candidate on
+  the same 10 workloads. Sum of best times 815.75 -> 834.13 ms (+2.25%). W4
+  14.44 -> 14.34 ms (-0.7%), W5 38.23 -> 36.66 ms (-4.1%), W8 41.95 ->
+  44.63 ms (+6.4%). W2 RSS 24,064 -> 25,036 KiB. Raw paired records are under
+  `tmp/phase2754-final/perf-parent-candidate/summary.json`.
+- Current emitter whole-corpus counters remain 0 reparses and 0 text lookups
+  over 3,648 default/`-O` commands; Fast Debug and optimizer have no parser or
+  text-keyed lookup paths by source audit. Emitter type inference remains.
+- Pinned-parent conformance confirmation run is in
+  `tmp/phase2754-final/conformance-parent.log`; candidate no-MAKEFLAGS run is
+  `tmp/phase2754-final/conformance-no-makeflags.log`. Both fail only gate 10.
+- C2 final audit has been requested from Agent 2 and is pending. Do not merge
+  until its GO/NO-GO arrives and the C2 gate disposition is recorded. Report
+  appended to `docs/phase27/27_5_4_REPORT.md`.
+- After C2 merge/tag, perform the queued closing round: default `make check`
+  without shadow, dedicated `make check-shadow`, runtime ratchet, contract
+  status update, then its own Agent 2 gate and m2 merge/tag.
+
+## 2026-11-01 C2 audit and cost blocker
+
+- Agent 2 completed its single audit at C2 HEAD `1c9e26fa7f03bfc34daa633187a67ddde6d911cc` and returned **NO-GO**. It verified composite emitter text fallback fails closed, Fast Debug/optimizer have no reparse/text-lookup routes, and three seeded random accepted fixtures match C1 across Fast Debug/default/optimized Rust and runtime. It also clarified the 1,824-source emitter sweep inventories 337 package manifests but does not run package-context commands.
+- Hard blocker: the normal O2 candidate has W2 RSS about 1 MiB above its C1 parent and is above the permanent 25,000 KiB cap (25,012 default / 25,024 shadow; paired samples include 25,036). Do not merge this C2 head without resolving the performance gate and getting a permitted final audit disposition.
+- The two other suite failures are parent baseline: conformance gate 10 (verified 10/11 on C1 with `MAKEFLAGS` unset) and `swarm_035_nested_mutating_calls.moss` E0499 in two jobs. Full default/shadow totals are 161/165 each. Logs remain `tmp/phase2754-final/make-check-c2.log`, `shadow-c2.log`.
+- Size experiments (not integrated): all-TU `-Os` clears W2 RSS but is +10.66% aggregate; `semantic_checker.cpp` only at `-Os` clears W2 (24,288–24,392 KiB), measures +4.18% aggregate on the ten Phase 25.4 workloads, with W4 +8.86%, W5 +3.12%, W8 -0.05%. Raw records: `tmp/phase2754-final/perf-os-candidate/summary.json` and `perf-semantic-os/summary.json`. No Makefile/source build flags were changed.
+- Since Agent 2 was requested exactly once for this C2 checkpoint, do not request another audit on this same checkpoint. A later user-authorized checkpoint/review may be needed if a cost repair is integrated; a changed candidate would require fresh final suite validation. The queued C2 merge and post-C2 closing round (shadow demotion, runtime ratchet, contract update, m2 tag) have not started.
+- Latest tracked edits are report/status only and should be committed/pushed as a handover checkpoint. `git diff --check` and `check_agent_feedback.py` passed before the final report append; rerun both before commit.

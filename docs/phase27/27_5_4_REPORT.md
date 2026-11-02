@@ -574,7 +574,7 @@ parity gates, performance, and the single Agent 2 audit remain pending.
 
 ## C2 consumer counters and checker-answer coverage (2026-11-01)
 
-The paired C1-parent/candidate sweep used `tests/tooling/measure_phase27_5_4_emitter_consumers.py` on the identical 1,824 tracked `.moss` files under `tests/` and `examples/`, each with default and `-O` emission (3,648 commands per compiler; 337 package manifests represented in the source tree). The parent is the counter-matched build at `phase27-5-3-c1`; the generated test-only counters were added in its isolated worktree. Results:
+The paired C1-parent/candidate sweep used `tests/tooling/measure_phase27_5_4_emitter_consumers.py` on the identical 1,824 tracked `.moss` files under `tests/` and `examples/`, each with default and `-O` emission (3,648 commands per compiler; 337 package manifests are inventoried in the source tree, but the sweep does not run package-context commands). The parent is the counter-matched build at `phase27-5-3-c1`; the generated test-only counters were added in its isolated worktree. Results:
 
 | Emitter counter | C1 parent | C2 candidate | Change |
 | --- | ---: | ---: | ---: |
@@ -603,3 +603,52 @@ Fast Debug and optimizer source audits found no `est::parse*`, `parse_view`, fin
 The known-debt baseline is unchanged at 38 ignored `(class, action, fixture, engine)` comparisons. Breakdown by class is expression types 12, pipeline types 16, ownership 10. These counts measure the current explicit probes; they are not percentages of all semantic queries. The make-check harness fails only if this exact ignored-engine set grows. Call-target, specialization, join, and pattern tests pass independently of the known-debt exception.
 
 Focused validation after the emitter fallback removal passes the Phase 25 L7 repair suite, G3 ordering, G4 Unicode, S1 checker-authority, S2 Char/String, S3 key-protocol, safe arithmetic, S4 Fast Debug adversarial suite, and the Phase 27.5.4 fact-hook matrix. The conformance suite remains at its pinned-parent gate 10 failure (`compiled_only_custom_key`); gates 1–9 and 11 pass with `MAKEFLAGS` unset. Final make check default/shadow, aggregate three-engine/parity, performance, and Agent 2 audit remain pending.
+
+## C2 final gates (2026-11-01)
+
+The final default and shadow full shards each completed 161/165 jobs. Both
+reported the same four failures:
+
+- `check_phase25_conformance`, gate 10 `compiled_only_custom_key`; it also
+  fails on the pinned C1 parent with gates 1–9 and 11 passing.
+- `check_phase27_accepts_rustc` and `shard_swarm_cases`, both exposing the
+  existing Rust E0499 error in `tests/swarm_035_nested_mutating_calls.moss`.
+  This is the already identified C1-parent native-lowering debt.
+- `check_phase25_4_performance_baseline`, where W2 exceeded its legacy 25,000
+  KiB RSS cap by 12 KiB in default and 24 KiB in shadow. Its time and
+  specialization checks passed. Peak RSS is reported separately by the
+  Phase 27.5.4 cost criterion.
+
+All three-engine and Fast Debug/native tests in the shards passed, including
+`check_phase27_three_engine`; there were no new C2-specific behavior failures.
+The fact-hook matrix passed in default and shadow (call targets 9 fixtures,
+specializations 5, joins 4, patterns 3; known-debt ignore set 38/38).
+
+The paired best-of-two performance sample used the C1 parent binary at
+`tmp/phase27-5-4-parent-counter/build/compiler/moss-opt` and the candidate
+`build/compiler/moss-opt` on the same ten Phase 25.4 workloads. Summed best
+times were 815.75 ms and 834.13 ms, respectively (+2.25%). Required workloads:
+W4 `14.44 -> 14.34 ms` (-0.7%), W5 `38.23 -> 36.66 ms` (-4.1%), and W8
+`41.95 -> 44.63 ms` (+6.4%). Peak RSS for W4/W5/W8 was parent
+`11,004/12,936/14,316 KiB`, candidate `11,428/13,188/14,860 KiB`; W2 was
+`24,064 -> 25,036 KiB`. Raw paired runs are in
+`tmp/phase2754-final/perf-parent-candidate/summary.json` (disposable evidence).
+
+The final emitter corpus sweep remains 3,648 commands over the same 1,824
+tracked source files, with zero emitter text-node lookups, expression-view
+reparses, functional-pipeline reparses, or consumer expression-text parses.
+Fast Debug and optimizer source audits remain zero for parser and text-keyed
+node lookup routes. The emitter's `generated_expr_type` compatibility type
+inference remains as allowed by the C2 re-scope. Agent 2's one final C2 audit
+returned NO-GO: W2 RSS is a real increase over C1 and exceeds the 25,000 KiB
+gate. It also confirmed the fallback paths are deleted/fail closed, and its
+three seeded parity spot checks matched C1.
+
+The follow-up size experiments did not change repository files. A complete
+`-Os` compiler build brought W2 RSS below the limit (23,528–23,692 KiB) but
+measured +10.66% aggregate time against C1. Rebuilding only the checker's
+`semantic_checker.cpp` at `-Os` cleared W2 RSS (24,288–24,392 KiB); its paired
+10-workload aggregate was +4.18%, with W4 +8.86%, W5 +3.12%, and W8 -0.05%.
+That configuration is experimental and not integrated or full-suite tested.
+The normal O2 candidate remains at 161/165 in both suite modes and is not
+merge-ready under the single Agent 2 NO-GO.
