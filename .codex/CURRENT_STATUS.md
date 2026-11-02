@@ -1,3 +1,34 @@
+# Phase 27.5.5 handover (2026-11-02)
+
+## Active phase checkpoint
+
+- Work branch: `phase27-5-5-work`, currently at the clean phase-start commit
+  `e35bace1` (the main status-only commit after `phase27-5-4-m2`). The phase
+  tag/base is `phase27-5-4-m2` at `6e07d0b8`. The branch is pushed to origin.
+- Read `docs/MOSS_COMPILER_CONTRACT.md` first, repository instructions, Moss
+  language/workflow skills, and `agent-feedback/README.md`; live bootstrap
+  reports `moss-0.1`.
+- Targeted baseline: `make moss-dev -j"$(nproc)"` succeeded.
+  `python3 tests/tooling/check_phase27_5_4_fact_hooks.py build/compiler/moss-dev
+  build/compiler/moss-opt` passed the existing call-target/specialization/join/
+  pattern perturb/drop tests and reported known debt `ignored=38 baseline=38`
+  (28 type entries and 10 ownership entries). No phase code has changed yet.
+- Baseline coverage probe (`tests/phase27/est/side_facts.moss`, native debug
+  emitter, `MOSS_EST_COVERAGE_STATS=1`) reported 16 checker expression reparses,
+  zero consumer reparses/lookups, and generated type fact queries present for
+  the observed identifier and literal kinds. This is only a small source probe,
+  not the requested 1,824-source count.
+- Main consumer gaps identified: `native_generator.cpp` has a string-query
+  `generated_expr_type` inference routine (~3275) and node-query routine
+  (~3609) with syntax/type-env/call/pipeline fallback inference;
+  `interpreter.hpp::eval_pipeline` derives map element type from callback
+  signatures and transformed runtime `Value` kinds (~1548–1608). Checker facts
+  are read first but neither consumer is fully checker-only.
+- No full suite, corpus counter, or performance suite has run. Agent 2 has not
+  been invoked. Next: eliminate/restrict the consumer type inference paths,
+  make checker facts available at the needed contexts, and run focused type
+  perturb/drop fixtures. Keep ownership debt unchanged.
+
 # Phase 27.5.4 closeout handover (2026-11-01)
 
 ## Active checkpoint (post-C2 closing round)
