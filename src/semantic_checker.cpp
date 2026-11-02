@@ -787,6 +787,9 @@ class Checker {
           p_.domains.size() + p_.functions.size());
       infer_domain_specializations();
       infer_domain_state_fields(true);
+      for (const auto& domain : p_.domains)
+        for (const auto& field : domain.state)
+          record_domain_initializer_variant_facts(field);
       infer_handler_reply_types(true);
       infer_function_signatures(true);
       {
@@ -12617,6 +12620,60 @@ class Checker {
             "FIELD_COUNT_MISMATCH");
   }
 
+  void record_domain_initializer_variant_facts(const Field& field) const {
+    for (const auto& handle : field.expression_handles) {
+      if (handle.slot != est::ExprSlot::Initializer) continue;
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+        const auto root = est::unparenthesized(*arena, id);
+        auto variant_member = [&](est::ExprId candidate)
+            -> std::optional<std::pair<string, string>> {
+          candidate = est::unparenthesized(*arena, candidate);
+          const auto* member = std::get_if<est::Member>(&arena->at(candidate));
+          if (!member) return std::nullopt;
+          const auto base = est::unparenthesized(*arena, member->base);
+          const auto* enum_name =
+              std::get_if<est::Identifier>(&arena->at(base));
+          if (!enum_name || !enums_.count(enum_name->name))
+            return std::nullopt;
+          return std::pair<string, string>{enum_name->name, member->name};
+        };
+        std::optional<std::pair<string, string>> variant;
+        const auto& node = arena->at(root);
+        if (std::holds_alternative<est::Member>(node))
+          variant = variant_member(root);
+        else if (const auto* call = std::get_if<est::Call>(&node))
+          variant = variant_member(call->callee);
+        else if (const auto* constructor =
+                     std::get_if<est::Constructor>(&node))
+          variant = variant_member(constructor->type);
+        if (variant) {
+          const auto& declaration = *enums_.at(variant->first);
+          if (std::none_of(declaration.cases.begin(), declaration.cases.end(),
+                  [&](const EnumCase& item) {
+                    return item.name == variant->second;
+                  })) {
+            for (const auto child : arena->children(root)) visit(child);
+            return;
+          }
+          const string enum_name_identity = declaration.declaration_name.empty()
+              ? declaration.name : declaration.declaration_name;
+          const string enum_identity = moss::declaration_identity(
+              moss::DeclarationKind::Enum,
+              program_module_identity(p_, declaration.defining_module),
+              enum_name_identity);
+          est::SemanticFacts facts;
+          facts.resolved_target = "nominal-enum-variant-v1:" + enum_identity +
+              ":case:" + variant->second;
+          arena->record_facts(root, "main", std::move(facts));
+        }
+        for (const auto child : arena->children(root)) visit(child);
+      };
+      visit(handle.expr);
+    }
+  }
+
   static bool concrete_environment_type(const string& type) {
     return !type.empty() && !contains_internal_placeholder(type);
   }
@@ -24210,14 +24267,6 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
-    auto suspended_expression_cursors = std::move(active_est_expression_cursors_);
-    active_est_expression_cursors_.clear();
-    struct RestoreExpressionCursors {
-      vector<std::optional<EstExpressionCursor>>& target;
-      vector<std::optional<EstExpressionCursor>> saved;
-      ~RestoreExpressionCursors() { target = std::move(saved); }
-    } restore_expression_cursors{
-        active_est_expression_cursors_, std::move(suspended_expression_cursors)};
     SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,
                                            "fn:" + function.name);
@@ -26986,21 +27035,22 @@ class Checker {
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
         if (item == declaration.cases.end())
           err(line, "unknown enum case '" + enum_name + "." + case_name + "'", "UNKNOWN_ENUM_CASE");
+        const string enum_name_identity = declaration.declaration_name.empty()
+            ? declaration.name : declaration.declaration_name;
+        const string enum_identity = moss::declaration_identity(
+            moss::DeclarationKind::Enum,
+            program_module_identity(p_, declaration.defining_module),
+            enum_name_identity);
+        const string semantic_target_id = "nominal-enum-variant-v1:" +
+            enum_identity + ":case:" + case_name;
+        est::SemanticFacts enum_target_facts;
+        enum_target_facts.resolved_target = semantic_target_id;
+        record_active_expression_facts(std::move(enum_target_facts));
         if (current_body_types_ && !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty()) {
           auto& occurrence = current_body_types_->expression_occurrences.at(
               current_body_types_->active_expression_occurrences.back());
-          const string enum_name_identity = declaration.declaration_name.empty()
-              ? declaration.name : declaration.declaration_name;
-          const string enum_identity = moss::declaration_identity(
-              moss::DeclarationKind::Enum,
-              program_module_identity(p_, declaration.defining_module),
-              enum_name_identity);
-          occurrence.semantic_target_id = "nominal-enum-variant-v1:" +
-              enum_identity + ":case:" + case_name;
-          est::SemanticFacts enum_target_facts;
-          enum_target_facts.resolved_target = occurrence.semantic_target_id;
-          record_active_expression_facts(std::move(enum_target_facts));
+          occurrence.semantic_target_id = semantic_target_id;
           occurrence.source_operands = arguments;
           for (const auto& argument : arguments) {
             string field_name, field_value;

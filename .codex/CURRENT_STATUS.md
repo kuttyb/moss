@@ -17196,3 +17196,36 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Current uncommitted implementation files: `src/ast.hpp`,
   `src/est/expression_tree.cpp`, `src/est/expression_tree.hpp`, `src/moss.cpp`,
   `src/semantic_checker.cpp`, plus the feedback record.
+
+## C2 targeted checkpoint: initializer variant facts and borrowed lowering
+
+- On branch `phase27-5-4-work` at `8c5dec67`, the 20-job recheck of the
+  previous default-suite failures had 15 passes and 5 failures. Two new
+  candidate regressions were identified and fixed: (1) domain-state enum
+  initializer nodes lacked checked variant-target facts, exposed by the
+  EXPRESS-005 C1 transition control; (2) a Phase 15.1 assertion required the
+  prior string-lowered Rust spelling, while retained-node lowering now emits
+  the equivalent borrow `&(*packet)`. The latter still compiles/runs and
+  asserts the path does not clone.
+- The checker now records valid domain initializer enum targets on the retained
+  expression node in the `main` context. Specialized body checking also keeps
+  its active EST cursor so targets and other facts can be written under the
+  specialization context rather than being discarded. The EXPRESS-005 enum
+  shard passes with native and Fast Debug behavior; the Phase 10.6 runtime
+  shard passes after the spelling assertion was made representation-tolerant.
+- Refreshed dev/optimized build, `shard_enum_modules`,
+  `shard_phase106_runtime`, Phase 27.5.4 fact perturb/drop hooks (call targets
+  8, specializations 4, joins 4, patterns 3; known debt 38/38), feedback
+  validator, and `git diff --check` all pass.
+- The targeted batch now has 17 passes and 3 known baseline failures:
+  `check_phase25_conformance` G2 gate 10 (`compiled_only_custom_key`),
+  `check_phase27_accepts_rustc` on `swarm_035_nested_mutating_calls`, and
+  `shard_swarm_cases` on the same Rust E0499 borrow conflict. These are
+  documented C1-parent failures; no full-suite result is claimed from this
+  targeted batch. Other former reds in the batch pass, including Phase 15.9,
+  Phase 20, Phase 21 (three jobs), Phase 24, Phase 25 R2/S3, Phase 26 C3/X1,
+  and the SDK text/data jobs.
+- Next: commit/push this targeted repair; finish the outstanding non-performance
+  failure triage and C2 answer-read/perturb/drop inventory; then run the final
+  default/shadow suites, parity/three-engine checks, paired counters, and perf
+  near completion. Agent 2 remains reserved for the one audit after full gates.
