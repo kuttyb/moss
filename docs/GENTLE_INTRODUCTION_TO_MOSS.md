@@ -792,6 +792,32 @@ start from a literal with elements or a typed constructor such as
 
 You do not write Rust-style lifetime or borrow annotations in Moss source.
 
+### Move and Take in Moss (Phase 28 design preview)
+
+> **Proposed Phase 28 language rules — not yet implemented.** This short introduction captures the agreed ownership direction. The older ownership, enum, and collection examples elsewhere in this draft may still describe pre-Phase-28 behavior; they and the detailed language specification will be reconciled after Phase 28 is implemented. See [the Phase 28 LOL ownership proposal](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md) for the complete contract.
+
+**Moss moves values automatically when it can, and explicitly when it must.**
+
+- **Borrow by default.** Reading or modifying a value doesn't transfer ownership.
+- **Move automatically.** When an owned local transfers ownership, Moss infers the move. The original can no longer be used.
+- **Take explicitly.** `take()` moves a value out of eligible surviving storage, leaving a valid empty state.
+- **Remove elements.** Collections use `remove()` or `pop()` to transfer individual elements.
+- **Copy explicitly.** `copy(x)` creates an independent duplicate when the value is eligible. No implicit copies of non-primitive values.
+- **Destructure explicitly.** `match consume` moves payloads out of an owned enum. Ordinary `match` only borrows (READ or WRITE).
+
+```moss
+b = a                     # Borrow or move, inferred from usage
+b = take(job.pending)     # Move; leaves None
+xs = take(state.items)    # Move entire Vector; leaves []
+x = xs.remove(0)          # Move one element; shrink Vector
+```
+
+**The principle: Ownership moves automatically when the source is a local that goes away, and explicitly when the source survives.**
+
+A field without a valid empty state cannot be taken. The `take()` proposal covers fields of type `option`, Vector, Map, and Queue; it does not permit arbitrary field extraction.
+
+No surprise copies. No hidden moves out of containers. No manual lifetime annotations.
+
 ---
 
 ## 8. Untyped Functions and Structural Traits
