@@ -28,9 +28,9 @@ These are Rust ABI/runtime forms, not alternative Moss type answers:
 
 - `&T` and `&mut T`: encode the checker's READ/WRITE parameter effects as Rust borrowing (`src/handler_lowering.inc:96–107`, `src/native_generator.cpp:2399–2501`).
 - `MossRead<'a,T>`, `MossWrite<'a,T>`, and `MossAbsent<T>`: capability wrappers for domain shared-state message ABI and absent effect slots (`src/handler_lowering.inc:96–107`, `src/handler_runtime.cpp:30–41`).
-- `Result<T,__MossRaised>` and `__MossRaised` (including generated provider carrier enums): encode the Moss effect/raise transport across Rust function and handler boundaries (`src/native_generator.cpp:677–725, 8717–8727, 9076–9086`).
+- `Result<T,__MossRaised>` and `__MossRaised` (including generated provider carrier enums): encode the Moss effect/raise transport across Rust function and handler boundaries (`src/native_generator.cpp:677–725, 9133–9145`; handler signature generation is in `src/handler_lowering.inc:705–723, 822–838`).
 - `std::sync::RwLock<T>` and its read/write guards: implement the checker-derived domain synchronization plan and runtime lock acquisition (`src/handler_lowering.inc:865, 994`, `src/handler_runtime.cpp:19–24`).
-- `Arc<...>` and generated `*Ref`/runtime state wrappers: provide thread-safe domain runtime identity and storage; Moss domain handles themselves are static capabilities rather than first-class value types (`src/native_generator.cpp:9043–9044`).
+- `Arc<...>` and generated `*Ref`/runtime state wrappers: provide thread-safe domain runtime identity and storage; Moss domain handles themselves are static capabilities rather than first-class value types (`src/native_generator.cpp:9101–9106`, with `Arc::new` initialization at `992`).
 - `std::marker::PhantomData<T>` in `MossAbsent<T>`: Rust representation marker for an ABI slot with no Moss runtime value (`src/handler_lowering.inc:96–99`).
 
 `MossStr`, `MossSet`, `MossMap`, `Option<T>`, and `Vec<T>` are not listed as lowering-only: they are runtime representations of actual Moss value types. Agent 2 reviews this list; all placeholder citations must be resolved before merge.
@@ -116,6 +116,22 @@ above. The W2 peak RSS comparison is 64,624 KiB normal vs 65,404 KiB plain
 `-O2` (+1.2%). No tracked compiler-flag change was made. The phase report's
 lowering-only Rust type list is submitted to Agent 2 for audit.
 
-Agent 2's unseen fixture paths/results and GO/NO-GO are pending. Current paired
-raw performance data: `tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` and
+Agent 2's six additional fixture selections passed the all-engine
+baseline/perturb/drop harness:
+
+- Expression types: `tests/phase24_string_concat.moss`,
+  `examples/functional_objects.moss`, `tests/swarm_047_reduce_map.moss`.
+- Pipeline types: `examples/functional_dataflow.moss`,
+  `examples/functional_scope_fusion.moss`, `tests/swarm_047_reduce_map.moss`.
+
+All six matched baseline behavior, followed perturbations or failed closed in
+Fast Debug/native/`-O`, and failed closed on dropped facts. The reviewer tried
+`examples/functional_pipeline.moss` but stopped that spot check after a
+prolonged Fast Debug run; it is not counted. It reviewed the type consumer
+code, frozen debt and test integrity without finding an implementation issue.
+Its first review returned NO-GO because the `Result` and `Arc` citations above
+were inaccurate; the references have been corrected to the generator's
+handler return-type and domain reference declarations. A targeted follow-up is
+pending. Current paired raw performance data:
+`tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` and
 `tmp/compiler-perf/20261102-033618/LOCAL_REPORT.md`.
