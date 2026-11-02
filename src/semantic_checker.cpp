@@ -27540,8 +27540,7 @@ class Checker {
         const auto root = est::unparenthesized(*arena, tree_cursor->expr);
         const auto comparison_node = [&](est::ExprId id)
             -> const est::Binary* {
-          const auto node = est::unparenthesized(*arena, id);
-          const auto* binary = std::get_if<est::Binary>(&arena->at(node));
+          const auto* binary = std::get_if<est::Binary>(&arena->at(id));
           if (!binary || (binary->op != "<" && binary->op != "<=" &&
                           binary->op != ">" && binary->op != ">=" &&
                           binary->op != "==" && binary->op != "!="))
@@ -27549,8 +27548,7 @@ class Checker {
           return binary;
         };
         const auto has_count_stage = [&](est::ExprId id) {
-          const auto node = est::unparenthesized(*arena, id);
-          const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(node));
+          const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(id));
           if (!pipeline || pipeline->stages.empty()) return false;
           const auto stage = est::unparenthesized(
               *arena, pipeline->stages.back());

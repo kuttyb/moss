@@ -1,5 +1,24 @@
 # Phase 27.5.5 handover (2026-11-02)
 
+## 02:00 UTC checkpoint (cost-run regression repaired)
+
+- The first full perf comparison attempt against Phase 27.5.4-m2 was stopped
+  by an unexpected candidate checker rejection in `packages/regex/src/main.moss`
+  (`while (op_kinds |> count) > 0`). The retained-node compatibility guard
+  was unwrapping parentheses and misclassifying a grouped pipeline as an
+  ungrouped precedence conflict.
+- Narrowed the guard to inspect direct child nodes only, preserving explicit
+  grouping. Current dev/opt builds pass; the regex source checks, emits Rust,
+  and the generated Rust compiles. The five targeted precedence diagnostics
+  remain stable in default/shadow.
+- After this fix, `make check-preflight`, the fact perturb/drop matrix,
+  Fast Debug/native/optimized parity, optimizer expression-use checks, and
+  three-engine checks all pass. Ownership fact ignore-set remains 10/10.
+- The failed cost run is not valid performance evidence and must not be cited
+  as such. It did identify a real acceptance regression before any full suite.
+  Next: commit/push this guard fix, rerun both paired perf baselines, measure
+  plain-O2 W2 RSS, update docs, and then run the final default/shadow suites.
+
 ## 01:53 UTC checkpoint (source gates restored)
 
 - Branch tip `7fb4dbeb` is pushed; the current uncommitted fix set removes
