@@ -2949,7 +2949,7 @@ class Generator {
   }
 
   const est::SemanticFacts* checked_expression_facts(
-      const EmitterExpr& expression) const {
+      const EmitterExpr& expression, bool require_type = false) const {
     if (!expression.arena) return nullptr;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     vector<string> contexts;
@@ -3003,10 +3003,10 @@ class Generator {
     contexts.emplace_back();
     for (const auto& context : contexts) {
       if (const auto* facts = expression.arena->facts(expression.id, context))
-        return facts;
+        if (!require_type || facts->type) return facts;
       if (root != expression.id)
         if (const auto* facts = expression.arena->facts(root, context))
-          return facts;
+          if (!require_type || facts->type) return facts;
     }
     const est::SemanticFacts* selected = nullptr;
     for (const auto& context : call_edge_contexts) {
@@ -3015,6 +3015,7 @@ class Generator {
       if (!facts && root != expression.id)
         facts = expression.arena->facts(root, context);
       if (!facts || facts->resolved_target.empty()) continue;
+      if (require_type && !facts->type) continue;
       if (selected && selected->resolved_target != facts->resolved_target)
         return nullptr;
       selected = facts;
@@ -3611,11 +3612,10 @@ class Generator {
       const std::unordered_map<string,string>* types) const {
     if (!expression.arena) return std::nullopt;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
-    const est::Node& node = expression.arena->at(root);
-    const auto* facts = checked_expression_facts(expression);
+    const auto* facts = checked_expression_facts(expression, true);
     if (!facts && root != expression.id) {
       auto root_expression = expression.child(root);
-      facts = checked_expression_facts(root_expression);
+      facts = checked_expression_facts(root_expression, true);
     }
     const bool has_fact = facts && facts->type;
 #ifdef MOSS_TEST_BUILD
@@ -3640,285 +3640,31 @@ class Generator {
 #endif
     if (has_fact && facts->type->is_closed())
       return canonical_type_name(facts->type);
-    const auto legacy_type = []() -> std::optional<string> {
-      return std::nullopt;
-    };
-    const auto type_of = [&](est::ExprId child) {
-      return generated_expr_type(expression.child(child), types);
-    };
-    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
-      if (types) {
-        auto found = types->find(identifier->name);
-        if (found != types->end()) return canonical_type_name(found->second);
-      }
-      if (functions_.count(identifier->name))
-        return "callable:" + identifier->name;
-      return legacy_type();
-    }
-    if (std::holds_alternative<est::Placeholder>(node) && types) {
-      auto found = types->find("_");
-      if (found != types->end()) return canonical_type_name(found->second);
-    }
-    if (const auto* literal = std::get_if<est::Literal>(&node)) {
-      switch (literal->literal_class) {
-        case est::LiteralClass::Integer: return string("int");
-        case est::LiteralClass::Float: return string("float");
-        case est::LiteralClass::String: return string("string");
-        case est::LiteralClass::Character: return string("char");
-        case est::LiteralClass::Boolean: return string("bool");
-        case est::LiteralClass::None: return string("option[_]");
-      }
-    }
-    if (const auto* unary = std::get_if<est::Unary>(&node)) {
-      auto operand = type_of(unary->operand);
-      if (unary->op == "not") return string("bool");
-      if (unary->op == "~")
-        return operand && canonical_type_name(*operand) == "int"
-            ? std::optional<string>("int") : std::nullopt;
-      if ((unary->op == "-" || unary->op == "+") && operand &&
-          (canonical_type_name(*operand) == "int" ||
-           canonical_type_name(*operand) == "float"))
-        return operand;
-      return legacy_type();
-    }
-    if (const auto* binary = std::get_if<est::Binary>(&node)) {
-      if (binary->op == "and" || binary->op == "or" ||
-          binary->op == "xor" || binary->op == "==" ||
-          binary->op == "!=" || binary->op == "<" ||
-          binary->op == ">" || binary->op == "<=" ||
-          binary->op == ">=")
-        return string("bool");
-      auto left = type_of(binary->left);
-      auto right = type_of(binary->right);
-      if (!left || !right) return legacy_type();
-      const string left_type = canonical_type_name(*left);
-      const string right_type = canonical_type_name(*right);
-      if (binary->op == "+" && left_type == "string" &&
-          right_type == "string") return string("string");
-      if (binary->op == "|" || binary->op == "^" ||
-          binary->op == "&" || binary->op == "<<" ||
-          binary->op == ">>")
-        return left_type == "int" && right_type == "int"
-            ? std::optional<string>("int") : std::nullopt;
-      if ((binary->op == "+" || binary->op == "-" ||
-           binary->op == "*" || binary->op == "/" ||
-           binary->op == "%") &&
-          (left_type == "int" || left_type == "float") &&
-          (right_type == "int" || right_type == "float"))
-        return left_type == "float" || right_type == "float"
-            ? string("float") : string("int");
-      return legacy_type();
-    }
-    if (const auto* member = std::get_if<est::Member>(&node)) {
-      auto base = type_of(member->base);
-      if (base)
-        if (auto field = nominal_field_type(*base, member->name))
-          return canonical_type_name(*field);
-      return legacy_type();
-    }
-    if (const auto* index = std::get_if<est::Index>(&node)) {
-      auto base = type_of(index->base);
-      if (!base) return legacy_type();
-      const string concrete = canonical_type_name(*base);
-      if (concrete == "RangeBatch") return string("Range");
-      auto element = indexed_element(parsed_type(concrete));
-      return element ? element : legacy_type();
-    }
-    if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
-      const auto type_id = est::unparenthesized(*expression.arena,
-                                                constructor->type);
-      if (const auto* identifier = std::get_if<est::Identifier>(
-              &expression.arena->at(type_id))) {
-        if (identifier->name == "Map" || identifier->name == "Set" ||
-            identifier->name == "Queue") {
-          const string base = identifier->name == "Map" ? "map" :
-              identifier->name == "Set" ? "set" : "queue";
-          if (!constructor->type_arguments.empty()) {
-            vector<string> arguments;
-            for (const auto argument : constructor->type_arguments) {
-              const auto argument_id = est::unparenthesized(
-                  *expression.arena, argument);
-              if (const auto* name = std::get_if<est::Identifier>(
-                      &expression.arena->at(argument_id)))
-                arguments.push_back(canonical_type_name(name->name));
-              else
-                return legacy_type();
-            }
-            string rendered = base + "[";
-            for (size_t index = 0; index < arguments.size(); ++index) {
-              if (index) rendered += ",";
-              rendered += arguments[index];
-            }
-            return rendered + "]";
-          }
-          return base;
-        }
-        return identifier->name;
-      }
-      if (const auto* member = std::get_if<est::Member>(
-              &expression.arena->at(type_id))) {
-        const auto base_id = est::unparenthesized(*expression.arena,
-                                                   member->base);
-        if (const auto* base = std::get_if<est::Identifier>(
-                &expression.arena->at(base_id)))
-          return base->name;
-      }
-      return legacy_type();
-    }
-    if (const auto* call = std::get_if<est::Call>(&node)) {
-      const auto callee_id = est::unparenthesized(*expression.arena,
-                                                   call->callee);
-      const auto* callee = std::get_if<est::Identifier>(
-          &expression.arena->at(callee_id));
-      const auto* call_facts = checked_expression_facts(expression);
-      string target = call_facts ? call_facts->resolved_target : string();
-      if (!callee) {
-        const auto* member = std::get_if<est::Member>(
-            &expression.arena->at(callee_id));
-        if (!member) return legacy_type();
-        if (target.empty()) {
-          const auto targets = checked_call_edge_targets(codegen_body_context_,
-              static_cast<int>(expression.arena->span(root).line));
-          if (targets.size() == 1) target = targets.front();
-        }
-        if (starts_with(target, "callable-v1:")) {
-          const auto* selected = find_function_by_callable_id(target);
-          if (selected && selected->return_type)
-            return canonical_type_name(*selected->return_type);
-        } else if (starts_with(target, "fn:")) {
-          const auto selected = functions_.find(target.substr(3));
-          if (selected != functions_.end() && selected->second->return_type)
-            return canonical_type_name(*selected->second->return_type);
-        }
-        if (!starts_with(target, "method:"))
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT missing checked member-call target for generated type name=" +
-              member->name + " context=" + codegen_body_context_ +
-              " expr=" + expression.text() + " node=" +
-              std::to_string(root));
-        const auto separator = target.rfind('.');
-        if (separator == string::npos)
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT malformed checked member-call target");
-        const string owner = target.substr(7, separator - 7);
-        for (const auto& object : objects_) {
-          if (canonical_type_name(object.second->name) !=
-              canonical_type_name(owner)) continue;
-          const auto method = std::find_if(object.second->methods.begin(),
-              object.second->methods.end(), [&](const Method& item) {
-                return item.name == target.substr(separator + 1);
-              });
-          if (method != object.second->methods.end() && method->return_type)
-            return canonical_type_name(*method->return_type);
-        }
-        return legacy_type();
-      }
-      const Function* function = nullptr;
-      if (starts_with(target, "callable-v1:"))
-        function = find_function_by_callable_id(target);
-      else if (starts_with(target, "fn:")) {
-        auto found = functions_.find(target.substr(3));
-        if (found != functions_.end()) function = found->second;
-      }
-      vector<string> checked_edge_targets;
-      if (!function && callee) {
-        checked_edge_targets = checked_call_edge_targets(
-            codegen_body_context_,
-            static_cast<int>(expression.arena->span(root).line));
-        const string checked_name = "fn:" + callee->name;
-        if (std::find(checked_edge_targets.begin(), checked_edge_targets.end(),
-                      checked_name) != checked_edge_targets.end()) {
-          auto found = functions_.find(callee->name);
-          if (found != functions_.end()) function = found->second;
-        }
-      }
-      CheckedCallEdgeSpecialization checked_edge;
-      if (!function && callee) {
-        auto found = functions_.find(callee->name);
-        if (found != functions_.end() && found->second->static_dispatch) {
-          checked_edge = checked_call_edge_specialization(
-              p_, codegen_body_context_, found->second->name,
-              static_cast<int>(expression.arena->span(root).line),
-              codegen_nested_argument_occurrence_);
-          if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
-            function = found->second;
-        }
-      }
-      if (function && checked_edge.kind == CheckedCallEdgeSelectionKind::None &&
-          !function->specializations.empty())
-        checked_edge = checked_call_edge_specialization(
-            p_, codegen_body_context_, function->name,
-            static_cast<int>(expression.arena->span(root).line),
-            codegen_nested_argument_occurrence_);
-      if (!function) {
-        if (callee->name == "range") return string("range[int]");
-        if (callee->name == "Some" && call->arguments.size() == 1) {
-          auto value = type_of(call->arguments.front());
-          return value ? "option[" + *value + "]" : string("option[_]");
-        }
-        return legacy_type();
-      }
-      if (call_facts && !call_facts->specialization_result.empty()) {
-        auto specialization = std::find_if(function->specializations.begin(),
-            function->specializations.end(), [&](const auto& candidate) {
-              return candidate.stable_type_key ==
-                  call_facts->specialization_result;
-            });
-        if (specialization != function->specializations.end())
-          return specialization->return_type;
-      }
-      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Unique &&
-          checked_edge.unique)
-        return checked_edge.unique->return_type;
-      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
-        std::optional<string> common_result;
-        for (const auto* candidate : checked_edge.candidates) {
-          if (!candidate) continue;
-          const string result = canonical_type_name(candidate->return_type);
-          if (!common_result) common_result = result;
-          else if (*common_result != result) return legacy_type();
-        }
-        if (common_result) return common_result;
-      }
-      if (function->return_type &&
-          !contains_internal_placeholder(*function->return_type))
-        return canonical_type_name(*function->return_type);
-      return legacy_type();
-    }
-    if (std::holds_alternative<est::Pipeline>(node)) {
-      if (auto id = checked_functional_pipeline_id(expression))
-        if (const auto* plan = planned_functional_pipeline(*id);
-            plan && !plan->output_type.empty())
-          return canonical_type_name(plan->output_type);
-      const auto span = expression.arena->span(root);
-      const string context = codegen_body_context_;
-      const FunctionalPipeline* selected = nullptr;
-      for (const auto& pipeline : p_.functional_pipelines) {
-        if (pipeline.line != static_cast<int>(span.line) ||
-            pipeline.context != context) continue;
-        if (selected) return legacy_type();
-        selected = &pipeline;
-      }
-      if (selected && !selected->output_type.empty())
-        return canonical_type_name(selected->output_type);
-      const auto resolve_stage = [](std::string_view name)
-          -> std::optional<FunctionalNodeKind> {
-        for (const auto& operation : functional_operations())
-          if (name == operation.name) return operation.kind;
-        return std::nullopt;
-      };
-      if (auto parsed = functional_pipeline_from_node(expression, resolve_stage))
-        if (auto inferred = generated_functional_pipeline_type_from_node(
-                *parsed, types))
-          return inferred;
-    }
-    if (const auto* collection = std::get_if<est::Collection>(&node);
-        collection && collection->delimiter == '[' &&
-        !collection->elements.empty()) {
-      auto element = type_of(collection->elements.front());
-      if (element) return "vector[" + *element + "]";
-    }
-    return legacy_type();
+    if (auto pipeline_type = checked_functional_node_type(expression))
+      return canonical_type_name(*pipeline_type);
+    (void)types;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked expression type context=" +
+        codegen_body_context_ + " line=" +
+        std::to_string(expression.arena->span(root).line) + " node=" +
+        std::to_string(root) + " expr=" + expression.text() + " kind=" + std::visit([](const auto& value) {
+          using T = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, est::Literal>) return string("literal");
+          else if constexpr (std::is_same_v<T, est::Identifier>) return string("identifier");
+          else if constexpr (std::is_same_v<T, est::Call>) return string("call");
+          else if constexpr (std::is_same_v<T, est::Pipeline>) return string("pipeline");
+          else if constexpr (std::is_same_v<T, est::Binary>) return string("binary");
+          else if constexpr (std::is_same_v<T, est::Unary>) return string("unary");
+          else if constexpr (std::is_same_v<T, est::Member>) return string("member");
+          else if constexpr (std::is_same_v<T, est::Index>) return string("index");
+          else if constexpr (std::is_same_v<T, est::Collection>) return string("collection");
+          else return string("other");
+        }, expression.arena->at(root)) + [&]() {
+          if (const auto* identifier = std::get_if<est::Identifier>(
+                  &expression.arena->at(root)))
+            return " name=" + identifier->name;
+          return string();
+        }());
   }
 
   std::optional<string> checked_callable_pipeline_expr(
@@ -4379,6 +4125,69 @@ class Generator {
       if (selected) return selected;
     }
     return std::nullopt;
+  }
+
+  std::optional<string> checked_functional_node_type(
+      const EmitterExpr& expression) const {
+    if (!phase21_codegen_statement_ || !expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    std::optional<string> selected_type;
+    const auto consider = [&](std::optional<string>& selection,
+                              const std::string& type) {
+      if (type.empty()) return;
+      const auto canonical = canonical_type_name(type);
+      if (selection && *selection != canonical)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked pipeline node type");
+      selection = canonical;
+    };
+    for (const auto& context_plans :
+         phase21_codegen_statement_->functional_expression_plans_by_context) {
+      const auto& context = context_plans.first;
+      if (context != codegen_body_context_ && !context.empty() &&
+          context != "specialization:" + codegen_active_specialization_key_)
+        continue;
+      for (const auto& expression_plan : context_plans.second) {
+        if (expression_plan.arena_index >= p_.expression_arenas.size() ||
+            p_.expression_arenas[expression_plan.arena_index].get() !=
+                expression.arena || expression_plan.pipeline_id == 0)
+          continue;
+        const auto* pipeline = planned_functional_pipeline(
+            expression_plan.pipeline_id);
+        if (!pipeline) continue;
+        const auto pipeline_root = est::unparenthesized(
+            *expression.arena, expression_plan.expression);
+        if (root == pipeline_root) {
+          consider(selected_type, pipeline->output_type);
+          continue;
+        }
+        vector<est::ExprId> checked_stages;
+        std::function<void(est::ExprId)> collect_stages =
+            [&](est::ExprId expression_id) {
+          const auto expression_root = est::unparenthesized(
+              *expression.arena, expression_id);
+          const auto* pipeline_node = std::get_if<est::Pipeline>(
+              &expression.arena->at(expression_root));
+          if (!pipeline_node) return;
+          collect_stages(pipeline_node->input);
+          for (const auto stage : pipeline_node->stages) {
+            const auto stage_root = est::unparenthesized(
+                *expression.arena, stage);
+            if (std::holds_alternative<est::Pipeline>(
+                    expression.arena->at(stage_root)))
+              collect_stages(stage_root);
+            else
+              checked_stages.push_back(stage_root);
+          }
+        };
+        collect_stages(pipeline_root);
+        for (std::size_t index = 0; index < checked_stages.size() &&
+             index + 1 < pipeline->nodes.size(); ++index)
+          if (checked_stages[index] == root)
+            consider(selected_type, pipeline->nodes[index + 1].output_type);
+      }
+    }
+    return selected_type;
   }
 
   std::optional<EmitterExpr> checked_functional_pipeline_node(

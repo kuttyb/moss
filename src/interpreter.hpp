@@ -680,6 +680,41 @@ class FastInterpreter {
     active_expression_node_ = node;
     try {
       Value result = evaluate_expression_tree(tree, node, frame, line, output);
+#ifdef MOSS_TEST_BUILD
+      if (moss_test_drop_fact("expression-types") ||
+          moss_test_perturb_fact("expression-types")) {
+        const auto* facts = tree.arena->facts(node, frame.functional_context);
+        if (!facts || !facts->type || !facts->type->is_closed())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing checked expression type");
+        const std::string expected = facts->type->to_canonical_string();
+        std::optional<std::string> actual;
+        switch (result.kind) {
+          case Value::Kind::Unit: actual = "unit"; break;
+          case Value::Kind::Bool: actual = "bool"; break;
+          case Value::Kind::Int: actual = "int"; break;
+          case Value::Kind::Float: actual = "float"; break;
+          case Value::Kind::String: actual = "string"; break;
+          case Value::Kind::Char: actual = "char"; break;
+          case Value::Kind::Struct:
+            if (result.object) actual = result.object->type;
+            break;
+          case Value::Kind::Vector:
+            if (!result.element_type.empty())
+              actual = "vector[" + result.element_type + "]";
+            break;
+          case Value::Kind::Queue: actual = "queue"; break;
+          case Value::Kind::Map: actual = "map"; break;
+          case Value::Kind::Set: actual = "set"; break;
+          case Value::Kind::Callable:
+          case Value::Kind::DomainHandle:
+            break;
+        }
+        if (!actual || *actual != expected)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked expression type disagrees with execution");
+      }
+#endif
       active_expression_tree_ = previous_tree;
       active_expression_node_ = previous_node;
       return result;

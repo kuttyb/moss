@@ -1,87 +1,44 @@
 # Phase 27.5.5 handover (2026-11-02)
 
-## Active phase checkpoint
+## Active checkpoint
 
-- Work branch: `phase27-5-5-work`, currently at the clean phase-start commit
-  `e35bace1` (the main status-only commit after `phase27-5-4-m2`). The phase
-  tag/base is `phase27-5-4-m2` at `6e07d0b8`. The branch is pushed to origin.
-- Read `docs/MOSS_COMPILER_CONTRACT.md` first, repository instructions, Moss
-  language/workflow skills, and `agent-feedback/README.md`; live bootstrap
-  reports `moss-0.1`.
-- Targeted baseline: `make moss-dev -j"$(nproc)"` succeeded.
-  `python3 tests/tooling/check_phase27_5_4_fact_hooks.py build/compiler/moss-dev
-  build/compiler/moss-opt` passed the existing call-target/specialization/join/
-  pattern perturb/drop tests and reported known debt `ignored=38 baseline=38`
-  (28 type entries and 10 ownership entries). No phase code has changed yet.
-- Baseline coverage probe (`tests/phase27/est/side_facts.moss`, native debug
-  emitter, `MOSS_EST_COVERAGE_STATS=1`) reported 16 checker expression reparses,
-  zero consumer reparses/lookups, and generated type fact queries present for
-  the observed identifier and literal kinds. This is only a small source probe,
-  not the requested 1,824-source count.
-- Main consumer gaps identified: `native_generator.cpp` has a string-query
-  `generated_expr_type` inference routine (~3275) and node-query routine
-  (~3609) with syntax/type-env/call/pipeline fallback inference;
-  `interpreter.hpp::eval_pipeline` derives map element type from callback
-  signatures and transformed runtime `Value` kinds (~1548–1608). Checker facts
-  are read first but neither consumer is fully checker-only.
-- No full suite, corpus counter, or performance suite has run. Agent 2 has not
-  been invoked. Next: eliminate/restrict the consumer type inference paths,
-  make checker facts available at the needed contexts, and run focused type
-  perturb/drop fixtures. Keep ownership debt unchanged.
+- Branch `phase27-5-5-work`; latest pushed checkpoint `2985c35e` contains the
+  Fast Debug checked map-output requirement. Phase baseline is main `e35bace1`,
+  after tag `phase27-5-4-m2` (`6e07d0b8`).
+- Fast Debug no longer classifies map callback runtime values or re-resolves the
+  callback signature to determine the output element type. It requires the
+  checked stage output before callback execution. `examples/functional_basics.moss`
+  passes normally; pipeline-type perturb/drop fail with `MOSS_INTERNAL_INVARIANT`.
+  Existing fact-hook harness passes, with ignored debt now 36/38 (two fewer;
+  ownership debt is untouched).
+- Uncommitted C2 slice currently removes all syntax/locals/call-target/pipeline/
+  collection fallback inference from `generated_expr_type(EmitterExpr)`. It reads
+  a closed checked EST type, or a checked functional pipeline output/stage type
+  selected by retained node IDs; otherwise it raises `MOSS_INTERNAL_INVARIANT`.
+  `checked_expression_facts(..., require_type=true)` skips target-only facts.
+  It also includes temporary detailed invariant context (`expr`, node kind) for
+  diagnosis.
+- Focused native emit passed for `side_facts.moss`, `pipeline_shape.moss`,
+  `collections_and_methods.moss`, and `functional_basics.moss` after the change.
+  Facts dump showed `map(f)` has no standalone Moss type; the checker pipeline
+  plan carries the stage output answer. Nested pipeline stage selection now walks
+  the retained AST nodes and reads `FunctionalPipeline.nodes[].output_type`.
+- Fast Debug has a test-build expression-type consistency check on tree-evaluated
+  nodes. On `side_facts.moss` and `functional_basics.moss`, expression-type drop
+  and perturb fail closed; normal Fast Debug output remains intact.
+- No full suite, 1,824-source inference counter, three-engine parity sweep, or
+  performance suite has run. The old native string overload
+  `generated_expr_type(string)` still performs semantic type inference and is the
+  main unfinished removal. `generated_functional_pipeline_type*` and many string
+  type-query call sites also remain; do not claim the acceptance criteria yet.
+  Existing fixture harness does not yet register type classes; redesign it to
+  validate perturbation behavior or fail-closed and assert drop behavior across
+  Fast Debug/native/-O, preserving the 10 ownership debt entries unchanged.
+- Next: finish replacing consumer type queries with checker answers (no string
+  type inference), fill any checker fact gaps, add/register type perturb/drop
+  fixtures, remove exactly the 28 type entries from debt JSON, then full suites,
+  ratchet/parity/performance gates, one Agent 2 audit, merge and tag.
 
-# Phase 27.5.4 closeout handover (2026-11-01)
-
-## Active checkpoint (post-C2 closing round)
-
-- Closeout is complete and on `main`: merge `6e07d0b8fea9b6ffc871bbad13ebe46f70376b4d`
-  (first parent `4b5e98805c072fa4625560fb7bf9e297bcda80e9`) is tagged and pushed
-  as `phase27-5-4-m2`. The latest main may contain a status-only follow-up
-  commit; the phase tag identifies the merge commit.
-- Agent 2 audited candidate `1a4745f02d74cd2f99071df6c39ba179ff04ae3d`,
-  independently reran the runtime ratchet in both modes, verified zero
-  Fast Debug/emitter/optimizer counters and checker/driver-only shadow hits,
-  and returned GO accepting the documented C1 baseline failures. Later changes
-  before merge were documentation only.
-- Full default and shadow suites each completed once at 162/165 jobs, with
-  identical known failures: conformance gate 10 (`compiled_only_custom_key`)
-  and the two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs.
-  Preflight, perturb/drop hooks and the runtime ratchet passed in both modes.
-- No L7 input was needed.
-
-- C2 is already merged to `main` and tagged `phase27-5-4-m1` at
-  `4b5e98805c072fa4625560fb7bf9e297bcda80e9`. Current branch is
-  `phase27-5-4-closeout-work`, tracking its remote, based on that merge.
-- The closeout implementation and docs are committed and pushed as
-  `210000df` (`Add Phase 27.5.4 stage runtime ratchet`). This separates
-  `make check` (default only) from `make check-shadow`, adds the fixed workload
-  ratchet and stage-attributed counters, updates AGENTS.md/compiler contract,
-  and records the feedback observation. Worktree was clean at push.
-- Fixed workload: 28 sources include calculator, regex and string concatenation;
-  5 sources also run in Fast Debug. Committed baseline is
-  checker 54,037 reparses / 16,261,580 text-cache lookups; driver rewrites 748
-  reparses / 748 rebuilds; Fast Debug/emitter/optimizer are zero for reparses,
-  node/cache lookups and rebuilds. Shadow run: checker 64,548 cross-checks,
-  driver rewrites 748, and all consumer stages zero.
-- Targeted validation passed on the pushed code: default and shadow runtime
-  ratchet, EST counter coverage, focused EST checks, `check_agent_feedback.py`,
-  and `git diff --check`. `make -n check` showed default mode only;
-  `make -n check-shadow` showed shadow mode.
-- Full default `make --jobs="$(nproc)" check` has now run once. Preflight,
-  hooks and ratchet passed; regression shard was 162/165 jobs (352.56 s).
-  Failures: conformance gate 10 (`compiled_only_custom_key`),
-  `check_phase27_accepts_rustc`, and `shard_swarm_cases`. The latter two are
-  the documented C1-parent Rust E0499 baseline for
-  `tests/swarm_035_nested_mutating_calls.moss`; gate 10 is the documented
-  C1-parent conformance baseline. Full log: disposable
-  `tmp/phase2754-closeout-check.log`.
-- Full shadow `make --jobs="$(nproc)" check-shadow` has now run once.
-  Preflight, hooks and ratchet passed; regression shard was 162/165 jobs
-  (355.92 s), with the exact same three baseline failures as default. Shadow
-  counters remained checker 64,548, driver rewrite 748, consumer stages zero.
-  Full log: disposable `tmp/phase2754-closeout-shadow.log`.
-- Agent 2 closeout audit has not yet run. Next: commit/push this gate result,
-  invoke Agent 2 once, then merge/tag `phase27-5-4-m2` only if the audit
-  approves handling the documented baseline failures. No L7 input is needed.
 
 ## Historical C2 handover detail
 
