@@ -27532,6 +27532,51 @@ class Checker {
       }
       return;
     }
+    // Preserve the established diagnostic when an ungrouped comparison and
+    // a final count stage have an ambiguous pipeline/comparison boundary.
+    // Consult retained syntax nodes rather than trying either text parse.
+    if (tree_cursor) {
+      if (auto* arena = expression_arena(tree_cursor->arena_index)) {
+        const auto root = est::unparenthesized(*arena, tree_cursor->expr);
+        const auto comparison_node = [&](est::ExprId id)
+            -> const est::Binary* {
+          const auto node = est::unparenthesized(*arena, id);
+          const auto* binary = std::get_if<est::Binary>(&arena->at(node));
+          if (!binary || (binary->op != "<" && binary->op != "<=" &&
+                          binary->op != ">" && binary->op != ">=" &&
+                          binary->op != "==" && binary->op != "!="))
+            return nullptr;
+          return binary;
+        };
+        const auto has_count_stage = [&](est::ExprId id) {
+          const auto node = est::unparenthesized(*arena, id);
+          const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(node));
+          if (!pipeline || pipeline->stages.empty()) return false;
+          const auto stage = est::unparenthesized(
+              *arena, pipeline->stages.back());
+          if (const auto* identifier = std::get_if<est::Identifier>(
+                  &arena->at(stage)))
+            return identifier->name == "count";
+          if (const auto* call = std::get_if<est::Call>(&arena->at(stage))) {
+            const auto callee = est::unparenthesized(*arena, call->callee);
+            if (const auto* identifier = std::get_if<est::Identifier>(
+                    &arena->at(callee)))
+              return identifier->name == "count";
+          }
+          return false;
+        };
+        bool ambiguous_count_precedence = false;
+        if (const auto* binary = comparison_node(root)) {
+          ambiguous_count_precedence = has_count_stage(binary->left) ||
+              has_count_stage(binary->right);
+        }
+        if (const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(root)))
+          ambiguous_count_precedence = ambiguous_count_precedence ||
+              (comparison_node(pipeline->input) && has_count_stage(root));
+        if (ambiguous_count_precedence)
+          check_function_call(line, "count", {}, env);
+      }
+    }
     if (check_functional_pipeline(line, original, env)) {
       mark_active_expression(OccurrenceKind::Pipeline,
                              "functional-pipeline-v1");

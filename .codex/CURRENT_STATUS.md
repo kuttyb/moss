@@ -1,5 +1,29 @@
 # Phase 27.5.5 handover (2026-11-02)
 
+## 01:49 UTC checkpoint (shadow and compatibility fixes)
+
+- Fixed a shadow assertion exposed by the new checker fact walker: constructor
+  type syntax (`Map[String, Int]`) is not an expression child and is no longer
+  traversed/typed as one. All EST subtree collectors now use expression-only
+  children for constructors.
+- Restored the established unknown-`count` diagnostics for comparison/pipeline
+  precedence conflicts by inspecting the retained node shape in the checker.
+  `tests/tooling/check_phase27_est.py` now passes in default and shadow mode;
+  no accepted program changed.
+- Updated `check_phase27_est_coverage.py` to assert the current per-consumer
+  checked-type coverage report and `MOSS_EST_CONSUMER_TYPE_INFERENCE=0` (the
+  prior `GENERATED_TYPE_FACT` report was retired by the typed consumer
+  counter). Counter opt-in/output neutrality and release absence pass.
+- Current `moss-dev` and `moss-opt` builds pass. Focused validations pass:
+  phase 27 EST, specialized facts, string-debt scan, Fast Debug/native/-O
+  parity, three-engine, all perturb/drop hooks (including type classes), and
+  ownership debt unchanged at 10/10. No full suite or final performance suite
+  has run.
+- Next: commit and push this fix set; run a fresh paired performance round
+  (aggregate, W4/W5/W8, 23 real workloads, W2 RSS and plain-O2 memory), optimize
+  if needed; update compiler contract/state/report; final make check and
+  check-shadow once; then full parity, Agent 2 once, and merge/tag only on GO.
+
 ## 01:41 UTC checkpoint (corpus measurement)
 
 - Latest pushed code checkpoint remains `2770f632`. The like-for-like tracked

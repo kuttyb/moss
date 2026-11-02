@@ -3555,7 +3555,7 @@ class Generator {
       // The selected specialization carries the checker's parameter answer.
       // Callable parameters are compile-time inputs and are not emitted as
       // Rust runtime arguments; do not ask the expression type consumer to
-      // invent a Moss type for a callable identifier (it has no value type).
+      // invent a Moss type for a callable-name node (it has no value type).
       const bool compile_time_callable = specialization &&
           index < specialization->parameter_types.size() &&
           is_compile_time_callable(

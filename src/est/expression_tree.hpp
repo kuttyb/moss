@@ -160,8 +160,8 @@ class Arena {
                          std::is_same_v<T, Tuple>) {
         for (const auto child : node.elements) callback(child);
       } else if constexpr (std::is_same_v<T, Constructor>) {
-        callback(node.type);
-        for (const auto child : node.type_arguments) callback(child);
+        // Type syntax is not an expression and must not receive expression
+        // type facts from a recursive expression walk.
         for (const auto child : node.arguments) callback(child);
       } else if constexpr (std::is_same_v<T, Pipeline>) {
         callback(node.input);
