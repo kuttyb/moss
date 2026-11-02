@@ -17026,3 +17026,13 @@ future optimizer-isolated proof and must remain explicit in final review.
   loaded module identity and qualified nominal aliases. `check_phase24_...`
   now passes end-to-end; S3 remains 28/28 and the perturb/drop matrix remains
   green (known debt 38/38).
+- The Phase 20 full FileIO/executor harness initially failed on candidate
+  generated `positional()` calls where a placeholder map callback should have
+  been `_.length()`. The C1 parent passes that harness, so it was candidate
+  debt. The checker now places pipeline callback and reducer argument checks
+  on their retained stage/argument nodes; the compiler records the member
+  target on the callback node, and the emitter no longer picks the unrelated
+  reducer call edge by source line. Targeted Phase 20, Phase 24, Phase 25 S3
+  (28 cases), and Phase 27.5.4 fact-hook tests all pass after this fix.
+- No full-suite rerun, paired corpus count, parity/performance gate,
+  three-engine aggregate, or Agent 2 audit has run since the latest edits.

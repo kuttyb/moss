@@ -25818,8 +25818,36 @@ class Checker {
           current_body_types_->active_pipeline_placeholder_type = element_type;
           TypeEnv callback_env = env;
           callback_env["_"] = element_type->to_canonical_string();
+          std::optional<EstExpressionCursor> callback_parent_cursor;
+          if (stage.expression_arena &&
+              stage.expression_node != UINT32_MAX) {
+            for (std::uint32_t arena_index = 0;
+                 arena_index < p_.expression_arenas.size(); ++arena_index)
+              if (p_.expression_arenas[arena_index].get() ==
+                  stage.expression_arena) {
+                callback_parent_cursor = EstExpressionCursor{
+                    arena_index, stage.expression_node,
+                    stage.raw};
+                break;
+              }
+          }
+          const bool pushed_callback_parent = callback_parent_cursor.has_value();
+          if (pushed_callback_parent)
+            active_est_expression_cursors_.push_back(*callback_parent_cursor);
+          struct PipelineCallbackCursorScope {
+            vector<std::optional<EstExpressionCursor>>& cursors;
+            bool active;
+            ~PipelineCallbackCursorScope() {
+              if (active) {
+                assert(!cursors.empty());
+                cursors.pop_back();
+              }
+            }
+          } pipeline_callback_cursor_scope{
+              active_est_expression_cursors_, pushed_callback_parent};
           check_expression(line, stage.arguments.front(), callback_env, {},
-                           "callback-expression");
+              pushed_callback_parent ? "call-argument:0"
+                                     : "callback-expression");
           current_body_types_->active_pipeline_placeholder_identity =
               previous_identity;
           current_body_types_->active_pipeline_placeholder_type =
@@ -26029,12 +26057,42 @@ class Checker {
               " argument" + (expected == 1 ? "" : "s") + ", got " +
               std::to_string(stage.arguments.size()));
       };
+      auto in_stage_argument = [&](size_t argument_index, auto&& action)
+          -> decltype(auto) {
+        std::optional<EstExpressionCursor> stage_cursor;
+        if (argument_index < stage.argument_nodes.size() &&
+            stage.expression_arena && stage.expression_node != UINT32_MAX) {
+          for (std::uint32_t arena_index = 0;
+               arena_index < p_.expression_arenas.size(); ++arena_index)
+            if (p_.expression_arenas[arena_index].get() ==
+                stage.expression_arena) {
+              stage_cursor = EstExpressionCursor{arena_index,
+                  stage.expression_node, stage.raw};
+              break;
+            }
+        }
+        const bool pushed = stage_cursor.has_value();
+        if (pushed) active_est_expression_cursors_.push_back(*stage_cursor);
+        struct StageExpressionCursorScope {
+          vector<std::optional<EstExpressionCursor>>& cursors;
+          bool active;
+          ~StageExpressionCursorScope() {
+            if (active) {
+              assert(!cursors.empty());
+              cursors.pop_back();
+            }
+          }
+        } cursor_scope{active_est_expression_cursors_, pushed};
+        return action();
+      };
       switch (stage.kind) {
         case FunctionalNodeKind::Map: {
           require_arity(1);
-          auto result = check_functional_callable(
-              line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(0, [&] {
+            return check_functional_callable(
+                line, stage.arguments.front(), {state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result) {
             state.element_type = canonical_type_name(*result);
             stage_output_type = state.element_type;
@@ -26043,9 +26101,11 @@ class Checker {
         }
         case FunctionalNodeKind::Filter: {
           require_arity(1);
-          auto result = check_functional_callable(
-              line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(0, [&] {
+            return check_functional_callable(
+                line, stage.arguments.front(), {state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result && !unresolved_semantic_type(*result) &&
               canonical_type_name(*result) != "bool")
             err(line, "filter predicate returns '" + *result +
@@ -26054,8 +26114,10 @@ class Checker {
         }
         case FunctionalNodeKind::Reduce: {
           require_arity(2);
-          check_expression(line, stage.arguments.front(), env, {},
-                           "reduce-seed");
+          in_stage_argument(0, [&] {
+            check_expression(line, stage.arguments.front(), env, {},
+                             "call-argument:0");
+          });
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
           if (!accumulator || *accumulator == "vector" || *accumulator == "queue" || *accumulator == "map")
             teaching_err(
@@ -26070,9 +26132,11 @@ class Checker {
                   stage.arguments.front(), {}, 1}},
                 "use-statically-typed-expression",
                 "use a concrete seed expression whose type matches the named reduce callable's accumulator");
-          auto result = check_functional_callable(
-              line, stage.arguments[1], {*accumulator, state.element_type}, env,
-              functional_node_name(stage.kind), &stage_target);
+          auto result = in_stage_argument(1, [&] {
+            return check_functional_callable(
+                line, stage.arguments[1], {*accumulator, state.element_type}, env,
+                functional_node_name(stage.kind), &stage_target);
+          });
           if (result && !unresolved_semantic_type(*result) &&
               !unresolved_semantic_type(*accumulator) &&
               !same_type(*result, *accumulator))
