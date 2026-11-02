@@ -16883,3 +16883,36 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
   new requested report.
 - Continue with targeted diagnosis of pipeline-node fact attachment and
   specialization mismatch. Full suites remain reserved for the final gate run.
+
+## C2 status report: per-stage consumers and checker-answer coverage (2026-11-01)
+
+Latest measured reparsing/text lookup status (the paired emission sweep predates
+`b47208d3`, which changes node routing but adds no parser/query call sites):
+
+| Stage | Re-parses | Text lookups | Basis |
+| --- | ---: | ---: | --- |
+| Fast Debug | 0 | 0 | C1 corpus/examples/packages audit and test-build counters; 100% removed on that workload |
+| Emitter | 0 | 0 | Paired C1-parent/candidate measurement over 1,824 tracked test/example sources, default and `-O` (3,648 emissions); parent was 9,735,229 native expression-view reparses, 7,362 functional-pipeline reparses, and 14,606,057 text-node lookups |
+| Optimizer | 0 | 0 | Test-build counter call-site/source audit of `functional_optimizer.cpp`; it has no parser or EST text-lookup entry points. The emitter counters aggregate the surrounding compiler invocation and remain 0 on the measured candidate workload. |
+
+“Re-interpretation” is not a percentage counter. The remaining static-answer
+coverage is:
+
+| Stage | Checker answers read | Perturb/drop coverage |
+| --- | --- | --- |
+| Fast Debug | Expression type; resolved call/member target; selected specialization; pipeline output/step plan; joined branch types; resolved match/recovery patterns; ownership/effect inputs used by execution | Call targets, specializations, joins and patterns pass the registered fixture matrix. Expression types, pipeline types and ownership are known debt; `phase27_5_4_fact_hook_debt.json` records which Fast Debug fixtures ignore the answer. |
+| Emitter | `SemanticFacts.type`, `resolved_target`, `specialization_result`; `Program.semantic_call_edges`; statement checked call targets, joined types, resolved patterns, functional expression plans/pipeline IR; ownership/effect data used to select ABI and local clone/borrow forms | Call targets, specializations, joins and patterns pass the registered matrix for native and `-O`. Expression types, pipeline types and ownership are known debt; the JSON baseline identifies native and optimized ignored cases. Emitter `generated_expr_type` inference and local ownership lowering decisions remain independent computations allowed by the C2 scope. |
+| Optimizer | Checker-built `FunctionalPipeline` semantic steps, stage kind, input/output type, effects, ownership, fusion eligibility, failure/divergence and source-size facts; retained EST node shape for mechanical matching | It does not directly read `SemanticFacts`, call-edge, join, or pattern accessors. `-O` perturb/drop runs are end-to-end, not optimizer-isolated. Pipeline-type and ownership ignore cases are part of the known-debt list; a dedicated optimizer-boundary perturb/drop harness is still absent. |
+
+Targeted failures after the `b47208d3` checkpoint: `check_phase15_15_string_api.py`
+(candidate fails closed on a checked pipeline tree; parent C1 emits/compiles and
+prints `string/map ok`); `check_phase21_on_fail_capture.py` (nested recovery
+reply has a Rust `Option<i64>` vs `i64` mismatch); and
+`check_phase25_team_a_semantics.py` (same-line nested open-result call selects a
+specialization outside checked candidates). `check_phase25_s2_char_string.py`,
+`check_phase25_l7_repairs.py`, generic specialization (40 probes), imported
+effects, and `check_phase27_5_4_fact_hooks.py` pass. The full-suite result still
+predates these changes: default 127/165, 38 failures, shadow not run. These
+results are not final gates; rerun both suites and a stable paired count after
+fixes. The fact inventory above distinguishes end-to-end `-O` tests from a
+future optimizer-isolated proof and must remain explicit in final review.
