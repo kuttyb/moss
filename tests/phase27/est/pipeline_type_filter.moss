@@ -1,0 +1,7 @@
+fn positive(value: Int) -> Bool:
+  return value > 0
+
+fn main():
+  values = [-1, 2, 3]
+  filtered = values |> filter(positive)
+  echo filtered

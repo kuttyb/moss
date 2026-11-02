@@ -131,6 +131,27 @@ void Arena::test_mutate_expression_types(bool drop) {
     entry.second.type = perturbed;
   }
 }
+
+void Arena::test_mutate_pipeline_types(bool drop) {
+  std::unordered_set<ExprId> pipeline_nodes;
+  std::function<void(ExprId)> collect = [&](ExprId id) {
+    id = unparenthesized(*this, id);
+    const auto* pipeline = std::get_if<Pipeline>(&at(id));
+    if (!pipeline || !pipeline_nodes.insert(id).second) return;
+    for (const auto stage : pipeline->stages)
+      pipeline_nodes.insert(unparenthesized(*this, stage));
+    const auto input = unparenthesized(*this, pipeline->input);
+    if (std::holds_alternative<Pipeline>(at(input))) collect(input);
+  };
+  for (ExprId id = 0; id < size(); ++id)
+    if (std::holds_alternative<Pipeline>(at(id))) collect(id);
+  const TypeRef perturbed = drop ? nullptr
+      : Type::parse_canonical("bool").value_or(nullptr);
+  for (auto& entry : semantic_facts_) {
+    if (!pipeline_nodes.count(entry.first.expression)) continue;
+    if (drop || entry.second.type) entry.second.type = perturbed;
+  }
+}
 #endif
 
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
@@ -378,6 +399,8 @@ std::array<std::uint64_t,
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
+std::map<std::pair<std::string, std::string>,
+         std::array<std::uint64_t, 2>> consumer_type_fact_counts;
 
 struct TestCoverageReporter {
   ~TestCoverageReporter() noexcept {
@@ -477,6 +500,18 @@ void record_generated_type_fact_coverage(std::string_view node_kind,
   }
 }
 
+void record_consumer_type_fact_coverage(std::string_view consumer,
+                                        std::string_view node_kind,
+                                        bool present) noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++consumer_type_fact_counts[
+        {std::string(consumer), std::string(node_kind)}][present ? 0 : 1];
+  } catch (...) {
+  }
+}
+
 void report_test_coverage_counters() {
   std::lock_guard<std::mutex> lock(test_coverage_mutex);
   std::cerr << "MOSS_EST_TREE_TEXT_REBUILDS="
@@ -555,6 +590,10 @@ void report_test_coverage_counters() {
     std::cerr << "MOSS_EST_GENERATED_TYPE_FACT kind=" << kind
               << " PRESENT=" << counts[0] << " ABSENT=" << counts[1]
               << '\n';
+  for (const auto& [key, counts] : consumer_type_fact_counts)
+    std::cerr << "MOSS_EST_TYPE_COVERAGE consumer=" << key.first
+              << " kind=" << key.second << " PRESENT=" << counts[0]
+              << " ABSENT=" << counts[1] << '\n';
 }
 #endif
 

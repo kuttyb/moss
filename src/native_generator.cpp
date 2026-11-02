@@ -386,6 +386,8 @@ class Generator {
     if (est::test_coverage_counters_enabled()) {
       std::cerr << "MOSS_EST_STRING_TYPE_QUERY=" << string_type_queries_
                 << '\n';
+      std::cerr << "MOSS_EST_CONSUMER_TYPE_INFERENCE="
+                << string_type_queries_ << '\n';
       std::cerr << "MOSS_EST_STRING_EXPR_QUERY=" << string_expr_queries_
                 << '\n';
     }
@@ -1839,6 +1841,10 @@ class Generator {
       const std::unordered_map<string,string>* types,
       const vector<EmitterExpr>* argument_nodes = nullptr,
       const EmitterExpr* call_node = nullptr) const {
+    const auto edge_occurrence = call_node && call_node->arena
+        ? checked_call_edge_occurrence(*call_node->arena, call_node->id,
+              codegen_body_context_, function.name)
+        : std::optional<std::uint32_t>{};
     if (codegen_result_specialization_ &&
         !codegen_result_specialization_->result_call_key.empty()) {
       string direct_callee;
@@ -1871,6 +1877,7 @@ class Generator {
         return &*exact;
       }
     }
+    if (!function.static_dispatch) return nullptr;
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
       bool checked_statement_return_call = false;
@@ -1957,7 +1964,8 @@ class Generator {
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.test_fact_dropped || checked.test_fact_perturbed)
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
@@ -1969,12 +1977,19 @@ class Generator {
       }
       if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
         if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1")
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
-                    << (phase21_codegen_statement_
-                            ? phase21_codegen_statement_->line : 0)
-                    << "|context=" << codegen_body_context_
-                    << "|callee=" << function.name << "\n";
+            count && string(count) == "g1") {
+          const int line = phase21_codegen_statement_
+              ? phase21_codegen_statement_->line : 0;
+          const auto same_line_group = checked_call_edge_specialization(
+              p_, codegen_body_context_, function.name, line);
+          const auto selection = same_line_group.kind ==
+                  CheckedCallEdgeSelectionKind::Ambiguous
+              ? "ambiguous" : "unique";
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=" << selection
+                    << "|line=" << line << "|context="
+                    << codegen_body_context_ << "|callee=" << function.name
+                    << "\n";
+        }
         return checked.unique;
       }
       if (checked.kind == CheckedCallEdgeSelectionKind::None &&
@@ -1987,14 +2002,27 @@ class Generator {
             " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
-    for (size_t index = 0; index < arguments.size(); ++index)
-      concrete_types.push_back(argument_nodes && index < argument_nodes->size()
-          ? generated_expr_type(argument_nodes->at(index), types).value_or("")
-          : generated_expr_type(arguments[index], types).value_or(""));
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (argument_nodes && index < argument_nodes->size()) {
+        if (!argument_nodes->at(index).arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked call argument node " +
+              function.name + " index=" + std::to_string(index) +
+              " line=" + std::to_string(phase21_codegen_statement_
+                  ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        concrete_types.push_back(generated_expr_type(
+            argument_nodes->at(index), types).value_or(""));
+      } else {
+        concrete_types.push_back(generated_expr_type(
+            arguments[index], types).value_or(""));
+      }
+    }
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
         if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
             count && string(count) == "g1") {
@@ -2011,7 +2039,8 @@ class Generator {
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0,
+          edge_occurrence);
       if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
           std::find(checked.candidates.begin(), checked.candidates.end(),
                     selected) == checked.candidates.end()) {
@@ -2020,7 +2049,9 @@ class Generator {
             "checked call edge candidates callee=" + function.name +
             " line=" + std::to_string(phase21_codegen_statement_
                                            ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
+            " context=" + codegen_body_context_ + " selected=" +
+            (selected ? selected->stable_type_key : std::string("null")) +
+            " candidates=" + std::to_string(checked.candidates.size()));
       }
     }
     return selected;
@@ -2381,10 +2412,16 @@ class Generator {
     if (index >= function.params.size())
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
-    string actual_type = (checked_expression
-        ? generated_expr_type(*checked_expression, types)
-        : generated_expr_type(argument, types)).value_or("");
-    auto abi = function_parameter_abi(function, index, actual_type, specialization);
+    // An open result at this call site may still be passed to a declaration
+    // with a closed checked parameter type (for example make() -> Vector[Int]).
+    // ABI borrowing follows the callee's checked parameter/specialization type
+    // when the argument fact is intentionally open; it does not infer the
+    // argument's Moss type.
+    string abi_type = specialization &&
+        index < specialization->parameter_types.size()
+        ? specialization->parameter_types[index]
+        : function.params[index].type;
+    auto abi = function_parameter_abi(function, index, abi_type, specialization);
     Effect effect = abi.effect;
     auto argument_binding = checked_expression && checked_expression->arena
         ? [&]() -> std::optional<string> {
@@ -2417,7 +2454,7 @@ class Generator {
              : argument_binding
                  ? borrowed_message_parameters_.count(*argument_binding) != 0
                  : borrowed_message_parameter(argument)) &&
-        !view_object_type(actual_type))
+        !view_object_type(abi_type))
       return rendered;
     if (effect == Effect::Write)
       return "&mut (" + (checked_expression && checked_expression->arena
@@ -2613,83 +2650,6 @@ class Generator {
                             expression.source}, name);
   }
 
-  std::optional<string> generated_callable_result(
-      const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types,
-      const EmitterExpr* checked_callable) const {
-    const bool uses_placeholder = checked_callable && checked_callable->arena
-        ? generated_expression_uses(*checked_callable, "_")
-        : generated_expression_uses(callable, "_");
-    if (uses_placeholder) {
-      if (input_types.size() != 1) return std::nullopt;
-      std::unordered_map<string,string> placeholder_types = types
-          ? *types : std::unordered_map<string,string>{};
-      placeholder_types["_"] = input_types.front();
-      return checked_callable && checked_callable->arena
-          ? generated_expr_type(*checked_callable, &placeholder_types)
-          : generated_expr_type(callable, &placeholder_types);
-    }
-    string bound_receiver, bound_method;
-    std::optional<EmitterExpr> bound_receiver_node;
-    if (checked_callable && checked_callable->arena) {
-      const auto root = est::unparenthesized(*checked_callable->arena,
-                                              checked_callable->id);
-      if (const auto* member = std::get_if<est::Member>(
-              &checked_callable->arena->at(root))) {
-        bound_receiver_node = checked_callable->child(member->base);
-        bound_receiver = bound_receiver_node->text();
-        bound_method = member->name;
-      }
-    } else if (tree_parse_bound_method_callable(callable, bound_receiver,
-                                                bound_method)) {
-      bound_receiver_node = std::nullopt;
-    }
-    if (!bound_method.empty()) {
-      if (!checked_callable || !checked_callable->arena)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing checked bound-method target");
-      const Method* method = checked_method_target(*checked_callable, types);
-      if (method && method->return_type)
-        return canonical_type_name(*method->return_type);
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT checked bound-method target has no result");
-    }
-    string identity = resolved_callable_identity(callable, types);
-    const Function* fn = nullptr;
-    if (starts_with(identity, "callable-v1:")) {
-      fn = find_function_by_callable_id(identity);
-    } else {
-      auto function = functions_.find(identity);
-      if (function != functions_.end()) fn = function->second;
-    }
-    if (!fn) return std::nullopt;
-    if (fn->static_dispatch) {
-      if (const auto* specialization =
-              functional_specialization(*fn, input_types))
-        return specialization->return_type;
-      return std::nullopt;
-    }
-    if (fn->return_type &&
-        !contains_internal_placeholder(*fn->return_type))
-      return canonical_type_name(*fn->return_type);
-    return std::nullopt;
-  }
-
-  std::optional<string> generated_callable_result(
-      const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types) const {
-    return generated_callable_result(callable, input_types, types, nullptr);
-  }
-
-  std::optional<string> generated_callable_result(
-      const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types,
-      const ParsedFunctionalStage& stage, size_t argument_index) const {
-    auto checked = functional_argument_node(stage, argument_index);
-    return generated_callable_result(callable, input_types, types,
-                                     checked.arena ? &checked : nullptr);
-  }
-
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
@@ -2746,54 +2706,6 @@ class Generator {
       parsed.stages.push_back(std::move(stage));
     }
     return parsed;
-  }
-
-  std::optional<string> generated_functional_pipeline_type_from_node(
-      const ParsedFunctionalPipeline& pipeline,
-      const std::unordered_map<string,string>* types) const {
-    const EmitterExpr source{pipeline.expression_arena, pipeline.source_node,
-                             pipeline.expression_source};
-    auto source_type = generated_expr_type(source, types);
-    auto element = source_type
-        ? generated_functional_element_type(*source_type) : std::nullopt;
-    if (!element) return std::nullopt;
-    string current = *element;
-    string output = "vector[" + current + "]";
-    for (const auto& stage : pipeline.stages) {
-      switch (stage.kind) {
-        case FunctionalNodeKind::Map: {
-          if (stage.arguments.size() != 1) return std::nullopt;
-          auto result = generated_callable_result(stage.arguments.front(),
-              {current}, types, stage, 0);
-          if (!result) return std::nullopt;
-          current = *result;
-          output = "vector[" + current + "]";
-          break;
-        }
-        case FunctionalNodeKind::Filter:
-          output = "vector[" + current + "]";
-          break;
-        case FunctionalNodeKind::Reduce:
-          if (stage.argument_nodes.empty()) return std::nullopt;
-          output = generated_expr_type(EmitterExpr{pipeline.expression_arena,
-              stage.argument_nodes.front(), pipeline.expression_source}, types)
-              .value_or("");
-          break;
-        case FunctionalNodeKind::Sum:
-          output = current;
-          break;
-        case FunctionalNodeKind::Count:
-          output = "int";
-          break;
-        case FunctionalNodeKind::Any:
-        case FunctionalNodeKind::All:
-          output = "bool";
-          break;
-        case FunctionalNodeKind::Source:
-          return std::nullopt;
-      }
-    }
-    return output.empty() ? std::nullopt : std::optional<string>(output);
   }
 
   EmitterExpr checked_expression_ref(std::string source, est::ExprSlot slot,
@@ -2949,7 +2861,7 @@ class Generator {
   }
 
   const est::SemanticFacts* checked_expression_facts(
-      const EmitterExpr& expression) const {
+      const EmitterExpr& expression, bool require_type = false) const {
     if (!expression.arena) return nullptr;
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     vector<string> contexts;
@@ -3003,10 +2915,10 @@ class Generator {
     contexts.emplace_back();
     for (const auto& context : contexts) {
       if (const auto* facts = expression.arena->facts(expression.id, context))
-        return facts;
+        if (!require_type || facts->type) return facts;
       if (root != expression.id)
         if (const auto* facts = expression.arena->facts(root, context))
-          return facts;
+          if (!require_type || facts->type) return facts;
     }
     const est::SemanticFacts* selected = nullptr;
     for (const auto& context : call_edge_contexts) {
@@ -3015,11 +2927,31 @@ class Generator {
       if (!facts && root != expression.id)
         facts = expression.arena->facts(root, context);
       if (!facts || facts->resolved_target.empty()) continue;
+      if (require_type && !facts->type) continue;
       if (selected && selected->resolved_target != facts->resolved_target)
         return nullptr;
       selected = facts;
     }
     if (selected) return selected;
+    if (require_type) {
+      const auto source_fact = [&](est::ExprId id)
+          -> const est::SemanticFacts* {
+        const est::SemanticFacts* candidate = nullptr;
+        string candidate_context;
+        for (const auto& [context, facts] :
+             expression.arena->facts_for_expression(id)) {
+          if (!starts_with(context, "source:") || !facts.type) continue;
+          if (candidate && !candidate->type->structurally_equal(*facts.type))
+            return nullptr;
+          candidate_context = context;
+          candidate = expression.arena->facts(id, candidate_context);
+        }
+        return candidate;
+      };
+      if (const auto* source = source_fact(expression.id)) return source;
+      if (root != expression.id)
+        if (const auto* source = source_fact(root)) return source;
+    }
     return nullptr;
   }
 
@@ -3226,699 +3158,142 @@ class Generator {
     return &*method;
   }
 
-  std::optional<string> generated_functional_pipeline_type(
-      const string& expression,
-      const std::unordered_map<string,string>* types) const {
-    auto pipeline = functional_pipeline_from_est(expression);
-    if (!pipeline) return std::nullopt;
-    auto source_type = generated_expr_type(pipeline->source, types);
-    if (!source_type) return std::nullopt;
-    auto element = generated_functional_element_type(*source_type);
-    if (!element) return std::nullopt;
-    string current = *element;
-    string output = "vector[" + current + "]";
-    for (const auto& stage : pipeline->stages) {
-      switch (stage.kind) {
-        case FunctionalNodeKind::Map: {
-          if (stage.arguments.size() != 1) return std::nullopt;
-          auto result = generated_callable_result(stage.arguments.front(),
-              {current}, types, stage, 0);
-          if (!result) return std::nullopt;
-          current = *result;
-          output = "vector[" + current + "]";
-          break;
-        }
-        case FunctionalNodeKind::Filter:
-          output = "vector[" + current + "]";
-          break;
-        case FunctionalNodeKind::Reduce:
-          if (stage.arguments.size() != 2) return std::nullopt;
-          output = generated_expr_type(stage.arguments.front(), types).value_or("");
-          break;
-        case FunctionalNodeKind::Sum:
-          output = current;
-          break;
-        case FunctionalNodeKind::Count:
-          output = "int";
-          break;
-        case FunctionalNodeKind::Any:
-        case FunctionalNodeKind::All:
-          output = "bool";
-          break;
-        case FunctionalNodeKind::Source:
-          return std::nullopt;
-      }
-    }
-    return output.empty() ? std::nullopt : std::optional<string>(output);
-  }
-
   std::optional<string> generated_expr_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) ++string_type_queries_;
 #endif
-#ifdef MOSS_TEST_BUILD
-    if (est::test_coverage_counters_enabled()) {
-      // A text-only type query has no node identity to inspect. Record it as
-      // unavailable rather than reparsing or consulting a text-keyed handle
-      // cache solely for test instrumentation.
-      est::record_generated_type_fact_coverage("text-query", false);
-    }
-#endif
-    // Backend-created temporary bindings and simple local-name queries already
-    // have their type in the lexical environment. Resolve that name directly;
-    // do not rebuild an expression tree just to rediscover the same binding.
-    if (types) {
-      const auto local = types->find(string(expression));
-      if (local != types->end() && !local->second.empty() &&
-          !contains_internal_placeholder(local->second))
-        return canonical_type_name(local->second);
-    }
-    // Preserve the old primitive classification without routing these
-    // synthetic backend literals through the Moss expression parser.
-    if (expression == "true" || expression == "false") return string("bool");
-    if (expression == "None") return string("_none");
-    if (!expression.empty() && expression.front() == '"' &&
-        expression.back() == '"') return string("string");
-    if (!expression.empty() && expression.front() == '\'' &&
-        expression.back() == '\'') return string("char");
-    if (auto number = decode_numeric_literal_expression(expression))
-      return number->kind == NumericLiteral::Kind::Int
-          ? std::optional<string>("int") : std::optional<string>("float");
-    string original = tree_strip_expression_grouping(expression);
-    {
-      string callee;
-      vector<string> arguments;
-      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
-          arguments.size() == 2)
-        return generated_expr_type(arguments[0], types);
-      if (tree_parse_simple_call(original, callee, arguments) && !functions_.count(callee)) {
-        if (callee == "Char" && arguments.size() == 1) return string("char");
-        if ((callee == "less" || callee == "isequal") && arguments.size() == 2)
-          return string("bool");
-        if (callee == "hash" && arguments.size() == 1) return string("int");
-      }
-    }
-    string message_target, message_handler;
-    vector<string> message_arguments;
-    if (types && tree_parse_message(original, message_target, message_handler,
-                                    message_arguments)) {
-      string receiver = message_target;
-      string handler = message_handler;
-      vector<string> arguments = std::move(message_arguments);
-      if (tree_plain_identifier(receiver)) {
-        auto type = types->find(receiver);
-        if (type != types->end()) {
-          auto domain = domains_.find(type->second);
-          if (domain != domains_.end())
-            if (const Handler* target = find_handler(*domain->second, handler))
-              return target->reply_type.value_or("unit");
-        }
-      }
-      return std::nullopt;
-    }
-    if (auto pipeline = generated_functional_pipeline_type(original, types))
-      return pipeline;
-    // The checked functional-pipeline query above handles source pipelines.
-    // Do not normalize text into a second call-shaped expression here.
-    string value = std::move(original);
-    {
-      string enum_name, case_name;
-      vector<string> fields;
-      bool called = false;
-      if (tree_parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
-          enums_.count(enum_name))
-        return enum_name;
-    }
-    const auto literal = tree_literal_class(value);
-    if (literal == est::LiteralClass::Boolean) return string("bool");
-    if (literal == est::LiteralClass::Character) return string("char");
-    if (tree_identifier_name(value) == std::optional<string>("None"))
-      return string("_none");
-    if (literal == est::LiteralClass::String)
-      return string("string");
-    if (types) {
-      auto identifier = tree_identifier_name(value);
-      if (!identifier && tree_placeholder_expression(value)) identifier = "_";
-      if (identifier) {
-        auto local = types->find(*identifier);
-        if (local != types->end() && !local->second.empty() &&
-            !contains_internal_placeholder(local->second))
-          return canonical_type_name(local->second);
-      }
-    }
-    string unary_operation, unary_operand;
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
-        unary_operation == "not") {
-      auto operand = generated_expr_type(unary_operand, types);
-      return operand && canonical_type_name(*operand) == "bool"
-          ? std::optional<string>("bool") : std::nullopt;
-    }
-    if (tree_plain_identifier(value) && functions_.count(value))
-      return "callable:" + value;
-    if (auto typed_vector = tree_empty_typed_vector_constructor(value)) return *typed_vector;
-    if (generated_integer_literal(value))
-      return string("int");
-    if (literal == est::LiteralClass::Float) return string("float");
-    if (auto elements = tree_parse_vector_literal(value)) {
-      if (elements->empty()) return string("vector");
-      string element_type;
-      for (const auto& element : *elements) {
-        auto current = generated_expr_type(element, types);
-        if (!current) return std::nullopt;
-        string concrete = canonical_type_name(*current);
-        if (element_type.empty()) element_type = concrete;
-        else if (element_type != concrete) return std::nullopt;
-      }
-      return "vector[" + element_type + "]";
-    }
-
-    string receiver, method_name;
-    vector<string> method_args;
-    if (tree_parse_member_call(value, receiver, method_name, method_args)) {
-      if (staged_abi_v10() && tree_empty_constructor_named(receiver, "Map") &&
-          method_name == "get" && method_args.size() == 2)
-        return generated_expr_type(method_args[1], types);
-      string canon_recv = canonical_type_name(receiver);
-      if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
-          canon_recv == "string" || canon_recv == "bool") {
-        if ((method_name == "less" || method_name == "isequal") && method_args.size() == 2)
-          return string("bool");
-        if (method_name == "hash" && method_args.size() == 1)
-          return string("int");
-        if (method_name == "to_string" && method_args.size() == 1)
-          return string("string");
-        if (canon_recv == "char" && method_name == "codepoint" && method_args.size() == 1)
-          return string("int");
-      }
-      auto receiver_type = generated_expr_type(receiver, types);
-      if (receiver_type) {
-        string concrete_receiver = canonical_type_name(*receiver_type);
-        // Phase 20: Executor configuration/start chain and FileIO operations;
-        // mirrors the checker's inferred_expr_type handling.
-        if (concrete_receiver == "executor" &&
-            (executor_config_methods().count(method_name) || method_name == "start"))
-          return string("executor");
-        if (concrete_receiver == "FileIO") {
-          if (method_name == "read" && method_args.size() == 2) return string("Range");
-          if (method_name == "read" && method_args.size() == 1) return string("RangeBatch");
-          if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
-          if ((method_name == "write" && method_args.size() == 2) ||
-              (method_name == "sync" && method_args.size() <= 1) ||
-              (method_name == "close" && method_args.empty()))
-            return string("unit");
-        }
-        if (concrete_receiver == "Range" && method_name == "length" && method_args.empty())
-          return string("int");
-        if (concrete_receiver == "Range" && method_name == "slice" && method_args.size() == 2)
-          return string("Range");
-        if (auto result = builtin_operation_result(concrete_receiver, method_name,
-                                                    method_args.size()))
-          return result;
-        const int call_line = phase21_codegen_statement_
-            ? phase21_codegen_statement_->line : 0;
-        const auto checked_methods = checked_method_targets(method_name,
-                                                              call_line);
-        std::optional<string> common_return_type;
-        bool common_return_type_agrees = !checked_methods.empty();
-        for (const Method* method : checked_methods) {
-          if (!method->return_type) {
-            common_return_type_agrees = false;
-            break;
-          }
-          const string candidate = canonical_type_name(*method->return_type);
-          if (!common_return_type) common_return_type = candidate;
-          else if (*common_return_type != candidate) {
-            common_return_type_agrees = false;
-            break;
-          }
-        }
-        if (common_return_type_agrees && common_return_type)
-          return *common_return_type;
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing or ambiguous checked member-call "
-            "target for generated type method=" + method_name + " line=" +
-            std::to_string(call_line) + " context=" + codegen_body_context_);
-      }
-    }
-
-    string callee;
-    vector<string> call_args;
-    if (tree_parse_simple_call(value, callee, call_args)) {
-      if (objects_.count(callee)) {
-        const ObjectType* obj = objects_.at(callee);
-        bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
-            [](const Field& f) { return f.inferred || f.type.empty(); });
-        if (!has_generic_field) return callee;
-        std::map<string, string> supplied_types;
-        for (const auto& arg : call_args) {
-          string fn, fv;
-          if (tree_parse_named_argument(arg, fn, fv)) {
-            auto ft = generated_expr_type(fv, types);
-            if (ft) supplied_types[fn] = canonical_type_name(*ft);
-          }
-        }
-        string instance_type = callee + "[";
-        bool first = true;
-        for (const auto& f : obj->fields) {
-          if (!f.inferred && !f.type.empty()) continue;
-          if (!first) instance_type += ",";
-          first = false;
-          auto it = supplied_types.find(f.name);
-          string ft = (it != supplied_types.end()) ? it->second : (f.type.empty() ? "_" : canonical_type_name(f.type));
-          instance_type += f.name + "=" + ft;
-        }
-        instance_type += "]";
-        return instance_type;
-      }
-      if (callee == "sqrt" && call_args.size() == 1) {
-        auto argument = generated_expr_type(call_args.front(), types);
-        return argument && canonical_type_name(*argument) == "float"
-            ? std::optional<string>("float") : std::nullopt;
-      }
-      if (callee == "Some" && call_args.size() == 1) {
-        auto value_type = generated_expr_type(call_args.front(), types);
-        return value_type ? "option[" + *value_type + "]" : "option[_]";
-      }
-      if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
-        return "range[int]";
-      string callee_id = resolved_callable_identity(callee, types);
-      const Function* function_target = nullptr;
-      if (starts_with(callee_id, "callable-v1:")) {
-        function_target = find_function_by_callable_id(callee_id);
-      } else {
-        auto function = functions_.find(callee_id);
-        if (function != functions_.end()) function_target = function->second;
-      }
-      if (function_target && function_target->return_type) {
-        vector<string> argument_types;
-        for (const auto& argument : call_args)
-          argument_types.push_back(generated_expr_type(argument, types).value_or(""));
-        if (function_target->static_dispatch) {
-          const auto* specialization = call_specialization(
-              *function_target, call_args, types);
-          if (specialization)
-            return specialization->return_type;
-          return std::nullopt;
-        }
-        string result = canonical_type_name(*function_target->return_type);
-        if (open_generic(result)) {
-          string parameter = result.substr(9);
-          for (size_t index = 0; index < function_target->params.size(); ++index)
-            if (function_target->params[index].name == parameter &&
-                index < argument_types.size() && !argument_types[index].empty())
-              return argument_types[index];
-          return std::nullopt;
-        }
-        if (!contains_internal_placeholder(result)) return result;
-      }
-    }
-
-    string member_base, member_name;
-    if (tree_parse_member_access(value, member_base, member_name)) {
-      auto base = generated_expr_type(member_base, types);
-      if (base) {
-        string tname = nominal_template_name(*base);
-        auto object = objects_.find(tname);
-        if (object != objects_.end()) {
-          string field_name = member_name;
-          if (auto sub_type = nominal_field_type(*base, field_name)) {
-            return canonical_type_name(*sub_type);
-          }
-          for (const auto& field : object->second->fields)
-            if (field.name == field_name)
-              return canonical_type_name(field.type);
-        }
-      }
-    }
-    string index_base, index_expr;
-    if (tree_parse_index(value, index_base, index_expr)) {
-      auto base_type = generated_expr_type(index_base, types);
-      if (base_type) {
-        string concrete = canonical_type_name(*base_type);
-        if (concrete == "RangeBatch") return string("Range");
-        if (auto element = indexed_element(parsed_type(concrete)))
-          return element;
-      }
-    }
-    if (tree_generated_binary(value, {" or "}) ||
-        tree_generated_binary(value, {" xor "}) ||
-        tree_generated_binary(value, {" and "}) ||
-        tree_generated_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
-      return string("bool");
-    for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
-      if (auto binary = tree_generated_binary(value, ops)) {
-        auto left = generated_expr_type(binary->left, types);
-        auto right = generated_expr_type(binary->right, types);
-        if (left && right &&
-            canonical_type_name(*left) == "int" &&
-            canonical_type_name(*right) == "int")
-          return string("int");
-      }
-    }
-    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
-      auto binary = tree_generated_binary(value, operators);
-      if (!binary) continue;
-      auto left = generated_expr_type(binary->left, types);
-      auto right = generated_expr_type(binary->right, types);
-      if (left && right) {
-        if (*left == "string" && *right == "string" && binary->op == "+")
-          return string("string");
-        if ((*left == "int" || *left == "float") &&
-            (*right == "int" || *right == "float"))
-          return (*left == "float" || *right == "float") ? "float" : "int";
-      }
-    }
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
-        (unary_operation == "-" || unary_operation == "+")) {
-      auto operand = generated_expr_type(unary_operand, types);
-      if (operand && (canonical_type_name(*operand) == "int" ||
-                      canonical_type_name(*operand) == "float"))
-        return operand;
-    }
-    if (tree_parse_unary(value, unary_operation, unary_operand) &&
-        unary_operation == "~") {
-      auto operand = generated_expr_type(unary_operand, types);
-      if (operand && canonical_type_name(*operand) == "int")
-        return string("int");
-    }
-    return std::nullopt;
+    (void)types;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT expression type requested without checked node context=" +
+        codegen_body_context_ + " expression=" + expression);
   }
 
   std::optional<string> generated_expr_type(
       const EmitterExpr& expression,
       const std::unordered_map<string,string>* types) const {
-    if (!expression.arena) return std::nullopt;
+    const auto record_type_fact_coverage = [&](bool present) {
+#ifdef MOSS_TEST_BUILD
+      if (!est::test_coverage_counters_enabled()) return;
+      const char* kind = "missing-node";
+      if (expression.arena) {
+        const est::Node& observed_node = expression.arena->at(expression.id);
+        kind = std::holds_alternative<est::Identifier>(observed_node)
+            ? "identifier"
+            : std::holds_alternative<est::Literal>(observed_node) ? "literal"
+            : std::holds_alternative<est::Call>(observed_node) ? "call"
+            : std::holds_alternative<est::Member>(observed_node) ? "member"
+            : std::holds_alternative<est::Index>(observed_node) ? "index"
+            : std::holds_alternative<est::Binary>(observed_node) ? "binary"
+            : std::holds_alternative<est::Unary>(observed_node) ? "unary"
+            : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
+            : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
+            : std::holds_alternative<est::Collection>(observed_node) ? "collection"
+            : std::holds_alternative<est::Parenthesized>(observed_node)
+                ? "parenthesized"
+            : "other";
+      }
+      est::record_consumer_type_fact_coverage("emitter", kind, present);
+#else
+      (void)present;
+#endif
+    };
+    if (!expression.arena) {
+      record_type_fact_coverage(false);
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT expression type requested without checked node "
+          "context=" + codegen_body_context_ + " id=" +
+          std::to_string(expression.id) + " source=" + expression.source);
+    }
     const auto root = est::unparenthesized(*expression.arena, expression.id);
-    const est::Node& node = expression.arena->at(root);
-    const auto* facts = checked_expression_facts(expression);
+    const auto* facts = checked_expression_facts(expression, true);
     if (!facts && root != expression.id) {
       auto root_expression = expression.child(root);
-      facts = checked_expression_facts(root_expression);
+      facts = checked_expression_facts(root_expression, true);
     }
+    if (!facts) {
+      const auto* target_facts = checked_expression_facts(expression, false);
+      const auto* identifier = std::get_if<est::Identifier>(
+          &expression.arena->at(root));
+      if (identifier && target_facts &&
+          CallableId::parse(target_facts->resolved_target))
+        return std::nullopt;  // checked callable identity has no Moss value type
+    }
+    // An open TypeRef is still the checker's answer for a generic body. Rust
+    // lowering may map its type variables to the function's generated generic
+    // parameters; treating it as absent would re-enable consumer inference.
     const bool has_fact = facts && facts->type;
-#ifdef MOSS_TEST_BUILD
-    if (est::test_coverage_counters_enabled()) {
-      const est::Node& observed_node = expression.arena->at(expression.id);
-      const char* kind = std::holds_alternative<est::Identifier>(observed_node)
-          ? "identifier"
-          : std::holds_alternative<est::Literal>(observed_node) ? "literal"
-          : std::holds_alternative<est::Call>(observed_node) ? "call"
-          : std::holds_alternative<est::Member>(observed_node) ? "member"
-          : std::holds_alternative<est::Index>(observed_node) ? "index"
-          : std::holds_alternative<est::Binary>(observed_node) ? "binary"
-          : std::holds_alternative<est::Unary>(observed_node) ? "unary"
-          : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
-          : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
-          : std::holds_alternative<est::Collection>(observed_node) ? "collection"
-          : std::holds_alternative<est::Parenthesized>(observed_node)
-              ? "parenthesized"
-          : "other";
-      est::record_generated_type_fact_coverage(kind, has_fact);
-    }
-#endif
-    if (has_fact && facts->type->is_closed())
+    if (has_fact) {
+      record_type_fact_coverage(true);
       return canonical_type_name(facts->type);
-    const auto legacy_type = []() -> std::optional<string> {
-      return std::nullopt;
-    };
-    const auto type_of = [&](est::ExprId child) {
-      return generated_expr_type(expression.child(child), types);
-    };
-    if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
-      if (types) {
-        auto found = types->find(identifier->name);
-        if (found != types->end()) return canonical_type_name(found->second);
-      }
-      if (functions_.count(identifier->name))
-        return "callable:" + identifier->name;
-      return legacy_type();
     }
-    if (std::holds_alternative<est::Placeholder>(node) && types) {
-      auto found = types->find("_");
-      if (found != types->end()) return canonical_type_name(found->second);
+    if (auto pipeline_type = checked_functional_node_type(expression)) {
+      record_type_fact_coverage(true);
+      return canonical_type_name(*pipeline_type);
     }
-    if (const auto* literal = std::get_if<est::Literal>(&node)) {
-      switch (literal->literal_class) {
-        case est::LiteralClass::Integer: return string("int");
-        case est::LiteralClass::Float: return string("float");
-        case est::LiteralClass::String: return string("string");
-        case est::LiteralClass::Character: return string("char");
-        case est::LiteralClass::Boolean: return string("bool");
-        case est::LiteralClass::None: return string("option[_]");
+    if (auto enclosing_pipeline_type =
+            checked_enclosing_pipeline_type(expression)) {
+      record_type_fact_coverage(true);
+      return canonical_type_name(*enclosing_pipeline_type);
+    }
+    // Some source-backed handler nodes are lowered through a synthetic body
+    // context that has no direct name. A fact can still be used when every
+    // checker context recorded for this exact node agrees on the same type;
+    // conflicting specialization answers remain unavailable and fail closed.
+    TypeRef context_independent_type;
+    bool context_type_conflict = false;
+    for (const auto& entry : expression.arena->facts_for_expression(root)) {
+      if (!entry.second.type || !entry.second.type->is_closed()) continue;
+      if (!context_independent_type)
+        context_independent_type = entry.second.type;
+      else if (!context_independent_type->structurally_equal(
+                   *entry.second.type)) {
+        context_type_conflict = true;
+        break;
       }
     }
-    if (const auto* unary = std::get_if<est::Unary>(&node)) {
-      auto operand = type_of(unary->operand);
-      if (unary->op == "not") return string("bool");
-      if (unary->op == "~")
-        return operand && canonical_type_name(*operand) == "int"
-            ? std::optional<string>("int") : std::nullopt;
-      if ((unary->op == "-" || unary->op == "+") && operand &&
-          (canonical_type_name(*operand) == "int" ||
-           canonical_type_name(*operand) == "float"))
-        return operand;
-      return legacy_type();
+    if (context_independent_type && !context_type_conflict) {
+      record_type_fact_coverage(true);
+      return canonical_type_name(context_independent_type);
     }
-    if (const auto* binary = std::get_if<est::Binary>(&node)) {
-      if (binary->op == "and" || binary->op == "or" ||
-          binary->op == "xor" || binary->op == "==" ||
-          binary->op == "!=" || binary->op == "<" ||
-          binary->op == ">" || binary->op == "<=" ||
-          binary->op == ">=")
-        return string("bool");
-      auto left = type_of(binary->left);
-      auto right = type_of(binary->right);
-      if (!left || !right) return legacy_type();
-      const string left_type = canonical_type_name(*left);
-      const string right_type = canonical_type_name(*right);
-      if (binary->op == "+" && left_type == "string" &&
-          right_type == "string") return string("string");
-      if (binary->op == "|" || binary->op == "^" ||
-          binary->op == "&" || binary->op == "<<" ||
-          binary->op == ">>")
-        return left_type == "int" && right_type == "int"
-            ? std::optional<string>("int") : std::nullopt;
-      if ((binary->op == "+" || binary->op == "-" ||
-           binary->op == "*" || binary->op == "/" ||
-           binary->op == "%") &&
-          (left_type == "int" || left_type == "float") &&
-          (right_type == "int" || right_type == "float"))
-        return left_type == "float" || right_type == "float"
-            ? string("float") : string("int");
-      return legacy_type();
+    if (std::holds_alternative<est::Call>(expression.arena->at(root))) {
+      const auto* call_facts = checked_expression_facts(expression, false);
+      if (!call_facts || call_facts->resolved_target.empty())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked call target before type lowering");
     }
-    if (const auto* member = std::get_if<est::Member>(&node)) {
-      auto base = type_of(member->base);
-      if (base)
-        if (auto field = nominal_field_type(*base, member->name))
-          return canonical_type_name(*field);
-      return legacy_type();
+    record_type_fact_coverage(false);
+    string recorded_type_contexts;
+    for (const auto& entry : expression.arena->facts_for_expression(root)) {
+      if (!entry.second.type) continue;
+      if (!recorded_type_contexts.empty()) recorded_type_contexts += ",";
+      recorded_type_contexts += entry.first + "=" +
+          entry.second.type->to_canonical_string();
     }
-    if (const auto* index = std::get_if<est::Index>(&node)) {
-      auto base = type_of(index->base);
-      if (!base) return legacy_type();
-      const string concrete = canonical_type_name(*base);
-      if (concrete == "RangeBatch") return string("Range");
-      auto element = indexed_element(parsed_type(concrete));
-      return element ? element : legacy_type();
-    }
-    if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
-      const auto type_id = est::unparenthesized(*expression.arena,
-                                                constructor->type);
-      if (const auto* identifier = std::get_if<est::Identifier>(
-              &expression.arena->at(type_id))) {
-        if (identifier->name == "Map" || identifier->name == "Set" ||
-            identifier->name == "Queue") {
-          const string base = identifier->name == "Map" ? "map" :
-              identifier->name == "Set" ? "set" : "queue";
-          if (!constructor->type_arguments.empty()) {
-            vector<string> arguments;
-            for (const auto argument : constructor->type_arguments) {
-              const auto argument_id = est::unparenthesized(
-                  *expression.arena, argument);
-              if (const auto* name = std::get_if<est::Identifier>(
-                      &expression.arena->at(argument_id)))
-                arguments.push_back(canonical_type_name(name->name));
-              else
-                return legacy_type();
-            }
-            string rendered = base + "[";
-            for (size_t index = 0; index < arguments.size(); ++index) {
-              if (index) rendered += ",";
-              rendered += arguments[index];
-            }
-            return rendered + "]";
-          }
-          return base;
-        }
-        return identifier->name;
-      }
-      if (const auto* member = std::get_if<est::Member>(
-              &expression.arena->at(type_id))) {
-        const auto base_id = est::unparenthesized(*expression.arena,
-                                                   member->base);
-        if (const auto* base = std::get_if<est::Identifier>(
-                &expression.arena->at(base_id)))
-          return base->name;
-      }
-      return legacy_type();
-    }
-    if (const auto* call = std::get_if<est::Call>(&node)) {
-      const auto callee_id = est::unparenthesized(*expression.arena,
-                                                   call->callee);
-      const auto* callee = std::get_if<est::Identifier>(
-          &expression.arena->at(callee_id));
-      const auto* call_facts = checked_expression_facts(expression);
-      string target = call_facts ? call_facts->resolved_target : string();
-      if (!callee) {
-        const auto* member = std::get_if<est::Member>(
-            &expression.arena->at(callee_id));
-        if (!member) return legacy_type();
-        if (target.empty()) {
-          const auto targets = checked_call_edge_targets(codegen_body_context_,
-              static_cast<int>(expression.arena->span(root).line));
-          if (targets.size() == 1) target = targets.front();
-        }
-        if (starts_with(target, "callable-v1:")) {
-          const auto* selected = find_function_by_callable_id(target);
-          if (selected && selected->return_type)
-            return canonical_type_name(*selected->return_type);
-        } else if (starts_with(target, "fn:")) {
-          const auto selected = functions_.find(target.substr(3));
-          if (selected != functions_.end() && selected->second->return_type)
-            return canonical_type_name(*selected->second->return_type);
-        }
-        if (!starts_with(target, "method:"))
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT missing checked member-call target for generated type name=" +
-              member->name + " context=" + codegen_body_context_ +
-              " expr=" + expression.text() + " node=" +
-              std::to_string(root));
-        const auto separator = target.rfind('.');
-        if (separator == string::npos)
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT malformed checked member-call target");
-        const string owner = target.substr(7, separator - 7);
-        for (const auto& object : objects_) {
-          if (canonical_type_name(object.second->name) !=
-              canonical_type_name(owner)) continue;
-          const auto method = std::find_if(object.second->methods.begin(),
-              object.second->methods.end(), [&](const Method& item) {
-                return item.name == target.substr(separator + 1);
-              });
-          if (method != object.second->methods.end() && method->return_type)
-            return canonical_type_name(*method->return_type);
-        }
-        return legacy_type();
-      }
-      const Function* function = nullptr;
-      if (starts_with(target, "callable-v1:"))
-        function = find_function_by_callable_id(target);
-      else if (starts_with(target, "fn:")) {
-        auto found = functions_.find(target.substr(3));
-        if (found != functions_.end()) function = found->second;
-      }
-      vector<string> checked_edge_targets;
-      if (!function && callee) {
-        checked_edge_targets = checked_call_edge_targets(
-            codegen_body_context_,
-            static_cast<int>(expression.arena->span(root).line));
-        const string checked_name = "fn:" + callee->name;
-        if (std::find(checked_edge_targets.begin(), checked_edge_targets.end(),
-                      checked_name) != checked_edge_targets.end()) {
-          auto found = functions_.find(callee->name);
-          if (found != functions_.end()) function = found->second;
-        }
-      }
-      CheckedCallEdgeSpecialization checked_edge;
-      if (!function && callee) {
-        auto found = functions_.find(callee->name);
-        if (found != functions_.end() && found->second->static_dispatch) {
-          checked_edge = checked_call_edge_specialization(
-              p_, codegen_body_context_, found->second->name,
-              static_cast<int>(expression.arena->span(root).line),
-              codegen_nested_argument_occurrence_);
-          if (checked_edge.kind != CheckedCallEdgeSelectionKind::None)
-            function = found->second;
-        }
-      }
-      if (function && checked_edge.kind == CheckedCallEdgeSelectionKind::None &&
-          !function->specializations.empty())
-        checked_edge = checked_call_edge_specialization(
-            p_, codegen_body_context_, function->name,
-            static_cast<int>(expression.arena->span(root).line),
-            codegen_nested_argument_occurrence_);
-      if (!function) {
-        if (callee->name == "range") return string("range[int]");
-        if (callee->name == "Some" && call->arguments.size() == 1) {
-          auto value = type_of(call->arguments.front());
-          return value ? "option[" + *value + "]" : string("option[_]");
-        }
-        return legacy_type();
-      }
-      if (call_facts && !call_facts->specialization_result.empty()) {
-        auto specialization = std::find_if(function->specializations.begin(),
-            function->specializations.end(), [&](const auto& candidate) {
-              return candidate.stable_type_key ==
-                  call_facts->specialization_result;
-            });
-        if (specialization != function->specializations.end())
-          return specialization->return_type;
-      }
-      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Unique &&
-          checked_edge.unique)
-        return checked_edge.unique->return_type;
-      if (checked_edge.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
-        std::optional<string> common_result;
-        for (const auto* candidate : checked_edge.candidates) {
-          if (!candidate) continue;
-          const string result = canonical_type_name(candidate->return_type);
-          if (!common_result) common_result = result;
-          else if (*common_result != result) return legacy_type();
-        }
-        if (common_result) return common_result;
-      }
-      if (function->return_type &&
-          !contains_internal_placeholder(*function->return_type))
-        return canonical_type_name(*function->return_type);
-      return legacy_type();
-    }
-    if (std::holds_alternative<est::Pipeline>(node)) {
-      if (auto id = checked_functional_pipeline_id(expression))
-        if (const auto* plan = planned_functional_pipeline(*id);
-            plan && !plan->output_type.empty())
-          return canonical_type_name(plan->output_type);
-      const auto span = expression.arena->span(root);
-      const string context = codegen_body_context_;
-      const FunctionalPipeline* selected = nullptr;
-      for (const auto& pipeline : p_.functional_pipelines) {
-        if (pipeline.line != static_cast<int>(span.line) ||
-            pipeline.context != context) continue;
-        if (selected) return legacy_type();
-        selected = &pipeline;
-      }
-      if (selected && !selected->output_type.empty())
-        return canonical_type_name(selected->output_type);
-      const auto resolve_stage = [](std::string_view name)
-          -> std::optional<FunctionalNodeKind> {
-        for (const auto& operation : functional_operations())
-          if (name == operation.name) return operation.kind;
-        return std::nullopt;
-      };
-      if (auto parsed = functional_pipeline_from_node(expression, resolve_stage))
-        if (auto inferred = generated_functional_pipeline_type_from_node(
-                *parsed, types))
-          return inferred;
-    }
-    if (const auto* collection = std::get_if<est::Collection>(&node);
-        collection && collection->delimiter == '[' &&
-        !collection->elements.empty()) {
-      auto element = type_of(collection->elements.front());
-      if (element) return "vector[" + *element + "]";
-    }
-    return legacy_type();
+    (void)types;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked expression type context=" +
+        codegen_body_context_ + " facts=" + recorded_type_contexts + " line=" +
+        std::to_string(expression.arena->span(root).line) + " node=" +
+        std::to_string(root) + " expr=" + expression.text() + " kind=" + std::visit([](const auto& value) {
+          using T = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, est::Literal>) return string("literal");
+          else if constexpr (std::is_same_v<T, est::Identifier>) return string("identifier");
+          else if constexpr (std::is_same_v<T, est::Call>) return string("call");
+          else if constexpr (std::is_same_v<T, est::Pipeline>) return string("pipeline");
+          else if constexpr (std::is_same_v<T, est::Binary>) return string("binary");
+          else if constexpr (std::is_same_v<T, est::Unary>) return string("unary");
+          else if constexpr (std::is_same_v<T, est::Member>) return string("member");
+          else if constexpr (std::is_same_v<T, est::Index>) return string("index");
+          else if constexpr (std::is_same_v<T, est::Collection>) return string("collection");
+          else return string("other");
+        }, expression.arena->at(root)) + [&]() {
+          if (const auto* identifier = std::get_if<est::Identifier>(
+                  &expression.arena->at(root)))
+            return " name=" + identifier->name;
+          return string();
+        }());
   }
 
   std::optional<string> checked_callable_pipeline_expr(
@@ -4007,7 +3382,8 @@ class Generator {
         return decline("function-unsupported");
       vector<string> argument_values{rendered};
       vector<string> argument_types{*current_type};
-      if (is_object_view(current_node, domain, locals, types))
+      if (view_object_type(*current_type) &&
+          view_place(current_node, domain, locals, types))
         return decline("input-view");
       for (const auto argument_id : *explicit_arguments) {
         if (std::holds_alternative<est::NamedArgument>(
@@ -4022,7 +3398,8 @@ class Generator {
           return decline("complex-explicit-arg");
         auto type = generated_expr_type(argument, types);
         if (!type) return decline("explicit-arg-type");
-        if (is_object_view(argument, domain, locals, types))
+        if (view_object_type(*type) &&
+            view_place(argument, domain, locals, types))
           return decline("explicit-arg-view");
         argument_values.push_back(expr(argument, domain, locals, types));
         argument_types.push_back(*type);
@@ -4201,8 +3578,14 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
-      bool compile_time_callable = is_compile_time_callable(
-          argument_type(index).value_or(""));
+      // The selected specialization carries the checker's parameter answer.
+      // Callable parameters are compile-time inputs and are not emitted as
+      // Rust runtime arguments; do not ask the expression type consumer to
+      // invent a Moss type for a callable-name node (it has no value type).
+      const bool compile_time_callable = specialization &&
+          index < specialization->parameter_types.size() &&
+          is_compile_time_callable(
+              canonical_type_name(specialization->parameter_types[index]));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
@@ -4379,6 +3762,113 @@ class Generator {
       if (selected) return selected;
     }
     return std::nullopt;
+  }
+
+  std::optional<string> checked_functional_node_type(
+      const EmitterExpr& expression) const {
+    if (!phase21_codegen_statement_ || !expression.arena) return std::nullopt;
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    std::optional<string> selected_type;
+    const auto consider = [&](std::optional<string>& selection,
+                              const std::string& type) {
+      if (type.empty()) return;
+      const auto canonical = canonical_type_name(type);
+      if (selection && *selection != canonical)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked pipeline node type");
+      selection = canonical;
+    };
+    for (const auto& context_plans :
+         phase21_codegen_statement_->functional_expression_plans_by_context) {
+      const auto& context = context_plans.first;
+      if (context != codegen_body_context_ && !context.empty() &&
+          context != "specialization:" + codegen_active_specialization_key_)
+        continue;
+      for (const auto& expression_plan : context_plans.second) {
+        if (expression_plan.arena_index >= p_.expression_arenas.size() ||
+            p_.expression_arenas[expression_plan.arena_index].get() !=
+                expression.arena || expression_plan.pipeline_id == 0)
+          continue;
+        const auto* pipeline = planned_functional_pipeline(
+            expression_plan.pipeline_id);
+        if (!pipeline) continue;
+        const auto pipeline_root = est::unparenthesized(
+            *expression.arena, expression_plan.expression);
+        if (root == pipeline_root) {
+          consider(selected_type, pipeline->output_type);
+          continue;
+        }
+        vector<est::ExprId> checked_stages;
+        std::function<void(est::ExprId)> collect_stages =
+            [&](est::ExprId expression_id) {
+          const auto expression_root = est::unparenthesized(
+              *expression.arena, expression_id);
+          const auto* pipeline_node = std::get_if<est::Pipeline>(
+              &expression.arena->at(expression_root));
+          if (!pipeline_node) return;
+          collect_stages(pipeline_node->input);
+          for (const auto stage : pipeline_node->stages) {
+            const auto stage_root = est::unparenthesized(
+                *expression.arena, stage);
+            if (std::holds_alternative<est::Pipeline>(
+                    expression.arena->at(stage_root)))
+              collect_stages(stage_root);
+            else
+              checked_stages.push_back(stage_root);
+          }
+        };
+        collect_stages(pipeline_root);
+        for (std::size_t index = 0; index < checked_stages.size() &&
+             index + 1 < pipeline->nodes.size(); ++index)
+          if (checked_stages[index] == root)
+            consider(selected_type, pipeline->nodes[index + 1].output_type);
+      }
+    }
+    return selected_type;
+  }
+
+  std::optional<string> checked_enclosing_pipeline_type(
+      const EmitterExpr& expression) const {
+    if (!phase21_codegen_statement_ || !expression.arena) return std::nullopt;
+    const auto wanted = est::unparenthesized(*expression.arena,
+                                              expression.id);
+    std::optional<string> selected;
+    std::unordered_set<est::ExprId> visited;
+    for (const auto& handle : phase21_codegen_statement_->expression_handles) {
+      if (handle.arena_index >= p_.expression_arenas.size() ||
+          p_.expression_arenas[handle.arena_index].get() != expression.arena)
+        continue;
+      vector<est::ExprId> pending{handle.expr};
+      while (!pending.empty()) {
+        const auto candidate = est::unparenthesized(*expression.arena,
+                                                     pending.back());
+        pending.pop_back();
+        if (!visited.insert(candidate).second) continue;
+        if (const auto* pipeline = std::get_if<est::Pipeline>(
+                &expression.arena->at(candidate))) {
+          const bool owns_stage = std::any_of(pipeline->stages.begin(),
+              pipeline->stages.end(), [&](est::ExprId stage) {
+                return est::unparenthesized(*expression.arena, stage) == wanted;
+              });
+          if (owns_stage) {
+            const EmitterExpr pipeline_expression{
+                expression.arena, candidate, expression.source};
+            const auto* facts = checked_expression_facts(
+                pipeline_expression, true);
+            if (facts && facts->type && facts->type->is_closed()) {
+              const auto type = canonical_type_name(facts->type);
+              if (selected && *selected != type)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT ambiguous checked enclosing pipeline type");
+              selected = type;
+            }
+          }
+        }
+        for (const auto child : expression.arena->children(candidate))
+          pending.push_back(child);
+      }
+    }
+    return selected;
   }
 
   std::optional<EmitterExpr> checked_functional_pipeline_node(
@@ -4562,6 +4052,17 @@ class Generator {
         auto lowered_operation = operation;
         lowered_operation.checked_output_type =
             planned.nodes[node_index].output_type;
+        if (semantic_step.kind == FunctionalNodeKind::Map ||
+            semantic_step.kind == FunctionalNodeKind::Filter ||
+            semantic_step.kind == FunctionalNodeKind::Any ||
+            semantic_step.kind == FunctionalNodeKind::All) {
+          auto checked_input = generated_functional_element_type(
+              planned.nodes[node_index].input_type);
+          if (!checked_input)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked functional callback input type");
+          lowered_operation.checked_callable_argument_types = {*checked_input};
+        }
         stage.operations.push_back(std::move(lowered_operation));
       }
       lowered.stages.push_back(std::move(stage));
@@ -4598,7 +4099,8 @@ class Generator {
       const std::unordered_map<string,string>* types,
       bool propagate_raises = true,
       bool checked_placeholder_result = false,
-      const EmitterExpr* checked_callable = nullptr) const {
+      const EmitterExpr* checked_callable = nullptr,
+      const vector<string>* checked_argument_types = nullptr) const {
     const bool has_checked_callable = checked_callable && checked_callable->arena;
     const bool uses_placeholder = has_checked_callable
         ? generated_expression_uses(*checked_callable, "_")
@@ -4722,16 +4224,39 @@ class Generator {
                                identity + "'");
     string emitted = function_target->name;
     vector<string> argument_types;
-    for (const auto& argument : arguments) argument_types.push_back(argument.type);
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (checked_argument_types && index < checked_argument_types->size())
+        argument_types.push_back((*checked_argument_types)[index]);
+      else
+        argument_types.push_back(arguments[index].type);
+    }
     const FunctionSpecialization* concrete = nullptr;
     if (function_target->static_dispatch) {
       // Functional callbacks register the key with no receiver or open-result
       // binding. Select that exact checked key even when a separate ordinary
       // call of the same callable and arguments has a bound result key.
       concrete = functional_specialization(*function_target, argument_types);
-      if (!concrete)
-        throw std::runtime_error("missing functional specialization for '" +
-                                 identity + "'");
+      if (!concrete) {
+        string candidates;
+        for (const auto& candidate : function_target->specializations) {
+          if (!candidates.empty()) candidates += ";";
+          candidates += candidate.stable_type_key + "(";
+          for (size_t index = 0; index < candidate.parameter_types.size(); ++index) {
+            if (index) candidates += ",";
+            candidates += candidate.parameter_types[index];
+          }
+          candidates += ")";
+        }
+        string actual;
+        for (const auto& type : argument_types) {
+          if (!actual.empty()) actual += ",";
+          actual += type;
+        }
+        throw std::runtime_error(
+            string("MOSS_INTERNAL_INVARIANT missing checked functional specialization ") +
+            "for '" + identity + "' args=(" + actual + ") candidates=" +
+            candidates);
+      }
       emitted = concrete->generated_name;
     } else concrete = concrete_specialization(*function_target, argument_types);
     std::ostringstream rendered;
@@ -4739,7 +4264,9 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      auto abi = function_parameter_abi(*function_target, index, argument.type, concrete);
+      const string& argument_type = index < argument_types.size()
+          ? argument_types[index] : argument.type;
+      auto abi = function_parameter_abi(*function_target, index, argument_type, concrete);
       Effect effect = abi.effect;
       bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
@@ -4784,7 +4311,9 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT missing checked functional callable node");
     return render_functional_callable(stage.arguments[callable_index],
         arguments, domain, locals, types, propagate_raises,
-        checked_placeholder_result, &checked_callable);
+        checked_placeholder_result, &checked_callable,
+        stage.checked_callable_argument_types.empty()
+            ? nullptr : &stage.checked_callable_argument_types);
   }
 
   static string functional_zero(const string& type) {
@@ -4864,7 +4393,7 @@ class Generator {
           group.source_type).value_or("");
       if (element_type.empty())
         throw std::runtime_error(
-            "internal error: untyped shared functional source");
+            "MOSS_INTERNAL_INVARIANT missing checked shared functional source type");
       LoweredFunctionalPipeline lowered =
           lower_functional_semantic_plan(*parsed, *plan);
       if (lowered.stages.empty() ||
@@ -4934,7 +4463,7 @@ class Generator {
     auto source_element = generated_functional_element_type(group.source_type);
     if (!source_element)
       throw std::runtime_error(
-          "internal error: untyped shared functional source element");
+          "MOSS_INTERNAL_INVARIANT missing checked shared functional source element type");
     if (has_traversal) {
       out << inner << "for __moss_shared_item_ref_" << group.transient_id
           << " in __moss_shared_source_" << group.transient_id
@@ -5092,13 +4621,17 @@ class Generator {
                   pipeline.expression_arena, pipeline.source_node,
                   pipeline.expression_source})
             : std::nullopt;
-    auto source_type = checked_source
-        ? generated_expr_type(*checked_source, types)
-        : generated_expr_type(pipeline.source, types);
+    if (!checked_source)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked eager pipeline source node");
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
-      throw std::runtime_error("internal error: untyped functional source");
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked eager functional source type");
     string current_type = *element;
     string current_collection = "__moss_pipeline_source";
     std::ostringstream out;
@@ -5143,30 +4676,28 @@ class Generator {
         string mapped = render_functional_callable(
             stage, 0, {input}, domain, locals, types);
         out << "            " << output << ".push(" << mapped << ");\n";
-        std::optional<string> result = planned
-            ? checked_functional_result_element(*planned, pipeline_stage + 1)
-            : std::nullopt;
-        if (!result && stage.expression_arena &&
-            stage.expression_node != UINT32_MAX) {
-          auto stage_type = generated_expr_type(EmitterExpr{
-              stage.expression_arena, stage.expression_node,
-              stage.expression_source}, types);
-          if (stage_type)
-            result = generated_functional_element_type(*stage_type);
-        }
-        if (!result)
-          result = generated_callable_result(stage.arguments.front(),
-              {current_type}, types, stage, 0);
-        if (!result)
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT missing checked eager map output type");
-        current_type = *result;
       } else {
         string predicate = render_functional_callable(
             stage, 0, {input}, domain, locals, types);
         out << "            if " << predicate << " { " << output << ".push("
             << value << "); }\n";
       }
+      std::optional<string> result;
+      if (planned)
+        result = checked_functional_result_element(*planned,
+                                                    pipeline_stage + 1);
+      if (!result && stage.expression_arena &&
+          stage.expression_node != UINT32_MAX) {
+        auto checked_stage_type = generated_expr_type(EmitterExpr{
+            stage.expression_arena, stage.expression_node,
+            stage.expression_source}, types);
+        if (checked_stage_type)
+          result = generated_functional_element_type(*checked_stage_type);
+      }
+      if (!result)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked eager collection stage output type");
+      current_type = *result;
       out << "        }\n";
       current_collection = output;
       ++stage_number;
@@ -5178,6 +4709,18 @@ class Generator {
         terminal.kind == FunctionalNodeKind::Count ||
         terminal.kind == FunctionalNodeKind::Any ||
         terminal.kind == FunctionalNodeKind::All;
+    if (has_terminal && (!terminal.expression_arena ||
+                         terminal.expression_node == UINT32_MAX))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked eager terminal stage node");
+    std::optional<string> checked_terminal_type;
+    if (has_terminal)
+      checked_terminal_type = generated_expr_type(EmitterExpr{
+          terminal.expression_arena, terminal.expression_node,
+          terminal.expression_source}, types);
+    if (has_terminal && !checked_terminal_type)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked eager terminal stage type");
     if (!has_terminal) {
       out << "        " << current_collection << "\n    }";
       return out.str();
@@ -5188,12 +4731,13 @@ class Generator {
       out << "        // Moss functional origin|"
           << planned->nodes[pipeline.stages.size()].semantic_identity << "\n";
     if (terminal.kind == FunctionalNodeKind::Reduce)
-      out << "        let mut " << accumulator << " = "
+      out << "        let mut " << accumulator << ": "
+          << rust_type(*checked_terminal_type) << " = "
           << expr(functional_argument_node(terminal, 0), domain, locals, types)
           << ";\n";
     else if (terminal.kind == FunctionalNodeKind::Sum)
       out << "        let mut " << accumulator << " = "
-          << functional_zero(current_type) << ";\n";
+          << functional_zero(*checked_terminal_type) << ";\n";
     else if (terminal.kind == FunctionalNodeKind::Count)
       out << "        let mut " << accumulator << " = 0_i64;\n";
     else
@@ -5210,9 +4754,7 @@ class Generator {
         << (item_copy ? "*" : "") << item_ref << ";\n";
     FunctionalValue input{value, current_type, !item_copy};
     if (terminal.kind == FunctionalNodeKind::Reduce) {
-      auto accumulator_type = generated_expr_type(
-          functional_argument_node(terminal, 0), types)
-          .value_or(current_type);
+      const auto& accumulator_type = *checked_terminal_type;
       out << "            " << accumulator << " = "
           << render_functional_callable(
                  terminal, 1,
@@ -5220,7 +4762,7 @@ class Generator {
                  domain, locals, types)
           << ";\n";
     } else if (terminal.kind == FunctionalNodeKind::Sum) {
-      if (canonical_type_name(current_type) == "int")
+      if (canonical_type_name(*checked_terminal_type) == "int")
         out << "            " << accumulator << " = " << accumulator
             << ".wrapping_add(" << value << ");\n";
       else
@@ -5249,28 +4791,53 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
+    if (!planned)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked fused functional pipeline plan");
     const std::optional<EmitterExpr> checked_source =
         pipeline.expression_arena
             ? std::optional<EmitterExpr>(EmitterExpr{
                   pipeline.expression_arena, pipeline.source_node,
                   pipeline.expression_source})
             : std::nullopt;
-    auto source_type = checked_source
-        ? generated_expr_type(*checked_source, types)
-        : generated_expr_type(pipeline.source, types);
+    if (!checked_source)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked fused pipeline source node");
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
-      throw std::runtime_error("internal error: untyped fused functional source");
-    string current_type = *element;
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked fused functional source type");
+    const string source_element_type = *element;
+    string current_type = source_element_type;
     string final_element_type = current_type;
     for (const auto& stage : pipeline.stages) {
-      if (stage.kind != FunctionalNodeKind::Map) continue;
       for (const auto& operation : stage.operations) {
-        auto result = checked_functional_result_element(operation);
-        if (!result)
-          throw std::runtime_error("internal error: untyped fused map result");
-        final_element_type = *result;
+        if (!operation.expression_arena ||
+            operation.expression_node == UINT32_MAX)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked fused pipeline stage node");
+        auto output = generated_expr_type(EmitterExpr{
+            operation.expression_arena, operation.expression_node,
+            operation.expression_source}, types);
+        if (!output)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked fused pipeline stage type");
+        if (stage.kind == FunctionalNodeKind::Map ||
+            stage.kind == FunctionalNodeKind::Filter) {
+          auto stage_element = generated_functional_element_type(*output);
+          if (!stage_element)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT malformed checked fused collection stage type");
+          current_type = *stage_element;
+          if (stage.kind == FunctionalNodeKind::Map)
+            final_element_type = current_type;
+        } else if (stage.kind == FunctionalNodeKind::Sum) {
+          final_element_type = canonical_type_name(*output);
+        }
       }
     }
     FunctionalNodeKind last_kind = pipeline.stages.empty()
@@ -5278,6 +4845,19 @@ class Generator {
     bool terminal = functional_terminal_kind(last_kind);
     const ParsedFunctionalStage* last = terminal
         ? &terminal_operation(pipeline) : nullptr;
+    std::optional<string> checked_terminal_type;
+    if (last_kind == FunctionalNodeKind::Reduce) {
+      if (!last || !last->expression_arena ||
+          last->expression_node == UINT32_MAX)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked fused reduce stage");
+      checked_terminal_type = generated_expr_type(EmitterExpr{
+          last->expression_arena, last->expression_node,
+          last->expression_source}, types);
+      if (!checked_terminal_type)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked fused reduce output type");
+    }
     std::ostringstream out;
     out << "{\n        // Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated";
     if (planned) {
@@ -5294,7 +4874,9 @@ class Generator {
     if (!terminal)
       out << "        let mut __moss_result = std::vec::Vec::new();\n";
     else if (last_kind == FunctionalNodeKind::Reduce)
-      out << "        let mut __moss_result = "
+      out << "        let mut __moss_result: "
+          << rust_type(*checked_terminal_type)
+          << " = "
           << expr(functional_argument_node(*last, 0), domain, locals, types)
           << ";\n";
     else if (last_kind == FunctionalNodeKind::Sum)
@@ -5306,23 +4888,31 @@ class Generator {
       out << "        let mut __moss_result = "
           << (last_kind == FunctionalNodeKind::All ? "true" : "false")
           << ";\n";
-    bool source_copy = copy_type(current_type);
+    bool source_copy = copy_type(source_element_type);
     out << "        for __moss_item_ref in __moss_pipeline_source.iter() {\n"
         << "            let __moss_value_0 = "
         << (source_copy ? "*" : "") << "__moss_item_ref;\n";
-    FunctionalValue current{"__moss_value_0", current_type, !source_copy};
+    FunctionalValue current{"__moss_value_0", source_element_type,
+                             !source_copy};
     size_t map_number = 0;
     for (const auto& stage : pipeline.stages) {
       switch (stage.kind) {
         case FunctionalNodeKind::Map: {
-          for (const auto& operation : stage.operations) {
+          for (size_t operation_index = 0;
+               operation_index < stage.operations.size(); ++operation_index) {
+            const auto& operation = stage.operations[operation_index];
             string next = "__moss_value_" + std::to_string(++map_number);
             out << "            let " << next << " = "
                 << render_functional_callable(
                        operation, 0, {current}, domain,
                        locals, types)
                 << ";\n";
-            auto result = checked_functional_result_element(operation);
+            auto checked_stage_type = generated_expr_type(EmitterExpr{
+                operation.expression_arena, operation.expression_node,
+                operation.expression_source}, types);
+            auto result = checked_stage_type
+                ? generated_functional_element_type(*checked_stage_type)
+                : std::nullopt;
             if (!result)
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT missing checked fused map output type");
@@ -5331,6 +4921,20 @@ class Generator {
           break;
         }
         case FunctionalNodeKind::Filter: {
+          if (stage.operations.empty())
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked fused filter stage");
+          auto checked_stage_type = generated_expr_type(EmitterExpr{
+              stage.operations.front().expression_arena,
+              stage.operations.front().expression_node,
+              stage.operations.front().expression_source}, types);
+          auto checked_element = checked_stage_type
+              ? generated_functional_element_type(*checked_stage_type)
+              : std::nullopt;
+          if (!checked_element)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked fused filter output type");
+          current.type = *checked_element;
           out << "            if !(";
           for (size_t predicate = 0;
                predicate < stage.operations.size(); ++predicate) {
@@ -5346,19 +4950,22 @@ class Generator {
         }
         case FunctionalNodeKind::Reduce: {
           const auto& operation = stage.operations.front();
-          auto accumulator_type = generated_expr_type(
-              functional_argument_node(operation, 0),
-              types).value_or(current.type);
+          auto accumulator_type = generated_expr_type(EmitterExpr{
+              operation.expression_arena, operation.expression_node,
+              operation.expression_source}, types);
+          if (!accumulator_type)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked fused reduce output type");
           out << "            __moss_result = "
               << render_functional_callable(
                      operation, 1,
-                     {{"__moss_result", accumulator_type, false}, current},
+                     {{"__moss_result", *accumulator_type, false}, current},
                      domain, locals, types)
               << ";\n";
           break;
         }
         case FunctionalNodeKind::Sum:
-          if (canonical_type_name(current.type) == "int")
+          if (canonical_type_name(final_element_type) == "int")
             out << "            __moss_result = __moss_result.wrapping_add("
                 << current.expression << ");\n";
           else
@@ -5427,6 +5034,8 @@ class Generator {
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             checked_pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
+    const FunctionalPipeline* planned =
+        planned_functional_pipeline(functional_pipeline_id);
     const std::optional<EmitterExpr> checked_source =
         checked_pipeline.expression_arena
             ? std::optional<EmitterExpr>(EmitterExpr{
@@ -5434,20 +5043,18 @@ class Generator {
                   checked_pipeline.source_node,
                   checked_pipeline.expression_source})
             : std::nullopt;
-    auto source_type = checked_source
-        ? generated_expr_type(*checked_source, types)
-        : generated_expr_type(checked_pipeline.source, types);
+    if (!checked_source)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional pipeline source node");
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
-      return std::nullopt;
-    const FunctionalPipeline* planned =
-        planned_functional_pipeline(functional_pipeline_id);
-    // A pipeline nested in an ordinary expression does not have a standalone
-    // statement plan.  It still has fully checked semantics, so use the
-    // baseline eager lowering rather than requiring an unrelated outer
-    // expression to masquerade as a pipeline statement.
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked functional source type");
     if (!planned)
-      return gen_eager_functional_pipeline(checked_pipeline, domain, locals, types,
-                                           nullptr);
+      return gen_eager_functional_pipeline(
+          checked_pipeline, domain, locals, types, nullptr);
     LoweredFunctionalPipeline lowered =
         lower_functional_semantic_plan(checked_pipeline, *planned);
     if (planned->virtual_upstream_pipeline_id) {
@@ -5790,6 +5397,11 @@ class Generator {
           joined << "__moss_concat_result }";
           return joined.str();
         }
+        if (left_type && right_type &&
+            (canonical_type_name(*left_type) == "bool" ||
+             canonical_type_name(*right_type) == "bool"))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked arithmetic operand type is unsupported");
         string left = value_from_borrowed_message_parameter(
             left_expr, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
@@ -6812,10 +6424,24 @@ class Generator {
              ends_with(target, "." + member->name)) ||
             (starts_with(target, "builtin-method:bool.") &&
              ends_with(target, "." + member->name)) ||
-            target == "builtin-scalar-protocol:" + member->name) {
+            target == "builtin-scalar-protocol:" + member->name ||
+            (starts_with(target, "builtin-scalar-protocol:") &&
+             ends_with(target, "." + member->name))) {
           const auto receiver_expression = expression.child(member->base);
-          const auto receiver_type = generated_expr_type(receiver_expression,
-                                                          types);
+          std::optional<string> receiver_type;
+          constexpr std::string_view scalar_target_prefix =
+              "builtin-scalar-protocol:";
+          if (starts_with(target, std::string(scalar_target_prefix)) &&
+              target != "builtin-scalar-protocol:" + member->name) {
+            const string typed_receiver = target.substr(
+                scalar_target_prefix.size());
+            const auto separator = typed_receiver.rfind('.');
+            if (separator != string::npos &&
+                typed_receiver.substr(separator + 1) == member->name)
+              receiver_type = typed_receiver.substr(0, separator);
+          }
+          if (!receiver_type)
+            receiver_type = generated_expr_type(receiver_expression, types);
           vector<EmitterExpr> arguments;
           bool simple_arguments = true;
           for (const auto argument_id : call->arguments) {
@@ -7944,7 +7570,26 @@ class Generator {
           member_argument_nodes.clear();
         }
       }
+      auto checked_scalar_receiver_type = [&]() -> std::optional<string> {
+        if (!checked_node || !checked_node->arena) return std::nullopt;
+        const auto* facts = checked_expression_facts(*checked_node);
+        const string prefix = "builtin-scalar-protocol:";
+        if (!facts || !starts_with(facts->resolved_target, prefix))
+          return std::nullopt;
+        const string receiver = facts->resolved_target.substr(prefix.size());
+        const auto separator = receiver.rfind('.');
+        if (separator == string::npos ||
+            receiver.substr(separator + 1) != member_name)
+          return std::nullopt;
+        const string type = receiver.substr(0, separator);
+        if (type == "int" || type == "float" || type == "char" ||
+            type == "string" || type == "bool")
+          return type;
+        return std::nullopt;
+      };
       auto type_member_receiver = [&]() {
+        if (auto checked_type = checked_scalar_receiver_type())
+          return checked_type;
         return member_receiver_node.arena
             ? generated_expr_type(member_receiver_node, types)
             : generated_expr_type(member_receiver, types);
@@ -11045,33 +10690,12 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(checked_rhs, "Map") &&
-                !starts_with(statement_type, "map[")) {
-              // A bare Map constructor has no intrinsic element types. The
-              // checked body may close it at a later indexed assignment;
-              // preserve that evidence before emitting its Rust declaration.
-              for (size_t next = i + 1; next < ss.size(); ++next) {
-                if (ss[next].kind != Stmt::Kind::Assign) continue;
-                const auto next_lhs = checked_expression_ref(
-                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
-                EmitterExpr map_base, index_expression;
-                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
-                    tree_identifier_name(map_base) !=
-                        std::optional<string>(s.a)) continue;
-                auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(checked_expression_ref(
-                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
-                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
-                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
-                      "," + canonical_type_name(*value_type) + "]";
-                  break;
-                }
-              }
-            }
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
               annotation = rust_type(statement_type);
-            else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
+            else if (staged_abi_v10() &&
+                     tree_empty_constructor_named(checked_rhs, "Map"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked empty-map type");
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
             o << indent(level) << "let mut " << s.a;
@@ -11082,8 +10706,7 @@ class Generator {
                           s, functional_context, 0))
               << ";\n";
             locals.insert(s.a);
-            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
-                : statement_type;
+            types[s.a] = statement_type;
             const auto source_name = tree_identifier_name(checked_rhs);
             auto source_binding = source_name
                 ? domain_instance_bindings_.find(*source_name)
@@ -11636,27 +11259,11 @@ class Generator {
             const auto source_name = tree_identifier_name(checked_initializer);
             auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
-            string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(checked_initializer, "Map") &&
-                !starts_with(statement_type, "map[")) {
-              for (size_t next = i + 1; next < ss.size(); ++next) {
-                if (ss[next].kind != Stmt::Kind::Assign) continue;
-                const auto next_lhs = checked_expression_ref(
-                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
-                EmitterExpr map_base, index_expression;
-                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
-                    tree_identifier_name(map_base) !=
-                        std::optional<string>(s.a)) continue;
-                auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(checked_expression_ref(
-                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
-                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
-                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
-                      "," + canonical_type_name(*value_type) + "]";
-                  break;
-                }
-              }
-            }
+            if (staged_abi_v10() &&
+                tree_empty_constructor_named(checked_initializer, "Map") &&
+                !starts_with(statement_type, "map["))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked empty-map type");
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
@@ -11667,9 +11274,8 @@ class Generator {
                      checked_initializer, &types).value_or("")) == "float"))
               o << ": f64";
             else if (!joined_assignment && !domain_capability &&
-                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
-              o << ": " << rust_type(!inferred_map_type.empty()
-                  ? inferred_map_type : statement_type);
+                     starts_with(statement_type, "map["))
+              o << ": " << rust_type(statement_type);
             o << " = "
               << expr(checked_initializer, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -11677,7 +11283,6 @@ class Generator {
             if (domain_capability) o << ".clone()";
             o << ";\n";
             types[s.a] = domain_capability ? source->second
-                : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             if (domain_capability) {
               auto source_binding = source_name
@@ -11712,8 +11317,19 @@ class Generator {
               std::any_of(d->state.begin(), d->state.end(), [&](const Field& field) {
                 return field.name == s.message_result;
               });
+          const Field* state_field = nullptr;
+          if (state_result) {
+            auto found_state = std::find_if(d->state.begin(), d->state.end(),
+                [&](const Field& field) {
+                  return field.name == s.message_result;
+                });
+            if (found_state == d->state.end())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked message state field is unavailable");
+            state_field = &*found_state;
+          }
           const bool state_view = state_result &&
-              is_object_view(s.message_result, d, locals, &types);
+              view_object_type(state_field->type);
           if (state_view) {
             o << "(" << write_call_place(s.message_result, d, locals, &types)
               << ").__moss_replace(";

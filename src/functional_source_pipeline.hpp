@@ -20,6 +20,7 @@ struct ParsedFunctionalStage {
   const est::Arena* expression_arena = nullptr;
   std::string expression_source;
   std::string checked_output_type;
+  std::vector<std::string> checked_callable_argument_types;
 };
 
 struct ParsedFunctionalPipeline {

@@ -173,6 +173,7 @@ class FastInterpreter {
     Frame frame;
     frame.function = "main";
     frame.functional_context = "main";
+    frame.checked_fact_context = frame.functional_context;
     frame.source_file = program_.main->source_file;
     frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
@@ -209,6 +210,7 @@ class FastInterpreter {
       Frame frame;
       frame.function = "test:" + test.name;
       frame.functional_context = frame.function;
+      frame.checked_fact_context = frame.functional_context;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
       std::ostringstream test_output;
@@ -342,6 +344,7 @@ class FastInterpreter {
   struct Frame {
     std::string function;
     std::string functional_context;
+    std::string checked_fact_context;
     std::string source_file;
     std::string semantic_identity;
     std::string specialization_identity;
@@ -447,6 +450,38 @@ class FastInterpreter {
     ~ExpressionHandlesScope() { slot = prior; }
   };
 
+  struct FunctionalPlansScope {
+    const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>*& slot;
+    const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>* prior;
+    FunctionalPlansScope(const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>*& target,
+        const std::unordered_map<std::string,
+        std::vector<Stmt::FunctionalExpressionPlan>>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~FunctionalPlansScope() { slot = prior; }
+  };
+  struct FunctionResultPlansScope {
+    const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>*& slot;
+    const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>* prior;
+    FunctionResultPlansScope(const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>*& target,
+        const std::unordered_map<std::string,
+        Stmt::FunctionalExpressionPlan>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~FunctionResultPlansScope() { slot = prior; }
+  };
+  struct StatementScope {
+    const Stmt*& slot;
+    const Stmt* prior;
+    StatementScope(const Stmt*& target, const Stmt* current)
+        : slot(target), prior(target) { slot = current; }
+    ~StatementScope() { slot = prior; }
+  };
+
   struct RaisedSignal {
     RaisedIdentity identity;
     Value value;
@@ -459,6 +494,11 @@ class FastInterpreter {
 
   const Program& program_;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
+  const std::unordered_map<std::string,
+      std::vector<Stmt::FunctionalExpressionPlan>>* active_functional_plans_ = nullptr;
+  const std::unordered_map<std::string,
+      Stmt::FunctionalExpressionPlan>* active_function_result_plans_ = nullptr;
+  const Stmt* active_statement_ = nullptr;
   Options options_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
@@ -680,6 +720,44 @@ class FastInterpreter {
     active_expression_node_ = node;
     try {
       Value result = evaluate_expression_tree(tree, node, frame, line, output);
+#ifdef MOSS_TEST_BUILD
+      if (moss_test_drop_fact("expression-types") ||
+          moss_test_perturb_fact("expression-types")) {
+        const auto* facts = !frame.checked_fact_context.empty()
+            ? tree.arena->facts(node, frame.checked_fact_context) : nullptr;
+        if (!facts)
+          facts = tree.arena->facts(node, frame.functional_context);
+        if (!facts || !facts->type || !facts->type->is_closed())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing checked expression type");
+        const std::string expected = facts->type->to_canonical_string();
+        std::optional<std::string> actual;
+        switch (result.kind) {
+          case Value::Kind::Unit: actual = "unit"; break;
+          case Value::Kind::Bool: actual = "bool"; break;
+          case Value::Kind::Int: actual = "int"; break;
+          case Value::Kind::Float: actual = "float"; break;
+          case Value::Kind::String: actual = "string"; break;
+          case Value::Kind::Char: actual = "char"; break;
+          case Value::Kind::Struct:
+            if (result.object) actual = result.object->type;
+            break;
+          case Value::Kind::Vector:
+            if (!result.element_type.empty())
+              actual = "vector[" + result.element_type + "]";
+            break;
+          case Value::Kind::Queue: actual = "queue"; break;
+          case Value::Kind::Map: actual = "map"; break;
+          case Value::Kind::Set: actual = "set"; break;
+          case Value::Kind::Callable:
+          case Value::Kind::DomainHandle:
+            break;
+        }
+        if (!actual || *actual != expected)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked expression type disagrees with execution");
+      }
+#endif
       active_expression_tree_ = previous_tree;
       active_expression_node_ = previous_node;
       return result;
@@ -1462,36 +1540,214 @@ class FastInterpreter {
             &tree.arena->at(expression))) {
       auto local = callback.locals.find(identifier->name);
       if (local != callback.locals.end() &&
-          local->second.kind == Value::Kind::Callable)
+          local->second.kind == Value::Kind::Callable) {
+#ifdef MOSS_TEST_BUILD
+        if (moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets"))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline callable target was dropped or perturbed");
+#endif
         return invoke_pipeline_callable(local->second.string, values,
                                         frame, line, output);
-      if (function(identifier->name))
+      }
+      if (function(identifier->name)) {
+#ifdef MOSS_TEST_BUILD
+        if (moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets"))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline callable target was dropped or perturbed");
+#endif
         return invoke_pipeline_callable(identifier->name, values, frame,
                                         line, output);
+      }
     }
     return evaluate_tree_node(tree, expression, callback, line, output);
   }
 
+  static void record_type_coverage(const char* kind, bool present) {
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_type_fact_coverage("fast-debug", kind, present);
+#else
+    (void)kind;
+    (void)present;
+#endif
+  }
+
   std::optional<std::string> checked_pipeline_stage_output_type(
-      const ParsedFunctionalPipeline& parsed, size_t stage_index,
-      const Frame& frame, int line) const {
-    for (const auto& pipeline : program_.functional_pipelines) {
-      if (pipeline.line != line || pipeline.context != frame.functional_context ||
-          stage_index >= pipeline.nodes.size() ||
-          pipeline.nodes.size() != parsed.stages.size() + 1 ||
-          trim_copy(pipeline.source_expression) != trim_copy(parsed.source))
-        continue;
-      bool matches = true;
-      for (size_t index = 1; index < pipeline.nodes.size(); ++index)
-        if (trim_copy(pipeline.nodes[index].source_text) !=
-            trim_copy(parsed.stages[index - 1].raw)) {
-          matches = false;
-          break;
-        }
-      if (!matches) continue;
-      return pipeline.nodes[stage_index].output_type;
+      const ExpressionTreeView& tree, const est::Pipeline& pipeline_node,
+      size_t stage_index, const Frame& frame, int line) const {
+    if (!tree.arena || stage_index == 0 ||
+        stage_index > pipeline_node.stages.size()) {
+      record_type_coverage("pipeline-stage", false);
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
     }
-    return std::nullopt;
+    const auto stage = est::unparenthesized(*tree.arena,
+        pipeline_node.stages[stage_index - 1]);
+    const est::SemanticFacts* facts = nullptr;
+    std::vector<std::string> contexts;
+    if (!frame.checked_fact_context.empty())
+      contexts.push_back(frame.checked_fact_context);
+    contexts.push_back(frame.functional_context);
+    const auto specialization = frame.functional_context.find('<');
+    if (specialization != std::string::npos)
+      contexts.push_back(frame.functional_context.substr(0, specialization));
+    if (!frame.source_file.empty())
+      contexts.push_back("source:" + frame.source_file + ":" +
+                         std::to_string(line));
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      facts = tree.arena->facts(stage, context);
+      if (facts) break;
+    }
+    if ((!facts || !facts->type || !facts->type->is_closed()) &&
+        tree.arena) {
+      if (stage_index == pipeline_node.stages.size() &&
+          active_statement_ && !active_statement_->semantic_type.empty()) {
+        const bool owns_pipeline = active_expression_handles_ &&
+            std::any_of(active_expression_handles_->begin(),
+                active_expression_handles_->end(), [&](const est::Handle& handle) {
+                  if (handle.arena_index >= program_.expression_arenas.size() ||
+                      program_.expression_arenas[handle.arena_index].get() !=
+                          tree.arena)
+                    return false;
+                  const auto root = est::unparenthesized(*tree.arena, handle.expr);
+                  return std::get_if<est::Pipeline>(&tree.arena->at(root)) ==
+                      &pipeline_node;
+                });
+        auto checked_type = Type::parse_canonical(
+            active_statement_->semantic_type);
+        if (owns_pipeline && checked_type && (*checked_type)->is_closed()) {
+          record_type_coverage("pipeline-stage", true);
+          return (*checked_type)->to_canonical_string();
+        }
+      }
+      std::size_t arena_index = 0;
+      while (arena_index < program_.expression_arenas.size() &&
+             program_.expression_arenas[arena_index].get() != tree.arena)
+        ++arena_index;
+      if (arena_index < program_.expression_arenas.size()) {
+        std::vector<std::string> plan_contexts{frame.checked_fact_context,
+                                                frame.functional_context};
+        const auto specialization = frame.functional_context.find('<');
+        if (specialization != std::string::npos)
+          plan_contexts.push_back(
+              frame.functional_context.substr(0, specialization));
+        const auto output_for_plan = [&](
+            const Stmt::FunctionalExpressionPlan& plan)
+            -> std::optional<std::string> {
+          if (plan.arena_index != arena_index ||
+              plan.expression >= tree.arena->size() ||
+              std::get_if<est::Pipeline>(
+                  &tree.arena->at(plan.expression)) != &pipeline_node ||
+              plan.pipeline_id >= program_.functional_pipelines.size())
+            return std::nullopt;
+          const auto& checked_plan =
+              program_.functional_pipelines[plan.pipeline_id];
+          if (stage_index >= checked_plan.nodes.size() ||
+              checked_plan.nodes[stage_index].output_type.empty())
+            return std::nullopt;
+          return checked_plan.nodes[stage_index].output_type;
+        };
+        for (const auto& context : plan_contexts) {
+          if (active_functional_plans_) {
+            const auto found = active_functional_plans_->find(context);
+            if (found != active_functional_plans_->end())
+              for (const auto& plan : found->second)
+                if (auto output = output_for_plan(plan)) {
+                  record_type_coverage("pipeline-stage", true);
+                  return output;
+                }
+          }
+          if (active_function_result_plans_) {
+            const auto found = active_function_result_plans_->find(context);
+            if (found != active_function_result_plans_->end())
+              if (auto output = output_for_plan(found->second)) {
+                record_type_coverage("pipeline-stage", true);
+                return output;
+              }
+          }
+        }
+      }
+    }
+    if (!facts || !facts->type || !facts->type->is_closed()) {
+      record_type_coverage("pipeline-stage", false);
+      std::string recorded_contexts;
+      for (const auto& entry : tree.arena->facts_for_expression(stage)) {
+        if (!recorded_contexts.empty()) recorded_contexts += ",";
+        recorded_contexts += entry.first;
+      }
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked pipeline stage output type "
+          "node=" + std::to_string(stage) + " context=" +
+          frame.functional_context + " recorded=" + recorded_contexts);
+    }
+    record_type_coverage("pipeline-stage", true);
+    return facts->type->to_canonical_string();
+  }
+
+  std::string checked_expression_type(const ExpressionTreeView& tree,
+                                      est::ExprId expression,
+                                      const Frame& frame, int line) const {
+    if (!tree.arena) {
+      record_type_coverage("expression", false);
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked expression tree");
+    }
+    const auto root = est::unparenthesized(*tree.arena, expression);
+    std::vector<std::string> contexts;
+    if (!frame.checked_fact_context.empty())
+      contexts.push_back(frame.checked_fact_context);
+    contexts.push_back(frame.functional_context);
+    if (frame.functional_context.rfind("handler:", 0) == 0) {
+      const auto recovery = frame.functional_context.find(":on_fail:");
+      if (recovery != std::string::npos)
+        contexts.push_back(frame.functional_context.substr(0, recovery));
+    }
+    const auto specialization = frame.functional_context.find('<');
+    if (specialization != std::string::npos)
+      contexts.push_back(frame.functional_context.substr(0, specialization));
+    if (!frame.source_file.empty())
+      contexts.push_back("source:" + frame.source_file + ":" +
+                         std::to_string(line));
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      const auto* facts = tree.arena->facts(expression, context);
+      if (!facts && root != expression)
+        facts = tree.arena->facts(root, context);
+      if (facts && facts->type && facts->type->is_closed()) {
+        record_type_coverage("expression", true);
+        return facts->type->to_canonical_string();
+      }
+    }
+    // A function can be entered through a call whose checker edge has no
+    // unique specialization mapping. In that case the unspecialized context
+    // may contain an open type variable while every checked specialization
+    // records the same closed type for this node. Reuse that checked answer
+    // only when it is unambiguous; never infer from runtime values.
+    std::optional<std::string> common_checked_type;
+    bool conflicting_checked_types = false;
+    for (const auto& entry : tree.arena->facts_for_expression(root)) {
+      const auto& facts = entry.second;
+      if (!facts.type || !facts.type->is_closed()) continue;
+      const auto type = facts.type->to_canonical_string();
+      if (common_checked_type && *common_checked_type != type) {
+        conflicting_checked_types = true;
+        break;
+      }
+      common_checked_type = type;
+    }
+    if (common_checked_type && !conflicting_checked_types) {
+      record_type_coverage("expression", true);
+      return *common_checked_type;
+    }
+    record_type_coverage("expression", false);
+    throw RuntimeError(line,
+        "MOSS_INTERNAL_INVARIANT missing checked expression type node=" +
+        std::to_string(root) + " kind=" +
+        std::to_string(tree.arena->at(root).index()) + " expression=" +
+        std::string(expression_node_text(tree, root)) + " context=" +
+        frame.functional_context);
   }
 
   static std::optional<std::string> checked_vector_element_type(
@@ -1526,9 +1782,30 @@ class FastInterpreter {
           callee = stage.raw;
       }
       const auto& args = stage.arguments;
+      auto checked_output_type = checked_pipeline_stage_output_type(
+          tree, pipeline_node, stage_index, frame, line);
+      if (!checked_output_type) {
+#ifndef NDEBUG
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && std::string(count) == "g3")
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
+                    << "|context=" << frame.functional_context << "\n";
+#endif
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT missing checked pipeline stage output type");
+      }
+      std::optional<std::string> checked_vector_element;
+      if (callee == "map" || callee == "filter") {
+        checked_vector_element = checked_vector_element_type(
+            *checked_output_type);
+        if (!checked_vector_element)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT malformed checked pipeline vector output type");
+      }
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
-        Value total = (current.element_type == "Float" || current.element_type == "float")
+        Value total = (*checked_output_type == "Float" ||
+                       *checked_output_type == "float")
             ? Value::float_value(0.0) : Value::int_value(0);
         for (const auto& value : *current.vector) {
           if (value.kind == Value::Kind::Float || total.kind == Value::Kind::Float) {
@@ -1545,7 +1822,6 @@ class FastInterpreter {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
         std::vector<Value> values;
-        std::optional<std::string> inferred_map_element_type;
         if (stage_index - 1 >= pipeline_node.stages.size())
           throw RuntimeError(line,
               "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
@@ -1559,57 +1835,11 @@ class FastInterpreter {
           Value transformed = invoke_pipeline_expression(
               tree, stage_callable, {value}, frame, line, output);
           if (callee == "map") {
-            switch (transformed.kind) {
-              case Value::Kind::Bool: inferred_map_element_type = "bool"; break;
-              case Value::Kind::Int: inferred_map_element_type = "int"; break;
-              case Value::Kind::Float: inferred_map_element_type = "float"; break;
-              case Value::Kind::String: inferred_map_element_type = "string"; break;
-              case Value::Kind::Char: inferred_map_element_type = "char"; break;
-              case Value::Kind::Vector: inferred_map_element_type = "vector[" + transformed.element_type + "]"; break;
-              case Value::Kind::Struct: if (transformed.object) inferred_map_element_type = transformed.object->type; break;
-              default: break;
-            }
             values.push_back(std::move(transformed));
           } else if (transformed.truthy()) values.push_back(value);
         }
         std::string element_type = current.element_type;
-        if (callee == "map") {
-          auto output_type = checked_pipeline_stage_output_type(
-              parsed, stage_index, frame, line);
-          if (!output_type) {
-#ifndef NDEBUG
-            if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-                count && std::string(count) == "g3")
-              std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
-                        << "|context=" << frame.functional_context << "\n";
-#endif
-          }
-          if (!output_type && !args.empty()) {
-            std::string callback = trim_copy(args.front());
-            std::string callback_name = callback;
-            std::vector<std::string> callback_args;
-            expression_call(callback, callback_name, callback_args,
-                            "pipeline_callback");
-            for (std::size_t separator = callback_name.find('.');
-                 separator != std::string::npos;
-                 separator = callback_name.find('.', separator + 2))
-              callback_name.replace(separator, 1, "__");
-            auto callback_function = function_signature(callback_name);
-            if (!callback_function) {
-              auto local = frame.locals.find(callback_name);
-              if (local != frame.locals.end() && local->second.kind == Value::Kind::Callable)
-                callback_function = function_signature(local->second.string);
-            }
-            if (callback_function && callback_function->return_type)
-              output_type = "vector[" + *callback_function->return_type + "]";
-          }
-          auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
-          if (!output_element && inferred_map_element_type)
-            output_element = inferred_map_element_type;
-          if (!output_element)
-            throw RuntimeError(line, "internal error: missing checked map output type");
-          element_type = *output_element;
-        }
+        element_type = *checked_vector_element;
         current = Value::vector_value(std::move(values),
                                       std::move(element_type));
       } else if (callee == "reduce") {
@@ -1650,6 +1880,26 @@ class FastInterpreter {
         }
         current = Value::boolean_value(result);
       } else throw RuntimeError(line, "unsupported checked pipeline stage '" + callee + "'");
+#ifdef MOSS_TEST_BUILD
+      if (moss_test_perturb_fact("pipeline-types")) {
+        bool agrees = false;
+        if (*checked_output_type == "unit") agrees = current.kind == Value::Kind::Unit;
+        else if (*checked_output_type == "bool") agrees = current.kind == Value::Kind::Bool;
+        else if (*checked_output_type == "int") agrees = current.kind == Value::Kind::Int;
+        else if (*checked_output_type == "float") agrees = current.kind == Value::Kind::Float;
+        else if (*checked_output_type == "string") agrees = current.kind == Value::Kind::String;
+        else if (*checked_output_type == "char") agrees = current.kind == Value::Kind::Char;
+        else if (checked_output_type->rfind("vector[", 0) == 0)
+          agrees = current.kind == Value::Kind::Vector &&
+              checked_vector_element_type(*checked_output_type) ==
+                  std::optional<std::string>(current.element_type);
+        else if (current.kind == Value::Kind::Struct && current.object)
+          agrees = *checked_output_type == current.object->type;
+        if (!agrees)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline output type disagrees with execution");
+      }
+#endif
     }
     return current;
   }
@@ -1759,6 +2009,18 @@ class FastInterpreter {
         if (binary->op == "xor")
           return Value::boolean_value(left.truthy() != right.truthy());
         const auto& op = binary->op;
+        std::string checked_result_type;
+        std::string checked_left_type;
+        std::string checked_right_type;
+        if (op == "+" || op == "-" || op == "*" || op == "/" ||
+            op == "%") {
+          checked_result_type = checked_expression_type(
+              *tree, current_root, frame, line);
+          checked_left_type = checked_expression_type(
+              *tree, binary->left, frame, line);
+          checked_right_type = checked_expression_type(
+              *tree, binary->right, frame, line);
+        }
         if (op == "==") return Value::boolean_value(equal(left, right));
         if (op == "!=") return Value::boolean_value(!equal(left, right));
         if (op == "<" || op == ">" || op == "<=" || op == ">=") {
@@ -1790,10 +2052,19 @@ class FastInterpreter {
           if (op == "<<") return Value::int_value(moss_shl(left.integer, right.integer));
           return Value::int_value(moss_shr(left.integer, right.integer));
         }
-        if (op == "+" && left.kind == Value::Kind::String &&
-            right.kind == Value::Kind::String)
+        if (op == "+" && checked_result_type == "string") {
+          if (checked_left_type != "string" || checked_right_type != "string" ||
+              left.kind != Value::Kind::String ||
+              right.kind != Value::Kind::String)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked string addition operands disagree");
           return Value::string_value(left.string + right.string);
-        if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+        }
+        if (checked_result_type == "int") {
+          if (checked_left_type != "int" || checked_right_type != "int" ||
+              left.kind != Value::Kind::Int || right.kind != Value::Kind::Int)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked integer arithmetic operands disagree");
           if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
           if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
           if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
@@ -1805,6 +2076,13 @@ class FastInterpreter {
           if (op == "%") return Value::int_value(left.integer % right.integer);
           return Value::int_value(left.integer / right.integer);
         }
+        if (checked_result_type != "float" ||
+            (checked_left_type != "int" && checked_left_type != "float") ||
+            (checked_right_type != "int" && checked_right_type != "float") ||
+            (left.kind != Value::Kind::Int && left.kind != Value::Kind::Float) ||
+            (right.kind != Value::Kind::Int && right.kind != Value::Kind::Float))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked numeric arithmetic type is unsupported");
         const double lhs = left.kind == Value::Kind::Int ? left.integer : left.floating;
         const double rhs = right.kind == Value::Kind::Int ? right.integer : right.floating;
         if (op == "+") return Value::float_value(lhs + rhs);
@@ -3096,6 +3374,9 @@ class FastInterpreter {
 #endif
     }
     frame.functional_context = functional_function_context(target, specialization);
+    frame.checked_fact_context = specialization
+        ? "specialization:" + specialization->stable_type_key
+        : frame.functional_context;
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
@@ -3115,6 +3396,9 @@ class FastInterpreter {
     Flow flow = execute(executable_body, frame, output);
     ExpressionHandlesScope result_handles_scope(
         active_expression_handles_, &target.expression_handles);
+    FunctionResultPlansScope result_plans_scope(
+        active_function_result_plans_,
+        &target.result_functional_expression_plans_by_context);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
              ? evaluate_expression_source(*target.execution_result_expression,
@@ -3286,8 +3570,12 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      StatementScope statement_scope(active_statement_, &statement);
       ExpressionHandlesScope expression_handles_scope(
           active_expression_handles_, &statement.expression_handles);
+      FunctionalPlansScope functional_plans_scope(
+          active_functional_plans_,
+          &statement.functional_expression_plans_by_context);
       if (statement.kind == Stmt::Kind::Try) {
         size_t try_end = index + 1;
         while (try_end < end && statements[try_end].indent > statement.indent)

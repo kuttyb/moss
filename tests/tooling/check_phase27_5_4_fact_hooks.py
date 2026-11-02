@@ -40,20 +40,35 @@ CASES = {
                  ROOT / "tests/tooling/fixtures/phase27_5_match_copy.moss"],
 }
 DEBT_CASES = {
-    "expression-types": [
-        ROOT / "tests/phase27/est/side_facts.moss",
-        ROOT / "tests/phase27/est/pipeline_shape.moss",
-        ROOT / "examples/collections_and_methods.moss",
-    ],
-    "pipeline-types": [
-        ROOT / "tests/phase27/est/pipeline_shape.moss",
-        ROOT / "examples/functional_basics.moss",
-        ROOT / "examples/collections_and_methods.moss",
-    ],
+    # Type classes have dedicated all-engine perturb/drop fixtures below.
+    # This legacy debt ratchet is intentionally ownership-only (Phase 28).
     "ownership": [
         ROOT / "tests/generic_method_effects.moss",
         ROOT / "tests/phase4_effect_smoke.moss",
         ROOT / "tests/swarm_028_self_method_argument_borrow.moss",
+    ],
+}
+TYPE_CASES = {
+    # Perturbed expression types turn the checker facts into Bool. Expected
+    # behavior on every fixture and engine: never retain baseline behavior;
+    # either follow the changed type observably or fail closed (including Rust
+    # rejecting contradictory generated code). Drops fail at a checked-fact
+    # boundary.
+    "expression-types": [
+        ROOT / "examples/collections_and_methods.moss",
+        ROOT / "tests/phase27/est/specialized_call_facts.moss",
+        ROOT / "tests/phase27/est/expression_type_arithmetic.moss",
+    ],
+    # Pipeline types are changed to Bool in both the FunctionalPipeline plan
+    # and retained pipeline/stage EST facts. Expected behavior on every
+    # fixture and engine: never reconstruct the baseline output type; follow
+    # Bool observably or fail closed, including generated-Rust rejection.
+    "pipeline-types": [
+        ROOT / "examples/functional_basics.moss",
+        ROOT / "tests/phase27/est/pipeline_shape.moss",
+        ROOT / "tests/phase27/est/pipeline_type_map.moss",
+        ROOT / "tests/phase27/est/pipeline_type_filter.moss",
+        ROOT / "tests/phase27/est/pipeline_type_reduce.moss",
     ],
 }
 DEBT_BASELINE = ROOT / "tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json"
@@ -128,19 +143,97 @@ def check_known_debt(work: Path) -> None:
           f"(no growth)")
 
 
+def type_engine_result(source: Path, engine: str, fact_class: str,
+                       action: str, work: Path, key: str):
+    env = os.environ.copy()
+    env.pop("MOSS_TEST_PERTURB", None)
+    env.pop("MOSS_TEST_DROP_FACT", None)
+    if action != "baseline":
+        env["MOSS_TEST_" + ("PERTURB" if action == "perturb" else "DROP_FACT")] = fact_class
+    if engine == "fast-debug":
+        return run([str(COMPILER), "run", "--interp", str(source)], env)
+    flags = ["-O"] if engine == "optimized" else []
+    rust = work / f"type-{key}.rs"
+    emitted = run([str(COMPILER), str(source), *flags, "-o", str(rust)], env)
+    if emitted.returncode:
+        return emitted
+    binary = rust.with_suffix(".bin")
+    compiled = run(["rustc", "--edition=2021", str(rust), "-o", str(binary)], env)
+    if compiled.returncode:
+        return compiled
+    return run([str(binary)], env)
+
+
+def check_type_fact_contract(work: Path,
+                             cases: dict[str, list[Path]]) -> None:
+    for fact_class, sources in cases.items():
+        if len(sources) < 3:
+            raise SystemExit(f"{fact_class}: fewer than three type fixtures")
+        for index, source in enumerate(sources):
+            checked = run([str(COMPILER), "check", str(source), "--json"],
+                          os.environ.copy())
+            if checked.returncode:
+                raise SystemExit(f"type fixture rejected: {source}: "
+                                 f"{checked.stdout}{checked.stderr}")
+            baseline_outputs: dict[str, str] = {}
+            for engine in ("fast-debug", "native", "optimized"):
+                base = type_engine_result(source, engine, fact_class,
+                    "baseline", work, f"{fact_class}-{index}-{engine}-base")
+                if base.returncode:
+                    raise SystemExit(f"type fixture baseline failed: {engine} "
+                        f"{source}: {base.stdout}{base.stderr}")
+                baseline_outputs[engine] = base.stdout
+                dropped = type_engine_result(source, engine, fact_class,
+                    "drop", work, f"{fact_class}-{index}-{engine}-drop")
+                if dropped.returncode == 0 or \
+                        "MOSS_INTERNAL_INVARIANT" not in dropped.stderr:
+                    raise SystemExit(f"{engine} did not fail closed on dropped "
+                        f"{fact_class} for {source}: "
+                        f"{dropped.stdout}{dropped.stderr}")
+                perturbed = type_engine_result(source, engine, fact_class,
+                    "perturb", work,
+                    f"{fact_class}-{index}-{engine}-perturb")
+                if perturbed.returncode == 0 and \
+                        perturbed.stdout == base.stdout:
+                    raise SystemExit(f"{engine} ignored perturbed {fact_class} "
+                        f"for {source}; expected changed output or fail-closed")
+            if len(set(baseline_outputs.values())) != 1:
+                raise SystemExit(
+                    f"type fixture engine output mismatch for {source}: "
+                    + ", ".join(f"{engine}={output!r}" for engine, output
+                                 in baseline_outputs.items()))
+        print(f"PASS {fact_class}: {len(sources)} fixtures, all engines follow "
+              "perturbation or fail closed; drops fail with internal invariant")
+
+
 def main() -> None:
     work = ROOT / "tmp/phase27-5-4-fact-hooks" / str(time.time_ns())
     work.mkdir(parents=True)
     cases = {name: list(sources) for name, sources in CASES.items()}
-    selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURE")
+    type_cases = {name: list(sources) for name, sources in TYPE_CASES.items()}
+    selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURES")
+    if not selected and os.environ.get("MOSS_TEST_AGENT2_FIXTURE"):
+        selected = os.environ["MOSS_TEST_AGENT2_FIXTURE"]
     if selected:
-        path = Path(selected)
-        if not path.is_absolute():
-            path = ROOT / path
+        paths = [Path(item.strip()) for item in selected.split(",")
+                 if item.strip()]
+        paths = [path if path.is_absolute() else ROOT / path
+                 for path in paths]
         fact_class = os.environ.get("MOSS_TEST_AGENT2_CLASS")
-        if fact_class not in cases:
+        if fact_class in cases:
+            destination = cases[fact_class]
+        elif fact_class in type_cases:
+            destination = type_cases[fact_class]
+        else:
             raise SystemExit("MOSS_TEST_AGENT2_CLASS must name one fact class")
-        cases[fact_class].append(path)
+        if len(set(paths)) != len(paths):
+            raise SystemExit("Agent 2 fixture list contains duplicates")
+        existing = {path.resolve() for path in destination}
+        overlap = sorted(str(path) for path in paths if path.resolve() in existing)
+        if overlap:
+            raise SystemExit("Agent 2 fixtures must be additional programs: " +
+                             ", ".join(overlap))
+        destination.extend(paths)
     for fact_class, sources in cases.items():
         if len(sources) < 3:
             raise SystemExit(f"{fact_class}: fewer than three fixtures")
@@ -180,6 +273,7 @@ def main() -> None:
                             f"{ignored.stdout}{ignored.stderr}")
         print(f"PASS {fact_class}: {len(sources)} fixtures, perturb/drop, "
               "Fast Debug/native/-O fail closed")
+    check_type_fact_contract(work, type_cases)
     check_known_debt(work)
     print("Phase 27.5.4 checked-fact perturb/drop hooks passed")
 

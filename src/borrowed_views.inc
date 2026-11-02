@@ -175,11 +175,16 @@
     }
     if (!found_fn) return emitted;
     const auto* specialization = call_specialization(*found_fn, args, types);
-    for (size_t i = 0; i < args.size(); ++i)
-      if (function_effect(*found_fn, i,
-              generated_expr_type(args[i], types).value_or(""), specialization) != Effect::Consume &&
-          is_object_view(args[i], d, locals, types))
+    for (size_t i = 0; i < args.size(); ++i) {
+      const string type = specialization &&
+          i < specialization->parameter_types.size()
+          ? specialization->parameter_types[i]
+          : i < found_fn->params.size() ? found_fn->params[i].type : string();
+      if (function_effect(*found_fn, i, type, specialization) != Effect::Consume &&
+          view_object_type(type) &&
+          view_place(args[i], d, locals, types).has_value())
         return "__moss_view_" + emitted;
+    }
     return emitted;
   }
 
@@ -197,10 +202,15 @@
     string emitted = specialization ? specialization->generated_name
                                     : function.name;
     for (size_t index = 0; index < args.size(); ++index) {
-      const string type = generated_expr_type(args[index], types).value_or("");
+      const string type = specialization &&
+          index < specialization->parameter_types.size()
+          ? specialization->parameter_types[index]
+          : index < function.params.size() ? function.params[index].type
+                                            : string();
       if (function_effect(function, index, type, specialization) !=
               Effect::Consume &&
-          is_object_view(args[index], d, locals, types))
+          view_object_type(type) &&
+          view_place(args[index], d, locals, types).has_value())
         return "__moss_view_" + emitted;
     }
     return emitted;
