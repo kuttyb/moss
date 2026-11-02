@@ -4,7 +4,9 @@
 
 C1 implementation: `0e150dcef0a0be69c1502710e38c1dabb4f0877e` on
 `phase27-5-4-work`. Agent 2 reviewed that exact implementation and returned
-**GO** before delivery. C2 emitter/optimizer migration is in progress; its final gates have not run.
+**GO** before C1 delivery. C2 and the post-C2 closeout are delivered at
+`phase27-5-4-m2`; see the closeout record below for current gates and baseline
+failures.
 
 Fast Debug expression evaluation now requires a retained checked tree handle;
 `src/interpreter.hpp:639–670` reports `MOSS_INTERNAL_INVARIANT` when the
@@ -682,7 +684,7 @@ measured RSS issue was addressed by the `-Os` checker translation unit. C2 was
 then merged/tagged as `phase27-5-4-m1` (`4b5e9880`). The separate closing round
 is now active on `phase27-5-4-closeout-work`.
 
-## Post-C2 closing round checkpoint (2026-11-01)
+## Post-C2 closing round delivery (2026-11-01)
 
 Added stage-attributed test-build counters and the committed runtime workload
 ratchet. The workload has 28 checked/emitted sources, including a calculator
@@ -709,5 +711,7 @@ by both `check_phase27_accepts_rustc` and `shard_swarm_cases`. The shadow
 `make check-shadow` then ran once: preflight, hooks and ratchet passed; its
 regression shard also passed 162/165 jobs in 355.92s, with the exact same
 three baseline failures. Shadow counters were checker 64,548, driver rewrites
-748, and zero for consumer stages. Agent 2's closeout audit remains pending.
+748, and zero for consumer stages. Agent 2 audited exact candidate
+`1a4745f02d74cd2f99071df6c39ba179ff04ae3d`, reran the default and shadow
+ratchets, and returned **GO**, accepting the documented C1 baseline failures.
 The status and handover are maintained in `.codex/CURRENT_STATUS.md`.
