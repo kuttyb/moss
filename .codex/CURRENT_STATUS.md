@@ -17661,3 +17661,17 @@ future optimizer-isolated proof and must remain explicit in final review.
   optimizer PRESENT=1, ABSENT=0. Consumer re-parses, text lookups and type
   inference were all 0. Re-run the corpus comparison and identify the two
   absent emitter queries after this correction.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (unresolved call fails before type query)
+
+- Whole-corpus per-node coverage isolated the final absent emitter type query to
+  the intentionally malformed-looking `return(...)` call in
+  `17_formatter_return_grouping_native.moss`. The checker accepts the file,
+  but both the Phase 27.5.4 parent and candidate already fail native emission
+  for the unresolved `return` target. The emitter now fails at the missing
+  checked call-target boundary before asking for a value type; it does not infer
+  one. Targeted coverage for that source now has zero ABSENT type queries.
+- Targeted fact perturb/drop, three-engine, and Fast Debug/native/-O parity all
+  pass after this guard. Paired whole-corpus counters must be refreshed; the
+  previous summary was before the arithmetic guard was narrowed and this
+  missing-target ordering fix.

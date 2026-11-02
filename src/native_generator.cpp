@@ -3231,6 +3231,12 @@ class Generator {
       record_type_fact_coverage(true);
       return canonical_type_name(context_independent_type);
     }
+    if (std::holds_alternative<est::Call>(expression.arena->at(root))) {
+      const auto* call_facts = checked_expression_facts(expression, false);
+      if (!call_facts || call_facts->resolved_target.empty())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked call target before type lowering");
+    }
     record_type_fact_coverage(false);
     string recorded_type_contexts;
     for (const auto& entry : expression.arena->facts_for_expression(root)) {
