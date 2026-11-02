@@ -6206,6 +6206,25 @@ class Generator {
             }
           }
         }
+        if (starts_with(target, "trait-method:") ||
+            starts_with(target, "parameter:")) {
+          const Method* selected_method = checked_method_target(expression,
+                                                                 types);
+          bool mapped = false;
+          for (const auto& object : objects_) {
+            const auto method = std::find_if(object.second->methods.begin(),
+                object.second->methods.end(), [&](const Method& candidate) {
+                  return &candidate == selected_method;
+                });
+            if (method == object.second->methods.end()) continue;
+            target = "method:" + object.second->name + "." + method->name;
+            mapped = true;
+            break;
+          }
+          if (!mapped)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked trait method target has no declaration");
+        }
         if (starts_with(target, "callable-v1:") || starts_with(target, "fn:")) {
           const Function* selected = starts_with(target, "callable-v1:")
               ? find_function_by_callable_id(target) : nullptr;

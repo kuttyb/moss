@@ -1335,6 +1335,27 @@ class FastInterpreter {
         std::distance(member_calls.begin(), occurrence));
 
     std::vector<std::pair<std::size_t, std::string>> selected_targets;
+    std::optional<std::string> selected_id;
+    const auto* call = std::get_if<est::Call>(&tree.arena->at(call_id));
+    if (call) {
+      const auto callee = est::unparenthesized(*tree.arena, call->callee);
+      if (const auto* member =
+              std::get_if<est::Member>(&tree.arena->at(callee))) {
+        const auto receiver = est::unparenthesized(*tree.arena, member->base);
+        if (const auto* binding =
+                std::get_if<est::Identifier>(&tree.arena->at(receiver))) {
+          std::set<std::string> subject_targets;
+          for (const auto& requirement :
+                   selected_specialization->member_requirements)
+            if (requirement.member_name == method_name &&
+                requirement.subject == binding->name &&
+                requirement.selected_callable_id)
+              subject_targets.insert(*requirement.selected_callable_id);
+          if (subject_targets.size() == 1)
+            selected_id = *subject_targets.begin();
+        }
+      }
+    }
     for (const auto& requirement : selected_specialization->member_requirements) {
       if (requirement.member_name != method_name ||
           !requirement.selected_callable_id)
@@ -1352,15 +1373,17 @@ class FastInterpreter {
                                     *requirement.selected_callable_id);
     }
     std::sort(selected_targets.begin(), selected_targets.end());
-    if (ordinal >= selected_targets.size()) return std::nullopt;
-    const auto& selected_id = selected_targets[ordinal].second;
-    if (selected_id.rfind("builtin:FileIO.", 0) == 0)
-      return "builtin-fileio:" + selected_id.substr(
+    if (!selected_id) {
+      if (ordinal >= selected_targets.size()) return std::nullopt;
+      selected_id = selected_targets[ordinal].second;
+    }
+    if (selected_id->rfind("builtin:FileIO.", 0) == 0)
+      return "builtin-fileio:" + selected_id->substr(
           std::string("builtin:FileIO.").size());
-    if (selected_id.rfind("builtin:", 0) == 0)
-      return "builtin-method:" + selected_id.substr(
+    if (selected_id->rfind("builtin:", 0) == 0)
+      return "builtin-method:" + selected_id->substr(
           std::string("builtin:").size());
-    const auto callable = CallableId::parse(selected_id);
+    const auto callable = CallableId::parse(*selected_id);
     if (!callable || callable->kind != "method") return std::nullopt;
     for (const auto& object : program_.objects) {
       if (!program_.type_context) break;

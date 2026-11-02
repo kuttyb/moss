@@ -17229,3 +17229,34 @@ future optimizer-isolated proof and must remain explicit in final review.
   failure triage and C2 answer-read/perturb/drop inventory; then run the final
   default/shadow suites, parity/three-engine checks, paired counters, and perf
   near completion. Agent 2 remains reserved for the one audit after full gates.
+
+## C2 checkpoint: trait receiver target mapping and reparse hotspot (2026-11-01)
+
+- Paired C1-parent/candidate measurement over the same 1,824 tracked sources
+  (3,648 default/`-O` emissions per compiler) found candidate totals of 112
+  text lookups, 112 native expression-view reparses, 0 pipeline reparses, and
+  112 consumer expression parses. C1 was 14,606,057 / 9,735,229 / 7,362 / 0
+  respectively; failures were 1,406 parent vs 1,446 candidate.
+- A source locator found exactly two commands with counts: default and `-O` for
+  `examples/swarm/modules/domain_services/repro/trait_param/single/src/main.moss`.
+  The compatibility path handled `trait-method:Weighted.weight` by reparsing
+  the four `a.weight()` / `b.weight()` call occurrences. This was a real
+  remaining C2 path, not a broad corpus regression.
+- Fast Debug now associates a trait method call with the checked specialization
+  requirement by receiver binder when present, avoiding the incorrect assumption
+  that a call's same-line ordinal is the global member-requirement ordinal.
+  The emitter maps the same checked requirement to its declaration and lowers
+  from the retained call node. No receiver type selects the method.
+- Focused parity passes: dev/optimized Fast Debug and native/`-O` each print
+  `10`; both native emissions compile; both modes report 0 reparses and 0 text
+  lookups. The source is now included in call-target and specialization
+  perturb/drop coverage. The fact-hook suite passes 9 call-target fixtures,
+  5 specialization fixtures, joins 4, patterns 3, and the known-debt set stays
+  38/38. Phase 27 EST tree check and feedback validation pass.
+- The paired whole-corpus counter sweep above predates this fix and remains the
+  current aggregate measurement until rerun. The four prior targeted failure
+  labels from the last full suite now reduce to three C1 baseline failures:
+  conformance G2 gate 10, `check_phase27_accepts_rustc`, and
+  `shard_swarm_cases` (both the latter jobs fail on `swarm_035` Rust E0499).
+  Full default/shadow suite, three-engine/parity gates, final paired counters,
+  performance, and the single Agent 2 review remain outstanding.
