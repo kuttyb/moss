@@ -140,6 +140,28 @@ engine ignores every fact in that class. K1 remains report-only in the current
 re-scoped phase. C1's default and shadow suites pass 165/165, and Agent 2
 returned GO on the candidate recorded in `docs/phase27/27_5_4_REPORT.md`.
 
+## Phase 27.5.4 C2 delivery
+
+The retained-tree emitter/optimizer C2 implementation is delivered at tag
+`phase27-5-4-m1`, first-parented on the fetched `origin/main`. Fast Debug,
+emitter, and optimizer consumer expression reparses and text-keyed node lookups
+are zero by the C2 corpus counters and source audits; the emitter measurement
+covers 1,824 tracked test/example files in default and `-O`, while package
+manifests are inventoried but not run as package-context commands. The
+string-based compatibility type inference in
+`src/native_generator.cpp:3275–3609` remains reported debt.
+
+The fact perturb/drop matrix passes for call targets, specializations, joins,
+and patterns; expression types, pipeline types, and ownership retain the
+38-entry explicit-probe ignore baseline. Default and shadow suites each pass
+162/165; the three failures are the pinned-parent conformance gate 10 and the
+two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs. The canonical W2
+performance gate passes at 24,316 KiB peak RSS. Paired C1-parent performance is
++2.19% aggregate, W4 +2.55%, W5 +1.98%, W8 +0.22%; all 23 real-world workloads
+remain within the established slowdown noise rule. Agent 2 returned GO for the
+cost-repaired candidate. Full test and measurement details are in the
+[Phase 27.5.4 report](phase27/27_5_4_REPORT.md).
+
 `tests/tooling/check_phase27_5_4_fact_hooks.py` perturbs and drops these three
 classes on three accepted fixtures each, then compares Fast Debug, native, and
 optimized results with the unmodified run. The exact ignored
