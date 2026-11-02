@@ -148,6 +148,7 @@ class Arena {
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
   void test_mutate_expression_types(bool drop);
+  void test_mutate_pipeline_types(bool drop);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.

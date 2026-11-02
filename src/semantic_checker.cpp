@@ -26215,7 +26215,7 @@ class Checker {
           });
           if (result) {
             state.element_type = canonical_type_name(*result);
-            stage_output_type = state.element_type;
+            stage_output_type = "vector[" + state.element_type + "]";
           }
           break;
         }
@@ -26230,6 +26230,7 @@ class Checker {
               canonical_type_name(*result) != "bool")
             err(line, "filter predicate returns '" + *result +
                 "'; expected 'bool'");
+          stage_output_type = "vector[" + state.element_type + "]";
           break;
         }
         case FunctionalNodeKind::Reduce: {
@@ -26305,6 +26306,41 @@ class Checker {
             stage_occurrence_id);
         captured.semantic_target_id = stage_target;
         captured.output_type = stage_output_type;
+        if (auto stage_type = moss::Type::parse_canonical(stage_output_type)) {
+          captured.output_type_ref = *stage_type;
+          captured.checked_type = *stage_type;
+        }
+      }
+      std::optional<EstExpressionCursor> checked_stage_cursor;
+      if (!active_est_expression_cursors_.empty() &&
+          active_est_expression_cursors_.back()) {
+        const auto& parent = *active_est_expression_cursors_.back();
+        if (auto* parent_arena = expression_arena(parent.arena_index)) {
+          if (auto child = matching_expression_child(*parent_arena,
+                  parent.expr, "stage:" + std::to_string(stage_index),
+                  static_cast<std::uint32_t>(stage_index), parent.source,
+                  stage.raw)) {
+            checked_stage_cursor = EstExpressionCursor{
+                parent.arena_index, *child, stage.raw};
+          }
+        }
+      }
+      if (checked_stage_cursor && !stage_output_type.empty()) {
+        auto stage_type = moss::Type::parse_canonical(stage_output_type);
+        if (stage_type) {
+          if (auto* arena = expression_arena(
+                  checked_stage_cursor->arena_index)) {
+            est::SemanticFacts facts;
+            if (const auto* existing = arena->facts(
+                    checked_stage_cursor->expr,
+                    expression_fact_context()))
+              facts = *existing;
+            facts.type = *stage_type;
+            arena->record_facts(checked_stage_cursor->expr,
+                                expression_fact_context(),
+                                std::move(facts));
+          }
+        }
       }
     }
     return true;
@@ -28972,6 +29008,13 @@ class Checker {
           if (contains_domain_handle(current_env.at(binding)))
             err(statement.line, "domain handle '" + binding +
                 "' cannot be used as ordinary writable storage");
+        if (statement.kind == Stmt::Kind::Assign && current_object_ &&
+            tree_simple_identifier(statement.a) &&
+            std::any_of(current_object_->fields.begin(),
+                        current_object_->fields.end(),
+                [&](const Field& field) { return field.name == statement.a; }))
+          check_expression(statement.line, statement.a, current_env,
+                           "assignment-place");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env,
                          "initializer");
@@ -31791,6 +31834,13 @@ public:
         p_.expression_arena->test_mutate_expression_types(drop_types);
     }
     if (drop_pipelines || perturb_pipelines) {
+      std::set<est::Arena*> visited;
+      for (const auto& arena : p_.expression_arenas)
+        if (arena && visited.insert(arena.get()).second)
+          arena->test_mutate_pipeline_types(drop_pipelines);
+      if (p_.expression_arena &&
+          visited.insert(p_.expression_arena.get()).second)
+        p_.expression_arena->test_mutate_pipeline_types(drop_pipelines);
       for (auto& pipeline : p_.functional_pipelines) {
         if (drop_pipelines) {
           pipeline.output_type.clear();

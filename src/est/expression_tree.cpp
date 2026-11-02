@@ -131,6 +131,27 @@ void Arena::test_mutate_expression_types(bool drop) {
     entry.second.type = perturbed;
   }
 }
+
+void Arena::test_mutate_pipeline_types(bool drop) {
+  std::unordered_set<ExprId> pipeline_nodes;
+  std::function<void(ExprId)> collect = [&](ExprId id) {
+    id = unparenthesized(*this, id);
+    const auto* pipeline = std::get_if<Pipeline>(&at(id));
+    if (!pipeline || !pipeline_nodes.insert(id).second) return;
+    for (const auto stage : pipeline->stages)
+      pipeline_nodes.insert(unparenthesized(*this, stage));
+    const auto input = unparenthesized(*this, pipeline->input);
+    if (std::holds_alternative<Pipeline>(at(input))) collect(input);
+  };
+  for (ExprId id = 0; id < size(); ++id)
+    if (std::holds_alternative<Pipeline>(at(id))) collect(id);
+  const TypeRef perturbed = drop ? nullptr
+      : Type::parse_canonical("bool").value_or(nullptr);
+  for (auto& entry : semantic_facts_) {
+    if (!pipeline_nodes.count(entry.first.expression)) continue;
+    if (drop || entry.second.type) entry.second.type = perturbed;
+  }
+}
 #endif
 
 std::optional<ParsedFunctionalPipeline> functional_pipeline(

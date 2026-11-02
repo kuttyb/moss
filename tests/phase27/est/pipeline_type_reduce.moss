@@ -1,0 +1,7 @@
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+fn main():
+  values = [1, 2, 3]
+  total = values |> reduce(0, add)
+  echo total

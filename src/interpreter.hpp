@@ -1497,36 +1497,43 @@ class FastInterpreter {
             &tree.arena->at(expression))) {
       auto local = callback.locals.find(identifier->name);
       if (local != callback.locals.end() &&
-          local->second.kind == Value::Kind::Callable)
+          local->second.kind == Value::Kind::Callable) {
+#ifdef MOSS_TEST_BUILD
+        if (moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets"))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline callable target was dropped or perturbed");
+#endif
         return invoke_pipeline_callable(local->second.string, values,
                                         frame, line, output);
-      if (function(identifier->name))
+      }
+      if (function(identifier->name)) {
+#ifdef MOSS_TEST_BUILD
+        if (moss_test_drop_fact("call-targets") ||
+            moss_test_perturb_fact("call-targets"))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline callable target was dropped or perturbed");
+#endif
         return invoke_pipeline_callable(identifier->name, values, frame,
                                         line, output);
+      }
     }
     return evaluate_tree_node(tree, expression, callback, line, output);
   }
 
   std::optional<std::string> checked_pipeline_stage_output_type(
-      const ParsedFunctionalPipeline& parsed, size_t stage_index,
-      const Frame& frame, int line) const {
-    for (const auto& pipeline : program_.functional_pipelines) {
-      if (pipeline.line != line || pipeline.context != frame.functional_context ||
-          stage_index >= pipeline.nodes.size() ||
-          pipeline.nodes.size() != parsed.stages.size() + 1 ||
-          trim_copy(pipeline.source_expression) != trim_copy(parsed.source))
-        continue;
-      bool matches = true;
-      for (size_t index = 1; index < pipeline.nodes.size(); ++index)
-        if (trim_copy(pipeline.nodes[index].source_text) !=
-            trim_copy(parsed.stages[index - 1].raw)) {
-          matches = false;
-          break;
-        }
-      if (!matches) continue;
-      return pipeline.nodes[stage_index].output_type;
-    }
-    return std::nullopt;
+      const ExpressionTreeView& tree, const est::Pipeline& pipeline_node,
+      size_t stage_index, const Frame& frame, int line) const {
+    if (!tree.arena || stage_index == 0 ||
+        stage_index > pipeline_node.stages.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
+    const auto stage = est::unparenthesized(*tree.arena,
+        pipeline_node.stages[stage_index - 1]);
+    const auto* facts = tree.arena->facts(stage, frame.functional_context);
+    if (!facts || !facts->type || !facts->type->is_closed())
+      return std::nullopt;
+    return facts->type->to_canonical_string();
   }
 
   static std::optional<std::string> checked_vector_element_type(
@@ -1561,28 +1568,30 @@ class FastInterpreter {
           callee = stage.raw;
       }
       const auto& args = stage.arguments;
-      std::optional<std::string> checked_map_output_element;
-      if (callee == "map") {
-        auto output_type = checked_pipeline_stage_output_type(
-            parsed, stage_index, frame, line);
-        if (!output_type) {
+      auto checked_output_type = checked_pipeline_stage_output_type(
+          tree, pipeline_node, stage_index, frame, line);
+      if (!checked_output_type) {
 #ifndef NDEBUG
-          if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-              count && std::string(count) == "g3")
-            std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
-                      << "|context=" << frame.functional_context << "\n";
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && std::string(count) == "g3")
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
+                    << "|context=" << frame.functional_context << "\n";
 #endif
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT missing checked pipeline stage output type");
+      }
+      std::optional<std::string> checked_vector_element;
+      if (callee == "map" || callee == "filter") {
+        checked_vector_element = checked_vector_element_type(
+            *checked_output_type);
+        if (!checked_vector_element)
           throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked pipeline output type");
-        }
-        checked_map_output_element = checked_vector_element_type(*output_type);
-        if (!checked_map_output_element)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT malformed checked map output type");
+              "MOSS_INTERNAL_INVARIANT malformed checked pipeline vector output type");
       }
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
-        Value total = (current.element_type == "Float" || current.element_type == "float")
+        Value total = (*checked_output_type == "Float" ||
+                       *checked_output_type == "float")
             ? Value::float_value(0.0) : Value::int_value(0);
         for (const auto& value : *current.vector) {
           if (value.kind == Value::Kind::Float || total.kind == Value::Kind::Float) {
@@ -1616,9 +1625,7 @@ class FastInterpreter {
           } else if (transformed.truthy()) values.push_back(value);
         }
         std::string element_type = current.element_type;
-        if (callee == "map") {
-          element_type = *checked_map_output_element;
-        }
+        element_type = *checked_vector_element;
         current = Value::vector_value(std::move(values),
                                       std::move(element_type));
       } else if (callee == "reduce") {
@@ -1659,6 +1666,26 @@ class FastInterpreter {
         }
         current = Value::boolean_value(result);
       } else throw RuntimeError(line, "unsupported checked pipeline stage '" + callee + "'");
+#ifdef MOSS_TEST_BUILD
+      if (moss_test_perturb_fact("pipeline-types")) {
+        bool agrees = false;
+        if (*checked_output_type == "unit") agrees = current.kind == Value::Kind::Unit;
+        else if (*checked_output_type == "bool") agrees = current.kind == Value::Kind::Bool;
+        else if (*checked_output_type == "int") agrees = current.kind == Value::Kind::Int;
+        else if (*checked_output_type == "float") agrees = current.kind == Value::Kind::Float;
+        else if (*checked_output_type == "string") agrees = current.kind == Value::Kind::String;
+        else if (*checked_output_type == "char") agrees = current.kind == Value::Kind::Char;
+        else if (checked_output_type->rfind("vector[", 0) == 0)
+          agrees = current.kind == Value::Kind::Vector &&
+              checked_vector_element_type(*checked_output_type) ==
+                  std::optional<std::string>(current.element_type);
+        else if (current.kind == Value::Kind::Struct && current.object)
+          agrees = *checked_output_type == current.object->type;
+        if (!agrees)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked pipeline output type disagrees with execution");
+      }
+#endif
     }
     return current;
   }
