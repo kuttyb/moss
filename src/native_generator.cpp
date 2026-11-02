@@ -1120,37 +1120,11 @@ class Generator {
       const vector<est::Handle>* handles = nullptr,
       std::string_view query_site = {}) const {
     if (expression.empty()) return std::nullopt;
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(string(expression));
-    const auto* selected = handles ? handles
-        : active_functional_expression_handles_;
-    if (selected) {
-      for (const auto& handle : *selected) {
-        if (handle.source_fingerprint != fingerprint ||
-            handle.arena_index >= p_.expression_arenas.size() ||
-            !p_.expression_arenas[handle.arena_index]) continue;
-        const auto& arena = *p_.expression_arenas[handle.arena_index];
-        const auto span = arena.span(handle.expr);
-        // A fingerprint can match an identical expression nested in a larger
-        // source slot. Its node spans are relative to that parent buffer, so
-        // pairing it with the child text breaks EST projections (notably
-        // arithmetic in a Root message argument). Reparse unless this handle
-        // is rooted at the complete supplied expression.
-        if (span.source_begin != 0 || span.source_end != expression.size())
-          continue;
-        return est::view(arena, handle.expr, expression);
-      }
-    }
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
-    ++expression_view_reparse_sites_[query_site.empty()
-        ? "unknown" : string(query_site)];
-#else
-    (void)query_site;
-#endif
-    return est::parse_view(expression);
+    (void)handles;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitter requested an expression view without "
+        "a checked node site=" +
+        (query_site.empty() ? std::string("unknown") : string(query_site)));
   }
 
   bool tree_plain_identifier(std::string_view expression) const {
@@ -1618,11 +1592,12 @@ class Generator {
 
   bool tree_parse_named_argument(const string& expression, string& name,
                                  string& value) const {
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
-#endif
-    auto syntax = est::parse_named_argument_view(expression);
-    return syntax && est::project_named_argument(*syntax, name, value);
+    (void)expression;
+    (void)name;
+    (void)value;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitter requested named-argument parsing "
+        "without a checked node");
   }
 
   std::optional<vector<string>> tree_parse_vector_literal(
@@ -2591,55 +2566,10 @@ class Generator {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
-    if (!est::functional_pipeline_candidate(expression))
-      return std::nullopt;
-    const auto resolve_stage = [](std::string_view name)
-        -> std::optional<FunctionalNodeKind> {
-      for (const auto& operation : functional_operations())
-        if (name == operation.name) return operation.kind;
-      return std::nullopt;
-    };
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(string(expression));
-    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
-        -> std::optional<ParsedFunctionalPipeline> {
-      if (arena_index >= p_.expression_arenas.size() ||
-          !p_.expression_arenas[arena_index]) return std::nullopt;
-      return est::functional_pipeline(*p_.expression_arenas[arena_index], root,
-                                      expression, resolve_stage);
-    };
-    const auto* selected_handles = handles ? handles
-        : active_functional_expression_handles_;
-    if (selected_handles) {
-      for (const auto& handle : *selected_handles)
-        if (handle.source_fingerprint == fingerprint)
-          if (auto parsed = convert(handle.arena_index, handle.expr))
-            return parsed;
-    }
-
-    // Optimizer-created and nested expression occurrences may not retain a
-    // root handle. Parse into EST and consume the Pipeline node.
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(
-        est::ConsumerReparseSite::NativeFunctionalPipeline);
-#endif
-    auto temporary = std::make_shared<est::Arena>();
-    try {
-      const auto root = est::parse_expression(*temporary, expression);
-      auto parsed = est::functional_pipeline(*temporary, root, expression,
-                                             resolve_stage);
-      if (parsed) {
-        parsed->expression_arena = temporary.get();
-        parsed->owned_expression_arena = std::move(temporary);
-        for (auto& stage : parsed->stages)
-          stage.expression_arena = parsed->expression_arena;
-      }
-      return parsed;
-    } catch (const std::invalid_argument&) {
-      return std::nullopt;
-    }
+    (void)expression;
+    (void)handles;
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT missing checked functional pipeline node");
   }
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_node(
@@ -2801,13 +2731,11 @@ class Generator {
     // facts are shared with codegen instead of selecting the separately parsed
     // argument root, which has no checked children.
     if (slot == est::ExprSlot::Argument &&
-        statement.kind == Stmt::Kind::Call && !statement.text.empty()) {
+        statement.kind == Stmt::Kind::Call) {
       const est::Handle* invocation = nullptr;
-      const auto fingerprint = est::fingerprint(statement.text);
       for (const auto& handle : statement.expression_handles) {
         if (handle.slot != est::ExprSlot::Expression ||
             handle.argument_index != 0 ||
-            handle.source_fingerprint != fingerprint ||
             handle.arena_index >= p_.expression_arenas.size() ||
             !p_.expression_arenas[handle.arena_index]) continue;
         if (invocation)
