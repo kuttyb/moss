@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn inspect_all(items):
+  for item in items:
+    echo item.value
+
+fn main():
+  inspect_all([Box(value: 1), Box(value: 2)])

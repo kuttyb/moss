@@ -73,13 +73,21 @@ struct TypedSpecializationV1 {
 // definition_identity distinguishes rebinding versions of one source name.
 // Consumers must treat unavailable records as missing semantic authority.
 struct TypedLocalOwnershipFactV1 {
-  enum class SourceKind { LocalBinding };
+  enum class SourceKind { LocalBinding, VectorElement };
+  enum class InferenceStatus { Inferred, Unsupported };
+  enum class UnsupportedReason {
+    None, ControlFlowJoin, LoopCarriedUse, AmbiguousUse, UnsupportedSource,
+    ConsumingLoopElement
+  };
   enum class Availability {
-    Present, MissingEstOccurrence, MissingStatementOccurrence,
+    NotRequired, Present, MissingEstOccurrence, MissingStatementOccurrence,
     MissingBindingIdentity, ContradictoryEffect
   };
 
   std::string definition_identity;
+  // Non-empty for a branch definition reaching a checked live join. All
+  // predecessor facts for that joined local share this identity.
+  std::string join_definition_identity;
   std::string source_binding_identity;
   std::string specialization_context;
   std::uint32_t statement_occurrence_id{UINT32_MAX};
@@ -87,9 +95,30 @@ struct TypedLocalOwnershipFactV1 {
   est::ExprId expression_occurrence_id{UINT32_MAX};
   Effect access{Effect::Read};
   SourceKind source_kind{SourceKind::LocalBinding};
+  InferenceStatus inference_status{InferenceStatus::Inferred};
+  UnsupportedReason unsupported_reason{UnsupportedReason::None};
   Availability availability{Availability::MissingEstOccurrence};
   TypeRef value_type;
   TypedSourceProvenanceV1 provenance;
+
+  // Consumer gate: an inferred record is authoritative only when every
+  // identity needed to locate its checker decision is present. Unsupported
+  // inference and incomplete/contradictory records are never authority.
+  bool is_authoritative() const noexcept {
+    return inference_status == InferenceStatus::Inferred &&
+        availability == Availability::Present &&
+        !definition_identity.empty() && !source_binding_identity.empty() &&
+        !specialization_context.empty() &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        expression_occurrence_id != UINT32_MAX;
+  }
+
+  bool is_intentionally_unsupported() const noexcept {
+    return inference_status == InferenceStatus::Unsupported &&
+        unsupported_reason != UnsupportedReason::None &&
+        availability == Availability::NotRequired;
+  }
 };
 
 // A missing or incomplete checker summary is represented as unavailable,
@@ -160,9 +189,10 @@ struct TypedSemanticModuleV1 {
   // Structured absence keeps ABI consumers from parsing diagnostic prose.
   std::map<std::string, TypedOpenSummaryGapV1> unavailable_open_summaries;
   std::map<std::string, TypedSpecializationV1> specializations;
-  // Facts for the bounded local-to-local ownership slice. Absence means the
-  // definition is outside this slice; a listed unavailable fact is explicit
-  // missing authority and must fail closed.
+  // Facts for checked local definitions and Vector loop elements. Unsupported
+  // means the checker deliberately declined this bounded inference. Missing
+  // or contradictory availability on an Inferred record is missing authority
+  // and must fail closed.
   std::vector<TypedLocalOwnershipFactV1> local_ownership_facts;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
