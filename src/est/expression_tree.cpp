@@ -399,6 +399,8 @@ std::array<std::uint64_t,
 thread_local ExpressionParseSite active_expression_parse_site =
     ExpressionParseSite::Other;
 std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
+std::map<std::pair<std::string, std::string>,
+         std::array<std::uint64_t, 2>> consumer_type_fact_counts;
 
 struct TestCoverageReporter {
   ~TestCoverageReporter() noexcept {
@@ -498,6 +500,18 @@ void record_generated_type_fact_coverage(std::string_view node_kind,
   }
 }
 
+void record_consumer_type_fact_coverage(std::string_view consumer,
+                                        std::string_view node_kind,
+                                        bool present) noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++consumer_type_fact_counts[
+        {std::string(consumer), std::string(node_kind)}][present ? 0 : 1];
+  } catch (...) {
+  }
+}
+
 void report_test_coverage_counters() {
   std::lock_guard<std::mutex> lock(test_coverage_mutex);
   std::cerr << "MOSS_EST_TREE_TEXT_REBUILDS="
@@ -576,6 +590,10 @@ void report_test_coverage_counters() {
     std::cerr << "MOSS_EST_GENERATED_TYPE_FACT kind=" << kind
               << " PRESENT=" << counts[0] << " ABSENT=" << counts[1]
               << '\n';
+  for (const auto& [key, counts] : consumer_type_fact_counts)
+    std::cerr << "MOSS_EST_TYPE_COVERAGE consumer=" << key.first
+              << " kind=" << key.second << " PRESENT=" << counts[0]
+              << " ABSENT=" << counts[1] << '\n';
 }
 #endif
 

@@ -17515,3 +17515,10 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Targeted Fast Debug checks passed for expression arithmetic, the specialized-call fixture, and pipeline map. The fact-hook harness passed calls 9, specializations 5, joins 4, patterns 3, expression types 3, pipeline types 5, ownership debt 10/10.
 - Changes are not yet committed at this checkpoint. Full suites and performance remain unrun.
 - Remaining: cover other Fast Debug type-directed behavior and track per-consumer type queries; collect whole-corpus default/-O fact coverage and type-inference counts; complete remaining native/optimizer type consumers and checker fact coverage; update contract; perform final paired perf/suites/parity, then the single Agent 2 audit and merge/tag on GO.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (consumer coverage counters)
+
+- Added test-build per-consumer PRESENT/ABSENT type-fact counters for emitter, Fast Debug, and optimizer. The emitter counts checker plans as present when a pipeline type comes from a checked plan rather than a direct EST fact; Fast Debug counts expression arithmetic and pipeline-stage type reads; optimizer counts checked functional pipeline input types when read.
+- Extended the Phase 27.5.4 paired source measurement tool to report type inference totals per default/optimized emission mode and checked type coverage by consumer. Targeted fixture sample: emitter inference counter 0; arithmetic type query coverage PRESENT=3 ABSENT=0; Fast Debug arithmetic type coverage PRESENT=3 ABSENT=0. An optimized functional fixture emitted no optimizer type query (the optimizer had no applicable type-dependent rewrite on that source).
+- Build and focused fact-hook suite pass; default/optimized full-corpus measurements remain deferred until final gates.
+- Current tracked branch head before this counter checkpoint: `74a2a40e`; current edits are uncommitted. Continue auditing all Fast Debug type-directed paths, test optimizer type-dependent rewrites with a focused source, and implement the full-corpus sweep before final suite/performance gates.

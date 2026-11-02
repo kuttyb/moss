@@ -3159,7 +3159,7 @@ class Generator {
                 ? "parenthesized"
             : "other";
       }
-      est::record_generated_type_fact_coverage(kind, present);
+      est::record_consumer_type_fact_coverage("emitter", kind, present);
 #else
       (void)present;
 #endif

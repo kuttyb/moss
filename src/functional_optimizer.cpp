@@ -460,6 +460,11 @@ class FunctionalOptimizer {
 
   static bool trivial_pipeline_element_type(const string& collection_type) {
     const auto term = parsed_type(collection_type);
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_type_fact_coverage(
+        "optimizer", "functional-pipeline-input",
+        term && term->is_closed());
+#endif
     if (!applied_builtin(term, {"vector", "seq"}) || term->type_args.size() != 1)
       return false;
     const auto& element = term->type_args[0];

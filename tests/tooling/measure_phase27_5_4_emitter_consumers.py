@@ -19,12 +19,21 @@ COUNTER_PATTERNS = {
         r"^MOSS_EST_REPARSES .*native_functional_pipeline=(\d+)", re.M),
     "consumer_expression_parses": re.compile(
         r"^MOSS_EST_EXPRESSION_TEXT_PARSES .*consumer=(\d+)", re.M),
+    "consumer_type_inference": re.compile(
+        r"^MOSS_EST_CONSUMER_TYPE_INFERENCE=(\d+)$", re.M),
 }
+TYPE_COVERAGE = re.compile(
+    r"^MOSS_EST_TYPE_COVERAGE consumer=([^ ]+) kind=([^ ]+) "
+    r"PRESENT=(\d+) ABSENT=(\d+)$", re.M)
 
 
 def measure(compiler: Path, profile: str, sources: list[Path], out: Path) -> dict:
     totals = {name: 0 for name in COUNTER_PATTERNS}
+    by_mode = {mode: {name: 0 for name in COUNTER_PATTERNS}
+               for mode in ("default", "optimized")}
+    coverage: dict[str, dict[str, int]] = {}
     failures = 0
+    failures_by_mode = {mode: 0 for mode in by_mode}
     env = os.environ.copy()
     env.pop("MOSS_EST", None)
     env["MOSS_EST_COVERAGE_STATS"] = "1"
@@ -39,13 +48,23 @@ def measure(compiler: Path, profile: str, sources: list[Path], out: Path) -> dic
                 cwd=ROOT, env=env, text=True, capture_output=True, timeout=90)
             if result.returncode:
                 failures += 1
+                failures_by_mode[mode] += 1
             for name, pattern in COUNTER_PATTERNS.items():
                 match = pattern.search(result.stderr)
                 if match:
-                    totals[name] += int(match.group(1))
+                    amount = int(match.group(1))
+                    totals[name] += amount
+                    by_mode[mode][name] += amount
+            for match in TYPE_COVERAGE.finditer(result.stderr):
+                consumer, kind, present, absent = match.groups()
+                counts = coverage.setdefault(consumer, {"present": 0,
+                                                        "absent": 0})
+                counts["present"] += int(present)
+                counts["absent"] += int(absent)
     return {"compiler": str(compiler), "sources": len(sources),
             "commands": len(sources) * 2, "failures": failures,
-            "counts": totals}
+            "failures_by_mode": failures_by_mode, "counts": totals,
+            "counts_by_mode": by_mode, "type_coverage": coverage}
 
 
 def main() -> None:

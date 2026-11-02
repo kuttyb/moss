@@ -333,6 +333,9 @@ enum class ConsumerReparseSite : std::uint8_t {
 };
 bool test_coverage_counters_enabled() noexcept;
 void record_consumer_reparse(ConsumerReparseSite site) noexcept;
+void record_consumer_type_fact_coverage(std::string_view consumer,
+                                        std::string_view node_kind,
+                                        bool present) noexcept;
 void record_generated_type_fact_coverage(std::string_view node_kind,
                                          bool present) noexcept;
 void report_test_coverage_counters();

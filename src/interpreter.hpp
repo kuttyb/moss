@@ -1521,27 +1521,43 @@ class FastInterpreter {
     return evaluate_tree_node(tree, expression, callback, line, output);
   }
 
+  static void record_type_coverage(const char* kind, bool present) {
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_type_fact_coverage("fast-debug", kind, present);
+#else
+    (void)kind;
+    (void)present;
+#endif
+  }
+
   std::optional<std::string> checked_pipeline_stage_output_type(
       const ExpressionTreeView& tree, const est::Pipeline& pipeline_node,
       size_t stage_index, const Frame& frame, int line) const {
     if (!tree.arena || stage_index == 0 ||
-        stage_index > pipeline_node.stages.size())
+        stage_index > pipeline_node.stages.size()) {
+      record_type_coverage("pipeline-stage", false);
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT missing checked pipeline stage node");
+    }
     const auto stage = est::unparenthesized(*tree.arena,
         pipeline_node.stages[stage_index - 1]);
     const auto* facts = tree.arena->facts(stage, frame.functional_context);
-    if (!facts || !facts->type || !facts->type->is_closed())
+    if (!facts || !facts->type || !facts->type->is_closed()) {
+      record_type_coverage("pipeline-stage", false);
       return std::nullopt;
+    }
+    record_type_coverage("pipeline-stage", true);
     return facts->type->to_canonical_string();
   }
 
   std::string checked_expression_type(const ExpressionTreeView& tree,
                                       est::ExprId expression,
                                       const Frame& frame, int line) const {
-    if (!tree.arena)
+    if (!tree.arena) {
+      record_type_coverage("expression", false);
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT missing checked expression tree");
+    }
     const auto root = est::unparenthesized(*tree.arena, expression);
     std::vector<std::string> contexts{frame.functional_context};
     if (frame.functional_context.rfind("handler:", 0) == 0) {
@@ -1560,9 +1576,12 @@ class FastInterpreter {
       const auto* facts = tree.arena->facts(expression, context);
       if (!facts && root != expression)
         facts = tree.arena->facts(root, context);
-      if (facts && facts->type && facts->type->is_closed())
+      if (facts && facts->type && facts->type->is_closed()) {
+        record_type_coverage("expression", true);
         return facts->type->to_canonical_string();
+      }
     }
+    record_type_coverage("expression", false);
     throw RuntimeError(line,
         "MOSS_INTERNAL_INVARIANT missing checked expression type node=" +
         std::to_string(root) + " context=" + frame.functional_context);
