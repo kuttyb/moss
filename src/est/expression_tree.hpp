@@ -363,6 +363,7 @@ inline bool functional_pipeline_candidate(std::string_view source) {
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);
+void restore_loaded_facts(Program& program);
 void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
                                 std::string_view source, ExprSlot slot,
                                 int line, std::uint64_t origin_id);

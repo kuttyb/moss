@@ -2422,11 +2422,15 @@ void populate(Program& program) { populate_impl(program, nullptr, 0); }
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
+}
+
+void restore_loaded_facts(Program& program) {
   moss::TypeContext::Scope type_scope(program.type_context.get());
-  std::function<void(Stmt&)> restore_facts = [&](Stmt& statement) {
-    for (const auto& loaded : statement.loaded_expression_facts) {
+  auto restore_fact_list = [&](std::vector<Handle>& handles,
+                               std::vector<LoadedExpressionFact>& loaded_facts) {
+    for (const auto& loaded : loaded_facts) {
       const Handle* selected = nullptr;
-      for (const auto& handle : statement.expression_handles)
+      for (const auto& handle : handles)
         if (static_cast<std::uint8_t>(handle.slot) == loaded.slot &&
             handle.argument_index == loaded.argument_index) {
           if (selected)
@@ -2459,9 +2463,39 @@ void populate_loaded(Program& program, std::vector<Stmt>& statements,
         facts.inferred_effect = static_cast<Effect>(loaded.inferred_effect);
       arena.record_facts(expression, loaded.context, std::move(facts));
     }
-    statement.loaded_expression_facts.clear();
+    loaded_facts.clear();
   };
-  for (auto& statement : statements) restore_facts(statement);
+  std::function<void(Stmt&)> restore_facts = [&](Stmt& statement) {
+    restore_fact_list(statement.expression_handles,
+                      statement.loaded_expression_facts);
+  };
+  auto restore_body = [&](std::vector<Stmt>& statements) {
+    for (auto& statement : statements) restore_facts(statement);
+  };
+  for (auto& function : program.functions) {
+    restore_fact_list(function.expression_handles,
+                      function.loaded_result_expression_facts);
+    restore_body(function.body);
+    if (function.execution_body) restore_body(*function.execution_body);
+  }
+  for (auto& object : program.objects)
+    for (auto& method : object.methods) {
+      restore_fact_list(method.expression_handles,
+                        method.loaded_result_expression_facts);
+      restore_body(method.body);
+      if (method.execution_body) restore_body(*method.execution_body);
+    }
+  for (auto& domain : program.domains)
+    for (auto& handler : domain.handlers) {
+      restore_fact_list(handler.expression_handles,
+                        handler.loaded_result_expression_facts);
+      restore_body(handler.body);
+      if (handler.execution_body) restore_body(*handler.execution_body);
+      for (auto& arm : handler.failure_arms) restore_body(arm.body);
+      if (handler.execution_failure_arms)
+        for (auto& arm : *handler.execution_failure_arms)
+          restore_body(arm.body);
+    }
 }
 
 void populate_loaded_expression(Program& program, std::vector<Handle>& handles,

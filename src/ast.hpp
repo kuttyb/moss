@@ -449,6 +449,7 @@ struct Method {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   string execution_source_file;
   std::optional<string> result_expression;
   vector<est::Handle> expression_handles;
@@ -552,6 +553,7 @@ struct Handler {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   std::optional<vector<FailureArm>> execution_failure_arms;
   string execution_source_file;
   vector<FailureArm> failure_arms;
@@ -679,6 +681,7 @@ struct Function {
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   std::optional<string> execution_result_expression;
+  vector<LoadedExpressionFact> loaded_result_expression_facts;
   string execution_source_file;
   // Bound at module name resolution, before checking. Source-free functions
   // retain the same defining package/module/declaration identity.

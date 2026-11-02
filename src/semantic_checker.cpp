@@ -623,6 +623,7 @@ class Checker {
     // and stays bound to its identity for the rest of this session.
     build_type_context(p_);
     type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    est::restore_loaded_facts(p_);
     project_imported_h3_checked_bodies(p_);
     for (auto& f : p_.functions) {
       for (auto& param : f.params) {

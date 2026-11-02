@@ -17171,3 +17171,28 @@ future optimizer-isolated proof and must remain explicit in final review.
 - The change is in `src/moss.cpp`; current validation does not replace the
   final default/shadow suites. Current branch tip before this checkpoint is
   `8930ba5c`.
+
+
+## C2 checkpoint: source-free expression-result facts and unified binding (2026-11-01)
+
+- The Phase 26 X1 v9 source-free check and the three previously failing SDK
+  paths passed after rebuilding both binaries: `sdk_text_encoding`,
+  `sdk_adv_data_oracle_fast_debug`, and `sdk_adv_data_margo_debug`. The Phase
+  27.5.4 fact perturb/drop matrix also passes (call targets 8, specializations
+  4, joins 4, patterns 3; known debt 38/38).
+- Section 2 may represent a concrete provider callable body as a single
+  `execution_result_expression`, not as statement records. Facts for that
+  Function/Method ReturnValue handle are now serialized and restored; statement
+  and result facts are restored after Checker builds the assembled program's
+  TypeContext, so imported dependency-owned nominal types resolve too.
+- This closes the `text.builder_append` Fast Debug miss (`vector.push` target)
+  and invalid type errors for source-free `linalg__Matrix`,
+  `binary__ByteWriter`, and private `x1_library__HiddenBox`. No consumer fallback
+  was reintroduced.
+- The last Phase 25 family remains 25/26 with only G2 conformance gate 10,
+  which fails on pinned C1; the last Phase 21 family passed 43/43 after the
+  `moss-opt` rebuild. Full default/shadow suites, paired consumer count sweep,
+  three-engine/parity checks, perf, and Agent 2 audit remain outstanding.
+- Current uncommitted implementation files: `src/ast.hpp`,
+  `src/est/expression_tree.cpp`, `src/est/expression_tree.hpp`, `src/moss.cpp`,
+  `src/semantic_checker.cpp`, plus the feedback record.

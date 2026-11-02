@@ -15144,6 +15144,34 @@ static bool execution_body_read_statement(const string& record,
   return true;
 }
 
+static bool execution_body_read_result_fact(const string& record,
+                                             LoadedExpressionFact& fact) {
+  std::istringstream fields(record);
+  string tag;
+  size_t path_count = 0;
+  unsigned slot = 0;
+  if (!(fields >> tag) || tag != "result_fact" ||
+      !(fields >> slot >> fact.argument_index >> path_count) ||
+      slot >= est::Arena::slot_count || path_count > 100000)
+    return false;
+  fact.slot = static_cast<std::uint8_t>(slot);
+  fact.child_path.reserve(path_count);
+  for (size_t index = 0; index < path_count; ++index) {
+    std::uint32_t child = 0;
+    if (!(fields >> child)) return false;
+    fact.child_path.push_back(child);
+  }
+  if (!(fields >> std::quoted(fact.context) >>
+        std::quoted(fact.canonical_type) >>
+        std::quoted(fact.specialization_result) >>
+        std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
+      fact.inferred_effect < -1 ||
+      fact.inferred_effect > static_cast<int>(Effect::Consume))
+    return false;
+  string trailing;
+  return !(fields >> trailing);
+}
+
 static string execution_body_short_name(const string& qualified) {
   const size_t moss_separator = qualified.rfind("__");
   if (moss_separator != string::npos)
@@ -15416,6 +15444,16 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       }
       vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "function_end") {
+        if (starts_with(line, "result_fact ")) {
+          LoadedExpressionFact fact;
+          if (!execution_body_read_result_fact(line, fact))
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid function result expression fact",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          function->loaded_result_expression_facts.push_back(
+              std::move(fact));
+          continue;
+        }
         Stmt statement;
         std::istringstream statement_input(line);
         string tag;
@@ -15547,6 +15585,16 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         method->execution_result_expression = std::move(result_expression);
       vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "method_end") {
+        if (starts_with(line, "result_fact ")) {
+          LoadedExpressionFact fact;
+          if (!execution_body_read_result_fact(line, fact))
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid method result expression fact",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          method->loaded_result_expression_facts.push_back(
+              std::move(fact));
+          continue;
+        }
         Stmt statement;
         std::istringstream statement_input(line);
         string tag;
@@ -17714,9 +17762,6 @@ static ParsedModuleUnit load_module_interface(
     }
   if (load_execution_bodies) {
     parse_execution_body_payload(execution_bodies, provider, file);
-    // Section 2 can introduce private declarations referenced by its retained
-    // expression facts. Rebuild the projection before restoring those facts.
-    build_type_context(provider);
     for (auto& function : provider.functions) {
       if (function.execution_result_expression)
         est::populate_loaded_expression(provider, function.expression_handles,
@@ -21832,6 +21877,43 @@ static void write_execution_body_statement(std::ostream& out,
   out << "\n";
 }
 
+static void write_execution_body_result_facts(
+    std::ostream& out, const Program& program,
+    const vector<est::Handle>& handles) {
+  for (const auto& handle : handles) {
+    if (handle.slot != est::ExprSlot::ReturnValue ||
+        handle.arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle.arena_index]) continue;
+    const auto& arena = *program.expression_arenas[handle.arena_index];
+    std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
+        [&](est::ExprId node, vector<std::uint32_t>& path) {
+      for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        if (!semantic.type && semantic.specialization_result.empty() &&
+            semantic.resolved_target.empty() && !semantic.inferred_effect)
+          continue;
+        out << "result_fact " << static_cast<unsigned>(handle.slot) << " "
+            << handle.argument_index << " " << path.size();
+        for (const auto child : path) out << " " << child;
+        out << " " << std::quoted(context) << " "
+            << std::quoted(semantic.type
+                ? semantic.type->to_canonical_string() : string()) << " "
+            << std::quoted(semantic.specialization_result) << " "
+            << std::quoted(semantic.resolved_target) << " "
+            << (semantic.inferred_effect
+                ? static_cast<int>(*semantic.inferred_effect) : -1) << "\n";
+      }
+      const auto children = arena.children(node);
+      for (std::size_t index = 0; index < children.size(); ++index) {
+        path.push_back(static_cast<std::uint32_t>(index));
+        visit(children[index], path);
+        path.pop_back();
+      }
+    };
+    vector<std::uint32_t> path;
+    visit(handle.expr, path);
+  }
+}
+
 static string execution_body_package_fingerprint(
     const string& package_source_hash, const BackendToolchainIdentity& backend) {
   const char* supplied = std::getenv("MARGO_PACKAGE_FINGERPRINT");
@@ -22159,6 +22241,9 @@ static string encode_execution_body_payload(
               << std::quoted(function->params[index].type) << " "
               << ownership_effect_name(effect) << "\n";
     }
+    if (function->result_expression)
+      write_execution_body_result_facts(
+          payload, program, function->expression_handles);
     for (const auto& statement : function->body)
       write_execution_body_statement(payload, program, statement);
     payload << "function_end\n";
@@ -22204,6 +22289,9 @@ static string encode_execution_body_payload(
                 << std::quoted(method->params[index].type) << " "
                 << ownership_effect_name(effect) << "\n";
       }
+      if (method->result_expression)
+        write_execution_body_result_facts(
+            payload, program, method->expression_handles);
       for (const auto& statement : method->body)
         write_execution_body_statement(payload, program, statement);
       payload << "method_end\n";
