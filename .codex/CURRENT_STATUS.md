@@ -2,6 +2,21 @@
 
 ## Active checkpoint (post-C2 closing round)
 
+- Closeout is complete and on `main`: merge `6e07d0b8fea9b6ffc871bbad13ebe46f70376b4d`
+  (first parent `4b5e98805c072fa4625560fb7bf9e297bcda80e9`) is tagged and pushed
+  as `phase27-5-4-m2`. The latest main may contain a status-only follow-up
+  commit; the phase tag identifies the merge commit.
+- Agent 2 audited candidate `1a4745f02d74cd2f99071df6c39ba179ff04ae3d`,
+  independently reran the runtime ratchet in both modes, verified zero
+  Fast Debug/emitter/optimizer counters and checker/driver-only shadow hits,
+  and returned GO accepting the documented C1 baseline failures. Later changes
+  before merge were documentation only.
+- Full default and shadow suites each completed once at 162/165 jobs, with
+  identical known failures: conformance gate 10 (`compiled_only_custom_key`)
+  and the two `swarm_035_nested_mutating_calls.moss` Rust E0499 jobs.
+  Preflight, perturb/drop hooks and the runtime ratchet passed in both modes.
+- No L7 input was needed.
+
 - C2 is already merged to `main` and tagged `phase27-5-4-m1` at
   `4b5e98805c072fa4625560fb7bf9e297bcda80e9`. Current branch is
   `phase27-5-4-closeout-work`, tracking its remote, based on that merge.
