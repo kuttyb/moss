@@ -1989,10 +1989,22 @@ class Generator {
             " context=" + codegen_body_context_);
     }
     vector<string> concrete_types;
-    for (size_t index = 0; index < arguments.size(); ++index)
-      concrete_types.push_back(argument_nodes && index < argument_nodes->size()
-          ? generated_expr_type(argument_nodes->at(index), types).value_or("")
-          : generated_expr_type(arguments[index], types).value_or(""));
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (argument_nodes && index < argument_nodes->size()) {
+        if (!argument_nodes->at(index).arena)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT missing checked call argument node " +
+              function.name + " index=" + std::to_string(index) +
+              " line=" + std::to_string(phase21_codegen_statement_
+                  ? phase21_codegen_statement_->line : 0) +
+              " context=" + codegen_body_context_);
+        concrete_types.push_back(generated_expr_type(
+            argument_nodes->at(index), types).value_or(""));
+      } else {
+        concrete_types.push_back(generated_expr_type(
+            arguments[index], types).value_or(""));
+      }
+    }
     if (function.static_dispatch) {
       auto checked = checked_call_edge_specialization(
           p_, codegen_body_context_, function.name,
@@ -3167,7 +3179,9 @@ class Generator {
     if (!expression.arena) {
       record_type_fact_coverage(false);
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT expression type requested without checked node");
+          "MOSS_INTERNAL_INVARIANT expression type requested without checked node "
+          "context=" + codegen_body_context_ + " id=" +
+          std::to_string(expression.id) + " source=" + expression.source);
     }
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const auto* facts = checked_expression_facts(expression, true);
@@ -3205,11 +3219,38 @@ class Generator {
       record_type_fact_coverage(true);
       return canonical_type_name(*enclosing_pipeline_type);
     }
+    // Some source-backed handler nodes are lowered through a synthetic body
+    // context that has no direct name. A fact can still be used when every
+    // checker context recorded for this exact node agrees on the same type;
+    // conflicting specialization answers remain unavailable and fail closed.
+    TypeRef context_independent_type;
+    bool context_type_conflict = false;
+    for (const auto& entry : expression.arena->facts_for_expression(root)) {
+      if (!entry.second.type || !entry.second.type->is_closed()) continue;
+      if (!context_independent_type)
+        context_independent_type = entry.second.type;
+      else if (!context_independent_type->structurally_equal(
+                   *entry.second.type)) {
+        context_type_conflict = true;
+        break;
+      }
+    }
+    if (context_independent_type && !context_type_conflict) {
+      record_type_fact_coverage(true);
+      return canonical_type_name(context_independent_type);
+    }
     record_type_fact_coverage(false);
+    string recorded_type_contexts;
+    for (const auto& entry : expression.arena->facts_for_expression(root)) {
+      if (!entry.second.type) continue;
+      if (!recorded_type_contexts.empty()) recorded_type_contexts += ",";
+      recorded_type_contexts += entry.first + "=" +
+          entry.second.type->to_canonical_string();
+    }
     (void)types;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT missing checked expression type context=" +
-        codegen_body_context_ + " line=" +
+        codegen_body_context_ + " facts=" + recorded_type_contexts + " line=" +
         std::to_string(expression.arena->span(root).line) + " node=" +
         std::to_string(root) + " expr=" + expression.text() + " kind=" + std::visit([](const auto& value) {
           using T = std::decay_t<decltype(value)>;
@@ -3317,7 +3358,8 @@ class Generator {
         return decline("function-unsupported");
       vector<string> argument_values{rendered};
       vector<string> argument_types{*current_type};
-      if (is_object_view(current_node, domain, locals, types))
+      if (view_object_type(*current_type) &&
+          view_place(current_node, domain, locals, types))
         return decline("input-view");
       for (const auto argument_id : *explicit_arguments) {
         if (std::holds_alternative<est::NamedArgument>(
@@ -3332,7 +3374,8 @@ class Generator {
           return decline("complex-explicit-arg");
         auto type = generated_expr_type(argument, types);
         if (!type) return decline("explicit-arg-type");
-        if (is_object_view(argument, domain, locals, types))
+        if (view_object_type(*type) &&
+            view_place(argument, domain, locals, types))
           return decline("explicit-arg-view");
         argument_values.push_back(expr(argument, domain, locals, types));
         argument_types.push_back(*type);

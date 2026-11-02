@@ -26955,10 +26955,10 @@ class Checker {
               [&](est::ExprId id, std::string_view text) {
             if (!visited.insert(id).second) return;
             const auto* existing = arena->facts(id, fact_context);
-            if (existing && existing->type) return;
             if (!existing || !existing->type) {
               try {
-                auto type = inferred_expr_term(std::string(text), env);
+                auto type = checked_expression_term(std::string(text), env);
+                if (!type) type = inferred_expr_term(std::string(text), env);
                 if (type) {
                   est::SemanticFacts facts = existing
                       ? *existing : est::SemanticFacts{};
@@ -26972,6 +26972,8 @@ class Checker {
             }
             const auto parent_span = arena->span(id);
             for (const auto child : arena->children(id)) {
+              if (const auto* child_facts = arena->facts(child, fact_context);
+                  child_facts && child_facts->type) continue;
               const auto child_span = arena->span(child);
               if (child_span.source_begin < parent_span.source_begin ||
                   child_span.source_end < child_span.source_begin ||
@@ -29129,6 +29131,14 @@ class Checker {
             (implicit_object_field || implicit_domain_field))
           check_expression(statement.line, statement.a, current_env,
                            "assignment-place");
+        if (statement.kind == Stmt::Kind::Assign &&
+            tree_simple_identifier(statement.a)) {
+          auto checked_binding = current_env.find(statement.a);
+          if (checked_binding != current_env.end())
+            record_statement_type_fact(statement, est::ExprSlot::LhsPlace, 0,
+                statement.a, current_check_body_context_,
+                canonical_type_name(checked_binding->second));
+        }
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env,
                          "initializer");

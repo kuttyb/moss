@@ -17589,3 +17589,25 @@ future optimizer-isolated proof and must remain explicit in final review.
   fix any missing checker facts or disclose whether accepted source semantics
   would be affected, then update compiler contract and phase report before the
   one final full-gate run and Agent 2 audit.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (remaining checked-type gaps)
+
+- Rebuilt `moss-dev` and `moss-opt` with the latest checker/emitter edits;
+  `check_phase27_5_4_fact_hooks.py` passes (3 expression-type and 5 pipeline-
+  type fixtures across Fast Debug/native/-O; ownership debt remains 10/10).
+- The prior corpus sweep's seven remaining native-emission failures reproduce:
+  `examples/functional_static_callables.moss` (`double` callable identifier),
+  `examples/object_pipeline.moss` (`item.revisions` member),
+  `examples/projects/phase7_demo/benches/arithmetic.moss` (bench expression),
+  `examples/swarm/Python/deque/src/main.moss` (assignment identifier `j`),
+  `examples/swarm/Surface/GraphKit/src/main.moss` (`topo.order` member),
+  `examples/swarm/Surface/repros/swarm_048_fast_debug_function_argument.moss`
+  (`twice` callable identifier), and
+  `examples/swarm/Surface/repros/swarm_061b_map_get_before_write.moss`
+  (`Map()` refined by later indexed writes).
+- No inference fallback was restored. These are unresolved checker-fact producer
+  gaps; no full suite has run. Current source edits add checked assignment-LHS
+  facts, preserve agreed closed facts across synthetic emitter contexts, and
+  avoid duplicate type queries in checked pipeline lowering. Continue by
+  locating the checker entry/context that owns each missing node and add facts
+  only from checker-resolved types. Re-run the seven targets and hook suite.
