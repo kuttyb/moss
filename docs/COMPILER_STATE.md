@@ -207,14 +207,16 @@ optimized execution; only the 10 frozen ownership entries remain in
 `tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`.
 
 The final paired emitter sweep measured 1,828 tracked test/example sources in
-default and `-O` (3,656 commands). It recorded emitter PRESENT=271,538,
+default and `-O` (3,656 commands). It recorded emitter PRESENT=174,024,
 ABSENT=0 and optimizer PRESENT=1, ABSENT=0, with zero consumer type inference,
 expression reparses, functional-pipeline reparses and text-node lookups. Both
-the Phase 27.5.3 baseline and candidate had 1,410 failed commands (705 per
-mode); no status-count regression occurred. The machine-readable result is
-`tmp/phase2754-emitter-counts/1793613540050453503/summary.json` and the durable
-phase report is [27.5.5](phase27/27_5_5_REPORT.md). This replaces the earlier
-23,452/282,668 (8.3%) coverage measurement above.
+the Phase 27.5.3 baseline and candidate had 1,406 and 1,410 failed commands
+(703 and 705 per mode), respectively. The two extra candidate-only sources
+are accepted failure probes that now hit missing-fact invariants; the parent
+emitted Rust that did not compile for these probes. The machine-readable result
+is `tmp/phase2754-emitter-counts/1793619016465805546/summary.json` and the
+durable phase report is [27.5.5](phase27/27_5_5_REPORT.md). This replaces the
+earlier 23,452/282,668 (8.3%) coverage measurement above.
 
 On the fixed 27.5.4 workload, checker reparses were 55,160 and checker
 text-cache lookups 16,456,102, compared with prior measurements 54,037 and
@@ -222,10 +224,10 @@ text-cache lookups 16,456,102, compared with prior measurements 54,037 and
 counts report-only; the ratchet gates driver rewrites and consumer stages.
 Those consumer stages remain zero and driver rewrite counts remain at baseline.
 
-Paired performance against phase-start `274f8485` was 6.100s vs 15.000s
-aggregate (-59.3%); against phase27-5-4-m2 it was 6.092s vs 5.925s (+2.8%).
-The W2 n032 candidate peaked at 64,800 KiB using the normal per-translation
-unit flags and 65,664 KiB with plain `-O2` everywhere. Full default/shadow
+Paired performance against phase-start `274f8485` was 5.967s vs 15.029s
+aggregate (-60.3%); against phase27-5-4-m2 it was 5.976s vs 5.789s (+3.2%).
+The W2 n032 candidate peaked at 64,624 KiB using the normal per-translation
+unit flags and 65,404 KiB with plain `-O2` everywhere. Full default/shadow
 suite results and Agent 2 review are recorded in the report after final gates.
 
 Rust-only lowering forms remain distinct from Moss type answers: effect

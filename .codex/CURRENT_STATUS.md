@@ -17951,3 +17951,32 @@ future optimizer-isolated proof and must remain explicit in final review.
   three-engine check all pass. Final default/shadow suites must be rerun because
   code changed after the first full default run. Current corpus counter and
   perf numbers are being refreshed before those final suites.
+
+## 08:10 UTC checkpoint (current-source counters and paired perf)
+
+- Rebuilt `moss-opt` from `eccd2103`; the registered 27.5.4 perturb/drop and
+  frozen-debt matrix passes for call targets, specializations, joins, patterns,
+  expression types, pipeline types, and unchanged 10-entry ownership debt.
+  Three-engine output parity passes.
+- Current paired source sweep: 1,828 sources / 3,656 default and `-O` calls.
+  Consumer reparses, text-node lookups and type inference are 0 in both modes;
+  emitter coverage is 174,024 PRESENT / 0 ABSENT and optimizer coverage is 1 / 0.
+  Baseline had 1,406 failed emissions; current has 1,410, from the two
+  fail-closed accepted probes documented in `27_5_5_REPORT.md`. Full suites
+  have not yet been rerun after final code fixes.
+- Current paired perf: vs m2 aggregate 5.789s -> 5.976s (+3.2%); vs
+  `274f8485` 15.029s -> 5.967s (-60.3%). W2 n032 is +1.2% vs m2, W4 d018
+  +1.5%, W5 w100 +6.0%, W8 c100 +7.2%; W2 peak is 64,616 KiB. Against m2,
+  `rw_projects_rolling_window` is +11.2% with non-overlapping ranges and is
+  called out for follow-up. A nine-trial focused repeat had overlapping ranges
+  (m2 median 54.84 ms, candidate 60.73 ms), within the established noise rule.
+  Exact-source W2 peak RSS: normal 64,624 KiB, plain `-O2` 65,404 KiB (+1.2%).
+- Raw measurements: current source summary
+  `tmp/phase2754-emitter-counts/1793619016465805546/summary.json`; perf
+  `tmp/compiler-perf/20261102-033425/LOCAL_REPORT.md` (m2) and
+  `tmp/compiler-perf/20261102-033618/LOCAL_REPORT.md` (phase start). The phase
+  report and compiler contract now carry these current counts/results.
+- Remaining: run feedback validator and diff checks; commit/push docs; run
+  final default and shadow suites once; perform the one
+  Agent 2 audit (including three unseen sources per type class); if GO, fetch,
+  merge, tag and update delivery records.
