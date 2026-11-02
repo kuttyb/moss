@@ -14475,3 +14475,40 @@ Full `make check` / `make check-shadow`, native/optimizer parity and corpus
 suites were not run; no result for those gates is claimed. Implementation is committed as
 `df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`; the handoff-document follow-up
 and push are pending.
+
+### Phase 28 Round 2 Team A checkpoint
+
+Round 2 continues from the accepted Team A R1 handoff on branch
+`phase28-r2-team-a`, based on `phase28-r1-team-a` at `a73d8a6b`. The typed
+ownership contract now distinguishes intentional `Unsupported` inference
+(`Availability::NotRequired`) from inferred records with missing occurrence or
+binding identities and contradictory EST effects. Its `is_authoritative()`
+and `is_intentionally_unsupported()` helpers expose the consumer gate.
+`TypedLocalOwnershipFactV1` also carries a logical `join_definition_identity`.
+Existing checker join and
+predecessor binding tables drive bounded explicit-local `if`/`else` inference
+for READ, WRITE and CONSUME demands; no parallel CFG engine was added. Vector
+iteration emits loop-occurrence facts for READ/WRITE element access, keyed by
+the exact iterable EST root and checker loop binding. Consumer migration,
+exception edges, general CFG/liveness, loop-carried fixed points and imported
+effects remain open.
+
+E3 Shapes diagnosis: nested leaf-effect capture lost the method's implicit-self
+owner while evaluating a callable argument. A scoped capture owner plus
+preservation of checked callable identities repairs the reduced case. The
+original Shapes path now returns the separate `MODULE_IDENTITY_UNRESOLVED`
+diagnostic (`module 'shapes' has no package identity`); package-level Shapes
+validation is consequently still blocked.
+
+The ownership harness is registered in `make check` for default and shadow
+modes, including its drop/perturb checks. Validation after the checker edits:
+`make --jobs="$(nproc)" moss-dev`; focused ownership harness against
+`build/compiler/moss-dev` in default and shadow; `python3 -m py_compile
+tests/tooling/check_phase28_local_ownership.py tests/run_parallel.py`;
+`python3 tests/tooling/check_agent_feedback.py`; and `git diff --check` all
+pass. Shapes direct checking returns the module identity error above. Full
+`make check`, `make check-shadow`, three-engine parity and corpus runs have not
+been run. The current AGENTS.md had no general no-push prohibition; its scoped
+authorization now explicitly includes this Round 2 branch. Implementation is
+committed locally as `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`. Handoff-doc
+follow-up and push are pending.
