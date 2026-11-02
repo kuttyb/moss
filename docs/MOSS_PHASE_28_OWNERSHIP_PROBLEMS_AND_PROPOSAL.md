@@ -195,7 +195,7 @@ Reviewers should test these specific failure modes:
 ## 9. Related source of truth
 
 - [Phase 28 original inventory and detailed decisions](MOSS_OWNERSHIP_S3.md)
-- [Phase 27 compiler contract](MOSS_COMPILER_CONTRACT.md) — authoritative invariant/debt tracking on `main`; branch implementation must merge/reconcile it
-- [Phase 27 architecture](COMPILER_ARCHITECTURE.md) — stage boundaries and existing checked fact handoff on `main`
-- [Phase 27 closeout report](phase27/27_CLOSEOUT_REPORT.md)
-- [Phase 27.5.5 report](phase27/27_5_5_REPORT.md)
+- [Phase 27 compiler contract](https://github.com/kuttyb/moss/blob/main/docs/MOSS_COMPILER_CONTRACT.md) — authoritative invariant/debt tracking on `main`; branch implementation must merge/reconcile it
+- [Phase 27 architecture](https://github.com/kuttyb/moss/blob/main/docs/COMPILER_ARCHITECTURE.md) — stage boundaries and existing checked fact handoff on `main`
+- [Phase 27 closeout report](https://github.com/kuttyb/moss/blob/main/docs/phase27/27_CLOSEOUT_REPORT.md)
+- [Phase 27.5.5 report](https://github.com/kuttyb/moss/blob/main/docs/phase27/27_5_5_REPORT.md)
