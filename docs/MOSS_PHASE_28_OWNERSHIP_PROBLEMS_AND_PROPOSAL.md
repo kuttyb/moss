@@ -17,6 +17,8 @@ Four rules resolve the bulk of the ownership ambiguity:
 
 **Consequence:** Moss may reject a theoretically safe borrow-versus-new-object join. This is a deliberate simplicity tradeoff: a single statically determined ownership category after a live merge. Transfers occur only on the path actually executed.
 
+**Message-boundary rule:** An incoming handler argument is an immutable, non-transferable capability. It can be read or synchronously forwarded, but it cannot become the handler's reply **directly, through a local alias, or through a helper**, even when its type is primitive Copy. This rule is distinct from ordinary function parameter ownership; §6 gives examples.
+
 **Compiler strategy:** Extend Phase 27's checker-owned facts and existing interprocedural effect summaries; do not add competing inference in the emitter or Fast Debug. Remove hidden non-primitive clones, preserve domain-leaf provenance, and bring the remaining ten ownership fact-hook exceptions to zero. The Phase 27 suite's three failing jobs are not three ownership-language defects; see §7.
 
 ---
@@ -237,8 +239,47 @@ These are applications of LOL and local inference, rather than more independent 
 | **Map views and iteration** | `keys()`, `values()`, and iteration provide temporary borrows, not eager cloned snapshots; exclusivity applies for the whole collection |
 | **Whole Vector/Map field** | Can be consumed where legal, leaving an empty collection field rather than a missing field |
 | **Explicit independent copy** | `copy(x)` (name provisional) creates an independently owned eligible value; no user-defined or implicit non-primitive copy; resources such as FileIO are nonduplicable |
-| **Message payload** | Separate immutable capability rule: incoming handler data can be READ/forwarded but not written, consumed, rebound, stored as owned, or replied directly, even when primitive. Explicit `copy(payload)` or a newly calculated reply is allowed |
+| **Message payload** | Incoming parameters are immutable, non-transferable capabilities: READ and synchronous forwarding only. They cannot be replied **directly or indirectly through aliases/helpers**, written, consumed, rebound, or stored as owned, including primitive inputs. Explicit eligible `copy(payload)` or an independently computed result may be replied |
 | **Domain state** | Borrow aliases retain source field/leaf provenance; READ/WRITE effects contribute to the existing synchronization plan; no new lock order or per-index proof |
+
+### Message input reply prohibition — direct and transitive
+
+This is an **additional message-boundary capability restriction**, not a general ban on returning ordinary function arguments. A function may return its own parameter when ordinary inferred ownership permits it. A **message handler**, however, may not return its **incoming message argument itself** as a reply. The restriction follows the input's origin through local aliases, primitive assignments and nested helper calls: passing the original argument through an identity helper does not make it a new value.
+
+Illustrative Moss handler syntax (to be reconciled with current parser syntax during implementation):
+
+```moss
+on Echo(payload: String):
+    reply payload                   # ERROR: input replied directly
+
+on EchoAliased(payload: String):
+    x = payload
+    reply x                         # ERROR: aliased input replied
+
+fn identity(x: String) -> String:
+    return x
+
+on EchoViaHelper(payload: String):
+    reply identity(payload)         # ERROR: input returned through helper
+
+on EchoPrimitive(n: Int):
+    m = n
+    reply m                         # ERROR: Copy primitive does not bypass rule
+```
+
+**Allowed:** ordinary READ, synchronous forwarding of the input to another message handler, an **explicit independent eligible copy**, or a **new computed result**. The distinction is the *original input value/capability* versus a newly produced reply, not whether the result's contents happen to equal the input.
+
+```moss
+on EchoCopy(payload: String):
+    reply copy(payload)             # legal: explicit independent value
+
+on Length(payload: String):
+    reply payload.length()          # legal: independently computed Int
+```
+
+The checker must retain incoming-message provenance across aliases and through checked helper/callee effects, including the primitive-Copy case. Merely changing a variable's name, forwarding the same value through a function, or relying on backend copying does **not** clear that provenance. A helper that only reads the input is fine; a helper that returns the original input as the handler's reply is not. An independently constructed/copied result has its own provenance.
+
+Tests must cover direct input reply, alias reply, transitive identity-helper reply, primitive alias reply, explicit eligible copy, computed reply, and legal synchronous forwarding. This supersedes older documentation permitting `reply payload` and must be reflected in `LANGUAGE_SYNTAX.md` and `MODULE_ABI.md` during Phase 28 migration.
 
 **One native/Fast Debug proof case** must print `9`, then `9` in all engines:
 
@@ -282,7 +323,7 @@ Checker-internal string reparses and driver text-to-tree rewrites remain explici
 | **A — Freeze language model** | Peer review LOL + inferred assignment + non-rebinding + live path widening; reconcile conflicting old S3 §0e | Accepted and rejected examples, including ergonomic SDK counterexamples |
 | **B — Checker facts** | Binding identities, liveness, path/loop assignment rules, local effect demands, provenance and legal joins | Positive/negative `if`, `match`, early return, exception, loop, and alias fixtures |
 | **C — Interprocedural effects** | Use existing method/function/generic/`.mossi` summaries, reliable convergence and state-leaf tracking | Deep call chains, imported effects, contradiction/missing-summary tests, no reanalysis explosion |
-| **D — LOL operations** | Field, general option, collection, Map/view, explicit-copy and message rules | Tests showing exact source/owner postconditions and no hidden non-primitive clone |
+| **D — LOL operations** | Field, general option, collection, Map/view, explicit-copy and message rules | Tests showing exact source/owner postconditions; direct/aliased/transitive/primitive message reply negatives, computed/copied reply and forwarding positives; no hidden non-primitive clone |
 | **E — Consumers and Rust lowering** | Fast Debug, native/`-O`, optimizer and packages obey checked ownership | Perturb/drop tests with zero ownership exceptions; native compile and output parity |
 | **F — Migration and final gate** | Update `LANGUAGE_SYNTAX.md`, `MODULE_ABI.md`, Gentle Introduction, SDK and examples | `make check` and `make check-shadow`, accepted→rustc ratchet and documented unrelated baselines |
 
@@ -303,7 +344,8 @@ Reviewers should challenge the **four rules**, not start with emitter code. Spec
 3. Can path-wise non-rebinding be defined using **binding identity** without banning a fresh loop-local or a mutually exclusive definition? What real String/Vector accumulation pattern becomes unreasonably awkward?
 4. Is **live-only widening** enough to avoid mixed ownership representations while still handling READ/WRITE borrowed merges, early exits, exceptions and loop joins? Can any reachable path hide a use-after-move or illegal source extraction?
 5. Can the checker reuse existing interprocedural effect summaries with bounded, verified convergence and per-leaf provenance, instead of walking callee bodies for every local alias?
-6. Do native, Fast Debug, optimizer and imported packages consume **exactly the same checked ownership decisions**? Which test would detect a silent clone or Rust borrow-lowering regression?
+6. Can a message input be laundered into a reply through an alias, primitive assignment, imported identity helper or generic specialization? Conversely, are explicit copies, new computations, and forwarding still legal?
+7. Do native, Fast Debug, optimizer and imported packages consume **exactly the same checked ownership decisions**? Which test would detect a silent clone or Rust borrow-lowering regression?
 
 **Intentional tradeoffs, not open feature requests:** no hidden non-primitive copy; no runtime owned-or-borrowed union at a live join; no general `swap`/`replace`; no disjoint-index lock/borrow reasoning in Phase 28. Counterexamples may motivate a deliberate later revision, but implementations must not silently relax these rules.
 
