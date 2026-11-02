@@ -22,6 +22,12 @@
   `tests/swarm_035_nested_mutating_calls.moss` prints `1` under both binaries;
   its suite failure is native Rust E0499, not introduced by this target
   selection change.
+- Baseline comparison added after this checkpoint: the exact
+  `check_phase21_imported_effects.py` harness passes with the C1 compiler at
+  `tmp/phase2754-c1-base/moss` when given an isolated output directory. The
+  candidate failure in the full suite (`MOSS_INTERNAL_INVARIANT missing
+  checked member-call target for lowering name=Other context=fn:provider__generic<int>`)
+  is therefore another branch regression, not baseline debt.
 - Full output reported additional missing checked member targets in generic
   specialization, phase 21/25/26 Fast Debug fixtures; missing emitter slots
   in phase 25; and an emitter specialization outside checked candidates in a
