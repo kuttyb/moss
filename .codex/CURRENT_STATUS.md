@@ -1,5 +1,23 @@
 # Phase 27.5.5 handover (2026-11-02)
 
+## 01:53 UTC checkpoint (source gates restored)
+
+- Branch tip `7fb4dbeb` is pushed; the current uncommitted fix set removes
+  facts from constructor type-syntax nodes, keeps the phase27 string reader
+  audit from matching a comment, preserves the known comparison/`|> count`
+  diagnostic based on EST shape, and switches the EST counter test to the
+  new per-consumer fact report.
+- The pipeline precedence fixture initially failed with an ordering
+  `TYPE_MISMATCH`; after the node-shape diagnostic preservation, all five
+  default/shadow cases in `check_phase27_est.py` match their established
+  diagnostics. Parent Phase 27.5.4-m2 passed that target too.
+- Current dev/opt builds and focused phase27 EST, counter, string-debt,
+  Fast Debug/native/optimized parity, three-engine, fact perturb/drop and
+  optimizer-expression checks pass. Ownership debt is unchanged at 10/10.
+- No full suite/perf run has happened on this source checkpoint. Current next
+  action is commit/push, then optimize and measure performance before the sole
+  final default/shadow suites.
+
 ## 01:49 UTC checkpoint (shadow and compatibility fixes)
 
 - Fixed a shadow assertion exposed by the new checker fact walker: constructor
