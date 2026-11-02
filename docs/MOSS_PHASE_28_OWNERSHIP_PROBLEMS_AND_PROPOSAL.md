@@ -1,5 +1,7 @@
 # Phase 28 — LOL and local ownership inference: problems and proposed rules
 
+**Historical draft — superseded for peer review.** The current consolidated Phase 28 LOL and ownership proposal is [MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md](MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md). This older draft is retained for comparison; its non-rebinding, implicit field-extraction, and match decisions must not be treated as the current proposal.
+
 **Status:** Peer-review proposal, 2026-11-02. Language rules below are the current agreed design, **not implemented behavior**. The proposals are intended to be challenged with concrete counterexamples before implementation.  
 **Baseline:** Phase 27-closed `main` at `9b840e8` (`phase27-5-5-m1`). **Work branch:** `phase28-work`.  
 **Companion inventory:** [MOSS_OWNERSHIP_S3.md](MOSS_OWNERSHIP_S3.md) retains the full history, probes, Map/API decisions and earlier alternatives. **This proposal supersedes its rev-10 §0e and review follow-ups #13–#14:** non-primitive rebinding on the same path is now forbidden; mixed owned/borrowed paths are widened rather than categorically rejected.
