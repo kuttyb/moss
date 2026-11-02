@@ -10,6 +10,7 @@
 #include <string_view>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -137,6 +138,37 @@ class Arena {
   ExprId append(Node node, SourceSpan span);
   const Node& at(ExprId id) const;
   std::vector<ExprId> children(ExprId id) const;
+  template <class Callback>
+  void for_each_child(ExprId id, Callback&& callback) const {
+    std::visit([&](const auto& node) {
+      using T = std::decay_t<decltype(node)>;
+      if constexpr (std::is_same_v<T, Unary>) callback(node.operand);
+      else if constexpr (std::is_same_v<T, Binary>) {
+        callback(node.left); callback(node.right);
+      } else if constexpr (std::is_same_v<T, Call>) {
+        callback(node.callee);
+        for (const auto child : node.arguments) callback(child);
+      } else if constexpr (std::is_same_v<T, Member>) callback(node.base);
+      else if constexpr (std::is_same_v<T, Index>) {
+        callback(node.base); callback(node.index);
+      } else if constexpr (std::is_same_v<T, Parenthesized>) callback(node.inner);
+      else if constexpr (std::is_same_v<T, Message>) {
+        callback(node.target);
+        for (const auto child : node.arguments) callback(child);
+      } else if constexpr (std::is_same_v<T, NamedArgument>) callback(node.value);
+      else if constexpr (std::is_same_v<T, Collection> ||
+                         std::is_same_v<T, Tuple>) {
+        for (const auto child : node.elements) callback(child);
+      } else if constexpr (std::is_same_v<T, Constructor>) {
+        callback(node.type);
+        for (const auto child : node.type_arguments) callback(child);
+        for (const auto child : node.arguments) callback(child);
+      } else if constexpr (std::is_same_v<T, Pipeline>) {
+        callback(node.input);
+        for (const auto child : node.stages) callback(child);
+      }
+    }, nodes_.at(id));
+  }
   SourceSpan span(ExprId id) const { return spans_.at(id); }
   std::size_t size() const { return nodes_.size(); }
   void record_facts(ExprId id, std::string specialization_context,

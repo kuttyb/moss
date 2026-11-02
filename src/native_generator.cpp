@@ -5372,10 +5372,8 @@ class Generator {
           return joined.str();
         }
         if (left_type && right_type &&
-            !((canonical_type_name(*left_type) == "int" ||
-               canonical_type_name(*left_type) == "float") &&
-              (canonical_type_name(*right_type) == "int" ||
-               canonical_type_name(*right_type) == "float")))
+            (canonical_type_name(*left_type) == "bool" ||
+             canonical_type_name(*right_type) == "bool"))
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT checked arithmetic operand type is unsupported");
         string left = value_from_borrowed_message_parameter(

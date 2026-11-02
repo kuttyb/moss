@@ -12455,7 +12455,9 @@ class Checker {
   }
 
   moss::TypeRef checked_expression_term(const string& expression,
-                                        const TypeEnv& env) const {
+                                        const TypeEnv& env,
+                                        std::optional<InferredExpr>* retained_inference =
+                                            nullptr) const {
     if (current_body_types_)
       if (auto retained = current_body_types_->known_expression(expression))
         return retained;
@@ -12463,6 +12465,7 @@ class Checker {
     auto it = binding ? env.terms.find(*binding) : env.terms.end();
     if (it != env.terms.end() && it->second) return it->second;
     auto expr = inferred_expr(expression, env);
+    if (retained_inference) *retained_inference = expr;
     if (expr && expr->term) return expr->term;
     if (!expr || contains_internal_placeholder(expr->legacy)) {
       if (current_body_types_ && expr) {
@@ -12748,10 +12751,8 @@ class Checker {
           handle.source_fingerprint != fingerprint) continue;
       auto* arena = expression_arena(handle.arena_index);
       if (!arena) continue;
-      std::set<est::ExprId> visited;
       std::function<void(est::ExprId, std::string_view)> retain =
           [&](est::ExprId id, std::string_view text) {
-        if (!visited.insert(id).second) return;
         const auto* existing = arena->facts(id, "main");
         if (!existing || !existing->type) {
           auto type = id == handle.expr ? *declared
@@ -12764,16 +12765,16 @@ class Checker {
           }
         }
         const auto parent_span = arena->span(id);
-        for (const auto child : arena->children(id)) {
+        arena->for_each_child(id, [&](const auto child) {
           const auto child_span = arena->span(child);
           if (child_span.source_begin < parent_span.source_begin ||
               child_span.source_end < child_span.source_begin ||
-              child_span.source_end > parent_span.source_end) continue;
+              child_span.source_end > parent_span.source_end) return;
           const auto begin = child_span.source_begin - parent_span.source_begin;
           const auto length = child_span.source_end - child_span.source_begin;
-          if (begin > text.size() || length > text.size() - begin) continue;
+          if (begin > text.size() || length > text.size() - begin) return;
           retain(child, trim(std::string(text.substr(begin, length))));
-        }
+        });
       };
       retain(handle.expr, field.init);
     }
@@ -27055,22 +27056,20 @@ class Checker {
                                              &env] {
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
-          std::set<est::ExprId> visited;
           std::function<void(est::ExprId, std::string_view)> record_subtree =
               [&](est::ExprId id, std::string_view text) {
-            if (!visited.insert(id).second) return;
             const auto* existing = arena->facts(id, fact_context);
             if (!existing || !existing->type) {
               try {
-                auto type = checked_expression_term(std::string(text), env);
-                if (!type) type = inferred_expr_term(std::string(text), env);
+                std::optional<InferredExpr> inferred;
+                auto type = checked_expression_term(std::string(text), env,
+                                                    &inferred);
                 if (type) {
                   est::SemanticFacts facts = existing
                       ? *existing : est::SemanticFacts{};
                   facts.type = std::move(type);
                   arena->record_facts(id, fact_context, std::move(facts));
-                } else if (auto inferred = inferred_expr(std::string(text), env);
-                           inferred && inferred->is_callable()) {
+                } else if (inferred && inferred->is_callable()) {
                   est::SemanticFacts facts = existing
                       ? *existing : est::SemanticFacts{};
                   facts.resolved_target = inferred->callable_id;
@@ -27082,21 +27081,21 @@ class Checker {
               }
             }
             const auto parent_span = arena->span(id);
-            for (const auto child : arena->children(id)) {
+            arena->for_each_child(id, [&](const auto child) {
               if (const auto* child_facts = arena->facts(child, fact_context);
-                  child_facts && child_facts->type) continue;
+                  child_facts && child_facts->type) return;
               const auto child_span = arena->span(child);
               if (child_span.source_begin < parent_span.source_begin ||
                   child_span.source_end < child_span.source_begin ||
-                  child_span.source_end > parent_span.source_end) continue;
+                  child_span.source_end > parent_span.source_end) return;
               const auto begin = child_span.source_begin -
                   parent_span.source_begin;
               const auto length = child_span.source_end -
                   child_span.source_begin;
-              if (begin > text.size() || length > text.size() - begin) continue;
+              if (begin > text.size() || length > text.size() - begin) return;
               record_subtree(child, trim(std::string(text.substr(begin,
                                                                   length))));
-            }
+            });
           };
           record_subtree(cursor.expr, source);
           if (const char* dump = std::getenv("MOSS_EST_FACTS_DUMP");
@@ -27589,8 +27588,7 @@ class Checker {
                                     std::move(facts));
               }
             }
-            for (const auto child : arena->children(id))
-              record_stage_argument_types(child);
+            arena->for_each_child(id, record_stage_argument_types);
           };
           for (const auto stage_id : pipeline->stages)
             if (const auto* call = std::get_if<est::Call>(&arena->at(stage_id)))
@@ -29199,6 +29197,7 @@ class Checker {
           check_expression(statement.line, statement.text, current_env,
                            "expression");
       }
+      auto record_statement_est_facts = [&] {
       if (!statement.expression_handles.empty()) {
         std::vector<std::string> checked_sources;
         auto add_source = [&](const std::string& source) {
@@ -29250,21 +29249,19 @@ class Checker {
             if (handle.source_fingerprint != fingerprint) continue;
             auto* arena = expression_arena(handle.arena_index);
             if (!arena) continue;
-            std::set<est::ExprId> visited;
             std::function<void(est::ExprId, std::string_view)> retain_tree_facts =
                 [&](est::ExprId id, std::string_view text) {
-            if (!visited.insert(id).second) return;
             const auto* existing = arena->facts(id, fact_context);
             if (!existing || !existing->type) {
-              auto type = checked_expression_term(std::string(text), current_env);
+              std::optional<InferredExpr> inferred;
+              auto type = checked_expression_term(std::string(text), current_env,
+                                                  &inferred);
               if (type) {
                 est::SemanticFacts facts = existing
                     ? *existing : est::SemanticFacts{};
                 facts.type = std::move(type);
                 arena->record_facts(id, fact_context, std::move(facts));
-              } else if (auto inferred = inferred_expr(std::string(text),
-                                                       current_env);
-                         inferred && inferred->is_callable()) {
+              } else if (inferred && inferred->is_callable()) {
                 est::SemanticFacts facts = existing
                     ? *existing : est::SemanticFacts{};
                 facts.resolved_target = inferred->callable_id;
@@ -29272,23 +29269,30 @@ class Checker {
               }
             }
             const auto parent_span = arena->span(id);
-            for (const auto child : arena->children(id)) {
+            arena->for_each_child(id, [&](const auto child) {
+              if (const auto* child_facts = arena->facts(child, fact_context);
+                  child_facts && child_facts->type) return;
               const auto child_span = arena->span(child);
               if (child_span.source_begin < parent_span.source_begin ||
                   child_span.source_end < child_span.source_begin ||
-                  child_span.source_end > parent_span.source_end) continue;
+                  child_span.source_end > parent_span.source_end) return;
               const auto begin = child_span.source_begin -
                   parent_span.source_begin;
               const auto length = child_span.source_end - child_span.source_begin;
-              if (begin > text.size() || length > text.size() - begin) continue;
+              if (begin > text.size() || length > text.size() - begin) return;
               retain_tree_facts(child, trim(std::string(text.substr(begin,
                                                                     length))));
-            }
+            });
           };
             retain_tree_facts(handle.expr, source);
           }
         }
       }
+      };
+      struct StatementFactsOnExit {
+        std::function<void()> record;
+        ~StatementFactsOnExit() { record(); }
+      } statement_facts_on_exit{record_statement_est_facts};
       if (auto snapshot = bound_snapshots.find(&statement);
           snapshot != bound_snapshots.end())
         static_bound_bindings_ = snapshot->second;

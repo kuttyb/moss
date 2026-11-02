@@ -1,5 +1,39 @@
 # Phase 27.5.5 handover (2026-11-02)
 
+## 01:35 UTC implementation checkpoint
+
+- Branch is `phase27-5-5-work`; starting code base `cc0615b7`. Working tree
+  currently has an uncommitted checker fact-retention/performance slice in
+  `src/semantic_checker.cpp`, a generic EST child visitor in
+  `src/est/expression_tree.hpp`, and a narrower fail-closed arithmetic
+  perturbation guard in `src/native_generator.cpp`.
+- Latest focused validation: `make moss-dev` and `make moss-opt` succeeded;
+  `python3 tests/tooling/check_phase27_5_4_fact_hooks.py build/compiler/moss-dev
+  build/compiler/moss-opt` passed all 6 semantic classes, ownership debt stayed
+  10/10. Normal and `-O` Rust emission passed for
+  `examples/functional_dataflow.moss`, `tests/phase45_divergence_fusion.moss`,
+  `tests/phase5_tooling.moss`, and
+  `tests/tooling/phase20_review/probes/bug_untyped_map_length_expr.moss`.
+  (`moss run --interp` on the last source is intentionally unsupported FileIO.)
+- Checker statement facts are now retained after statement checking, so the
+  traversal can reuse already checked expression types. This cut the prior W2
+  checker text-cache increase from roughly +9.5% to +0.5% in the focused
+  sample; this code has not yet been committed or remeasured against the full
+  corpus. EST child walks now avoid allocating child vectors and visited sets.
+- The post-expression checker subtree fact recorder is enabled again. An
+  experiment with it disabled preserved the three-engine hook tests but caused
+  absent types and source failures, so it was not viable. The checker still
+  uses its own string passes (explicitly out of scope in the re-scoped phase).
+- Previously recorded first full perf pair breached the +5% aggregate gate
+  (+11.5% vs 27.5.4-m2); optimization remains required. No final suite,
+  corpus-wide current counter run, final perf pair, Agent 2 audit, merge, or
+  tag has occurred. Do not report phase completion.
+- Next: inspect/review this diff, complete a checkpoint commit and push, then
+  run corpus type coverage/counters. Continue eliminating consumer-side Moss
+  type derivation, register perturb/drop tests for all three engines, update
+  the contract/state/report, run default and shadow full suites once each,
+  parity and perf gates, and only then invoke Agent 2 once.
+
 ## Active checkpoint
 
 - Branch `phase27-5-5-work`; latest pushed checkpoint `2985c35e` contains the
