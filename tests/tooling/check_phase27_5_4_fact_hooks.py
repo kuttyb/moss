@@ -50,13 +50,13 @@ DEBT_CASES = {
 }
 TYPE_CASES = {
     # Perturbed expression types turn the checker facts into Bool. Each
-    # fixture either must make an engine follow the changed type visibly or
-    # fail closed (including a rustc rejection of contradictory generated
-    # Rust). Drops must fail at a checked-fact boundary.
+    # fixture makes an engine follow the changed type visibly or fail closed
+    # (including a rustc rejection of contradictory generated Rust). Drops
+    # must fail at a checked-fact boundary.
     "expression-types": [
         ROOT / "examples/collections_and_methods.moss",
         ROOT / "tests/phase27/est/specialized_call_facts.moss",
-        ROOT / "examples/functional_basics.moss",
+        ROOT / "tests/phase27/est/expression_type_arithmetic.moss",
     ],
     # Pipeline types are changed to Bool in both the FunctionalPipeline plan
     # and retained pipeline/stage EST facts. A map result then cannot be

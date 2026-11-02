@@ -3144,6 +3144,22 @@ class Generator {
       facts = checked_expression_facts(root_expression, true);
     }
     const bool has_fact = facts && facts->type;
+    if (has_fact && facts->type->is_closed() && types) {
+      if (const auto* identifier = std::get_if<est::Identifier>(
+              &expression.arena->at(root))) {
+        const auto binding = types->find(identifier->name);
+        if (binding != types->end() && !binding->second.empty() &&
+            !contains_internal_placeholder(binding->second)) {
+          const auto checked_binding = parsed_type(binding->second);
+          if (checked_binding && checked_binding->is_closed() &&
+              !checked_binding->structurally_equal(*facts->type))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked expression type conflicts "
+                "with checked local type context=" + codegen_body_context_ +
+                " name=" + identifier->name);
+        }
+      }
+    }
 #ifdef MOSS_TEST_BUILD
     if (est::test_coverage_counters_enabled()) {
       const est::Node& observed_node = expression.arena->at(expression.id);
@@ -4477,7 +4493,9 @@ class Generator {
     if (!checked_source)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked eager pipeline source node");
-    auto source_type = generated_expr_type(*checked_source, types);
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
@@ -4654,7 +4672,9 @@ class Generator {
     if (!checked_source)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked fused pipeline source node");
-    auto source_type = generated_expr_type(*checked_source, types);
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     auto element = source_type
         ? generated_functional_element_type(*source_type) : std::nullopt;
     if (!element)
@@ -4893,7 +4913,9 @@ class Generator {
     if (!checked_source)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked functional pipeline source node");
-    auto source_type = generated_expr_type(*checked_source, types);
+    auto source_type = planned && !planned->source_type.empty()
+        ? std::optional<string>(planned->source_type)
+        : generated_expr_type(*checked_source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked functional source type");
@@ -10497,33 +10519,12 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(checked_rhs, "Map") &&
-                !starts_with(statement_type, "map[")) {
-              // A bare Map constructor has no intrinsic element types. The
-              // checked body may close it at a later indexed assignment;
-              // preserve that evidence before emitting its Rust declaration.
-              for (size_t next = i + 1; next < ss.size(); ++next) {
-                if (ss[next].kind != Stmt::Kind::Assign) continue;
-                const auto next_lhs = checked_expression_ref(
-                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
-                EmitterExpr map_base, index_expression;
-                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
-                    tree_identifier_name(map_base) !=
-                        std::optional<string>(s.a)) continue;
-                auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(checked_expression_ref(
-                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
-                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
-                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
-                      "," + canonical_type_name(*value_type) + "]";
-                  break;
-                }
-              }
-            }
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
               annotation = rust_type(statement_type);
-            else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
+            else if (staged_abi_v10() &&
+                     tree_empty_constructor_named(checked_rhs, "Map"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked empty-map type");
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
             o << indent(level) << "let mut " << s.a;
@@ -10534,8 +10535,7 @@ class Generator {
                           s, functional_context, 0))
               << ";\n";
             locals.insert(s.a);
-            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
-                : statement_type;
+            types[s.a] = statement_type;
             const auto source_name = tree_identifier_name(checked_rhs);
             auto source_binding = source_name
                 ? domain_instance_bindings_.find(*source_name)
@@ -11088,27 +11088,11 @@ class Generator {
             const auto source_name = tree_identifier_name(checked_initializer);
             auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
-            string inferred_map_type;
-            if (staged_abi_v10() && tree_empty_constructor_named(checked_initializer, "Map") &&
-                !starts_with(statement_type, "map[")) {
-              for (size_t next = i + 1; next < ss.size(); ++next) {
-                if (ss[next].kind != Stmt::Kind::Assign) continue;
-                const auto next_lhs = checked_expression_ref(
-                    ss[next], ss[next].a, est::ExprSlot::LhsPlace);
-                EmitterExpr map_base, index_expression;
-                if (!tree_parse_index(next_lhs, map_base, index_expression) ||
-                    tree_identifier_name(map_base) !=
-                        std::optional<string>(s.a)) continue;
-                auto key_type = generated_expr_type(index_expression, &types);
-                auto value_type = generated_expr_type(checked_expression_ref(
-                    ss[next], ss[next].b, est::ExprSlot::RhsValue), &types);
-                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
-                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
-                      "," + canonical_type_name(*value_type) + "]";
-                  break;
-                }
-              }
-            }
+            if (staged_abi_v10() &&
+                tree_empty_constructor_named(checked_initializer, "Map") &&
+                !starts_with(statement_type, "map["))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked empty-map type");
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
@@ -11119,9 +11103,8 @@ class Generator {
                      checked_initializer, &types).value_or("")) == "float"))
               o << ": f64";
             else if (!joined_assignment && !domain_capability &&
-                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
-              o << ": " << rust_type(!inferred_map_type.empty()
-                  ? inferred_map_type : statement_type);
+                     starts_with(statement_type, "map["))
+              o << ": " << rust_type(statement_type);
             o << " = "
               << expr(checked_initializer, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -11129,7 +11112,6 @@ class Generator {
             if (domain_capability) o << ".clone()";
             o << ";\n";
             types[s.a] = domain_capability ? source->second
-                : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             if (domain_capability) {
               auto source_binding = source_name

@@ -1,0 +1,4 @@
+fn main():
+  left = 3
+  right = 4
+  echo left + right

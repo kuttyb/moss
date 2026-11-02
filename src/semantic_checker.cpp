@@ -26115,9 +26115,12 @@ class Checker {
       return true;  // Rechecked with the specialization's concrete TypeEnv.
     }
     auto element = functional_element_type(*source_type, parsed->source);
-    if (!element) return false;  // General/scalar pipeline compatibility.
+    if (!element) {
+      check_expression(line, parsed->source, env, {}, "pipeline-source");
+      return false;  // General/scalar pipeline compatibility.
+    }
 
-    check_expression(line, parsed->source, env);
+    check_expression(line, parsed->source, env, {}, "pipeline-source");
     FunctionalPipelineState state{*element, *source_type, false};
     for (size_t stage_index = 0; stage_index < parsed->stages.size(); ++stage_index) {
       const auto& stage = parsed->stages[stage_index];
@@ -27376,6 +27379,67 @@ class Checker {
       mark_active_expression(OccurrenceKind::Pipeline,
                              "functional-pipeline-v1");
       return;
+    }
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      if (auto* arena = expression_arena(cursor.arena_index)) {
+        const auto root = est::unparenthesized(*arena, cursor.expr);
+        if (const auto* pipeline = std::get_if<est::Pipeline>(
+                &arena->at(root))) {
+          const auto parent_span = arena->span(root);
+          const auto source_for = [&](est::ExprId id)
+              -> std::optional<string> {
+            const auto span = arena->span(id);
+            if (span.source_begin < parent_span.source_begin ||
+                span.source_end < span.source_begin ||
+                span.source_end > parent_span.source_end)
+              return std::nullopt;
+            const auto begin = span.source_begin - parent_span.source_begin;
+            const auto length = span.source_end - span.source_begin;
+            if (begin > original.size() ||
+                length > original.size() - begin)
+              return std::nullopt;
+            return trim(original.substr(begin, length));
+          };
+          const auto source_span = arena->span(pipeline->input);
+          if (source_span.source_begin >= parent_span.source_begin &&
+              source_span.source_end >= source_span.source_begin &&
+              source_span.source_end <= parent_span.source_end) {
+            const auto begin = source_span.source_begin -
+                parent_span.source_begin;
+            const auto length = source_span.source_end -
+                source_span.source_begin;
+            if (begin <= original.size() &&
+                length <= original.size() - begin) {
+              const auto source = trim(original.substr(begin, length));
+              if (!source.empty())
+                check_expression(line, source, env, {}, "pipeline-source");
+            }
+          }
+          std::function<void(est::ExprId)> record_stage_argument_types =
+              [&](est::ExprId id) {
+            if (const auto* existing = arena->facts(
+                    id, expression_fact_context());
+                existing && existing->type) return;
+            if (auto text = source_for(id); text && !text->empty()) {
+              if (auto type = inferred_expr_term(*text, env)) {
+                est::SemanticFacts facts;
+                facts.type = current_body_types_
+                    ? current_body_types_->solver.resolve(type) : type;
+                arena->record_facts(id, expression_fact_context(),
+                                    std::move(facts));
+              }
+            }
+            for (const auto child : arena->children(id))
+              record_stage_argument_types(child);
+          };
+          for (const auto stage_id : pipeline->stages)
+            if (const auto* call = std::get_if<est::Call>(&arena->at(stage_id)))
+              for (const auto argument : call->arguments)
+                record_stage_argument_types(argument);
+        }
+      }
     }
     string value = tree_normalize_pipeline(std::move(original));
     string unary_operation, unary_operand;
@@ -29008,11 +29072,16 @@ class Checker {
           if (contains_domain_handle(current_env.at(binding)))
             err(statement.line, "domain handle '" + binding +
                 "' cannot be used as ordinary writable storage");
-        if (statement.kind == Stmt::Kind::Assign && current_object_ &&
-            tree_simple_identifier(statement.a) &&
+        const bool implicit_object_field = current_object_ &&
             std::any_of(current_object_->fields.begin(),
                         current_object_->fields.end(),
-                [&](const Field& field) { return field.name == statement.a; }))
+                [&](const Field& field) { return field.name == statement.a; });
+        const bool implicit_domain_field = current &&
+            std::any_of(current->state.begin(), current->state.end(),
+                [&](const Field& field) { return field.name == statement.a; });
+        if (statement.kind == Stmt::Kind::Assign &&
+            tree_simple_identifier(statement.a) &&
+            (implicit_object_field || implicit_domain_field))
           check_expression(statement.line, statement.a, current_env,
                            "assignment-place");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
