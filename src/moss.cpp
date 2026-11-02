@@ -14968,6 +14968,52 @@ static bool execution_body_read_statement(const string& record,
           "invalid or duplicate statement raise identity in ABI-v9 execution-body section",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
+  string serialized_fact_count;
+  if (fields >> serialized_fact_count) {
+    size_t fact_count = 0;
+    try {
+      std::size_t consumed = 0;
+      fact_count = std::stoull(serialized_fact_count, &consumed);
+      if (consumed != serialized_fact_count.size() || fact_count > 100000)
+        throw std::invalid_argument("invalid fact count");
+    } catch (...) {
+      throw CompileError(std::max(statement.line, 0),
+          "invalid expression fact count in ABI-v9 execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    for (size_t index = 0; index < fact_count; ++index) {
+      LoadedExpressionFact fact;
+      size_t path_count = 0;
+      unsigned serialized_slot = 0;
+      if (!(fields >> serialized_slot >> fact.argument_index >> path_count) ||
+          serialized_slot >= est::Arena::slot_count || path_count > 100000)
+        throw CompileError(std::max(statement.line, 0),
+            "invalid expression fact location in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      fact.slot = static_cast<std::uint8_t>(serialized_slot);
+      fact.child_path.reserve(path_count);
+      for (size_t path = 0; path < path_count; ++path) {
+        std::uint32_t child = 0;
+        if (!(fields >> child))
+          throw CompileError(std::max(statement.line, 0),
+              "truncated expression fact path in ABI-v9 execution body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        fact.child_path.push_back(child);
+      }
+      if (!(fields >> std::quoted(fact.context) >>
+            std::quoted(fact.canonical_type) >>
+            std::quoted(fact.specialization_result) >>
+            std::quoted(fact.resolved_target) >> fact.inferred_effect) ||
+          fact.context.empty() || fact.inferred_effect < -1 ||
+          fact.inferred_effect > static_cast<int>(Effect::Consume))
+        throw CompileError(std::max(statement.line, 0),
+            "invalid semantic fact in ABI-v9 execution body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      statement.loaded_expression_facts.push_back(std::move(fact));
+    }
+  } else {
+    fields.clear();  // Backward-compatible Section 2 records have no facts.
+  }
   string trailing;
   if (fields >> trailing)
     throw CompileError(std::max(statement.line, 0),
@@ -17541,6 +17587,7 @@ static ParsedModuleUnit load_module_interface(
                             handler.name + ":" + std::to_string(arm.line));
     }
   if (load_execution_bodies) {
+    if (!provider.type_context) build_type_context(provider);
     parse_execution_body_payload(execution_bodies, provider, file);
     for (auto& function : provider.functions) {
       if (function.execution_result_expression)
@@ -21560,6 +21607,7 @@ static void validate_imported_nominal_key_proofs(
 }
 
 static void write_execution_body_statement(std::ostream& out,
+                                           const Program& program,
                                            const Stmt& statement) {
   out << "stmt " << static_cast<int>(statement.kind) << " "
       << statement.line << " " << statement.indent << " "
@@ -21573,6 +21621,51 @@ static void write_execution_body_statement(std::ostream& out,
   out << " " << statement.exceptional_alternatives.size();
   for (const auto& raised : statement.exceptional_alternatives)
     out << " " << std::quoted(raised.canonical());
+  vector<LoadedExpressionFact> facts;
+  for (const auto& handle : statement.expression_handles) {
+    if (handle.arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle.arena_index]) continue;
+    const auto& arena = *program.expression_arenas[handle.arena_index];
+    std::function<void(est::ExprId, vector<std::uint32_t>&)> visit =
+        [&](est::ExprId node, vector<std::uint32_t>& path) {
+      for (const auto& [context, semantic] : arena.facts_for_expression(node)) {
+        if (!semantic.type && semantic.specialization_result.empty() &&
+            semantic.resolved_target.empty() && !semantic.inferred_effect)
+          continue;
+        LoadedExpressionFact fact;
+        fact.slot = static_cast<std::uint8_t>(handle.slot);
+        fact.argument_index = handle.argument_index;
+        fact.child_path = path;
+        fact.context = context;
+        if (semantic.type)
+          fact.canonical_type = semantic.type->to_canonical_string();
+        fact.specialization_result = semantic.specialization_result;
+        fact.resolved_target = semantic.resolved_target;
+        if (semantic.inferred_effect)
+          fact.inferred_effect = static_cast<int>(*semantic.inferred_effect);
+        facts.push_back(std::move(fact));
+      }
+      const auto children = arena.children(node);
+      for (std::size_t index = 0; index < children.size(); ++index) {
+        path.push_back(static_cast<std::uint32_t>(index));
+        visit(children[index], path);
+        path.pop_back();
+      }
+    };
+    vector<std::uint32_t> path;
+    visit(handle.expr, path);
+  }
+  out << " " << facts.size();
+  for (const auto& fact : facts) {
+    out << " " << static_cast<unsigned>(fact.slot) << " "
+        << fact.argument_index << " " << fact.child_path.size();
+    for (const auto child : fact.child_path) out << " " << child;
+    out << " " << std::quoted(fact.context) << " "
+        << std::quoted(fact.canonical_type) << " "
+        << std::quoted(fact.specialization_result) << " "
+        << std::quoted(fact.resolved_target) << " "
+        << fact.inferred_effect;
+  }
   out << "\n";
 }
 
@@ -21904,7 +21997,7 @@ static string encode_execution_body_payload(
               << ownership_effect_name(effect) << "\n";
     }
     for (const auto& statement : function->body)
-      write_execution_body_statement(payload, statement);
+      write_execution_body_statement(payload, program, statement);
     payload << "function_end\n";
   }
 
@@ -21949,7 +22042,7 @@ static string encode_execution_body_payload(
                 << ownership_effect_name(effect) << "\n";
       }
       for (const auto& statement : method->body)
-        write_execution_body_statement(payload, statement);
+        write_execution_body_statement(payload, program, statement);
       payload << "method_end\n";
     }
   }
@@ -21986,13 +22079,13 @@ static string encode_execution_body_payload(
               << handler->body.size() << " "
               << handler->failure_arms.size() << "\n";
       for (const auto& statement : handler->body)
-        write_execution_body_statement(payload, statement);
+        write_execution_body_statement(payload, program, statement);
       for (size_t index = 0; index < handler->failure_arms.size(); ++index) {
         const auto& arm = handler->failure_arms[index];
         payload << "failure_arm " << index << " " << arm.line << " "
                 << arm.body.size() << "\n";
         for (const auto& statement : arm.body)
-          write_execution_body_statement(payload, statement);
+          write_execution_body_statement(payload, program, statement);
         payload << "failure_arm_end\n";
       }
       payload << "handler_end\n";

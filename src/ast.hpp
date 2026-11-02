@@ -248,6 +248,20 @@ struct CheckedBodyV1 {
   vector<CheckedBodyStmtV1> statements;
   string semantic_hash;
 };
+// Checked per-node facts retained across the one permitted initial load of a
+// compiled .mossi execution body. The child path is relative to an expression
+// handle root; consumers receive the same tree facts after loading without
+// consulting source text or resolving the operation again.
+struct LoadedExpressionFact {
+  std::uint8_t slot = 0;
+  std::uint32_t argument_index = 0;
+  vector<std::uint32_t> child_path;
+  string context;
+  string canonical_type;
+  string specialization_result;
+  string resolved_target;
+  int inferred_effect = -1;
+};
 struct Stmt {
   enum class Kind {
     Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
@@ -262,6 +276,7 @@ struct Stmt {
   // statement's syntax is converted into its expression/statement tree.
   string est_binding_name;
   vector<est::Handle> expression_handles;
+  vector<LoadedExpressionFact> loaded_expression_facts;
   std::optional<est::RawForm> est_raw_form;
   // EST pattern node for match/recover syntax. Pattern source remains on the
   // legacy AST fields for diagnostics and serialization only.

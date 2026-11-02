@@ -16999,3 +16999,24 @@ future optimizer-isolated proof and must remain explicit in final review.
   Phase 27.5.4 fact-hook matrix (known debt 38/38). The targeted C3
   `-Werror` parser-cache test also passes after marking its test-only query
   label used in non-test builds.
+
+## C2 checkpoint: retain node facts in source-free execution bodies (2026-11-01)
+
+- Extended ABI-v9 Section 2 statement records with optional checked facts for
+  every node reachable from each expression handle: location within the
+  statement tree, specialization context, canonical type, resolved target,
+  specialization result, and inferred effect. Old records without the
+  optional trailing field remain readable.
+- Source-free body loading restores these facts onto the freshly populated
+  retained tree. Canonical provider type names are normalized to provider
+  declarations before constructing `TypeRef`s; this handles the
+  module-qualified `keys__Item` spelling in the imported-package test.
+- Targeted validation passes: the full Phase 25 S3 key-protocol suite (28
+  cases, including path dependency and source-removed provider), and the
+  Phase 27.5.4 perturb/drop matrix (call targets 8, specializations 4, joins
+  4, patterns 3; known debt remains 38/38). `make moss-dev` succeeds.
+- No full-suite rerun, paired all-workload reparse sweep, parity/performance
+  gate, three-engine aggregate, or Agent 2 audit has run after this change.
+  The recorded 144/165 full-suite result is stale; its 21 failures remain the
+  outstanding regression list above, with the S3 imported-package regression
+  now fixed on its targeted harness.

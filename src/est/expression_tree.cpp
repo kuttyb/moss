@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -41,6 +42,44 @@ ExprId Arena::append(Node node, SourceSpan source_span) {
 
 const Node& Arena::at(ExprId id) const { return nodes_.at(id); }
 
+std::vector<ExprId> Arena::children(ExprId id) const {
+  std::vector<ExprId> result;
+  std::visit([&](const auto& node) {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, Unary>) result.push_back(node.operand);
+    else if constexpr (std::is_same_v<T, Binary>) {
+      result.push_back(node.left);
+      result.push_back(node.right);
+    } else if constexpr (std::is_same_v<T, Call>) {
+      result.push_back(node.callee);
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, Member>) result.push_back(node.base);
+    else if constexpr (std::is_same_v<T, Index>) {
+      result.push_back(node.base);
+      result.push_back(node.index);
+    } else if constexpr (std::is_same_v<T, Parenthesized>)
+      result.push_back(node.inner);
+    else if constexpr (std::is_same_v<T, Message>) {
+      result.push_back(node.target);
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, NamedArgument>)
+      result.push_back(node.value);
+    else if constexpr (std::is_same_v<T, Collection> ||
+                       std::is_same_v<T, Tuple>)
+      result.insert(result.end(), node.elements.begin(), node.elements.end());
+    else if constexpr (std::is_same_v<T, Constructor>) {
+      result.push_back(node.type);
+      result.insert(result.end(), node.type_arguments.begin(),
+                    node.type_arguments.end());
+      result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      result.push_back(node.input);
+      result.insert(result.end(), node.stages.begin(), node.stages.end());
+    }
+  }, nodes_.at(id));
+  return result;
+}
+
 void Arena::record_facts(ExprId id, std::string specialization_context,
                          SemanticFacts facts) {
   if (id >= nodes_.size())
@@ -63,6 +102,15 @@ const SemanticFacts* Arena::facts(
   auto found = semantic_facts_.find(
       FactKey{id, std::string(specialization_context)});
   return found == semantic_facts_.end() ? nullptr : &found->second;
+}
+
+std::vector<std::pair<std::string, SemanticFacts>>
+Arena::facts_for_expression(ExprId id) const {
+  std::vector<std::pair<std::string, SemanticFacts>> result;
+  for (const auto& [key, facts] : semantic_facts_)
+    if (key.expression == id)
+      result.emplace_back(key.specialization_context, facts);
+  return result;
 }
 
 #ifdef MOSS_TEST_BUILD
@@ -2374,6 +2422,92 @@ void populate(Program& program) { populate_impl(program, nullptr, 0); }
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id) {
   populate_impl(program, &statements, origin_id ? origin_id : 1);
+  moss::TypeContext::Scope type_scope(program.type_context.get());
+  auto normalize_loaded_type = [&](std::string_view raw) {
+    std::string result;
+    auto append_token = [&](std::string_view token) {
+      const auto separator = token.rfind("__");
+      if (separator == std::string_view::npos) {
+        result.append(token);
+        return;
+      }
+      const auto suffix = token.substr(separator + 2);
+      std::string_view unique_name;
+      bool ambiguous = false;
+      bool matched = false;
+      auto consider = [&](const auto& declarations) {
+        for (const auto& declaration : declarations) {
+          const std::string_view name = declaration.name;
+          if (name != suffix) continue;
+          if (matched) ambiguous = true;
+          matched = true;
+          unique_name = name;
+        }
+      };
+      consider(program.objects);
+      consider(program.enums);
+      consider(program.domains);
+      if (unique_name.empty() || ambiguous) result.append(token);
+      else result.append(unique_name);
+    };
+    for (std::size_t begin = 0; begin < raw.size();) {
+      const char ch = raw[begin];
+      if (ch == '[' || ch == ']' || ch == ',' || ch == '=' ||
+          std::isspace(static_cast<unsigned char>(ch))) {
+        result.push_back(ch);
+        ++begin;
+        continue;
+      }
+      std::size_t end = begin + 1;
+      while (end < raw.size() && raw[end] != '[' && raw[end] != ']' &&
+             raw[end] != ',' && raw[end] != '=' &&
+             !std::isspace(static_cast<unsigned char>(raw[end]))) ++end;
+      append_token(raw.substr(begin, end - begin));
+      begin = end;
+    }
+    return result;
+  };
+  std::function<void(Stmt&)> restore_facts = [&](Stmt& statement) {
+    for (const auto& loaded : statement.loaded_expression_facts) {
+      const Handle* selected = nullptr;
+      for (const auto& handle : statement.expression_handles)
+        if (static_cast<std::uint8_t>(handle.slot) == loaded.slot &&
+            handle.argument_index == loaded.argument_index) {
+          if (selected)
+            throw std::invalid_argument(
+                "ambiguous loaded expression fact handle");
+          selected = &handle;
+        }
+      if (!selected || selected->arena_index >= program.expression_arenas.size() ||
+          !program.expression_arenas[selected->arena_index])
+        throw std::invalid_argument("missing loaded expression fact handle");
+      auto& arena = *program.expression_arenas[selected->arena_index];
+      ExprId expression = selected->expr;
+      for (const auto child : loaded.child_path) {
+        const auto children = arena.children(expression);
+        if (child >= children.size())
+          throw std::invalid_argument("invalid loaded expression fact path");
+        expression = children[child];
+      }
+      SemanticFacts facts;
+      if (!loaded.canonical_type.empty()) {
+        const auto normalized_type = normalize_loaded_type(
+            loaded.canonical_type);
+        auto type = moss::Type::parse_canonical(normalized_type);
+        if (!type || !*type)
+          throw std::invalid_argument("invalid loaded expression fact type: " +
+                                      loaded.canonical_type);
+        facts.type = *type;
+      }
+      facts.specialization_result = loaded.specialization_result;
+      facts.resolved_target = loaded.resolved_target;
+      if (loaded.inferred_effect >= 0)
+        facts.inferred_effect = static_cast<Effect>(loaded.inferred_effect);
+      arena.record_facts(expression, loaded.context, std::move(facts));
+    }
+    statement.loaded_expression_facts.clear();
+  };
+  for (auto& statement : statements) restore_facts(statement);
 }
 
 void populate_loaded_expression(Program& program, std::vector<Handle>& handles,
