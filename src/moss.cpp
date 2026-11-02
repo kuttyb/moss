@@ -17713,8 +17713,10 @@ static ParsedModuleUnit load_module_interface(
                             handler.name + ":" + std::to_string(arm.line));
     }
   if (load_execution_bodies) {
-    if (!provider.type_context) build_type_context(provider);
     parse_execution_body_payload(execution_bodies, provider, file);
+    // Section 2 can introduce private declarations referenced by its retained
+    // expression facts. Rebuild the projection before restoring those facts.
+    build_type_context(provider);
     for (auto& function : provider.functions) {
       if (function.execution_result_expression)
         est::populate_loaded_expression(provider, function.expression_handles,

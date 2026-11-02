@@ -17151,3 +17151,23 @@ future optimizer-isolated proof and must remain explicit in final review.
   Full default/shadow suites remain reserved for final gates.
 - Current branch tip: `cad90fdb`; current working changes in this checkpoint
   are status documentation only.
+
+
+## C2 checkpoint: source-free private nominal expression facts (2026-11-01)
+
+- Refreshed both `moss-dev` and `moss-opt` after the Section 2 expression-fact
+  work. The prior X1 v9 failure persisted after this rebuild, confirming a
+  source issue rather than stale optimized code.
+- Section 2 can introduce private object/enum declarations after the initial
+  provider TypeContext was built. The reader now rebuilds that declaration
+  projection after parsing Section 2 and before restoring execution-body facts,
+  so checked nominal types such as `x1_library__HiddenBox` bind to their
+  declaration.
+- The direct X1 harness and isolated `check_phase26_1_1_x1_v9` now pass. The
+  full Phase 25 focused family passed 25/26; its sole failure is G2
+  `compiled_only_custom_key`, also failing on pinned C1. Phase 21 passed 43/43;
+  Phase 15.9, Phase 20 and Phase 24 targeted failures also pass with refreshed
+  compilers.
+- The change is in `src/moss.cpp`; current validation does not replace the
+  final default/shadow suites. Current branch tip before this checkpoint is
+  `8930ba5c`.
