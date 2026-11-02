@@ -705,6 +705,9 @@ once: preflight, fact hooks and ratchet passed; the regression shard passed
 162/165 jobs in 352.56s. The three failures are the C1-parent baseline issues
 documented above: conformance gate 10 (`compiled_only_custom_key`) and the
 native Rust E0499 failure in `swarm_035_nested_mutating_calls.moss`, surfaced
-by both `check_phase27_accepts_rustc` and `shard_swarm_cases`. The shadow full
-suite and closeout Agent 2 audit remain pending. The status and handover are
-maintained in `.codex/CURRENT_STATUS.md`.
+by both `check_phase27_accepts_rustc` and `shard_swarm_cases`. The shadow
+`make check-shadow` then ran once: preflight, hooks and ratchet passed; its
+regression shard also passed 162/165 jobs in 355.92s, with the exact same
+three baseline failures. Shadow counters were checker 64,548, driver rewrites
+748, and zero for consumer stages. Agent 2's closeout audit remains pending.
+The status and handover are maintained in `.codex/CURRENT_STATUS.md`.

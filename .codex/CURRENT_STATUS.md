@@ -28,9 +28,14 @@
   `tests/swarm_035_nested_mutating_calls.moss`; gate 10 is the documented
   C1-parent conformance baseline. Full log: disposable
   `tmp/phase2754-closeout-check.log`.
-- Next steps: run `make check-shadow` once, review its failures, invoke
-  Agent 2 once, and merge/tag `phase27-5-4-m2` only if the gates and audit pass.
-  No L7 input is needed.
+- Full shadow `make --jobs="$(nproc)" check-shadow` has now run once.
+  Preflight, hooks and ratchet passed; regression shard was 162/165 jobs
+  (355.92 s), with the exact same three baseline failures as default. Shadow
+  counters remained checker 64,548, driver rewrite 748, consumer stages zero.
+  Full log: disposable `tmp/phase2754-closeout-shadow.log`.
+- Agent 2 closeout audit has not yet run. Next: commit/push this gate result,
+  invoke Agent 2 once, then merge/tag `phase27-5-4-m2` only if the audit
+  approves handling the documented baseline failures. No L7 input is needed.
 
 ## Historical C2 handover detail
 
