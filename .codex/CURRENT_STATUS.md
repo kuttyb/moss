@@ -17522,3 +17522,46 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Extended the Phase 27.5.4 paired source measurement tool to report type inference totals per default/optimized emission mode and checked type coverage by consumer. Targeted fixture sample: emitter inference counter 0; arithmetic type query coverage PRESENT=3 ABSENT=0; Fast Debug arithmetic type coverage PRESENT=3 ABSENT=0. An optimized functional fixture emitted no optimizer type query (the optimizer had no applicable type-dependent rewrite on that source).
 - Build and focused fact-hook suite pass; default/optimized full-corpus measurements remain deferred until final gates.
 - Current tracked branch head before this counter checkpoint: `74a2a40e`; current edits are uncommitted. Continue auditing all Fast Debug type-directed paths, test optimizer type-dependent rewrites with a focused source, and implement the full-corpus sweep before final suite/performance gates.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (predicate placeholder type fact)
+
+- Confirmed the Fast Debug `examples/mini_application.moss` missing-expression-node
+  invariant also fires on the Phase 27.5.4 m2 parent binary (`6e07d0b8`) with
+  identical source and context; inherited baseline debt.
+- The optimized `tests/phase46_semantic_rewrites.moss` fixture exposed an
+  emitter missing-type invariant on the `_` predicate in an `any` stage. The
+  checker already checked the predicate type, but its Any/All callable check
+  omitted the EST cursor scope used by Map/Filter. Added that cursor scope,
+  without changing accepted programs or semantics.
+- Targeted validation: rebuilt `moss-dev`; optimized Rust generation and
+  `rustc` compilation of `phase46_semantic_rewrites.moss` pass. The emitter
+  reports 0 absent facts across call (2), identifier (11), literal (17), other
+  (12), and unary (1) expression queries. The optimizer reports its applicable
+  functional-pipeline input fact PRESENT=1, ABSENT=0. No full suite/perf run.
+- Current edit in `src/semantic_checker.cpp` is ready for checkpoint commit and
+  push. Next: targeted fact-hook/parity checks, continue auditing consumer
+  types and coverage, run the 1,824-source counter and final gates once near
+  completion.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (nested grouping cursor repair)
+
+- Focused Fast Debug parity found `tests/swarm_001_parenthesized_pipeline.moss`
+  missing the checked output type on the `count` stage in a twice-parenthesized
+  expression. Checker `check_expression` stripped all redundant grouping in
+  one recursion, so the text for the child no longer matched the immediate EST
+  child and its cursor was lost.
+- Checker grouping now removes one balanced outer pair per recursive call,
+  preserving the EST cursor path; stage facts use the parser-provided stage
+  node when available. Fast Debug tries the same specialization/base/source
+  context sequence for pipeline facts as expression facts.
+- `examples/mini_application.moss` remains inherited Phase 27.5.4 m2 baseline
+  debt: parent and candidate both report the same missing-expression-node
+  invariant.
+- Validation: `make moss-dev`, `make moss-opt`, focused Fast Debug/native/-O
+  parity (`check_phase27_5_3_fastdebug_checked_tree.py`), and the checked-fact
+  perturb/drop suite pass. Optimized Rust generation plus `rustc` for
+  `tests/phase46_semantic_rewrites.moss` passes; emitter facts were all
+  PRESENT (37 queries), optimizer input fact PRESENT=1. No full suite/perf run.
+- Changes in checker, Fast Debug and this status file are ready to commit/push.
+  Next: inventory all checked type reads vs remaining consumer type decisions,
+  run corpus counters, then final gates and one Agent 2 audit.

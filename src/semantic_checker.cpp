@@ -26287,9 +26287,11 @@ class Checker {
                 " stage accepts zero or one predicate");
           string predicate_type = state.element_type;
           if (!stage.arguments.empty()) {
-            auto result = check_functional_callable(
-                line, stage.arguments.front(), {state.element_type}, env,
-                functional_node_name(stage.kind), &stage_target);
+            auto result = in_stage_argument(0, [&] {
+              return check_functional_callable(
+                  line, stage.arguments.front(), {state.element_type}, env,
+                  functional_node_name(stage.kind), &stage_target);
+            });
             if (result) predicate_type = *result;
           }
           if (!unresolved_semantic_type(predicate_type) &&
@@ -26315,14 +26317,33 @@ class Checker {
         }
       }
       std::optional<EstExpressionCursor> checked_stage_cursor;
-      if (!active_est_expression_cursors_.empty() &&
+      if (stage.expression_arena && stage.expression_node != UINT32_MAX) {
+        for (std::uint32_t arena_index = 0;
+             arena_index < p_.expression_arenas.size(); ++arena_index)
+          if (p_.expression_arenas[arena_index].get() ==
+              stage.expression_arena) {
+            checked_stage_cursor = EstExpressionCursor{
+                arena_index, stage.expression_node, stage.raw};
+            break;
+          }
+      }
+      if (!checked_stage_cursor && !active_est_expression_cursors_.empty() &&
           active_est_expression_cursors_.back()) {
         const auto& parent = *active_est_expression_cursors_.back();
         if (auto* parent_arena = expression_arena(parent.arena_index)) {
-          if (auto child = matching_expression_child(*parent_arena,
-                  parent.expr, "stage:" + std::to_string(stage_index),
-                  static_cast<std::uint32_t>(stage_index), parent.source,
-                  stage.raw)) {
+          const auto pipeline_root = est::unparenthesized(
+              *parent_arena, parent.expr);
+          const auto* checked_pipeline = std::get_if<est::Pipeline>(
+              &parent_arena->at(pipeline_root));
+          std::optional<est::ExprId> child;
+          if (checked_pipeline && stage_index < checked_pipeline->stages.size())
+            child = checked_pipeline->stages[stage_index];
+          if (!child)
+            child = matching_expression_child(*parent_arena,
+                parent.expr, "stage:" + std::to_string(stage_index),
+                static_cast<std::uint32_t>(stage_index), parent.source,
+                stage.raw);
+          if (child) {
             checked_stage_cursor = EstExpressionCursor{
                 parent.arena_index, *child, stage.raw};
           }
@@ -27285,8 +27306,10 @@ class Checker {
     // from the ordinary-expression checker.
     if (tree_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
-      check_expression(line, tree_strip_redundant_outer_parentheses(original), env,
-                       {}, "grouped-expression");
+      const string grouped = original.size() >= 2
+          ? trim(original.substr(1, original.size() - 2))
+          : original;
+      check_expression(line, grouped, env, {}, "grouped-expression");
       return;
     }
     if (auto elements = tree_parse_vector_literal(original)) {

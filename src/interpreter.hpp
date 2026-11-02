@@ -1541,10 +1541,30 @@ class FastInterpreter {
     }
     const auto stage = est::unparenthesized(*tree.arena,
         pipeline_node.stages[stage_index - 1]);
-    const auto* facts = tree.arena->facts(stage, frame.functional_context);
+    const est::SemanticFacts* facts = nullptr;
+    std::vector<std::string> contexts{frame.functional_context};
+    const auto specialization = frame.functional_context.find('<');
+    if (specialization != std::string::npos)
+      contexts.push_back(frame.functional_context.substr(0, specialization));
+    if (!frame.source_file.empty())
+      contexts.push_back("source:" + frame.source_file + ":" +
+                         std::to_string(line));
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      facts = tree.arena->facts(stage, context);
+      if (facts) break;
+    }
     if (!facts || !facts->type || !facts->type->is_closed()) {
       record_type_coverage("pipeline-stage", false);
-      return std::nullopt;
+      std::string recorded_contexts;
+      for (const auto& entry : tree.arena->facts_for_expression(stage)) {
+        if (!recorded_contexts.empty()) recorded_contexts += ",";
+        recorded_contexts += entry.first;
+      }
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked pipeline stage output type "
+          "node=" + std::to_string(stage) + " context=" +
+          frame.functional_context + " recorded=" + recorded_contexts);
     }
     record_type_coverage("pipeline-stage", true);
     return facts->type->to_canonical_string();
