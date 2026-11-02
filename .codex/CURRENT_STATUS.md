@@ -34,8 +34,9 @@
   closeout independently ran default and shadow full suites once each; both
   were 162/165 with the same three baseline failures. The new gate check passed
   in both runs. No language rule changed.
-- Branch commit `dda8fa49` was pushed. The remaining delivery action is to merge
-  it into `main` with `origin/main` as first parent and push `main`.
+- Branch commits `dda8fa49` and `aaed6174` were pushed. The closeout was
+  merged into `main` as `63a822ce`, with `e7668792` as first parent, and
+  pushed. No work remains.
 
 # Compiler architecture gaps handover (2026-11-02)
 
