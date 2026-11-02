@@ -28,7 +28,7 @@ These are Rust ABI/runtime forms, not alternative Moss type answers:
 
 - `&T` and `&mut T`: encode the checker's READ/WRITE parameter effects as Rust borrowing (`src/handler_lowering.inc:96–107`, `src/native_generator.cpp:2399–2501`).
 - `MossRead<'a,T>`, `MossWrite<'a,T>`, and `MossAbsent<T>`: capability wrappers for domain shared-state message ABI and absent effect slots (`src/handler_lowering.inc:96–107`, `src/handler_runtime.cpp:30–41`).
-- `Result<T,__MossRaised>` and `__MossRaised` (including generated provider carrier enums): encode the Moss effect/raise transport across Rust function and handler boundaries (`src/native_generator.cpp:677–725, 9133–9145`; handler signature generation is in `src/handler_lowering.inc:705–723, 822–838`).
+- `Result<T,__MossRaised>` and `__MossRaised`: encode the Moss effect/raise transport across Rust function and handler boundaries (`src/native_generator.cpp:677–683, 9130–9145`). Captured-failure provider carriers use a generated frame and carrier struct to preserve captured values across the ABI (`src/handler_lowering.inc:818–840`).
 - `std::sync::RwLock<T>` and its read/write guards: implement the checker-derived domain synchronization plan and runtime lock acquisition (`src/handler_lowering.inc:865, 994`, `src/handler_runtime.cpp:19–24`).
 - `Arc<...>` and generated `*Ref`/runtime state wrappers: provide thread-safe domain runtime identity and storage; Moss domain handles themselves are static capabilities rather than first-class value types (`src/native_generator.cpp:9101–9106`, with `Arc::new` initialization at `992`).
 - `std::marker::PhantomData<T>` in `MossAbsent<T>`: Rust representation marker for an ABI slot with no Moss runtime value (`src/handler_lowering.inc:96–99`).
