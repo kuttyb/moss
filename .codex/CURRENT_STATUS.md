@@ -16957,3 +16957,29 @@ future optimizer-isolated proof and must remain explicit in final review.
 - No full suite, paired corpus count, three-engine aggregate, performance run,
   or Agent 2 audit has run after this fix. The last full suite remains the
   earlier 127/165 result and is stale; final gates remain pending.
+
+## C2 full-suite checkpoint: default run after recovery fix (2026-11-01)
+
+- `make check` rebuilt dev and opt binaries; Fast Debug checked-tree parity,
+  EST checks, both default/shadow perturbation-and-drop hooks, and the targeted
+  test-build checks passed. The default 165-job regression run ended 144 pass,
+  21 fail. Since default failed, the shadow 165-job regression run did not
+  start.
+- Failed jobs: `check_phase15_9_cross_package_specialization`,
+  `check_phase20_executor_fileio`, `check_phase21_source_free_standard_write_recovery`,
+  `check_phase21_standard_error_namespace`, `check_phase21_standard_write_order`,
+  `check_phase24_adversarial_architect`, `check_phase25_4_performance_baseline`,
+  `check_phase25_conformance`, `check_phase25_r2_wp1_call_chain`,
+  `check_phase25_s3_key_protocol`, `check_phase26_0_1_c3_parse_cache`,
+  `check_phase26_1_1_x1_v9`, `check_phase27_accepts_rustc`,
+  `phase25_key_protocol_fixtures`, `sdk_adv_data_margo_debug`,
+  `sdk_adv_data_oracle_fast_debug`, `sdk_foundations`, `sdk_text_encoding`,
+  `shard_enum_modules`, `shard_phase106_runtime`, and `shard_swarm_cases`.
+- Distinct observed causes include missing Fast Debug member/call facts in
+  package fixtures; emitter specialization outside checked edge candidates;
+  cross-crate standard-error type mismatch; native receiver argument ordering;
+  `query_site` becoming unused under the standalone `-Werror` test build;
+  `swarm_035_nested_mutating_calls` generated borrow conflict; and the
+  performance gate's `w2_spec_distinct_n016` peak RSS of 25,224 KiB over its
+  25,000 KiB limit. These failures need targeted triage; no baseline comparison
+  has yet classified them as pre-existing or introduced.
