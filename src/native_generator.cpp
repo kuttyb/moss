@@ -1147,6 +1147,8 @@ class Generator {
     est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
     ++expression_view_reparse_sites_[query_site.empty()
         ? "unknown" : string(query_site)];
+#else
+    (void)query_site;
 #endif
     return est::parse_view(expression);
   }
