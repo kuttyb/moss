@@ -17822,3 +17822,24 @@ future optimizer-isolated proof and must remain explicit in final review.
   Targeted source parity, three-engine behavior, and fact-hook perturb/drop
   checks pass. Full `make check`, `make check-shadow`, performance comparisons,
   documentation closeout, and Agent 2 review remain outstanding.
+
+## 2026-11-02 Phase 27.5.5 continuation checkpoint (final measurements)
+
+- Working branch remains `phase27-5-5-work`, pushed tip `ff17ecf6`; feedback
+  observation validation passes and is awaiting commit.
+- Final paired performance run vs phase-start `274f8485` completed on the same
+  77 fixtures: aggregate 15.000s -> 6.100s (-59.3%); W2 n032 1946.85ms ->
+  2193.24ms (+12.7%), W4 d018 7302.76ms -> 33.14ms (-99.5%), W5 w100
+  128.28ms -> 148.02ms (+15.4%), W8 c100 77.70ms -> 89.91ms (+15.7%).
+  Full per-fixture table is in `tmp/compiler-perf/20261102-015509/LOCAL_REPORT.md`.
+- Plain `-O2` optimized compiler build is running in isolated disposable
+  worktree `tmp/phase2755-o2`; committed sources and compiler flags remain
+  untouched. W2 n032 peak-RSS comparison against normal `-Os` build is running.
+- Fresh 1,828-source emitter counter sweep is running against the final
+  candidate and phase27.5.3 baseline binary. Previous candidate count was
+  zero reparses/lookups/inference and 271,538/1 emitter/optimizer checked-type
+  answers with no absences; this sweep will establish whether latest edits
+  preserve that result.
+- Remaining: capture both runs, run Agent2 unseen fixtures (3 per type class),
+  write phase report and current contract/status updates, run feedback check,
+  then run default and shadow full suites once, final gates, and Agent2 audit.
