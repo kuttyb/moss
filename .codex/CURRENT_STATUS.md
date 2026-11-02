@@ -17648,3 +17648,16 @@ future optimizer-isolated proof and must remain explicit in final review.
   fact producer/context fixes. Next: run the full corpus counters and resolve
   any candidate-only consumer failures; then update contract/report and perform
   all final gates.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (arithmetic guard narrowed)
+
+- Corpus comparison isolated all 38 candidate-only failed emission commands to
+  String `+` sources. The new perturbation fail-closed guard ran before the
+  existing checked String-concatenation lowering. Moved the numeric operand
+  guard after the String case; targeted String concatenation examples and the
+  full perturb/drop harness pass again. Parent comparison showed 38 candidate-
+  only and 0 parent-only failed commands before this correction.
+- The prior valid coverage measurement had emitter PRESENT=270,826 and ABSENT=2;
+  optimizer PRESENT=1, ABSENT=0. Consumer re-parses, text lookups and type
+  inference were all 0. Re-run the corpus comparison and identify the two
+  absent emitter queries after this correction.

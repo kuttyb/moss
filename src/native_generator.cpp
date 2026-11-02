@@ -5290,13 +5290,6 @@ class Generator {
       if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
         auto left_type = generated_expr_type(left_expr, types);
         auto right_type = generated_expr_type(right_expr, types);
-        if (left_type && right_type &&
-            !((canonical_type_name(*left_type) == "int" ||
-               canonical_type_name(*left_type) == "float") &&
-              (canonical_type_name(*right_type) == "int" ||
-               canonical_type_name(*right_type) == "float")))
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT checked arithmetic operand type is unsupported");
         if (left_type && right_type && op == "+" &&
             canonical_type_name(*left_type) == "string" &&
             canonical_type_name(*right_type) == "string") {
@@ -5372,6 +5365,13 @@ class Generator {
           joined << "__moss_concat_result }";
           return joined.str();
         }
+        if (left_type && right_type &&
+            !((canonical_type_name(*left_type) == "int" ||
+               canonical_type_name(*left_type) == "float") &&
+              (canonical_type_name(*right_type) == "int" ||
+               canonical_type_name(*right_type) == "float")))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked arithmetic operand type is unsupported");
         string left = value_from_borrowed_message_parameter(
             left_expr, expr(left_expr, d, locals, types), types);
         string right = value_from_borrowed_message_parameter(
