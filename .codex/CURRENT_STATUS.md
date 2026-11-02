@@ -17356,3 +17356,33 @@ future optimizer-isolated proof and must remain explicit in final review.
   uncommitted and need a targeted verification pass, then commit/push.
 - No new full suite has run since the prior default suite. Shadow, final paired
   counters, parity/three-engine/perf, Agent 2 review, merge and tag are pending.
+
+## 2026-11-01 C2 paired consumer sweep complete
+
+- The counter-matched pass compared the pinned C1 test build and candidate on
+  1,824 tracked `.moss` sources, default and `-O` (3,648 commands each; 337
+  package manifests). Parent: 14,606,057 emitter text-node lookups, 9,735,229
+  expression-view reparses, 7,362 pipeline reparses, 0 consumer expression
+  parses, 1,406 failed emissions. Candidate: 0/0/0/0 and 1,410 failures.
+  Exact JSON: `tmp/phase2754-emitter-counts/1793593987288347906/summary.json`.
+- Candidate-only emission failure delta is four commands from two sources:
+  the formatter-return grouping failed attempt and incomplete-index adversarial
+  probe. Both pass `moss check`, while C1-generated Rust fails to compile;
+  candidate fails closed on missing checked target/slot. There is no executable
+  parent behavior to compare. Details are in `docs/phase27/27_5_4_REPORT.md`.
+- Fast Debug and optimizer reparse/text-lookup counts are 0 by source audit
+  (no parser/fingerprint/text-node lookup references); these stages have no
+  paired corpus counter. Emitter generated_expr_type inference remains a known
+  allowed area, separate from the 0 text-query counts.
+- Fact-read inventory and coverage matrix are now in the report. Perturb/drop
+  pass: call targets 9, specializations 5, joins 4, patterns 3 fixtures. Known
+  debt remains 38/38 (expression types 12, pipeline types 16, ownership 10).
+- Targeted validation after the last source commit: full Phase 25 S4, S2
+  Char/String, S3 key protocol, G3 ordering, G4 Unicode, S1 checker authority,
+  safe arithmetic, Phase 25 L7 repairs, and Phase 27.5.4 fact hooks pass.
+  Conformance is 10/11 with only pinned-parent gate 10 failing when `MAKEFLAGS`
+  is unset. No full suites have been run after the latest emitter fixes.
+- Next: final source audit and report review; run make check default/shadow,
+  three-engine/parity, and performance once; then request the one Agent 2 audit.
+  If GO, fetch current origin/main, merge C2 with that first parent, tag
+  phase27-5-4-m1, then perform the queued closing round and its gates.

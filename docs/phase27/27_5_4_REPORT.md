@@ -571,3 +571,35 @@ the known-debt ignore set remains 38/38; Team A semantics and EST functional
 tree checks pass. Earlier full-suite output predates recent repairs and is not
 a current gate result. Final default/shadow suites, aggregate three-engine and
 parity gates, performance, and the single Agent 2 audit remain pending.
+
+## C2 consumer counters and checker-answer coverage (2026-11-01)
+
+The paired C1-parent/candidate sweep used `tests/tooling/measure_phase27_5_4_emitter_consumers.py` on the identical 1,824 tracked `.moss` files under `tests/` and `examples/`, each with default and `-O` emission (3,648 commands per compiler; 337 package manifests represented in the source tree). The parent is the counter-matched build at `phase27-5-3-c1`; the generated test-only counters were added in its isolated worktree. Results:
+
+| Emitter counter | C1 parent | C2 candidate | Change |
+| --- | ---: | ---: | ---: |
+| Text-node lookups | 14,606,057 | 0 | -100% |
+| Native expression-view reparses | 9,735,229 | 0 | -100% |
+| Native functional-pipeline reparses | 7,362 | 0 | -100% |
+| Consumer expression-text parses | 0 | 0 | unchanged |
+| Emission failures | 1,406 | 1,410 | +4 |
+
+The four extra candidate failures are two default/`-O` pairs: `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/17_formatter_return_grouping_native.moss` and `tests/phase27/adversarial/cp-e-blind-914d59d/probe-sources/cpe-probe-incomplete_index.moss`. Both pass `moss check`, but the C1 parent's generated Rust fails compilation (`self.return(...)`/invalid result statement and unmatched `items[`, respectively). The candidate fails earlier with missing checked target/slot invariants. These inputs have no runnable C1 behavior and are not runtime parity differences. Raw results are in `tmp/phase2754-emitter-counts/1793593987288347906/summary.json`.
+
+Fast Debug and optimizer source audits found no `est::parse*`, `parse_view`, fingerprint, or text-keyed node lookup calls in `src/interpreter.hpp`, `src/interpreter_domains.inc`, or `src/functional_optimizer.cpp`. The Fast Debug fallback remains deleted; the emitter's `expression_view_from_est` now fails closed and has no parser implementation. Their reparse/text-lookup counts are therefore zero by source audit; unlike the emitter, these two stages do not currently expose a paired corpus counter. The emitter still contains `generated_expr_type` (`src/native_generator.cpp:3275,3609`) and may infer types as allowed by the re-scoped C2 target. Zero text reparses is not a claim of zero semantic re-interpretation.
+
+### Consumer answer inventory
+
+| Answer class | Fast Debug | Native emitter | Optimizer | Perturb/drop evidence |
+| --- | --- | --- | --- | --- |
+| Call targets | Reads checked expression targets/call edges (`src/interpreter.hpp:1246–1260`) | Reads `SemanticFacts::resolved_target`, checked statement targets and checked call edges (`src/native_generator.cpp:2951,3063–3094,1958–2018`) | No selected call-target reader found in `functional_optimizer.cpp` | PASS: 9 accepted fixtures, including direct `x.m()`, indexed `xs[i].m()`, and trait receivers; Fast Debug/native/`-O` fail closed on drop/perturb |
+| Specializations | Uses shared checked-edge selection (`src/interpreter.hpp:1246–1260`) | Uses checked call edges and open-call keys (`src/native_generator.cpp:1900–2018`) | Iterates checker-produced specialization bodies for optimization (`src/functional_optimizer.cpp:88–107`); it does not select a call edge | PASS: 5 fixtures; all three execution/lowering paths fail closed |
+| Control-flow joins | Reads per-context `joined_types_by_context` (`src/interpreter.hpp:3247–3263,3345–3350`) | Reads per-context joined types for branch/try lowering (`src/native_generator.cpp:10167–10182,10526–10538,10640–10654`) | Reads joined binder names while finding pipeline scope (`src/functional_optimizer.cpp:1152`) | PASS: 4 fixtures; all three paths fail closed |
+| Pattern meaning | Reads `Recovery::est_pattern` and arm `est_pattern` (`src/interpreter.hpp:489–510,3403–3404`) | Reads checked recovery/arm patterns (`src/native_generator.cpp:10311–10334,10577–10586`) | No pattern reader found in `functional_optimizer.cpp` | PASS: 3 fixtures; Fast Debug/native/`-O` follow perturbation or fail closed on drop |
+| Expression types | Checked type facts are available, but some consumers still use inferred/source-independent type paths | Reads checked types in `generated_expr_type(EmitterExpr)`; its compatibility inference remains (`src/native_generator.cpp:3275–3609`) | Reads types already attached to functional plan nodes | KNOWN DEBT: 12 ignored comparisons across engines in the committed baseline; see `phase27_5_4_fact_hook_debt.json` |
+| Pipeline stage/output types | Reads checked functional plan IDs/output types; legacy fallback was removed in C1 | Reads checked node plans, while selected compatibility type inference remains | Reads and transforms checker-produced `FunctionalPipeline` records (`src/functional_optimizer.cpp:34–106`) | KNOWN DEBT: 16 ignored comparisons across engines in the committed baseline |
+| Ownership / clone-move-borrow | Consumes checked effects on covered paths but still has local executor choices | Lowers ABI, clones, views and recovery slots locally (`src/native_generator.cpp:2383–2478`, `src/borrowed_views.inc:16–128`) | Uses checked ownership/effect annotations for fusion safety (`src/functional_optimizer.cpp:498,526`) | KNOWN DEBT: 10 ignored comparisons across engines in the committed baseline |
+
+The known-debt baseline is unchanged at 38 ignored `(class, action, fixture, engine)` comparisons. Breakdown by class is expression types 12, pipeline types 16, ownership 10. These counts measure the current explicit probes; they are not percentages of all semantic queries. The make-check harness fails only if this exact ignored-engine set grows. Call-target, specialization, join, and pattern tests pass independently of the known-debt exception.
+
+Focused validation after the emitter fallback removal passes the Phase 25 L7 repair suite, G3 ordering, G4 Unicode, S1 checker-authority, S2 Char/String, S3 key-protocol, safe arithmetic, S4 Fast Debug adversarial suite, and the Phase 27.5.4 fact-hook matrix. The conformance suite remains at its pinned-parent gate 10 failure (`compiled_only_custom_key`); gates 1–9 and 11 pass with `MAKEFLAGS` unset. Final make check default/shadow, aggregate three-engine/parity, performance, and Agent 2 audit remain pending.
