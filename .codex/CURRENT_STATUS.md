@@ -14454,3 +14454,23 @@ and `-O`. Agent 2 confirmed zero Fast Debug consumer reparse/text-lookup
 counter sites and absence of the fallback branch; the coverage sample was
 also zero. `origin/main` advanced to `3da06d9e`; the authorized C1 merge must
 use that as first parent after the report is committed and pushed.
+
+### Phase 28 Round 1 Team A checkpoint
+
+Branch `phase28-r1-team-a` is based on `phase28-work` at `569d3092`. Team A
+implemented a bounded straight-line local-to-local ownership fact path. The
+checker retains typed READ/WRITE/CONSUME facts tied to definition/source
+binding identities, statement occurrence IDs, and exact EST RHS occurrences;
+`TypedSemanticModuleV1::local_ownership_facts` is the consumer handoff. No
+emitter, Fast Debug, or optimizer consumer was changed. CFG joins, loops,
+exception edges, and imported ownership effects remain deferred; Agent 2 CP1
+adversarial review remains pending.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`, focused
+`python3 tests/tooling/check_phase28_local_ownership.py ./moss` (3 effects,
+2 negative cases, fact drop/perturb), the same focused harness with
+`MOSS_EST=shadow`, Python compilation of the harness and `tests/run_parallel.py`,
+`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`.
+Full `make check` / `make check-shadow`, native/optimizer parity and corpus
+suites were not run; no result for those gates is claimed. The work is pending
+commit/push and the exact handoff SHA will be recorded in the phase handoff.

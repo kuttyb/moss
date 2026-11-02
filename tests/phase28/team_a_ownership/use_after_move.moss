@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn invalid(value: Box):
+  alias = value
+  moved = alias
+  echo value.value
+
+fn main():
+  invalid(Box(value = 7))
