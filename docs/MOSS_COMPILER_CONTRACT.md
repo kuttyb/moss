@@ -46,6 +46,7 @@ Terms:
 ## Maintenance
 
 - Kept current like the language docs. Required reading for Moss compiler development (see AGENTS.md); not required for regular Moss development. Fed to cold-start reviewers alongside the language docs.
+- The companion [compiler architecture guide](COMPILER_ARCHITECTURE.md) describes current stage boundaries and data structures; this contract remains the authority for numbered invariants and their statuses.
 - Every phase that changes a status or a debt number updates this file in the same delivery.
 - `make check` runs the default gates and runtime ratchet. `make check-shadow`
   runs the same suites with shadow cross-checks and is required at every phase
