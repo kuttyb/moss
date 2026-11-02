@@ -17843,3 +17843,26 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Remaining: capture both runs, run Agent2 unseen fixtures (3 per type class),
   write phase report and current contract/status updates, run feedback check,
   then run default and shadow full suites once, final gates, and Agent2 audit.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (final measurements recorded)
+
+- The final source sweep is complete: 1,828 sources / 3,656 default and `-O`
+  emissions; baseline/candidate failures both 1,410. Candidate reparses,
+  functional-pipeline reparses, text-node lookups and consumer type inference
+  are all 0. Checked types: emitter 271,538 PRESENT / 0 ABSENT; optimizer
+  1 PRESENT / 0 ABSENT. Machine result:
+  `tmp/phase2754-emitter-counts/1793613540050453503/summary.json`.
+- W2 n032 final RSS: normal candidate 64,800 KiB, plain `-O2` candidate
+  65,664 KiB; m2 63,828 KiB and phase-start 34,760 KiB. Same input digest;
+  no tracked compiler flags were changed.
+- Paired performance is recorded in `docs/phase27/27_5_5_REPORT.md`, including
+  all 23 `rw_*` workloads against both baselines. Aggregate: m2 +2.8%,
+  phase-start -59.3%. W2/W4/W5/W8 values and plain-O2 RSS are documented.
+- Contract and compiler-state statuses are updated. Feedback validator and
+  `git diff --check` pass. Final default/shadow suites have NOT run yet.
+- Remaining: final review of docs, then run `make check` and `make check-shadow`
+  once each. After green gates, Agent 2 must select 3 additional unseen
+  expression-type fixtures and 3 additional unseen pipeline-type fixtures,
+  run each through perturb/drop on all engines, audit the lowering-only list,
+  and return GO/NO-GO. On GO, fetch current origin/main, merge, tag
+  `phase27-5-5-m1`, and update delivery docs/report with exact outcomes.

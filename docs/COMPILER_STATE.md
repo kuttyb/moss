@@ -192,3 +192,41 @@ Rust E0499 lowering defect in two jobs. These are the documented C1-parent
 baseline failures. Agent 2 audited the closeout candidate and returned GO with
 those failures accepted as recorded debt. Details are in the
 [Phase 27.5.4 report](phase27/27_5_4_REPORT.md).
+
+## Phase 27.5.5 expression and pipeline type authority
+
+The status above is historical. At Phase 27.5.5, expression and pipeline
+types are no longer known consumer debt. The emitter's node-based
+`generated_expr_type` reads a checked fact and fails closed when the answer is
+missing (`src/native_generator.cpp:3138–3265`); the string-only overload throws
+an internal invariant. Fast Debug also requires checked expression/stage type
+answers (`src/interpreter.hpp:1203–1317`), and the optimizer reads the checked
+pipeline plan (`src/functional_optimizer.cpp:640–688`). `MOSS_TEST_PERTURB` and
+`MOSS_TEST_DROP_FACT` exercise these answers through Fast Debug, native and
+optimized execution; only the 10 frozen ownership entries remain in
+`tests/tooling/fixtures/phase27_5_4_fact_hook_debt.json`.
+
+The final paired emitter sweep measured 1,828 tracked test/example sources in
+default and `-O` (3,656 commands). It recorded emitter PRESENT=271,538,
+ABSENT=0 and optimizer PRESENT=1, ABSENT=0, with zero consumer type inference,
+expression reparses, functional-pipeline reparses and text-node lookups. Both
+the Phase 27.5.3 baseline and candidate had 1,410 failed commands (705 per
+mode); no status-count regression occurred. The machine-readable result is
+`tmp/phase2754-emitter-counts/1793613540050453503/summary.json` and the durable
+phase report is [27.5.5](phase27/27_5_5_REPORT.md). This replaces the earlier
+23,452/282,668 (8.3%) coverage measurement above.
+
+Paired performance against phase-start `274f8485` was 6.100s vs 15.000s
+aggregate (-59.3%); against phase27-5-4-m2 it was 6.092s vs 5.925s (+2.8%).
+The W2 n032 candidate peaked at 64,800 KiB using the normal per-translation
+unit flags and 65,664 KiB with plain `-O2` everywhere. Full default/shadow
+suite results and Agent 2 review are recorded in the report after final gates.
+
+Rust-only lowering forms remain distinct from Moss type answers: effect
+borrows and the `MossRead`/`MossWrite`/`MossAbsent` wrappers encode checked
+parameter effects (`src/handler_lowering.inc:96–107`,
+`src/handler_runtime.cpp:30–41`); `Result<_, __MossRaised>` transports raised
+outcomes (`src/native_generator.cpp:677–725, 8717–8727`); and per-domain
+`Arc<DomainRuntime>` plus `*Ref` wrappers implement runtime storage and
+identity (`src/native_generator.cpp:9043–9044`). `MossStr`, `MossSet`,
+`MossMap`, `Option`, and `Vec` remain representations of Moss value types.
