@@ -3213,7 +3213,10 @@ class Generator {
           CallableId::parse(target_facts->resolved_target))
         return std::nullopt;  // checked callable identity has no Moss value type
     }
-    const bool has_fact = facts && facts->type && facts->type->is_closed();
+    // An open TypeRef is still the checker's answer for a generic body. Rust
+    // lowering may map its type variables to the function's generated generic
+    // parameters; treating it as absent would re-enable consumer inference.
+    const bool has_fact = facts && facts->type;
     if (has_fact) {
       record_type_fact_coverage(true);
       return canonical_type_name(facts->type);

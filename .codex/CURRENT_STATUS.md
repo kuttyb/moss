@@ -17905,3 +17905,25 @@ future optimizer-isolated proof and must remain explicit in final review.
   No full default/shadow suite or final performance run has occurred on these
   edits. Continue targeted consumer/type checks, checkpoint and push, then the
   final gates, one Agent 2 audit, and merge/tag if GO.
+
+## 06:45 UTC checkpoint (open checked generic types)
+
+- The refreshed 1,828-source paired measurement at commit `00458cbd` showed
+  zero candidate reparses/lookups/type inference in both default and `-O`, but
+  4 absent emitter type facts and four additional failed emissions versus the
+  Phase 27.5.3 baseline. Exact failures were
+  `bare_vector_parameter_mutation.moss` and `probe_swap.moss` (each both modes).
+- Both queried receiver nodes carry a valid open checker type
+  `vector[_typevar:...]`. Emitter had incorrectly treated any open TypeRef as a
+  missing answer. It now accepts the checker’s open answer; no type inference
+  fallback was added. Both targeted Rust outputs are byte-identical to the C1
+  parent. The generated Rust has the same pre-existing missing `Clone` bound
+  error under both binaries; this phase does not alter ownership.
+- Need one refreshed candidate corpus measurement after this correction before
+  the final full suites. The previous pair measured 5.895 s vs m2 5.895/6.002
+  (+1.8%); phase-start aggregate was 14.990/6.031 (-59.8%). W4/W5/W8, all 23
+  real-world workloads, regular W2 RSS 64,560 KiB and plain-O2 W2 RSS 65,260
+  KiB are documented in raw reports
+  `tmp/compiler-perf/20261102-025608/LOCAL_REPORT.md` and
+  `tmp/compiler-perf/20261102-025805/LOCAL_REPORT.md`. No compiler flags were
+  changed. Full suites remain pending.
