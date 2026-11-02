@@ -4315,6 +4315,64 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
       target = expression.semantic_target_id;
       break;
     }
+    case checked_ir::ExprKind::EnumConstruct: {
+      if (!expression.type || expression.type->kind != moss::TypeKind::Enum ||
+          !expression.type->declaration ||
+          expression.type->declaration->kind != moss::DeclarationKind::Enum ||
+          expression.semantic_target_id.rfind(
+              "nominal-enum-variant-v1:" +
+                  expression.type->declaration->id + ":case:", 0) != 0)
+        return std::nullopt;
+      const auto declaration = program.type_context
+          ? program.type_context->find_id(expression.type->declaration->id)
+          : nullptr;
+      if (!declaration || declaration->kind != moss::DeclarationKind::Enum)
+        return std::nullopt;
+      const auto case_name = expression.semantic_target_id.substr(
+          std::string("nominal-enum-variant-v1:").size() +
+          expression.type->declaration->id.size() +
+          std::string(":case:").size());
+      const EnumType* enumeration = nullptr;
+      for (const auto& candidate : program.enums) {
+        const string module_id = program_module_identity(
+            program, candidate.defining_module);
+        const string declaration_name = candidate.declaration_name.empty()
+            ? candidate.name : candidate.declaration_name;
+        if (moss::declaration_identity(moss::DeclarationKind::Enum,
+                module_id, declaration_name) != declaration->id) continue;
+        if (enumeration) return std::nullopt;
+        enumeration = &candidate;
+      }
+      if (!enumeration) return std::nullopt;
+      const auto variant = std::find_if(enumeration->cases.begin(),
+          enumeration->cases.end(), [&](const EnumCase& candidate) {
+            return candidate.name == case_name;
+          });
+      if (variant == enumeration->cases.end() ||
+          variant->fields.size() != expression.operands.size() ||
+          expression.payload_ordinals.size() != expression.operands.size())
+        return std::nullopt;
+      const auto type_id = append_auxiliary(
+          est::Identifier{declaration->program_name});
+      const auto case_member = append_auxiliary(
+          est::Member{type_id, case_name});
+      if (expression.operands.empty()) {
+        node = est::Member{type_id, case_name};
+      } else {
+        std::vector<est::ExprId> arguments;
+        arguments.reserve(expression.operands.size());
+        for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+          if (expression.payload_ordinals[index] != index) return std::nullopt;
+          auto value = child(expression.operands[index]);
+          if (!value) return std::nullopt;
+          arguments.push_back(append_auxiliary(est::NamedArgument{
+              variant->fields[index].name, *value, ':'}));
+        }
+        node = est::Call{case_member, std::move(arguments)};
+      }
+      target = expression.semantic_target_id;
+      break;
+    }
     case checked_ir::ExprKind::CollectionCount: {
       if (expression.operands.size() != 1) return std::nullopt;
       auto input = child(expression.operands.front());
@@ -14851,6 +14909,16 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       if (!(input >> std::quoted(argument))) return;
       statement.args.push_back(std::move(argument));
     }
+    size_t raised_count = 0;
+    if (input >> raised_count) {
+      if (raised_count > 256) return;
+      for (size_t index = 0; index < raised_count; ++index) {
+        string identity;
+        if (!(input >> std::quoted(identity))) return;
+        statement.exceptional_alternatives.insert(
+            parse_interface_raise_identity(identity));
+      }
+    }
     function.body.push_back(std::move(statement));
   } else if (record == "generic_source") {
     input >> std::quoted(function.provider_origin_file);
@@ -22100,6 +22168,9 @@ static vector<std::filesystem::path> write_module_interfaces(
             << statement.args.size();
         for (const auto& argument : statement.args)
           out << " " << std::quoted(argument);
+        out << " " << statement.exceptional_alternatives.size();
+        for (const auto& identity : statement.exceptional_alternatives)
+          out << " " << std::quoted(identity.canonical());
         out << "\n";
       }
       if (function.result_expression)
@@ -22146,6 +22217,9 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " " << std::quoted(statement.semantic_type) << " "
           << statement.args.size();
       for (const auto& argument : statement.args) out << " " << std::quoted(argument);
+      out << " " << statement.exceptional_alternatives.size();
+      for (const auto& identity : statement.exceptional_alternatives)
+        out << " " << std::quoted(identity.canonical());
       out << "\n";
     }
     if (function.result_expression)

@@ -16845,3 +16845,41 @@ full suite or perf run. Branch `phase27-5-4-work`; latest pushed checkpoint
 - The saved residual-hotspot set is now 0 reparses / 0 lookups, including the
   Phase 21 FileIO lock fixture. Full suites, three-engine/parity aggregate,
   performance run and Agent 2 audit remain pending; C2 is not yet complete.
+
+## C2 handover update: invocation-node routing and current gates (2026-11-01)
+
+- Branch remains `phase27-5-4-work`. This checkpoint follows pushed
+  `bf7ac812`; current source edits are not yet committed. No final suite,
+  paired counter sweep, performance run, or Agent 2 audit occurred after the
+  earlier full-suite run (127/165 pass, 38 fail).
+- `make moss-dev` succeeds. `tests/tooling/check_phase25_s2_char_string.py`
+  passes, including its three-engine and Unicode property checks.
+  `check_phase25_l7_repairs.py` passes end-to-end after emitter call argument
+  collection was deferred until after builtin `sort` lowering. This avoids
+  treating the static `by:` sort label as a checked expression slot.
+- `check_phase27_5_4_fact_hooks.py` passes: call-target perturb/drop across 8
+  fixtures, specializations across 4, joins across 4, patterns across 3;
+  known-debt ignored set remains 38/38. Generic-specialization probes pass
+  40/40 and Phase 21 imported effects pass.
+- Still failing targeted checks: `check_phase15_15_string_api.py` native
+  emission fails closed at `text.chars()` inside a functional pipeline with
+  `missing checked member-call target` (emitter node 50). A checker dump shows
+  the same `string.chars` answer recorded on arena 0 node 42, so this is an
+  expression-tree ownership/cursor association mismatch to resolve without
+  consumer text lookup. `check_phase21_on_fail_capture.py` still has the
+  Rust Option nesting mismatch in `root_nested.rs`. `check_phase25_team_a_semantics.py`
+  fails lowering `same_line_nested_open_results` because the emitter chooses a
+  specialization outside checked candidates (`make`, line 9, context `main`).
+  These failures have not been reclassified against C1 in this checkpoint.
+- User added a C2 merge gate: report emitter and optimizer reparse/text-lookup
+  counts over all test programs, and list every checker answer each stage reads
+  with perturbation/drop coverage marked. Existing paired sweep covers 1,824
+  tracked test/example Moss sources and 3,648 default/`-O` emissions; latest
+  completed sweep before the current uncommitted edits reported emitter
+  lookups/reparses/pipeline reparses 0/0/0 on candidate, parent
+  14,606,057/9,735,229/7,362. It does not separately report optimizer counts
+  or fact-by-fact hook coverage; produce that inventory and rerun the paired
+  counts after the code is stable. Do not treat the earlier aggregate as the
+  new requested report.
+- Continue with targeted diagnosis of pipeline-node fact attachment and
+  specialization mismatch. Full suites remain reserved for the final gate run.

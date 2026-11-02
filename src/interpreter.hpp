@@ -1277,6 +1277,11 @@ class FastInterpreter {
   std::optional<std::string> checked_member_call_target(
       const Frame& frame, int line) const {
     std::vector<std::string> sources{frame.functional_context};
+    if (frame.functional_context.rfind("handler:", 0) == 0) {
+      const auto recovery = frame.functional_context.find(":on_fail:");
+      if (recovery != std::string::npos)
+        sources.push_back(frame.functional_context.substr(0, recovery));
+    }
     if (frame.functional_context.rfind("fn:", 0) == 0) {
       const auto specialization = frame.functional_context.find('<');
       if (specialization != std::string::npos)
@@ -1348,7 +1353,14 @@ class FastInterpreter {
     }
     std::sort(selected_targets.begin(), selected_targets.end());
     if (ordinal >= selected_targets.size()) return std::nullopt;
-    const auto callable = CallableId::parse(selected_targets[ordinal].second);
+    const auto& selected_id = selected_targets[ordinal].second;
+    if (selected_id.rfind("builtin:FileIO.", 0) == 0)
+      return "builtin-fileio:" + selected_id.substr(
+          std::string("builtin:FileIO.").size());
+    if (selected_id.rfind("builtin:", 0) == 0)
+      return "builtin-method:" + selected_id.substr(
+          std::string("builtin:").size());
+    const auto callable = CallableId::parse(selected_id);
     if (!callable || callable->kind != "method") return std::nullopt;
     for (const auto& object : program_.objects) {
       if (!program_.type_context) break;
@@ -2312,6 +2324,13 @@ class FastInterpreter {
               return unwrapped != current_root ? find(unwrapped) : nullptr;
             };
             target_facts = find_target(frame.functional_context);
+            if (!target_facts &&
+                frame.functional_context.rfind("handler:", 0) == 0) {
+              const auto recovery = frame.functional_context.find(":on_fail:");
+              if (recovery != std::string::npos)
+                target_facts = find_target(
+                    frame.functional_context.substr(0, recovery));
+            }
             if (!target_facts && !frame.source_file.empty())
               target_facts = find_target("source:" + frame.source_file +
                                          ":" + std::to_string(line));
@@ -2351,9 +2370,26 @@ class FastInterpreter {
                 ? checked_trait_method_target(*tree, current_root, frame,
                                               method_name)
                 : std::nullopt;
-            if (!selected)
+            if (!selected) {
+              const auto* active_function = function(frame.function);
+              std::string detail;
+              if (active_function)
+                for (const auto& specialization : active_function->specializations) {
+                  if (functional_function_context(*active_function,
+                          &specialization) != frame.functional_context) continue;
+                  for (const auto& requirement : specialization.member_requirements)
+                    if (requirement.member_name == method_name) {
+                      if (!detail.empty()) detail += ",";
+                      detail += requirement.requirement_id + "=" +
+                          requirement.selected_callable_id.value_or("<none>");
+                    }
+                  break;
+                }
               throw RuntimeError(line,
-                  "MOSS_INTERNAL_INVARIANT missing checked trait method target");
+                  "MOSS_INTERNAL_INVARIANT missing checked trait method target function=" +
+                  frame.function + " context=" + frame.functional_context +
+                  " method=" + method_name + " requirements=" + detail);
+            }
             checked_target = std::move(*selected);
           }
           auto evaluate_method_argument = [&](std::size_t index) {

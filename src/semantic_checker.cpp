@@ -29165,6 +29165,26 @@ class Checker {
         if (sort_builtin && call_occurrence_id != UINT32_MAX)
           call_occurrence_state->expression_occurrences.at(call_occurrence_id)
               .operation_id = "call:sort";
+        // Direct call statements retain their source expression as one tree,
+        // but the checks below are deliberately routed through the statement's
+        // argument views. Keep that expression root active so recursive
+        // checking records child facts on the same nodes the consumers later
+        // navigate (for example `assertEqual(text.length(), 4)`).
+        std::optional<EstExpressionCursor> invocation_cursor;
+        if (statement.b.empty() && !statement.text.empty())
+          invocation_cursor = root_expression_cursor(statement.text, {});
+        if (invocation_cursor)
+          active_est_expression_cursors_.push_back(invocation_cursor);
+        struct DirectCallExpressionCursorScope {
+          vector<std::optional<EstExpressionCursor>>& stack;
+          bool active;
+          ~DirectCallExpressionCursorScope() {
+            if (!active) return;
+            assert(!stack.empty());
+            stack.pop_back();
+          }
+        } direct_call_cursor_scope{active_est_expression_cursors_,
+                                   invocation_cursor.has_value()};
         for (size_t index = 0; index < statement.args.size(); ++index) {
           const auto& argument = statement.args[index];
           if (sort_builtin) {

@@ -2731,10 +2731,11 @@ class Generator {
         selected = &handle;
       }
     }
-    if (selected)
+    if (selected) {
       return EmitterExpr{
           p_.expression_arenas[selected->arena_index].get(), selected->expr,
           std::move(source)};
+    }
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT missing checked emitter expression slot=" +
         std::to_string(static_cast<unsigned>(slot)) + " index=" +
@@ -2767,6 +2768,53 @@ class Generator {
   EmitterExpr checked_expression_ref(const Stmt& statement,
       std::string source, est::ExprSlot slot,
       std::uint32_t argument_index = 0) const {
+    // Direct call arguments are recursively checked beneath the statement's
+    // retained invocation node. Navigate that same tree so nested target/type
+    // facts are shared with codegen instead of selecting the separately parsed
+    // argument root, which has no checked children.
+    if (slot == est::ExprSlot::Argument &&
+        statement.kind == Stmt::Kind::Call && !statement.text.empty()) {
+      const est::Handle* invocation = nullptr;
+      const auto fingerprint = est::fingerprint(statement.text);
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.slot != est::ExprSlot::Expression ||
+            handle.argument_index != 0 ||
+            handle.source_fingerprint != fingerprint ||
+            handle.arena_index >= p_.expression_arenas.size() ||
+            !p_.expression_arenas[handle.arena_index]) continue;
+        if (invocation)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous checked invocation expression");
+        invocation = &handle;
+      }
+      if (invocation) {
+        const auto* arena = p_.expression_arenas[invocation->arena_index].get();
+        const auto root = est::unparenthesized(*arena, invocation->expr);
+        const auto* call = std::get_if<est::Call>(&arena->at(root));
+        if (!call || argument_index >= call->arguments.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked invocation argument is missing");
+        auto argument = call->arguments[argument_index];
+        if (const auto* named = std::get_if<est::NamedArgument>(
+                &arena->at(argument)))
+          argument = named->value;
+        // Functional pipeline lowering is attached to the checked argument
+        // handle by the checker. Keep that root so the emitter reads the
+        // recorded pipeline plan; ordinary nested calls use invocation nodes
+        // to retain their recursively checked child facts.
+        const EmitterExpr invocation_argument{arena, argument, source};
+        const auto argument_root = est::unparenthesized(*arena, argument);
+        const auto* argument_facts = checked_expression_facts(invocation_argument);
+        const bool call_root = std::holds_alternative<est::Call>(
+                arena->at(argument_root)) ||
+            std::holds_alternative<est::Member>(arena->at(argument_root));
+        const bool checked_call_root = !call_root ||
+            (argument_facts && !argument_facts->resolved_target.empty());
+        if (!std::holds_alternative<est::Pipeline>(arena->at(argument_root)) &&
+            argument_facts && checked_call_root)
+          return EmitterExpr{arena, argument, std::move(source)};
+      }
+    }
     const est::Handle* selected = nullptr;
     for (const auto& handle : statement.expression_handles) {
       if (handle.slot != slot || handle.argument_index != argument_index ||
@@ -3663,7 +3711,9 @@ class Generator {
         if (!starts_with(target, "method:"))
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT missing checked member-call target for generated type name=" +
-              member->name + " context=" + codegen_body_context_);
+              member->name + " context=" + codegen_body_context_ +
+              " expr=" + expression.text() + " node=" +
+              std::to_string(root));
         const auto separator = target.rfind('.');
         if (separator == string::npos)
           throw std::runtime_error(
@@ -5374,7 +5424,8 @@ class Generator {
               const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
-              const vector<size_t>* message_argument_plans = nullptr) const {
+              const vector<size_t>* message_argument_plans = nullptr,
+              std::string_view checked_target_override = {}) const {
     if (!expression.arena)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
@@ -5971,6 +6022,8 @@ class Generator {
                      &expression.arena->at(callee_id))) {
         const auto* facts = checked_expression_facts(expression);
         string target = facts ? facts->resolved_target : string();
+        if (target.empty() && !checked_target_override.empty())
+          target.assign(checked_target_override);
         if (target.empty()) {
           const auto* callee_facts = checked_expression_facts(
               expression.child(callee_id));
@@ -6934,15 +6987,19 @@ class Generator {
             &expression.arena->at(root))) {
       const auto* facts = checked_expression_facts(expression);
       const string enum_case_prefix = "nominal-enum-variant-v1:";
-      if (facts && starts_with(facts->resolved_target, enum_case_prefix)) {
-        const auto separator = facts->resolved_target.rfind(":case:");
+      const string checked_target = facts ? facts->resolved_target : string();
+      const string target = checked_target.empty() &&
+              !checked_target_override.empty()
+          ? string(checked_target_override) : checked_target;
+      if (starts_with(target, enum_case_prefix)) {
+        const auto separator = target.rfind(":case:");
         if (separator == string::npos)
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT malformed checked enum variant target");
-        const string declaration_id = facts->resolved_target.substr(
+        const string declaration_id = target.substr(
             enum_case_prefix.size(), separator - enum_case_prefix.size());
         const string case_name =
-            facts->resolved_target.substr(separator + 6);
+            target.substr(separator + 6);
         for (const auto& candidate : enums_) {
           if (!p_.type_context) break;
           const auto declaration = p_.type_context->find(candidate.second->name);
@@ -10159,9 +10216,43 @@ class Generator {
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
+            string checked_raise_target;
+            if (s.exceptional_alternatives.size() == 1) {
+              const auto& identity = *s.exceptional_alternatives.begin();
+              if (identity.kind == RaisedIdentityKind::EnumVariant) {
+                auto enum_type = enums_.find(
+                    canonical_type_name(identity.type));
+                if (enum_type != enums_.end() && p_.type_context) {
+                  const auto root = est::unparenthesized(
+                      *raise_value.arena, raise_value.id);
+                  est::ExprId callee = root;
+                  if (const auto* call = std::get_if<est::Call>(
+                          &raise_value.arena->at(root)))
+                    callee = est::unparenthesized(*raise_value.arena,
+                                                   call->callee);
+                  const auto* member = std::get_if<est::Member>(
+                      &raise_value.arena->at(callee));
+                  const auto base = member
+                      ? est::unparenthesized(*raise_value.arena, member->base)
+                      : 0;
+                  const auto* enum_name = member
+                      ? std::get_if<est::Identifier>(
+                            &raise_value.arena->at(base)) : nullptr;
+                  const auto declaration = p_.type_context->find(
+                      enum_type->second->name);
+                  if (enum_name && enum_name->name == enum_type->second->name &&
+                      member->name == identity.variant && declaration &&
+                      canonical_type_name(identity.type) == concrete)
+                    checked_raise_target =
+                        "nominal-enum-variant-v1:" + declaration->id +
+                        ":case:" + identity.variant;
+                }
+              }
+            }
             const string value = expr(raise_value, d, locals, &types,
                 statement_functional_pipeline_id(
-                    s, functional_context, 0));
+                    s, functional_context, 0), nullptr,
+                checked_raise_target);
             if (enums_.count(concrete)) {
               const string raised_value = "__moss_error_value_" +
                   std::to_string(phase21_try_temp_++);
@@ -10924,14 +11015,11 @@ class Generator {
         }
         case Stmt::Kind::Call: {
           auto argument_node = [&](size_t index) {
-            return checked_expression_ref(s.args.at(index),
+            return checked_expression_ref(s, s.args.at(index),
                 est::ExprSlot::Argument,
                 static_cast<std::uint32_t>(index));
           };
           vector<EmitterExpr> checked_call_arguments;
-          checked_call_arguments.reserve(s.args.size());
-          for (size_t index = 0; index < s.args.size(); ++index)
-            checked_call_arguments.push_back(argument_node(index));
           const EmitterExpr receiver_expression = checked_expression_ref(
               s.a, est::ExprSlot::Receiver);
           auto checked_receiver = s.receiver_types_by_context.find(functional_context);
@@ -10960,8 +11048,7 @@ class Generator {
             break;
           }
           if (s.b.empty() && s.a == "assert") {
-            const EmitterExpr condition = checked_expression_ref(
-                s.args.front(), est::ExprSlot::Argument, 0);
+            const EmitterExpr condition = argument_node(0);
             o << indent(level) << "if !("
               << expr(condition, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -10978,10 +11065,8 @@ class Generator {
             size_t id = assertion_temp_++;
             string actual = "__moss_assert_actual_" + std::to_string(id);
             string expected = "__moss_assert_expected_" + std::to_string(id);
-            const EmitterExpr actual_expression = checked_expression_ref(
-                s.args[0], est::ExprSlot::Argument, 0);
-            const EmitterExpr expected_expression = checked_expression_ref(
-                s.args[1], est::ExprSlot::Argument, 1);
+            const EmitterExpr actual_expression = argument_node(0);
+            const EmitterExpr expected_expression = argument_node(1);
             o << indent(level) << "let " << actual << " = &("
               << expr(actual_expression, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -11014,6 +11099,9 @@ class Generator {
             ++i;
             break;
           }
+          checked_call_arguments.reserve(s.args.size());
+          for (size_t index = 0; index < s.args.size(); ++index)
+            checked_call_arguments.push_back(argument_node(index));
           auto checked_target_fact =
               s.checked_call_targets_by_context.find(codegen_body_context_);
           if (checked_target_fact == s.checked_call_targets_by_context.end() &&
