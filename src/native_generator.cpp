@@ -386,6 +386,8 @@ class Generator {
     if (est::test_coverage_counters_enabled()) {
       std::cerr << "MOSS_EST_STRING_TYPE_QUERY=" << string_type_queries_
                 << '\n';
+      std::cerr << "MOSS_EST_CONSUMER_TYPE_INFERENCE="
+                << string_type_queries_ << '\n';
       std::cerr << "MOSS_EST_STRING_EXPR_QUERY=" << string_expr_queries_
                 << '\n';
     }
@@ -3136,7 +3138,37 @@ class Generator {
   std::optional<string> generated_expr_type(
       const EmitterExpr& expression,
       const std::unordered_map<string,string>* types) const {
-    if (!expression.arena) return std::nullopt;
+    const auto record_type_fact_coverage = [&](bool present) {
+#ifdef MOSS_TEST_BUILD
+      if (!est::test_coverage_counters_enabled()) return;
+      const char* kind = "missing-node";
+      if (expression.arena) {
+        const est::Node& observed_node = expression.arena->at(expression.id);
+        kind = std::holds_alternative<est::Identifier>(observed_node)
+            ? "identifier"
+            : std::holds_alternative<est::Literal>(observed_node) ? "literal"
+            : std::holds_alternative<est::Call>(observed_node) ? "call"
+            : std::holds_alternative<est::Member>(observed_node) ? "member"
+            : std::holds_alternative<est::Index>(observed_node) ? "index"
+            : std::holds_alternative<est::Binary>(observed_node) ? "binary"
+            : std::holds_alternative<est::Unary>(observed_node) ? "unary"
+            : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
+            : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
+            : std::holds_alternative<est::Collection>(observed_node) ? "collection"
+            : std::holds_alternative<est::Parenthesized>(observed_node)
+                ? "parenthesized"
+            : "other";
+      }
+      est::record_generated_type_fact_coverage(kind, present);
+#else
+      (void)present;
+#endif
+    };
+    if (!expression.arena) {
+      record_type_fact_coverage(false);
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT expression type requested without checked node");
+    }
     const auto root = est::unparenthesized(*expression.arena, expression.id);
     const auto* facts = checked_expression_facts(expression, true);
     if (!facts && root != expression.id) {
@@ -3160,33 +3192,20 @@ class Generator {
         }
       }
     }
-#ifdef MOSS_TEST_BUILD
-    if (est::test_coverage_counters_enabled()) {
-      const est::Node& observed_node = expression.arena->at(expression.id);
-      const char* kind = std::holds_alternative<est::Identifier>(observed_node)
-          ? "identifier"
-          : std::holds_alternative<est::Literal>(observed_node) ? "literal"
-          : std::holds_alternative<est::Call>(observed_node) ? "call"
-          : std::holds_alternative<est::Member>(observed_node) ? "member"
-          : std::holds_alternative<est::Index>(observed_node) ? "index"
-          : std::holds_alternative<est::Binary>(observed_node) ? "binary"
-          : std::holds_alternative<est::Unary>(observed_node) ? "unary"
-          : std::holds_alternative<est::Pipeline>(observed_node) ? "pipeline"
-          : std::holds_alternative<est::Constructor>(observed_node) ? "constructor"
-          : std::holds_alternative<est::Collection>(observed_node) ? "collection"
-          : std::holds_alternative<est::Parenthesized>(observed_node)
-              ? "parenthesized"
-          : "other";
-      est::record_generated_type_fact_coverage(kind, has_fact);
-    }
-#endif
-    if (has_fact && facts->type->is_closed())
+    if (has_fact && facts->type->is_closed()) {
+      record_type_fact_coverage(true);
       return canonical_type_name(facts->type);
-    if (auto pipeline_type = checked_functional_node_type(expression))
+    }
+    if (auto pipeline_type = checked_functional_node_type(expression)) {
+      record_type_fact_coverage(true);
       return canonical_type_name(*pipeline_type);
+    }
     if (auto enclosing_pipeline_type =
-            checked_enclosing_pipeline_type(expression))
+            checked_enclosing_pipeline_type(expression)) {
+      record_type_fact_coverage(true);
       return canonical_type_name(*enclosing_pipeline_type);
+    }
+    record_type_fact_coverage(false);
     (void)types;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT missing checked expression type context=" +

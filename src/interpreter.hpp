@@ -1536,6 +1536,38 @@ class FastInterpreter {
     return facts->type->to_canonical_string();
   }
 
+  std::string checked_expression_type(const ExpressionTreeView& tree,
+                                      est::ExprId expression,
+                                      const Frame& frame, int line) const {
+    if (!tree.arena)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked expression tree");
+    const auto root = est::unparenthesized(*tree.arena, expression);
+    std::vector<std::string> contexts{frame.functional_context};
+    if (frame.functional_context.rfind("handler:", 0) == 0) {
+      const auto recovery = frame.functional_context.find(":on_fail:");
+      if (recovery != std::string::npos)
+        contexts.push_back(frame.functional_context.substr(0, recovery));
+    }
+    const auto specialization = frame.functional_context.find('<');
+    if (specialization != std::string::npos)
+      contexts.push_back(frame.functional_context.substr(0, specialization));
+    if (!frame.source_file.empty())
+      contexts.push_back("source:" + frame.source_file + ":" +
+                         std::to_string(line));
+    contexts.emplace_back();
+    for (const auto& context : contexts) {
+      const auto* facts = tree.arena->facts(expression, context);
+      if (!facts && root != expression)
+        facts = tree.arena->facts(root, context);
+      if (facts && facts->type && facts->type->is_closed())
+        return facts->type->to_canonical_string();
+    }
+    throw RuntimeError(line,
+        "MOSS_INTERNAL_INVARIANT missing checked expression type node=" +
+        std::to_string(root) + " context=" + frame.functional_context);
+  }
+
   static std::optional<std::string> checked_vector_element_type(
       const std::string& type) {
     if (type.rfind("vector[", 0) != 0 || type.size() <= 8 || type.back() != ']')
@@ -1795,6 +1827,18 @@ class FastInterpreter {
         if (binary->op == "xor")
           return Value::boolean_value(left.truthy() != right.truthy());
         const auto& op = binary->op;
+        std::string checked_result_type;
+        std::string checked_left_type;
+        std::string checked_right_type;
+        if (op == "+" || op == "-" || op == "*" || op == "/" ||
+            op == "%") {
+          checked_result_type = checked_expression_type(
+              *tree, current_root, frame, line);
+          checked_left_type = checked_expression_type(
+              *tree, binary->left, frame, line);
+          checked_right_type = checked_expression_type(
+              *tree, binary->right, frame, line);
+        }
         if (op == "==") return Value::boolean_value(equal(left, right));
         if (op == "!=") return Value::boolean_value(!equal(left, right));
         if (op == "<" || op == ">" || op == "<=" || op == ">=") {
@@ -1826,10 +1870,19 @@ class FastInterpreter {
           if (op == "<<") return Value::int_value(moss_shl(left.integer, right.integer));
           return Value::int_value(moss_shr(left.integer, right.integer));
         }
-        if (op == "+" && left.kind == Value::Kind::String &&
-            right.kind == Value::Kind::String)
+        if (op == "+" && checked_result_type == "string") {
+          if (checked_left_type != "string" || checked_right_type != "string" ||
+              left.kind != Value::Kind::String ||
+              right.kind != Value::Kind::String)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked string addition operands disagree");
           return Value::string_value(left.string + right.string);
-        if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+        }
+        if (checked_result_type == "int") {
+          if (checked_left_type != "int" || checked_right_type != "int" ||
+              left.kind != Value::Kind::Int || right.kind != Value::Kind::Int)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked integer arithmetic operands disagree");
           if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
           if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
           if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
@@ -1841,6 +1894,13 @@ class FastInterpreter {
           if (op == "%") return Value::int_value(left.integer % right.integer);
           return Value::int_value(left.integer / right.integer);
         }
+        if (checked_result_type != "float" ||
+            (checked_left_type != "int" && checked_left_type != "float") ||
+            (checked_right_type != "int" && checked_right_type != "float") ||
+            (left.kind != Value::Kind::Int && left.kind != Value::Kind::Float) ||
+            (right.kind != Value::Kind::Int && right.kind != Value::Kind::Float))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked numeric arithmetic type is unsupported");
         const double lhs = left.kind == Value::Kind::Int ? left.integer : left.floating;
         const double rhs = right.kind == Value::Kind::Int ? right.integer : right.floating;
         if (op == "+") return Value::float_value(lhs + rhs);

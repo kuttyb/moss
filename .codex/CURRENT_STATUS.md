@@ -17507,3 +17507,11 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Added `expression_type_arithmetic.moss`; the type fact harness uses fixtures where a consumer must visibly follow the perturbation or fail closed, and asserts Fast Debug/native/-O baseline stdout parity. Harness passes: calls 9, specializations 5, joins 4, patterns 3, expression types 3, pipeline types 5; ownership debt exactly 10/10.
 - Targeted native generation and `rustc` compilation passed for mini_application, empty-map, string-map, collections and collections_and_methods sources. No full suite/perf has run.
 - Next: commit/push this slice; continue source audit and corpus coverage measurement, including consumer inference counter default/-O; check Fast Debug expression type reads and optimizer consumer type questions; update compiler contract; final gates and single Agent 2 audit remain.
+
+## 2026-11-02 Phase 27.5.5 checkpoint (Fast Debug arithmetic facts)
+
+- Fast Debug arithmetic used runtime `Value.kind` to choose Moss integer, float, and string addition. Its arithmetic path now reads the checked result and operand types and fails with `MOSS_INTERNAL_INVARIANT` if runtime payloads disagree with those answers. Specialization contexts can read the checked generic-body fact when no concrete closed fact exists.
+- Native checked-type coverage now includes tree-fact and pipeline-plan answers, records absent facts only after all checked sources are exhausted, and treats a type query without a node as an internal invariant. Test builds report a consumer type-inference counter alias; the legacy string type-query counter remains.
+- Targeted Fast Debug checks passed for expression arithmetic, the specialized-call fixture, and pipeline map. The fact-hook harness passed calls 9, specializations 5, joins 4, patterns 3, expression types 3, pipeline types 5, ownership debt 10/10.
+- Changes are not yet committed at this checkpoint. Full suites and performance remain unrun.
+- Remaining: cover other Fast Debug type-directed behavior and track per-consumer type queries; collect whole-corpus default/-O fact coverage and type-inference counts; complete remaining native/optimizer type consumers and checker fact coverage; update contract; perform final paired perf/suites/parity, then the single Agent 2 audit and merge/tag on GO.
