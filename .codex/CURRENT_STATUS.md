@@ -1,3 +1,22 @@
+### Phase 28 Round 3 Team B — Stored Fact Corruption & Selector Authority (W05) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Resolved L7 architectural finding on synthetic throw hooks and selector fact provenance:
+1. Replaced Synthetic Contradiction Hooks with Genuine Stored Fact Corruption:
+   - Eliminated all artificial `getenv` checks and synthetic `throw` statements from `src/native_generator.cpp::lookup_selector_facts()`.
+   - Relocated test hooks to `Generator::Generator` and `FastInterpreter::FastInterpreter`, where they invoke genuine mutation methods on `Arena::semantic_facts_` (`test_contradict_selector_type`, `test_contradict_selector_target`, `test_contradict_selector_effect`, `test_drop_primary_selector_fact`, `test_drop_secondary_selector_fact`, `test_perturb_primary_effect`, etc.).
+   - Normal production validation in `lookup_selector_facts()` detects mutations and fails closed with `MOSS_INTERNAL_INVARIANT`.
+2. Diagnosed Primary Inferred Effect Fact Provenance (Team A Handoff Request):
+   - Investigated why `inferred_effect` is missing under primary `fact.est_fact_context` (`fn:...`): in `src/semantic_checker.cpp`, `analyze_effects` (`analyze_effect_block`) does not set `current_semantic_context_` or `current_check_body_context_`, causing `expression_fact_context()` to fall back to `source:<file>:<line>`.
+   - Maintained strict non-intervention boundary: Team B did NOT modify `semantic_checker.cpp`, preserving Team A ownership. Formulated minimal Team A API request for L7 (R03-T01-W02) to set `current_semantic_context_` during effect analysis.
+   - Preserved cross-context consistency validation in `lookup_selector_facts()`: secondary context effects are only accepted if no contradiction exists with primary context facts.
+3. Verification & Review:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (16/16 cases, zero hidden clones in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (20/20 cases in default and `MOSS_EST=shadow`).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - Agent 2 independently reviewed implementation commit `cab3560c8f3079365e40d01480dac0e55c58b7b6` and returned GO with no findings.
+
 ### Phase 28 Round 3 Team B — Selector Fact Integrity & Specialization Identity (W04) (2026-11-02)
 
 Branch `phase28-r3-team-b`. Resolved the two L7 P1 findings on selector fact integrity and specialization identity:
