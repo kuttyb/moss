@@ -1,3 +1,35 @@
+### Phase 28 Round 3 R03-T02-W00 `take(place)` Preparation (2026-11-02, Team B)
+
+Branch `phase28-r3-team-b`, based on `phase28-r2-integration` at `42b3dc607f2a2468d66df21b068d30e3dffc7946`.
+Completed independent preparation for the `take(place)` explicit move operator without waiting idle for Team A and without speculative implementation:
+1. Investigation:
+   - Evaluated closed set of four terminal field types (`option[T]`, `Vector[T]`, `Map[K, V]`, `Queue[T]`).
+   - Mapped Rust lowering to `std::mem::take(&mut <place>)`, which uniformly replaces with `Default::default()` without heap reallocation or element copying.
+   - Mapped Fast Debug lowering to `locate_tree_node(tree, node, ...)` resolving place pointer, `std::move(*place.value)` extracting the value, and canonical empty `Value` installation.
+   - Identified missing execution capabilities pending Team A W01: syntax recognition, typed take facts/requirements, call handling in emitter and Fast Debug.
+2. Architecture Specification (`docs/phase28/TEAM_B_R3_TAKE_PREPARATION.md`):
+   - Defined strict checker semantic authority: consumer never infers take eligibility or empty states.
+   - Specified required Team A typed API contracts: `TypedTakeFactV1` and `TypedTakeRequirementV1` with exact EST occurrence, target place occurrence, specialization identity, terminal type family, and empty state.
+   - Analyzed implementation hazards and mitigations: single evaluation of nested projection indices, zero hidden clones in Rust, and mutation survival across typed raises (no invented rollback).
+3. Execution Fixtures (`tests/phase28/take_fixtures/`):
+   - `take_option_field.moss`: Option field move-and-empty (`None`), repeated take, nonprimitive payload.
+   - `take_vector_field.moss`: Vector field move-and-empty (`[]`), repeated take, nonprimitive elements.
+   - `take_map_field.moss`: Map field move-and-empty (`{}`), repeated take.
+   - `take_queue_field.moss`: Queue field move-and-empty, repeated take.
+   - `take_nested_projection.moss`: Nested field projections (`v[i].pending`, `m[k].items`), single evaluation of projection indices.
+   - `take_raise_mutation.moss`: Successful take before typed raise remains a mutation (no invented rollback).
+   - `take_rejected_forms.moss`: Rejection of illegal forms (`take(local)`, `take(v[i])`, `take(unified_field)`).
+4. Verification Harness (`tests/phase28/verify_take_fixtures.py`):
+   - Asserts returned value ownership, source empty state, repeat take, zero hidden clones, single index evaluation, Fast Debug/native parity, and fail-closed integrity.
+   - Explicitly tracks feature-pending status awaiting Team A W01 without false failure.
+5. Validation Ledger:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (7/7 fixtures accounted for: 7 FEATURE_PENDING awaiting Team A W01).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase28_team_b_consumer.py`: PASS.
+   - `python3 tests/tooling/check_phase28_specialized_native_consumer.py`: PASS.
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
 ### Phase 28 Round 2 Final Integration & Verification (2026-11-02, Team B)
 
 Branch `phase28-r2-integration`. Completed final Round 2 integration of Team A's reviewed specialization identity contract and typed API into the native consumer:

@@ -1,0 +1,32 @@
+# Option field move-and-empty (None), repeated take, nonprimitive payload without clone.
+type Payload:
+  data: Vector[Int]
+
+type Box:
+  item: option[Payload]
+
+fn extract_payload(b: Box) -> Int:
+  let first = take(b.item)
+  let second = take(b.item)
+  var count = 0
+  match first:
+    case Some(p):
+      count = count + p.data.len()
+    case None:
+      count = count + 0
+  match second:
+    case Some(p):
+      count = count + 100
+    case None:
+      count = count + 10
+  match b.item:
+    case Some(p):
+      count = count + 200
+    case None:
+      count = count + 1
+  return count
+
+fn main():
+  var b = Box(item: Some(Payload(data: [1, 2, 3])))
+  let res = extract_payload(b)
+  echo res

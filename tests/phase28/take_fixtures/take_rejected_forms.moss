@@ -1,0 +1,26 @@
+# Illegal forms rejected by the checker: take(local), take(v[i]) element extraction, take(unified_field).
+type Item:
+  tag: Int
+
+type Container:
+  data: Vector[Item]
+  name: String
+
+fn reject_local() -> Int:
+  var local_vec = [1, 2, 3]
+  # ILLEGAL: take(local) is rejected; local moves are inferred.
+  let moved = take(local_vec)
+  return moved.len()
+
+fn reject_collection_element(c: Container) -> Int:
+  # ILLEGAL: take(v[0]) collection element extraction is rejected; requires remove/pop/swap_remove.
+  let elem = take(c.data[0])
+  return elem.tag
+
+fn reject_unified_field(c: Container) -> String:
+  # ILLEGAL: take(unified_field) has no language-defined empty state.
+  let n = take(c.name)
+  return n
+
+fn main():
+  echo 0

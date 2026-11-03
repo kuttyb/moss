@@ -1,0 +1,29 @@
+# Successful take before typed raise remains a mutation (no invented rollback).
+enum OpError:
+  Failed(code: Int)
+
+type Storage:
+  buffer: Vector[Int]
+
+fn fallible_take(s: Storage) -> Int:
+  let extracted = take(s.buffer)
+  # Extraction succeeded; s.buffer is now empty ([]).
+  # Now a typed raise occurs.
+  raise OpError.Failed(code: 404)
+  return extracted.len()
+
+fn main():
+  var s = Storage(buffer: [10, 20, 30])
+  var caught = 0
+  try:
+    fallible_take(s)
+  recover OpError.Failed(code):
+    caught = code
+
+  # Critical Phase 28 / Phase 21 invariant:
+  # The partial state mutation survives the raise. s.buffer remains [] (len == 0).
+  # There is NO invented rollback.
+  var score = caught
+  if s.buffer.len() == 0:
+    score = score + 1000
+  echo score
