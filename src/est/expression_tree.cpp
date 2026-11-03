@@ -74,6 +74,162 @@ void Arena::test_mutate_call_targets(bool drop) {
     else target = "fn:__moss_test_perturbed_call_target__";
   }
 }
+
+void Arena::test_contradict_selector_type(TypeRef wrong_type) {
+  for (auto& entry : semantic_facts_) {
+    if (entry.second.type) {
+      entry.second.type = wrong_type;
+    }
+  }
+}
+
+void Arena::test_contradict_selector_target(const std::string& wrong_target) {
+  std::vector<ExprId> targets;
+  for (const auto& entry : semantic_facts_) {
+    if (!entry.second.resolved_target.empty()) {
+      targets.push_back(entry.first.expression);
+    }
+  }
+  for (auto expr : targets) {
+    for (auto& entry : semantic_facts_) {
+      if (entry.first.expression == expr && entry.first.specialization_context.rfind("source:", 0) == 0) {
+        entry.second.resolved_target = wrong_target;
+      }
+    }
+  }
+}
+
+void Arena::test_contradict_selector_effect() {
+  std::vector<std::pair<ExprId, Effect>> effects;
+  for (const auto& entry : semantic_facts_) {
+    if (entry.second.inferred_effect) {
+      effects.push_back({entry.first.expression, *entry.second.inferred_effect});
+    }
+  }
+  for (const auto& [expr, eff] : effects) {
+    for (auto& entry : semantic_facts_) {
+      if (entry.first.expression == expr && entry.first.specialization_context.rfind("fn:", 0) == 0) {
+        entry.second.inferred_effect = (eff == Effect::Read) ? Effect::Write : Effect::Read;
+      }
+    }
+  }
+}
+
+void Arena::test_drop_primary_selector_fact() {
+  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
+    if (it->first.specialization_context.rfind("fn:", 0) == 0) {
+      it = semantic_facts_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Arena::test_drop_secondary_selector_fact() {
+  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
+    if (it->first.specialization_context.rfind("source:", 0) == 0) {
+      it = semantic_facts_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Arena::test_perturb_primary_effect() {
+  for (auto& entry : semantic_facts_) {
+    if (entry.second.inferred_effect) {
+      entry.second.inferred_effect = (*entry.second.inferred_effect == Effect::Read) ? Effect::Write : Effect::Read;
+    }
+  }
+}
+
+void Arena::test_drop_selector_op_type() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.type = nullptr;
+  }
+}
+
+void Arena::test_drop_selector_target() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.resolved_target.clear();
+  }
+}
+
+void Arena::test_perturb_selector_target(const std::string& wrong_target) {
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.resolved_target.empty()) {
+      entry.second.resolved_target = wrong_target;
+    }
+  }
+}
+
+void Arena::test_drop_selector_effect() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.inferred_effect = std::nullopt;
+  }
+}
+
+void Arena::test_perturb_specialization_identity(const std::string& wrong_spec) {
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.specialization_result.empty()) {
+      entry.second.specialization_result = wrong_spec;
+    }
+  }
+}
+
+bool Arena::test_drop_occurrence_fact(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    semantic_facts_.erase(it);
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_target(ExprId id, std::string_view context, const std::string& wrong_target) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.resolved_target = wrong_target;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_drop_occurrence_effect(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.inferred_effect = std::nullopt;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_perturb_occurrence_effect(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end() && it->second.inferred_effect) {
+    it->second.inferred_effect = (*it->second.inferred_effect == Effect::Read) ? Effect::Write : Effect::Read;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.type = wrong_type;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.specialization_result = wrong_spec;
+    return true;
+  }
+  return false;
+}
 #endif
 
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
@@ -165,6 +321,11 @@ ExprId Arena::duplicate(ExprId id) {
       std::vector<ExprId> arguments;
       for (const auto argument : value.arguments) arguments.push_back(duplicate(argument));
       return append(Call{callee, std::move(arguments)}, span(id));
+    } else if constexpr (std::is_same_v<T, Take>) {
+      std::vector<ExprId> arguments;
+      for (const auto argument : value.arguments)
+        arguments.push_back(duplicate(argument));
+      return append(Take{std::move(arguments)}, span(id));
     } else if constexpr (std::is_same_v<T, Member>)
       return append(Member{duplicate(value.base), value.name}, span(id));
     else if constexpr (std::is_same_v<T, Index>)
@@ -840,7 +1001,11 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        id = constructor ? append(Constructor{id, {}, std::move(arguments),
+        const bool take_operator =
+            named && named->name == "take" && arguments.size() == 1;
+        id = take_operator
+                         ? append(Take{std::move(arguments)}, callee_begin)
+                         : constructor ? append(Constructor{id, {}, std::move(arguments),
                                                callee_begin, callee_end},
                                    callee_begin)
                          : append(Call{id, std::move(arguments)}, source_begin(id));
@@ -913,6 +1078,9 @@ void mark_uncompared_subtree(const Arena& arena, ExprId id,
     } else if constexpr (std::is_same_v<T, Call>) {
       mark_uncompared_subtree(arena, node.callee, failed_source);
       for (auto child : node.arguments) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, Take>) {
+      for (auto child : node.arguments)
+        mark_uncompared_subtree(arena, child, failed_source);
     } else if constexpr (std::is_same_v<T, Member>) mark_uncompared_subtree(arena, node.base, failed_source);
     else if constexpr (std::is_same_v<T, Index>) {
       mark_uncompared_subtree(arena, node.base, failed_source);
@@ -945,6 +1113,11 @@ Shape shape_of(const Arena& arena, ExprId id) {
     else if constexpr (std::is_same_v<T, Call>) {
       Shape result{"call", {}, {shape_of(arena, node.callee)}};
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, Take>) {
+      Shape result{"take", {}, {}};
+      for (auto child : node.arguments)
+        result.children.push_back(shape_of(arena, child));
       return result;
     } else if constexpr (std::is_same_v<T, Member>) return {"member", node.name, {shape_of(arena, node.base)}};
     else if constexpr (std::is_same_v<T, Index>) return {"index", {}, {shape_of(arena, node.base), shape_of(arena, node.index)}};
@@ -1165,6 +1338,20 @@ std::optional<Shape> string_shape(std::string source) {
   }
   std::string callee;
   std::vector<std::string> args;
+  // The shadow-only legacy shape oracle recognizes the language-owned
+  // operator separately as well. Receiver-qualified `x.take(...)` continues
+  // through the ordinary member-call shape below.
+  if (parse_simple_call(source, callee, args) && callee == "take") {
+    Shape result{"take", {}, {}};
+    for (const auto& arg : args) {
+      auto child = string_shape(arg);
+      if (!child) return std::nullopt;
+      result.children.push_back(std::move(*child));
+    }
+    return result;
+  }
+  callee.clear();
+  args.clear();
   bool is_call = parse_simple_call(source, callee, args);
   if (!is_call) {
     std::size_t open = std::string::npos;
@@ -1762,6 +1949,11 @@ std::string dump_node(const Arena& arena, ExprId id) {
       for (const auto argument : value.arguments)
         out << ' ' << dump_node(arena, argument);
       out << ')';
+    } else if constexpr (std::is_same_v<T, Take>) {
+      out << "(take#" << id;
+      for (const auto argument : value.arguments)
+        out << ' ' << dump_node(arena, argument);
+      out << ')';
     } else if constexpr (std::is_same_v<T, Member>)
       out << "(member#" << id << ' ' << dump_node(arena, value.base) << ' '
           << quoted(value.name) << ')';
@@ -2268,6 +2460,31 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
            retained_facts->resolved_target == "callable-v1:test" &&
            retained_facts->inferred_effect == Effect::Consume);
     assert(!arena.facts(same_a, "fn:fact-test@String"));
+    auto parsed_string_type = Type::parse_canonical("String");
+    assert(parsed_string_type);
+    SemanticFacts string_facts;
+    string_facts.type = *parsed_string_type;
+    string_facts.specialization_result = "spec-result-v1:string";
+    string_facts.resolved_target = "callable-v1:string";
+    string_facts.inferred_effect = Effect::Read;
+    arena.record_facts(same_a, "fn:fact-test@String", string_facts);
+
+    // Multi-specialization fact isolation:
+    // Query under context A returns fact A.
+    const auto* facts_a = arena.facts(same_a, "fn:fact-test@Int");
+    assert(facts_a && facts_a->type &&
+           facts_a->type->structurally_equal(**parsed_fact_type) &&
+           facts_a->specialization_result == "spec-result-v1:test");
+
+    // Query under context B returns fact B.
+    const auto* facts_b = arena.facts(same_a, "fn:fact-test@String");
+    assert(facts_b && facts_b->type &&
+           facts_b->type->structurally_equal(**parsed_string_type) &&
+           facts_b->specialization_result == "spec-result-v1:string");
+
+    // Query under an unrelated context returns nullptr.
+    assert(!arena.facts(same_a, "fn:fact-test@Bool"));
+    assert(!arena.facts(same_a, "specialization:unrelated"));
     Program copied_with_facts = copied;
     assert(copied_with_facts.expression_arena == program.expression_arena &&
            copied_with_facts.expression_arena->facts(

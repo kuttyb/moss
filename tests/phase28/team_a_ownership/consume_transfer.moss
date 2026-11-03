@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn transfer(value: Box) -> Box:
+  alias = value
+  return alias
+
+fn main():
+  result = transfer(Box(value = 7))
+  echo result.value

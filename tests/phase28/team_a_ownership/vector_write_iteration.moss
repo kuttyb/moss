@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn update_all(items):
+  for item in items:
+    item.value = item.value + 1
+
+fn main():
+  update_all([Box(value: 1), Box(value: 2)])

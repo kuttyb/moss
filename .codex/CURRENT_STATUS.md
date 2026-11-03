@@ -1,3 +1,282 @@
+### Phase 28 Round 3 Team B — Specialization Effect Correction & Failure Reconciliation (W07) (2026-11-03)
+
+Branch `phase28-r3-team-b-effect-consumer`. Completed W07 specialization-effect authority and full-suite failure reconciliation:
+1. Specialization-Effect Consistency Validation:
+   - In `src/native_generator.cpp::lower_est_selector()`, replaced unspecialized declaration effect comparison (`fn->parameter_effects[i]`) with exact checker-selected specialization parameter access (`spec_it->second.parameter_access[i]`).
+   - For non-specialized calls, validates against `fn->parameter_effects`. Fails closed with `MOSS_INTERNAL_INVARIANT` on any mismatch, missing authority, or missing identity.
+   - Refined borrowed parameter checking (`borrowed_function_parameters_.count(arg_id->name)`) so local concrete struct instances are passed with borrow references (`&` or `&mut`) matching the specialized function's ABI.
+2. Distinct Specialization Effects Fixture:
+   - Authored `tests/phase28/take_fixtures/take_specialized_effects.moss` exercising two specializations of `select_cursor(x)` with distinct inferred parameter effects (`Reader` -> `READ` vs `Writer` -> `WRITE`).
+   - Parity verified across checker, Fast Debug, native, and optimized-native (`-O`) producing identical output `330` with zero hidden clones.
+   - Added fault-injection test in `tests/tooling/check_phase28_take_consumer.py` verifying that perturbing the primary effect fails closed with `MOSS_INTERNAL_INVARIANT`.
+3. 17 Full-Suite Failures Reconciliation Table:
+   - Reconciled all 17 failed jobs in `tests/run_parallel.py` against baseline evidence (all 17 confirmed preexisting known failures, 0 regressions introduced by Team B).
+4. Validation Ledger:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (18/18 cases, default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (23/23 cases, default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_selector_argument_effects.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_local_ownership.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS.
+   - `tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+   - Agent 2 independently reviewed implementation commit `403ff035e5dd851f0a18bc74e556b2169dbcd2f4` and returned final CP2 verdict **GO**.
+
+### Phase 28 Round 3 Team B — Final Selector Authority & Closeout (W06) (2026-11-03)
+
+Branch `phase28-r3-team-b-effect-consumer`. Completed W06 integration and Round 3 closeout:
+1. Integrated Team A Reviewed Implementation:
+   - Cherry-picked Team A reviewed commit `325ff2ef62f384684fd693ca38d0c3b6474f5a8e` as `08756e32`.
+   - Team A checker publishes selector argument effects via `publish_selector_argument_effects()` directly under the primary statement context matching `TypedTakeFactV1::est_fact_context`.
+   - Single authoritative publication path retained in `src/semantic_checker.cpp`; zero duplicated or parallel publication paths.
+2. Eliminated Secondary Synthesis & Reconciled Consumer:
+   - Removed `source_context` parameter, secondary `arena.facts()` queries, and cross-context fallback merges from `src/native_generator.cpp::lookup_selector_facts()` and `lower_est_selector()`.
+   - Consumer queries strictly the primary checker context (`fact.est_fact_context`).
+   - Validates argument inferred effects directly against callee function declared `parameter_effects`, failing closed with `MOSS_INTERNAL_INVARIANT`.
+3. Occurrence-Targeted Corruption & Isolation Proof:
+   - Implemented exact composite key mutations in `Arena` (`test_drop_occurrence_fact`, `test_perturb_occurrence_effect`, `test_mutate_occurrence_target`, etc.) targeting exact `(arena_idx, ExprId, context)`.
+   - Authored `tests/phase28/take_fixtures/take_multi_selector.moss` exercising two distinct selectors in one function.
+   - Tested targeted corruption of each selector occurrence and proved selector isolation: sibling selector facts remain fully intact.
+4. Parity & Verification Suite:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (17/17 cases across checker, Fast Debug, native, and optimized-native `-O` with zero hidden clones, in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (22/22 fail-closed cases in default and `MOSS_EST=shadow`, including 5 occurrence isolation checks).
+   - `tests/tooling/check_phase28_selector_argument_effects.py ./moss`: PASS (in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase27_string_debt.py`: PASS (42 name comparisons, 7 binding comparisons).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+   - `make check`: 14/14 tooling/focused gates PASS; parallel suite (`tests/run_parallel.py`) 150/167 PASS, 17 FAIL (all 17 confirmed preexisting known failures: legacy `take` syntax in Phase 21/generics, `use_after_transfer` negative fixture, vector element consume, incremental dependency; 0 regressions).
+   - Agent 2 independently reviewed implementation commit `a8ab5d6283b1f14d250c582c6609a0e428e98f21` and issued final CP2 review verdict **GO** (review provenance corrected from earlier SHA typo).
+5. Architectural Audit:
+   - `lookup_selector_facts()` queries strictly primary `fact.est_fact_context`; zero `source:` context fallback remains.
+   - Selector argument effects consume checker-issued facts directly; specialization names resolve directly to `exact_fn_spec->generated_name`.
+   - Occurrence-targeted corruption changes only the selected composite key `(arena_idx, ExprId, context)`; sibling selector facts remain intact.
+   - Audited argument effect vs callee parameter effect comparison: unspecialized declaration effects and checker specialization effects agree (`READ, READ`) across all selector fixtures; zero concrete discrepancy.
+
+### Phase 28 Round 3 Team B — Stored Fact Corruption & Selector Authority (W05) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Resolved L7 architectural finding on synthetic throw hooks and selector fact provenance:
+1. Replaced Synthetic Contradiction Hooks with Genuine Stored Fact Corruption:
+   - Eliminated all artificial `getenv` checks and synthetic `throw` statements from `src/native_generator.cpp::lookup_selector_facts()`.
+   - Relocated test hooks to `Generator::Generator` and `FastInterpreter::FastInterpreter`, where they invoke genuine mutation methods on `Arena::semantic_facts_` (`test_contradict_selector_type`, `test_contradict_selector_target`, `test_contradict_selector_effect`, `test_drop_primary_selector_fact`, `test_drop_secondary_selector_fact`, `test_perturb_primary_effect`, etc.).
+   - Normal production validation in `lookup_selector_facts()` detects mutations and fails closed with `MOSS_INTERNAL_INVARIANT`.
+2. Diagnosed Primary Inferred Effect Fact Provenance (Team A Handoff Request):
+   - Investigated why `inferred_effect` is missing under primary `fact.est_fact_context` (`fn:...`): in `src/semantic_checker.cpp`, `analyze_effects` (`analyze_effect_block`) does not set `current_semantic_context_` or `current_check_body_context_`, causing `expression_fact_context()` to fall back to `source:<file>:<line>`.
+   - Maintained strict non-intervention boundary: Team B did NOT modify `semantic_checker.cpp`, preserving Team A ownership. Formulated minimal Team A API request for L7 (R03-T01-W02) to set `current_semantic_context_` during effect analysis.
+   - Preserved cross-context consistency validation in `lookup_selector_facts()`: secondary context effects are only accepted if no contradiction exists with primary context facts.
+3. Verification & Review:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (16/16 cases, zero hidden clones in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (20/20 cases in default and `MOSS_EST=shadow`).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - Agent 2 independently reviewed implementation commit `cab3560c8f3079365e40d01480dac0e55c58b7b6` and returned GO with no findings.
+
+### Phase 28 Round 3 Team B — Selector Fact Integrity & Specialization Identity (W04) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Resolved the two L7 P1 findings on selector fact integrity and specialization identity:
+1. Context Coherence in `lookup_selector_facts`:
+   - Enforced primary checker context (`fact.est_fact_context` from `TypedTakeFactV1`) precedence.
+   - Cross-context consistency validation: if both primary and secondary (`source:`) contexts supply type, resolved target, specialization key, or inferred effect, they must agree structurally; contradictions fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Secondary context cannot supply missing semantic types or targets if primary dropped them.
+   - Added fault-injection hooks for primary/secondary fact drops and cross-context contradictions (`MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT`, `MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT`).
+2. Checked Specialization Resolution to Generated Function Names:
+   - Eliminated string concatenation of callable name and specialization key in `lower_est_selector`.
+   - Validates that `facts->specialization_result` is registered in `p_.typed_semantics->specializations` and that its `callable_id` strictly matches `facts->resolved_target`.
+   - Resolves specialization directly to `exact_fn_spec->generated_name` in `fn->specializations`.
+   - Retained exact specialization keys on static dispatch call expressions in `src/semantic_checker.cpp`.
+   - Added `tests/phase28/take_fixtures/take_specialized_selector.moss` fixture exercising real native specialized selector call lowering with exact parity (`15`) and zero hidden clones.
+   - Added `MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION` wrong-specialization corruption hook failing closed with `MOSS_INTERNAL_INVARIANT`.
+3. Verification & Review:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (16/16 cases, zero hidden clones).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (19/19 cases in default and `MOSS_EST=shadow`, including binary arithmetic selector operator corruption and contradiction).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - Agent 2 independently reviewed implementation commit `a05cbb8f9046f8522d6091dccb879165d33a637f` and returned GO with no findings.
+
+### Phase 28 Round 3 Team B — Remove Independent Selector Semantics (W03) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Corrected L7 architectural finding on independent selector semantics:
+1. Strict Checker Semantic Authority:
+   - Eliminated independent call-target resolution via `functions_` in `lower_est_selector`; resolves strictly via checker-issued `facts->resolved_target` and validates `specialization_result`.
+   - Eliminated independent parameter effect re-derivation via `function_effect`; arguments consume exact checker-issued `arg_facts->inferred_effect`.
+   - Replaced string-only binary operator lowering with type-driven dispatch using checker-issued `left_facts->type` (handling integer wrapping arithmetic, float operations, string formatting, and boolean logic).
+   - Enforced fail-closed behavior on missing or unauthoritative facts with `MOSS_INTERNAL_INVARIANT`.
+2. Fast Debug Parity:
+   - Verified that `FastInterpreter` take evaluation fails closed with `MOSS_INTERNAL_INVARIANT` if a requirement with a non-empty specialization identity is evaluated in an unspecialized frame.
+3. Verification & Review:
+   - Added `tests/phase28/take_fixtures/take_selector_operators.moss` fixture exercising integer arithmetic operators in index selectors with zero hidden clones.
+   - Added 4 selector corruption fault injection checks to `tests/tooling/check_phase28_take_consumer.py` (`DROP_SELECTOR_TARGET`, `PERTURB_SELECTOR_TARGET`, `DROP_SELECTOR_EFFECT`, `DROP_SELECTOR_OP_TYPE`), all failing closed with `MOSS_INTERNAL_INVARIANT`.
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (15/15 cases, zero hidden clones).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (12/12 cases in default and `MOSS_EST=shadow`).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - Agent 2 independently reviewed implementation commit `6bdec1eeb4cf8e7fafbf0b4e070c32fbe14b72ae` and returned GO with no findings.
+
+### Phase 28 Round 3 Team B — `take(place)` Architectural Corrections (2026-11-02)
+
+Branch `phase28-r3-team-b`. Corrected the three L7 findings:
+1. Removed specialization fallback:
+   - Eliminated blanket catch fallback in `native_generator.cpp::resolve_take_fact`.
+   - Requires exact specialization identity matching; fails closed with `MOSS_INTERNAL_INVARIANT`.
+   - Added `tests/tooling/typed_take_contract_test.cpp` exercising multi-specialization identity lookups, mismatched identity rejections, and 5 targeted corruption modes.
+2. Removed expression-text reconstruction:
+   - Deleted `render_est_syntax` completely.
+   - Implemented `lower_est_selector` lowering retained EST selector nodes directly to Rust syntax across identifiers, literals, parenthesized expressions, member access, index expressions, and view/borrowed call arguments.
+   - Retained single-evaluation property of selectors.
+3. Restored string-debt gate:
+   - Restored gate allowance to 7 in `tests/tooling/check_phase27_string_debt.py`.
+   - Merged Team A's reviewed string-debt fix (`phase28-r3-team-a-debt-fix` at `08b9f2fc11ba0b2f9b2bbeeb5217c7a55fd4fe66`), eliminating the 3 `Stmt.a` comparisons in `src/semantic_checker.cpp`.
+4. Verification:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (14/14 tests).
+   - `tests/tooling/typed_take_contract_test`: PASS (7/7 contract & corruption modes).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (audited 42 name comparisons, 7 binding comparisons).
+
+### Phase 28 Round 3 Team A — checker string-debt correction (2026-11-02)
+
+Branch `phase28-r3-team-a-debt-fix`, based on `a679994c1d2b44fc82e64c5cf7a2f123aef26a27`. Removed the three reported `Stmt.a` scanner matches in `straight_line_alias_effect`: Let/Var redefinition and assignment redefinition now read exact LHS EST identifiers; member-call alias matching reads the exact Receiver EST identifier. Original gate allowance stays at 7; the checker-only count is 7. Targeted ownership/`take` checks pass in default and EST shadow. Agent 2 reviewed exact implementation SHA `7e5bb6333a6b8736fea277ab240bf41463839cb8` and returned GO with no findings. Targeted tests and checker-only count were independently confirmed.
+
+### Phase 28 Round 3 Team A — `take(place)` checker handoff (2026-11-02)
+
+Branch: `phase28-r3-team-a`, based on Round 2 integration `42b3dc607ebeadefd3f117bcee3af09f312e84e8`. Checker/EST implementation and focused positive, negative, fact-drop, perturbation, and duplicate-record checks are complete for the bounded slice. Validation on the current worktree: `make --jobs="$(nproc)" moss-dev` PASS; `tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev` PASS in default and `MOSS_EST=shadow`; `git diff --check` PASS. Full suites and downstream lowering are not run.
+
+The checker publishes `TypedTakeRequirementV1` and `TypedTakeFactV1` through `TypedSemanticModuleV1::{find_take_requirement,find_take_fact}`. Direct option/Vector/Map/Queue fields and nested record/Vector-index/Map-index projections are represented with exact EST and checker identities, WRITE authorization, whole-value transfer and empty replacement. Composition inside another expression has no fact path yet. Frozen implementation/reviewed SHA: `4a10be88c6b06a4542c55adc19dfe9db44152aa8`; Agent 2 adversarial review: GO, no findings. Final delivered SHA is the documentation-only closeout commit; no code/tests/ABI/semantics changed after review. Remaining blockers: downstream native/Fast Debug/optimizer lowering and fact consumption, plus take nested inside other expression contexts.
+
+### Phase 28 Round 3 R03-T02-W00 `take(place)` Preparation (2026-11-02, Team B)
+
+Branch `phase28-r3-team-b`, based on `phase28-r2-integration` at `42b3dc607f2a2468d66df21b068d30e3dffc7946`.
+Completed independent preparation for the `take(place)` explicit move operator without waiting idle for Team A and without speculative implementation:
+1. Investigation:
+   - Evaluated closed set of four terminal field types (`option[T]`, `Vector[T]`, `Map[K, V]`, `Queue[T]`).
+   - Mapped Rust lowering to `std::mem::take(&mut <place>)`, which uniformly replaces with `Default::default()` without heap reallocation or element copying.
+   - Mapped Fast Debug lowering to `locate_tree_node(tree, node, ...)` resolving place pointer, `std::move(*place.value)` extracting the value, and canonical empty `Value` installation.
+   - Identified missing execution capabilities pending Team A W01: syntax recognition, typed take facts/requirements, call handling in emitter and Fast Debug.
+2. Architecture Specification (`docs/phase28/TEAM_B_R3_TAKE_PREPARATION.md`):
+   - Defined strict checker semantic authority: consumer never infers take eligibility or empty states.
+   - Specified required Team A typed API contracts: `TypedTakeFactV1` and `TypedTakeRequirementV1` with exact EST occurrence, target place occurrence, specialization identity, terminal type family, and empty state.
+   - Analyzed implementation hazards and mitigations: single evaluation of nested projection indices, zero hidden clones in Rust, and mutation survival across typed raises (no invented rollback).
+3. Execution Fixtures (`tests/phase28/take_fixtures/`):
+   - `take_option_field.moss`: Option field move-and-empty (`None`), repeated take, nonprimitive payload.
+   - `take_vector_field.moss`: Vector field move-and-empty (`[]`), repeated take, nonprimitive elements.
+   - `take_map_field.moss`: Map field move-and-empty (`{}`), repeated take.
+   - `take_queue_field.moss`: Queue field move-and-empty, repeated take.
+   - `take_nested_projection.moss`: Nested field projections (`v[i].pending`, `m[k].items`), single evaluation of projection indices.
+   - `take_raise_mutation.moss`: Successful take before typed raise remains a mutation (no invented rollback).
+   - `take_rejected_forms.moss`: Rejection of illegal forms (`take(local)`, `take(v[i])`, `take(unified_field)`).
+4. Verification Harness (`tests/phase28/verify_take_fixtures.py`):
+   - Asserts returned value ownership, source empty state, repeat take, zero hidden clones, single index evaluation, Fast Debug/native parity, and fail-closed integrity.
+   - Explicitly tracks feature-pending status awaiting Team A W01 without false failure.
+5. Validation Ledger:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (7/7 fixtures accounted for: 7 FEATURE_PENDING awaiting Team A W01).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase28_team_b_consumer.py`: PASS.
+   - `python3 tests/tooling/check_phase28_specialized_native_consumer.py`: PASS.
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
+### Phase 28 Round 2 Final Integration & Verification (2026-11-02, Team B)
+
+Branch `phase28-r2-integration`. Completed final Round 2 integration of Team A's reviewed specialization identity contract and typed API into the native consumer:
+1. Merge: Merged `phase28-r2-specialization-fix-a` (`a794f1ea`) into `phase28-r2-integration` (`bc9d9156`), preserving ancestry. Resolved `.codex/CURRENT_STATUS.md` conflict preserving both teams' records.
+2. Adopted Team A Typed API: Replaced manual loop matching in `resolve_local_ownership_fact` in `src/native_generator.cpp` with `p_.typed_semantics->find_local_ownership_requirement(...)` and `p_.typed_semantics->find_local_ownership_fact(...)`. Matches exact retained EST occurrence, checker-published consumer context, and validates all identity/effect/status fields through typed API. Converted all checked-API integrity exceptions into `MOSS_INTERNAL_INVARIANT` compiler diagnostics.
+3. EST Lookup Exactness: Removed context-free lookups and artificial context string concatenation from the emitter; E1 scalar push queries strictly under `functional_context` and safely declines optimization when exact facts are absent.
+4. Specialized Native Consumer Tests: Added `tests/tooling/check_phase28_specialized_native_consumer.py` covering:
+   - Generic function instantiated with two nonprimitive types (`specialized_identity.moss`).
+   - Correct ownership fact selected for each specialization and verified parity (`1\n2`).
+   - Targeted failure injection for specialized facts: deleting record, perturbing effect, perturbing specialization ID, perturbing source ID, duplicating fact, duplicating requirement all fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Unsupported facts remain distinguishable from missing authority.
+   - Verified pure move lowering (zero `.clone()` on local alias).
+5. Validation Ledger:
+   - `tests/tooling/check_phase28_specialized_ownership_contract.py`: PASS.
+   - `tests/tooling/check_phase28_local_ownership.py` (default & shadow): PASS.
+   - `tests/tooling/check_phase28_team_b_consumer.py`: PASS.
+   - `tests/tooling/check_phase28_specialized_native_consumer.py`: PASS.
+   - `tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE, 0 UNEXPECTED FAILURE).
+   - `tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
+### Phase 28 Round 2 specialized ownership identity correction (2026-11-02, Team A)
+
+Branch `phase28-r2-specialization-fix-a`, based on the reviewed integration
+baseline `536cf415da9cc54ffdfda48e4445ec21058495b7`. Repaired the ownership
+coverage contract after the specialized-context audit found that checker stable
+specialization keys and consumer function contexts did not match. Checker now
+publishes an explicit context-to-stable-key mapping, stamps local/Vector facts
+and requirements with the checker key, and resolves requirements/facts using
+exact EST, statement, specialization, definition and effect/status identities.
+Ambiguous, missing, perturbed and contradictory required records fail closed;
+explicitly unsupported facts remain discoverable as unsupported. Added a
+two-specialization Moss fixture and a direct typed API contract harness.
+
+The correction is committed and pushed as
+`26bccd8d492a0fcafd333b30ec64e17e1116281a`. Agent 2 initially returned NO-GO
+on the preceding commit for missing source identity and jointly erasable
+specialization IDs. The follow-up added source/join identities to requirement
+matching and rejects missing IDs for checker-mapped specialization contexts.
+Agent 2's focused re-review returned GO on the corrected SHA.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`; default and shadow
+`tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`; and
+`git diff --check`. The harness compiles the direct typed API contract test and
+checks a Moss fixture with two specializations against actual published
+requirements. No corpus suite was run. `docs/COMPILER_ARCHITECTURE.md`, which
+the startup instructions reference, is absent on this baseline branch.
+
+Team B should call
+`find_local_ownership_requirement(arena, expr, consumer_context)` to get the
+requirement's checker-issued `specialization_identity`, or use the overload
+with statement, context, specialization identity, and definition identity.
+Then `find_local_ownership_fact(requirement)` returns the unique validated
+fact or throws on missing, duplicate, altered, unavailable, or contradictory
+facts. Broader ownership language scope and native-consumer integration remain
+outside this correction.
+
+### Phase 28 Round 2 Final Integration Corrections (2026-11-02, Team B specialization safety & context audit)
+
+Branch `phase28-r2-integration`. Completed bounded integration corrections directed by L7:
+1. P1 AST/EST context-free fact removal: Reverted `Arena::facts(ExprId)` overload in `src/est/expression_tree.hpp` and `src/est/expression_tree.cpp` under one-time file lease. Emitter in `src/native_generator.cpp` queries only the exact specialization context (`"specialization:" + codegen_active_specialization_key_` or `functional_context`).
+2. P1 Specialization lookup audit: Audited consumer-side specialization matching in `resolve_local_ownership_fact`. Prepared consumer for Team A's canonical specialization identity contract (`"specialization:" + key`). Documented the exact remaining gap: checker records generic specializations as `specialization:specialization-v2:...` and object methods without `current_semantic_context_` (falling back to `source:...`), whereas emitter previously matched against `functional_context` (`fn:<name>` / `method:<owner>.<name>`).
+3. P2 Scalar Copy path safety: Repaired `push` optimization in `src/native_generator.cpp` using `is_primitive_copy_type(arg_facts->type)` directly on checker-issued `TypeRef`. Uncontextualized lookups eliminated; when facts are unavailable under the exact specialization context, optimization is declined safely. In `tests/phase28/verify_defects.py`, `E1_group_a_push_self_field_scalar` explicitly tracked as KNOWN FAILURE (E0502) awaiting Team A's specialization context fix.
+4. Specialization fact isolation: Added `tests/phase28/test_specialization_fact_isolation.py` and C++ contract test in `src/est/expression_tree.cpp` (`MOSS_EST_CONTRACT_TEST=1`), verifying that queries under Context A return Fact A, queries under Context B return Fact B, and queries under unrelated contexts return `nullptr`. Integrated into `tests/tooling/check_phase28_team_b_consumer.py`.
+5. Gate verification:
+   - Defect gate: `tests/phase28/verify_defects.py` PASSED (8 cases: 4 PASS, 4 KNOWN FAILURE, 0 XPASS, 0 UNEXPECTED FAILURE).
+   - Consumer gate: `tests/tooling/check_phase28_team_b_consumer.py` PASSED (Read/Write/Consume lowering + E1 push + drop/perturb/delete fail-closed + specialization isolation).
+   - Local ownership gate: `tests/tooling/check_phase28_local_ownership.py` PASSED in default and shadow modes.
+   - Specialization isolation gate: `tests/phase28/test_specialization_fact_isolation.py` PASSED.
+   - Agent feedback gate: `tests/tooling/check_agent_feedback.py` PASSED.
+6. Handoff status: Independent Team B corrections complete. Exclusive file leases preserved. Stopped and awaiting L7 authorization to integrate Team A's `phase28-r2-specialization-fix-a`.
+
+### Phase 28 Round 1 Team B fan-in corrections (2026-11-02, defect gate and handoff alignment)
+
+Branch `phase28-r1-team-b`. Completed bounded fan-in corrections requested by L7:
+1. Restored canonical `docs/Phase28-team.md` from `origin/phase28-work` (`569d3092`). Team B execution details moved to `docs/phase28/TEAM_B_R1_RECONNAISSANCE.md`.
+2. Enhanced `tests/phase28/verify_defects.py` into a strict regression gate asserting expected outcomes (3 PASS, 3 KNOWN FAILURES, 0 UNEXPECTED FAILURES, returns nonzero on regression).
+3. Evaluated canonical `tests/swarm_035_nested_mutating_calls.moss` (E2) directly: passes with parity (`1`) under native and -O via existing `call_argument_temp_` in emitter.
+4. Isolated E3 (T6) in Shapes (`examples/swarm/Surface/Shapes/src/main.moss`): confirmed checker-level failure (`synchronization_require` / `unresolved callable argument`) versus historical native E0596 lowering.
+5. Reconciled Team A fact handoff (`docs/phase28/TEAM_A_R1_HANDOFF.md`): acknowledged published `TypedSemanticModuleV1::local_ownership_facts` in `src/typed_semantic_api.hpp` for straight-line aliases. Documented additional Round 2 requirements (loops, disjoint projections, take facts) without premature consumer integration.
+6. Preserved RHS-before-LHS assignment evaluation-order fix in `src/native_generator.cpp:6677-6681`. Fact hooks, string debt, agent feedback, and defect gates pass.
+
+### Phase 28 Round 1 Team B checkpoint (2026-11-02, consumer migration reconnaissance and defect analysis)
+
+Branch `phase28-r1-team-b` branched from `origin/phase28-work`. Team B (Agent 1 L6 Coordinator/Implementer/Reviewer). Completed mandatory bootstrap: `result.language_version` is `moss-0.1`.
+
+Completed scope:
+1. Native emitter, Fast Debug, and optimizer duplication/clone census:
+   - Identified 28+ hidden `.clone()` sites in native generator (`src/native_generator.cpp`) across call arguments, indexing, struct constructors, binary operators, and returns.
+   - Identified duplicated ownership decisions in emitter (`function_parameter_abi`, `borrowable_type`, `borrowed_views.inc`, `view_place`, `is_object_view`) and Fast Debug (dynamic `frame.consumed` simulation and full-vector copy `*source` in `for` loops).
+   - Identified remaining expression-string parsing in `native_generator.cpp` (`expression_view_from_est` parsing strings on demand into temporary views).
+2. Four compiler defects investigated with focused reproducers in `tests/phase28/reproducers/` and verification harness `tests/phase28/verify_defects.py`:
+   - E1 Group A `push_self_field_read` (Rust E0502): Confirmed borrow conflict due to whole-`self` borrowing in `MossAccess_*` field accessor trait methods. Fast Debug PASS (0), Rustc FAIL.
+   - E1 Group A `field_self_assign_struct` (Rust E0502): Successfully diagnosed and corrected independently via RHS-before-LHS temporary binding in `src/native_generator.cpp:6677`. Fast Debug PASS (1), Native PASS (1).
+   - E2 `swarm_035` nested mutating calls (Rust E0499): Passes with parity in current compiler; temporary argument binding `__moss_call_argument_2` already serializes evaluation. Fast Debug PASS (1), Native PASS (1).
+   - E3 T6 untyped read-only `for` (Rust E0596): Minimal untyped `for` loop passes; complex `Scene` methods trigger checker-level `unresolved callable argument` on `moss ownership`. Fast Debug PASS (3), Native PASS (3).
+   - E4 `mutate_loop_element` (Rust E0596): Diagnosed: checker infers receiver as READ instead of WRITE, and native emitter hardcodes `.iter()` and non-`mut` element binding. Fast Debug PASS (7 17), Rustc FAIL.
+3. Created `docs/Phase28-team.md`, `tests/phase28/verify_defects.py`, and developer-experience record in `agent-feedback/phase28/team-b-consumer-migration/reconnaissance/observations.jsonl`.
+4. Fact hook test `check_phase27_5_4_fact_hooks.py` and string debt check `check_phase27_string_debt.py` pass cleanly.
+
+Remaining for Round 2: Consumer migration to Team A's checked ownership facts (`ForLoopElementFacts`, `BindingOwnershipFacts`, `ExprOccurrenceFacts`) once Team A publishes the checker-fact interface.
+
 ### Phase 27.5.4 C1 checkpoint (2026-11-01, Fast Debug text lookup removed)
 
 Branch `phase27-5-4-work`. Pushed prior checkpoint `b45fa4b3`; this checkpoint removes the Fast Debug active-node equality lookup that compared rendered expression text to the requested source. `tests/tooling/check_phase27_string_debt.py --require-zero fast_debug` now passes, and its adapter gate recognizes the typed `expression_tree(expression, caller, handle_key)` route. Grep finds no remaining source/rendered-text comparison in `src/interpreter.hpp` of that form.
@@ -14454,3 +14733,169 @@ and `-O`. Agent 2 confirmed zero Fast Debug consumer reparse/text-lookup
 counter sites and absence of the fallback branch; the coverage sample was
 also zero. `origin/main` advanced to `3da06d9e`; the authorized C1 merge must
 use that as first parent after the report is committed and pushed.
+
+### Phase 28 Round 1 Team A checkpoint
+
+Branch `phase28-r1-team-a` is based on `phase28-work` at `569d3092`. Team A
+implemented a bounded straight-line local-to-local ownership fact path. The
+checker retains typed READ/WRITE/CONSUME facts tied to definition/source
+binding identities, statement occurrence IDs, and exact EST RHS occurrences;
+`TypedSemanticModuleV1::local_ownership_facts` is the consumer handoff. No
+emitter, Fast Debug, or optimizer consumer was changed. CFG joins, loops,
+exception edges, and imported ownership effects remain deferred; Agent 2 CP1
+adversarial review remains pending.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`, focused
+`python3 tests/tooling/check_phase28_local_ownership.py ./moss` (3 effects,
+2 negative cases, fact drop/perturb), the same focused harness with
+`MOSS_EST=shadow`, Python compilation of the harness and `tests/run_parallel.py`,
+`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`.
+Full `make check` / `make check-shadow`, native/optimizer parity and corpus
+suites were not run; no result for those gates is claimed. Implementation is committed as
+`df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`; the handoff-document follow-up
+and push are pending.
+
+### Phase 28 Round 2 Team A checkpoint
+
+Round 2 continues from the accepted Team A R1 handoff on branch
+`phase28-r2-team-a`, based on `phase28-r1-team-a` at `a73d8a6b`. The typed
+ownership contract now distinguishes intentional `Unsupported` inference
+(`Availability::NotRequired`) from inferred records with missing occurrence or
+binding identities and contradictory EST effects. Its `is_authoritative()`
+and `is_intentionally_unsupported()` helpers expose the consumer gate.
+`TypedLocalOwnershipFactV1` also carries a logical `join_definition_identity`.
+Existing checker join and
+predecessor binding tables drive bounded explicit-local `if`/`else` inference
+for READ, WRITE and CONSUME demands; no parallel CFG engine was added. Vector
+iteration emits loop-occurrence facts for READ/WRITE element access, keyed by
+the exact iterable EST root and checker loop binding. Consumer migration,
+exception edges, general CFG/liveness, loop-carried fixed points and imported
+effects remain open.
+
+E3 Shapes diagnosis: nested leaf-effect capture lost the method's implicit-self
+owner while evaluating a callable argument. A scoped capture owner plus
+preservation of checked callable identities repairs the reduced case. The
+original Shapes path now returns the separate `MODULE_IDENTITY_UNRESOLVED`
+diagnostic (`module 'shapes' has no package identity`); package-level Shapes
+validation is consequently still blocked.
+
+The ownership harness is registered in `make check` for default and shadow
+modes, including its drop/perturb checks. Validation after the checker edits:
+`make --jobs="$(nproc)" moss-dev`; focused ownership harness against
+`build/compiler/moss-dev` in default and shadow; `python3 -m py_compile
+tests/tooling/check_phase28_local_ownership.py tests/run_parallel.py`;
+`python3 tests/tooling/check_agent_feedback.py`; and `git diff --check` all
+pass. Shapes direct checking returns the module identity error above. Full
+`make check`, `make check-shadow`, three-engine parity and corpus runs have not
+been run. The current AGENTS.md had no general no-push prohibition; its scoped
+authorization now explicitly includes this Round 2 branch. The initial
+implementation `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`, docs commit
+`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`, and status commit
+`2f310c2b0ff518269a87c17ba28006cdf4edc063` were pushed to
+`origin/phase28-r2-team-a`. Agent 2 returned CP1 NO-GO on the initial
+implementation with two P1 findings: non-direct return alias uses were too
+broadly classified as READ, and a Vector loop element used only as an index
+could be marked WRITE. It also flagged the header occurrence comment. The
+corrections are committed locally at implementation SHA
+`73da9d9db0fd35dce195acc1de142994fd756af4`: unsupported nested returns decline
+inference, Copy-valued EST field projections retain READ, and projected WRITE
+facts use only the EST LHS base chain. Regressions cover both P1 findings. The
+candidate's dev build and focused harness in default and shadow modes,
+py_compile, feedback validation, and diff check pass. Corrected implementation
+SHA `73da9d9db0fd35dce195acc1de142994fd756af4` and handoff/status commit
+`a22568a9eff30f05ad89b2745b8d6a0eb6c26153` are pushed; `git ls-remote`
+confirmed the branch ref at the handoff/status commit. Agent 2 re-review of
+implementation SHA `73da9d9db0fd35dce195acc1de142994fd756af4` found a third P1:
+the legacy `copy_type` predicate considers `option[Int]` Copy, contrary to the
+Phase 28 contract. The local correction now admits only designated primitive
+field projections and adds an Option-return rejection regression. The
+Copy-field projection type query also receives the source binding's checked
+type under the local alias. Latest dev build, 18-fixture focused harness in
+default and shadow modes, py_compile, feedback validation and diff check pass.
+The correction is committed at implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`; updated handoff docs are committed
+at `56fcc00929133a3fee83c9bb22ee3d5e46292ffa`. Both are pushed to
+`origin/phase28-r2-team-a`. Agent 2 returned CP1 GO, scoped to this checker
+handoff, for exact implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`; no additional related soundness
+findings were reported. The reviewer reran the 18-fixture harness in default
+and shadow modes. No source changes followed the reviewed implementation SHA;
+this final status/documentation update is docs-only. Full repository and
+engine suites remain unrun. Earlier NO-GO commits remain in published history;
+no history was rewritten.
+
+### Phase 28 Round 2 Team B checkpoint
+
+Branch `phase28-r2-team-b` merged Team A's Round 1 handoff (`a73d8a6b`).
+Team B migrated one direct local-alias path in the native code generator
+(`src/native_generator.cpp`) to consume Team A's `TypedLocalOwnershipFactV1` and
+exact EST occurrence facts.
+
+In the L7 Round 2 fan-in corrective pass:
+1. P1: Removed emitter shortcut throws and implemented genuine fault injection
+   in `Generator::Generator` under `MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT` and
+   `MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT`. The production consumer's
+   ordinary validation logic catches corrupted availability (`MissingEstOccurrence`)
+   or contradictory access effects and fails closed with `MOSS_INTERNAL_INVARIANT`.
+2. P2: Refactored `resolve_local_ownership_fact()` to look up strictly by
+   retained EST handles (`est_arena_index`, `expression_occurrence_id`) and
+   specialization context. Eliminated all definition-identity string formatting
+   and source line number matching.
+3. E1: Repaired the scalar Copy argument case of `nxt.push(head[u])` by evaluating
+   the Copy argument into an owned temporary scalar prior to acquiring the mutable
+   receiver borrow. Separated this from the general non-Copy disjoint-field borrowing
+   defect (`defect_e1_group_a_push_self_field_noncopy.moss`), which remains an open
+   known failure requiring checker disjoint projection facts.
+4. Harness: `tests/phase28/verify_defects.py` now protects all 7 fixtures
+   (4 PASS, 0 XPASS, 3 KNOWN FAILURE, 0 UNEXPECTED FAILURE).
+5. Dependencies: Documented requirement for checker-owned fact applicability/coverage
+   to formally prove missing-fact detection without heuristics.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`,
+`python3 tests/tooling/check_phase28_local_ownership.py ./moss`,
+`python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`,
+`python3 tests/phase28/verify_defects.py`,
+`python3 tests/tooling/check_agent_feedback.py`,
+`python3 -m py_compile tests/run_parallel.py tests/tooling/check_phase28_team_b_consumer.py tests/phase28/verify_defects.py`,
+and `git diff --check`. Full check/check-shadow and engine parity were not run.
+Agent 2 adversarial review remains pending until CP2.
+
+### Phase 28 Round 2 integration checkpoint (2026-11-02, Team A checker facts & Team B native ownership lowering reconciled)
+
+Branch `phase28-r2-integration`. Merged `origin/phase28-r2-team-a` (`43d87556`) into `phase28-r2-integration` (ancestor `phase28-r2-team-b` at `a90faf87`) preserving full ancestry at merge commit `e225259503920107e0718f46cddca1f0b81d769f`.
+
+Completed integration scope:
+1. Reconciled checker-owned ownership facts:
+   - Updated `TypedSemanticModuleV1` with `required_local_ownership_occurrences` and `find_local_ownership_requirement()`.
+   - Updated native consumer (`resolve_local_ownership_fact`) to honor `is_authoritative()`, `is_intentionally_unsupported()`, `InferenceStatus`, and `UnsupportedReason`.
+   - Explicitly unsupported facts safely preserve authorized legacy lowering without inventing new heuristics. Contradictory/incomplete facts fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Status: Native local-alias migration is delivered; general Fast Debug and optimizer ownership-fact consumption remains open.
+2. Proved whole-record deletion fails closed:
+   - Checker records required ownership occurrences in `required_local_ownership_occurrences`.
+   - Native consumer detects when a required fact is omitted completely from `local_ownership_facts` and throws `MOSS_INTERNAL_INVARIANT required local ownership fact record missing`.
+   - Genuine test-build hook `MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD` verified in `tests/tooling/check_phase28_team_b_consumer.py`.
+3. Validated semantic identities:
+   - Consumer lookup uses exact retained EST handles (`matched_handle->arena_index`, `matched_handle->expr`), `specialization_context`, statement occurrence identity when exposed by the checker, and binding identities. Context mismatches and loose cross-definition matches fail closed.
+4. Removed independent Copy classification from emitter:
+   - Native `gen_block()` for `s.b == "push"` inspects the available checker-issued `TypeRef` on the exact argument EST occurrence via `arena->facts(arg_handle->expr)`.
+   - Enforces `is_primitive_copy_type()` checking `type->kind == TypeKind::Primitive` for designated primitives (`Int`, `Float`, `Bool`, `Char`, `Byte`).
+   - Removed `phase28_copy_primitive_type(const string&)` and `generated_expr_type()` string inference from this path.
+   - Non-primitive types (`option[T]`, records, Vector elements of nonprimitive type) are strictly rejected from implicit copies.
+5. Corrected defect regression harness (`tests/phase28/verify_defects.py`):
+   - Implemented explicit handling for `expected_rustc == "SKIP"`, classifying checker/Fast Debug-only tests as PASS without attempting native compilation.
+   - Exactly one result per case: 8 cases total: 5 PASS (1 checker/Fast Debug-only), 3 KNOWN FAILURE, 0 XPASS, 0 UNEXPECTED FAILURE.
+   - Recorded merge SHA `e225259503920107e0718f46cddca1f0b81d769f`.
+6. Validation:
+   - `tests/tooling/check_phase28_team_b_consumer.py` PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed).
+   - `tests/tooling/check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow` modes.
+   - `tests/phase28/verify_defects.py` PASS (5 PASS, 3 KNOWN FAILURES, 0 XPASS, 0 UNEXPECTED FAILURES).
+   - `tests/tooling/check_agent_feedback.py` PASS.
+   - `git diff --check` PASS.
+
+### Phase 28 Round 3 Team A — Authoritative Selector Argument Effects (W02) (in progress)
+
+Branch `phase28-r3-team-a-effect-facts`, based on requested `4dc62e9437f00363286f7adc6ada8138d20a48ca`.
+- Checker now publishes checked READ/WRITE/CONSUME for exact selector argument EST occurrences under the primary `expression_fact_context()` used by call target/specialization and take facts. Static callee parameter effects require an exact checker specialization key; object method publication requires a complete checked effect vector; built-ins use their checker-approved operation effect vector. Contradictory primary effects reject.
+- Added a fixture and focused harness for READ/WRITE/CONSUME, exact `(arena, ExprId, context)` lookup, same-call specialization isolation, and abstract trait dispatch producing no invented primary effect. Registered in default and EST-shadow make check paths.
+- Validation completed: targeted selector effect harness (default and shadow), local ownership gate (default and shadow), `verify_take_fixtures.py` (16/16), specialized ownership contract, string debt (42 names / 7 binding comparisons), and `git diff --check`.
+- Remaining before handoff: document feedback, freeze and request Agent 2 review, address findings if any, final push and status record. Abstract trait-call effects remain unsupported because no checked argument-effect vector is available there. No full integration suite run.

@@ -127,9 +127,182 @@ class FastInterpreter {
   };
 
   explicit FastInterpreter(const Program& program)
-      : program_(program) {}
+      : program_(program) {
+#ifdef MOSS_TEST_BUILD
+    init_test_hooks();
+#endif
+  }
   FastInterpreter(const Program& program, Options options)
-      : program_(program), options_(options) {}
+      : program_(program), options_(options) {
+#ifdef MOSS_TEST_BUILD
+    init_test_hooks();
+#endif
+  }
+
+#ifdef MOSS_TEST_BUILD
+  void init_test_hooks() {
+    auto* semantics = program_.typed_semantics.get();
+    if (!semantics) return;
+
+    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->availability = TypedTakeFactV1::Availability::MissingTakeOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->required_access = Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_RECORD")) {
+      if (!semantics->take_facts.empty()) {
+        semantics->take_facts.erase(semantics->take_facts.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_REQUIREMENT")) {
+      if (!semantics->required_take_occurrences.empty()) {
+        semantics->required_take_occurrences.erase(
+            semantics->required_take_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          semantics->take_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_REQUIREMENT")) {
+      if (!semantics->required_take_occurrences.empty()) {
+        if (auto* req = find_target_take_req(semantics->required_take_occurrences)) {
+          semantics->required_take_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_PLACE_ID")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->place_occurrence_id += 9999;
+        }
+      }
+    }
+    if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
+      auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
+      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
+      if (target_expr_env && target_context_env && mutation_env) {
+        size_t arena_idx = std::stoull(target_arena_env);
+        est::ExprId expr_id = std::stoull(target_expr_env);
+        string ctx = target_context_env;
+        string mut = mutation_env;
+        if (arena_idx < program_.expression_arenas.size() && program_.expression_arenas[arena_idx]) {
+          auto& arena = *program_.expression_arenas[arena_idx];
+          if (mut == "drop_fact") {
+            arena.test_drop_occurrence_fact(expr_id, ctx);
+          } else if (mut == "drop_effect") {
+            arena.test_drop_occurrence_effect(expr_id, ctx);
+          } else if (mut == "perturb_effect") {
+            arena.test_perturb_occurrence_effect(expr_id, ctx);
+          } else if (mut == "drop_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+          } else if (mut == "perturb_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+          } else if (mut == "corrupt_type") {
+            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+          } else if (mut == "corrupt_specialization") {
+            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+          }
+          if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
+            est::ExprId sibling_id = std::stoull(sibling_env);
+            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            if (!sibling_facts || !sibling_facts->inferred_effect) {
+              throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
+            }
+          }
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_type(Type::primitive("bool"));
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_target("callable-v1:module-v1:corrupted::target");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_drop_primary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_drop_secondary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_perturb_primary_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_drop_selector_op_type();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_drop_selector_target();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_perturb_selector_target("callable-v1:module-v1:corrupted::unknown");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_drop_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
+      for (const auto& arena : program_.expression_arenas) {
+        if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
+      }
+    }
+  }
+#endif
 
   const std::vector<TraceEvent>& trace() const { return trace_; }
 
@@ -631,6 +804,7 @@ class FastInterpreter {
     est::ExprId root = 0;
     std::string source;
     mutable std::unordered_map<est::ExprId, std::string> derived_text;
+    std::uint32_t arena_index = 0;
   };
 
   const ExpressionTreeView* active_expression_tree_ = nullptr;
@@ -651,6 +825,7 @@ class FastInterpreter {
           view.source.assign(source);
           view.arena = program_.expression_arenas[handle.arena_index].get();
           view.root = handle.expr;
+          view.arena_index = handle.arena_index;
           return view;
         }
       }
@@ -725,6 +900,8 @@ class FastInterpreter {
               child(value.right) + ")";
         else if constexpr (std::is_same_v<T, est::Call>)
           return child(value.callee) + "(" + join(value.arguments) + ")";
+        else if constexpr (std::is_same_v<T, est::Take>)
+          return "take(" + join(value.arguments) + ")";
         else if constexpr (std::is_same_v<T, est::Member>)
           return child(value.base) + "." + value.name;
         else if constexpr (std::is_same_v<T, est::Index>)
@@ -1614,6 +1791,72 @@ class FastInterpreter {
       return eval_pipeline(*pipeline, frame, line, output, *tree, *pipeline_node);
     }
     if (tree) {
+      if (const auto* take_node =
+              std::get_if<est::Take>(&tree->arena->at(current_root))) {
+        (void)take_node;
+        if (!program_.typed_semantics)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing typed semantics for take");
+        const TypedTakeRequirementV1* requirement = nullptr;
+        const TypedTakeFactV1* fact = nullptr;
+        try {
+          if (!frame.specialization_identity.empty()) {
+            requirement = &program_.typed_semantics->find_take_requirement(
+                tree->arena_index, current_root, frame.functional_context,
+                frame.specialization_identity);
+          } else {
+            requirement = &program_.typed_semantics->find_take_requirement(
+                tree->arena_index, current_root, frame.functional_context);
+            if (!requirement->specialization_identity.empty()) {
+              throw std::invalid_argument(
+                  "take requirement expects specialization identity '" +
+                  requirement->specialization_identity + "' but active frame has none");
+            }
+          }
+          fact = program_.typed_semantics->find_take_fact(*requirement);
+        } catch (const std::exception& exc) {
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT " + std::string(exc.what()));
+        }
+        if (!requirement || !fact || !fact->is_authoritative())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT unauthoritative take fact");
+
+        Place place = locate_tree_node(*tree, fact->place_occurrence_id,
+                                       frame, line, output);
+        if (!place.value)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT unresolvable place for checked take");
+
+        Value previous = std::move(*place.value);
+        switch (fact->replacement) {
+          case TypedTakeReplacementV1::OptionNone: {
+            Value none = Value::struct_value("option");
+            none.object->case_name = "None";
+            *place.value = std::move(none);
+            break;
+          }
+          case TypedTakeReplacementV1::VectorEmpty: {
+            *place.value = Value::vector_value({}, previous.element_type);
+            break;
+          }
+          case TypedTakeReplacementV1::MapEmpty: {
+            *place.value = Value::map_value();
+            break;
+          }
+          case TypedTakeReplacementV1::QueueEmpty: {
+            *place.value = Value::queue_value();
+            break;
+          }
+        }
+        if (place.domain) {
+          state_event("state_write", frame, line, place, summary(previous),
+                      summary(*place.value));
+        } else {
+          emit("LocalWrite", frame, line, fact->root_name);
+        }
+        return previous;
+      }
       if (const auto* message_node =
               std::get_if<est::Message>(&tree->arena->at(current_root)))
         return message(*tree, *message_node, frame, line, output);
@@ -3481,6 +3724,7 @@ class FastInterpreter {
               checked_handle->arena_index].get();
           message_tree.root = checked_handle->expr;
           message_tree.source = checked_source;
+          message_tree.arena_index = checked_handle->arena_index;
           const auto* message_node = std::get_if<est::Message>(
               &message_tree.arena->at(message_tree.root));
           if (!message_node)

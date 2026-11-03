@@ -1,0 +1,12 @@
+type Box:
+  maybe: option[Int]
+
+fn return_option(source: Box) -> option[Int]:
+  let alias = source
+  return alias.maybe
+
+fn main():
+  original = Box(maybe: Some(5))
+  result = return_option(original)
+  echo original.maybe
+  echo result

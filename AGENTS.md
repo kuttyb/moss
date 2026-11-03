@@ -189,6 +189,17 @@ When working with Moss:
   `phase27-5-1-work`. Phase 27.5.4 work on `phase27-5-4-work` is authorized
   for scoped local commits, normal pushes, and its explicitly stated C1/C2
   merges after the required gates and independent reviews pass.
+  For Phase 28 Round 1 Team A on `phase28-r1-team-a`, the user authorized
+  scoped local commits and normal pushes to the configured remote for the
+  asynchronous Team B handoff. Keep this work on that branch; no main merge is
+  authorized. For Phase 28 Round 2 Team A on `phase28-r2-team-a`, the user
+  authorized scoped local commits and normal pushes to the configured remote
+  for the Round 2 Team B handoff. Keep this work on that branch; no main merge
+  is authorized.
+  For Phase 28 Round 3 Team A on `phase28-r3-team-a`, the user authorized
+  scoped local commits and normal pushes to the configured remote for the
+  `take(place)` checker handoff. Keep this work on that branch; no merge is
+  authorized.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

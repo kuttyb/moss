@@ -92,6 +92,10 @@ struct Identifier { std::string name; };
 struct Unary { std::string op; ExprId operand; };
 struct Binary { std::string op; ExprId left, right; };
 struct Call { ExprId callee; std::vector<ExprId> arguments; };
+// Language-owned destructive extraction operator. Kept distinct from Call so
+// `take(place)` cannot resolve as a user function and `receiver.take(n)` stays
+// an ordinary member call.
+struct Take { std::vector<ExprId> arguments; };
 struct Member { ExprId base; std::string name; };
 struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
@@ -116,7 +120,7 @@ struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
                      std::uint32_t callee_source_begin = 0;
                      std::uint32_t callee_source_end = 0; };
 struct Pipeline { ExprId input; std::vector<ExprId> stages; };
-using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
+using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Take, Member,
                           Index, Parenthesized, Message, NamedArgument,
                           Placeholder, Collection, Tuple, Constructor, Pipeline,
                           MissingExpression>;
@@ -144,6 +148,23 @@ class Arena {
                              std::string_view specialization_context) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
+  void test_contradict_selector_type(TypeRef wrong_type);
+  void test_contradict_selector_target(const std::string& wrong_target);
+  void test_contradict_selector_effect();
+  void test_drop_primary_selector_fact();
+  void test_drop_secondary_selector_fact();
+  void test_perturb_primary_effect();
+  void test_drop_selector_op_type();
+  void test_drop_selector_target();
+  void test_perturb_selector_target(const std::string& wrong_target);
+  void test_drop_selector_effect();
+  void test_perturb_specialization_identity(const std::string& wrong_spec);
+  bool test_drop_occurrence_fact(ExprId id, std::string_view context);
+  bool test_mutate_occurrence_target(ExprId id, std::string_view context, const std::string& wrong_target);
+  bool test_drop_occurrence_effect(ExprId id, std::string_view context);
+  bool test_perturb_occurrence_effect(ExprId id, std::string_view context);
+  bool test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type);
+  bool test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.

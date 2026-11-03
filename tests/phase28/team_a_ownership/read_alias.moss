@@ -1,0 +1,8 @@
+type Box:
+  value: Int
+
+fn main():
+  origin = Box(value = 7)
+  alias = origin
+  echo alias.value
+  echo origin.value

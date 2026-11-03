@@ -1,0 +1,20 @@
+# Queue field move-and-empty, repeated take.
+type Worklist:
+  tasks: Queue[Int]
+
+fn take_worklist(w: Worklist) -> Queue[Int]:
+  return take(w.tasks)
+
+fn main():
+  var q = Queue()
+  q.push(10)
+  q.push(2)
+  var w = Worklist(tasks: q)
+  let first = take_worklist(w)
+  let second = take_worklist(w)
+  var sum = 0
+  sum = sum + first.pop()
+  sum = sum + first.pop()
+  w.tasks.push(100)
+  sum = sum + w.tasks.pop()
+  echo sum

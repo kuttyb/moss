@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn consume_after_join(source: Box, choose: Bool):
+  if choose:
+    var alias = source
+  else:
+    var alias = source
+  sink = alias
+  echo source.value
+
+fn main():
+  box = Box(value: 7)
+  consume_after_join(box, true)

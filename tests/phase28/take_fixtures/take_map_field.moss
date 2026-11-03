@@ -1,0 +1,28 @@
+# Map field move-and-empty ({}), repeated take.
+type Cache:
+  entries: Map[String, Int]
+
+fn take_cache(c: Cache) -> Map[String, Int]:
+  return take(c.entries)
+
+fn main():
+  var m = Map()
+  m["alpha"] = 100
+  m["beta"] = 200
+  var c = Cache(entries: m)
+  let first = take_cache(c)
+  let second = take_cache(c)
+  var sum = 0
+  let first_keys = first.keys()
+  let first_count = first_keys |> count
+  if first_count == 2:
+    sum = sum + 20
+  let second_keys = second.keys()
+  let second_count = second_keys |> count
+  if second_count == 0:
+    sum = sum + 5
+  let c_keys = c.entries.keys()
+  let c_count = c_keys |> count
+  if c_count == 0:
+    sum = sum + 1
+  echo sum

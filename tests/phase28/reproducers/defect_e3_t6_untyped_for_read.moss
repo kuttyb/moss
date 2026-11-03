@@ -1,0 +1,15 @@
+fn count_items(items) -> Int:
+  var count = 0
+  for item in items:
+    count = count + 1
+  return count
+
+type Scene:
+  items: Vector[Int]
+
+  fn total() -> Int:
+    return count_items(items)
+
+fn main():
+  s = Scene(items: [10, 20, 30])
+  echo s.total()

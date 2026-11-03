@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn update_after_join(source: Box, choose: Bool):
+  if choose:
+    var alias = source
+  else:
+    var alias = source
+  alias.value = 9
+
+fn main():
+  box = Box(value: 7)
+  update_after_join(box, true)
+  echo box.value

@@ -1,0 +1,25 @@
+# Successful take before typed raise remains a mutation (no invented rollback).
+enum OpError:
+  Failed(code: Int)
+
+type Storage:
+  buffer: Vector[Int]
+
+fn fallible_take(s: Storage) -> Int:
+  let extracted = take(s.buffer)
+  raise OpError.Failed(code: 404)
+  return 0
+
+fn main():
+  var s = Storage(buffer: [10, 20, 30])
+  var caught = 0
+  try:
+    fallible_take(s)
+  recover OpError.Failed(code):
+    caught = code
+
+  var score = caught
+  let remaining = s.buffer |> count
+  if remaining == 0:
+    score = score + 1000
+  echo score

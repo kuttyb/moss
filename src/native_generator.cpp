@@ -38,6 +38,7 @@
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
 #include "abi_v10_records.hpp"
+#include "typed_semantic_api.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
 #include "float_format_runtime.hpp"
@@ -77,6 +78,8 @@ void visit_est_expression(const est::ExpressionView& view, est::ExprId id,
       visit(node.left); visit(node.right);
     } else if constexpr (std::is_same_v<T, est::Call>) {
       visit(node.callee); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, est::Take>) {
+      visit_all(node.arguments);
     } else if constexpr (std::is_same_v<T, est::Member>) visit(node.base);
     else if constexpr (std::is_same_v<T, est::Index>) {
       visit(node.base); visit(node.index);
@@ -230,6 +233,250 @@ class Generator {
           callable_id_to_function_.emplace(f.semantic_callable_id, &f);
       }
     }
+#ifdef MOSS_TEST_BUILD
+    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_req = [&](std::vector<TypedLocalOwnershipRequirementV1>& reqs) -> TypedLocalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->availability = TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->access = (fact->access == Effect::Read) ? Effect::Write : Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = p_.typed_semantics->local_ownership_facts.begin();
+               it != p_.typed_semantics->local_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              p_.typed_semantics->local_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          p_.typed_semantics->local_ownership_facts.erase(
+              p_.typed_semantics->local_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->specialization_identity = "perturbed-specialization-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SOURCE_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->source_binding_identity = "perturbed-source-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          p_.typed_semantics->local_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_local_ownership_occurrences.empty()) {
+        if (auto* req = find_target_req(p_.typed_semantics->required_local_ownership_occurrences)) {
+          p_.typed_semantics->required_local_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+
+    auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->availability = TypedTakeFactV1::Availability::MissingTakeOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->required_access = Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        p_.typed_semantics->take_facts.erase(p_.typed_semantics->take_facts.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_take_occurrences.empty()) {
+        p_.typed_semantics->required_take_occurrences.erase(
+            p_.typed_semantics->required_take_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          p_.typed_semantics->take_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_take_occurrences.empty()) {
+        if (auto* req = find_target_take_req(p_.typed_semantics->required_take_occurrences)) {
+          p_.typed_semantics->required_take_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_SPECIALIZATION_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->specialization_identity = "perturbed-specialization-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_PLACE_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->place_occurrence_id += 9999;
+        }
+      }
+    }
+    if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
+      auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
+      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
+      if (target_expr_env && target_context_env && mutation_env) {
+        size_t arena_idx = std::stoull(target_arena_env);
+        est::ExprId expr_id = std::stoull(target_expr_env);
+        string ctx = target_context_env;
+        string mut = mutation_env;
+        if (arena_idx < p_.expression_arenas.size() && p_.expression_arenas[arena_idx]) {
+          auto& arena = *p_.expression_arenas[arena_idx];
+          if (mut == "drop_fact") {
+            arena.test_drop_occurrence_fact(expr_id, ctx);
+          } else if (mut == "drop_effect") {
+            arena.test_drop_occurrence_effect(expr_id, ctx);
+          } else if (mut == "perturb_effect") {
+            arena.test_perturb_occurrence_effect(expr_id, ctx);
+          } else if (mut == "drop_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+          } else if (mut == "perturb_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+          } else if (mut == "corrupt_type") {
+            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+          } else if (mut == "corrupt_specialization") {
+            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+          }
+          if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
+            est::ExprId sibling_id = std::stoull(sibling_env);
+            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            if (!sibling_facts || !sibling_facts->inferred_effect) {
+              throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
+            }
+          }
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_type(Type::primitive("bool"));
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_target("callable-v1:module-v1:corrupted::target");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_primary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_secondary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_primary_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_op_type();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_target();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_selector_target("callable-v1:module-v1:corrupted::unknown");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
+      }
+    }
+#endif
   }
 
   string generate() {
@@ -1096,6 +1343,17 @@ class Generator {
 
   bool copy_type(const string& type) const {
     return copy_type_name(canonical_type_name(type));
+  }
+
+  bool is_primitive_copy_type(const moss::TypeRef& type) const {
+    if (!type || type->kind != moss::TypeKind::Primitive) return false;
+    const auto& name = type->name;
+    return name == "Int" || name == "int" ||
+           name == "Float" || name == "float" ||
+           name == "Bool" || name == "bool" ||
+           name == "Char" || name == "char" ||
+           name == "Byte" || name == "byte" ||
+           name == "i64" || name == "f64" || name == "u8";
   }
 
   std::optional<est::ExpressionView> expression_view_from_est(
@@ -2088,6 +2346,7 @@ class Generator {
           else if constexpr (std::is_same_v<T, est::Unary>) return "unary";
           else if constexpr (std::is_same_v<T, est::Binary>) return "binary";
           else if constexpr (std::is_same_v<T, est::Call>) return "call";
+          else if constexpr (std::is_same_v<T, est::Take>) return "take";
           else if constexpr (std::is_same_v<T, est::Member>) return "member";
           else if constexpr (std::is_same_v<T, est::Index>) return "index";
           else if constexpr (std::is_same_v<T, est::Parenthesized>) return "parenthesized";
@@ -4551,6 +4810,10 @@ class Generator {
                 argument, generated_expr_type(argument, types).value_or("")));
           sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
         }
+        if (!known_function && !sibling_method && head == "take") {
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT unhandled take expression in native lowering");
+        }
         vector<string> sibling_temporaries(call_args.size());
         if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
           for (size_t i = 0; i < call_args.size(); ++i) {
@@ -5632,6 +5895,477 @@ class Generator {
     return plans->second[slot];
   }
 
+  const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return nullptr;
+
+    const est::ExprSlot slot =
+        (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+            ? est::ExprSlot::Initializer
+            : est::ExprSlot::RhsValue;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == slot && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+
+    // Resolve requirement and validated fact through Team A's typed API:
+    const TypedLocalOwnershipRequirementV1* requirement = nullptr;
+    const TypedLocalOwnershipFactV1* found_fact = nullptr;
+    try {
+      requirement = p_.typed_semantics->find_local_ownership_requirement(
+          matched_handle->arena_index, matched_handle->expr, context);
+      if (!requirement) {
+        return nullptr;
+      }
+      found_fact = &p_.typed_semantics->find_local_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+
+    if (!found_fact) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required local ownership fact record missing");
+    }
+
+    // Intentionally unsupported facts decline bounded inference;
+    // preserve explicitly authorized legacy path within documented bounds.
+    if (found_fact->is_intentionally_unsupported()) {
+      return nullptr;
+    }
+
+    // Validate authoritative gate:
+    if (!found_fact->is_authoritative()) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
+          std::to_string(static_cast<int>(found_fact->availability)));
+    }
+
+    // Verify EST arena and facts:
+    const est::Arena* arena = nullptr;
+    if (found_fact->est_arena_index < p_.expression_arenas.size() &&
+        p_.expression_arenas[found_fact->est_arena_index]) {
+      arena = p_.expression_arenas[found_fact->est_arena_index].get();
+    } else if (found_fact->est_arena_index == 0 && p_.expression_arena) {
+      arena = p_.expression_arena.get();
+    }
+    if (!arena) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing EST arena");
+    }
+
+    const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
+                                          found_fact->specialization_context);
+    if (!tree_facts || !tree_facts->inferred_effect ||
+        *tree_facts->inferred_effect != found_fact->access) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena");
+    }
+
+    return found_fact;
+  }
+
+  const TypedTakeFactV1* resolve_take_fact(
+      const Stmt& s, const string& functional_context,
+      std::uint32_t* out_arena_index = nullptr,
+      est::ExprId* out_expr_id = nullptr) const {
+    if (!p_.typed_semantics) return nullptr;
+
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    switch (s.kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
+      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
+      case Stmt::Kind::Return: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
+      default: return nullptr;
+    }
+
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == slot && handle.argument_index == 0) {
+        if (handle.arena_index < p_.expression_arenas.size() &&
+            p_.expression_arenas[handle.arena_index]) {
+          const auto& arena = *p_.expression_arenas[handle.arena_index];
+          if (std::holds_alternative<est::Take>(arena.at(handle.expr))) {
+            matched_handle = &handle;
+            break;
+          }
+        }
+      }
+    }
+    if (!matched_handle) return nullptr;
+
+    if (out_arena_index) *out_arena_index = matched_handle->arena_index;
+    if (out_expr_id) *out_expr_id = matched_handle->expr;
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const TypedTakeRequirementV1* requirement = nullptr;
+    const TypedTakeFactV1* found_fact = nullptr;
+    try {
+      if (!codegen_active_specialization_key_.empty()) {
+        requirement = &p_.typed_semantics->find_take_requirement(
+            matched_handle->arena_index, matched_handle->expr, context,
+            codegen_active_specialization_key_);
+      } else {
+        requirement = &p_.typed_semantics->find_take_requirement(
+            matched_handle->arena_index, matched_handle->expr, context);
+        if (!requirement->specialization_identity.empty()) {
+          throw std::invalid_argument(
+              "take requirement expects specialization identity '" +
+              requirement->specialization_identity + "' but active context has none");
+        }
+      }
+      found_fact = p_.typed_semantics->find_take_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+
+    if (!requirement || !found_fact) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required take fact record missing");
+    }
+
+    if (!found_fact->is_authoritative()) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT take fact unauthoritative availability=" +
+          std::to_string(static_cast<int>(found_fact->availability)));
+    }
+
+    return found_fact;
+  }
+
+  struct SelectorNodeFacts {
+    TypeRef type;
+    std::string resolved_target;
+    std::string specialization_result;
+    std::optional<Effect> inferred_effect;
+  };
+
+  std::optional<SelectorNodeFacts> lookup_selector_facts(
+      const est::Arena& arena, est::ExprId id,
+      const string& fact_context) const {
+    if (fact_context.empty()) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector fact lookup missing primary checker context");
+    }
+    const auto* facts = arena.facts(id, fact_context);
+    if (!facts) return std::nullopt;
+
+    SelectorNodeFacts result;
+    if (facts->type) result.type = facts->type;
+    if (!facts->resolved_target.empty()) result.resolved_target = facts->resolved_target;
+    if (!facts->specialization_result.empty()) result.specialization_result = facts->specialization_result;
+    if (facts->inferred_effect) result.inferred_effect = facts->inferred_effect;
+    return result;
+  }
+
+  string lower_est_selector(
+      const est::Arena& arena,
+      est::ExprId node_id,
+      const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const string& fact_context) const {
+    const auto facts = lookup_selector_facts(arena, node_id, fact_context);
+    const auto& node = arena.at(node_id);
+    return std::visit([&](const auto& value) -> string {
+      using T = std::decay_t<decltype(value)>;
+      if constexpr (std::is_same_v<T, est::Identifier>) {
+        if (value.name == "true" || value.name == "false") return value.name;
+        if (view_parameters_.count(value.name)) {
+          return value.name + ".__moss_value()";
+        }
+        if (borrowed_function_parameters_.count(value.name)) {
+          return "(*" + value.name + ")";
+        }
+        bool is_state_field = d && std::any_of(d->state.begin(), d->state.end(),
+            [&](const Field& f) { return f.name == value.name; });
+        if (d && (value.name == "self" || (!locals.count(value.name) && is_state_field))) {
+          return "self." + rust_identifier(value.name);
+        }
+        return rust_identifier(value.name);
+      } else if constexpr (std::is_same_v<T, est::Literal>) {
+        if (!facts || !facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector literal missing checker-issued type facts");
+        }
+        if (facts->type->kind == TypeKind::Primitive && facts->type->name == "string") {
+          return "String::from(" + value.spelling + ")";
+        }
+        if (facts->type->kind == TypeKind::Primitive && facts->type->name == "int") {
+          if (value.spelling.find('_') != string::npos) return value.spelling;
+          return value.spelling + "_i64";
+        }
+        return value.spelling;
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+        return "(" + lower_est_selector(arena, value.inner, d, locals, types, fact_context) + ")";
+      } else if constexpr (std::is_same_v<T, est::Unary>) {
+        const auto operand_facts = lookup_selector_facts(arena, value.operand, fact_context);
+        if (!facts || !facts->type || !operand_facts || !operand_facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector unary operator missing checker-issued type facts");
+        }
+        string operand = lower_est_selector(arena, value.operand, d, locals, types, fact_context);
+        if (value.op == "-") {
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "int") {
+            return "(" + operand + ").wrapping_neg()";
+          }
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "float") {
+            return "-(" + operand + ")";
+          }
+        } else if (value.op == "!" || value.op == "not") {
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "bool") {
+            return "!(" + operand + ")";
+          }
+        }
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector unary operator '" + value.op +
+                                 "' for type " + operand_facts->type->to_canonical_string());
+      } else if constexpr (std::is_same_v<T, est::Binary>) {
+        const auto left_facts = lookup_selector_facts(arena, value.left, fact_context);
+        const auto right_facts = lookup_selector_facts(arena, value.right, fact_context);
+        if (!facts || !facts->type || !left_facts || !left_facts->type || !right_facts || !right_facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector binary operator missing checker-issued type facts");
+        }
+        string left = lower_est_selector(arena, value.left, d, locals, types, fact_context);
+        string right = lower_est_selector(arena, value.right, d, locals, types, fact_context);
+
+        // Respect checker-issued operator and operand types:
+        if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "int") {
+          if (value.op == "+") return "(" + left + ").wrapping_add(" + right + ")";
+          if (value.op == "-") return "(" + left + ").wrapping_sub(" + right + ")";
+          if (value.op == "*") return "(" + left + ").wrapping_mul(" + right + ")";
+          if (value.op == "/") return "(" + left + ") / (" + right + ")";
+          if (value.op == "%") return "(" + left + ") % (" + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+          if (value.op == "<") return "(" + left + ") < (" + right + ")";
+          if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
+          if (value.op == ">") return "(" + left + ") > (" + right + ")";
+          if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "float") {
+          if (value.op == "+") return "(" + left + " + " + right + ")";
+          if (value.op == "-") return "(" + left + " - " + right + ")";
+          if (value.op == "*") return "(" + left + " * " + right + ")";
+          if (value.op == "/") return "(" + left + " / " + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+          if (value.op == "<") return "(" + left + ") < (" + right + ")";
+          if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
+          if (value.op == ">") return "(" + left + ") > (" + right + ")";
+          if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "string") {
+          if (value.op == "+") return "format!(\"{}{}\", " + left + ", " + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "bool") {
+          if (value.op == "and") return "(" + left + ") && (" + right + ")";
+          if (value.op == "or") return "(" + left + ") || (" + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+        }
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector binary operator '" + value.op +
+                                 "' for type " + left_facts->type->to_canonical_string());
+      } else if constexpr (std::is_same_v<T, est::Member>) {
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
+        return base + "." + rust_identifier(value.name);
+      } else if constexpr (std::is_same_v<T, est::Index>) {
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
+        string idx = lower_est_selector(arena, value.index, d, locals, types, fact_context);
+        const auto base_facts = lookup_selector_facts(arena, value.base, fact_context);
+        if (base_facts && base_facts->type && base_facts->type->kind == TypeKind::Builtin && base_facts->type->name == "map") {
+          return "(" + base + ").get(&(" + idx + ")).expect(\"Moss missing map key\")";
+        }
+        return "(" + base + ")[(" + idx + ") as usize]";
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        // Enforce exact checker semantic authority:
+        if (!facts || facts->resolved_target.empty()) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call missing checker-issued target identity");
+        }
+        const Function* fn = find_function_by_callable_id(facts->resolved_target);
+        if (!fn) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT checker target callable not found: " + facts->resolved_target);
+        }
+
+        // Validate and resolve specialization identity to existing generated function name:
+        string fn_name;
+        const std::vector<Effect>* callee_parameter_effects = nullptr;
+        if (!facts->specialization_result.empty()) {
+          if (!p_.typed_semantics) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT typed semantics unavailable for selector specialization");
+          }
+          auto spec_it = p_.typed_semantics->specializations.find(facts->specialization_result);
+          if (spec_it == p_.typed_semantics->specializations.end()) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization identity not found in typed semantics: " +
+                                     facts->specialization_result);
+          }
+          if (spec_it->second.callable_id != facts->resolved_target) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization callable mismatch: expected " +
+                                     facts->resolved_target + " but specialization belongs to " + spec_it->second.callable_id);
+          }
+          auto exact_fn_spec = std::find_if(
+              fn->specializations.begin(), fn->specializations.end(),
+              [&](const FunctionSpecialization& cand) {
+                return cand.stable_type_key == facts->specialization_result;
+              });
+          if (exact_fn_spec == fn->specializations.end() || exact_fn_spec->generated_name.empty()) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization missing generated function name: " +
+                                     facts->specialization_result);
+          }
+          callee_parameter_effects = &spec_it->second.parameter_access;
+          bool is_view_fn = false;
+          for (const auto& p : fn->params) {
+            if (view_object_type(p.type)) { is_view_fn = true; break; }
+          }
+          fn_name = is_view_fn ? "__moss_view_" + exact_fn_spec->generated_name : exact_fn_spec->generated_name;
+        } else {
+          if (fn->generic || fn->static_dispatch) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call to generic function requires specialization identity: " +
+                                     facts->resolved_target);
+          }
+          callee_parameter_effects = &fn->parameter_effects;
+          bool is_view_fn = false;
+          for (const auto& p : fn->params) {
+            if (view_object_type(p.type)) { is_view_fn = true; break; }
+          }
+          fn_name = is_view_fn ? "__moss_view_" + fn->name : rust_identifier(fn->name);
+        }
+
+        string call_str = fn_name + "(";
+        for (size_t i = 0; i < value.arguments.size(); ++i) {
+          if (i) call_str += ", ";
+          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], fact_context);
+          if (!arg_facts || !arg_facts->inferred_effect) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument missing checker-issued effect");
+          }
+          Effect eff = *arg_facts->inferred_effect;
+          if (!callee_parameter_effects || i >= callee_parameter_effects->size() ||
+              eff != (*callee_parameter_effects)[i]) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument effect mismatch with callee parameter effect");
+          }
+          const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
+          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, fact_context);
+
+          if (eff == Effect::Write) {
+            if (arg_id && view_parameters_.count(arg_id->name)) {
+              call_str += "&mut (*" + arg_id->name + ")";
+            } else if (arg_id && borrowed_function_parameters_.count(arg_id->name)) {
+              call_str += rust_identifier(arg_id->name);
+            } else {
+              call_str += "&mut (" + arg_rendered + ")";
+            }
+          } else if (eff == Effect::Read) {
+            if (arg_id && view_parameters_.count(arg_id->name)) {
+              call_str += "&(*" + arg_id->name + ")";
+            } else if (arg_id && borrowed_function_parameters_.count(arg_id->name)) {
+              call_str += rust_identifier(arg_id->name);
+            } else if (arg_facts->type && (arg_facts->type->kind == TypeKind::NominalInstance ||
+                                           !is_primitive_copy_type(arg_facts->type))) {
+              call_str += "&(" + arg_rendered + ")";
+            } else {
+              call_str += arg_rendered;
+            }
+          } else if (eff == Effect::Consume) {
+            call_str += arg_rendered;
+          }
+        }
+        call_str += ")";
+        return call_str;
+      } else {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unhandled EST node in selector");
+      }
+    }, node);
+  }
+
+  string emit_take_expression(
+      const TypedTakeFactV1& fact,
+      const Stmt& s,
+      const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (fact.est_arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[fact.est_arena_index]) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing take EST arena");
+    }
+    const auto& arena = *p_.expression_arenas[fact.est_arena_index];
+    (void)s;
+    const string fact_context = fact.est_fact_context;
+
+    string current_place;
+    bool is_view_root = false;
+    if (view_parameters_.count(fact.root_name)) {
+      current_place = fact.root_name;
+      is_view_root = true;
+    } else if (view_method_ && d && (fact.root_name == "self" || !locals.count(fact.root_name))) {
+      if (fact.root_name == "self") {
+        current_place = "self";
+      } else {
+        current_place = "self.__moss_field_" + fact.root_name + "_mut()";
+      }
+      is_view_root = true;
+    } else if (view_domain_ && d && !locals.count(fact.root_name)) {
+      current_place = "state." + fact.root_name;
+      is_view_root = view_domain_access_;
+    } else if (borrowed_function_parameters_.count(fact.root_name)) {
+      current_place = "(*" + fact.root_name + ")";
+    } else {
+      current_place = fact.root_name;
+    }
+
+    bool ends_with_mut_accessor = current_place.rfind("_mut()") != string::npos;
+    bool current_is_view = is_view_root;
+
+    for (const auto& proj : fact.projection_path) {
+      switch (proj.kind) {
+        case TypedTakeProjectionKindV1::RecordField: {
+          const auto* member = std::get_if<est::Member>(&arena.at(proj.expression_occurrence_id));
+          if (!member) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT take projection member missing");
+          }
+          if (current_is_view) {
+            current_place += ".__moss_field_" + member->name + "_mut()";
+            ends_with_mut_accessor = true;
+            current_is_view = proj.output_type && view_object_type(canonical_type_name(proj.output_type));
+          } else {
+            current_place += "." + rust_identifier(member->name);
+            ends_with_mut_accessor = false;
+            current_is_view = false;
+          }
+          break;
+        }
+        case TypedTakeProjectionKindV1::VectorIndex:
+        case TypedTakeProjectionKindV1::QueueIndex: {
+          string rendered_selector = lower_est_selector(
+              arena, proj.selector_occurrence_id, d, locals, types,
+              fact_context);
+          current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
+          ends_with_mut_accessor = false;
+          current_is_view = false;
+          break;
+        }
+        case TypedTakeProjectionKindV1::MapIndex: {
+          string rendered_selector = lower_est_selector(
+              arena, proj.selector_occurrence_id, d, locals, types,
+              fact_context);
+          current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
+          ends_with_mut_accessor = false;
+          current_is_view = false;
+          break;
+        }
+      }
+    }
+
+    if (ends_with_mut_accessor) {
+      return "std::mem::take(" + current_place + ")";
+    } else {
+      return "std::mem::take(&mut " + current_place + ")";
+    }
+  }
+
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
                  const Handler* current_handler, const string& reply_slot,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
@@ -6057,9 +6791,12 @@ class Generator {
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
-            const string value = expr(s.a, d, locals, &types,
-                statement_functional_pipeline_id(
-                    s, functional_context, 0));
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const string value = take_fact
+                ? emit_take_expression(*take_fact, s, d, locals, &types)
+                : expr(s.a, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, 0));
             if (enums_.count(concrete)) {
               const string raised_value = "__moss_error_value_" +
                   std::to_string(phase21_try_temp_++);
@@ -6615,15 +7352,34 @@ class Generator {
             else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
-            o << indent(level) << "let mut " << s.a;
-            if (!annotation.empty()) o << ": " << annotation;
-            o << " = "
-              << expr(s.b, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0))
-              << ";\n";
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+            if (take_fact) {
+              string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
+              o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+            } else if (ownership_fact) {
+              string rhs_val = expr(s.b, d, locals, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, 0));
+              if (ownership_fact->access == Effect::Read) {
+                o << indent(level) << "let " << s.a << " = &(" << rhs_val << ");\n";
+              } else if (ownership_fact->access == Effect::Write) {
+                o << indent(level) << "let mut " << s.a << " = &mut (" << rhs_val << ");\n";
+              } else {
+                o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+              }
+            } else {
+              o << indent(level) << "let mut " << s.a;
+              if (!annotation.empty()) o << ": " << annotation;
+              o << " = "
+                << expr(s.b, d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, 0))
+                << ";\n";
+            }
             locals.insert(s.a);
-            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+            types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
+                : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             const auto source_name = tree_identifier_name(s.b);
             auto source_binding = source_name
@@ -6674,8 +7430,11 @@ class Generator {
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types))
-              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+            else if (is_object_view(s.a, d, locals, &types)) {
+              string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
+              o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
+                << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
+            }
             else {
               string assigned;
               vector<string> concat_operands;
@@ -6744,6 +7503,17 @@ class Generator {
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
+              const auto* take_fact = resolve_take_fact(s, functional_context);
+              const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+              if (take_fact) {
+                assigned = emit_take_expression(*take_fact, s, d, locals, &types);
+              } else if (ownership_fact) {
+                if (ownership_fact->access == Effect::Read) {
+                  assigned = "&(" + assigned + ")";
+                } else if (ownership_fact->access == Effect::Write) {
+                  assigned = "&mut (" + assigned + ")";
+                }
+              }
               if (reuse_string_buffer)
                 o << indent(level) << assigned << ";\n";
               else
@@ -6762,7 +7532,8 @@ class Generator {
             types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
               ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
-          if (!s.b.empty() &&
+          const string& method_name = s.b;
+          if (!method_name.empty() &&
               (statement_receiver_type == "string" ||
                statement_receiver_type == "vector" ||
                starts_with(statement_receiver_type, "vector[") ||
@@ -6773,6 +7544,37 @@ class Generator {
                  starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
+            if (method_name == "push" && s.args.size() == 1) {
+              const est::Handle* arg_handle = nullptr;
+              for (const auto& handle : s.expression_handles) {
+                if (handle.slot == est::ExprSlot::Argument && handle.argument_index == 0) {
+                  arg_handle = &handle;
+                  break;
+                }
+              }
+              const est::Arena* arena = nullptr;
+              if (arg_handle && arg_handle->arena_index < p_.expression_arenas.size() &&
+                  p_.expression_arenas[arg_handle->arena_index]) {
+                arena = p_.expression_arenas[arg_handle->arena_index].get();
+              } else if (arg_handle && arg_handle->arena_index == 0 && p_.expression_arena) {
+                arena = p_.expression_arena.get();
+              }
+              const est::SemanticFacts* arg_facts = nullptr;
+              if (arg_handle && arena) {
+                arg_facts = arena->facts(arg_handle->expr, functional_context);
+              }
+              if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
+                string arg_val = expr(s.args[0], d, locals, &types);
+                string temp_var = "__moss_push_arg_" + std::to_string(call_argument_temp_++);
+                auto recv_type = generated_expr_type(s.a, &types);
+                string push_method = (recv_type && starts_with(canonical_type_name(*recv_type), "queue"))
+                    ? "push_back" : "push";
+                o << indent(level) << "{ let " << temp_var << " = " << arg_val << "; ("
+                  << write_call_place(s.a, d, locals, &types) << ")." << push_method << "(" << temp_var << "); }\n";
+                ++i;
+                break;
+              }
+            }
             string call = s.a + "." + s.b + "(";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
               if (argument) call += ", ";
@@ -7075,25 +7877,44 @@ class Generator {
                 }
               }
             }
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
             o << indent(level);
-            if (!joined_assignment)
-              o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
+            if (!joined_assignment) {
+              bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
+              if (ownership_fact) {
+                mutable_decl = (ownership_fact->access == Effect::Write);
+              }
+              o << "let " << (mutable_decl ? "mut " : "");
+            }
             o << s.a;
-            if (!joined_assignment && !domain_capability &&
-                (canonical_type_name(statement_type) == "float" ||
-                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
-              o << ": f64";
-            else if (!joined_assignment && !domain_capability &&
-                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
-              o << ": " << rust_type(!inferred_map_type.empty()
-                  ? inferred_map_type : statement_type);
-            o << " = "
-              << expr(s.b, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0));
-            if (domain_capability) o << ".clone()";
-            o << ";\n";
-            types[s.a] = domain_capability ? source->second
+            if (take_fact) {
+              o << " = " << emit_take_expression(*take_fact, s, d, locals, &types) << ";\n";
+            } else {
+              if (!joined_assignment && !domain_capability && !ownership_fact &&
+                  (canonical_type_name(statement_type) == "float" ||
+                   canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+                o << ": f64";
+              else if (!joined_assignment && !domain_capability && !ownership_fact &&
+                       (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
+                o << ": " << rust_type(!inferred_map_type.empty()
+                    ? inferred_map_type : statement_type);
+              string rhs_val = expr(s.b, d, locals, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, 0));
+              if (ownership_fact) {
+                if (ownership_fact->access == Effect::Read) {
+                  rhs_val = "&(" + rhs_val + ")";
+                } else if (ownership_fact->access == Effect::Write) {
+                  rhs_val = "&mut (" + rhs_val + ")";
+                }
+              }
+              o << " = " << rhs_val;
+              if (domain_capability) o << ".clone()";
+              o << ";\n";
+            }
+            types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
+                : domain_capability ? source->second
                 : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             if (domain_capability) {
@@ -7153,12 +7974,18 @@ class Generator {
           ++i;
           break;
         }
-        case Stmt::Kind::Reply:
+        case Stmt::Kind::Reply: {
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
-          o << indent(level) << reply_slot << " = Some("
-            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
-                statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          const auto* take_fact = resolve_take_fact(s, functional_context);
+          if (take_fact) {
+            o << indent(level) << reply_slot << " = Some("
+              << emit_take_expression(*take_fact, s, d, locals, &types) << ");\n";
+          } else {
+            o << indent(level) << reply_slot << " = Some("
+              << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          }
           o << indent(level) << "break 'handler;\n";
           ++i;
           // `reply` terminates the handler.  Do not emit statements that are
@@ -7168,17 +7995,24 @@ class Generator {
           // semantics.
           while (i < ss.size() && ss[i].indent >= level) ++i;
           break;
+        }
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            string rendered = expr(s.a, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0));
-            const auto returned_binding = tree_identifier_name(s.a);
-            if (returned_binding && view_parameters_.count(*returned_binding)) {
-              rendered = *returned_binding + ".__moss_value()";
-            } else if (returned_binding && types.count(*returned_binding) &&
-                       view_object_type(types.at(*returned_binding))) {
-              rendered = "(" + rendered + ").clone()";
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            string rendered;
+            if (take_fact) {
+              rendered = emit_take_expression(*take_fact, s, d, locals, &types);
+            } else {
+              rendered = expr(s.a, d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, 0));
+              const auto returned_binding = tree_identifier_name(s.a);
+              if (returned_binding && view_parameters_.count(*returned_binding)) {
+                rendered = *returned_binding + ".__moss_value()";
+              } else if (returned_binding && types.count(*returned_binding) &&
+                         view_object_type(types.at(*returned_binding))) {
+                rendered = "(" + rendered + ").clone()";
+              }
             }
             o << indent(level) << "return ";
             const bool returns_result = phase21_return_result_context_.value_or(

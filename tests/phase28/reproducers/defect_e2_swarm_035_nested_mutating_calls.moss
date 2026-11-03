@@ -1,0 +1,18 @@
+type Box2:
+  values: Vector[Int]
+
+  fn take() -> Int:
+    return values.pop()
+
+  fn put(x: Int):
+    values.push(x)
+    return
+
+  fn cycle():
+    put(take())
+
+fn main():
+  var b = Box2(values = [1, 2])
+  b.cycle()
+  b.put(b.take())
+  echo b.values[0]

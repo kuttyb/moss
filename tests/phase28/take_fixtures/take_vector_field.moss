@@ -1,0 +1,25 @@
+# Vector field move-and-empty ([]), repeated take, nonprimitive elements.
+type Element:
+  tag: Int
+
+type Container:
+  items: Vector[Element]
+
+fn take_items(c: Container) -> Vector[Element]:
+  return take(c.items)
+
+fn main():
+  var c = Container(items: [Element(tag: 10), Element(tag: 20), Element(tag: 30)])
+  let first = take_items(c)
+  let second = take_items(c)
+  var sum = 0
+  let first_count = first |> count
+  if first_count == 3:
+    sum = sum + 30
+  let second_count = second |> count
+  if second_count == 0:
+    sum = sum + 20
+  let c_count = c.items |> count
+  if c_count == 0:
+    sum = sum + 10
+  echo sum

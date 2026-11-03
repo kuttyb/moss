@@ -1,0 +1,27 @@
+# Option field move-and-empty (None), repeated take, nonprimitive payload without clone.
+type Payload:
+  data: Vector[Int]
+
+type Box:
+  item: option[Payload]
+
+fn take_box(b: Box) -> option[Payload]:
+  return take(b.item)
+
+domain BoxKeeper:
+  store = Box(item: Some(Payload(data: [1, 2, 3])))
+
+  fn TakePayload() -> option[Payload]:
+    reply take(store.item)
+
+  fn TakeAgain() -> option[Payload]:
+    reply take(store.item)
+
+fn main():
+  keeper = BoxKeeper()
+  var b = Box(item: Some(Payload(data: [10, 20])))
+  let first = take_box(b)
+  let second = take_box(b)
+  p1 = message keeper.TakePayload()
+  p2 = message keeper.TakeAgain()
+  echo 14

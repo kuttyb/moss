@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn move_element(items):
+  for item in items:
+    sink = item
+
+fn main():
+  move_element([Box(value: 1)])

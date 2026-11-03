@@ -1,0 +1,9 @@
+type Cell:
+  maybe: option[Int]
+
+domain Owner:
+  fn Invalid(payload: Cell):
+    result = take(payload.maybe)
+
+fn main():
+  echo 1

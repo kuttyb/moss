@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn transfer_after_join(source: Box, choose: Bool) -> Box:
+  if choose:
+    var alias = source
+  else:
+    var alias = source
+  return alias
+
+fn main():
+  box = Box(value: 7)
+  sink = transfer_after_join(box, true)
+  echo sink.value

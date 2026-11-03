@@ -155,6 +155,13 @@ check-parallel: moss-dev moss-opt
 	python3 tests/tooling/check_phase27_est_coverage.py $(MOSS_DEV) $(MOSS_OPT)
 	env -u MOSS_EST python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
 	MOSS_EST=shadow python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
+	env -u MOSS_EST python3 tests/tooling/check_phase28_local_ownership.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_local_ownership.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
+	python3 tests/phase28/verify_take_fixtures.py
+	python3 tests/tooling/check_phase28_take_consumer.py $(MOSS_DEV)
+	python3 tests/tooling/check_phase28_team_b_consumer.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 

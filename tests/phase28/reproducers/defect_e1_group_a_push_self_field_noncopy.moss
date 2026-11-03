@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+type Links:
+  head: Vector[Box]
+  nxt: Vector[Box]
+
+  fn link(u: Int) -> Int:
+    nxt.push(head[u])
+    return 0
+
+fn main():
+  l = Links(head: [Box(value: 5)], nxt: [])
+  echo l.link(0)

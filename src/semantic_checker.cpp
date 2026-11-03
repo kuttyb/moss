@@ -1908,6 +1908,104 @@ class Checker {
       // This pass neither infers types nor parses diagnostic/display strings.
       p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
           moss::project_typed_semantics_v1(p_));
+      p_.typed_semantics->local_ownership_facts = local_ownership_facts_;
+      p_.typed_semantics->required_local_ownership_occurrences =
+          required_local_ownership_occurrences_;
+      p_.typed_semantics->local_ownership_specialization_contexts =
+          local_ownership_specialization_contexts_;
+      p_.typed_semantics->take_facts = take_facts_;
+      p_.typed_semantics->required_take_occurrences =
+          required_take_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_VALIDATE_TAKE_CONTRACT"))
+        for (const auto& requirement :
+             p_.typed_semantics->required_take_occurrences)
+          (void)p_.typed_semantics->find_take_fact(requirement);
+#endif
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT")) {
+        for (const auto& requirement :
+             p_.typed_semantics->required_local_ownership_occurrences) {
+          const auto* retained =
+              p_.typed_semantics->find_local_ownership_requirement(
+                  requirement.est_arena_index,
+                  requirement.expression_occurrence_id,
+                  requirement.specialization_context);
+          if (!retained || retained->statement_occurrence_id !=
+                               requirement.statement_occurrence_id ||
+              retained->specialization_identity !=
+                  requirement.specialization_identity ||
+              retained->definition_identity != requirement.definition_identity)
+            throw std::invalid_argument(
+                "checker local ownership requirement failed exact resolution");
+        }
+      }
+#endif
+      if (std::getenv("MOSS_EST_FACTS_DUMP")) {
+        for (const auto& fact : local_ownership_facts_)
+          std::cerr << "MOSS_EST_OWNERSHIP_RECORD source_kind="
+                    << static_cast<int>(fact.source_kind) << " definition="
+                    << std::quoted(fact.definition_identity) << " join="
+                    << std::quoted(fact.join_definition_identity) << " source="
+                    << std::quoted(fact.source_binding_identity) << " expr="
+                    << fact.expression_occurrence_id << " context="
+                    << std::quoted(fact.specialization_context) << " specialization="
+                    << std::quoted(fact.specialization_identity) << " statement="
+                    << fact.statement_occurrence_id << " access="
+                    << static_cast<int>(fact.access) << " inference_status="
+                    << static_cast<int>(fact.inference_status)
+                    << " unsupported_reason="
+                    << static_cast<int>(fact.unsupported_reason)
+                    << " availability="
+                    << static_cast<int>(fact.availability) << '\n';
+        for (const auto& req : required_local_ownership_occurrences_)
+          std::cerr << "MOSS_EST_OWNERSHIP_REQUIREMENT arena="
+                    << req.est_arena_index << " expr="
+                    << req.expression_occurrence_id << " statement="
+                    << req.statement_occurrence_id << " context="
+                    << std::quoted(req.specialization_context)
+                    << " specialization="
+                    << std::quoted(req.specialization_identity)
+                    << " definition=" << std::quoted(req.definition_identity)
+                    << " join=" << std::quoted(req.join_definition_identity)
+                    << " source=" << std::quoted(req.source_binding_identity)
+                    << " access=" << static_cast<int>(req.access)
+                    << " inference_status="
+                    << static_cast<int>(req.inference_status)
+                    << " unsupported_reason="
+                    << static_cast<int>(req.unsupported_reason)
+                    << " availability=" << static_cast<int>(req.availability)
+                    << '\n';
+        for (const auto& fact : take_facts_)
+          std::cerr << "MOSS_EST_TAKE_FACT arena=" << fact.est_arena_index
+                    << " take=" << fact.take_occurrence_id
+                    << " place=" << fact.place_occurrence_id
+                    << " statement=" << fact.statement_occurrence_id
+                    << " context=" << std::quoted(fact.specialization_context)
+                    << " specialization="
+                    << std::quoted(fact.specialization_identity)
+                    << " root=" << std::quoted(fact.root_name)
+                    << " binding=" << std::quoted(fact.root_binding_identity)
+                    << " type=" << (fact.terminal_type
+                        ? fact.terminal_type->to_canonical_string() : "")
+                    << " replacement=" << static_cast<int>(fact.replacement)
+                    << " access=" << static_cast<int>(fact.required_access)
+                    << " transfer=" << fact.transfers_original_value
+                    << " exclusive=" << fact.exclusive_projection_access
+                    << " projections=" << fact.projection_path.size()
+                    << " availability=" << static_cast<int>(fact.availability)
+                    << '\n';
+        for (const auto& req : required_take_occurrences_)
+          std::cerr << "MOSS_EST_TAKE_REQUIREMENT arena=" << req.est_arena_index
+                    << " take=" << req.take_occurrence_id
+                    << " place=" << req.place_occurrence_id
+                    << " statement=" << req.statement_occurrence_id
+                    << " context=" << std::quoted(req.specialization_context)
+                    << " specialization="
+                    << std::quoted(req.specialization_identity)
+                    << " binding=" << std::quoted(req.root_binding_identity)
+                    << '\n';
+      }
       p_.assert_declaration_type_consistency();
     }
     if (CompilerTraceRecorder::instance().is_enabled()) {
@@ -2213,6 +2311,10 @@ class Checker {
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
+  // The leaf-effect traversal can enter a method body while retaining the
+  // caller's semantic context. Preserve the checked implicit-self owner for
+  // nested argument inference without rewriting that context string.
+  mutable const ObjectType* effect_capture_object_ = nullptr;
   // Set only while the checker validates one concrete static body.  Calls
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
@@ -2241,6 +2343,11 @@ class Checker {
   bool suppress_expression_occurrence_capture_ = false;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
+  vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
+  vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
+  std::map<string, string> local_ownership_specialization_contexts_;
+  vector<TypedTakeFactV1> take_facts_;
+  vector<TypedTakeRequirementV1> required_take_occurrences_;
   bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = moss::TypeEnv;
@@ -2264,7 +2371,7 @@ class Checker {
     struct ExpressionOccurrence {
       enum class Kind : std::uint8_t {
         Unknown, Group, Literal, Identifier, Unary, Binary, Field, Index,
-        VectorLiteral, CollectionLiteral, Call, MemberCall, Pipeline,
+        VectorLiteral, CollectionLiteral, Call, Take, MemberCall, Pipeline,
         PipelineStage, Constructor, Message
       } kind = Kind::Unknown;
       std::uint32_t id = 0;
@@ -10672,6 +10779,10 @@ class Checker {
     // traversed collection.
     std::set<string> active_read_traversals;
     std::unordered_map<string,string> borrowed_enum_payloads;
+    // Vector loop element facts are attached to the checker-owned loop
+    // binding. Branch copies retain the same fact index and join access with
+    // READ < WRITE; they never infer a new effect in a consumer.
+    std::unordered_map<string,size_t> vector_element_fact_by_name;
     std::map<string,MoveInfo> moved;
   };
 
@@ -11818,6 +11929,21 @@ class Checker {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
     string original = tree_strip_redundant_outer_parentheses(expression);
+    // `take(place)` is a language-owned EST node, not a call selected from the
+    // function namespace. Its result is the same closed type as the terminal
+    // place; legality and the replacement decision are checked below by the
+    // ordinary body checker once the exact place type is known.
+    if (auto cursor = root_expression_cursor(original, {})) {
+      if (auto* arena = expression_arena(cursor->arena_index)) {
+        if (const auto* take =
+                std::get_if<est::Take>(&arena->at(cursor->expr));
+            take && take->arguments.size() == 1) {
+          const auto view = est::view(*arena, cursor->expr, original);
+          if (auto place = view.source_text(take->arguments.front()))
+            if (auto result = inferred_expr(*place, env)) return result;
+        }
+      }
+    }
     if (tree_placeholder_expression(original) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
@@ -12050,11 +12176,13 @@ class Checker {
         auto it = functions_.find(target);
         if (it != functions_.end()) function_target = it->second;
       }
-      if (!function_target && current_object_) {
+      const ObjectType* implicit_object = effect_capture_object_
+          ? effect_capture_object_ : current_object_;
+      if (!function_target && implicit_object) {
         vector<string> argument_types;
         for (const auto& argument : args)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
-        auto method = resolve_method(current_object_->name, callee, argument_types);
+        auto method = resolve_method(implicit_object->name, callee, argument_types);
         if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
       if (function_target && function_target->return_type) {
@@ -15834,6 +15962,30 @@ class Checker {
         ? function.parameter_effects[index] : Effect::Read;
   }
 
+  std::optional<vector<Effect>> checked_function_argument_effects(
+      const Function& function, std::string_view specialization_identity) const {
+    if (!final_parameter_effects_ready_) return std::nullopt;
+    if (!function.static_dispatch) {
+      if (function.parameter_effects.size() != function.params.size())
+        return std::nullopt;
+      return function.parameter_effects;
+    }
+    if (specialization_identity.empty()) return std::nullopt;
+    const FunctionSpecialization* selected = nullptr;
+    for (const auto& candidate : function.specializations) {
+      if (candidate.stable_type_key != specialization_identity) continue;
+      if (candidate.semantic_key.stable_key() !=
+          std::optional<string>(candidate.stable_type_key))
+        return std::nullopt;
+      if (selected) return std::nullopt;
+      selected = &candidate;
+    }
+    if (!selected || selected->parameter_effects.size() !=
+                         function.params.size())
+      return std::nullopt;
+    return selected->parameter_effects;
+  }
+
   vector<Effect> concrete_function_effects(const Function& function,
                                            const vector<string>& types,
                                            vector<bool>* mutations = nullptr,
@@ -16014,6 +16166,16 @@ class Checker {
         : slot(target), previous(target) { slot = value; }
     ~LeafCaptureScope() { slot = previous; }
   };
+  struct EffectCaptureObjectScope {
+    const ObjectType*& slot;
+    const ObjectType* previous;
+    EffectCaptureObjectScope(const ObjectType*& target,
+                             const ObjectType* value)
+        : slot(target), previous(target) {
+      if (value) slot = value;
+    }
+    ~EffectCaptureObjectScope() { slot = previous; }
+  };
   struct LeafRecordingScope {
     LeafEffectCapture* capture;
     bool previous;
@@ -16103,8 +16265,20 @@ class Checker {
     std::set<string> fields;
     for (size_t i = 0; i < formals.size(); ++i) {
       synchronization_require(i < arguments.size(), "unresolved callable arity");
-      auto type = inferred_expr_type(arguments[i], caller_env);
-      synchronization_require(type.has_value(), "unresolved callable argument");
+      auto inferred = inferred_expr(arguments[i], caller_env);
+      if (inferred && inferred->is_callable()) {
+        // A statically selected function argument is a callable identity, not
+        // a runtime value with an ordinary Moss type. Preserve that checker
+        // answer in the callee environment so the existing callback summary
+        // path can resolve it without inventing a type or state leaf.
+        env[formals[i].name] = "callable:" + inferred->callable_id;
+        substitutions[formals[i].name] = arguments[i];
+        continue;
+      }
+      auto type = inferred ? std::optional<string>(inferred->projection())
+                          : inferred_expr_type(arguments[i], caller_env);
+      synchronization_require(type.has_value() && !type->empty(),
+                              "unresolved callable argument");
       env[formals[i].name] = *type;
       capture.roots[formals[i].name] = *type;
       substitutions[formals[i].name] = arguments[i];
@@ -16125,6 +16299,7 @@ class Checker {
           body, env, "", false, true);
       BodyTypeScope callee_scope(current_body_types_, &callee_types);
       LeafCaptureScope scope(leaf_effect_capture_, &capture);
+      EffectCaptureObjectScope object_scope(effect_capture_object_, object);
       vector<Effect> unused(formals.size(), Effect::Read);
       Effect unused_receiver = Effect::Read;
       size_t index = 0;
@@ -17961,6 +18136,26 @@ class Checker {
       }
     } effect_cursor_scope{*this, active_effect_cursors_, expression_effect,
                           fact_context};
+    if (effect_cursor) {
+      if (auto* arena = expression_arena(effect_cursor->arena_index)) {
+        if (const auto* take = std::get_if<est::Take>(
+                &arena->at(effect_cursor->expr));
+            take && take->arguments.size() == 1) {
+          auto place = est::view(*arena, effect_cursor->expr, effect_source)
+                           .source_text(take->arguments.front());
+          if (place) {
+            // Taking is a checked WRITE to the complete place. Walking its
+            // EST-derived place through the established effect engine also
+            // records state-leaf access and reads selectors exactly once.
+            expression_effect = Effect::Write;
+            analyze_effect_expression(*place, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      Effect::Write);
+            return;
+          }
+        }
+      }
+    }
     {
       // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
       // `s.length()` for `-s.length()` rather than a method on `-s`.
@@ -18598,13 +18793,22 @@ class Checker {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
           auto source_type = inferred_expr_type(statement.b, env);
+          Effect source_access = Effect::Read;
           if (storage_location(statement.b, env) && source_type &&
-              effect_requires_borrow(*source_type))
+              effect_requires_borrow(*source_type)) {
+            source_access = Effect::Consume;
+            const auto source = direct_statement_identifier(
+                statement, est::ExprSlot::Initializer);
+            if (source && transfer_type(*source_type))
+              if (auto inferred = straight_line_alias_effect(
+                      statements, index, statement.a, *source, env))
+                source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Consume);
-          else
+                                      receiver_effect, receiver_fields, source_access);
+          } else {
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          }
           if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
           else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
           else env[statement.a] = "_value";
@@ -18626,13 +18830,24 @@ class Checker {
                                parameter_effects, receiver_effect, receiver_fields);
           }
           auto source_type = inferred_expr_type(statement.b, env);
+          Effect source_access = Effect::Read;
           if (storage_location(statement.b, env) && source_type &&
-              effect_requires_borrow(*source_type))
+              effect_requires_borrow(*source_type)) {
+            source_access = Effect::Consume;
+            const auto source = direct_statement_identifier(
+                statement, est::ExprSlot::RhsValue);
+            if (source && transfer_type(*source_type) &&
+                simple_effect_identifier(statement.a) &&
+                env.count(statement.a) && !receiver_fields.count(statement.a))
+              if (auto inferred = straight_line_alias_effect(
+                      statements, index, statement.a, *source, env))
+                source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Consume);
-          else
+                                      receiver_effect, receiver_fields, source_access);
+          } else {
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          }
           if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
           refine_map_index_assignment_type(statement.a, statement.b, env);
           ++index;
@@ -19548,8 +19763,10 @@ class Checker {
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         const TypeEnv entry_env = env;
-        BodyTypeState body_types = solve_local_collection_types(
-            function.body, entry_env, "", false, true);
+        BodyTypeState body_types;
+        walk_type_environment(function.body, entry_env,
+            [](const Stmt&, const TypeEnv&) {}, false, true, false, "",
+            &body_types);
         BodyTypeScope body_scope(current_body_types_, &body_types);
         auto inferred = function.parameter_effects;
         vector<bool> mutations(function.params.size(), false);
@@ -19594,8 +19811,10 @@ class Checker {
           env["self"] = object.name;
           for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
           const TypeEnv entry_env = env;
-          BodyTypeState body_types = solve_local_collection_types(
-              method.body, entry_env, "", false, true);
+          BodyTypeState body_types;
+          walk_type_environment(method.body, entry_env,
+              [](const Stmt&, const TypeEnv&) {}, false, true, false, "",
+              &body_types);
           BodyTypeScope body_scope(current_body_types_, &body_types);
           auto inferred = method.parameter_effects;
           Effect receiver = Effect::Read;
@@ -22033,6 +22252,16 @@ class Checker {
     return std::nullopt;
   }
 
+  std::optional<string> active_read_overlap(
+      const StorageLocation& location, const OwnershipEnv& env) const {
+    for (const auto& source : env.active_read_traversals) {
+      auto borrowed = storage_location(source, env.types);
+      if (borrowed && storage_locations_overlap(location, *borrowed))
+        return source;
+    }
+    return std::nullopt;
+  }
+
   static string enum_payload_transfer_guidance(const string& source,
                                                const OwnershipEnv& env) {
     if (env.state_fields.count(source))
@@ -22068,6 +22297,681 @@ class Checker {
     if (ownership_current_stmt_)
       ownership_current_stmt_->ownership_consumed_bindings.insert(name);
     const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
+  }
+
+  static Effect stronger_ownership_effect(Effect left, Effect right) {
+    auto rank = [](Effect effect) {
+      switch (effect) {
+        case Effect::Read: return 0;
+        case Effect::Write: return 1;
+        case Effect::Consume: return 2;
+      }
+      return 2;
+    };
+    return rank(left) < rank(right) ? right : left;
+  }
+
+  std::optional<string> direct_statement_identifier(
+      const Stmt& statement, est::ExprSlot slot) const {
+    const est::Handle* found = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != 0) continue;
+      if (found) return std::nullopt;
+      found = &handle;
+    }
+    if (!found) return std::nullopt;
+    const auto* arena = expression_arena(found->arena_index);
+    if (!arena) return std::nullopt;
+    est::ExprId expression = found->expr;
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena->at(expression)))
+      expression = grouped->inner;
+    if (const auto* identifier = std::get_if<est::Identifier>(&arena->at(expression)))
+      return identifier->name;
+    return std::nullopt;
+  }
+
+  static bool est_occurrence_mentions(const est::Arena& arena,
+                                      est::ExprId root,
+                                      std::string_view name) {
+    std::vector<est::ExprId> pending{root};
+    std::set<est::ExprId> visited;
+    while (!pending.empty()) {
+      const auto expression = pending.back();
+      pending.pop_back();
+      if (!visited.insert(expression).second) continue;
+      if (const auto* identifier =
+              std::get_if<est::Identifier>(&arena.at(expression));
+          identifier && identifier->name == name)
+        return true;
+      auto children = syntax_children(arena, expression);
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+    return false;
+  }
+
+  bool phase28_copy_primitive_type(const string& type) const {
+    // Phase 28 treats option[T] as non-Copy even though the legacy shared
+    // copy_type predicate still recurses through option.
+    const string canonical = canonical_type_name(type);
+    return canonical == "Int" || canonical == "int" ||
+        canonical == "Float" || canonical == "float" ||
+        canonical == "Bool" || canonical == "bool" ||
+        canonical == "Char" || canonical == "char";
+  }
+
+  bool return_is_copy_projection_of_alias(const Stmt& statement,
+                                          const string& alias,
+                                          const string& source,
+                                          const TypeEnv& env) const {
+    const est::Handle* returned = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::ReturnValue ||
+          handle.argument_index != 0) continue;
+      if (returned) return false;
+      returned = &handle;
+    }
+    if (!returned) return false;
+    const auto* arena = expression_arena(returned->arena_index);
+    if (!arena) return false;
+    est::ExprId cursor = returned->expr;
+    bool projected = false;
+    while (true) {
+      const auto& node = arena->at(cursor);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        cursor = grouped->inner;
+      } else if (const auto* member = std::get_if<est::Member>(&node)) {
+        projected = true;
+        cursor = member->base;
+      } else {
+        break;
+      }
+    }
+    const auto* base = std::get_if<est::Identifier>(&arena->at(cursor));
+    if (!projected || !base || base->name != alias) return false;
+    auto source_type = env.find(source);
+    if (source_type == env.end()) return false;
+    TypeEnv projection_env = env;
+    projection_env[alias] = source_type->second;
+    const auto type = inferred_expr_type(statement.a, projection_env);
+    return type && phase28_copy_primitive_type(*type);
+  }
+
+  std::optional<Effect> straight_line_alias_effect(
+      const vector<Stmt>& statements, size_t definition_index,
+      const string& alias, const string& source, const TypeEnv& env,
+      TypedLocalOwnershipFactV1::UnsupportedReason* unsupported = nullptr) const {
+    auto decline = [&](TypedLocalOwnershipFactV1::UnsupportedReason reason)
+        -> std::optional<Effect> {
+      if (unsupported) *unsupported = reason;
+      return std::nullopt;
+    };
+    Effect demand = Effect::Read;
+    size_t last_alias_use = definition_index;
+    bool saw_alias_use = false;
+    std::optional<size_t> first_source_use;
+    vector<std::tuple<size_t, size_t, int>> scan_ranges;
+    const int definition_indent = statements[definition_index].indent;
+    if (definition_indent == 0) {
+      scan_ranges.emplace_back(definition_index + 1, statements.size(), 0);
+    } else {
+      // The existing body type join table is the authority that a name is a
+      // live join with these exact predecessor definitions. Only inspect the
+      // remainder of this predecessor arm and the common post-join block.
+      bool found_join = false;
+      const string predecessor = statement_binding_identity(
+          current_semantic_context_, statements[definition_index].line) +
+          ":" + alias;
+      for (size_t candidate = definition_index; candidate-- > 0;) {
+        const Stmt& branch = statements[candidate];
+        if (branch.kind != Stmt::Kind::If || branch.indent + 1 != definition_indent)
+          continue;
+        const size_t then_end = nested_block_end(statements, candidate);
+        const bool in_then = definition_index < then_end;
+        size_t else_index = then_end;
+        if (else_index >= statements.size() ||
+            statements[else_index].indent != branch.indent ||
+            statements[else_index].kind != Stmt::Kind::Else)
+          continue;
+        const size_t else_end = nested_block_end(statements, else_index);
+        const bool in_else = definition_index > else_index &&
+                             definition_index < else_end;
+        if (!in_then && !in_else) continue;
+        if (!current_body_types_) continue;
+        auto joins = current_body_types_->joined_bindings.find(&branch);
+        if (joins == current_body_types_->joined_bindings.end()) continue;
+        const bool predecessor_reaches_join = std::any_of(
+            joins->second.begin(), joins->second.end(), [&](const auto& binding) {
+              return binding.name == alias &&
+                  std::find(binding.predecessor_binding_ids.begin(),
+                            binding.predecessor_binding_ids.end(), predecessor) !=
+                      binding.predecessor_binding_ids.end();
+            });
+        if (!predecessor_reaches_join) continue;
+        const size_t arm_end = in_then ? else_index : else_end;
+        scan_ranges.emplace_back(definition_index + 1, arm_end,
+                                 definition_indent);
+        scan_ranges.emplace_back(else_end, statements.size(), branch.indent);
+        found_join = true;
+        break;
+      }
+      if (!found_join)
+        return decline(TypedLocalOwnershipFactV1::UnsupportedReason::ControlFlowJoin);
+    }
+    bool stopped_at_redefinition = false;
+    for (const auto& [range_begin, range_end, expected_indent] : scan_ranges) {
+      if (stopped_at_redefinition) break;
+      for (size_t index = range_begin; index < range_end; ++index) {
+        const auto& statement = statements[index];
+        if (statement.indent != expected_indent)
+          return decline(TypedLocalOwnershipFactV1::UnsupportedReason::ControlFlowJoin);
+        if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Else ||
+            statement.kind == Stmt::Kind::Match || statement.kind == Stmt::Kind::Case ||
+            statement.kind == Stmt::Kind::Try || statement.kind == Stmt::Kind::Recover)
+          return decline(TypedLocalOwnershipFactV1::UnsupportedReason::ControlFlowJoin);
+        if (statement.kind == Stmt::Kind::While || statement.kind == Stmt::Kind::For)
+          return decline(TypedLocalOwnershipFactV1::UnsupportedReason::LoopCarriedUse);
+        const auto declared_binding =
+            (statement.kind == Stmt::Kind::Let ||
+             statement.kind == Stmt::Kind::Var)
+                ? direct_statement_identifier(statement, est::ExprSlot::LhsPlace)
+                : std::nullopt;
+        if (declared_binding && *declared_binding == alias) {
+          stopped_at_redefinition = true;
+          break;
+        }
+        const auto assigned_binding = statement.kind == Stmt::Kind::Assign
+            ? direct_statement_identifier(statement, est::ExprSlot::LhsPlace)
+            : std::nullopt;
+        if (assigned_binding && *assigned_binding == alias) {
+          stopped_at_redefinition = true;
+          break;
+        }
+
+        bool alias_used = false;
+        bool source_used = false;
+        bool alias_written = false;
+        bool alias_used_outside_lhs = false;
+        for (const auto& handle : statement.expression_handles) {
+          const auto* arena = expression_arena(handle.arena_index);
+          if (!arena)
+            return decline(TypedLocalOwnershipFactV1::UnsupportedReason::UnsupportedSource);
+          alias_used |= est_occurrence_mentions(*arena, handle.expr, alias);
+          source_used |= est_occurrence_mentions(*arena, handle.expr, source);
+          if (handle.slot != est::ExprSlot::LhsPlace)
+            alias_used_outside_lhs |=
+                est_occurrence_mentions(*arena, handle.expr, alias);
+          if (statement.kind == Stmt::Kind::Assign &&
+              handle.slot == est::ExprSlot::LhsPlace) {
+            const auto* member = std::get_if<est::Member>(&arena->at(handle.expr));
+            if (member) {
+              const auto* base = std::get_if<est::Identifier>(&arena->at(member->base));
+              alias_written |= base && base->name == alias;
+            }
+          }
+        }
+        if (alias_written && alias_used_outside_lhs)
+          return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+        if (alias_used) {
+          saw_alias_use = true;
+          last_alias_use = index;
+          Effect use = Effect::Read;
+          if (alias_written)
+            use = Effect::Write;
+          else if (statement.kind == Stmt::Kind::Return) {
+            const auto returned_local = direct_statement_identifier(
+                statement, est::ExprSlot::ReturnValue);
+            if (returned_local && *returned_local == alias)
+              use = Effect::Consume;
+            else if (return_is_copy_projection_of_alias(
+                         statement, alias, source, env))
+              use = Effect::Read;
+            else
+              return decline(
+                  TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          } else if (statement.kind == Stmt::Kind::Assign)
+            return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          else if (statement.kind == Stmt::Kind::Call) {
+            const auto requirements =
+                statement.member_requirements_by_context.find(
+                    current_semantic_context_);
+            if (requirements == statement.member_requirements_by_context.end())
+              return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+            std::optional<Effect> checked_use;
+            // Resolve the exact retained receiver occurrence. `Stmt::a` is a
+            // legacy source slot; it is not ownership evidence.
+            const auto receiver_binding = direct_statement_identifier(
+                statement, est::ExprSlot::Receiver);
+            for (const auto& requirement : requirements->second) {
+              if (requirement.member_name != statement.b ||
+                  !receiver_binding || *receiver_binding != alias)
+                continue;
+              checked_use = requirement.receiver_access == moss::AccessMode::Consume
+                  ? Effect::Consume
+                  : requirement.receiver_access == moss::AccessMode::Write
+                      ? Effect::Write : Effect::Read;
+              break;
+            }
+            if (!checked_use)
+              return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+            use = *checked_use;
+          } else if (statement.kind == Stmt::Kind::Raw) {
+            return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          } else if (statement.kind == Stmt::Kind::Reply ||
+                     statement.kind == Stmt::Kind::Echo ||
+                     statement.kind == Stmt::Kind::Message) {
+            use = Effect::Read;
+          } else if (statement.kind != Stmt::Kind::Pass) {
+            return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          }
+          demand = stronger_ownership_effect(demand, use);
+        }
+        if (source_used && !first_source_use) first_source_use = index;
+      }
+    }
+    // A source use before the alias's final use would overlap the inferred
+    // borrow. Keep the established transfer rule for that unsupported case.
+    if (saw_alias_use && first_source_use && *first_source_use <= last_alias_use)
+      return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+    return demand;
+  }
+
+  std::optional<Effect> retain_local_ownership_fact(
+      const Stmt& statement, const string& definition_identity,
+      const string& source_binding_identity, Effect access) {
+    TypedLocalOwnershipFactV1 fact;
+    fact.definition_identity = definition_identity;
+    fact.source_binding_identity = source_binding_identity;
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.access = access;
+    fact.provenance = {statement.source_file.empty() ? current_source_file_
+                                                     : statement.source_file,
+                       statement.line, {}, current_semantic_context_};
+    string defining_module = p_.main_module;
+    if (starts_with(current_semantic_context_, "fn:")) {
+      auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end()) defining_module = function->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "handler:")) {
+      const string identity = current_semantic_context_.substr(8);
+      const auto separator = identity.find('.');
+      auto domain = domains_.find(identity.substr(0, separator));
+      if (domain != domains_.end()) defining_module = domain->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "method:")) {
+      const string identity = current_semantic_context_.substr(7);
+      const auto separator = identity.find('.');
+      auto object = objects_.find(identity.substr(0, separator));
+      if (object != objects_.end()) defining_module = object->second->defining_module;
+    }
+    fact.provenance.defining_module_id =
+        program_module_identity(p_, defining_module);
+    if (current_body_types_) {
+      fact.value_type = current_body_types_->assignment_value(statement);
+      if (fact.value_type)
+        fact.value_type = current_body_types_->solver.resolve(fact.value_type);
+      auto occurrence = current_body_types_->statement_occurrence_ids.find(&statement);
+      if (occurrence != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = occurrence->second;
+      const string predecessor = statement_binding_identity(
+          current_semantic_context_, statement.line) + ":" + statement.a;
+      for (const auto& [join_statement, bindings] :
+           current_body_types_->joined_bindings) {
+        (void)join_statement;
+        auto joined = std::find_if(bindings.begin(), bindings.end(),
+            [&](const auto& binding) {
+              return binding.name == statement.a &&
+                  std::find(binding.predecessor_binding_ids.begin(),
+                            binding.predecessor_binding_ids.end(),
+                            predecessor) != binding.predecessor_binding_ids.end();
+            });
+        if (joined != bindings.end()) {
+          fact.join_definition_identity = joined->identity;
+          break;
+        }
+      }
+    }
+    if (fact.definition_identity.empty() ||
+        fact.source_binding_identity.empty())
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::MissingBindingIdentity;
+    else if (fact.statement_occurrence_id == UINT32_MAX)
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::MissingStatementOccurrence;
+    const est::ExprSlot slot =
+        statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var
+            ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+    const est::Handle* matched = nullptr;
+    bool ambiguous = false;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != 0) continue;
+      if (matched) { ambiguous = true; break; }
+      matched = &handle;
+    }
+    const est::Arena* arena = nullptr;
+    if (fact.availability !=
+            TypedLocalOwnershipFactV1::Availability::MissingBindingIdentity &&
+        fact.availability !=
+            TypedLocalOwnershipFactV1::Availability::MissingStatementOccurrence &&
+        matched && !ambiguous && expression_arena(matched->arena_index)) {
+      fact.est_arena_index = matched->arena_index;
+      fact.expression_occurrence_id = matched->expr;
+      fact.availability = TypedLocalOwnershipFactV1::Availability::Present;
+      arena = expression_arena(matched->arena_index);
+      if (const auto* existing = arena->facts(
+              matched->expr, fact.specialization_context);
+          existing && existing->inferred_effect &&
+          existing->inferred_effect != access) {
+        fact.availability =
+            TypedLocalOwnershipFactV1::Availability::ContradictoryEffect;
+        arena = nullptr;
+      } else {
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_DROP_OWNERSHIP_FACT")) {
+          arena = nullptr;
+          fact.availability =
+              TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+        } else {
+#endif
+          Effect retained_access = access;
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_TEST_PERTURB_OWNERSHIP_FACT"))
+            retained_access = access == Effect::Read ? Effect::Write
+                : access == Effect::Write ? Effect::Consume : Effect::Read;
+#endif
+          est::SemanticFacts semantic_fact;
+          semantic_fact.inferred_effect = retained_access;
+          const_cast<est::Arena*>(arena)->record_facts(
+              matched->expr, fact.specialization_context,
+              std::move(semantic_fact));
+#ifdef MOSS_TEST_BUILD
+        }
+#endif
+      }
+    }
+    std::optional<Effect> checked_access;
+    if (arena && matched) {
+      const auto* retained = arena->facts(matched->expr,
+                                           fact.specialization_context);
+      if (retained && retained->inferred_effect == access)
+        checked_access = *retained->inferred_effect;
+      else
+        fact.availability =
+            TypedLocalOwnershipFactV1::Availability::ContradictoryEffect;
+    }
+    if (std::getenv("MOSS_EST_FACTS_DUMP"))
+      std::cerr << "MOSS_EST_OWNERSHIP_FACT definition="
+                << std::quoted(fact.definition_identity) << " source="
+                << std::quoted(fact.source_binding_identity) << " expr="
+                << fact.expression_occurrence_id << " context="
+                << std::quoted(fact.specialization_context) << " access="
+                << static_cast<int>(fact.access) << " availability="
+                << static_cast<int>(fact.availability) << '\n';
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
+    required_local_ownership_occurrences_.push_back(std::move(req));
+    local_ownership_facts_.push_back(std::move(fact));
+    return checked_access;
+  }
+
+  size_t retain_vector_element_fact(const Stmt& loop,
+                                    const string& collection_binding,
+                                    const string& element_binding) {
+    TypedLocalOwnershipFactV1 fact;
+    fact.definition_identity = element_binding;
+    fact.source_binding_identity = collection_binding;
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.source_kind = TypedLocalOwnershipFactV1::SourceKind::VectorElement;
+    fact.access = Effect::Read;
+    fact.provenance = {loop.source_file.empty() ? current_source_file_
+                                                : loop.source_file,
+                       loop.line, {}, current_semantic_context_};
+    if (current_body_types_) {
+      auto statement = current_body_types_->statement_occurrence_ids.find(&loop);
+      if (statement != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = statement->second;
+      auto element = current_body_types_->for_bindings.find(&loop);
+      if (element != current_body_types_->for_bindings.end())
+        fact.value_type = current_body_types_->solver.resolve(element->second);
+    }
+    const est::Handle* iterable = nullptr;
+    for (const auto& handle : loop.expression_handles)
+      if (handle.slot == est::ExprSlot::Iterable &&
+          handle.argument_index == 0) {
+        if (iterable) { iterable = nullptr; break; }
+        iterable = &handle;
+      }
+    if (fact.source_binding_identity.empty())
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::MissingBindingIdentity;
+    else if (fact.statement_occurrence_id == UINT32_MAX)
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::MissingStatementOccurrence;
+    else if (!iterable || !expression_arena(iterable->arena_index))
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+    else {
+      fact.est_arena_index = iterable->arena_index;
+      fact.expression_occurrence_id = iterable->expr;
+      fact.availability = TypedLocalOwnershipFactV1::Availability::Present;
+    }
+    string module = p_.main_module;
+    if (starts_with(current_semantic_context_, "fn:")) {
+      auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end()) module = function->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "handler:")) {
+      const string identity = current_semantic_context_.substr(8);
+      const auto separator = identity.find('.');
+      auto domain = domains_.find(identity.substr(0, separator));
+      if (domain != domains_.end()) module = domain->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "method:")) {
+      const string identity = current_semantic_context_.substr(7);
+      const auto separator = identity.find('.');
+      auto object = objects_.find(identity.substr(0, separator));
+      if (object != objects_.end()) module = object->second->defining_module;
+    }
+    fact.provenance.defining_module_id = program_module_identity(p_, module);
+    const size_t fact_index = local_ownership_facts_.size();
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
+    required_local_ownership_occurrences_.push_back(std::move(req));
+    local_ownership_facts_.push_back(std::move(fact));
+    return fact_index;
+  }
+
+  void retain_unsupported_local_fact(const Stmt& statement,
+                                     const string& definition_identity,
+                                     const string& source_binding_identity,
+                                     TypedLocalOwnershipFactV1::UnsupportedReason reason) {
+    TypedLocalOwnershipFactV1 fact;
+    fact.definition_identity = definition_identity;
+    fact.source_binding_identity = source_binding_identity;
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.inference_status =
+        TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
+    fact.unsupported_reason = reason;
+    fact.availability = TypedLocalOwnershipFactV1::Availability::NotRequired;
+    fact.provenance = {statement.source_file.empty() ? current_source_file_
+                                                      : statement.source_file,
+                       statement.line, {}, current_semantic_context_};
+    if (current_body_types_) {
+      auto occurrence = current_body_types_->statement_occurrence_ids.find(&statement);
+      if (occurrence != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = occurrence->second;
+      fact.value_type = current_body_types_->assignment_value(statement);
+      if (fact.value_type)
+        fact.value_type = current_body_types_->solver.resolve(fact.value_type);
+      const string predecessor = statement_binding_identity(
+          current_semantic_context_, statement.line) + ":" + statement.a;
+      for (const auto& [join_statement, bindings] :
+           current_body_types_->joined_bindings) {
+        (void)join_statement;
+        auto joined = std::find_if(bindings.begin(), bindings.end(),
+            [&](const auto& binding) {
+              return binding.name == statement.a &&
+                  std::find(binding.predecessor_binding_ids.begin(),
+                            binding.predecessor_binding_ids.end(),
+                            predecessor) != binding.predecessor_binding_ids.end();
+            });
+        if (joined != bindings.end()) {
+          fact.join_definition_identity = joined->identity;
+          break;
+        }
+      }
+    }
+    const est::ExprSlot slot =
+        statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var
+            ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+    for (const auto& handle : statement.expression_handles)
+      if (handle.slot == slot && handle.argument_index == 0 &&
+          expression_arena(handle.arena_index)) {
+        fact.est_arena_index = handle.arena_index;
+        fact.expression_occurrence_id = handle.expr;
+        break;
+      }
+    string module = p_.main_module;
+    if (starts_with(current_semantic_context_, "fn:")) {
+      auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end()) module = function->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "handler:")) {
+      const string identity = current_semantic_context_.substr(8);
+      const auto separator = identity.find('.');
+      auto domain = domains_.find(identity.substr(0, separator));
+      if (domain != domains_.end()) module = domain->second->defining_module;
+    } else if (starts_with(current_semantic_context_, "method:")) {
+      const string identity = current_semantic_context_.substr(7);
+      const auto separator = identity.find('.');
+      auto object = objects_.find(identity.substr(0, separator));
+      if (object != objects_.end()) module = object->second->defining_module;
+    }
+    fact.provenance.defining_module_id = program_module_identity(p_, module);
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
+    required_local_ownership_occurrences_.push_back(std::move(req));
+    local_ownership_facts_.push_back(std::move(fact));
+  }
+
+  void observe_vector_element_access(const string& expression,
+                                    const OwnershipEnv& env,
+                                    Effect requested, int line) {
+    const string name = trim(expression);
+    string element_name = tree_simple_identifier(name) ? name : string();
+    if (element_name.empty() && requested == Effect::Write &&
+        ownership_current_stmt_ &&
+        ownership_current_stmt_->kind == Stmt::Kind::Assign) {
+      // A projected write is authorized by the checked LhsPlace occurrence.
+      // Its base identifier comes from EST; do not parse the rendered place.
+      for (const auto& handle : ownership_current_stmt_->expression_handles) {
+        if (handle.slot != est::ExprSlot::LhsPlace ||
+            handle.argument_index != 0) continue;
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena) continue;
+        est::ExprId cursor = handle.expr;
+        while (true) {
+          const auto& node = arena->at(cursor);
+          if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+            cursor = grouped->inner;
+          else if (const auto* member = std::get_if<est::Member>(&node))
+            cursor = member->base;
+          else if (const auto* index = std::get_if<est::Index>(&node))
+            cursor = index->base;
+          else
+            break;
+        }
+        const auto* place_base =
+            std::get_if<est::Identifier>(&arena->at(cursor));
+        if (!place_base) continue;
+        for (const auto& [candidate, fact_index] :
+             env.vector_element_fact_by_name) {
+          if (fact_index < local_ownership_facts_.size() &&
+              place_base->name == candidate) {
+            element_name = candidate;
+            break;
+          }
+        }
+      }
+    }
+    if (element_name.empty()) return;
+    auto tracked = env.vector_element_fact_by_name.find(element_name);
+    auto binding = env.binding_identities.find(element_name);
+    if (tracked == env.vector_element_fact_by_name.end() ||
+        binding == env.binding_identities.end() ||
+        tracked->second >= local_ownership_facts_.size() ||
+        local_ownership_facts_[tracked->second].definition_identity !=
+            binding->second)
+      return;
+    auto& fact = local_ownership_facts_[tracked->second];
+    if (requested == Effect::Consume) {
+      fact.inference_status =
+          TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
+      fact.unsupported_reason =
+          TypedLocalOwnershipFactV1::UnsupportedReason::ConsumingLoopElement;
+      fact.availability = TypedLocalOwnershipFactV1::Availability::NotRequired;
+      err(line, "Vector iteration elements cannot be consumed; use an explicit "
+          "owned collection operation for element transfer",
+          "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
+      return;
+    }
+    fact.access = stronger_ownership_effect(fact.access, requested);
+  }
+
+  bool vector_element_binding(const string& name,
+                              const OwnershipEnv& env) const {
+    auto tracked = env.vector_element_fact_by_name.find(name);
+    auto binding = env.binding_identities.find(name);
+    return tracked != env.vector_element_fact_by_name.end() &&
+        binding != env.binding_identities.end() &&
+        tracked->second < local_ownership_facts_.size() &&
+        local_ownership_facts_[tracked->second].definition_identity ==
+            binding->second;
+  }
+
+  void reject_vector_element_escape(const Stmt& statement,
+                                    est::ExprSlot source_slot,
+                                    const OwnershipEnv& env) const {
+    auto source = direct_statement_identifier(statement, source_slot);
+    if (source && vector_element_binding(*source, env))
+      err(statement.line,
+          "Vector iteration elements are borrowed and cannot be transferred "
+          "to owned local storage",
+          "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
   }
 
   bool check_functional_pipeline_ownership(int line, const string& expression,
@@ -22295,6 +23199,7 @@ class Checker {
 
   void check_ownership_expression(int line, const string& expression,
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
+    observe_vector_element_access(expression, env, requested, line);
     if (!ownership_exceptional_sink_) {
       check_ownership_expression_walk(line, expression, env, requested);
       return;
@@ -22322,9 +23227,336 @@ class Checker {
           {std::move(at_this_point), env, ownership_exceptional_source_});
   }
 
+  std::optional<EstExpressionCursor> ownership_take_cursor(
+      const string& expression) const {
+    if (!ownership_current_stmt_) return std::nullopt;
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    switch (ownership_current_stmt_->kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
+      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
+      case Stmt::Kind::Return: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
+      default: return std::nullopt;
+    }
+    for (const auto& handle : ownership_current_stmt_->expression_handles) {
+      if (handle.slot != slot || handle.argument_index != 0) continue;
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena || !std::holds_alternative<est::Take>(arena->at(handle.expr)))
+        continue;
+      return EstExpressionCursor{handle.arena_index, handle.expr, expression};
+    }
+    return std::nullopt;
+  }
+
+  void check_take_ownership(int line, const string& expression,
+                            OwnershipEnv& env,
+                            const EstExpressionCursor& cursor) {
+    (void)expression;
+    auto* arena = expression_arena(cursor.arena_index);
+    if (!arena) err(line, "take EST arena is unavailable",
+                    "TAKE_FACT_UNAVAILABLE");
+    const auto* take = std::get_if<est::Take>(&arena->at(cursor.expr));
+    if (!take || take->arguments.size() != 1)
+      err(line, "take requires exactly one field place", "TAKE_ARGUMENT_ARITY");
+    const est::ExprId place_id = take->arguments.front();
+    if (!est_take_place_shape(*arena, place_id))
+      err(line, "take requires a writable terminal field place",
+          "TAKE_REQUIRES_FIELD_PLACE");
+
+    StorageLocation location;
+    std::function<void(est::ExprId)> resolve_place = [&](est::ExprId id) {
+      const auto& node = arena->at(id);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        resolve_place(grouped->inner);
+      } else if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+        location.root = identifier->name;
+      } else if (const auto* member = std::get_if<est::Member>(&node)) {
+        resolve_place(member->base);
+        location.path.push_back(member->name);
+      } else if (const auto* index = std::get_if<est::Index>(&node)) {
+        resolve_place(index->base);
+        location.path.push_back("[]");
+      }
+    };
+    resolve_place(place_id);
+    if (location.root.empty() || location.path.empty())
+      err(line, "take place has no checker-owned storage root",
+          "TAKE_PLACE_IDENTITY_MISSING");
+    if (env.immutable_locals.count(location.root))
+      err(line, "cannot take from immutable local '" + location.root + "'",
+          "IMMUTABLE_LOCAL_MUTATION");
+    if (env.message_payloads.count(location.root))
+      err(line, "cannot take from incoming message payload '" +
+          location.root + "'", "IMMUTABLE_MESSAGE_PAYLOAD");
+    if (auto borrowed = env.borrowed_enum_payloads.find(location.root);
+        borrowed != env.borrowed_enum_payloads.end())
+      err(line, "cannot take from borrowed enum payload '" + location.root +
+          "' of '" + borrowed->second + "'",
+          "BORROWED_ENUM_PAYLOAD_ACCESS");
+    require_available(line, location.root, env);
+    if (auto borrowed = active_read_overlap(location, env))
+      err(line, "cannot take this place while '" + *borrowed +
+          "' is READ-borrowed by a match or traversal",
+          "MATCH_READ_BORROW_ACTIVE");
+
+    const std::string fact_context = expression_fact_context();
+    auto checked_type = [&](est::ExprId id) -> TypeRef {
+      const auto* facts = arena->facts(id, fact_context);
+      if (facts && facts->type) return facts->type;
+      return nullptr;
+    };
+    auto terminal = checked_type(place_id);
+    if (!terminal || terminal->kind != moss::TypeKind::Builtin ||
+        (terminal->name != "option" && terminal->name != "vector" &&
+         terminal->name != "map" && terminal->name != "queue"))
+      err(line, "take terminal field must have type option[T], Vector[T], "
+          "Map[K,V], or Queue[T]", "TAKE_INELIGIBLE_TERMINAL");
+
+    std::string root_binding;
+    if (auto binding = env.binding_identities.find(location.root);
+        binding != env.binding_identities.end()) {
+      root_binding = binding->second;
+    } else if (env.state_fields.count(location.root)) {
+      const auto separator = current_semantic_context_.find('.');
+      const std::string domain_name =
+          starts_with(current_semantic_context_, "handler:") &&
+                  separator != std::string::npos
+              ? current_semantic_context_.substr(8, separator - 8)
+              : std::string();
+      auto domain = domains_.find(domain_name);
+      if (domain != domains_.end()) {
+        const auto field = std::find_if(domain->second->state.begin(),
+            domain->second->state.end(), [&](const Field& candidate) {
+              return candidate.name == location.root;
+            });
+        if (field != domain->second->state.end())
+          root_binding = moss::declaration_identity(
+              moss::DeclarationKind::Domain,
+              program_module_identity(p_, domain->second->defining_module),
+              domain->second->declaration_name.empty()
+                  ? domain->second->name : domain->second->declaration_name) +
+              ":state-field:" + field->name + "@" +
+              std::to_string(field->line);
+      }
+    } else if (current_object_ && location.root == "self") {
+      root_binding = moss::declaration_identity(
+          moss::DeclarationKind::Record,
+          program_module_identity(p_, current_object_->defining_module),
+          current_object_->declaration_name.empty()
+              ? current_object_->name : current_object_->declaration_name);
+    } else {
+      err(line, "take root has no checker-issued binding identity",
+          "TAKE_BINDING_IDENTITY_MISSING");
+    }
+
+    TypedTakeFactV1 fact;
+    fact.est_arena_index = cursor.arena_index;
+    fact.take_occurrence_id = cursor.expr;
+    fact.place_occurrence_id = take->arguments.front();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.est_fact_context = expression_fact_context();
+    fact.root_binding_identity = root_binding;
+    fact.root_name = location.root;
+    fact.terminal_type = terminal;
+    fact.result_type = terminal;
+    fact.required_access = Effect::Write;
+    fact.transfers_original_value = true;
+    fact.exclusive_projection_access = true;
+    if (terminal->name == "option")
+      fact.replacement = TypedTakeReplacementV1::OptionNone;
+    else if (terminal->name == "vector")
+      fact.replacement = TypedTakeReplacementV1::VectorEmpty;
+    else if (terminal->name == "map")
+      fact.replacement = TypedTakeReplacementV1::MapEmpty;
+    else
+      fact.replacement = TypedTakeReplacementV1::QueueEmpty;
+
+    if (current_body_types_) {
+      auto statement = current_body_types_->statement_occurrence_ids.find(
+          ownership_current_stmt_);
+      if (statement != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = statement->second;
+    }
+
+    std::function<void(est::ExprId)> append_projection = [&](est::ExprId id) {
+      const auto& node = arena->at(id);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        append_projection(grouped->inner);
+        return;
+      }
+      if (const auto* member = std::get_if<est::Member>(&node)) {
+        append_projection(member->base);
+        TypedTakeProjectionV1 projection;
+        projection.kind = TypedTakeProjectionKindV1::RecordField;
+        projection.expression_occurrence_id = id;
+        projection.input_type = checked_type(member->base);
+        projection.output_type = checked_type(id);
+        if (projection.input_type) {
+          const auto object = objects_.find(
+              canonical_type_name(projection.input_type));
+          if (object != objects_.end()) {
+            const auto field = std::find_if(object->second->fields.begin(),
+                object->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == member->name;
+                });
+            if (field != object->second->fields.end())
+              projection.semantic_identity =
+                  moss::declaration_identity(
+                      moss::DeclarationKind::Record,
+                      program_module_identity(p_,
+                          object->second->defining_module),
+                      object->second->declaration_name.empty()
+                          ? object->second->name
+                          : object->second->declaration_name) +
+                  ":field:" + field->name + "@" +
+                  std::to_string(field->line);
+          }
+        }
+        projection.ordinal = static_cast<std::uint32_t>(
+            fact.projection_path.size());
+        fact.projection_path.push_back(std::move(projection));
+        return;
+      }
+      if (const auto* index = std::get_if<est::Index>(&node)) {
+        append_projection(index->base);
+        auto input = checked_type(index->base);
+        TypedTakeProjectionV1 projection;
+        projection.kind = input && input->name == "map"
+            ? TypedTakeProjectionKindV1::MapIndex
+            : input && input->name == "queue"
+                ? TypedTakeProjectionKindV1::QueueIndex
+                : TypedTakeProjectionKindV1::VectorIndex;
+        projection.expression_occurrence_id = id;
+        projection.selector_occurrence_id = index->index;
+        projection.semantic_identity = input
+            ? "builtin-index:" + input->name : "";
+        projection.ordinal = static_cast<std::uint32_t>(
+            fact.projection_path.size());
+        projection.input_type = std::move(input);
+        projection.output_type = checked_type(id);
+        fact.projection_path.push_back(std::move(projection));
+      }
+    };
+    append_projection(take->arguments.front());
+
+    est::SemanticFacts checked_facts;
+    checked_facts.type = terminal;
+    checked_facts.resolved_target = "builtin:take-place-v1";
+    checked_facts.inferred_effect = Effect::Write;
+    arena->record_facts(cursor.expr, fact.est_fact_context,
+                        std::move(checked_facts));
+    const auto* retained = arena->facts(cursor.expr, fact.est_fact_context);
+    if (!retained || !retained->type ||
+        !terminal->structurally_equal(*retained->type) ||
+        retained->resolved_target != "builtin:take-place-v1" ||
+        retained->inferred_effect != Effect::Write)
+      fact.availability = TypedTakeFactV1::Availability::Contradictory;
+    else if (fact.statement_occurrence_id == UINT32_MAX)
+      fact.availability = TypedTakeFactV1::Availability::MissingStatementOccurrence;
+    else if (root_binding.empty())
+      fact.availability = TypedTakeFactV1::Availability::MissingBindingIdentity;
+    else
+      fact.availability = TypedTakeFactV1::Availability::Present;
+
+    if (fact.availability != TypedTakeFactV1::Availability::Present)
+      err(line, "required take ownership fact is incomplete",
+          "TAKE_FACT_UNAVAILABLE");
+    TypedTakeRequirementV1 requirement;
+    requirement.est_arena_index = fact.est_arena_index;
+    requirement.take_occurrence_id = fact.take_occurrence_id;
+    requirement.place_occurrence_id = fact.place_occurrence_id;
+    requirement.statement_occurrence_id = fact.statement_occurrence_id;
+    requirement.specialization_identity = fact.specialization_identity;
+    requirement.specialization_context = fact.specialization_context;
+    requirement.est_fact_context = fact.est_fact_context;
+    requirement.root_binding_identity = fact.root_binding_identity;
+    requirement.root_name = fact.root_name;
+    requirement.terminal_type = fact.terminal_type;
+    requirement.result_type = fact.result_type;
+    requirement.projection_path = fact.projection_path;
+    requirement.replacement = fact.replacement;
+    requirement.required_access = fact.required_access;
+    requirement.transfers_original_value = fact.transfers_original_value;
+    requirement.exclusive_projection_access =
+        fact.exclusive_projection_access;
+    for (const auto& existing : required_take_occurrences_) {
+      if (existing.est_arena_index != requirement.est_arena_index ||
+          existing.take_occurrence_id != requirement.take_occurrence_id ||
+          existing.specialization_context != requirement.specialization_context)
+        continue;
+      auto same_type = [](const TypeRef& left, const TypeRef& right) {
+        return left && right && left->structurally_equal(*right);
+      };
+      const bool same_path = existing.projection_path.size() ==
+              requirement.projection_path.size() &&
+          std::equal(existing.projection_path.begin(),
+              existing.projection_path.end(), requirement.projection_path.begin(),
+              [](const auto& left, const auto& right) {
+                return left.kind == right.kind &&
+                    left.expression_occurrence_id ==
+                        right.expression_occurrence_id &&
+                    left.selector_occurrence_id ==
+                        right.selector_occurrence_id &&
+                    left.semantic_identity == right.semantic_identity &&
+                    left.ordinal == right.ordinal && left.input_type &&
+                    right.input_type &&
+                    left.input_type->structurally_equal(*right.input_type) &&
+                    left.output_type && right.output_type &&
+                    left.output_type->structurally_equal(*right.output_type);
+              });
+      if (same_path &&
+          existing.place_occurrence_id == requirement.place_occurrence_id &&
+          existing.statement_occurrence_id ==
+              requirement.statement_occurrence_id &&
+          existing.specialization_identity ==
+              requirement.specialization_identity &&
+          existing.est_fact_context == requirement.est_fact_context &&
+          existing.root_binding_identity == requirement.root_binding_identity &&
+          existing.root_name == requirement.root_name &&
+          same_type(existing.terminal_type, requirement.terminal_type) &&
+          same_type(existing.result_type, requirement.result_type) &&
+          existing.replacement == requirement.replacement &&
+          existing.required_access == requirement.required_access &&
+          existing.transfers_original_value ==
+              requirement.transfers_original_value &&
+          existing.exclusive_projection_access ==
+              requirement.exclusive_projection_access)
+        return;
+      err(line, "duplicate checker-issued take occurrence conflicts",
+          "TAKE_FACT_CONTRADICTORY");
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_PERTURB_TAKE_FACT"))
+      fact.required_access = Effect::Read;
+    if (std::getenv("MOSS_TEST_PERTURB_TAKE_IDENTITY"))
+      ++fact.place_occurrence_id;
+    const bool drop_fact = std::getenv("MOSS_TEST_DROP_TAKE_FACT") != nullptr;
+    if (!drop_fact) {
+      const bool duplicate_fact =
+          std::getenv("MOSS_TEST_DUPLICATE_TAKE_FACT") != nullptr;
+#endif
+      take_facts_.push_back(std::move(fact));
+#ifdef MOSS_TEST_BUILD
+      if (duplicate_fact) take_facts_.push_back(take_facts_.back());
+    }
+#endif
+    required_take_occurrences_.push_back(std::move(requirement));
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_DUPLICATE_TAKE_REQUIREMENT"))
+      required_take_occurrences_.push_back(required_take_occurrences_.back());
+#endif
+  }
+
   void check_ownership_expression_walk(int line, const string& expression,
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
+    if (auto take = ownership_take_cursor(original)) {
+      check_take_ownership(line, original, env, *take);
+      return;
+    }
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
@@ -23106,6 +24338,7 @@ class Checker {
 
       if (s.kind == Stmt::Kind::For) {
         auto element = iterator_element_type(s.line, s.b, env.types);
+        auto iterable_type = inferred_expr_type(s.b, env.types);
         string source_root;
         if (auto location = storage_location(s.b, env.types))
           source_root = location->root;
@@ -23122,6 +24355,19 @@ class Checker {
         body.types[s.a] = element.value_or("_value");
         body.binding_identities[s.a] = statement_binding_identity(
             current_semantic_context_, s.line);
+        if (iterable_type &&
+            starts_with(canonical_type_name(*iterable_type), "vector[")) {
+          const auto source = direct_statement_identifier(
+              s, est::ExprSlot::Iterable);
+          string source_identity;
+          if (source) {
+            auto found = env.binding_identities.find(*source);
+            if (found != env.binding_identities.end()) source_identity = found->second;
+          }
+          const size_t fact_index = retain_vector_element_fact(
+              s, source_identity, body.binding_identities[s.a]);
+          body.vector_element_fact_by_name[s.a] = fact_index;
+        }
         if (!source_root.empty() && source_effect == Effect::Read)
           body.active_read_traversals.insert(source_root);
         ++index;
@@ -23156,6 +24402,7 @@ class Checker {
       switch (s.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
+          reject_vector_element_escape(s, est::ExprSlot::Initializer, env);
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
           if (source_type && canonical_type_name(*source_type) == "FileIO" &&
@@ -23166,15 +24413,44 @@ class Checker {
           bool transfers = storage_location(s.b, env.types) && source_type &&
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
-          if (transfers) {
-            if (tree_simple_identifier(source)) {
+          Effect source_access = transfers ? Effect::Consume : Effect::Read;
+          const auto local_source = direct_statement_identifier(
+              s, est::ExprSlot::Initializer);
+          auto source_binding = local_source
+              ? env.binding_identities.find(*local_source)
+              : env.binding_identities.end();
+          if (transfers && source_binding != env.binding_identities.end() &&
+              !source_binding->second.empty() && transfer_type(*source_type)) {
+            TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
+                TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
+            if (auto inferred = straight_line_alias_effect(
+                    statements, index, s.a, *local_source, env.types,
+                    &unsupported)) {
+              source_access = *inferred;
+              const auto retained_access = retain_local_ownership_fact(s,
+                  statement_binding_identity(current_semantic_context_, s.line),
+                  source_binding->second, source_access);
+              if (!retained_access || *retained_access != source_access)
+                err(s.line, "checker could not retain the required EST ownership fact",
+                    "MOSS_INTERNAL_INVARIANT");
+            } else {
+              retain_unsupported_local_fact(s,
+                  statement_binding_identity(current_semantic_context_, s.line),
+                  source_binding->second, unsupported);
+            }
+          }
+          if (source_access == Effect::Consume) {
+            if (local_source) {
+              require_available(s.line, *local_source, env);
+              consume_binding(s.line, *local_source, env, s.a);
+            } else if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
               check_ownership_expression(s.line, s.b, env, Effect::Consume);
             }
           } else {
-            check_ownership_expression(s.line, s.b, env, Effect::Read);
+            check_ownership_expression(s.line, s.b, env, source_access);
           }
           record_direct_raise();
           std::optional<string> type;
@@ -23208,6 +24484,8 @@ class Checker {
           break;
         }
         case Stmt::Kind::Assign: {
+          if (tree_simple_identifier(s.a))
+            reject_vector_element_escape(s, est::ExprSlot::RhsValue, env);
           const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
           const bool targets_state_field = env.state_fields.count(s.a) != 0;
           auto prior_type = inferred_expr_type(s.a, env.types);
@@ -23235,15 +24513,47 @@ class Checker {
           bool transfers = storage_location(s.b, env.types) && source_type &&
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
-          if (transfers) {
-            if (tree_simple_identifier(source)) {
+          Effect source_access = transfers ? Effect::Consume : Effect::Read;
+          const auto local_source = direct_statement_identifier(
+              s, est::ExprSlot::RhsValue);
+          auto source_binding = local_source
+              ? env.binding_identities.find(*local_source)
+              : env.binding_identities.end();
+          if (transfers && source_binding != env.binding_identities.end() &&
+              !source_binding->second.empty() && transfer_type(*source_type) &&
+              !env.state_fields.count(s.a)) {
+            TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
+                TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
+            if (auto inferred = straight_line_alias_effect(
+                    statements, index, s.a, *local_source, env.types,
+                    &unsupported)) {
+              source_access = *inferred;
+              const auto retained_access = retain_local_ownership_fact(s,
+                  statement_binding_identity(current_semantic_context_, s.line) +
+                      ":" + s.a,
+                  source_binding->second, source_access);
+              if (!retained_access || *retained_access != source_access)
+                err(s.line, "checker could not retain the required EST ownership fact",
+                    "MOSS_INTERNAL_INVARIANT");
+            } else {
+              retain_unsupported_local_fact(s,
+                  statement_binding_identity(current_semantic_context_, s.line) +
+                      ":" + s.a,
+                  source_binding->second, unsupported);
+            }
+          }
+          if (source_access == Effect::Consume) {
+            if (local_source) {
+              require_available(s.line, *local_source, env);
+              consume_binding(s.line, *local_source, env, s.a);
+            } else if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
               check_ownership_expression(s.line, s.b, env, Effect::Consume);
             }
           } else {
-            check_ownership_expression(s.line, s.b, env, Effect::Read);
+            check_ownership_expression(s.line, s.b, env, source_access);
           }
           record_direct_raise();
           if (auto constructed = domain_constructor(s.b)) {
@@ -24053,8 +25363,11 @@ class Checker {
       concrete_function.params[index].set_type(canonical_types[index]);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
     OwnershipEnv specialized_ownership;
-    for (size_t index = 0; index < function.params.size(); ++index)
+    for (size_t index = 0; index < function.params.size(); ++index) {
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
+      specialized_ownership.binding_identities[function.params[index].name] =
+          "parameter:" + std::to_string(index);
+    }
     {
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
@@ -25052,16 +26365,27 @@ class Checker {
                                      open_result ? std::optional<moss::TypeRef>(
                                                        open_result->result)
                                                  : std::nullopt);
+      if (function->second->static_dispatch) {
+        auto key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
+            std::nullopt, open_result ? open_result->ordered_bindings
+                                      : vector<std::pair<uint32_t,
+                                            moss::TypeRef>>{});
+        if (open_result && (!key || !key->stable_key()))
+          err(line, "open-result specialization has unresolved type bindings",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        if (key && key->stable_key()) {
+          const string exact_key = *key->stable_key();
+          retain_active_expression_specialization(exact_key);
+        }
+      }
       if (open_result && function->second->static_dispatch) {
         auto key = specialization_key_inputs(
             function->second->semantic_callable_id,
             semantic_specialization_arguments(line, actual_types),
             std::nullopt, open_result->ordered_bindings);
-        if (!key || !key->stable_key())
-          err(line, "open-result specialization has unresolved type bindings",
-              "TYPE_AMBIGUOUS_OPEN_RESULT");
         const string exact_key = *key->stable_key();
-        retain_active_expression_specialization(exact_key);
         if (nested_result && current_check_statement_) {
           auto& keys = const_cast<Stmt*>(current_check_statement_)
               ->nested_open_call_keys_by_context[current_check_body_context_]
@@ -26100,6 +27424,31 @@ class Checker {
     return {};
   }
 
+  std::string local_ownership_consumer_context() {
+    if (checking_specialization_ &&
+        starts_with(current_semantic_context_, "fn:")) {
+      const auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end()) {
+        const std::string consumer_context = functional_function_context(
+            *function->second, checking_specialization_);
+        const auto [mapping, inserted] =
+            local_ownership_specialization_contexts_.emplace(
+                consumer_context, checking_specialization_->stable_type_key);
+        if (!inserted &&
+            mapping->second != checking_specialization_->stable_type_key)
+          throw std::invalid_argument(
+              "conflicting checker local ownership specialization context");
+        return consumer_context;
+      }
+    }
+    return expression_fact_context();
+  }
+
+  std::string local_ownership_specialization_identity() const {
+    return checking_specialization_
+        ? checking_specialization_->stable_type_key : std::string();
+  }
+
   void record_statement_expression_facts(
       const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
       std::string_view source, std::string context,
@@ -26206,6 +27555,8 @@ class Checker {
       } else if constexpr (std::is_same_v<T, est::Call>) {
         result.push_back(node.callee);
         result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        result.insert(result.end(), node.arguments.begin(), node.arguments.end());
       } else if constexpr (std::is_same_v<T, est::Member>) result.push_back(node.base);
       else if constexpr (std::is_same_v<T, est::Index>) {
         result.push_back(node.base); result.push_back(node.index);
@@ -26227,6 +27578,110 @@ class Checker {
       }
     }, arena.at(expression));
     return result;
+  }
+
+  static bool est_take_place_path(const est::Arena& arena,
+                                 est::ExprId expression) {
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena.at(expression)))
+      expression = grouped->inner;
+    if (std::holds_alternative<est::Identifier>(arena.at(expression)))
+      return true;
+    if (const auto* member =
+            std::get_if<est::Member>(&arena.at(expression)))
+      return est_take_place_path(arena, member->base);
+    if (const auto* indexed =
+            std::get_if<est::Index>(&arena.at(expression)))
+      return est_take_place_path(arena, indexed->base);
+    return false;
+  }
+
+  static bool est_take_place_shape(const est::Arena& arena,
+                                  est::ExprId expression) {
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena.at(expression)))
+      expression = grouped->inner;
+    return std::holds_alternative<est::Member>(arena.at(expression)) &&
+        est_take_place_path(arena, expression);
+  }
+
+  static bool est_subtree_contains(const est::Arena& arena,
+                                   est::ExprId root,
+                                   est::ExprId occurrence) {
+    std::vector<est::ExprId> pending{root};
+    std::set<est::ExprId> visited;
+    while (!pending.empty()) {
+      const auto current = pending.back();
+      pending.pop_back();
+      if (current == occurrence) return true;
+      if (!visited.insert(current).second) continue;
+      auto children = syntax_children(arena, current);
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+    return false;
+  }
+
+  bool active_expression_is_index_selector(
+      std::uint32_t arena_index, est::ExprId occurrence) const {
+    const auto* arena = expression_arena(arena_index);
+    if (!arena) return false;
+    for (const auto& active : active_est_expression_cursors_) {
+      if (!active || active->arena_index != arena_index) continue;
+      const auto* index = std::get_if<est::Index>(&arena->at(active->expr));
+      if (index && est_subtree_contains(*arena, index->index, occurrence))
+        return true;
+    }
+    return false;
+  }
+
+  bool publish_selector_argument_effects(
+      std::uint32_t arena_index, est::ExprId call_occurrence,
+      std::string_view selected_target,
+      const std::vector<Effect>& argument_effects) const {
+    if (!active_expression_is_index_selector(arena_index, call_occurrence))
+      return false;
+    const auto* arena = expression_arena(arena_index);
+    const auto* call = arena
+        ? std::get_if<est::Call>(&arena->at(call_occurrence)) : nullptr;
+    if (!arena || !call || call->arguments.size() != argument_effects.size())
+      return false;
+    const string context = expression_fact_context();
+    if (context.empty()) return false;
+    const auto* call_facts = arena->facts(call_occurrence, context);
+    if (!call_facts || call_facts->resolved_target.empty() ||
+        call_facts->resolved_target != selected_target)
+      return false;
+
+    // The argument records live under the very same exact context as the
+    // checked call target/specialization. When this index belongs to a take
+    // place, that context is also the one retained by its take requirement.
+    for (std::size_t index = 0; index < call->arguments.size(); ++index) {
+      const auto argument = call->arguments[index];
+      const auto* existing = arena->facts(argument, context);
+      if (existing && existing->inferred_effect &&
+          *existing->inferred_effect != argument_effects[index]) {
+        throw std::invalid_argument(
+            "contradictory checked selector argument effect in primary EST context");
+      }
+      est::SemanticFacts facts;
+      facts.inferred_effect = argument_effects[index];
+      const_cast<est::Arena*>(arena)->record_facts(argument, context,
+                                                   std::move(facts));
+      const auto* retained = arena->facts(argument, context);
+      if (!retained || retained->inferred_effect != argument_effects[index])
+        throw std::invalid_argument(
+            "checked selector argument effect failed EST fact publication");
+      if (std::getenv("MOSS_EST_FACTS_DUMP"))
+        std::cerr << "MOSS_EST_SELECTOR_ARGUMENT_EFFECT call="
+                  << call_occurrence << " argument=" << argument
+                  << " context=" << std::quoted(context)
+                  << " target=" << std::quoted(call_facts->resolved_target)
+                  << " specialization="
+                  << std::quoted(call_facts->specialization_result)
+                  << " effect=" << static_cast<int>(argument_effects[index])
+                  << '\n';
+    }
+    return true;
   }
 
   static bool source_span_matches(const est::Arena& arena,
@@ -26284,6 +27739,11 @@ class Checker {
           if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg)))
             candidates.push_back(named->value);
         } else candidates = syntax_children(arena, parent);
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        if ((role == "place" || role == "argument:0") &&
+            node.arguments.size() == 1)
+          candidates.push_back(node.arguments.front());
+        else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Message>) {
         if (role == "target" || role == "receiver") candidates.push_back(node.target);
         else if (auto index = expression_role_index(role,
@@ -26687,6 +28147,66 @@ class Checker {
                 }
               })
             : std::function<void()>{});
+    if (tree_cursor) {
+      const auto* arena = expression_arena(tree_cursor->arena_index);
+      const auto* take = arena
+          ? std::get_if<est::Take>(&arena->at(tree_cursor->expr)) : nullptr;
+      if (take) {
+        bool direct_value_slot = false;
+        auto inspect_handles = [&](const vector<est::Handle>& handles) {
+          for (const auto& handle : handles) {
+            if (handle.arena_index != tree_cursor->arena_index ||
+                handle.expr != tree_cursor->expr || handle.argument_index != 0)
+              continue;
+            direct_value_slot |= handle.slot == est::ExprSlot::Initializer ||
+                handle.slot == est::ExprSlot::RhsValue ||
+                handle.slot == est::ExprSlot::ReturnValue ||
+                handle.slot == est::ExprSlot::RaisedValue;
+          }
+        };
+        if (current_check_statement_)
+          inspect_handles(current_check_statement_->expression_handles);
+        if (current_check_result_function_)
+          inspect_handles(current_check_result_function_->expression_handles);
+        if (!direct_value_slot)
+          err(line, "take(place) requires a direct initializer, assignment, "
+              "return, reply, or raise value", "TAKE_CONTEXT_UNSUPPORTED");
+        mark_active_expression(OccurrenceKind::Take, "builtin:take-place-v1");
+        retain_active_expression_target("builtin:take-place-v1");
+        if (take->arguments.size() != 1)
+          err(line, "take expects exactly one field place",
+              "TAKE_ARGUMENT_ARITY");
+        const auto expression_view = est::view(*arena, tree_cursor->expr,
+                                               original);
+        const auto place_source =
+            expression_view.source_text(take->arguments.front());
+        if (!place_source || place_source->empty())
+          err(line, "take place has no retained EST source occurrence",
+              "TAKE_PLACE_OCCURRENCE_MISSING");
+        check_expression(line, *place_source, env, {}, "place");
+        if (!est_take_place_shape(*arena, take->arguments.front()))
+          err(line, "take requires a field place; locals and collection elements "
+              "cannot be taken directly", "TAKE_REQUIRES_FIELD_PLACE");
+        auto terminal = current_body_types_
+            ? current_body_types_->known_expression(*place_source) : nullptr;
+        if (!terminal) terminal = inferred_expr_term(*place_source, env);
+        terminal = terminal && current_body_types_
+            ? current_body_types_->solver.resolve(terminal) : terminal;
+        if (!terminal || terminal->kind != moss::TypeKind::Builtin ||
+            (terminal->name != "option" && terminal->name != "vector" &&
+             terminal->name != "map" && terminal->name != "queue"))
+          err(line, "take terminal field must have type option[T], Vector[T], "
+              "Map[K,V], or Queue[T]", "TAKE_INELIGIBLE_TERMINAL");
+        if (current_body_types_ &&
+            !current_body_types_->active_expression_occurrences.empty())
+          current_body_types_->retain_active_expression_type(terminal);
+        est::SemanticFacts facts;
+        facts.type = terminal;
+        facts.resolved_target = "builtin:take-place-v1";
+        record_active_expression_facts(std::move(facts));
+        return;
+      }
+    }
     if (est::begins_with_keyword(original, "match"))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
@@ -27381,6 +28901,19 @@ class Checker {
           retain_active_expression_target(
               "builtin-method:" + canonical_type_name(*receiver_type) +
               "." + handler);
+          std::vector<Effect> checked_argument_effects(
+              operation->argument_effects.begin(),
+              operation->argument_effects.end());
+          if (!active_est_expression_cursors_.empty() &&
+              active_est_expression_cursors_.back()) {
+            const auto& call_cursor =
+                *active_est_expression_cursors_.back();
+            publish_selector_argument_effects(
+                call_cursor.arena_index, call_cursor.expr,
+                "builtin-method:" + canonical_type_name(*receiver_type) +
+                    "." + handler,
+                checked_argument_effects);
+          }
           auto set_type = parsed_type(*receiver_type);
           if (staged_abi_v10() && applied_builtin(set_type, {"set"}) &&
               set_type->type_args.size() == 1)
@@ -27461,6 +28994,7 @@ class Checker {
         }
         return;
       }
+      const Method* checked_object_method = nullptr;
       if (it != env.end() && objects_.count(canonical_type_name(it->second))) {
         vector<string> argument_types;
         for (const auto& arg : args)
@@ -27472,9 +29006,27 @@ class Checker {
         if (!method && !defer_generic_method_admission(argument_types, failure))
           err(line, "no matching method '" + canonical_type_name(it->second) + "." +
               handler + "' for supplied arguments");
-        if (method)
+        if (method) {
+          checked_object_method = method;
           retain_active_expression_target(
               "method:" + method->owner + "." + method->name);
+        }
+      }
+      if (checked_object_method &&
+          checked_object_method->parameter_effects.size() == args.size()) {
+        // Publish only a complete checker-inferred method effect vector;
+        // method_parameter_effect's compatibility default is not authority.
+        const vector<Effect>& checked_argument_effects =
+            checked_object_method->parameter_effects;
+        if (!active_est_expression_cursors_.empty() &&
+            active_est_expression_cursors_.back()) {
+          const auto& call_cursor = *active_est_expression_cursors_.back();
+          publish_selector_argument_effects(
+              call_cursor.arena_index, call_cursor.expr,
+              "method:" + checked_object_method->owner + "." +
+                  checked_object_method->name,
+              checked_argument_effects);
+        }
       }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
@@ -27973,6 +29525,25 @@ class Checker {
         if (resolved_target) {
           retain_active_expression_target(
               resolved_target->semantic_callable_id);
+          if (!active_est_expression_cursors_.empty() &&
+              active_est_expression_cursors_.back()) {
+            const auto& call_cursor =
+                *active_est_expression_cursors_.back();
+            const auto* call_arena =
+                expression_arena(call_cursor.arena_index);
+            const auto* call_facts = call_arena
+                ? call_arena->facts(call_cursor.expr, expression_fact_context())
+                : nullptr;
+            if (call_facts && call_facts->resolved_target ==
+                                  resolved_target->semantic_callable_id) {
+              auto effects = checked_function_argument_effects(
+                  *resolved_target, call_facts->specialization_result);
+              if (effects)
+                publish_selector_argument_effects(
+                    call_cursor.arena_index, call_cursor.expr,
+                    resolved_target->semantic_callable_id, *effects);
+            }
+          }
         } else if (auto binding = env.find(callee);
                    binding != env.end() && open_generic(binding->second)) {
           retain_active_expression_target("binding:pending:" + callee);

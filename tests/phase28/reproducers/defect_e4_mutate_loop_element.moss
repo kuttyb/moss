@@ -1,0 +1,18 @@
+type Item:
+  qty: Int
+
+  fn take(n: Int):
+    qty = qty - n
+
+type Stock:
+  items: Vector[Item]
+
+  fn take_all(n: Int):
+    for it in items:
+      it.take(n)
+    return
+
+fn main():
+  stock = Stock(items: [Item(qty: 10), Item(qty: 20)])
+  stock.take_all(3)
+  echo stock.items[0].qty, stock.items[1].qty

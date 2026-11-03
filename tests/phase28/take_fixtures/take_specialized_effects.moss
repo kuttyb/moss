@@ -1,0 +1,43 @@
+# Two specializations of the same selector function with different inferred parameter effects (READ vs WRITE)
+type Reader:
+  val: Int
+  fn act() -> Int:
+    return val
+
+type Writer:
+  val: Int
+  fn act() -> Int:
+    val = val + 1
+    return val
+
+type Slot:
+  items: Vector[Int]
+
+type Container:
+  slots: Vector[Slot]
+
+fn select_cursor(x) -> Int:
+  return x.act()
+
+fn take_with_reader(c: Container) -> Vector[Int]:
+  var r = Reader(val: 0)
+  return take(c.slots[select_cursor(r)].items)
+
+fn take_with_writer(c: Container) -> Vector[Int]:
+  var w = Writer(val: 1)
+  return take(c.slots[select_cursor(w)].items)
+
+fn main():
+  var c = Container(slots: [Slot(items: [10]), Slot(items: [20]), Slot(items: [30])])
+  let v1 = take_with_reader(c)
+  let v2 = take_with_writer(c)
+  var score = 0
+  if v1[0] == 10:
+    score = score + 100
+  if v2[0] == 30:
+    score = score + 200
+  if (c.slots[0].items |> count) == 0:
+    score = score + 10
+  if (c.slots[2].items |> count) == 0:
+    score = score + 20
+  echo score
