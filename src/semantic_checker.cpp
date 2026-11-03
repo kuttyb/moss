@@ -15962,6 +15962,30 @@ class Checker {
         ? function.parameter_effects[index] : Effect::Read;
   }
 
+  std::optional<vector<Effect>> checked_function_argument_effects(
+      const Function& function, std::string_view specialization_identity) const {
+    if (!final_parameter_effects_ready_) return std::nullopt;
+    if (!function.static_dispatch) {
+      if (function.parameter_effects.size() != function.params.size())
+        return std::nullopt;
+      return function.parameter_effects;
+    }
+    if (specialization_identity.empty()) return std::nullopt;
+    const FunctionSpecialization* selected = nullptr;
+    for (const auto& candidate : function.specializations) {
+      if (candidate.stable_type_key != specialization_identity) continue;
+      if (candidate.semantic_key.stable_key() !=
+          std::optional<string>(candidate.stable_type_key))
+        return std::nullopt;
+      if (selected) return std::nullopt;
+      selected = &candidate;
+    }
+    if (!selected || selected->parameter_effects.size() !=
+                         function.params.size())
+      return std::nullopt;
+    return selected->parameter_effects;
+  }
+
   vector<Effect> concrete_function_effects(const Function& function,
                                            const vector<string>& types,
                                            vector<bool>* mutations = nullptr,
@@ -27581,6 +27605,85 @@ class Checker {
         est_take_place_path(arena, expression);
   }
 
+  static bool est_subtree_contains(const est::Arena& arena,
+                                   est::ExprId root,
+                                   est::ExprId occurrence) {
+    std::vector<est::ExprId> pending{root};
+    std::set<est::ExprId> visited;
+    while (!pending.empty()) {
+      const auto current = pending.back();
+      pending.pop_back();
+      if (current == occurrence) return true;
+      if (!visited.insert(current).second) continue;
+      auto children = syntax_children(arena, current);
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+    return false;
+  }
+
+  bool active_expression_is_index_selector(
+      std::uint32_t arena_index, est::ExprId occurrence) const {
+    const auto* arena = expression_arena(arena_index);
+    if (!arena) return false;
+    for (const auto& active : active_est_expression_cursors_) {
+      if (!active || active->arena_index != arena_index) continue;
+      const auto* index = std::get_if<est::Index>(&arena->at(active->expr));
+      if (index && est_subtree_contains(*arena, index->index, occurrence))
+        return true;
+    }
+    return false;
+  }
+
+  bool publish_selector_argument_effects(
+      std::uint32_t arena_index, est::ExprId call_occurrence,
+      std::string_view selected_target,
+      const std::vector<Effect>& argument_effects) const {
+    if (!active_expression_is_index_selector(arena_index, call_occurrence))
+      return false;
+    const auto* arena = expression_arena(arena_index);
+    const auto* call = arena
+        ? std::get_if<est::Call>(&arena->at(call_occurrence)) : nullptr;
+    if (!arena || !call || call->arguments.size() != argument_effects.size())
+      return false;
+    const string context = expression_fact_context();
+    if (context.empty()) return false;
+    const auto* call_facts = arena->facts(call_occurrence, context);
+    if (!call_facts || call_facts->resolved_target.empty() ||
+        call_facts->resolved_target != selected_target)
+      return false;
+
+    // The argument records live under the very same exact context as the
+    // checked call target/specialization. When this index belongs to a take
+    // place, that context is also the one retained by its take requirement.
+    for (std::size_t index = 0; index < call->arguments.size(); ++index) {
+      const auto argument = call->arguments[index];
+      const auto* existing = arena->facts(argument, context);
+      if (existing && existing->inferred_effect &&
+          *existing->inferred_effect != argument_effects[index]) {
+        throw std::invalid_argument(
+            "contradictory checked selector argument effect in primary EST context");
+      }
+      est::SemanticFacts facts;
+      facts.inferred_effect = argument_effects[index];
+      const_cast<est::Arena*>(arena)->record_facts(argument, context,
+                                                   std::move(facts));
+      const auto* retained = arena->facts(argument, context);
+      if (!retained || retained->inferred_effect != argument_effects[index])
+        throw std::invalid_argument(
+            "checked selector argument effect failed EST fact publication");
+      if (std::getenv("MOSS_EST_FACTS_DUMP"))
+        std::cerr << "MOSS_EST_SELECTOR_ARGUMENT_EFFECT call="
+                  << call_occurrence << " argument=" << argument
+                  << " context=" << std::quoted(context)
+                  << " target=" << std::quoted(call_facts->resolved_target)
+                  << " specialization="
+                  << std::quoted(call_facts->specialization_result)
+                  << " effect=" << static_cast<int>(argument_effects[index])
+                  << '\n';
+    }
+    return true;
+  }
+
   static bool source_span_matches(const est::Arena& arena,
                                   est::ExprId parent,
                                   est::ExprId child,
@@ -28798,6 +28901,19 @@ class Checker {
           retain_active_expression_target(
               "builtin-method:" + canonical_type_name(*receiver_type) +
               "." + handler);
+          std::vector<Effect> checked_argument_effects(
+              operation->argument_effects.begin(),
+              operation->argument_effects.end());
+          if (!active_est_expression_cursors_.empty() &&
+              active_est_expression_cursors_.back()) {
+            const auto& call_cursor =
+                *active_est_expression_cursors_.back();
+            publish_selector_argument_effects(
+                call_cursor.arena_index, call_cursor.expr,
+                "builtin-method:" + canonical_type_name(*receiver_type) +
+                    "." + handler,
+                checked_argument_effects);
+          }
           auto set_type = parsed_type(*receiver_type);
           if (staged_abi_v10() && applied_builtin(set_type, {"set"}) &&
               set_type->type_args.size() == 1)
@@ -28878,6 +28994,7 @@ class Checker {
         }
         return;
       }
+      const Method* checked_object_method = nullptr;
       if (it != env.end() && objects_.count(canonical_type_name(it->second))) {
         vector<string> argument_types;
         for (const auto& arg : args)
@@ -28889,9 +29006,27 @@ class Checker {
         if (!method && !defer_generic_method_admission(argument_types, failure))
           err(line, "no matching method '" + canonical_type_name(it->second) + "." +
               handler + "' for supplied arguments");
-        if (method)
+        if (method) {
+          checked_object_method = method;
           retain_active_expression_target(
               "method:" + method->owner + "." + method->name);
+        }
+      }
+      if (checked_object_method &&
+          checked_object_method->parameter_effects.size() == args.size()) {
+        // Publish only a complete checker-inferred method effect vector;
+        // method_parameter_effect's compatibility default is not authority.
+        const vector<Effect>& checked_argument_effects =
+            checked_object_method->parameter_effects;
+        if (!active_est_expression_cursors_.empty() &&
+            active_est_expression_cursors_.back()) {
+          const auto& call_cursor = *active_est_expression_cursors_.back();
+          publish_selector_argument_effects(
+              call_cursor.arena_index, call_cursor.expr,
+              "method:" + checked_object_method->owner + "." +
+                  checked_object_method->name,
+              checked_argument_effects);
+        }
       }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
@@ -29390,6 +29525,25 @@ class Checker {
         if (resolved_target) {
           retain_active_expression_target(
               resolved_target->semantic_callable_id);
+          if (!active_est_expression_cursors_.empty() &&
+              active_est_expression_cursors_.back()) {
+            const auto& call_cursor =
+                *active_est_expression_cursors_.back();
+            const auto* call_arena =
+                expression_arena(call_cursor.arena_index);
+            const auto* call_facts = call_arena
+                ? call_arena->facts(call_cursor.expr, expression_fact_context())
+                : nullptr;
+            if (call_facts && call_facts->resolved_target ==
+                                  resolved_target->semantic_callable_id) {
+              auto effects = checked_function_argument_effects(
+                  *resolved_target, call_facts->specialization_result);
+              if (effects)
+                publish_selector_argument_effects(
+                    call_cursor.arena_index, call_cursor.expr,
+                    resolved_target->semantic_callable_id, *effects);
+            }
+          }
         } else if (auto binding = env.find(callee);
                    binding != env.end() && open_generic(binding->second)) {
           retain_active_expression_target("binding:pending:" + callee);

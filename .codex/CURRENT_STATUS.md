@@ -14835,3 +14835,11 @@ Completed integration scope:
    - `tests/phase28/verify_defects.py` PASS (5 PASS, 3 KNOWN FAILURES, 0 XPASS, 0 UNEXPECTED FAILURES).
    - `tests/tooling/check_agent_feedback.py` PASS.
    - `git diff --check` PASS.
+
+### Phase 28 Round 3 Team A — Authoritative Selector Argument Effects (W02) (in progress)
+
+Branch `phase28-r3-team-a-effect-facts`, based on requested `4dc62e9437f00363286f7adc6ada8138d20a48ca`.
+- Checker now publishes checked READ/WRITE/CONSUME for exact selector argument EST occurrences under the primary `expression_fact_context()` used by call target/specialization and take facts. Static callee parameter effects require an exact checker specialization key; object method publication requires a complete checked effect vector; built-ins use their checker-approved operation effect vector. Contradictory primary effects reject.
+- Added a fixture and focused harness for READ/WRITE/CONSUME, exact `(arena, ExprId, context)` lookup, same-call specialization isolation, and abstract trait dispatch producing no invented primary effect. Registered in default and EST-shadow make check paths.
+- Validation completed: targeted selector effect harness (default and shadow), local ownership gate (default and shadow), `verify_take_fixtures.py` (16/16), specialized ownership contract, string debt (42 names / 7 binding comparisons), and `git diff --check`.
+- Remaining before handoff: document feedback, freeze and request Agent 2 review, address findings if any, final push and status record. Abstract trait-call effects remain unsupported because no checked argument-effect vector is available there. No full integration suite run.

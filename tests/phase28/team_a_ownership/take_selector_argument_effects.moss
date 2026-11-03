@@ -1,0 +1,83 @@
+type Cursor:
+  index: Int
+
+trait Position:
+  fn position(cursor: Cursor) -> Int
+
+type PositionA:
+  index: Int
+  fn position(cursor: Cursor) -> Int:
+    return cursor.index
+
+type PositionB:
+  index: Int
+  fn position(cursor: Cursor) -> Int:
+    cursor.index = cursor.index + 1
+    return cursor.index
+
+type PositionC:
+  index: Int
+  fn position(cursor: Cursor) -> Int:
+    held = cursor
+    return held.index
+
+type Slot:
+  items: Vector[Int]
+
+type Container:
+  slots: Vector[Slot]
+
+fn read_selector(cursor: Cursor) -> Int:
+  return cursor.index
+
+fn write_selector(cursor: Cursor) -> Int:
+  cursor.index = cursor.index + 0
+  return cursor.index
+
+fn consume_selector(cursor: Cursor) -> Int:
+  held = cursor
+  return held.index
+
+fn take_read(container: Container, cursor: Cursor) -> Vector[Int]:
+  return take(container.slots[read_selector(cursor)].items)
+
+fn take_write(container: Container, cursor: Cursor) -> Vector[Int]:
+  return take(container.slots[write_selector(cursor)].items)
+
+fn take_consume(container: Container, cursor: Cursor) -> Vector[Int]:
+  return take(container.slots[consume_selector(cursor)].items)
+
+fn index_specialized(container: Container, marker: Position, cursor: Cursor) -> Int:
+  return container.slots[marker.position(cursor)].items[0]
+
+fn main():
+  container = Container(slots: [Slot(items: [1])])
+  cursor_a = Cursor(index: 0)
+  cursor_b = Cursor(index: 0)
+  cursor_c = Cursor(index: 0)
+  read_value = take_read(container, cursor_a)
+  write_value = take_write(container, cursor_b)
+  consume_value = take_consume(container, cursor_c)
+  position_a = PositionA(index: 0)
+  position_b = PositionB(index: 0)
+  position_c = PositionC(index: 0)
+  cursor_d = Cursor(index: 0)
+  cursor_e = Cursor(index: 0)
+  cursor_f = Cursor(index: 0)
+  specialized_a = index_specialized(container, position_a, cursor_d)
+  specialized_b = index_specialized(container, position_b, cursor_e)
+  specialized_c = index_specialized(container, position_c, cursor_f)
+  echo specialized_a
+  marker_a = MarkerA(value: 1)
+  marker_b = MarkerB(value: 2)
+  specialized_index(container, cursor_a, marker_a)
+  specialized_index(container, cursor_b, marker_b)
+
+type MarkerA:
+  value: Int
+
+type MarkerB:
+  value: Int
+
+fn specialized_index(container: Container, cursor: Cursor, marker) -> Int:
+  return container.slots[read_selector(cursor)].items[0]
