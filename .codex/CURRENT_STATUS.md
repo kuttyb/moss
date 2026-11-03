@@ -14533,7 +14533,9 @@ field projections and adds an Option-return rejection regression. The
 Copy-field projection type query also receives the source binding's checked
 type under the local alias. Latest dev build, 18-fixture focused harness in
 default and shadow modes, py_compile, feedback validation and diff check pass.
-The correction is committed locally at implementation SHA
-`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`. Updated handoff docs, scoped push,
-and exact-SHA CP1 re-review remain pending. Earlier pushed commits remain
-intact; no history was rewritten.
+The correction is committed at implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`; updated handoff docs are committed
+at `56fcc00929133a3fee83c9bb22ee3d5e46292ffa`. Both are pushed to
+`origin/phase28-r2-team-a`. Agent 2 exact-SHA CP1 re-review is in progress on
+the corrected implementation. Earlier NO-GO commits remain in published
+history; no history was rewritten.
