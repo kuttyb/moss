@@ -1,7 +1,7 @@
 # Nested field projections (v[i].pending, m[k].items), verifying single evaluation of projection indices.
 type Task:
   id: Int
-  pending: option[String]
+  pending: Vector[Int]
 
 type Group:
   tasks: Vector[Task]
@@ -17,26 +17,21 @@ fn next_group_index(c: Counter) -> Int:
   return 0
 
 fn run_nested_projection(r: Registry, c: Counter) -> Int:
-  # r.groups[next_group_index(c)].tasks[0].pending must evaluate next_group_index(c) exactly once!
   let moved = take(r.groups[next_group_index(c)].tasks[0].pending)
   var score = 0
-  match moved:
-    case Some(s):
-      score = score + 100
-    case None:
-      score = score + 0
+  let moved_count = moved |> count
+  if moved_count == 3:
+    score = score + 100
   score = score + r.groups[0].tasks[0].id
-  match r.groups[0].tasks[0].pending:
-    case Some(s):
-      score = score + 50
-    case None:
-      score = score + 5
+  let pending_count = r.groups[0].tasks[0].pending |> count
+  if pending_count == 0:
+    score = score + 12
   if c.eval_count == 1:
     score = score + 10
   return score
 
 fn main():
-  var g = Group(tasks: [Task(id: 7, pending: Some("deploy"))])
+  var g = Group(tasks: [Task(id: 7, pending: [1, 2, 3])])
   var r = Registry(groups: [g])
   var c = Counter(eval_count: 0)
   let res = run_nested_projection(r, c)

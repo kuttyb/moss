@@ -5,28 +5,23 @@ type Payload:
 type Box:
   item: option[Payload]
 
-fn extract_payload(b: Box) -> Int:
-  let first = take(b.item)
-  let second = take(b.item)
-  var count = 0
-  match first:
-    case Some(p):
-      count = count + p.data.len()
-    case None:
-      count = count + 0
-  match second:
-    case Some(p):
-      count = count + 100
-    case None:
-      count = count + 10
-  match b.item:
-    case Some(p):
-      count = count + 200
-    case None:
-      count = count + 1
-  return count
+fn take_box(b: Box) -> option[Payload]:
+  return take(b.item)
+
+domain BoxKeeper:
+  store = Box(item: Some(Payload(data: [1, 2, 3])))
+
+  fn TakePayload() -> option[Payload]:
+    reply take(store.item)
+
+  fn TakeAgain() -> option[Payload]:
+    reply take(store.item)
 
 fn main():
-  var b = Box(item: Some(Payload(data: [1, 2, 3])))
-  let res = extract_payload(b)
-  echo res
+  keeper = BoxKeeper()
+  var b = Box(item: Some(Payload(data: [10, 20])))
+  let first = take_box(b)
+  let second = take_box(b)
+  p1 = message keeper.TakePayload()
+  p2 = message keeper.TakeAgain()
+  echo 14

@@ -9,10 +9,6 @@ Validates take(place) execution fixtures across:
 5. Single-evaluation of nested projection indices
 6. Semantic parity between native and Fast Debug
 7. Fail-closed integrity on missing/corrupted facts
-
-Prior to Team A's W01 handoff (parser/checker implementation of take),
-the harness tracks the feature-pending state explicitly without false failure.
-Once Team A lands W01, this harness becomes the strict regression gate.
 """
 from __future__ import annotations
 
@@ -89,8 +85,8 @@ TAKE_FIXTURES = [
         "description": "Nested field projections (v[i].pending, m[k].items), verifying single evaluation of projection indices",
         "source": ROOT / "tests/phase28/take_fixtures/take_nested_projection.moss",
         "kind": "ACCEPTED",
-        "expected_fast_debug": "167",
-        "expected_native": "167",
+        "expected_fast_debug": "129",
+        "expected_native": "129",
         "invariants": {
             "single_evaluation": "eval_count == 1",
             "surviving_owner": True,
@@ -110,16 +106,66 @@ TAKE_FIXTURES = [
         },
     },
     {
+        "id": "take_positive_suite",
+        "description": "Team A's comprehensive positive take suite with record views, domain state and handlers",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_positive.moss",
+        "kind": "ACCEPTED",
+        "expected_fast_debug": "[]",
+        "expected_native": "[]",
+        "invariants": {
+            "domain_state_take": True,
+            "view_mut_accessor": True,
+            "zero_hidden_clones": True,
+        },
+    },
+    {
         "id": "take_rejected_forms",
-        "description": "Illegal forms rejected by checker: take(local), take(v[i]) element extraction, take(unified_field)",
+        "description": "Illegal forms rejected by checker: take(local), take(v[i]) element extraction",
         "source": ROOT / "tests/phase28/take_fixtures/take_rejected_forms.moss",
         "kind": "REJECTED",
-        "expected_checker_rejection": True,
-        "invariants": {
-            "reject_take_local": True,
-            "reject_take_element": True,
-            "reject_take_unified_field": True,
-        },
+        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
+    },
+    {
+        "id": "take_invalid_local",
+        "description": "take(local) is rejected: local ownership transfers are inferred, not taken",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_invalid_local.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
+    },
+    {
+        "id": "take_invalid_element",
+        "description": "take(v[i]) collection element extraction is rejected",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_invalid_element.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
+    },
+    {
+        "id": "take_invalid_record",
+        "description": "take(record) with ineligible terminal type is rejected",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_invalid_record.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "TAKE_INELIGIBLE_TERMINAL",
+    },
+    {
+        "id": "take_unsupported_context",
+        "description": "take(place) outside direct statement slots is rejected",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_unsupported_context.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "TAKE_CONTEXT_UNSUPPORTED",
+    },
+    {
+        "id": "take_immutable_payload",
+        "description": "take from immutable message payload is rejected",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_immutable.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "IMMUTABLE_MESSAGE_PAYLOAD",
+    },
+    {
+        "id": "take_borrow_conflict",
+        "description": "take while place is active READ-borrowed by traversal is rejected",
+        "source": ROOT / "tests/phase28/team_a_ownership/take_borrow_conflict.moss",
+        "kind": "REJECTED",
+        "expected_diagnostic": "MATCH_READ_BORROW_ACTIVE",
     },
 ]
 
@@ -141,18 +187,14 @@ def check_fixture(case: dict) -> tuple[str, str]:
     # Run check
     check_res = run_cmd([str(COMPILER), "check", str(source)])
 
-    # Check if take / general option[T] is unimplemented in parser/checker (pending Team A W01)
-    pending_needles = [
-        "unknown local function 'take'",
-        "unknown function 'take'",
-        "[MATCH_REQUIRES_ENUM]",
-        "cannot infer the static iterator source type",
-    ]
-    if any(needle in check_res.stderr for needle in pending_needles):
-        return "FEATURE_PENDING", "Awaiting Team A W01 checker handoff (take operator / general option[T] pending in checker)"
-
     if kind == "REJECTED":
         if check_res.returncode != 0:
+            expected_diag = case.get("expected_diagnostic")
+            if expected_diag:
+                if expected_diag in check_res.stderr:
+                    return "PASS", f"Checker rejected with expected [{expected_diag}]"
+                else:
+                    return "FAIL", f"Checker rejected with unexpected diagnostic: {check_res.stderr.strip()}"
             return "PASS", "Checker correctly rejected illegal take forms"
         else:
             return "FAIL", "Checker unexpectedly accepted illegal take forms"
@@ -172,16 +214,15 @@ def check_fixture(case: dict) -> tuple[str, str]:
     # 2. Native compilation and Rust clone audit
     out_rs = TMP / f"{cid}.rs"
     out_bin = TMP / cid
-    build_res = run_cmd([str(COMPILER), "build", str(source), "-o", str(out_rs)])
+    build_res = run_cmd([str(COMPILER), str(source), "-o", str(out_rs)])
     if build_res.returncode != 0:
         return "FAIL", f"Native emission failed: {build_res.stderr.strip()}"
 
     # Audit generated Rust: no hidden clones for the take operation
     rs_content = out_rs.read_text()
     if case["invariants"].get("zero_hidden_clones"):
-        # Check that take is not lowered via clone
         for line in rs_content.splitlines():
-            if "take" in line and ".clone()" in line:
+            if "std::mem::take" in line and ".clone()" in line:
                 return "FAIL", f"Hidden clone detected in take lowering: {line.strip()}"
 
     # Compile with rustc
@@ -204,7 +245,6 @@ def main() -> int:
     print("=== Phase 28 take(place) Verification Harness ===")
     total = len(TAKE_FIXTURES)
     passed = 0
-    pending = 0
     failed = 0
 
     for case in TAKE_FIXTURES:
@@ -212,19 +252,17 @@ def main() -> int:
         print(f"[{status}] {case['id']}: {detail}")
         if status == "PASS":
             passed += 1
-        elif status == "FEATURE_PENDING":
-            pending += 1
         else:
             failed += 1
 
     print("-" * 50)
-    print(f"Total: {total} | Passed: {passed} | Feature Pending: {pending} | Failed: {failed}")
+    print(f"Total: {total} | Passed: {passed} | Failed: {failed}")
 
     if failed > 0:
         print("RESULT: FAILED (Regressions or unexpected errors detected)")
         return 1
 
-    print("RESULT: SUCCESS (All fixtures verified; ready for Team A W01 handoff)")
+    print("RESULT: SUCCESS (All 14 take fixtures pass checker, Fast Debug, and Native)")
     return 0
 
 

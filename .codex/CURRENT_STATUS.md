@@ -1,3 +1,27 @@
+### Phase 28 Round 3 R03-T02-W01 `take(place)` Consumer Lowering & Integration (2026-11-02, Team B)
+
+Branch `phase28-r3-team-b`. Integrated Team A's reviewed checker contract (`phase28-r3-team-a` at `a679994c1d2b44fc82e64c5cf7a2f123aef26a27`) and delivered executable native Rust emission and Fast Debug evaluation for `take(place)`:
+1. Fast Debug Lowering:
+   - Evaluates `est::Take` in `FastInterpreter::evaluate_expression_tree` by reading checked `TypedTakeRequirementV1` and `TypedTakeFactV1`.
+   - Locates target place via `locate_tree_node`, moves out value via `std::move(*place.value)`, installs terminal empty replacement (`None`, `[]`, `{}`, Queue::new).
+   - Emits state write or local write trace event, returns previous value with zero extra evaluations of nested indices.
+2. Native Rust Lowering:
+   - Emits `std::mem::take(...)` using `resolve_take_fact` and `emit_take_expression` in `src/native_generator.cpp`.
+   - Places lowered across domain state (`state.<root>.__moss_field_<field>_mut()`), view parameters (`<param>.__moss_field_<field>_mut()`), borrowed parameters (`(*<param>).<field>`), vector indexing (`[(<selector>) as usize]`), and map indexing (`.get_mut(&(<selector>)).expect(...)`).
+   - Zero `.clone()` calls emitted for take lowering.
+   - Guarded statements (`Let`/`Var`, `Assign`, `Return`, `Reply`, `Raise`) and expression fallback to fail closed with `MOSS_INTERNAL_INVARIANT` on unhandled take expressions.
+3. EST Fix:
+   - Qualified `take_operator` in `src/est/expression_tree.cpp` to require `arguments.size() == 1`, distinguishing `take(place)` from 0-argument methods (e.g. `take()` in `swarm_035`).
+4. Verification & Gates:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (14/14 tests: 7 positive parity + 7 checker rejection forms).
+   - `python3 tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (7/7 fail-closed tests: drop, perturb, delete fact, delete requirement, duplicate fact, duplicate requirement, perturb place ID).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase28_local_ownership.py ./moss` (default & `MOSS_EST=shadow`): PASS.
+   - `python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS.
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (audited 42 name comparisons, 10 binding comparisons).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
 ### Phase 28 Round 3 Team A — `take(place)` checker handoff (2026-11-02)
 
 Branch: `phase28-r3-team-a`, based on Round 2 integration `42b3dc607ebeadefd3f117bcee3af09f312e84e8`. Checker/EST implementation and focused positive, negative, fact-drop, perturbation, and duplicate-record checks are complete for the bounded slice. Validation on the current worktree: `make --jobs="$(nproc)" moss-dev` PASS; `tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev` PASS in default and `MOSS_EST=shadow`; `git diff --check` PASS. Full suites and downstream lowering are not run.

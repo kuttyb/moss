@@ -7,10 +7,8 @@ type Storage:
 
 fn fallible_take(s: Storage) -> Int:
   let extracted = take(s.buffer)
-  # Extraction succeeded; s.buffer is now empty ([]).
-  # Now a typed raise occurs.
   raise OpError.Failed(code: 404)
-  return extracted.len()
+  return 0
 
 fn main():
   var s = Storage(buffer: [10, 20, 30])
@@ -20,10 +18,8 @@ fn main():
   recover OpError.Failed(code):
     caught = code
 
-  # Critical Phase 28 / Phase 21 invariant:
-  # The partial state mutation survives the raise. s.buffer remains [] (len == 0).
-  # There is NO invented rollback.
   var score = caught
-  if s.buffer.len() == 0:
+  let remaining = s.buffer |> count
+  if remaining == 0:
     score = score + 1000
   echo score

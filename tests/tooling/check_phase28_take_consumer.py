@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Exercise Phase 28 Team B native and Fast Debug consumers of checker-owned take facts.
+
+Verifies strict checker semantic authority and fail-closed invariants:
+1. Native and Fast Debug execution on valid take fixtures
+2. Fact availability drop fails closed with MOSS_INTERNAL_INVARIANT
+3. Fact effect perturbation (WRITE -> READ) fails closed with MOSS_INTERNAL_INVARIANT
+4. Fact record deletion fails closed with MOSS_INTERNAL_INVARIANT
+5. Requirement record deletion fails closed with MOSS_INTERNAL_INVARIANT
+6. Duplicate fact records fail closed with MOSS_INTERNAL_INVARIANT
+7. Duplicate requirement records fail closed with MOSS_INTERNAL_INVARIANT
+8. Perturbed place occurrence ID fails closed with MOSS_INTERNAL_INVARIANT
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+TMP = ROOT / "tmp/phase28_take_consumer"
+TMP.mkdir(parents=True, exist_ok=True)
+POSITIVE_FIXTURE = ROOT / "tests/phase28/take_fixtures/take_vector_field.moss"
+
+
+def run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=ROOT, env=env
+    )
+
+
+def verify_fail_closed(compiler: str, hook: str) -> None:
+    # 1. Native emission fail-closed
+    rs_path = TMP / f"take_fail_{hook}.rs"
+    env = os.environ.copy()
+    env[hook] = "1"
+    proc_native = run([compiler, str(POSITIVE_FIXTURE), "-o", str(rs_path)], env=env)
+    if proc_native.returncode == 0:
+        raise AssertionError(f"Hook {hook}: expected native failure, but compilation succeeded!")
+    combined_native = proc_native.stderr + proc_native.stdout
+    if "MOSS_INTERNAL_INVARIANT" not in combined_native:
+        raise AssertionError(
+            f"Hook {hook}: expected MOSS_INTERNAL_INVARIANT in native, got output:\n{combined_native}"
+        )
+
+    # 2. Fast Debug execution fail-closed
+    proc_fd = run([compiler, "run", "--interp", str(POSITIVE_FIXTURE)], env=env)
+    if proc_fd.returncode == 0:
+        raise AssertionError(f"Hook {hook}: expected Fast Debug failure, but execution succeeded!")
+    combined_fd = proc_fd.stderr + proc_fd.stdout
+    if "MOSS_INTERNAL_INVARIANT" not in combined_fd:
+        raise AssertionError(
+            f"Hook {hook}: expected MOSS_INTERNAL_INVARIANT in Fast Debug, got output:\n{combined_fd}"
+        )
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: check_phase28_take_consumer.py COMPILER")
+    compiler = sys.argv[1]
+
+    # Verify baseline succeeds without hooks
+    baseline_rs = TMP / "baseline.rs"
+    base_res = run([compiler, str(POSITIVE_FIXTURE), "-o", str(baseline_rs)])
+    if base_res.returncode != 0:
+        raise AssertionError(f"Baseline compile failed: {base_res.stderr}")
+
+    hooks = [
+        "MOSS_TEST_CONSUMER_DROP_TAKE_FACT",
+        "MOSS_TEST_CONSUMER_PERTURB_TAKE_FACT",
+        "MOSS_TEST_CONSUMER_DELETE_TAKE_RECORD",
+        "MOSS_TEST_CONSUMER_DELETE_TAKE_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_TAKE_FACT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_TAKE_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_PERTURB_TAKE_PLACE_ID",
+    ]
+
+    for hook in hooks:
+        verify_fail_closed(compiler, hook)
+        print(f"[PASS] {hook}: correctly failed closed with MOSS_INTERNAL_INVARIANT")
+
+    print("-" * 50)
+    print("RESULT: SUCCESS (All 7 take semantic authority fail-closed tests passed)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

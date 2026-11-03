@@ -127,9 +127,91 @@ class FastInterpreter {
   };
 
   explicit FastInterpreter(const Program& program)
-      : program_(program) {}
+      : program_(program) {
+#ifdef MOSS_TEST_BUILD
+    init_test_hooks();
+#endif
+  }
   FastInterpreter(const Program& program, Options options)
-      : program_(program), options_(options) {}
+      : program_(program), options_(options) {
+#ifdef MOSS_TEST_BUILD
+    init_test_hooks();
+#endif
+  }
+
+#ifdef MOSS_TEST_BUILD
+  void init_test_hooks() {
+    auto* semantics = program_.typed_semantics.get();
+    if (!semantics) return;
+
+    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->availability = TypedTakeFactV1::Availability::MissingTakeOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->required_access = Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_RECORD")) {
+      if (!semantics->take_facts.empty()) {
+        semantics->take_facts.erase(semantics->take_facts.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_REQUIREMENT")) {
+      if (!semantics->required_take_occurrences.empty()) {
+        semantics->required_take_occurrences.erase(
+            semantics->required_take_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_FACT")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          semantics->take_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_REQUIREMENT")) {
+      if (!semantics->required_take_occurrences.empty()) {
+        if (auto* req = find_target_take_req(semantics->required_take_occurrences)) {
+          semantics->required_take_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_PLACE_ID")) {
+      if (!semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(semantics->take_facts)) {
+          fact->place_occurrence_id += 9999;
+        }
+      }
+    }
+  }
+#endif
 
   const std::vector<TraceEvent>& trace() const { return trace_; }
 
@@ -631,6 +713,7 @@ class FastInterpreter {
     est::ExprId root = 0;
     std::string source;
     mutable std::unordered_map<est::ExprId, std::string> derived_text;
+    std::uint32_t arena_index = 0;
   };
 
   const ExpressionTreeView* active_expression_tree_ = nullptr;
@@ -651,6 +734,7 @@ class FastInterpreter {
           view.source.assign(source);
           view.arena = program_.expression_arenas[handle.arena_index].get();
           view.root = handle.expr;
+          view.arena_index = handle.arena_index;
           return view;
         }
       }
@@ -1616,6 +1700,67 @@ class FastInterpreter {
       return eval_pipeline(*pipeline, frame, line, output, *tree, *pipeline_node);
     }
     if (tree) {
+      if (const auto* take_node =
+              std::get_if<est::Take>(&tree->arena->at(current_root))) {
+        (void)take_node;
+        if (!program_.typed_semantics)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT missing typed semantics for take");
+        const TypedTakeRequirementV1* requirement = nullptr;
+        const TypedTakeFactV1* fact = nullptr;
+        try {
+          if (!frame.specialization_identity.empty()) {
+            requirement = &program_.typed_semantics->find_take_requirement(
+                tree->arena_index, current_root, frame.functional_context,
+                frame.specialization_identity);
+          } else {
+            requirement = &program_.typed_semantics->find_take_requirement(
+                tree->arena_index, current_root, frame.functional_context);
+          }
+          fact = program_.typed_semantics->find_take_fact(*requirement);
+        } catch (const std::exception& exc) {
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT " + std::string(exc.what()));
+        }
+        if (!requirement || !fact || !fact->is_authoritative())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT unauthoritative take fact");
+
+        Place place = locate_tree_node(*tree, fact->place_occurrence_id,
+                                       frame, line, output);
+        if (!place.value)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT unresolvable place for checked take");
+
+        Value previous = std::move(*place.value);
+        switch (fact->replacement) {
+          case TypedTakeReplacementV1::OptionNone: {
+            Value none = Value::struct_value("option");
+            none.object->case_name = "None";
+            *place.value = std::move(none);
+            break;
+          }
+          case TypedTakeReplacementV1::VectorEmpty: {
+            *place.value = Value::vector_value({}, previous.element_type);
+            break;
+          }
+          case TypedTakeReplacementV1::MapEmpty: {
+            *place.value = Value::map_value();
+            break;
+          }
+          case TypedTakeReplacementV1::QueueEmpty: {
+            *place.value = Value::queue_value();
+            break;
+          }
+        }
+        if (place.domain) {
+          state_event("state_write", frame, line, place, summary(previous),
+                      summary(*place.value));
+        } else {
+          emit("LocalWrite", frame, line, fact->root_name);
+        }
+        return previous;
+      }
       if (const auto* message_node =
               std::get_if<est::Message>(&tree->arena->at(current_root)))
         return message(*tree, *message_node, frame, line, output);
@@ -3483,6 +3628,7 @@ class FastInterpreter {
               checked_handle->arena_index].get();
           message_tree.root = checked_handle->expr;
           message_tree.source = checked_source;
+          message_tree.arena_index = checked_handle->arena_index;
           const auto* message_node = std::get_if<est::Message>(
               &message_tree.arena->at(message_tree.root));
           if (!message_node)

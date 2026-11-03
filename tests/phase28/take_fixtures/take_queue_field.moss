@@ -2,21 +2,19 @@
 type Worklist:
   tasks: Queue[Int]
 
-fn take_queue(w: Worklist) -> Int:
-  let first = take(w.tasks)
-  let second = take(w.tasks)
-  var sum = 0
-  sum = sum + first.len()
-  if second.len() == 0:
-    sum = sum + 10
-  if w.tasks.len() == 0:
-    sum = sum + 100
-  return sum
+fn take_worklist(w: Worklist) -> Queue[Int]:
+  return take(w.tasks)
 
 fn main():
   var q = Queue()
-  q.push(1)
+  q.push(10)
   q.push(2)
   var w = Worklist(tasks: q)
-  let res = take_queue(w)
-  echo res
+  let first = take_worklist(w)
+  let second = take_worklist(w)
+  var sum = 0
+  sum = sum + first.pop()
+  sum = sum + first.pop()
+  w.tasks.push(100)
+  sum = sum + w.tasks.pop()
+  echo sum

@@ -2,22 +2,27 @@
 type Cache:
   entries: Map[String, Int]
 
-fn take_map(c: Cache) -> Int:
-  let first = take(c.entries)
-  let second = take(c.entries)
-  var sum = 0
-  if first.len() == 2:
-    sum = sum + 20
-  if second.len() == 0:
-    sum = sum + 5
-  if c.entries.len() == 0:
-    sum = sum + 1
-  return sum
+fn take_cache(c: Cache) -> Map[String, Int]:
+  return take(c.entries)
 
 fn main():
   var m = Map()
   m["alpha"] = 100
   m["beta"] = 200
   var c = Cache(entries: m)
-  let res = take_map(c)
-  echo res
+  let first = take_cache(c)
+  let second = take_cache(c)
+  var sum = 0
+  let first_keys = first.keys()
+  let first_count = first_keys |> count
+  if first_count == 2:
+    sum = sum + 20
+  let second_keys = second.keys()
+  let second_count = second_keys |> count
+  if second_count == 0:
+    sum = sum + 5
+  let c_keys = c.entries.keys()
+  let c_count = c_keys |> count
+  if c_count == 0:
+    sum = sum + 1
+  echo sum

@@ -5,17 +5,21 @@ type Element:
 type Container:
   items: Vector[Element]
 
-fn take_vector(c: Container) -> Int:
-  let first = take(c.items)
-  let second = take(c.items)
-  var sum = 0
-  for e in first:
-    sum = sum + e.tag
-  sum = sum + (second.len() * 100)
-  sum = sum + (c.items.len() * 1000)
-  return sum
+fn take_items(c: Container) -> Vector[Element]:
+  return take(c.items)
 
 fn main():
   var c = Container(items: [Element(tag: 10), Element(tag: 20), Element(tag: 30)])
-  let res = take_vector(c)
-  echo res
+  let first = take_items(c)
+  let second = take_items(c)
+  var sum = 0
+  let first_count = first |> count
+  if first_count == 3:
+    sum = sum + 30
+  let second_count = second |> count
+  if second_count == 0:
+    sum = sum + 20
+  let c_count = c.items |> count
+  if c_count == 0:
+    sum = sum + 10
+  echo sum

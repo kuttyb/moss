@@ -845,7 +845,8 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        const bool take_operator = named && named->name == "take";
+        const bool take_operator =
+            named && named->name == "take" && arguments.size() == 1;
         id = take_operator
                          ? append(Take{std::move(arguments)}, callee_begin)
                          : constructor ? append(Constructor{id, {}, std::move(arguments),

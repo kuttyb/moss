@@ -312,6 +312,79 @@ class Generator {
         }
       }
     }
+
+    auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->availability = TypedTakeFactV1::Availability::MissingTakeOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->required_access = Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        p_.typed_semantics->take_facts.erase(p_.typed_semantics->take_facts.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_TAKE_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_take_occurrences.empty()) {
+        p_.typed_semantics->required_take_occurrences.erase(
+            p_.typed_semantics->required_take_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          p_.typed_semantics->take_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TAKE_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_take_occurrences.empty()) {
+        if (auto* req = find_target_take_req(p_.typed_semantics->required_take_occurrences)) {
+          p_.typed_semantics->required_take_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_SPECIALIZATION_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->specialization_identity = "perturbed-specialization-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_PLACE_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
+        if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
+          fact->place_occurrence_id += 9999;
+        }
+      }
+    }
 #endif
   }
 
@@ -4646,6 +4719,10 @@ class Generator {
                 argument, generated_expr_type(argument, types).value_or("")));
           sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
         }
+        if (!known_function && !sibling_method && head == "take") {
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT unhandled take expression in native lowering");
+        }
         vector<string> sibling_temporaries(call_args.size());
         if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
           for (size_t i = 0; i < call_args.size(); ++i) {
@@ -5802,6 +5879,194 @@ class Generator {
     return found_fact;
   }
 
+  const TypedTakeFactV1* resolve_take_fact(
+      const Stmt& s, const string& functional_context,
+      std::uint32_t* out_arena_index = nullptr,
+      est::ExprId* out_expr_id = nullptr) const {
+    if (!p_.typed_semantics) return nullptr;
+
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    switch (s.kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
+      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
+      case Stmt::Kind::Return: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
+      default: return nullptr;
+    }
+
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == slot && handle.argument_index == 0) {
+        if (handle.arena_index < p_.expression_arenas.size() &&
+            p_.expression_arenas[handle.arena_index]) {
+          const auto& arena = *p_.expression_arenas[handle.arena_index];
+          if (std::holds_alternative<est::Take>(arena.at(handle.expr))) {
+            matched_handle = &handle;
+            break;
+          }
+        }
+      }
+    }
+    if (!matched_handle) return nullptr;
+
+    if (out_arena_index) *out_arena_index = matched_handle->arena_index;
+    if (out_expr_id) *out_expr_id = matched_handle->expr;
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const TypedTakeRequirementV1* requirement = nullptr;
+    const TypedTakeFactV1* found_fact = nullptr;
+    try {
+      if (!codegen_active_specialization_key_.empty()) {
+        try {
+          requirement = &p_.typed_semantics->find_take_requirement(
+              matched_handle->arena_index, matched_handle->expr, context,
+              codegen_active_specialization_key_);
+        } catch (...) {
+          requirement = &p_.typed_semantics->find_take_requirement(
+              matched_handle->arena_index, matched_handle->expr, context);
+        }
+      } else {
+        requirement = &p_.typed_semantics->find_take_requirement(
+            matched_handle->arena_index, matched_handle->expr, context);
+      }
+      found_fact = p_.typed_semantics->find_take_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+
+    if (!requirement || !found_fact) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required take fact record missing");
+    }
+
+    if (!found_fact->is_authoritative()) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT take fact unauthoritative availability=" +
+          std::to_string(static_cast<int>(found_fact->availability)));
+    }
+
+    return found_fact;
+  }
+
+  static string render_est_syntax(const est::Arena& arena, est::ExprId node_id) {
+    const auto& node = arena.at(node_id);
+    return std::visit([&](const auto& value) -> string {
+      using T = std::decay_t<decltype(value)>;
+      auto child = [&](est::ExprId expression) {
+        return render_est_syntax(arena, expression);
+      };
+      auto join = [&](const std::vector<est::ExprId>& expressions) {
+        string result;
+        for (size_t index = 0; index < expressions.size(); ++index) {
+          if (index) result += ", ";
+          result += child(expressions[index]);
+        }
+        return result;
+      };
+      if constexpr (std::is_same_v<T, est::Identifier>) return value.name;
+      else if constexpr (std::is_same_v<T, est::Literal>) return value.spelling;
+      else if constexpr (std::is_same_v<T, est::Placeholder>) return "_";
+      else if constexpr (std::is_same_v<T, est::Unary>)
+        return value.op + child(value.operand);
+      else if constexpr (std::is_same_v<T, est::Binary>)
+        return "(" + child(value.left) + " " + value.op + " " + child(value.right) + ")";
+      else if constexpr (std::is_same_v<T, est::Call>)
+        return child(value.callee) + "(" + join(value.arguments) + ")";
+      else if constexpr (std::is_same_v<T, est::Member>)
+        return child(value.base) + "." + value.name;
+      else if constexpr (std::is_same_v<T, est::Index>)
+        return child(value.base) + "[" + child(value.index) + "]";
+      else if constexpr (std::is_same_v<T, est::Parenthesized>)
+        return "(" + child(value.inner) + ")";
+      else return string();
+    }, node);
+  }
+
+  string emit_take_expression(
+      const TypedTakeFactV1& fact,
+      const Stmt& s,
+      const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (fact.est_arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[fact.est_arena_index]) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing take EST arena");
+    }
+    const auto& arena = *p_.expression_arenas[fact.est_arena_index];
+
+    (void)s;
+    string current_place;
+    bool is_view_root = false;
+    if (view_parameters_.count(fact.root_name)) {
+      current_place = fact.root_name;
+      is_view_root = true;
+    } else if (view_method_ && d && (fact.root_name == "self" || !locals.count(fact.root_name))) {
+      if (fact.root_name == "self") {
+        current_place = "self";
+      } else {
+        current_place = "self.__moss_field_" + fact.root_name + "_mut()";
+      }
+      is_view_root = true;
+    } else if (view_domain_ && d && !locals.count(fact.root_name)) {
+      current_place = "state." + fact.root_name;
+      is_view_root = view_domain_access_;
+    } else if (borrowed_function_parameters_.count(fact.root_name)) {
+      current_place = "(*" + fact.root_name + ")";
+    } else {
+      current_place = fact.root_name;
+    }
+
+    bool ends_with_mut_accessor = current_place.rfind("_mut()") != string::npos;
+    bool current_is_view = is_view_root;
+
+    for (const auto& proj : fact.projection_path) {
+      switch (proj.kind) {
+        case TypedTakeProjectionKindV1::RecordField: {
+          const auto* member = std::get_if<est::Member>(&arena.at(proj.expression_occurrence_id));
+          if (!member) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT take projection member missing");
+          }
+          if (current_is_view) {
+            current_place += ".__moss_field_" + member->name + "_mut()";
+            ends_with_mut_accessor = true;
+            current_is_view = proj.output_type && view_object_type(canonical_type_name(proj.output_type));
+          } else {
+            current_place += "." + rust_identifier(member->name);
+            ends_with_mut_accessor = false;
+            current_is_view = false;
+          }
+          break;
+        }
+        case TypedTakeProjectionKindV1::VectorIndex:
+        case TypedTakeProjectionKindV1::QueueIndex: {
+          string selector_text = render_est_syntax(arena, proj.selector_occurrence_id);
+          string rendered_selector = expr(selector_text, d, locals, types);
+          current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
+          ends_with_mut_accessor = false;
+          current_is_view = false;
+          break;
+        }
+        case TypedTakeProjectionKindV1::MapIndex: {
+          string selector_text = render_est_syntax(arena, proj.selector_occurrence_id);
+          string rendered_selector = expr(selector_text, d, locals, types);
+          current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
+          ends_with_mut_accessor = false;
+          current_is_view = false;
+          break;
+        }
+      }
+    }
+
+    if (ends_with_mut_accessor) {
+      return "std::mem::take(" + current_place + ")";
+    } else {
+      return "std::mem::take(&mut " + current_place + ")";
+    }
+  }
+
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
                  const Handler* current_handler, const string& reply_slot,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
@@ -6227,9 +6492,12 @@ class Generator {
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
-            const string value = expr(s.a, d, locals, &types,
-                statement_functional_pipeline_id(
-                    s, functional_context, 0));
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const string value = take_fact
+                ? emit_take_expression(*take_fact, s, d, locals, &types)
+                : expr(s.a, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, 0));
             if (enums_.count(concrete)) {
               const string raised_value = "__moss_error_value_" +
                   std::to_string(phase21_try_temp_++);
@@ -6785,8 +7053,12 @@ class Generator {
             else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
-            const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
-            if (ownership_fact) {
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+            if (take_fact) {
+              string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
+              o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+            } else if (ownership_fact) {
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
@@ -6807,7 +7079,8 @@ class Generator {
                 << ";\n";
             }
             locals.insert(s.a);
-            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+            types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
+                : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             const auto source_name = tree_identifier_name(s.b);
             auto source_binding = source_name
@@ -6931,8 +7204,11 @@ class Generator {
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
-              const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
-              if (ownership_fact) {
+              const auto* take_fact = resolve_take_fact(s, functional_context);
+              const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+              if (take_fact) {
+                assigned = emit_take_expression(*take_fact, s, d, locals, &types);
+              } else if (ownership_fact) {
                 if (ownership_fact->access == Effect::Read) {
                   assigned = "&(" + assigned + ")";
                 } else if (ownership_fact->access == Effect::Write) {
@@ -6957,7 +7233,8 @@ class Generator {
             types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
               ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
-          if (!s.b.empty() &&
+          const string& method_name = s.b;
+          if (!method_name.empty() &&
               (statement_receiver_type == "string" ||
                statement_receiver_type == "vector" ||
                starts_with(statement_receiver_type, "vector[") ||
@@ -6968,7 +7245,7 @@ class Generator {
                  starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
-            if (s.b == "push" && s.args.size() == 1) {
+            if (method_name == "push" && s.args.size() == 1) {
               const est::Handle* arg_handle = nullptr;
               for (const auto& handle : s.expression_handles) {
                 if (handle.slot == est::ExprSlot::Argument && handle.argument_index == 0) {
@@ -6990,8 +7267,11 @@ class Generator {
               if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);
                 string temp_var = "__moss_push_arg_" + std::to_string(call_argument_temp_++);
+                auto recv_type = generated_expr_type(s.a, &types);
+                string push_method = (recv_type && starts_with(canonical_type_name(*recv_type), "queue"))
+                    ? "push_back" : "push";
                 o << indent(level) << "{ let " << temp_var << " = " << arg_val << "; ("
-                  << write_call_place(s.a, d, locals, &types) << ").push(" << temp_var << "); }\n";
+                  << write_call_place(s.a, d, locals, &types) << ")." << push_method << "(" << temp_var << "); }\n";
                 ++i;
                 break;
               }
@@ -7298,38 +7578,44 @@ class Generator {
                 }
               }
             }
-            const auto* ownership_fact = resolve_local_ownership_fact(s, functional_context);
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
             o << indent(level);
             if (!joined_assignment) {
-              bool mutable_decl = (s.kind == Stmt::Kind::Var);
+              bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
               if (ownership_fact) {
                 mutable_decl = (ownership_fact->access == Effect::Write);
               }
               o << "let " << (mutable_decl ? "mut " : "");
             }
             o << s.a;
-            if (!joined_assignment && !domain_capability && !ownership_fact &&
-                (canonical_type_name(statement_type) == "float" ||
-                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
-              o << ": f64";
-            else if (!joined_assignment && !domain_capability && !ownership_fact &&
-                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
-              o << ": " << rust_type(!inferred_map_type.empty()
-                  ? inferred_map_type : statement_type);
-            string rhs_val = expr(s.b, d, locals, &types,
-                                  statement_functional_pipeline_id(
-                                      s, functional_context, 0));
-            if (ownership_fact) {
-              if (ownership_fact->access == Effect::Read) {
-                rhs_val = "&(" + rhs_val + ")";
-              } else if (ownership_fact->access == Effect::Write) {
-                rhs_val = "&mut (" + rhs_val + ")";
+            if (take_fact) {
+              o << " = " << emit_take_expression(*take_fact, s, d, locals, &types) << ";\n";
+            } else {
+              if (!joined_assignment && !domain_capability && !ownership_fact &&
+                  (canonical_type_name(statement_type) == "float" ||
+                   canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+                o << ": f64";
+              else if (!joined_assignment && !domain_capability && !ownership_fact &&
+                       (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
+                o << ": " << rust_type(!inferred_map_type.empty()
+                    ? inferred_map_type : statement_type);
+              string rhs_val = expr(s.b, d, locals, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, 0));
+              if (ownership_fact) {
+                if (ownership_fact->access == Effect::Read) {
+                  rhs_val = "&(" + rhs_val + ")";
+                } else if (ownership_fact->access == Effect::Write) {
+                  rhs_val = "&mut (" + rhs_val + ")";
+                }
               }
+              o << " = " << rhs_val;
+              if (domain_capability) o << ".clone()";
+              o << ";\n";
             }
-            o << " = " << rhs_val;
-            if (domain_capability) o << ".clone()";
-            o << ";\n";
-            types[s.a] = domain_capability ? source->second
+            types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
+                : domain_capability ? source->second
                 : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
             if (domain_capability) {
@@ -7389,12 +7675,18 @@ class Generator {
           ++i;
           break;
         }
-        case Stmt::Kind::Reply:
+        case Stmt::Kind::Reply: {
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
-          o << indent(level) << reply_slot << " = Some("
-            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
-                statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          const auto* take_fact = resolve_take_fact(s, functional_context);
+          if (take_fact) {
+            o << indent(level) << reply_slot << " = Some("
+              << emit_take_expression(*take_fact, s, d, locals, &types) << ");\n";
+          } else {
+            o << indent(level) << reply_slot << " = Some("
+              << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+          }
           o << indent(level) << "break 'handler;\n";
           ++i;
           // `reply` terminates the handler.  Do not emit statements that are
@@ -7404,17 +7696,24 @@ class Generator {
           // semantics.
           while (i < ss.size() && ss[i].indent >= level) ++i;
           break;
+        }
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            string rendered = expr(s.a, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0));
-            const auto returned_binding = tree_identifier_name(s.a);
-            if (returned_binding && view_parameters_.count(*returned_binding)) {
-              rendered = *returned_binding + ".__moss_value()";
-            } else if (returned_binding && types.count(*returned_binding) &&
-                       view_object_type(types.at(*returned_binding))) {
-              rendered = "(" + rendered + ").clone()";
+            const auto* take_fact = resolve_take_fact(s, functional_context);
+            string rendered;
+            if (take_fact) {
+              rendered = emit_take_expression(*take_fact, s, d, locals, &types);
+            } else {
+              rendered = expr(s.a, d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, 0));
+              const auto returned_binding = tree_identifier_name(s.a);
+              if (returned_binding && view_parameters_.count(*returned_binding)) {
+                rendered = *returned_binding + ".__moss_value()";
+              } else if (returned_binding && types.count(*returned_binding) &&
+                         view_object_type(types.at(*returned_binding))) {
+                rendered = "(" + rendered + ").clone()";
+              }
             }
             o << indent(level) << "return ";
             const bool returns_result = phase21_return_result_context_.value_or(
