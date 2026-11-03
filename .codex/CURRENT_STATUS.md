@@ -14868,3 +14868,21 @@ Branch `phase28-r3-team-a-effect-facts`, based on requested `4dc62e9437f00363286
 - Added a fixture and focused harness for READ/WRITE/CONSUME, exact `(arena, ExprId, context)` lookup, same-call specialization isolation, and abstract trait dispatch producing no invented primary effect. Registered in default and EST-shadow make check paths.
 - Validation completed: targeted selector effect harness (default and shadow), local ownership gate (default and shadow), `verify_take_fixtures.py` (16/16), specialized ownership contract, string debt (42 names / 7 binding comparisons), and `git diff --check`.
 - Remaining before handoff: document feedback, freeze and request Agent 2 review, address findings if any, final push and status record. Abstract trait-call effects remain unsupported because no checked argument-effect vector is available there. No full integration suite run.
+
+### Phase 28 Round 4 — General Ownership Inference Plan (R04-T01-P01)
+
+Branch `phase28-r4-checker-plan`, based on the latest inspected Round 3 Team B
+W06 reference branch `origin/phase28-r3-team-b-effect-consumer`. This branch is
+not confirmed integrated into `phase28-work`; no Round 4 implementation was
+started. Drafted `docs/phase28/ROUND4_GENERAL_OWNERSHIP_PLAN.md`, covering
+current checker scope, conventional CFG/reaching-definitions/liveness/fixed-point
+algorithms, checker fact contract, slices A–D, handoffs, adversarial cases, and
+explicit exclusions. Added task-scoped normal push authorization to `AGENTS.md`
+while retaining no-direct-main/no-force-push rules. `git diff --check` passed.
+Agent 2 returned GO with one requested counterexample, now included. No
+compiler/test validation was required or run for
+this planning-only change. `./moss agent bootstrap --json` reports
+`result.language_version` as `moss-0.1`.
+- Agent 2 one-time plan review: GO; requested an explicit open-FileIO rebinding
+  negative case. Added it to Slice A and the adversarial matrix. No re-review
+  was requested; this is a bounded test-plan addition, not a semantic change.

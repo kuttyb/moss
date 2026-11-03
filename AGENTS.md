@@ -200,6 +200,10 @@ When working with Moss:
   scoped local commits and normal pushes to the configured remote for the
   `take(place)` checker handoff. Keep this work on that branch; no merge is
   authorized.
+  For Phase 28 Round 4 planning on `phase28-r4-checker-plan`, the user
+  authorized scoped local commits and normal pushes to the configured remote
+  for the reviewed implementation plan. Do not implement Round 4 or merge to
+  `phase28-work` or `main` without L7 authorization.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
