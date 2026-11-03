@@ -6,9 +6,14 @@ fn inspect(value: Box) -> Int:
 
 fn forward(value: Box) -> Int:
   alias = value
-  inspect(alias)
+  observed = inspect(alias)
   echo value.value
-  return value.value
+  return observed
+
+fn forward_return(value: Box) -> Int:
+  alias = value
+  return inspect(alias)
 
 fn main():
   echo forward(Box(value = 4))
+  echo forward_return(Box(value = 5))

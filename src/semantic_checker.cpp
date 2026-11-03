@@ -22539,6 +22539,86 @@ class Checker {
       return argument < statement.args.size() &&
           tree_expression_mentions_identifier(statement.args[argument], name);
     };
+    auto est_subtree_uses_definition = [&](const est::Arena& arena,
+                                           est::ExprId root) {
+      std::vector<est::ExprId> pending{root};
+      while (!pending.empty()) {
+        const auto node_id = pending.back();
+        pending.pop_back();
+        const auto& node = arena.at(node_id);
+        if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+          const auto found = binding_identities.find(identifier->name);
+          if (found != binding_identities.end() &&
+              found->second == alias_binding_identity) return true;
+        }
+        auto children = syntax_children(arena, node_id);
+        pending.insert(pending.end(), children.begin(), children.end());
+      }
+      return false;
+    };
+    auto checked_nested_call_effect = [&](const Stmt& statement)
+        -> std::optional<Effect> {
+      if (!current_body_types_ || alias_binding_identity.empty())
+        return std::nullopt;
+      std::optional<Effect> result;
+      for (const auto& handle : statement.expression_handles) {
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena) continue;
+        std::vector<est::ExprId> pending{handle.expr};
+        while (!pending.empty()) {
+          const auto node_id = pending.back();
+          pending.pop_back();
+          const auto* call = std::get_if<est::Call>(&arena->at(node_id));
+          if (call) {
+            const auto occurrence = std::find_if(
+                current_body_types_->expression_occurrences.begin(),
+                current_body_types_->expression_occurrences.end(),
+                [&](const auto& candidate) {
+              return candidate.est_arena_index == handle.arena_index &&
+                  candidate.est_expr_id == node_id &&
+                  !candidate.semantic_target_id.empty();
+            });
+            if (occurrence !=
+                current_body_types_->expression_occurrences.end()) {
+              auto target = std::find_if(functions_.begin(), functions_.end(),
+                  [&](const auto& entry) {
+                return entry.second && entry.second->semantic_callable_id ==
+                    occurrence->semantic_target_id;
+              });
+              if (target != functions_.end()) {
+                const vector<Effect>* checked_effects = nullptr;
+                if (!target->second->static_dispatch &&
+                    target->second->parameter_effects.size() ==
+                        call->arguments.size()) {
+                  checked_effects = &target->second->parameter_effects;
+                } else if (target->second->static_dispatch) {
+                  const auto selected = checked_call_edge_specialization(
+                      p_, current_semantic_context_, target->second->name,
+                      statement.line);
+                  if (selected.kind == CheckedCallEdgeSelectionKind::Unique &&
+                      selected.unique &&
+                      selected.unique->parameter_effects.size() ==
+                          call->arguments.size())
+                    checked_effects = &selected.unique->parameter_effects;
+                }
+                if (checked_effects)
+                  for (size_t argument = 0;
+                       argument < call->arguments.size(); ++argument)
+                    if (est_subtree_uses_definition(
+                            *arena, call->arguments[argument])) {
+                      const Effect effect = checked_effects->at(argument);
+                      result = result
+                          ? stronger_ownership_effect(*result, effect) : effect;
+                    }
+              }
+            }
+          }
+          auto children = syntax_children(*arena, node_id);
+          pending.insert(pending.end(), children.begin(), children.end());
+        }
+      }
+      return result;
+    };
     if (!alias_binding_identity.empty())
       binding_identities[alias] = alias_binding_identity;
     Effect demand = Effect::Read;
@@ -22672,11 +22752,18 @@ class Checker {
             else if (return_is_copy_projection_of_alias(
                          statement, alias, source, env))
               use = Effect::Read;
+            else if (auto call_effect = checked_nested_call_effect(statement))
+              use = *call_effect;
             else
               return decline(
                   TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
-          } else if (statement.kind == Stmt::Kind::Assign)
-            return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          } else if (statement.kind == Stmt::Kind::Assign) {
+            if (auto call_effect = checked_nested_call_effect(statement))
+              use = *call_effect;
+            else
+              return decline(
+                  TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
+          }
           else if (statement.kind == Stmt::Kind::Call) {
             std::optional<Effect> checked_use;
             if (!statement.b.empty()) {
