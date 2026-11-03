@@ -86,6 +86,102 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
                 f"predecessor facts sharing a join identity, got {join_records!r}")
 
 
+def check_take_contract(compiler: str) -> None:
+    fixture = FIXTURES / "take_positive.moss"
+    env = os.environ.copy()
+    env["MOSS_EST_FACTS_DUMP"] = "1"
+    env["MOSS_EST_DUMP"] = "1"
+    env["MOSS_TEST_VALIDATE_TAKE_CONTRACT"] = "1"
+    env.pop("MOSS_TEST_DROP_TAKE_FACT", None)
+    env.pop("MOSS_TEST_PERTURB_TAKE_FACT", None)
+    proc = subprocess.run([compiler, "check", str(fixture), "--json"],
+                          cwd=ROOT, text=True, capture_output=True,
+                          env=env, check=False)
+    result = json.loads(proc.stdout)
+    if not result.get("ok"):
+        raise AssertionError(
+            f"take positive cases rejected: {result!r}\n{proc.stderr}")
+    if len(re.findall(r"\(take#\d+", proc.stderr)) < 10:
+        raise AssertionError("parser/EST did not retain take as its own node")
+    if not re.search(r'\(call#\d+ \(member#\d+ .*"take"\)', proc.stderr):
+        raise AssertionError("ordinary receiver.take(n) was confused with take(place)")
+    facts = re.findall(
+        r"MOSS_EST_TAKE_FACT arena=(\d+) take=(\d+) place=(\d+) "
+        r"statement=(\d+) context=\"([^\"]+)\" specialization=\"([^\"]*)\" "
+        r"root=\"([^\"]+)\" binding=\"([^\"]+)\" type=(\S+) "
+        r"replacement=(\d+) access=(\d+) transfer=(\d+) exclusive=(\d+) "
+        r"projections=(\d+) availability=(\d+)", proc.stderr)
+    if len(facts) != 10:
+        raise AssertionError(
+            f"expected 10 direct, nested, repeated, domain, and raised take facts; got {facts!r}")
+    if not any(row[4].startswith("handler:") and row[6] == "store"
+               for row in facts):
+        raise AssertionError("domain-state take did not retain a handler-root fact")
+    if {int(row[9]) for row in facts} != {0, 1, 2, 3}:
+        raise AssertionError("take replacement kinds do not cover all four types")
+    if any(int(row[10]) != 1 or int(row[11]) != 1 or
+           int(row[12]) != 1 or int(row[14]) != 0 for row in facts):
+        raise AssertionError(f"take authority/access record incomplete: {facts!r}")
+    if not any(int(row[13]) > 1 for row in facts):
+        raise AssertionError("nested take projection path was not retained")
+    effect_ids = {int(match) for match in re.findall(
+        r"MOSS_EST_EFFECT_FACT expr=(\d+) context=\"[^\"]+\" effect=1",
+        proc.stderr)}
+    if any(int(row[1]) not in effect_ids for row in facts):
+        raise AssertionError("take EST occurrences lack checked WRITE effects")
+
+    for name, code in (
+        ("take_invalid_local.moss", "TAKE_REQUIRES_FIELD_PLACE"),
+        ("take_invalid_element.moss", "TAKE_REQUIRES_FIELD_PLACE"),
+        ("take_invalid_record.moss", "TAKE_INELIGIBLE_TERMINAL"),
+        ("take_immutable.moss", "IMMUTABLE_MESSAGE_PAYLOAD"),
+        ("take_borrow_conflict.moss", "MATCH_READ_BORROW_ACTIVE"),
+        ("take_unsupported_context.moss", "TAKE_CONTEXT_UNSUPPORTED"),
+    ):
+        negative = subprocess.run(
+            [compiler, "check", str(FIXTURES / name), "--json"],
+            cwd=ROOT, text=True, capture_output=True, check=False)
+        negative_result = json.loads(negative.stdout)
+        if negative_result.get("ok") or \
+                negative_result.get("error", {}).get("code") != code:
+            raise AssertionError(
+                f"{name}: expected {code}, got {negative_result!r}")
+
+    for hook, message in (
+        ("MOSS_TEST_DROP_TAKE_FACT", "required checked take fact missing"),
+        ("MOSS_TEST_PERTURB_TAKE_FACT",
+         "required checked take fact contradicts requirement"),
+        ("MOSS_TEST_PERTURB_TAKE_IDENTITY",
+         "required checked take fact contradicts requirement"),
+        ("MOSS_TEST_DUPLICATE_TAKE_FACT",
+         "duplicate or contradictory checked take facts"),
+        ("MOSS_TEST_DUPLICATE_TAKE_REQUIREMENT",
+         "duplicate or contradictory required take identity"),
+    ):
+        hooked = os.environ.copy()
+        hooked["MOSS_TEST_VALIDATE_TAKE_CONTRACT"] = "1"
+        hooked[hook] = "1"
+        rejected = subprocess.run(
+            [compiler, "check", str(fixture), "--json"], cwd=ROOT,
+            text=True, capture_output=True, env=hooked, check=False)
+        rejected_result = json.loads(rejected.stdout)
+        if rejected_result.get("ok") or message not in \
+                rejected_result.get("error", {}).get("message", ""):
+            raise AssertionError(
+                f"{hook} did not fail closed as expected: {rejected_result!r}")
+
+    raised = subprocess.run(
+        [compiler, "check", str(FIXTURES / "take_before_raise.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True,
+        env={**os.environ, "MOSS_EST_FACTS_DUMP": "1",
+             "MOSS_TEST_VALIDATE_TAKE_CONTRACT": "1"}, check=False)
+    raised_result = json.loads(raised.stdout)
+    if not raised_result.get("ok") or len(re.findall(
+            r"MOSS_EST_TAKE_FACT .*? availability=0", raised.stderr)) != 1:
+        raise AssertionError(
+            f"take before a typed raise lacked its pre-raise fact: {raised_result!r}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
@@ -127,6 +223,7 @@ def main() -> int:
     check(compiler, "read_alias.moss",
           expected_error="MOSS_INTERNAL_INVARIANT",
           hooks=("MOSS_TEST_PERTURB_OWNERSHIP_FACT",))
+    check_take_contract(compiler)
     contract = subprocess.run(
         [sys.executable,
          str(ROOT / "tests/tooling/check_phase28_specialized_ownership_contract.py"),

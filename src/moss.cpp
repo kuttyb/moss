@@ -12289,6 +12289,8 @@ static void visit_expression_handles(const Program& program,
       } else if constexpr (std::is_same_v<T, est::Call>) {
         visit(arena, node.callee);
         for (auto child : node.arguments) visit(arena, child);
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        for (auto child : node.arguments) visit(arena, child);
       } else if constexpr (std::is_same_v<T, est::Member>) visit(arena, node.base);
       else if constexpr (std::is_same_v<T, est::Index>) {
         visit(arena, node.base); visit(arena, node.index);
@@ -12344,6 +12346,8 @@ static void add_expression_references(const Program& program,
           else if constexpr (std::is_same_v<T, est::Call>) {
             const auto callee = callable_spelling(arena, child.callee);
             if (!callee.empty()) add_name(unqualified_callable_name(callee));
+            for (auto argument : child.arguments) add_bare_names(argument);
+          } else if constexpr (std::is_same_v<T, est::Take>) {
             for (auto argument : child.arguments) add_bare_names(argument);
           } else if constexpr (std::is_same_v<T, est::Constructor>) {
             const auto callee = callable_spelling(arena, child.type);

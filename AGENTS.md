@@ -196,6 +196,10 @@ When working with Moss:
   authorized scoped local commits and normal pushes to the configured remote
   for the Round 2 Team B handoff. Keep this work on that branch; no main merge
   is authorized.
+  For Phase 28 Round 3 Team A on `phase28-r3-team-a`, the user authorized
+  scoped local commits and normal pushes to the configured remote for the
+  `take(place)` checker handoff. Keep this work on that branch; no merge is
+  authorized.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

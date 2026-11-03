@@ -725,6 +725,8 @@ class FastInterpreter {
               child(value.right) + ")";
         else if constexpr (std::is_same_v<T, est::Call>)
           return child(value.callee) + "(" + join(value.arguments) + ")";
+        else if constexpr (std::is_same_v<T, est::Take>)
+          return "take(" + join(value.arguments) + ")";
         else if constexpr (std::is_same_v<T, est::Member>)
           return child(value.base) + "." + value.name;
         else if constexpr (std::is_same_v<T, est::Index>)

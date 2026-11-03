@@ -92,6 +92,10 @@ struct Identifier { std::string name; };
 struct Unary { std::string op; ExprId operand; };
 struct Binary { std::string op; ExprId left, right; };
 struct Call { ExprId callee; std::vector<ExprId> arguments; };
+// Language-owned destructive extraction operator. Kept distinct from Call so
+// `take(place)` cannot resolve as a user function and `receiver.take(n)` stays
+// an ordinary member call.
+struct Take { std::vector<ExprId> arguments; };
 struct Member { ExprId base; std::string name; };
 struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
@@ -116,7 +120,7 @@ struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
                      std::uint32_t callee_source_begin = 0;
                      std::uint32_t callee_source_end = 0; };
 struct Pipeline { ExprId input; std::vector<ExprId> stages; };
-using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
+using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Take, Member,
                           Index, Parenthesized, Message, NamedArgument,
                           Placeholder, Collection, Tuple, Constructor, Pipeline,
                           MissingExpression>;

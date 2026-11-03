@@ -78,6 +78,8 @@ void visit_est_expression(const est::ExpressionView& view, est::ExprId id,
       visit(node.left); visit(node.right);
     } else if constexpr (std::is_same_v<T, est::Call>) {
       visit(node.callee); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, est::Take>) {
+      visit_all(node.arguments);
     } else if constexpr (std::is_same_v<T, est::Member>) visit(node.base);
     else if constexpr (std::is_same_v<T, est::Index>) {
       visit(node.base); visit(node.index);
@@ -2180,6 +2182,7 @@ class Generator {
           else if constexpr (std::is_same_v<T, est::Unary>) return "unary";
           else if constexpr (std::is_same_v<T, est::Binary>) return "binary";
           else if constexpr (std::is_same_v<T, est::Call>) return "call";
+          else if constexpr (std::is_same_v<T, est::Take>) return "take";
           else if constexpr (std::is_same_v<T, est::Member>) return "member";
           else if constexpr (std::is_same_v<T, est::Index>) return "index";
           else if constexpr (std::is_same_v<T, est::Parenthesized>) return "parenthesized";

@@ -1,0 +1,12 @@
+type Cell:
+  maybe: option[Int]
+
+enum Failure:
+  Bad
+
+fn fail_after_take(cell: Cell) -> Int:
+  discarded = take(cell.maybe)
+  raise Failure.Bad
+
+fn main():
+  echo 1

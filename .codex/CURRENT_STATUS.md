@@ -1,3 +1,9 @@
+### Phase 28 Round 3 Team A — `take(place)` checker handoff (2026-11-02)
+
+Branch: `phase28-r3-team-a`, based on Round 2 integration `42b3dc607ebeadefd3f117bcee3af09f312e84e8`. Checker/EST implementation and focused positive, negative, fact-drop, perturbation, and duplicate-record checks are complete for the bounded slice. Validation on the current worktree: `make --jobs="$(nproc)" moss-dev` PASS; `tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev` PASS in default and `MOSS_EST=shadow`; `git diff --check` PASS. Full suites and downstream lowering are not run.
+
+The checker publishes `TypedTakeRequirementV1` and `TypedTakeFactV1` through `TypedSemanticModuleV1::{find_take_requirement,find_take_fact}`. Direct option/Vector/Map/Queue fields and nested record/Vector-index/Map-index projections are represented with exact EST and checker identities, WRITE authorization, whole-value transfer and empty replacement. Composition inside another expression has no fact path yet. Final frozen/reviewed SHA and Agent 2 verdict will be appended at closeout.
+
 ### Phase 28 Round 2 Final Integration & Verification (2026-11-02, Team B)
 
 Branch `phase28-r2-integration`. Completed final Round 2 integration of Team A's reviewed specialization identity contract and typed API into the native consumer:
