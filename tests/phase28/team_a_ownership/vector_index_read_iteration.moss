@@ -1,0 +1,8 @@
+fn write_by_index(values, indices):
+  for index in indices:
+    values[index] = 9
+
+fn main():
+  values = [1, 2, 3]
+  indices = [0, 2]
+  write_by_index(values, indices)

@@ -105,12 +105,17 @@ def main() -> int:
           expected_records=(0, 2, 2), expected_join_predecessors=2)
     check(compiler, "if_else_consume_after_join.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
+    check(compiler, "nested_return_consume.moss",
+          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
+    check(compiler, "copy_field_return.moss")
     check(compiler, "control_flow_unsupported.moss",
           expected_unsupported=(0, 1))
     check(compiler, "vector_read_iteration.moss",
           expected_records=(1, 0, 1))
     check(compiler, "vector_write_iteration.moss",
           expected_records=(1, 1, 1))
+    check(compiler, "vector_index_read_iteration.moss",
+          expected_records=(1, 0, 1))
     check(compiler, "vector_consume_iteration.moss",
           expected_error="OWNERSHIP_VECTOR_ELEMENT_CONSUME")
     check(compiler, "implicit_method_argument_effect.moss")

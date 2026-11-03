@@ -18656,7 +18656,7 @@ class Checker {
                 statement, est::ExprSlot::Initializer);
             if (source && transfer_type(*source_type))
               if (auto inferred = straight_line_alias_effect(
-                      statements, index, statement.a, *source))
+                      statements, index, statement.a, *source, env))
                 source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
@@ -18695,7 +18695,7 @@ class Checker {
                 simple_effect_identifier(statement.a) &&
                 env.count(statement.a) && !receiver_fields.count(statement.a))
               if (auto inferred = straight_line_alias_effect(
-                      statements, index, statement.a, *source))
+                      statements, index, statement.a, *source, env))
                 source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
@@ -22195,9 +22195,41 @@ class Checker {
     return false;
   }
 
+  bool return_is_copy_projection_of_alias(const Stmt& statement,
+                                          const string& alias,
+                                          const TypeEnv& env) const {
+    const est::Handle* returned = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::ReturnValue ||
+          handle.argument_index != 0) continue;
+      if (returned) return false;
+      returned = &handle;
+    }
+    if (!returned) return false;
+    const auto* arena = expression_arena(returned->arena_index);
+    if (!arena) return false;
+    est::ExprId cursor = returned->expr;
+    bool projected = false;
+    while (true) {
+      const auto& node = arena->at(cursor);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        cursor = grouped->inner;
+      } else if (const auto* member = std::get_if<est::Member>(&node)) {
+        projected = true;
+        cursor = member->base;
+      } else {
+        break;
+      }
+    }
+    const auto* base = std::get_if<est::Identifier>(&arena->at(cursor));
+    if (!projected || !base || base->name != alias) return false;
+    const auto type = inferred_expr_type(statement.a, env);
+    return type && copy_type(*type);
+  }
+
   std::optional<Effect> straight_line_alias_effect(
       const vector<Stmt>& statements, size_t definition_index,
-      const string& alias, const string& source,
+      const string& alias, const string& source, const TypeEnv& env,
       TypedLocalOwnershipFactV1::UnsupportedReason* unsupported = nullptr) const {
     auto decline = [&](TypedLocalOwnershipFactV1::UnsupportedReason reason)
         -> std::optional<Effect> {
@@ -22312,8 +22344,13 @@ class Checker {
           else if (statement.kind == Stmt::Kind::Return) {
             const auto returned_local = direct_statement_identifier(
                 statement, est::ExprSlot::ReturnValue);
-            use = returned_local && *returned_local == alias
-                ? Effect::Consume : Effect::Read;
+            if (returned_local && *returned_local == alias)
+              use = Effect::Consume;
+            else if (return_is_copy_projection_of_alias(statement, alias, env))
+              use = Effect::Read;
+            else
+              return decline(
+                  TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
           } else if (statement.kind == Stmt::Kind::Assign)
             return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
           else if (statement.kind == Stmt::Kind::Call) {
@@ -22635,10 +22672,25 @@ class Checker {
             handle.argument_index != 0) continue;
         const auto* arena = expression_arena(handle.arena_index);
         if (!arena) continue;
+        est::ExprId cursor = handle.expr;
+        while (true) {
+          const auto& node = arena->at(cursor);
+          if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+            cursor = grouped->inner;
+          else if (const auto* member = std::get_if<est::Member>(&node))
+            cursor = member->base;
+          else if (const auto* index = std::get_if<est::Index>(&node))
+            cursor = index->base;
+          else
+            break;
+        }
+        const auto* place_base =
+            std::get_if<est::Identifier>(&arena->at(cursor));
+        if (!place_base) continue;
         for (const auto& [candidate, fact_index] :
              env.vector_element_fact_by_name) {
           if (fact_index < local_ownership_facts_.size() &&
-              est_occurrence_mentions(*arena, handle.expr, candidate)) {
+              place_base->name == candidate) {
             element_name = candidate;
             break;
           }
@@ -23814,7 +23866,8 @@ class Checker {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             if (auto inferred = straight_line_alias_effect(
-                    statements, index, s.a, *local_source, &unsupported)) {
+                    statements, index, s.a, *local_source, env.types,
+                    &unsupported)) {
               source_access = *inferred;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line),
@@ -23914,7 +23967,8 @@ class Checker {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             if (auto inferred = straight_line_alias_effect(
-                    statements, index, s.a, *local_source, &unsupported)) {
+                    statements, index, s.a, *local_source, env.types,
+                    &unsupported)) {
               source_access = *inferred;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +

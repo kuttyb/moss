@@ -1,0 +1,15 @@
+type Box:
+  value: Int
+
+type Holder:
+  box: Box
+
+fn escape(source: Box) -> Holder:
+  let alias = source
+  return Holder(box: alias)
+
+fn main():
+  original = Box(value: 4)
+  holder = escape(original)
+  echo original.value
+  echo holder.box.value

@@ -68,9 +68,10 @@ struct TypedSpecializationV1 {
   TypedSourceProvenanceV1 provenance;
 };
 
-// Checker-owned ownership access for one straight-line local-to-local
-// definition. The EST occurrence is the RHS evaluated by this definition;
-// definition_identity distinguishes rebinding versions of one source name.
+// Checker-owned ownership access for one local binding definition or Vector
+// loop element. expression_occurrence_id names the RHS for LocalBinding and
+// the iterable expression for VectorElement. definition_identity distinguishes
+// rebinding versions of one source name or the exact loop element binding.
 // Consumers must treat unavailable records as missing semantic authority.
 struct TypedLocalOwnershipFactV1 {
   enum class SourceKind { LocalBinding, VectorElement };
