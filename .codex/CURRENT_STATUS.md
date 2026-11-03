@@ -3,6 +3,21 @@
 Integration of branch `phase28-r4-slice-b` (`cc86da2e5538740e977b5db5cddb9c0196a71736`)
 into target `phase28-work` (`123bd4e01a3efdf86b9d0b9b2688e2b32eab56c1`).
 Reviewed implementation SHA `0460274a7d206f1a68ed90d34a35c694a1539dfd` preserved exactly.
+Integration merge commit: `0ee29b740871e8c75e24395e263fc0e7371946dc`.
+
+- Targeted gates: `moss-dev`, `moss-opt`, `check_phase28_local_ownership.py` (default & shadow),
+  `check_phase28_specialized_ownership_contract.py` (default & shadow),
+  `check_phase28_take_consumer.py` (default & shadow, 22/22), `check_phase28_team_b_consumer.py`
+  (default & shadow), `verify_take_fixtures.py` (18/18 with zero clones),
+  `check_phase27_string_debt.py` (42/7), `verify_defects.py` (4 PASS, 4 KNOWN FAILURES),
+  `check_agent_feedback.py`, and `git diff --check` all PASS.
+- Full parallel suite: 167 jobs completed at 149 PASS / 18 FAIL.
+  16 of the 17 ledger failures match expected status; intermittent infrastructure
+  failure `check_make_incremental_dependencies` passed.
+  Documented new regressions on `0460274a`: `check_phase21_expression_ownership_edges`,
+  `shard_enum_modules`, and `check_phase28_selector_argument_effects.py` in
+  `docs/phase28/ROUND_4_SLICE_B_INTEGRATION.md`.
+- No merge to `main`. No compiler source or test changes made during integration.
 
 ### Phase 28 Round 4 Slice B — General Ownership Joins and Early Exits (2026-11-03)
 
