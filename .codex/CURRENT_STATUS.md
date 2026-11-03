@@ -1,3 +1,7 @@
+### Phase 28 Round 3 Team A — checker string-debt correction (2026-11-02)
+
+Branch `phase28-r3-team-a-debt-fix`, based on `a679994c1d2b44fc82e64c5cf7a2f123aef26a27`. Removed the three reported `Stmt.a` scanner matches in `straight_line_alias_effect`: Let/Var redefinition and assignment redefinition now read exact LHS EST identifiers; member-call alias matching reads the exact Receiver EST identifier. Original gate allowance stays at 7; the checker-only count is 7. Targeted ownership/`take` checks pass in default and EST shadow. The complete string-debt script currently stops at a preexisting unclassified `s.b == "push"` in Team B-owned `src/native_generator.cpp:6971`; it is outside scope and was not changed.
+
 ### Phase 28 Round 3 Team A — `take(place)` checker handoff (2026-11-02)
 
 Branch: `phase28-r3-team-a`, based on Round 2 integration `42b3dc607ebeadefd3f117bcee3af09f312e84e8`. Checker/EST implementation and focused positive, negative, fact-drop, perturbation, and duplicate-record checks are complete for the bounded slice. Validation on the current worktree: `make --jobs="$(nproc)" moss-dev` PASS; `tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev` PASS in default and `MOSS_EST=shadow`; `git diff --check` PASS. Full suites and downstream lowering are not run.
