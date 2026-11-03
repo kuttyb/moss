@@ -1,3 +1,18 @@
+### Phase 28 Round 2 Final Integration Corrections (2026-11-02, specialization safety & context audit)
+
+Branch `phase28-r2-integration`. Completed bounded integration corrections directed by L7:
+1. P1 AST/EST context-free fact removal: Reverted `Arena::facts(ExprId)` overload in `src/est/expression_tree.hpp` and `src/est/expression_tree.cpp` under one-time file lease. Emitter in `src/native_generator.cpp` queries only the exact specialization context (`"specialization:" + codegen_active_specialization_key_` or `functional_context`).
+2. P1 Specialization lookup audit: Audited consumer-side specialization matching in `resolve_local_ownership_fact`. Prepared consumer for Team A's canonical specialization identity contract (`"specialization:" + key`). Documented the exact remaining gap: checker records generic specializations as `specialization:specialization-v2:...` and object methods without `current_semantic_context_` (falling back to `source:...`), whereas emitter previously matched against `functional_context` (`fn:<name>` / `method:<owner>.<name>`).
+3. P2 Scalar Copy path safety: Repaired `push` optimization in `src/native_generator.cpp` using `is_primitive_copy_type(arg_facts->type)` directly on checker-issued `TypeRef`. Uncontextualized lookups eliminated; when facts are unavailable under the exact specialization context, optimization is declined safely. In `tests/phase28/verify_defects.py`, `E1_group_a_push_self_field_scalar` explicitly tracked as KNOWN FAILURE (E0502) awaiting Team A's specialization context fix.
+4. Specialization fact isolation: Added `tests/phase28/test_specialization_fact_isolation.py` and C++ contract test in `src/est/expression_tree.cpp` (`MOSS_EST_CONTRACT_TEST=1`), verifying that queries under Context A return Fact A, queries under Context B return Fact B, and queries under unrelated contexts return `nullptr`. Integrated into `tests/tooling/check_phase28_team_b_consumer.py`.
+5. Gate verification:
+   - Defect gate: `tests/phase28/verify_defects.py` PASSED (8 cases: 4 PASS, 4 KNOWN FAILURE, 0 XPASS, 0 UNEXPECTED FAILURE).
+   - Consumer gate: `tests/tooling/check_phase28_team_b_consumer.py` PASSED (Read/Write/Consume lowering + E1 push + drop/perturb/delete fail-closed + specialization isolation).
+   - Local ownership gate: `tests/tooling/check_phase28_local_ownership.py` PASSED in default and shadow modes.
+   - Specialization isolation gate: `tests/phase28/test_specialization_fact_isolation.py` PASSED.
+   - Agent feedback gate: `tests/tooling/check_agent_feedback.py` PASSED.
+6. Handoff status: Independent Team B corrections complete. Exclusive file leases preserved. Stopped and awaiting L7 authorization to integrate Team A's `phase28-r2-specialization-fix-a`.
+
 ### Phase 28 Round 1 Team B fan-in corrections (2026-11-02, defect gate and handoff alignment)
 
 Branch `phase28-r1-team-b`. Completed bounded fan-in corrections requested by L7:

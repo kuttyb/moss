@@ -5684,18 +5684,28 @@ class Generator {
     const string context = functional_context.empty() ? "main" : functional_context;
     const auto bracket = context.find('<');
     const string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
+    const string canonical_spec_context =
+        !codegen_active_specialization_key_.empty()
+            ? "specialization:" + codegen_active_specialization_key_
+            : string();
 
     // Check checker-owned requirement coverage:
     const auto* requirement = p_.typed_semantics->find_local_ownership_requirement(
         matched_handle->arena_index, matched_handle->expr, context);
+    if (!requirement && !canonical_spec_context.empty()) {
+      requirement = p_.typed_semantics->find_local_ownership_requirement(
+          matched_handle->arena_index, matched_handle->expr, canonical_spec_context);
+    }
 
     const auto& facts = p_.typed_semantics->local_ownership_facts;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     for (const auto& fact : facts) {
       if (fact.est_arena_index == matched_handle->arena_index &&
           fact.expression_occurrence_id == matched_handle->expr) {
-        if (fact.specialization_context == base_context ||
-            fact.specialization_context == context) {
+        if (fact.specialization_context == context ||
+            (!canonical_spec_context.empty() &&
+             fact.specialization_context == canonical_spec_context) ||
+            fact.specialization_context == base_context) {
           if (requirement && !requirement->definition_identity.empty() &&
               fact.definition_identity != requirement->definition_identity) {
             continue; // Reject loose matches across different definitions
@@ -5738,7 +5748,9 @@ class Generator {
     const auto at_pos = found_fact->definition_identity.find('@');
     if (at_pos != string::npos) {
       const string def_ctx = found_fact->definition_identity.substr(0, at_pos);
-      if (def_ctx != context && def_ctx != base_context) {
+      if (def_ctx != context &&
+          (canonical_spec_context.empty() || def_ctx != canonical_spec_context) &&
+          def_ctx != base_context) {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT definition identity context mismatch: " +
             found_fact->definition_identity + " for context " + context);
@@ -6966,9 +6978,12 @@ class Generator {
               }
               const est::SemanticFacts* arg_facts = nullptr;
               if (arg_handle && arena) {
-                arg_facts = arena->facts(arg_handle->expr, functional_context);
-                if (!arg_facts || !arg_facts->type)
-                  arg_facts = arena->facts(arg_handle->expr);
+                std::string arg_context;
+                if (!codegen_active_specialization_key_.empty())
+                  arg_context = "specialization:" + codegen_active_specialization_key_;
+                else
+                  arg_context = functional_context;
+                arg_facts = arena->facts(arg_handle->expr, arg_context);
               }
               if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);

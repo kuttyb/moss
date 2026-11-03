@@ -65,15 +65,6 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
-const SemanticFacts* Arena::facts(ExprId id) const {
-  if (id >= nodes_.size()) return nullptr;
-  for (const auto& entry : semantic_facts_) {
-    if (entry.first.expression == id && entry.second.type)
-      return &entry.second;
-  }
-  return nullptr;
-}
-
 #ifdef MOSS_TEST_BUILD
 void Arena::test_mutate_call_targets(bool drop) {
   for (auto& entry : semantic_facts_) {
@@ -2277,6 +2268,31 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
            retained_facts->resolved_target == "callable-v1:test" &&
            retained_facts->inferred_effect == Effect::Consume);
     assert(!arena.facts(same_a, "fn:fact-test@String"));
+    auto parsed_string_type = Type::parse_canonical("String");
+    assert(parsed_string_type);
+    SemanticFacts string_facts;
+    string_facts.type = *parsed_string_type;
+    string_facts.specialization_result = "spec-result-v1:string";
+    string_facts.resolved_target = "callable-v1:string";
+    string_facts.inferred_effect = Effect::Read;
+    arena.record_facts(same_a, "fn:fact-test@String", string_facts);
+
+    // Multi-specialization fact isolation:
+    // Query under context A returns fact A.
+    const auto* facts_a = arena.facts(same_a, "fn:fact-test@Int");
+    assert(facts_a && facts_a->type &&
+           facts_a->type->structurally_equal(**parsed_fact_type) &&
+           facts_a->specialization_result == "spec-result-v1:test");
+
+    // Query under context B returns fact B.
+    const auto* facts_b = arena.facts(same_a, "fn:fact-test@String");
+    assert(facts_b && facts_b->type &&
+           facts_b->type->structurally_equal(**parsed_string_type) &&
+           facts_b->specialization_result == "spec-result-v1:string");
+
+    // Query under an unrelated context returns nullptr.
+    assert(!arena.facts(same_a, "fn:fact-test@Bool"));
+    assert(!arena.facts(same_a, "specialization:unrelated"));
     Program copied_with_facts = copied;
     assert(copied_with_facts.expression_arena == program.expression_arena &&
            copied_with_facts.expression_arena->facts(
