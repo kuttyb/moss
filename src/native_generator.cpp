@@ -5919,17 +5919,17 @@ class Generator {
     const TypedTakeFactV1* found_fact = nullptr;
     try {
       if (!codegen_active_specialization_key_.empty()) {
-        try {
-          requirement = &p_.typed_semantics->find_take_requirement(
-              matched_handle->arena_index, matched_handle->expr, context,
-              codegen_active_specialization_key_);
-        } catch (...) {
-          requirement = &p_.typed_semantics->find_take_requirement(
-              matched_handle->arena_index, matched_handle->expr, context);
-        }
+        requirement = &p_.typed_semantics->find_take_requirement(
+            matched_handle->arena_index, matched_handle->expr, context,
+            codegen_active_specialization_key_);
       } else {
         requirement = &p_.typed_semantics->find_take_requirement(
             matched_handle->arena_index, matched_handle->expr, context);
+        if (!requirement->specialization_identity.empty()) {
+          throw std::invalid_argument(
+              "take requirement expects specialization identity '" +
+              requirement->specialization_identity + "' but active context has none");
+        }
       }
       found_fact = p_.typed_semantics->find_take_fact(*requirement);
     } catch (const std::exception& e) {
@@ -5951,37 +5951,114 @@ class Generator {
     return found_fact;
   }
 
-  static string render_est_syntax(const est::Arena& arena, est::ExprId node_id) {
+  string lower_est_selector(
+      const est::Arena& arena,
+      est::ExprId node_id,
+      const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
     const auto& node = arena.at(node_id);
     return std::visit([&](const auto& value) -> string {
       using T = std::decay_t<decltype(value)>;
-      auto child = [&](est::ExprId expression) {
-        return render_est_syntax(arena, expression);
-      };
-      auto join = [&](const std::vector<est::ExprId>& expressions) {
-        string result;
-        for (size_t index = 0; index < expressions.size(); ++index) {
-          if (index) result += ", ";
-          result += child(expressions[index]);
+      if constexpr (std::is_same_v<T, est::Identifier>) {
+        if (value.name == "true" || value.name == "false") return value.name;
+        if (view_parameters_.count(value.name)) {
+          return value.name + ".__moss_value()";
         }
-        return result;
-      };
-      if constexpr (std::is_same_v<T, est::Identifier>) return value.name;
-      else if constexpr (std::is_same_v<T, est::Literal>) return value.spelling;
-      else if constexpr (std::is_same_v<T, est::Placeholder>) return "_";
-      else if constexpr (std::is_same_v<T, est::Unary>)
-        return value.op + child(value.operand);
-      else if constexpr (std::is_same_v<T, est::Binary>)
-        return "(" + child(value.left) + " " + value.op + " " + child(value.right) + ")";
-      else if constexpr (std::is_same_v<T, est::Call>)
-        return child(value.callee) + "(" + join(value.arguments) + ")";
-      else if constexpr (std::is_same_v<T, est::Member>)
-        return child(value.base) + "." + value.name;
-      else if constexpr (std::is_same_v<T, est::Index>)
-        return child(value.base) + "[" + child(value.index) + "]";
-      else if constexpr (std::is_same_v<T, est::Parenthesized>)
-        return "(" + child(value.inner) + ")";
-      else return string();
+        if (borrowed_function_parameters_.count(value.name)) {
+          return "(*" + value.name + ")";
+        }
+        bool is_state_field = d && std::any_of(d->state.begin(), d->state.end(),
+            [&](const Field& f) { return f.name == value.name; });
+        if (d && (value.name == "self" || (!locals.count(value.name) && is_state_field))) {
+          return "self." + rust_identifier(value.name);
+        }
+        return rust_identifier(value.name);
+      } else if constexpr (std::is_same_v<T, est::Literal>) {
+        if (value.literal_class == est::LiteralClass::String) {
+          return "String::from(" + value.spelling + ")";
+        }
+        if (value.literal_class == est::LiteralClass::Integer) {
+          if (value.spelling.find('_') != string::npos) return value.spelling;
+          return value.spelling + "_i64";
+        }
+        return value.spelling;
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+        return "(" + lower_est_selector(arena, value.inner, d, locals, types) + ")";
+      } else if constexpr (std::is_same_v<T, est::Unary>) {
+        string op = (value.op == "!") ? "!" : value.op;
+        return op + "(" + lower_est_selector(arena, value.operand, d, locals, types) + ")";
+      } else if constexpr (std::is_same_v<T, est::Binary>) {
+        string left = lower_est_selector(arena, value.left, d, locals, types);
+        string right = lower_est_selector(arena, value.right, d, locals, types);
+        if (value.op == "+") return "(" + left + ").wrapping_add(" + right + ")";
+        if (value.op == "-") return "(" + left + ").wrapping_sub(" + right + ")";
+        if (value.op == "*") return "(" + left + ").wrapping_mul(" + right + ")";
+        if (value.op == "/") return "(" + left + ") / (" + right + ")";
+        if (value.op == "%") return "(" + left + ") % (" + right + ")";
+        if (value.op == "==") return "(" + left + ") == (" + right + ")";
+        if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+        if (value.op == "<") return "(" + left + ") < (" + right + ")";
+        if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
+        if (value.op == ">") return "(" + left + ") > (" + right + ")";
+        if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
+        if (value.op == "and") return "(" + left + ") && (" + right + ")";
+        if (value.op == "or") return "(" + left + ") || (" + right + ")";
+        return "(" + left + " " + value.op + " " + right + ")";
+      } else if constexpr (std::is_same_v<T, est::Member>) {
+        string base = lower_est_selector(arena, value.base, d, locals, types);
+        return base + "." + rust_identifier(value.name);
+      } else if constexpr (std::is_same_v<T, est::Index>) {
+        string base = lower_est_selector(arena, value.base, d, locals, types);
+        string idx = lower_est_selector(arena, value.index, d, locals, types);
+        return "(" + base + ")[(" + idx + ") as usize]";
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        const auto* callee_id = std::get_if<est::Identifier>(&arena.at(value.callee));
+        if (callee_id && functions_.count(callee_id->name)) {
+          const Function* fn = functions_.at(callee_id->name);
+          bool is_view_fn = false;
+          for (const auto& p : fn->params) {
+            if (view_object_type(p.type)) { is_view_fn = true; break; }
+          }
+          string fn_name = is_view_fn ? "__moss_view_" + fn->name : rust_identifier(fn->name);
+          string call_str = fn_name + "(";
+          for (size_t i = 0; i < value.arguments.size(); ++i) {
+            if (i) call_str += ", ";
+            const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
+            if (arg_id && i < fn->params.size()) {
+              Effect eff = function_effect(*fn, i, fn->params[i].type, nullptr);
+              if (eff == Effect::Write) {
+                if (view_parameters_.count(arg_id->name)) {
+                  call_str += "&mut (*" + arg_id->name + ")";
+                } else if (types && types->count(arg_id->name) &&
+                           view_object_type(types->at(arg_id->name))) {
+                  call_str += rust_identifier(arg_id->name);
+                } else {
+                  call_str += "&mut (" + rust_identifier(arg_id->name) + ")";
+                }
+              } else if (eff == Effect::Read) {
+                if (view_parameters_.count(arg_id->name)) {
+                  call_str += "&(*" + arg_id->name + ")";
+                } else if (types && types->count(arg_id->name) &&
+                           view_object_type(types->at(arg_id->name))) {
+                  call_str += rust_identifier(arg_id->name);
+                } else {
+                  call_str += "&(" + rust_identifier(arg_id->name) + ")";
+                }
+              } else {
+                call_str += lower_est_selector(arena, value.arguments[i], d, locals, types);
+              }
+            } else {
+              call_str += lower_est_selector(arena, value.arguments[i], d, locals, types);
+            }
+          }
+          call_str += ")";
+          return call_str;
+        }
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unhandled EST call in selector");
+      } else {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unhandled EST node in selector");
+      }
     }, node);
   }
 
@@ -6042,16 +6119,14 @@ class Generator {
         }
         case TypedTakeProjectionKindV1::VectorIndex:
         case TypedTakeProjectionKindV1::QueueIndex: {
-          string selector_text = render_est_syntax(arena, proj.selector_occurrence_id);
-          string rendered_selector = expr(selector_text, d, locals, types);
+          string rendered_selector = lower_est_selector(arena, proj.selector_occurrence_id, d, locals, types);
           current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
           ends_with_mut_accessor = false;
           current_is_view = false;
           break;
         }
         case TypedTakeProjectionKindV1::MapIndex: {
-          string selector_text = render_est_syntax(arena, proj.selector_occurrence_id);
-          string rendered_selector = expr(selector_text, d, locals, types);
+          string rendered_selector = lower_est_selector(arena, proj.selector_occurrence_id, d, locals, types);
           current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
           ends_with_mut_accessor = false;
           current_is_view = false;

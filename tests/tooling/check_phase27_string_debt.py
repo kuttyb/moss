@@ -57,7 +57,7 @@ RAW_REVERSED_FIELD_VARIABLE_COMPARE = re.compile(
     r"\b(?:expression|expr)\s*(?:==|!=)\s*"
     r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*"
     r"\.(a|b|text)\b")
-RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 10}
+RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 7}
 # Shape tests on expression-bearing Stmt fields are readers even when they do
 # not call one of the legacy parser APIs. Keep this fail-closed for direct
 # punctuation searches, first-character dispatch, and trimmed-prefix tests.
