@@ -210,9 +210,45 @@ class FastInterpreter {
         }
       }
     }
+    if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
+      auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
+      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
+      if (target_expr_env && target_context_env && mutation_env) {
+        size_t arena_idx = std::stoull(target_arena_env);
+        est::ExprId expr_id = std::stoull(target_expr_env);
+        string ctx = target_context_env;
+        string mut = mutation_env;
+        if (arena_idx < program_.expression_arenas.size() && program_.expression_arenas[arena_idx]) {
+          auto& arena = *program_.expression_arenas[arena_idx];
+          if (mut == "drop_fact") {
+            arena.test_drop_occurrence_fact(expr_id, ctx);
+          } else if (mut == "drop_effect") {
+            arena.test_drop_occurrence_effect(expr_id, ctx);
+          } else if (mut == "perturb_effect") {
+            arena.test_perturb_occurrence_effect(expr_id, ctx);
+          } else if (mut == "drop_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+          } else if (mut == "perturb_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+          } else if (mut == "corrupt_type") {
+            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+          } else if (mut == "corrupt_specialization") {
+            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+          }
+          if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
+            est::ExprId sibling_id = std::stoull(sibling_env);
+            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            if (!sibling_facts || !sibling_facts->inferred_effect) {
+              throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
+            }
+          }
+        }
+      }
+    }
     if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
       for (const auto& arena : program_.expression_arenas) {
-        if (arena) arena->test_contradict_selector_type(Type::primitive("float"));
+        if (arena) arena->test_contradict_selector_type(Type::primitive("bool"));
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {

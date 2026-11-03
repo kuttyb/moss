@@ -118,6 +118,18 @@ TAKE_FIXTURES = [
         },
     },
     {
+        "id": "take_multi_selector",
+        "description": "Multiple distinct selector occurrences in one function proving selector isolation",
+        "source": ROOT / "tests/phase28/take_fixtures/take_multi_selector.moss",
+        "kind": "ACCEPTED",
+        "expected_fast_debug": "331",
+        "expected_native": "331",
+        "invariants": {
+            "selector_isolation": True,
+            "zero_hidden_clones": True,
+        },
+    },
+    {
         "id": "take_raise_mutation",
         "description": "Successful take before typed raise remains a mutation (no invented rollback)",
         "source": ROOT / "tests/phase28/take_fixtures/take_raise_mutation.moss",

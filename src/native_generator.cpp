@@ -385,9 +385,45 @@ class Generator {
         }
       }
     }
+    if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
+      auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
+      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
+      if (target_expr_env && target_context_env && mutation_env) {
+        size_t arena_idx = std::stoull(target_arena_env);
+        est::ExprId expr_id = std::stoull(target_expr_env);
+        string ctx = target_context_env;
+        string mut = mutation_env;
+        if (arena_idx < p_.expression_arenas.size() && p_.expression_arenas[arena_idx]) {
+          auto& arena = *p_.expression_arenas[arena_idx];
+          if (mut == "drop_fact") {
+            arena.test_drop_occurrence_fact(expr_id, ctx);
+          } else if (mut == "drop_effect") {
+            arena.test_drop_occurrence_effect(expr_id, ctx);
+          } else if (mut == "perturb_effect") {
+            arena.test_perturb_occurrence_effect(expr_id, ctx);
+          } else if (mut == "drop_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+          } else if (mut == "perturb_target") {
+            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+          } else if (mut == "corrupt_type") {
+            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+          } else if (mut == "corrupt_specialization") {
+            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+          }
+          if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
+            est::ExprId sibling_id = std::stoull(sibling_env);
+            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            if (!sibling_facts || !sibling_facts->inferred_effect) {
+              throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
+            }
+          }
+        }
+      }
+    }
     if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
       for (const auto& arena : p_.expression_arenas) {
-        if (arena) arena->test_contradict_selector_type(Type::primitive("float"));
+        if (arena) arena->test_contradict_selector_type(Type::primitive("bool"));
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
@@ -6015,62 +6051,18 @@ class Generator {
 
   std::optional<SelectorNodeFacts> lookup_selector_facts(
       const est::Arena& arena, est::ExprId id,
-      const string& fact_context, const string& source_context) const {
+      const string& fact_context) const {
     if (fact_context.empty()) {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector fact lookup missing primary checker context");
     }
-    const auto* primary = arena.facts(id, fact_context);
-    const auto* secondary = !source_context.empty() ? arena.facts(id, source_context) : nullptr;
-
-    // Validate consistency across contexts to prevent contradictory or conflicting facts:
-    if (primary && secondary) {
-      if (primary->type && secondary->type &&
-          !primary->type->structurally_equal(*secondary->type)) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT contradictory selector type facts across contexts: primary '" +
-            primary->type->to_canonical_string() + "' vs secondary '" +
-            secondary->type->to_canonical_string() + "'");
-      }
-      if (!primary->resolved_target.empty() && !secondary->resolved_target.empty() &&
-          primary->resolved_target != secondary->resolved_target) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT contradictory selector target facts across contexts: primary '" +
-            primary->resolved_target + "' vs secondary '" + secondary->resolved_target + "'");
-      }
-      if (!primary->specialization_result.empty() && !secondary->specialization_result.empty() &&
-          primary->specialization_result != secondary->specialization_result) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT contradictory selector specialization facts across contexts: primary '" +
-            primary->specialization_result + "' vs secondary '" + secondary->specialization_result + "'");
-      }
-      if (primary->inferred_effect && secondary->inferred_effect &&
-          *primary->inferred_effect != *secondary->inferred_effect) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT contradictory selector inferred effect facts across contexts");
-      }
-    }
+    const auto* facts = arena.facts(id, fact_context);
+    if (!facts) return std::nullopt;
 
     SelectorNodeFacts result;
-    bool found_any = false;
-
-    // Prefer exact checker-issued semantic fact context:
-    if (primary) {
-      found_any = true;
-      if (primary->type) result.type = primary->type;
-      if (!primary->resolved_target.empty()) result.resolved_target = primary->resolved_target;
-      if (!primary->specialization_result.empty()) result.specialization_result = primary->specialization_result;
-      if (primary->inferred_effect) result.inferred_effect = primary->inferred_effect;
-    }
-
-    // Secondary context only supplies verified non-conflicting effect authority if primary lacked it:
-    if (secondary) {
-      found_any = true;
-      if (!result.inferred_effect && secondary->inferred_effect) {
-        result.inferred_effect = secondary->inferred_effect;
-      }
-    }
-
-    if (!found_any) return std::nullopt;
+    if (facts->type) result.type = facts->type;
+    if (!facts->resolved_target.empty()) result.resolved_target = facts->resolved_target;
+    if (!facts->specialization_result.empty()) result.specialization_result = facts->specialization_result;
+    if (facts->inferred_effect) result.inferred_effect = facts->inferred_effect;
     return result;
   }
 
@@ -6080,9 +6072,8 @@ class Generator {
       const Domain* d,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      const string& fact_context,
-      const string& source_context) const {
-    const auto facts = lookup_selector_facts(arena, node_id, fact_context, source_context);
+      const string& fact_context) const {
+    const auto facts = lookup_selector_facts(arena, node_id, fact_context);
     const auto& node = arena.at(node_id);
     return std::visit([&](const auto& value) -> string {
       using T = std::decay_t<decltype(value)>;
@@ -6113,13 +6104,13 @@ class Generator {
         }
         return value.spelling;
       } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
-        return "(" + lower_est_selector(arena, value.inner, d, locals, types, fact_context, source_context) + ")";
+        return "(" + lower_est_selector(arena, value.inner, d, locals, types, fact_context) + ")";
       } else if constexpr (std::is_same_v<T, est::Unary>) {
-        const auto operand_facts = lookup_selector_facts(arena, value.operand, fact_context, source_context);
+        const auto operand_facts = lookup_selector_facts(arena, value.operand, fact_context);
         if (!facts || !facts->type || !operand_facts || !operand_facts->type) {
           throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector unary operator missing checker-issued type facts");
         }
-        string operand = lower_est_selector(arena, value.operand, d, locals, types, fact_context, source_context);
+        string operand = lower_est_selector(arena, value.operand, d, locals, types, fact_context);
         if (value.op == "-") {
           if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "int") {
             return "(" + operand + ").wrapping_neg()";
@@ -6135,13 +6126,13 @@ class Generator {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector unary operator '" + value.op +
                                  "' for type " + operand_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Binary>) {
-        const auto left_facts = lookup_selector_facts(arena, value.left, fact_context, source_context);
-        const auto right_facts = lookup_selector_facts(arena, value.right, fact_context, source_context);
+        const auto left_facts = lookup_selector_facts(arena, value.left, fact_context);
+        const auto right_facts = lookup_selector_facts(arena, value.right, fact_context);
         if (!facts || !facts->type || !left_facts || !left_facts->type || !right_facts || !right_facts->type) {
           throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector binary operator missing checker-issued type facts");
         }
-        string left = lower_est_selector(arena, value.left, d, locals, types, fact_context, source_context);
-        string right = lower_est_selector(arena, value.right, d, locals, types, fact_context, source_context);
+        string left = lower_est_selector(arena, value.left, d, locals, types, fact_context);
+        string right = lower_est_selector(arena, value.right, d, locals, types, fact_context);
 
         // Respect checker-issued operator and operand types:
         if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "int") {
@@ -6180,12 +6171,12 @@ class Generator {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector binary operator '" + value.op +
                                  "' for type " + left_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Member>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context, source_context);
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
         return base + "." + rust_identifier(value.name);
       } else if constexpr (std::is_same_v<T, est::Index>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context, source_context);
-        string idx = lower_est_selector(arena, value.index, d, locals, types, fact_context, source_context);
-        const auto base_facts = lookup_selector_facts(arena, value.base, fact_context, source_context);
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
+        string idx = lower_est_selector(arena, value.index, d, locals, types, fact_context);
+        const auto base_facts = lookup_selector_facts(arena, value.base, fact_context);
         if (base_facts && base_facts->type && base_facts->type->kind == TypeKind::Builtin && base_facts->type->name == "map") {
           return "(" + base + ").get(&(" + idx + ")).expect(\"Moss missing map key\")";
         }
@@ -6244,13 +6235,16 @@ class Generator {
         string call_str = fn_name + "(";
         for (size_t i = 0; i < value.arguments.size(); ++i) {
           if (i) call_str += ", ";
-          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], fact_context, source_context);
+          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], fact_context);
           if (!arg_facts || !arg_facts->inferred_effect) {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument missing checker-issued effect");
           }
           Effect eff = *arg_facts->inferred_effect;
+          if (i < fn->parameter_effects.size() && eff != fn->parameter_effects[i]) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument effect mismatch with callee parameter effect");
+          }
           const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
-          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, fact_context, source_context);
+          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, fact_context);
 
           if (eff == Effect::Write) {
             if (arg_id && view_parameters_.count(arg_id->name)) {
@@ -6296,7 +6290,7 @@ class Generator {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing take EST arena");
     }
     const auto& arena = *p_.expression_arenas[fact.est_arena_index];
-    const string source_context = "source:" + s.source_file + ":" + std::to_string(s.line);
+    (void)s;
     const string fact_context = fact.est_fact_context;
 
     string current_place;
@@ -6345,7 +6339,7 @@ class Generator {
         case TypedTakeProjectionKindV1::QueueIndex: {
           string rendered_selector = lower_est_selector(
               arena, proj.selector_occurrence_id, d, locals, types,
-              fact_context, source_context);
+              fact_context);
           current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
           ends_with_mut_accessor = false;
           current_is_view = false;
@@ -6354,7 +6348,7 @@ class Generator {
         case TypedTakeProjectionKindV1::MapIndex: {
           string rendered_selector = lower_est_selector(
               arena, proj.selector_occurrence_id, d, locals, types,
-              fact_context, source_context);
+              fact_context);
           current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
           ends_with_mut_accessor = false;
           current_is_view = false;

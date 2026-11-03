@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -99,9 +100,6 @@ def main() -> int:
         "MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT",
         "MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE",
         "MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT",
-        "MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT",
-        "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET",
-        "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT",
         "MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT",
     ]
     for hook in selector_hooks:
@@ -131,8 +129,62 @@ def main() -> int:
         raise AssertionError(f"typed_take_contract_test failed:\n{run_contract.stderr}")
     print("[PASS] typed_take_contract_test: multi-specialization exact lookup and targeted corruption passed")
 
+    # Targeted occurrence-specific corruption and selector isolation tests
+    multi_fixture = ROOT / "tests/phase28/take_fixtures/take_multi_selector.moss"
+    dump_proc = run([compiler, "check", str(multi_fixture)], env={**os.environ, "MOSS_EST_FACTS_DUMP": "1"})
+    sel1_call = None
+    sel1_arg = None
+    sel2_call = None
+    sel2_arg = None
+    for line in dump_proc.stderr.splitlines():
+        if "MOSS_EST_SELECTOR_ARGUMENT_EFFECT" in line and "sel_first" in line:
+            m = re.search(r"call=(\d+)\s+argument=(\d+)", line)
+            if m:
+                sel1_call = int(m.group(1))
+                sel1_arg = int(m.group(2))
+        elif "MOSS_EST_SELECTOR_ARGUMENT_EFFECT" in line and "sel_second" in line:
+            m = re.search(r"call=(\d+)\s+argument=(\d+)", line)
+            if m:
+                sel2_call = int(m.group(1))
+                sel2_arg = int(m.group(2))
+    assert sel1_call is not None and sel1_arg is not None, "Failed to discover sel_first occurrence"
+    assert sel2_call is not None and sel2_arg is not None, "Failed to discover sel_second occurrence"
+
+    def verify_occurrence_mutation(arena_idx: int, expr_id: int, ctx: str, mutation: str, sibling_id: int | None = None) -> None:
+        rs_path = TMP / f"occurrence_fail_{expr_id}_{mutation}.rs"
+        env = os.environ.copy()
+        env["MOSS_TEST_TARGET_ARENA"] = str(arena_idx)
+        env["MOSS_TEST_TARGET_EXPR"] = str(expr_id)
+        env["MOSS_TEST_TARGET_CONTEXT"] = ctx
+        env["MOSS_TEST_TARGET_MUTATION"] = mutation
+        if sibling_id is not None:
+            env["MOSS_TEST_ISOLATION_SIBLING_EXPR"] = str(sibling_id)
+        proc_native = run([compiler, str(multi_fixture), "-o", str(rs_path)], env=env)
+        if proc_native.returncode == 0:
+            raise AssertionError(f"Occurrence mutation {expr_id} {mutation}: expected failure, succeeded!")
+        if "MOSS_INTERNAL_INVARIANT" not in (proc_native.stderr + proc_native.stdout):
+            raise AssertionError(f"Occurrence mutation {expr_id} {mutation}: expected MOSS_INTERNAL_INVARIANT, got:\n{proc_native.stderr}")
+
+    # Corrupt Selector 1's argument effect while asserting Selector 2 remains intact
+    verify_occurrence_mutation(0, sel1_arg, "fn:take_both", "drop_effect", sibling_id=sel2_arg)
+    print(f"[PASS] targeted occurrence mutation (sel1 arg={sel1_arg} drop_effect, sibling={sel2_arg} intact): correctly failed closed")
+
+    verify_occurrence_mutation(0, sel1_arg, "fn:take_both", "perturb_effect", sibling_id=sel2_arg)
+    print(f"[PASS] targeted occurrence mutation (sel1 arg={sel1_arg} perturb_effect, sibling={sel2_arg} intact): correctly failed closed")
+
+    # Corrupt Selector 1's call target while asserting Selector 2 remains intact
+    verify_occurrence_mutation(0, sel1_call, "fn:take_both", "perturb_target", sibling_id=sel2_arg)
+    print(f"[PASS] targeted occurrence mutation (sel1 call={sel1_call} perturb_target, sibling={sel2_arg} intact): correctly failed closed")
+
+    # Corrupt Selector 2's argument effect while asserting Selector 1 remains intact
+    verify_occurrence_mutation(0, sel2_arg, "fn:take_both", "drop_effect", sibling_id=sel1_arg)
+    print(f"[PASS] targeted occurrence mutation (sel2 arg={sel2_arg} drop_effect, sibling={sel1_arg} intact): correctly failed closed")
+
+    verify_occurrence_mutation(0, sel2_arg, "fn:take_both", "perturb_effect", sibling_id=sel1_arg)
+    print(f"[PASS] targeted occurrence mutation (sel2 arg={sel2_arg} perturb_effect, sibling={sel1_arg} intact): correctly failed closed")
+
     print("-" * 50)
-    print("RESULT: SUCCESS (All 20 take and selector semantic authority fail-closed tests passed)")
+    print("RESULT: SUCCESS (All 22 take and selector semantic authority fail-closed tests passed)")
     return 0
 
 

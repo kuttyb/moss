@@ -1,0 +1,45 @@
+# Multiple take projections with distinct selectors in one function, proving selector isolation.
+type Task:
+  id: Int
+  pending: Vector[Int]
+
+type Group:
+  tasks: Vector[Task]
+
+type Registry:
+  groups: Vector[Group]
+
+type Counter:
+  eval_count: Int
+
+fn sel_first(c: Counter) -> Int:
+  c.eval_count = c.eval_count + 1
+  return 0
+
+fn sel_second(c: Counter) -> Int:
+  c.eval_count = c.eval_count + 10
+  return 1
+
+fn take_both(r: Registry, c: Counter) -> Int:
+  let moved1 = take(r.groups[sel_first(c)].tasks[0].pending)
+  let moved2 = take(r.groups[sel_second(c)].tasks[0].pending)
+  var score = 0
+  if (moved1 |> count) == 2:
+    score = score + 100
+  if (moved2 |> count) == 3:
+    score = score + 200
+  if (r.groups[0].tasks[0].pending |> count) == 0:
+    score = score + 10
+  if (r.groups[1].tasks[0].pending |> count) == 0:
+    score = score + 20
+  if c.eval_count == 11:
+    score = score + 1
+  return score
+
+fn main():
+  var g1 = Group(tasks: [Task(id: 1, pending: [10, 20])])
+  var g2 = Group(tasks: [Task(id: 2, pending: [30, 40, 50])])
+  var r = Registry(groups: [g1, g2])
+  var c = Counter(eval_count: 0)
+  let res = take_both(r, c)
+  echo res

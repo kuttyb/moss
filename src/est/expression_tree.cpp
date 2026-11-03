@@ -76,17 +76,9 @@ void Arena::test_mutate_call_targets(bool drop) {
 }
 
 void Arena::test_contradict_selector_type(TypeRef wrong_type) {
-  std::vector<ExprId> typed_exprs;
-  for (const auto& entry : semantic_facts_) {
+  for (auto& entry : semantic_facts_) {
     if (entry.second.type) {
-      typed_exprs.push_back(entry.first.expression);
-    }
-  }
-  for (auto expr : typed_exprs) {
-    for (auto& entry : semantic_facts_) {
-      if (entry.first.expression == expr && entry.first.specialization_context.rfind("source:", 0) == 0) {
-        entry.second.type = wrong_type;
-      }
+      entry.second.type = wrong_type;
     }
   }
 }
@@ -144,7 +136,11 @@ void Arena::test_drop_secondary_selector_fact() {
 }
 
 void Arena::test_perturb_primary_effect() {
-  test_contradict_selector_effect();
+  for (auto& entry : semantic_facts_) {
+    if (entry.second.inferred_effect) {
+      entry.second.inferred_effect = (*entry.second.inferred_effect == Effect::Read) ? Effect::Write : Effect::Read;
+    }
+  }
 }
 
 void Arena::test_drop_selector_op_type() {
@@ -179,6 +175,60 @@ void Arena::test_perturb_specialization_identity(const std::string& wrong_spec) 
       entry.second.specialization_result = wrong_spec;
     }
   }
+}
+
+bool Arena::test_drop_occurrence_fact(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    semantic_facts_.erase(it);
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_target(ExprId id, std::string_view context, const std::string& wrong_target) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.resolved_target = wrong_target;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_drop_occurrence_effect(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.inferred_effect = std::nullopt;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_perturb_occurrence_effect(ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end() && it->second.inferred_effect) {
+    it->second.inferred_effect = (*it->second.inferred_effect == Effect::Read) ? Effect::Write : Effect::Read;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.type = wrong_type;
+    return true;
+  }
+  return false;
+}
+
+bool Arena::test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it != semantic_facts_.end()) {
+    it->second.specialization_result = wrong_spec;
+    return true;
+  }
+  return false;
 }
 #endif
 
