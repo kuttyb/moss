@@ -1,3 +1,37 @@
+### Phase 28 Round 4 Slice B — General Ownership Joins and Early Exits (2026-11-03)
+
+Branch `phase28-r4-slice-b`, based on authorized `phase28-r4-slice-a` at
+`2ed0df34642c58ac84101f66eac483417d830f96`. Implementation frozen at
+`0460274a7d206f1a68ed90d34a35c694a1539dfd`; Agent 2 review GO on this exact SHA
+(Slice B only).
+
+- Extended shared StatementOccurrence in BodyTypeState with CFG predecessor/successor
+  edges, terminal exit flags, and reachable flags. Computed shared control flow graph
+  during statement scope analysis without constructing a competing CFG or converting
+  to SSA.
+- Implemented forward reaching definitions and backward liveness fixed-point analysis
+  in BodyOwnershipFlowAnalysis over reachable edges. Excluded early exits (`return`,
+  `reply`, `raise`) from subsequent normal joins.
+- Enforced live join legality checks: rejected mixed owned/borrowed joins
+  (`OWNERSHIP_INCOMPATIBLE_JOIN`), write demands on immutable predecessors
+  (`OWNERSHIP_JOIN_WRITE_UNSATISFIED`), consume demands on unconsumable borrows
+  (`OWNERSHIP_JOIN_CONSUME_UNSATISFIED`), and borrows escaping declaring scopes
+  (`OWNERSHIP_BORROW_ESCAPES_SCOPE`).
+- Widened definitions and assigned stable `join_definition_identity` at live joins;
+  left dead branch-local definitions local and unwidened.
+- Tested: nested branches, dead branch-locals, write joins, early returns, unreachable
+  terminal exits, match reaching definitions, rebind across branches, and all negative
+  legality cases.
+- Validation on frozen implementation SHA: `make --jobs="$(nproc)" moss-dev` PASS;
+  `check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow`;
+  string debt PASS at 42 name / 7 binding comparisons; `check_agent_feedback.py` PASS;
+  `verify_defects.py` PASS (4 PASS, 4 KNOWN FAILURE); `git diff --check` PASS.
+- Remaining exclusions: Slice C (loops / loop fixed points), Slice D (general typed
+  exception/recover ownership), `copy(x)`, expanded `take`, collection ownership APIs,
+  and `match consume`.
+- Pushed to `origin/phase28-r4-slice-b`. No merge to `phase28-work` or `main`. Do not start
+  Slice C without L7 authorization.
+
 ### Phase 28 Round 4 Slice A — General Per-Definition Ownership (2026-11-03)
 
 Branch `phase28-r4-slice-a`, based on authorized `phase28-work` SHA

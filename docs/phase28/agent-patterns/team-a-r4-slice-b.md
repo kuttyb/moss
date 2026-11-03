@@ -1,0 +1,15 @@
+# Team A — Phase 28 Round 4 Slice B
+
+| Category | Report |
+| --- | --- |
+| **Leaf agents** | 0 actual implementation/test workers. The L6 Coordinator implemented and verified the slice. Evidence: scoped branch history; one Agent 2 review role. Planned worker slots: none used. |
+| **Peak leaf concurrency** | 0; no leaf implementation workers were active. |
+| **Non-leaf reviewers/managers** | Coordinator: 1. Architect: 0. Independent adversarial reviewer: 1 (Agent 2). |
+| **Submissions** | Actual PRs: 0. Actual non-PR handoffs: 1 (`phase28-r4-slice-b`, frozen implementation `0460274a7d206f1a68ed90d34a35c694a1539dfd`). Integrated: 0. Rejected final delivery: 0. Deferred integration: 1 pending L7 authorization; no merge into `phase28-work` or `main`. |
+| **Coordinator reviews** | Reviewed/submitted: 0/1. Coordinator-only average and max repair rounds: not applicable (no recorded coordinator review decision). |
+| **Other review events** | Architect planned/unplanned: 0/0. Adversarial: 1 exact-SHA review on `0460274a7d206f1a68ed90d34a35c694a1539dfd` GO (Slice B only). L7: 0. |
+| **Defects** | Confirmed implementation defects addressed during development: (1) sibling branch declarations were falsely matching LHS binders during parameter effect inference before lexical binding IDs were installed; (2) transfer-type whole-variable assignment after joins was defaulting to READ instead of CONSUME; (3) enum case payload types were not populated in flow TypeEnv, causing false mixed owned/borrowed join rejections. All fixed and verified with tests. Duplicates/false positives: 0. No open review findings. |
+| **Test evidence** | `check_phase28_local_ownership.py`: default and EST shadow both PASS, covering nested branches, dead branch-locals, write joins, branch early returns, unreachable exits excluded, match reaching definitions, rebinding across branches, mixed owned/borrowed joins, write unsatisfied, consume unsatisfied, conditional consume use, and borrow escapes scope. `verify_defects.py`: 8 cases, 4 PASS + 4 expected known failures, 0 unexpected failures. `check_phase27_string_debt.py`: 42 name / 7 binding comparisons PASS. `check_agent_feedback.py`: PASS. Compiler build and `git diff --check`: PASS. Full 167-job suite not run; Round 3 regression ledger unchanged. |
+| **Review provenance** | Exact reviewed implementation SHA: `0460274a7d206f1a68ed90d34a35c694a1539dfd`, Agent 2 GO. Final delivered implementation SHA: `0460274a7d206f1a68ed90d34a35c694a1539dfd`. Post-review changes are documentation/status only (`.codex/CURRENT_STATUS.md` and this closeout). |
+| **Usage** | Token and billed cost by role: unknown; no provider usage report available. |
+| **Value** | Reused the existing statement occurrence graph and BodyTypeState to establish shared CFG edges, reaching definitions, and backward liveness fixed points without SSA conversion or duplicate ownership-only CFGs. Demonstrated full coverage of nested if/else, ordinary match, live joins, and early return exclusion. String-debt ratchet preserved at 42/7. |
