@@ -1,0 +1,16 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn main():
+  try:
+    var file = FileIO.open("tests/phase28/team_a_ownership/fileio_rebinding.moss", ro)
+    replacement = FileIO.open("tests/phase28/team_a_ownership/fileio_rebinding.moss", ro)
+    file = replacement
+    file.close()
+  recover:
+    pass

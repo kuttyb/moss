@@ -10763,6 +10763,10 @@ class Checker {
     // Exact declarations selected for local names by the ordinary ownership
     // walk. Branch copies naturally preserve lexical shadowing.
     std::unordered_map<string,string> binding_identities;
+    // Current reaching whole-local definition, separate from the lexical
+    // binding identity above. Rebinding kills this version only after its RHS
+    // has been checked successfully.
+    std::unordered_map<string,string> definition_identities;
     // Only fallthrough paths reach a join or a loop back edge.
     bool can_continue = true;
     std::set<string> state_fields;
@@ -18800,8 +18804,8 @@ class Checker {
             const auto source = direct_statement_identifier(
                 statement, est::ExprSlot::Initializer);
             if (source && transfer_type(*source_type))
-              if (auto inferred = straight_line_alias_effect(
-                      statements, index, statement.a, *source, env))
+              if (auto inferred = infer_straight_line_definition_effect(
+                      statements, index, statement.a, {}, *source, {}, env))
                 source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
@@ -18839,8 +18843,8 @@ class Checker {
             if (source && transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
                 env.count(statement.a) && !receiver_fields.count(statement.a))
-              if (auto inferred = straight_line_alias_effect(
-                      statements, index, statement.a, *source, env))
+              if (auto inferred = infer_straight_line_definition_effect(
+                      statements, index, statement.a, {}, *source, {}, env))
                 source_access = *inferred;
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
@@ -22397,14 +22401,121 @@ class Checker {
     return type && phase28_copy_primitive_type(*type);
   }
 
-  std::optional<Effect> straight_line_alias_effect(
+  bool ownership_statement_uses_binding(
+      const Stmt& statement, const string& binding_identity,
+      const string& root_slot = {}) const {
+    if (binding_identity.empty() || !current_body_types_) return false;
+    const auto identities =
+        current_body_types_->binding_identities_at_statement.find(&statement);
+    if (identities == current_body_types_->binding_identities_at_statement.end())
+      return false;
+    std::optional<est::ExprSlot> wanted_slot;
+    if (root_slot == "assignment-place") wanted_slot = est::ExprSlot::LhsPlace;
+    else if (root_slot == "return-value") wanted_slot = est::ExprSlot::ReturnValue;
+    else if (root_slot == "receiver") wanted_slot = est::ExprSlot::Receiver;
+    for (const auto& handle : statement.expression_handles) {
+      if (wanted_slot && handle.slot != *wanted_slot) continue;
+      if (root_slot == "initializer" &&
+          handle.slot != est::ExprSlot::Initializer &&
+          handle.slot != est::ExprSlot::RhsValue)
+        continue;
+      const auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      std::vector<est::ExprId> pending{handle.expr};
+      while (!pending.empty()) {
+        const auto node_id = pending.back();
+        pending.pop_back();
+        const auto& node = arena->at(node_id);
+        if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+          const auto found = identities->second.find(identifier->name);
+          if (found != identities->second.end() &&
+              found->second == binding_identity) return true;
+        }
+        auto children = syntax_children(*arena, node_id);
+        pending.insert(pending.end(), children.begin(), children.end());
+      }
+    }
+    return false;
+  }
+
+  bool ownership_assignment_writes_binding(
+      const Stmt& statement, const string& binding_identity) const {
+    if (!current_body_types_ || binding_identity.empty()) return false;
+    const auto identities =
+        current_body_types_->binding_identities_at_statement.find(&statement);
+    if (identities == current_body_types_->binding_identities_at_statement.end())
+      return false;
+    bool projected_place = false;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::LhsPlace) continue;
+      const auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      const auto& lhs = arena->at(handle.expr);
+      if (std::holds_alternative<est::Identifier>(lhs)) continue;
+      projected_place = true;
+      break;
+    }
+    // A whole-local assignment creates a new definition; only a projected
+    // place is a WRITE use of the existing binding.
+    if (!projected_place) return false;
+    return ownership_statement_uses_binding(statement, binding_identity,
+                                             "assignment-place");
+  }
+
+  std::optional<Effect> infer_straight_line_definition_effect(
       const vector<Stmt>& statements, size_t definition_index,
-      const string& alias, const string& source, const TypeEnv& env,
+      const string& alias, const string& alias_binding_identity,
+      const string& source, const string& source_binding_identity,
+      const TypeEnv& env,
       TypedLocalOwnershipFactV1::UnsupportedReason* unsupported = nullptr) const {
     auto decline = [&](TypedLocalOwnershipFactV1::UnsupportedReason reason)
         -> std::optional<Effect> {
       if (unsupported) *unsupported = reason;
       return std::nullopt;
+    };
+    auto uses_definition = [&](const Stmt& statement,
+                              const string& binding_identity,
+                              const string& name,
+                              const string& root_slot = {}) {
+      if (!binding_identity.empty())
+        if (ownership_statement_uses_binding(statement, binding_identity,
+                                             root_slot))
+          return true;
+      // The earlier callable-effect summary pass runs before checked body
+      // occurrence identities are installed. It uses the same straight-line
+      // flow walk only to summarize the callee; ownership fact publication
+      // below always takes the exact checker-identity path.
+      for (const auto& handle : statement.expression_handles) {
+        if (!root_slot.empty() &&
+            ((root_slot == "assignment-place" &&
+              handle.slot != est::ExprSlot::LhsPlace) ||
+             (root_slot == "initializer" &&
+              handle.slot != est::ExprSlot::RhsValue &&
+              handle.slot != est::ExprSlot::Initializer)))
+          continue;
+        const auto* arena = expression_arena(handle.arena_index);
+        if (arena && est_occurrence_mentions(*arena, handle.expr, name))
+          return true;
+      }
+      return false;
+    };
+    auto writes_definition = [&](const Stmt& statement,
+                                 const string& binding_identity,
+                                 const string& name) {
+      if (!binding_identity.empty() &&
+          ownership_assignment_writes_binding(statement, binding_identity))
+        return true;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.slot != est::ExprSlot::LhsPlace) continue;
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena) continue;
+        const auto* member = std::get_if<est::Member>(&arena->at(handle.expr));
+        if (!member) continue;
+        const auto* base = std::get_if<est::Identifier>(
+            &arena->at(member->base));
+        if (base && base->name == name) return true;
+      }
+      return false;
     };
     Effect demand = Effect::Read;
     size_t last_alias_use = definition_index;
@@ -22496,20 +22607,17 @@ class Checker {
           const auto* arena = expression_arena(handle.arena_index);
           if (!arena)
             return decline(TypedLocalOwnershipFactV1::UnsupportedReason::UnsupportedSource);
-          alias_used |= est_occurrence_mentions(*arena, handle.expr, alias);
-          source_used |= est_occurrence_mentions(*arena, handle.expr, source);
-          if (handle.slot != est::ExprSlot::LhsPlace)
-            alias_used_outside_lhs |=
-                est_occurrence_mentions(*arena, handle.expr, alias);
-          if (statement.kind == Stmt::Kind::Assign &&
-              handle.slot == est::ExprSlot::LhsPlace) {
-            const auto* member = std::get_if<est::Member>(&arena->at(handle.expr));
-            if (member) {
-              const auto* base = std::get_if<est::Identifier>(&arena->at(member->base));
-              alias_written |= base && base->name == alias;
-            }
-          }
+          (void)arena;
         }
+        alias_used = uses_definition(statement, alias_binding_identity, alias);
+        source_used = uses_definition(statement, source_binding_identity, source);
+        alias_written = writes_definition(statement, alias_binding_identity, alias);
+        if (statement.kind == Stmt::Kind::Assign)
+          alias_used_outside_lhs =
+              uses_definition(statement, alias_binding_identity, alias,
+                              "initializer");
+        else
+          alias_used_outside_lhs = alias_used;
         if (alias_written && alias_used_outside_lhs)
           return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
         if (alias_used) {
@@ -22540,11 +22648,10 @@ class Checker {
             std::optional<Effect> checked_use;
             // Resolve the exact retained receiver occurrence. `Stmt::a` is a
             // legacy source slot; it is not ownership evidence.
-            const auto receiver_binding = direct_statement_identifier(
-                statement, est::ExprSlot::Receiver);
+            const bool receiver_matches = uses_definition(
+                statement, alias_binding_identity, alias, "receiver");
             for (const auto& requirement : requirements->second) {
-              if (requirement.member_name != statement.b ||
-                  !receiver_binding || *receiver_binding != alias)
+              if (requirement.member_name != statement.b || !receiver_matches)
                 continue;
               checked_use = requirement.receiver_access == moss::AccessMode::Consume
                   ? Effect::Consume
@@ -22578,9 +22685,13 @@ class Checker {
 
   std::optional<Effect> retain_local_ownership_fact(
       const Stmt& statement, const string& definition_identity,
-      const string& source_binding_identity, Effect access) {
+      const string& source_binding_identity, Effect access,
+      const string& binding_identity = {},
+      const string& killed_definition_identity = {}) {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = definition_identity;
+    fact.binding_identity = binding_identity;
+    fact.killed_definition_identity = killed_definition_identity;
     fact.source_binding_identity = source_binding_identity;
     fact.specialization_context = local_ownership_consumer_context();
     fact.specialization_identity = local_ownership_specialization_identity();
@@ -22701,7 +22812,9 @@ class Checker {
     if (std::getenv("MOSS_EST_FACTS_DUMP"))
       std::cerr << "MOSS_EST_OWNERSHIP_FACT definition="
                 << std::quoted(fact.definition_identity) << " source="
-                << std::quoted(fact.source_binding_identity) << " expr="
+                << std::quoted(fact.source_binding_identity) << " binding="
+                << std::quoted(fact.binding_identity) << " killed="
+                << std::quoted(fact.killed_definition_identity) << " expr="
                 << fact.expression_occurrence_id << " context="
                 << std::quoted(fact.specialization_context) << " access="
                 << static_cast<int>(fact.access) << " availability="
@@ -22713,6 +22826,8 @@ class Checker {
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.binding_identity = fact.binding_identity;
+    req.killed_definition_identity = fact.killed_definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
     req.access = fact.access;
@@ -24423,13 +24538,18 @@ class Checker {
               !source_binding->second.empty() && transfer_type(*source_type)) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
-            if (auto inferred = straight_line_alias_effect(
-                    statements, index, s.a, *local_source, env.types,
+            if (auto inferred = infer_straight_line_definition_effect(
+                    statements, index, s.a,
+                    statement_binding_identity(current_semantic_context_, s.line),
+                    *local_source, source_binding->second, env.types,
                     &unsupported)) {
               source_access = *inferred;
               const auto retained_access = retain_local_ownership_fact(s,
+                  statement_binding_identity(current_semantic_context_, s.line) +
+                      ":" + s.a,
+                  source_binding->second, source_access,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_binding->second, source_access);
+                  {});
               if (!retained_access || *retained_access != source_access)
                 err(s.line, "checker could not retain the required EST ownership fact",
                     "MOSS_INTERNAL_INVARIANT");
@@ -24469,6 +24589,8 @@ class Checker {
           env.types[s.a] = type.value_or("_value");
           env.binding_identities[s.a] = statement_binding_identity(
               current_semantic_context_, s.line);
+          env.definition_identities[s.a] = statement_binding_identity(
+              current_semantic_context_, s.line) + ":" + s.a;
           if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
           else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
@@ -24492,6 +24614,13 @@ class Checker {
           auto new_type = inferred_expr_type(s.b, env.types);
           bool existing_owner = env.binding_identities.count(s.a) ||
               env.state_fields.count(s.a);
+          const string target_binding_identity =
+              env.binding_identities.count(s.a)
+                  ? env.binding_identities.at(s.a)
+                  : statement_binding_identity(current_semantic_context_, s.line);
+          const string killed_definition_identity =
+              env.definition_identities.count(s.a)
+                  ? env.definition_identities.at(s.a) : string{};
           if ((existing_owner && prior_type &&
                canonical_type_name(*prior_type) == "FileIO") ||
               (new_type && canonical_type_name(*new_type) == "FileIO" &&
@@ -24524,14 +24653,16 @@ class Checker {
               !env.state_fields.count(s.a)) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
-            if (auto inferred = straight_line_alias_effect(
-                    statements, index, s.a, *local_source, env.types,
+            if (auto inferred = infer_straight_line_definition_effect(
+                    statements, index, s.a, target_binding_identity,
+                    *local_source, source_binding->second, env.types,
                     &unsupported)) {
               source_access = *inferred;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_access);
+                  source_binding->second, source_access,
+                  target_binding_identity, killed_definition_identity);
               if (!retained_access || *retained_access != source_access)
                 err(s.line, "checker could not retain the required EST ownership fact",
                     "MOSS_INTERNAL_INVARIANT");
@@ -24559,6 +24690,10 @@ class Checker {
           if (auto constructed = domain_constructor(s.b)) {
             env.types[s.a] = *constructed;
             env.moved.erase(s.a);
+            if (tree_simple_identifier(s.a))
+              env.definition_identities[s.a] =
+                  statement_binding_identity(current_semantic_context_, s.line) +
+                  ":" + s.a;
             ++index;
             break;
           }
@@ -24577,6 +24712,10 @@ class Checker {
             if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(
                   current_semantic_context_, s.line);
+            if (!env.state_fields.count(s.a))
+              env.definition_identities[s.a] =
+                  statement_binding_identity(current_semantic_context_, s.line) +
+                  ":" + s.a;
             // Assignment creates or reinitializes the target, including a
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);

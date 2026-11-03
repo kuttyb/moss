@@ -1,0 +1,15 @@
+enum Fault:
+  Bad
+
+type Box:
+  value: Int
+
+fn may_fail() -> Box:
+  raise Fault.Bad
+
+fn main():
+  var alias = Box(value = 1)
+  try:
+    alias = may_fail()
+  recover:
+    echo alias.value

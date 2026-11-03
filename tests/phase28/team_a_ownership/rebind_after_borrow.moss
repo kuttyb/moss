@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn main():
+  var origin = Box(value = 1)
+  var alias = origin
+  echo alias.value
+  origin = Box(value = 2)
+  echo origin.value

@@ -18,7 +18,8 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
           expected_error: str | None = None, hooks: tuple[str, ...] = (),
           expected_records: tuple[int, int, int] | None = None,
           expected_unsupported: tuple[int, int] | None = None,
-          expected_join_predecessors: int = 0) -> None:
+          expected_join_predecessors: int = 0,
+          expected_rebinding: bool = False) -> None:
     env = os.environ.copy()
     env["MOSS_EST_FACTS_DUMP"] = "1"
     env.pop("MOSS_TEST_DROP_OWNERSHIP_FACT", None)
@@ -84,6 +85,19 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
             raise AssertionError(
                 f"{fixture}: expected {expected_join_predecessors} inferred "
                 f"predecessor facts sharing a join identity, got {join_records!r}")
+    if expected_rebinding:
+        definitions = re.findall(
+            r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="[^"]+" '
+            r'binding="([^"]+)" killed="([^"]*)" expr=(\d+)',
+            proc.stderr)
+        if len(definitions) != 2 or definitions[0][0] == definitions[1][0]:
+            raise AssertionError(
+                f"expected two exact assignment definitions, got {definitions!r}")
+        if definitions[0][1] != definitions[1][1] or \
+                definitions[1][2] != definitions[0][0]:
+            raise AssertionError(
+                f"rebind did not preserve lexical identity and kill prior definition: "
+                f"{definitions!r}")
 
 
 def check_take_contract(compiler: str) -> None:
@@ -189,6 +203,12 @@ def main() -> int:
     check(compiler, "read_alias.moss", expected_effect=0)
     check(compiler, "write_alias.moss", expected_effect=1)
     check(compiler, "consume_transfer.moss", expected_effect=2)
+    check(compiler, "rebinding_definitions.moss",
+          expected_records=(0, 2, 1), expected_rebinding=True)
+    check(compiler, "rebind_after_borrow.moss", expected_effect=0)
+    check(compiler, "rebind_rhs_raise.moss")
+    check(compiler, "fileio_rebinding.moss",
+          expected_error="FILEIO_PINNED_OWNERSHIP")
     check(compiler, "use_after_move.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "surviving_field_demand.moss",

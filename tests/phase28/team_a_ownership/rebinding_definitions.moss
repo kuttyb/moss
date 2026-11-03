@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn transfer(value: Box, other: Box) -> Box:
+  var alias = value
+  echo alias.value
+  alias = other
+  return alias
+
+fn main():
+  first = Box(value = 1)
+  second = Box(value = 2)
+  result = transfer(first, second)
+  echo result.value
