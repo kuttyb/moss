@@ -274,7 +274,23 @@ def check_fixture(case: dict) -> tuple[str, str]:
     if actual_native != case["expected_native"]:
         return "FAIL", f"Native output mismatch: expected '{case['expected_native']}', got '{actual_native}'"
 
-    return "PASS", "Checker, Fast Debug, and Native parity verified with zero clones"
+    # 4. Optimized native emission, compilation, and execution parity
+    out_opt_rs = TMP / f"{cid}_opt.rs"
+    out_opt_bin = TMP / f"{cid}_opt"
+    opt_build_res = run_cmd([str(COMPILER), "-O", str(source), "-o", str(out_opt_rs)])
+    if opt_build_res.returncode != 0:
+        return "FAIL", f"Optimized native emission failed: {opt_build_res.stderr.strip()}"
+    opt_rustc_res = run_cmd(["rustc", "-O", str(out_opt_rs), "-o", str(out_opt_bin)])
+    if opt_rustc_res.returncode != 0:
+        return "FAIL", f"rustc -O compilation failed: {opt_rustc_res.stderr.strip()}"
+    opt_native_res = run_cmd([str(out_opt_bin)])
+    if opt_native_res.returncode != 0:
+        return "FAIL", f"Optimized native execution failed: {opt_native_res.stderr.strip()}"
+    actual_opt_native = opt_native_res.stdout.strip()
+    if actual_opt_native != case["expected_native"]:
+        return "FAIL", f"Optimized native output mismatch: expected '{case['expected_native']}', got '{actual_opt_native}'"
+
+    return "PASS", "Checker, Fast Debug, Native, and Optimized Native parity verified with zero clones"
 
 
 def main() -> int:

@@ -1,3 +1,28 @@
+### Phase 28 Round 3 Team B — Final Selector Authority & Closeout (W06) (2026-11-03)
+
+Branch `phase28-r3-team-b-effect-consumer`. Completed W06 integration and Round 3 closeout:
+1. Integrated Team A Reviewed Implementation:
+   - Cherry-picked Team A reviewed commit `325ff2ef62f384684fd693ca38d0c3b6474f5a8e` as `08756e32`.
+   - Team A checker publishes selector argument effects via `publish_selector_argument_effects()` directly under the primary statement context matching `TypedTakeFactV1::est_fact_context`.
+   - Single authoritative publication path retained in `src/semantic_checker.cpp`; zero duplicated or parallel publication paths.
+2. Eliminated Secondary Synthesis & Reconciled Consumer:
+   - Removed `source_context` parameter, secondary `arena.facts()` queries, and cross-context fallback merges from `src/native_generator.cpp::lookup_selector_facts()` and `lower_est_selector()`.
+   - Consumer queries strictly the primary checker context (`fact.est_fact_context`).
+   - Validates argument inferred effects directly against callee function declared `parameter_effects`, failing closed with `MOSS_INTERNAL_INVARIANT`.
+3. Occurrence-Targeted Corruption & Isolation Proof:
+   - Implemented exact composite key mutations in `Arena` (`test_drop_occurrence_fact`, `test_perturb_occurrence_effect`, `test_mutate_occurrence_target`, etc.) targeting exact `(arena_idx, ExprId, context)`.
+   - Authored `tests/phase28/take_fixtures/take_multi_selector.moss` exercising two distinct selectors in one function.
+   - Tested targeted corruption of each selector occurrence and proved selector isolation: sibling selector facts remain fully intact.
+4. Parity & Verification Suite:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (17/17 cases across checker, Fast Debug, native, and optimized-native `-O` with zero hidden clones, in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (22/22 fail-closed cases in default and `MOSS_EST=shadow`, including 5 occurrence isolation checks).
+   - `tests/tooling/check_phase28_selector_argument_effects.py ./moss`: PASS (in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase27_string_debt.py`: PASS (42 name comparisons, 7 binding comparisons).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+   - Agent 2 independently reviewed implementation commit `a8ab5d6259079555c42bc2e30fa64ba248c8dfa4` and issued final CP2 review verdict **GO**.
+
 ### Phase 28 Round 3 Team B — Stored Fact Corruption & Selector Authority (W05) (2026-11-02)
 
 Branch `phase28-r3-team-b`. Resolved L7 architectural finding on synthetic throw hooks and selector fact provenance:
