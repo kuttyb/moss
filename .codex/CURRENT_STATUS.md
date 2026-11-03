@@ -1,3 +1,28 @@
+### Phase 28 Round 3 Team B — Specialization Effect Correction & Failure Reconciliation (W07) (2026-11-03)
+
+Branch `phase28-r3-team-b-effect-consumer`. Completed W07 specialization-effect authority and full-suite failure reconciliation:
+1. Specialization-Effect Consistency Validation:
+   - In `src/native_generator.cpp::lower_est_selector()`, replaced unspecialized declaration effect comparison (`fn->parameter_effects[i]`) with exact checker-selected specialization parameter access (`spec_it->second.parameter_access[i]`).
+   - For non-specialized calls, validates against `fn->parameter_effects`. Fails closed with `MOSS_INTERNAL_INVARIANT` on any mismatch, missing authority, or missing identity.
+   - Refined borrowed parameter checking (`borrowed_function_parameters_.count(arg_id->name)`) so local concrete struct instances are passed with borrow references (`&` or `&mut`) matching the specialized function's ABI.
+2. Distinct Specialization Effects Fixture:
+   - Authored `tests/phase28/take_fixtures/take_specialized_effects.moss` exercising two specializations of `select_cursor(x)` with distinct inferred parameter effects (`Reader` -> `READ` vs `Writer` -> `WRITE`).
+   - Parity verified across checker, Fast Debug, native, and optimized-native (`-O`) producing identical output `330` with zero hidden clones.
+   - Added fault-injection test in `tests/tooling/check_phase28_take_consumer.py` verifying that perturbing the primary effect fails closed with `MOSS_INTERNAL_INVARIANT`.
+3. 17 Full-Suite Failures Reconciliation Table:
+   - Reconciled all 17 failed jobs in `tests/run_parallel.py` against baseline evidence (all 17 confirmed preexisting known failures, 0 regressions introduced by Team B).
+4. Validation Ledger:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (18/18 cases, default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (23/23 cases, default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_selector_argument_effects.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_local_ownership.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS.
+   - `tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+   - Agent 2 independently reviewed implementation commit `403ff035e5dd851f0a18bc74e556b2169dbcd2f4` and returned final CP2 verdict **GO**.
+
 ### Phase 28 Round 3 Team B — Final Selector Authority & Closeout (W06) (2026-11-03)
 
 Branch `phase28-r3-team-b-effect-consumer`. Completed W06 integration and Round 3 closeout:
