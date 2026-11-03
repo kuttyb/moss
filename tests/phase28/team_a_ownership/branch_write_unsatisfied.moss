@@ -1,15 +1,19 @@
 type Box:
   value: Int
 
-fn bad_join_write(cond: Bool, fallback: Box) -> Int:
-  let origin = Box(value: 1)
-  if cond:
-    var alias = origin
-  else:
-    var alias = fallback
+enum Choice:
+  One(b: Box)
+  Two(b: Box)
+
+fn bad_join_write(c: Choice, fallback: Box) -> Int:
+  match c:
+    case One(b):
+      var alias = b
+    case Two(b):
+      var alias = fallback
   alias.value = 100
   return alias.value
 
 fn main():
   var b = Box(value: 1)
-  bad_join_write(true, b)
+  bad_join_write(Choice.Two(b: b), b)

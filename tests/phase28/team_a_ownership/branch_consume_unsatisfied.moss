@@ -1,14 +1,18 @@
 type Box:
   value: Int
 
-fn bad_join_consume(cond: Bool, fallback: Box) -> Box:
-  let origin = Box(value: 1)
-  if cond:
-    var alias = origin
-  else:
-    var alias = fallback
+enum Choice:
+  One(b: Box)
+  Two(b: Box)
+
+fn bad_join_consume(c: Choice, fallback: Box) -> Box:
+  match c:
+    case One(b):
+      var alias = b
+    case Two(b):
+      var alias = fallback
   return alias
 
 fn main():
   var b = Box(value: 1)
-  bad_join_consume(true, b)
+  bad_join_consume(Choice.Two(b: b), b)

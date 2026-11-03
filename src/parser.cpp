@@ -751,7 +751,8 @@ class Parser {
     }
     if (starts_with(L.text, "let ") || starts_with(L.text, "var ")) {
       bool is_var = starts_with(L.text, "var ");
-      s.kind = is_var ? Stmt::Kind::Var : Stmt::Kind::Let;
+      // `let` is an alias for `var`; mutability is inferred by the checker.
+      s.kind = Stmt::Kind::Var;
       string rest = trim(L.text.substr(4));
       auto eq = top_level_assignment(rest);
       if (eq == string::npos) fail(L, is_var ? "local var requires an initializer" : "let requires an initializer");
