@@ -1909,6 +1909,8 @@ class Checker {
       p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
           moss::project_typed_semantics_v1(p_));
       p_.typed_semantics->local_ownership_facts = local_ownership_facts_;
+      p_.typed_semantics->required_local_ownership_occurrences =
+          required_local_ownership_occurrences_;
       if (std::getenv("MOSS_EST_FACTS_DUMP"))
         for (const auto& fact : local_ownership_facts_)
           std::cerr << "MOSS_EST_OWNERSHIP_RECORD source_kind="
@@ -2262,6 +2264,7 @@ class Checker {
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
+  vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
   bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = moss::TypeEnv;
@@ -22538,6 +22541,13 @@ class Checker {
                 << std::quoted(fact.specialization_context) << " access="
                 << static_cast<int>(fact.access) << " availability="
                 << static_cast<int>(fact.availability) << '\n';
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
     return checked_access;
   }
@@ -22600,6 +22610,13 @@ class Checker {
     }
     fact.provenance.defining_module_id = program_module_identity(p_, module);
     const size_t fact_index = local_ownership_facts_.size();
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
     return fact_index;
   }
@@ -22670,6 +22687,13 @@ class Checker {
       if (object != objects_.end()) module = object->second->defining_module;
     }
     fact.provenance.defining_module_id = program_module_identity(p_, module);
+    TypedLocalOwnershipRequirementV1 req;
+    req.est_arena_index = fact.est_arena_index;
+    req.expression_occurrence_id = fact.expression_occurrence_id;
+    req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_context = fact.specialization_context;
+    req.definition_identity = fact.definition_identity;
+    required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
   }
 

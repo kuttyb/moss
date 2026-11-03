@@ -244,6 +244,12 @@ class Generator {
         fact.access = (fact.access == Effect::Read) ? Effect::Write : Effect::Read;
       }
     }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        p_.typed_semantics->local_ownership_facts.erase(
+            p_.typed_semantics->local_ownership_facts.begin());
+      }
+    }
 #endif
   }
 
@@ -1111,6 +1117,16 @@ class Generator {
 
   bool copy_type(const string& type) const {
     return copy_type_name(canonical_type_name(type));
+  }
+
+  bool phase28_copy_primitive_type(const string& type) const {
+    const string canonical = canonical_type_name(type);
+    return canonical == "Int" || canonical == "int" ||
+           canonical == "Float" || canonical == "float" ||
+           canonical == "Bool" || canonical == "bool" ||
+           canonical == "Char" || canonical == "char" ||
+           canonical == "Byte" || canonical == "byte" ||
+           canonical == "i64" || canonical == "f64" || canonical == "u8";
   }
 
   std::optional<est::ExpressionView> expression_view_from_est(
@@ -5651,9 +5667,6 @@ class Generator {
       const Stmt& s, const string& functional_context) const {
     if (!p_.typed_semantics) return nullptr;
 
-    const auto& facts = p_.typed_semantics->local_ownership_facts;
-    if (facts.empty()) return nullptr;
-
     const est::ExprSlot slot =
         (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
             ? est::ExprSlot::Initializer
@@ -5667,36 +5680,79 @@ class Generator {
     }
     if (!matched_handle) return nullptr;
 
-    string context = functional_context.empty() ? "main" : functional_context;
-    auto bracket = context.find('<');
-    string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const auto bracket = context.find('<');
+    const string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
 
+    // Check checker-owned requirement coverage:
+    const auto* requirement = p_.typed_semantics->find_local_ownership_requirement(
+        matched_handle->arena_index, matched_handle->expr, context);
+
+    const auto& facts = p_.typed_semantics->local_ownership_facts;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     for (const auto& fact : facts) {
       if (fact.est_arena_index == matched_handle->arena_index &&
           fact.expression_occurrence_id == matched_handle->expr) {
         if (fact.specialization_context == base_context ||
             fact.specialization_context == context) {
+          if (requirement && !requirement->definition_identity.empty() &&
+              fact.definition_identity != requirement->definition_identity) {
+            continue; // Reject loose matches across different definitions
+          }
           found_fact = &fact;
           break;
         }
       }
     }
 
-    if (!found_fact) return nullptr;
+    if (!found_fact) {
+      if (requirement) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT required local ownership fact record missing");
+      }
+      return nullptr;
+    }
 
-    if (found_fact->availability != TypedLocalOwnershipFactV1::Availability::Present) {
+    // Intentionally unsupported facts decline bounded inference;
+    // preserve explicitly authorized legacy path within documented bounds.
+    if (found_fact->is_intentionally_unsupported()) {
+      return nullptr;
+    }
+
+    // Validate authoritative gate:
+    if (!found_fact->is_authoritative()) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
           std::to_string(static_cast<int>(found_fact->availability)));
     }
 
+    // Semantic identity validation:
     if (found_fact->definition_identity.empty() ||
         found_fact->source_binding_identity.empty()) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checker-issued binding identity");
     }
 
+    // Verify definition identity belongs to this semantic context:
+    const auto at_pos = found_fact->definition_identity.find('@');
+    if (at_pos != string::npos) {
+      const string def_ctx = found_fact->definition_identity.substr(0, at_pos);
+      if (def_ctx != context && def_ctx != base_context) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT definition identity context mismatch: " +
+            found_fact->definition_identity + " for context " + context);
+      }
+    }
+
+    // Verify statement occurrence ID when exposed by checker:
+    if (found_fact->statement_occurrence_id != UINT32_MAX &&
+        requirement && requirement->statement_occurrence_id != UINT32_MAX &&
+        found_fact->statement_occurrence_id != requirement->statement_occurrence_id) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT statement occurrence mismatch in ownership fact");
+    }
+
+    // Verify EST arena and facts:
     const est::Arena* arena = nullptr;
     if (found_fact->est_arena_index < p_.expression_arenas.size() &&
         p_.expression_arenas[found_fact->est_arena_index]) {
@@ -6894,7 +6950,7 @@ class Generator {
                                     starts_with(statement_receiver_type, "map["))))) {
             if (s.b == "push" && s.args.size() == 1) {
               auto arg_type = generated_expr_type(s.args[0], &types);
-              if (arg_type && copy_type(*arg_type)) {
+              if (arg_type && phase28_copy_primitive_type(*arg_type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);
                 string temp_var = "__moss_push_arg_" + std::to_string(call_argument_temp_++);
                 o << indent(level) << "{ let " << temp_var << " = " << arg_val << "; ("

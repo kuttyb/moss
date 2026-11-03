@@ -101,8 +101,9 @@ def main() -> int:
     # Consumer-level genuine fault injection (production validation logic detection)
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
+    verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")
 
-    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb fail-closed)")
+    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed)")
     return 0
 
 

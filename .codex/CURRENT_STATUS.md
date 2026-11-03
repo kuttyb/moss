@@ -14610,3 +14610,32 @@ Validation completed: `make --jobs="$(nproc)" moss-dev`,
 `python3 -m py_compile tests/run_parallel.py tests/tooling/check_phase28_team_b_consumer.py tests/phase28/verify_defects.py`,
 and `git diff --check`. Full check/check-shadow and engine parity were not run.
 Agent 2 adversarial review remains pending until CP2.
+
+### Phase 28 Round 2 integration checkpoint (2026-11-02, Team A checker facts & Team B native ownership lowering reconciled)
+
+Branch `phase28-r2-integration`. Merged `origin/phase28-r2-team-a` (`43d87556`) into `phase28-r2-integration` (ancestor `phase28-r2-team-b` at `a90faf87`) preserving full ancestry.
+
+Completed integration scope:
+1. Reconciled checker-owned ownership facts:
+   - Updated `TypedSemanticModuleV1` with `required_local_ownership_occurrences` and `find_local_ownership_requirement()`.
+   - Updated native consumer (`resolve_local_ownership_fact`) to honor `is_authoritative()`, `is_intentionally_unsupported()`, `InferenceStatus`, and `UnsupportedReason`.
+   - Explicitly unsupported facts safely preserve authorized legacy lowering without inventing new heuristics. Contradictory/incomplete facts fail closed with `MOSS_INTERNAL_INVARIANT`.
+2. Proved whole-record deletion fails closed:
+   - Checker records required ownership occurrences in `required_local_ownership_occurrences`.
+   - Native consumer detects when a required fact is omitted completely from `local_ownership_facts` and throws `MOSS_INTERNAL_INVARIANT required local ownership fact record missing`.
+   - Genuine test-build hook `MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD` verified in `tests/tooling/check_phase28_team_b_consumer.py`.
+3. Validated semantic identities:
+   - Consumer lookup uses exact retained EST handles (`matched_handle->arena_index`, `matched_handle->expr`), `specialization_context`, statement occurrence identity when exposed by the checker, and binding identities. Context mismatches and loose cross-definition matches fail closed.
+4. Reconciled E1 scalar Copy lowering:
+   - Native `gen_block()` for `s.b == "push"` updated to `phase28_copy_primitive_type()` admitting only designated primitives (`Int`, `Float`, `Bool`, `Char`, `Byte`).
+   - Non-primitive types like `option[Int]` are never treated as Copy.
+5. Reconciled E3 and E4 in `tests/phase28/verify_defects.py`:
+   - E3 Shapes callable-argument inference (`implicit_method_argument_effect.moss`) verified as PASS.
+   - E3 full Shapes verified as KNOWN FAILURE with `MODULE_IDENTITY_UNRESOLVED` (the callable-argument defect is fully repaired).
+   - E4 mutate loop element verified as KNOWN FAILURE (`E0596`), respecting checker VectorElement authority without independent iteration mutability inference.
+6. Validation:
+   - `tests/tooling/check_phase28_team_b_consumer.py` PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed).
+   - `tests/tooling/check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow` modes.
+   - `tests/phase28/verify_defects.py` PASS (4 PASS, 3 KNOWN FAILURES, 0 UNEXPECTED FAILURES).
+   - `tests/tooling/check_agent_feedback.py` PASS.
+   - `git diff --check` PASS.

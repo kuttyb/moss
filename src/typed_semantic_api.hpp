@@ -122,6 +122,18 @@ struct TypedLocalOwnershipFactV1 {
   }
 };
 
+// Checker-owned requirement that a local ownership fact must exist for
+// an expression occurrence. If an occurrence appears here, consumers must
+// fail closed with MOSS_INTERNAL_INVARIANT if no authoritative or
+// intentionally unsupported fact is present in local_ownership_facts.
+struct TypedLocalOwnershipRequirementV1 {
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId expression_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_context;
+  std::string definition_identity;
+};
+
 // A missing or incomplete checker summary is represented as unavailable,
 // never guessed from the function's display result or source text.
 struct TypedOpenCallableSummaryV1 {
@@ -195,6 +207,9 @@ struct TypedSemanticModuleV1 {
   // or contradictory availability on an Inferred record is missing authority
   // and must fail closed.
   std::vector<TypedLocalOwnershipFactV1> local_ownership_facts;
+  // Checker-owned occurrences where a local ownership fact is required.
+  // Whole-record omission of a required fact causes consumer fail-closed.
+  std::vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -202,6 +217,23 @@ struct TypedSemanticModuleV1 {
   // False until A2 emits all reachable open summaries directly from solver
   // terms. ABI consumers must call require_complete_open_summaries().
   bool open_summaries_complete{true};
+
+  const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
+      std::uint32_t arena_index, est::ExprId expr_id,
+      const std::string& context) const {
+    const auto bracket = context.find('<');
+    const std::string base_context =
+        bracket != std::string::npos ? context.substr(0, bracket) : context;
+    for (const auto& req : required_local_ownership_occurrences) {
+      if (req.est_arena_index == arena_index &&
+          req.expression_occurrence_id == expr_id &&
+          (req.specialization_context == context ||
+           req.specialization_context == base_context)) {
+        return &req;
+      }
+    }
+    return nullptr;
+  }
 
   void require_complete_open_summaries() const {
     if (!open_summaries_complete)
