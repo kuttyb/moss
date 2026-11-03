@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn inspect(value: Box) -> Int:
+  return value.value
+
+fn forward(value: Box) -> Int:
+  alias = value
+  inspect(alias)
+  echo value.value
+  return value.value
+
+fn main():
+  echo forward(Box(value = 4))

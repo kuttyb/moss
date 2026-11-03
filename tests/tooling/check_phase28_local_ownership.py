@@ -88,7 +88,8 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
     if expected_rebinding:
         definitions = re.findall(
             r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="[^"]+" '
-            r'binding="([^"]+)" killed="([^"]*)" expr=(\d+)',
+            r'binding="([^"]+)" killed="([^"]*)" expr=(\d+) '
+            r'context="[^"]+" access=(\d+)',
             proc.stderr)
         if len(definitions) != 2 or definitions[0][0] == definitions[1][0]:
             raise AssertionError(
@@ -98,6 +99,9 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
             raise AssertionError(
                 f"rebind did not preserve lexical identity and kill prior definition: "
                 f"{definitions!r}")
+        if [int(row[4]) for row in definitions] != [0, 2]:
+            raise AssertionError(
+                f"independent definitions must remain READ then CONSUME: {definitions!r}")
 
 
 def check_take_contract(compiler: str) -> None:
@@ -206,6 +210,11 @@ def main() -> int:
     check(compiler, "rebinding_definitions.moss",
           expected_records=(0, 2, 1), expected_rebinding=True)
     check(compiler, "rebind_after_borrow.moss", expected_effect=0)
+    check(compiler, "callee_read_alias.moss", expected_effect=0)
+    check(compiler, "callee_consume_alias.moss",
+          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
+    check(compiler, "callee_specialized_consume_alias.moss",
+          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "rebind_rhs_raise.moss")
     check(compiler, "fileio_rebinding.moss",
           expected_error="FILEIO_PINNED_OWNERSHIP")

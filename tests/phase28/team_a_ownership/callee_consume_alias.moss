@@ -1,0 +1,13 @@
+type Box:
+  value: Int
+
+fn transfer(value: Box) -> Box:
+  return value
+
+fn invalid(source: Box):
+  alias = source
+  transfer(alias)
+  echo source.value
+
+fn main():
+  invalid(Box(value = 4))
