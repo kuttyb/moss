@@ -13,6 +13,7 @@ Terms:
    - Gate: string-debt gate (`check_phase27_string_debt.py`) and consumer re-parse counter.
    - Status: Fast Debug **met** (zero, enforced by require-zero, Phase 27.5.4 C1). Emitter and optimizer **in progress** (Phase 27.5.4 C2; allowlist ratchet may only shrink).
    - Known debt: the checker's internal string passes and text-keyed parse caches (≈670k re-parses, ≈255M cache lookups on the 27.5.4 corpus measurement). Accepted by decision on Nov 1 2026.
+   - Phase 28 Round 3 string-debt correction: the checker raw `Stmt.a` comparison allowance remains at 7. Three ownership-scan reads were changed to resolve declaration, assignment and receiver identifiers from their retained EST handles; the `Stmt` spelling slots are no longer inspected for those comparisons. This does not change the broader checker known-debt measurement above.
 
 2. **The tree is the source of truth.** Rewrites after parsing should operate on tree nodes; expression text should be derived from the tree, never the reverse.
    - Gate: text-to-tree rebuild counter.

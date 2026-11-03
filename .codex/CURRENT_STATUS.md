@@ -1,26 +1,25 @@
-### Phase 28 Round 3 R03-T02-W01 `take(place)` Consumer Lowering & Integration (2026-11-02, Team B)
+### Phase 28 Round 3 Team B — `take(place)` Architectural Corrections (2026-11-02)
 
-Branch `phase28-r3-team-b`. Integrated Team A's reviewed checker contract (`phase28-r3-team-a` at `a679994c1d2b44fc82e64c5cf7a2f123aef26a27`) and delivered executable native Rust emission and Fast Debug evaluation for `take(place)`:
-1. Fast Debug Lowering:
-   - Evaluates `est::Take` in `FastInterpreter::evaluate_expression_tree` by reading checked `TypedTakeRequirementV1` and `TypedTakeFactV1`.
-   - Locates target place via `locate_tree_node`, moves out value via `std::move(*place.value)`, installs terminal empty replacement (`None`, `[]`, `{}`, Queue::new).
-   - Emits state write or local write trace event, returns previous value with zero extra evaluations of nested indices.
-2. Native Rust Lowering:
-   - Emits `std::mem::take(...)` using `resolve_take_fact` and `emit_take_expression` in `src/native_generator.cpp`.
-   - Places lowered across domain state (`state.<root>.__moss_field_<field>_mut()`), view parameters (`<param>.__moss_field_<field>_mut()`), borrowed parameters (`(*<param>).<field>`), vector indexing (`[(<selector>) as usize]`), and map indexing (`.get_mut(&(<selector>)).expect(...)`).
-   - Zero `.clone()` calls emitted for take lowering.
-   - Guarded statements (`Let`/`Var`, `Assign`, `Return`, `Reply`, `Raise`) and expression fallback to fail closed with `MOSS_INTERNAL_INVARIANT` on unhandled take expressions.
-3. EST Fix:
-   - Qualified `take_operator` in `src/est/expression_tree.cpp` to require `arguments.size() == 1`, distinguishing `take(place)` from 0-argument methods (e.g. `take()` in `swarm_035`).
-4. Verification & Gates:
-   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (14/14 tests: 7 positive parity + 7 checker rejection forms).
-   - `python3 tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (7/7 fail-closed tests: drop, perturb, delete fact, delete requirement, duplicate fact, duplicate requirement, perturb place ID).
-   - `python3 tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE).
-   - `python3 tests/tooling/check_phase28_local_ownership.py ./moss` (default & `MOSS_EST=shadow`): PASS.
-   - `python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS.
-   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (audited 42 name comparisons, 10 binding comparisons).
-   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
-   - `git diff --check`: PASS.
+Branch `phase28-r3-team-b`. Corrected the three L7 findings:
+1. Removed specialization fallback:
+   - Eliminated blanket catch fallback in `native_generator.cpp::resolve_take_fact`.
+   - Requires exact specialization identity matching; fails closed with `MOSS_INTERNAL_INVARIANT`.
+   - Added `tests/tooling/typed_take_contract_test.cpp` exercising multi-specialization identity lookups, mismatched identity rejections, and 5 targeted corruption modes.
+2. Removed expression-text reconstruction:
+   - Deleted `render_est_syntax` completely.
+   - Implemented `lower_est_selector` lowering retained EST selector nodes directly to Rust syntax across identifiers, literals, parenthesized expressions, member access, index expressions, and view/borrowed call arguments.
+   - Retained single-evaluation property of selectors.
+3. Restored string-debt gate:
+   - Restored gate allowance to 7 in `tests/tooling/check_phase27_string_debt.py`.
+   - Merged Team A's reviewed string-debt fix (`phase28-r3-team-a-debt-fix` at `08b9f2fc11ba0b2f9b2bbeeb5217c7a55fd4fe66`), eliminating the 3 `Stmt.a` comparisons in `src/semantic_checker.cpp`.
+4. Verification:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (14/14 tests).
+   - `tests/tooling/typed_take_contract_test`: PASS (7/7 contract & corruption modes).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (audited 42 name comparisons, 7 binding comparisons).
+
+### Phase 28 Round 3 Team A — checker string-debt correction (2026-11-02)
+
+Branch `phase28-r3-team-a-debt-fix`, based on `a679994c1d2b44fc82e64c5cf7a2f123aef26a27`. Removed the three reported `Stmt.a` scanner matches in `straight_line_alias_effect`: Let/Var redefinition and assignment redefinition now read exact LHS EST identifiers; member-call alias matching reads the exact Receiver EST identifier. Original gate allowance stays at 7; the checker-only count is 7. Targeted ownership/`take` checks pass in default and EST shadow. Agent 2 reviewed exact implementation SHA `7e5bb6333a6b8736fea277ab240bf41463839cb8` and returned GO with no findings. Targeted tests and checker-only count were independently confirmed.
 
 ### Phase 28 Round 3 Team A — `take(place)` checker handoff (2026-11-02)
 

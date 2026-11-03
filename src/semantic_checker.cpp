@@ -22447,12 +22447,19 @@ class Checker {
           return decline(TypedLocalOwnershipFactV1::UnsupportedReason::ControlFlowJoin);
         if (statement.kind == Stmt::Kind::While || statement.kind == Stmt::Kind::For)
           return decline(TypedLocalOwnershipFactV1::UnsupportedReason::LoopCarriedUse);
-        if ((statement.kind == Stmt::Kind::Let ||
-             statement.kind == Stmt::Kind::Var) && statement.a == alias) {
+        const auto declared_binding =
+            (statement.kind == Stmt::Kind::Let ||
+             statement.kind == Stmt::Kind::Var)
+                ? direct_statement_identifier(statement, est::ExprSlot::LhsPlace)
+                : std::nullopt;
+        if (declared_binding && *declared_binding == alias) {
           stopped_at_redefinition = true;
           break;
         }
-        if (statement.kind == Stmt::Kind::Assign && statement.a == alias) {
+        const auto assigned_binding = statement.kind == Stmt::Kind::Assign
+            ? direct_statement_identifier(statement, est::ExprSlot::LhsPlace)
+            : std::nullopt;
+        if (assigned_binding && *assigned_binding == alias) {
           stopped_at_redefinition = true;
           break;
         }
@@ -22507,8 +22514,13 @@ class Checker {
             if (requirements == statement.member_requirements_by_context.end())
               return decline(TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
             std::optional<Effect> checked_use;
+            // Resolve the exact retained receiver occurrence. `Stmt::a` is a
+            // legacy source slot; it is not ownership evidence.
+            const auto receiver_binding = direct_statement_identifier(
+                statement, est::ExprSlot::Receiver);
             for (const auto& requirement : requirements->second) {
-              if (requirement.member_name != statement.b || statement.a != alias)
+              if (requirement.member_name != statement.b ||
+                  !receiver_binding || *receiver_binding != alias)
                 continue;
               checked_use = requirement.receiver_access == moss::AccessMode::Consume
                   ? Effect::Consume
