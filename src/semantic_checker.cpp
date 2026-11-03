@@ -22195,8 +22195,19 @@ class Checker {
     return false;
   }
 
+  bool phase28_copy_primitive_type(const string& type) const {
+    // Phase 28 treats option[T] as non-Copy even though the legacy shared
+    // copy_type predicate still recurses through option.
+    const string canonical = canonical_type_name(type);
+    return canonical == "Int" || canonical == "int" ||
+        canonical == "Float" || canonical == "float" ||
+        canonical == "Bool" || canonical == "bool" ||
+        canonical == "Char" || canonical == "char";
+  }
+
   bool return_is_copy_projection_of_alias(const Stmt& statement,
                                           const string& alias,
+                                          const string& source,
                                           const TypeEnv& env) const {
     const est::Handle* returned = nullptr;
     for (const auto& handle : statement.expression_handles) {
@@ -22223,8 +22234,12 @@ class Checker {
     }
     const auto* base = std::get_if<est::Identifier>(&arena->at(cursor));
     if (!projected || !base || base->name != alias) return false;
-    const auto type = inferred_expr_type(statement.a, env);
-    return type && copy_type(*type);
+    auto source_type = env.find(source);
+    if (source_type == env.end()) return false;
+    TypeEnv projection_env = env;
+    projection_env[alias] = source_type->second;
+    const auto type = inferred_expr_type(statement.a, projection_env);
+    return type && phase28_copy_primitive_type(*type);
   }
 
   std::optional<Effect> straight_line_alias_effect(
@@ -22346,7 +22361,8 @@ class Checker {
                 statement, est::ExprSlot::ReturnValue);
             if (returned_local && *returned_local == alias)
               use = Effect::Consume;
-            else if (return_is_copy_projection_of_alias(statement, alias, env))
+            else if (return_is_copy_projection_of_alias(
+                         statement, alias, source, env))
               use = Effect::Read;
             else
               return decline(

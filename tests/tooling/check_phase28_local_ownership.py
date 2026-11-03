@@ -108,6 +108,8 @@ def main() -> int:
     check(compiler, "nested_return_consume.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "copy_field_return.moss")
+    check(compiler, "option_field_return_consume.moss",
+          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "control_flow_unsupported.moss",
           expected_unsupported=(0, 1))
     check(compiler, "vector_read_iteration.moss",
