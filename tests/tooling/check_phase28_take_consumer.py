@@ -55,6 +55,19 @@ def verify_fail_closed(compiler: str, hook: str) -> None:
         )
 
 
+def verify_selector_fail_closed(compiler: str, hook: str) -> None:
+    fixture = ROOT / "tests/phase28/take_fixtures/take_nested_projection.moss"
+    rs_path = TMP / f"selector_fail_{hook}.rs"
+    env = os.environ.copy()
+    env[hook] = "1"
+    proc_native = run([compiler, str(fixture), "-o", str(rs_path)], env=env)
+    if proc_native.returncode == 0:
+        raise AssertionError(f"Selector hook {hook}: expected native failure, but compilation succeeded!")
+    combined = proc_native.stderr + proc_native.stdout
+    if "MOSS_INTERNAL_INVARIANT" not in combined:
+        raise AssertionError(f"Selector hook {hook}: expected MOSS_INTERNAL_INVARIANT, got:\n{combined}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_take_consumer.py COMPILER")
@@ -80,6 +93,16 @@ def main() -> int:
         verify_fail_closed(compiler, hook)
         print(f"[PASS] {hook}: correctly failed closed with MOSS_INTERNAL_INVARIANT")
 
+    selector_hooks = [
+        "MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET",
+        "MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET",
+        "MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT",
+        "MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE",
+    ]
+    for hook in selector_hooks:
+        verify_selector_fail_closed(compiler, hook)
+        print(f"[PASS] {hook}: selector correctly failed closed with MOSS_INTERNAL_INVARIANT")
+
     # 8. Multi-specialization & targeted contract corruption test
     contract_bin = TMP / "typed_take_contract_test"
     contract_src = ROOT / "tests/tooling/typed_take_contract_test.cpp"
@@ -92,7 +115,7 @@ def main() -> int:
     print("[PASS] typed_take_contract_test: multi-specialization exact lookup and targeted corruption passed")
 
     print("-" * 50)
-    print("RESULT: SUCCESS (All 8 take semantic authority fail-closed tests passed)")
+    print("RESULT: SUCCESS (All 12 take and selector semantic authority fail-closed tests passed)")
     return 0
 
 

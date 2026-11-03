@@ -1,0 +1,25 @@
+# Selector arithmetic operator lowering depending on checked operand types
+type Element:
+  tag: Int
+
+type Group:
+  items: Vector[Element]
+
+type Container:
+  groups: Vector[Group]
+
+fn take_group_items(c: Container, idx: Int) -> Vector[Element]:
+  # Selector uses integer multiplication and addition: idx * 2 + 1
+  return take(c.groups[idx * 2 + 1].items)
+
+fn main():
+  var c = Container(groups: [Group(items: [Element(tag: 1)]), Group(items: [Element(tag: 2)]), Group(items: [Element(tag: 3)]), Group(items: [Element(tag: 10), Element(tag: 20)])])
+  let v = take_group_items(c, 1)
+  let count_v = v |> count
+  let count_remaining = c.groups[3].items |> count
+  var sum = 0
+  if count_v == 2:
+    sum = sum + 20
+  if count_remaining == 0:
+    sum = sum + 5
+  echo sum

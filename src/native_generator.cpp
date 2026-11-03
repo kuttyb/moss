@@ -5951,12 +5951,58 @@ class Generator {
     return found_fact;
   }
 
+  struct SelectorNodeFacts {
+    TypeRef type;
+    std::string resolved_target;
+    std::string specialization_result;
+    std::optional<Effect> inferred_effect;
+  };
+
+  std::optional<SelectorNodeFacts> lookup_selector_facts(
+      const est::Arena& arena, est::ExprId id,
+      const string& fact_context, const string& source_context) const {
+    SelectorNodeFacts result;
+    bool found_any = false;
+    auto merge = [&](const est::SemanticFacts* facts) {
+      if (!facts) return;
+      found_any = true;
+      if (!result.type && facts->type) result.type = facts->type;
+      if (result.resolved_target.empty() && !facts->resolved_target.empty())
+        result.resolved_target = facts->resolved_target;
+      if (result.specialization_result.empty() && !facts->specialization_result.empty())
+        result.specialization_result = facts->specialization_result;
+      if (!result.inferred_effect && facts->inferred_effect)
+        result.inferred_effect = facts->inferred_effect;
+    };
+    if (!fact_context.empty()) merge(arena.facts(id, fact_context));
+    if (!source_context.empty()) merge(arena.facts(id, source_context));
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
+      result.resolved_target = "";
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET")) {
+      result.resolved_target = "callable-v1:module-v1:corrupted::unknown";
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT")) {
+      result.inferred_effect = std::nullopt;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
+      result.type = nullptr;
+    }
+#endif
+    if (!found_any) return std::nullopt;
+    return result;
+  }
+
   string lower_est_selector(
       const est::Arena& arena,
       est::ExprId node_id,
       const Domain* d,
       const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      const string& fact_context,
+      const string& source_context) const {
+    const auto facts = lookup_selector_facts(arena, node_id, fact_context, source_context);
     const auto& node = arena.at(node_id);
     return std::visit([&](const auto& value) -> string {
       using T = std::decay_t<decltype(value)>;
@@ -5975,87 +6021,161 @@ class Generator {
         }
         return rust_identifier(value.name);
       } else if constexpr (std::is_same_v<T, est::Literal>) {
-        if (value.literal_class == est::LiteralClass::String) {
+        if (!facts || !facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector literal missing checker-issued type facts");
+        }
+        if (facts->type->kind == TypeKind::Primitive && facts->type->name == "string") {
           return "String::from(" + value.spelling + ")";
         }
-        if (value.literal_class == est::LiteralClass::Integer) {
+        if (facts->type->kind == TypeKind::Primitive && facts->type->name == "int") {
           if (value.spelling.find('_') != string::npos) return value.spelling;
           return value.spelling + "_i64";
         }
         return value.spelling;
       } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
-        return "(" + lower_est_selector(arena, value.inner, d, locals, types) + ")";
+        return "(" + lower_est_selector(arena, value.inner, d, locals, types, fact_context, source_context) + ")";
       } else if constexpr (std::is_same_v<T, est::Unary>) {
-        string op = (value.op == "!") ? "!" : value.op;
-        return op + "(" + lower_est_selector(arena, value.operand, d, locals, types) + ")";
+        const auto operand_facts = lookup_selector_facts(arena, value.operand, fact_context, source_context);
+        if (!facts || !facts->type || !operand_facts || !operand_facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector unary operator missing checker-issued type facts");
+        }
+        string operand = lower_est_selector(arena, value.operand, d, locals, types, fact_context, source_context);
+        if (value.op == "-") {
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "int") {
+            return "(" + operand + ").wrapping_neg()";
+          }
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "float") {
+            return "-(" + operand + ")";
+          }
+        } else if (value.op == "!" || value.op == "not") {
+          if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "bool") {
+            return "!(" + operand + ")";
+          }
+        }
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector unary operator '" + value.op +
+                                 "' for type " + operand_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Binary>) {
-        string left = lower_est_selector(arena, value.left, d, locals, types);
-        string right = lower_est_selector(arena, value.right, d, locals, types);
-        if (value.op == "+") return "(" + left + ").wrapping_add(" + right + ")";
-        if (value.op == "-") return "(" + left + ").wrapping_sub(" + right + ")";
-        if (value.op == "*") return "(" + left + ").wrapping_mul(" + right + ")";
-        if (value.op == "/") return "(" + left + ") / (" + right + ")";
-        if (value.op == "%") return "(" + left + ") % (" + right + ")";
-        if (value.op == "==") return "(" + left + ") == (" + right + ")";
-        if (value.op == "!=") return "(" + left + ") != (" + right + ")";
-        if (value.op == "<") return "(" + left + ") < (" + right + ")";
-        if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
-        if (value.op == ">") return "(" + left + ") > (" + right + ")";
-        if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
-        if (value.op == "and") return "(" + left + ") && (" + right + ")";
-        if (value.op == "or") return "(" + left + ") || (" + right + ")";
-        return "(" + left + " " + value.op + " " + right + ")";
+        const auto left_facts = lookup_selector_facts(arena, value.left, fact_context, source_context);
+        const auto right_facts = lookup_selector_facts(arena, value.right, fact_context, source_context);
+        if (!facts || !facts->type || !left_facts || !left_facts->type || !right_facts || !right_facts->type) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector binary operator missing checker-issued type facts");
+        }
+        string left = lower_est_selector(arena, value.left, d, locals, types, fact_context, source_context);
+        string right = lower_est_selector(arena, value.right, d, locals, types, fact_context, source_context);
+
+        // Respect checker-issued operator and operand types:
+        if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "int") {
+          if (value.op == "+") return "(" + left + ").wrapping_add(" + right + ")";
+          if (value.op == "-") return "(" + left + ").wrapping_sub(" + right + ")";
+          if (value.op == "*") return "(" + left + ").wrapping_mul(" + right + ")";
+          if (value.op == "/") return "(" + left + ") / (" + right + ")";
+          if (value.op == "%") return "(" + left + ") % (" + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+          if (value.op == "<") return "(" + left + ") < (" + right + ")";
+          if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
+          if (value.op == ">") return "(" + left + ") > (" + right + ")";
+          if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "float") {
+          if (value.op == "+") return "(" + left + " + " + right + ")";
+          if (value.op == "-") return "(" + left + " - " + right + ")";
+          if (value.op == "*") return "(" + left + " * " + right + ")";
+          if (value.op == "/") return "(" + left + " / " + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+          if (value.op == "<") return "(" + left + ") < (" + right + ")";
+          if (value.op == "<=") return "(" + left + ") <= (" + right + ")";
+          if (value.op == ">") return "(" + left + ") > (" + right + ")";
+          if (value.op == ">=") return "(" + left + ") >= (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "string") {
+          if (value.op == "+") return "format!(\"{}{}\", " + left + ", " + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+        } else if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "bool") {
+          if (value.op == "and") return "(" + left + ") && (" + right + ")";
+          if (value.op == "or") return "(" + left + ") || (" + right + ")";
+          if (value.op == "==") return "(" + left + ") == (" + right + ")";
+          if (value.op == "!=") return "(" + left + ") != (" + right + ")";
+        }
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector binary operator '" + value.op +
+                                 "' for type " + left_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Member>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types);
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context, source_context);
         return base + "." + rust_identifier(value.name);
       } else if constexpr (std::is_same_v<T, est::Index>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types);
-        string idx = lower_est_selector(arena, value.index, d, locals, types);
+        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context, source_context);
+        string idx = lower_est_selector(arena, value.index, d, locals, types, fact_context, source_context);
+        const auto base_facts = lookup_selector_facts(arena, value.base, fact_context, source_context);
+        if (base_facts && base_facts->type && base_facts->type->kind == TypeKind::Builtin && base_facts->type->name == "map") {
+          return "(" + base + ").get(&(" + idx + ")).expect(\"Moss missing map key\")";
+        }
         return "(" + base + ")[(" + idx + ") as usize]";
       } else if constexpr (std::is_same_v<T, est::Call>) {
-        const auto* callee_id = std::get_if<est::Identifier>(&arena.at(value.callee));
-        if (callee_id && functions_.count(callee_id->name)) {
-          const Function* fn = functions_.at(callee_id->name);
+        // Enforce exact checker semantic authority:
+        if (!facts || facts->resolved_target.empty()) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call missing checker-issued target identity");
+        }
+        const Function* fn = find_function_by_callable_id(facts->resolved_target);
+        if (!fn) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT checker target callable not found: " + facts->resolved_target);
+        }
+
+        // Validate specialization identity if specialized:
+        string fn_name;
+        if (!facts->specialization_result.empty()) {
+          if (p_.typed_semantics &&
+              p_.typed_semantics->specializations.find(facts->specialization_result) ==
+                  p_.typed_semantics->specializations.end()) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization identity mismatch: " +
+                                     facts->specialization_result);
+          }
+          fn_name = rust_identifier(fn->name) + "_" + facts->specialization_result;
+        } else {
           bool is_view_fn = false;
           for (const auto& p : fn->params) {
             if (view_object_type(p.type)) { is_view_fn = true; break; }
           }
-          string fn_name = is_view_fn ? "__moss_view_" + fn->name : rust_identifier(fn->name);
-          string call_str = fn_name + "(";
-          for (size_t i = 0; i < value.arguments.size(); ++i) {
-            if (i) call_str += ", ";
-            const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
-            if (arg_id && i < fn->params.size()) {
-              Effect eff = function_effect(*fn, i, fn->params[i].type, nullptr);
-              if (eff == Effect::Write) {
-                if (view_parameters_.count(arg_id->name)) {
-                  call_str += "&mut (*" + arg_id->name + ")";
-                } else if (types && types->count(arg_id->name) &&
-                           view_object_type(types->at(arg_id->name))) {
-                  call_str += rust_identifier(arg_id->name);
-                } else {
-                  call_str += "&mut (" + rust_identifier(arg_id->name) + ")";
-                }
-              } else if (eff == Effect::Read) {
-                if (view_parameters_.count(arg_id->name)) {
-                  call_str += "&(*" + arg_id->name + ")";
-                } else if (types && types->count(arg_id->name) &&
-                           view_object_type(types->at(arg_id->name))) {
-                  call_str += rust_identifier(arg_id->name);
-                } else {
-                  call_str += "&(" + rust_identifier(arg_id->name) + ")";
-                }
-              } else {
-                call_str += lower_est_selector(arena, value.arguments[i], d, locals, types);
-              }
-            } else {
-              call_str += lower_est_selector(arena, value.arguments[i], d, locals, types);
-            }
-          }
-          call_str += ")";
-          return call_str;
+          fn_name = is_view_fn ? "__moss_view_" + fn->name : rust_identifier(fn->name);
         }
-        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unhandled EST call in selector");
+
+        string call_str = fn_name + "(";
+        for (size_t i = 0; i < value.arguments.size(); ++i) {
+          if (i) call_str += ", ";
+          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], fact_context, source_context);
+          if (!arg_facts || !arg_facts->inferred_effect) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument missing checker-issued effect");
+          }
+          Effect eff = *arg_facts->inferred_effect;
+          const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
+          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, fact_context, source_context);
+
+          if (eff == Effect::Write) {
+            if (arg_id && view_parameters_.count(arg_id->name)) {
+              call_str += "&mut (*" + arg_id->name + ")";
+            } else if (arg_id && types && types->count(arg_id->name) &&
+                       view_object_type(types->at(arg_id->name))) {
+              call_str += rust_identifier(arg_id->name);
+            } else {
+              call_str += "&mut (" + arg_rendered + ")";
+            }
+          } else if (eff == Effect::Read) {
+            if (arg_id && view_parameters_.count(arg_id->name)) {
+              call_str += "&(*" + arg_id->name + ")";
+            } else if (arg_id && types && types->count(arg_id->name) &&
+                       view_object_type(types->at(arg_id->name))) {
+              call_str += rust_identifier(arg_id->name);
+            } else if (arg_facts->type && (arg_facts->type->kind == TypeKind::NominalInstance ||
+                                           !is_primitive_copy_type(arg_facts->type))) {
+              call_str += "&(" + arg_rendered + ")";
+            } else {
+              call_str += arg_rendered;
+            }
+          } else if (eff == Effect::Consume) {
+            call_str += arg_rendered;
+          }
+        }
+        call_str += ")";
+        return call_str;
       } else {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT unhandled EST node in selector");
       }
@@ -6073,8 +6193,9 @@ class Generator {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing take EST arena");
     }
     const auto& arena = *p_.expression_arenas[fact.est_arena_index];
+    const string source_context = "source:" + s.source_file + ":" + std::to_string(s.line);
+    const string fact_context = fact.est_fact_context;
 
-    (void)s;
     string current_place;
     bool is_view_root = false;
     if (view_parameters_.count(fact.root_name)) {
@@ -6119,14 +6240,18 @@ class Generator {
         }
         case TypedTakeProjectionKindV1::VectorIndex:
         case TypedTakeProjectionKindV1::QueueIndex: {
-          string rendered_selector = lower_est_selector(arena, proj.selector_occurrence_id, d, locals, types);
+          string rendered_selector = lower_est_selector(
+              arena, proj.selector_occurrence_id, d, locals, types,
+              fact_context, source_context);
           current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
           ends_with_mut_accessor = false;
           current_is_view = false;
           break;
         }
         case TypedTakeProjectionKindV1::MapIndex: {
-          string rendered_selector = lower_est_selector(arena, proj.selector_occurrence_id, d, locals, types);
+          string rendered_selector = lower_est_selector(
+              arena, proj.selector_occurrence_id, d, locals, types,
+              fact_context, source_context);
           current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
           ends_with_mut_accessor = false;
           current_is_view = false;

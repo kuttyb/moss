@@ -1716,6 +1716,11 @@ class FastInterpreter {
           } else {
             requirement = &program_.typed_semantics->find_take_requirement(
                 tree->arena_index, current_root, frame.functional_context);
+            if (!requirement->specialization_identity.empty()) {
+              throw std::invalid_argument(
+                  "take requirement expects specialization identity '" +
+                  requirement->specialization_identity + "' but active frame has none");
+            }
           }
           fact = program_.typed_semantics->find_take_fact(*requirement);
         } catch (const std::exception& exc) {

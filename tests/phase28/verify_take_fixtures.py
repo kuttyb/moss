@@ -94,6 +94,18 @@ TAKE_FIXTURES = [
         },
     },
     {
+        "id": "take_selector_operators",
+        "description": "Selector arithmetic operators lowered strictly from checker-issued types",
+        "source": ROOT / "tests/phase28/take_fixtures/take_selector_operators.moss",
+        "kind": "ACCEPTED",
+        "expected_fast_debug": "25",
+        "expected_native": "25",
+        "invariants": {
+            "type_driven_operator_lowering": True,
+            "zero_hidden_clones": True,
+        },
+    },
+    {
         "id": "take_raise_mutation",
         "description": "Successful take before typed raise remains a mutation (no invented rollback)",
         "source": ROOT / "tests/phase28/take_fixtures/take_raise_mutation.moss",
@@ -262,7 +274,7 @@ def main() -> int:
         print("RESULT: FAILED (Regressions or unexpected errors detected)")
         return 1
 
-    print("RESULT: SUCCESS (All 14 take fixtures pass checker, Fast Debug, and Native)")
+    print(f"RESULT: SUCCESS (All {total} take fixtures pass checker, Fast Debug, and Native)")
     return 0
 
 
