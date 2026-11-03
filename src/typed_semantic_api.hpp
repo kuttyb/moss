@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <cstdint>
@@ -152,6 +153,113 @@ struct TypedLocalOwnershipRequirementV1 {
   Availability availability{Availability::MissingEstOccurrence};
 };
 
+enum class TypedTakeReplacementV1 { OptionNone, VectorEmpty, MapEmpty, QueueEmpty };
+enum class TypedTakeProjectionKindV1 {
+  RecordField, VectorIndex, MapIndex, QueueIndex
+};
+
+struct TypedTakeProjectionV1 {
+  TypedTakeProjectionKindV1 kind{TypedTakeProjectionKindV1::RecordField};
+  std::uint32_t expression_occurrence_id{UINT32_MAX};
+  std::uint32_t selector_occurrence_id{UINT32_MAX};
+  std::string semantic_identity;
+  std::uint32_t ordinal{UINT32_MAX};
+  TypeRef input_type;
+  TypeRef output_type;
+};
+
+struct TypedTakeFactV1 {
+  enum class Availability {
+    Present, MissingTakeOccurrence, MissingPlaceOccurrence,
+    MissingStatementOccurrence, MissingBindingIdentity, MissingType,
+    Contradictory
+  };
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId take_occurrence_id{UINT32_MAX};
+  est::ExprId place_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  std::string root_binding_identity;
+  std::string root_name;
+  TypeRef terminal_type;
+  TypeRef result_type;
+  std::vector<TypedTakeProjectionV1> projection_path;
+  TypedTakeReplacementV1 replacement{TypedTakeReplacementV1::OptionNone};
+  Effect required_access{Effect::Write};
+  bool transfers_original_value{false};
+  bool exclusive_projection_access{false};
+  Availability availability{Availability::MissingTakeOccurrence};
+
+  bool is_authoritative() const noexcept {
+    const bool replacement_matches_type = terminal_type &&
+        ((terminal_type->kind == TypeKind::Builtin &&
+          terminal_type->name == "option" &&
+          replacement == TypedTakeReplacementV1::OptionNone) ||
+         (terminal_type->kind == TypeKind::Builtin &&
+          terminal_type->name == "vector" &&
+          replacement == TypedTakeReplacementV1::VectorEmpty) ||
+         (terminal_type->kind == TypeKind::Builtin &&
+          terminal_type->name == "map" &&
+          replacement == TypedTakeReplacementV1::MapEmpty) ||
+         (terminal_type->kind == TypeKind::Builtin &&
+          terminal_type->name == "queue" &&
+          replacement == TypedTakeReplacementV1::QueueEmpty));
+    return availability == Availability::Present &&
+        est_arena_index != UINT32_MAX && take_occurrence_id != UINT32_MAX &&
+        place_occurrence_id != UINT32_MAX &&
+        statement_occurrence_id != UINT32_MAX &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        !root_binding_identity.empty() && !root_name.empty() &&
+        terminal_type && result_type && !projection_path.empty() &&
+        terminal_type->structurally_equal(*result_type) &&
+        replacement_matches_type &&
+        std::all_of(projection_path.begin(), projection_path.end(),
+            [](const auto& projection) {
+              return projection.expression_occurrence_id != UINT32_MAX &&
+                  projection.input_type && projection.output_type &&
+                  !projection.semantic_identity.empty() &&
+                  (projection.kind != TypedTakeProjectionKindV1::VectorIndex &&
+                   projection.kind != TypedTakeProjectionKindV1::MapIndex &&
+                   projection.kind != TypedTakeProjectionKindV1::QueueIndex
+                       ? projection.selector_occurrence_id == UINT32_MAX
+                       : projection.selector_occurrence_id != UINT32_MAX);
+            }) &&
+        projection_path.back().output_type->structurally_equal(*terminal_type) &&
+        [&] {
+          for (std::size_t index = 0; index < projection_path.size(); ++index) {
+            const auto& projection = projection_path[index];
+            if (projection.ordinal != index) return false;
+            if (index && !projection_path[index - 1].output_type->structurally_equal(
+                             *projection.input_type)) return false;
+          }
+          return true;
+        }() &&
+        required_access == Effect::Write && transfers_original_value &&
+        exclusive_projection_access;
+  }
+};
+
+struct TypedTakeRequirementV1 {
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId take_occurrence_id{UINT32_MAX};
+  est::ExprId place_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  std::string root_binding_identity;
+  std::string root_name;
+  TypeRef terminal_type;
+  TypeRef result_type;
+  std::vector<TypedTakeProjectionV1> projection_path;
+  TypedTakeReplacementV1 replacement{TypedTakeReplacementV1::OptionNone};
+  Effect required_access{Effect::Write};
+  bool transfers_original_value{false};
+  bool exclusive_projection_access{false};
+};
+
 // A missing or incomplete checker summary is represented as unavailable,
 // never guessed from the function's display result or source text.
 struct TypedOpenCallableSummaryV1 {
@@ -231,6 +339,8 @@ struct TypedSemanticModuleV1 {
   // Checker-issued bridge from a consumer's existing function-context alias
   // to the stable key in `specializations`. Consumers must not decode either.
   std::map<std::string, std::string> local_ownership_specialization_contexts;
+  std::vector<TypedTakeFactV1> take_facts;
+  std::vector<TypedTakeRequirementV1> required_take_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -371,6 +481,145 @@ struct TypedSemanticModuleV1 {
     if (!result->is_authoritative())
       throw std::invalid_argument("required local ownership fact unavailable");
     return *result;
+  }
+
+  const TypedTakeFactV1* find_take_fact(
+      const TypedTakeRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    auto same_projection = [](const TypedTakeProjectionV1& left,
+                              const TypedTakeProjectionV1& right) {
+      return left.kind == right.kind &&
+          left.expression_occurrence_id == right.expression_occurrence_id &&
+          left.selector_occurrence_id == right.selector_occurrence_id &&
+          left.semantic_identity == right.semantic_identity &&
+          left.ordinal == right.ordinal && left.input_type && right.input_type &&
+          left.input_type->structurally_equal(*right.input_type) &&
+          left.output_type && right.output_type &&
+          left.output_type->structurally_equal(*right.output_type);
+    };
+    auto same_projection_path = [&](const auto& left, const auto& right) {
+      return left.size() == right.size() &&
+          std::equal(left.begin(), left.end(), right.begin(), same_projection);
+    };
+    auto same_requirement = [&](const TypedTakeRequirementV1& left,
+                               const TypedTakeRequirementV1& right) {
+      return left.est_arena_index == right.est_arena_index &&
+          left.take_occurrence_id == right.take_occurrence_id &&
+          left.place_occurrence_id == right.place_occurrence_id &&
+          left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          left.root_binding_identity == right.root_binding_identity &&
+          left.root_name == right.root_name &&
+          same_type(left.terminal_type, right.terminal_type) &&
+          same_type(left.result_type, right.result_type) &&
+          same_projection_path(left.projection_path, right.projection_path) &&
+          left.replacement == right.replacement &&
+          left.required_access == right.required_access &&
+          left.transfers_original_value == right.transfers_original_value &&
+          left.exclusive_projection_access == right.exclusive_projection_access;
+    };
+    std::size_t matching_requirement_identities = 0;
+    std::size_t matching_requirements = 0;
+    for (const auto& candidate : required_take_occurrences) {
+      if (candidate.est_arena_index != requirement.est_arena_index ||
+          candidate.take_occurrence_id != requirement.take_occurrence_id ||
+          candidate.specialization_context !=
+              requirement.specialization_context)
+        continue;
+      ++matching_requirement_identities;
+      if (same_requirement(candidate, requirement))
+        ++matching_requirements;
+    }
+    if (matching_requirement_identities != 1 || matching_requirements != 1)
+      throw std::invalid_argument(matching_requirement_identities
+          ? "duplicate or contradictory required take identity"
+          : "take requirement was not checker-issued");
+    const auto mapping = local_ownership_specialization_contexts.find(
+        requirement.specialization_context);
+    if (mapping != local_ownership_specialization_contexts.end()) {
+      if (requirement.specialization_identity.empty() ||
+          local_ownership_specialization_identity(
+              requirement.specialization_context) !=
+              requirement.specialization_identity)
+        throw std::invalid_argument("take specialization identity mismatch");
+    } else if (!requirement.specialization_identity.empty()) {
+      throw std::invalid_argument(
+          "take specialization identity has no checker mapping");
+    }
+    const TypedTakeFactV1* result = nullptr;
+    std::size_t matching_fact_identities = 0;
+    for (const auto& fact : take_facts) {
+      if (fact.est_arena_index != requirement.est_arena_index ||
+          fact.take_occurrence_id != requirement.take_occurrence_id ||
+          fact.specialization_identity !=
+              requirement.specialization_identity ||
+          fact.specialization_context !=
+              requirement.specialization_context)
+        continue;
+      ++matching_fact_identities;
+      result = &fact;
+    }
+    if (matching_fact_identities != 1 || !result)
+      if (matching_fact_identities > 1)
+        throw std::invalid_argument("duplicate or contradictory checked take facts");
+    if (!result)
+      throw std::invalid_argument("required checked take fact missing");
+    if (result->place_occurrence_id != requirement.place_occurrence_id ||
+        result->statement_occurrence_id !=
+            requirement.statement_occurrence_id ||
+        result->root_binding_identity != requirement.root_binding_identity ||
+        result->est_fact_context != requirement.est_fact_context ||
+        result->root_name != requirement.root_name ||
+        !same_type(result->terminal_type, requirement.terminal_type) ||
+        !same_type(result->result_type, requirement.result_type) ||
+        !same_projection_path(result->projection_path,
+                              requirement.projection_path) ||
+        result->replacement != requirement.replacement ||
+        result->required_access != requirement.required_access ||
+        result->transfers_original_value !=
+            requirement.transfers_original_value ||
+        result->exclusive_projection_access !=
+            requirement.exclusive_projection_access)
+      throw std::invalid_argument("required checked take fact contradicts requirement");
+    if (!result->is_authoritative())
+      throw std::invalid_argument("required checked take fact unavailable");
+    return result;
+  }
+
+  const TypedTakeRequirementV1& find_take_requirement(
+      std::uint32_t arena_index, est::ExprId take_occurrence,
+      const std::string& specialization_context) const {
+    const TypedTakeRequirementV1* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& requirement : required_take_occurrences) {
+      if (requirement.est_arena_index != arena_index ||
+          requirement.take_occurrence_id != take_occurrence ||
+          requirement.specialization_context != specialization_context)
+        continue;
+      ++matches;
+      result = &requirement;
+    }
+    if (matches != 1 || !result)
+      throw std::invalid_argument(matches
+          ? "ambiguous checker take requirement"
+          : "checker take requirement missing");
+    (void)find_take_fact(*result);
+    return *result;
+  }
+
+  const TypedTakeRequirementV1& find_take_requirement(
+      std::uint32_t arena_index, est::ExprId take_occurrence,
+      const std::string& specialization_context,
+      const std::string& specialization_identity) const {
+    const auto& requirement = find_take_requirement(
+        arena_index, take_occurrence, specialization_context);
+    if (requirement.specialization_identity != specialization_identity)
+      throw std::invalid_argument("checker take requirement specialization mismatch");
+    return requirement;
   }
 
   void require_complete_open_summaries() const {

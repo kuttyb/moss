@@ -287,6 +287,8 @@ class FunctionalOptimizer {
         visit(node.left); visit(node.right);
       } else if constexpr (std::is_same_v<T, est::Call>) {
         visit(node.callee); visit_all(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        visit_all(node.arguments);
       } else if constexpr (std::is_same_v<T, est::Member>) visit(node.base);
       else if constexpr (std::is_same_v<T, est::Index>) {
         visit(node.base); visit(node.index);
@@ -334,6 +336,8 @@ class FunctionalOptimizer {
       else if constexpr (std::is_same_v<T, est::Call>)
         return child(node.callee, other->callee) &&
             children(node.arguments, other->arguments);
+      else if constexpr (std::is_same_v<T, est::Take>)
+        return children(node.arguments, other->arguments);
       else if constexpr (std::is_same_v<T, est::Member>)
         return node.name == other->name && child(node.base, other->base);
       else if constexpr (std::is_same_v<T, est::Index>)

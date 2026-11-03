@@ -1,0 +1,11 @@
+type Cell:
+  maybe: option[Int]
+  items: Vector[Int]
+
+fn invalid(cell: Cell):
+  for item in cell.items:
+    result = take(cell.items)
+    echo item
+
+fn main():
+  echo 1

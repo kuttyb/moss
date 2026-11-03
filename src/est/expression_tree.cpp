@@ -165,6 +165,11 @@ ExprId Arena::duplicate(ExprId id) {
       std::vector<ExprId> arguments;
       for (const auto argument : value.arguments) arguments.push_back(duplicate(argument));
       return append(Call{callee, std::move(arguments)}, span(id));
+    } else if constexpr (std::is_same_v<T, Take>) {
+      std::vector<ExprId> arguments;
+      for (const auto argument : value.arguments)
+        arguments.push_back(duplicate(argument));
+      return append(Take{std::move(arguments)}, span(id));
     } else if constexpr (std::is_same_v<T, Member>)
       return append(Member{duplicate(value.base), value.name}, span(id));
     else if constexpr (std::is_same_v<T, Index>)
@@ -840,7 +845,10 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        id = constructor ? append(Constructor{id, {}, std::move(arguments),
+        const bool take_operator = named && named->name == "take";
+        id = take_operator
+                         ? append(Take{std::move(arguments)}, callee_begin)
+                         : constructor ? append(Constructor{id, {}, std::move(arguments),
                                                callee_begin, callee_end},
                                    callee_begin)
                          : append(Call{id, std::move(arguments)}, source_begin(id));
@@ -913,6 +921,9 @@ void mark_uncompared_subtree(const Arena& arena, ExprId id,
     } else if constexpr (std::is_same_v<T, Call>) {
       mark_uncompared_subtree(arena, node.callee, failed_source);
       for (auto child : node.arguments) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, Take>) {
+      for (auto child : node.arguments)
+        mark_uncompared_subtree(arena, child, failed_source);
     } else if constexpr (std::is_same_v<T, Member>) mark_uncompared_subtree(arena, node.base, failed_source);
     else if constexpr (std::is_same_v<T, Index>) {
       mark_uncompared_subtree(arena, node.base, failed_source);
@@ -945,6 +956,11 @@ Shape shape_of(const Arena& arena, ExprId id) {
     else if constexpr (std::is_same_v<T, Call>) {
       Shape result{"call", {}, {shape_of(arena, node.callee)}};
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, Take>) {
+      Shape result{"take", {}, {}};
+      for (auto child : node.arguments)
+        result.children.push_back(shape_of(arena, child));
       return result;
     } else if constexpr (std::is_same_v<T, Member>) return {"member", node.name, {shape_of(arena, node.base)}};
     else if constexpr (std::is_same_v<T, Index>) return {"index", {}, {shape_of(arena, node.base), shape_of(arena, node.index)}};
@@ -1165,6 +1181,20 @@ std::optional<Shape> string_shape(std::string source) {
   }
   std::string callee;
   std::vector<std::string> args;
+  // The shadow-only legacy shape oracle recognizes the language-owned
+  // operator separately as well. Receiver-qualified `x.take(...)` continues
+  // through the ordinary member-call shape below.
+  if (parse_simple_call(source, callee, args) && callee == "take") {
+    Shape result{"take", {}, {}};
+    for (const auto& arg : args) {
+      auto child = string_shape(arg);
+      if (!child) return std::nullopt;
+      result.children.push_back(std::move(*child));
+    }
+    return result;
+  }
+  callee.clear();
+  args.clear();
   bool is_call = parse_simple_call(source, callee, args);
   if (!is_call) {
     std::size_t open = std::string::npos;
@@ -1759,6 +1789,11 @@ std::string dump_node(const Arena& arena, ExprId id) {
           << dump_node(arena, value.right) << ')';
     else if constexpr (std::is_same_v<T, Call>) {
       out << "(call#" << id << ' ' << dump_node(arena, value.callee);
+      for (const auto argument : value.arguments)
+        out << ' ' << dump_node(arena, argument);
+      out << ')';
+    } else if constexpr (std::is_same_v<T, Take>) {
+      out << "(take#" << id;
       for (const auto argument : value.arguments)
         out << ' ' << dump_node(arena, argument);
       out << ')';

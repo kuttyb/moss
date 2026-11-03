@@ -1913,6 +1913,15 @@ class Checker {
           required_local_ownership_occurrences_;
       p_.typed_semantics->local_ownership_specialization_contexts =
           local_ownership_specialization_contexts_;
+      p_.typed_semantics->take_facts = take_facts_;
+      p_.typed_semantics->required_take_occurrences =
+          required_take_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_VALIDATE_TAKE_CONTRACT"))
+        for (const auto& requirement :
+             p_.typed_semantics->required_take_occurrences)
+          (void)p_.typed_semantics->find_take_fact(requirement);
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT")) {
         for (const auto& requirement :
@@ -1966,6 +1975,35 @@ class Checker {
                     << " unsupported_reason="
                     << static_cast<int>(req.unsupported_reason)
                     << " availability=" << static_cast<int>(req.availability)
+                    << '\n';
+        for (const auto& fact : take_facts_)
+          std::cerr << "MOSS_EST_TAKE_FACT arena=" << fact.est_arena_index
+                    << " take=" << fact.take_occurrence_id
+                    << " place=" << fact.place_occurrence_id
+                    << " statement=" << fact.statement_occurrence_id
+                    << " context=" << std::quoted(fact.specialization_context)
+                    << " specialization="
+                    << std::quoted(fact.specialization_identity)
+                    << " root=" << std::quoted(fact.root_name)
+                    << " binding=" << std::quoted(fact.root_binding_identity)
+                    << " type=" << (fact.terminal_type
+                        ? fact.terminal_type->to_canonical_string() : "")
+                    << " replacement=" << static_cast<int>(fact.replacement)
+                    << " access=" << static_cast<int>(fact.required_access)
+                    << " transfer=" << fact.transfers_original_value
+                    << " exclusive=" << fact.exclusive_projection_access
+                    << " projections=" << fact.projection_path.size()
+                    << " availability=" << static_cast<int>(fact.availability)
+                    << '\n';
+        for (const auto& req : required_take_occurrences_)
+          std::cerr << "MOSS_EST_TAKE_REQUIREMENT arena=" << req.est_arena_index
+                    << " take=" << req.take_occurrence_id
+                    << " place=" << req.place_occurrence_id
+                    << " statement=" << req.statement_occurrence_id
+                    << " context=" << std::quoted(req.specialization_context)
+                    << " specialization="
+                    << std::quoted(req.specialization_identity)
+                    << " binding=" << std::quoted(req.root_binding_identity)
                     << '\n';
       }
       p_.assert_declaration_type_consistency();
@@ -2308,6 +2346,8 @@ class Checker {
   vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
   vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
   std::map<string, string> local_ownership_specialization_contexts_;
+  vector<TypedTakeFactV1> take_facts_;
+  vector<TypedTakeRequirementV1> required_take_occurrences_;
   bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = moss::TypeEnv;
@@ -2331,7 +2371,7 @@ class Checker {
     struct ExpressionOccurrence {
       enum class Kind : std::uint8_t {
         Unknown, Group, Literal, Identifier, Unary, Binary, Field, Index,
-        VectorLiteral, CollectionLiteral, Call, MemberCall, Pipeline,
+        VectorLiteral, CollectionLiteral, Call, Take, MemberCall, Pipeline,
         PipelineStage, Constructor, Message
       } kind = Kind::Unknown;
       std::uint32_t id = 0;
@@ -11889,6 +11929,21 @@ class Checker {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
     string original = tree_strip_redundant_outer_parentheses(expression);
+    // `take(place)` is a language-owned EST node, not a call selected from the
+    // function namespace. Its result is the same closed type as the terminal
+    // place; legality and the replacement decision are checked below by the
+    // ordinary body checker once the exact place type is known.
+    if (auto cursor = root_expression_cursor(original, {})) {
+      if (auto* arena = expression_arena(cursor->arena_index)) {
+        if (const auto* take =
+                std::get_if<est::Take>(&arena->at(cursor->expr));
+            take && take->arguments.size() == 1) {
+          const auto view = est::view(*arena, cursor->expr, original);
+          if (auto place = view.source_text(take->arguments.front()))
+            if (auto result = inferred_expr(*place, env)) return result;
+        }
+      }
+    }
     if (tree_placeholder_expression(original) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
@@ -18057,6 +18112,26 @@ class Checker {
       }
     } effect_cursor_scope{*this, active_effect_cursors_, expression_effect,
                           fact_context};
+    if (effect_cursor) {
+      if (auto* arena = expression_arena(effect_cursor->arena_index)) {
+        if (const auto* take = std::get_if<est::Take>(
+                &arena->at(effect_cursor->expr));
+            take && take->arguments.size() == 1) {
+          auto place = est::view(*arena, effect_cursor->expr, effect_source)
+                           .source_text(take->arguments.front());
+          if (place) {
+            // Taking is a checked WRITE to the complete place. Walking its
+            // EST-derived place through the established effect engine also
+            // records state-leaf access and reads selectors exactly once.
+            expression_effect = Effect::Write;
+            analyze_effect_expression(*place, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      Effect::Write);
+            return;
+          }
+        }
+      }
+    }
     {
       // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
       // `s.length()` for `-s.length()` rather than a method on `-s`.
@@ -22153,6 +22228,16 @@ class Checker {
     return std::nullopt;
   }
 
+  std::optional<string> active_read_overlap(
+      const StorageLocation& location, const OwnershipEnv& env) const {
+    for (const auto& source : env.active_read_traversals) {
+      auto borrowed = storage_location(source, env.types);
+      if (borrowed && storage_locations_overlap(location, *borrowed))
+        return source;
+    }
+    return std::nullopt;
+  }
+
   static string enum_payload_transfer_guidance(const string& source,
                                                const OwnershipEnv& env) {
     if (env.state_fields.count(source))
@@ -23106,9 +23191,336 @@ class Checker {
           {std::move(at_this_point), env, ownership_exceptional_source_});
   }
 
+  std::optional<EstExpressionCursor> ownership_take_cursor(
+      const string& expression) const {
+    if (!ownership_current_stmt_) return std::nullopt;
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    switch (ownership_current_stmt_->kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
+      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
+      case Stmt::Kind::Return: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
+      default: return std::nullopt;
+    }
+    for (const auto& handle : ownership_current_stmt_->expression_handles) {
+      if (handle.slot != slot || handle.argument_index != 0) continue;
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena || !std::holds_alternative<est::Take>(arena->at(handle.expr)))
+        continue;
+      return EstExpressionCursor{handle.arena_index, handle.expr, expression};
+    }
+    return std::nullopt;
+  }
+
+  void check_take_ownership(int line, const string& expression,
+                            OwnershipEnv& env,
+                            const EstExpressionCursor& cursor) {
+    (void)expression;
+    auto* arena = expression_arena(cursor.arena_index);
+    if (!arena) err(line, "take EST arena is unavailable",
+                    "TAKE_FACT_UNAVAILABLE");
+    const auto* take = std::get_if<est::Take>(&arena->at(cursor.expr));
+    if (!take || take->arguments.size() != 1)
+      err(line, "take requires exactly one field place", "TAKE_ARGUMENT_ARITY");
+    const est::ExprId place_id = take->arguments.front();
+    if (!est_take_place_shape(*arena, place_id))
+      err(line, "take requires a writable terminal field place",
+          "TAKE_REQUIRES_FIELD_PLACE");
+
+    StorageLocation location;
+    std::function<void(est::ExprId)> resolve_place = [&](est::ExprId id) {
+      const auto& node = arena->at(id);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        resolve_place(grouped->inner);
+      } else if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+        location.root = identifier->name;
+      } else if (const auto* member = std::get_if<est::Member>(&node)) {
+        resolve_place(member->base);
+        location.path.push_back(member->name);
+      } else if (const auto* index = std::get_if<est::Index>(&node)) {
+        resolve_place(index->base);
+        location.path.push_back("[]");
+      }
+    };
+    resolve_place(place_id);
+    if (location.root.empty() || location.path.empty())
+      err(line, "take place has no checker-owned storage root",
+          "TAKE_PLACE_IDENTITY_MISSING");
+    if (env.immutable_locals.count(location.root))
+      err(line, "cannot take from immutable local '" + location.root + "'",
+          "IMMUTABLE_LOCAL_MUTATION");
+    if (env.message_payloads.count(location.root))
+      err(line, "cannot take from incoming message payload '" +
+          location.root + "'", "IMMUTABLE_MESSAGE_PAYLOAD");
+    if (auto borrowed = env.borrowed_enum_payloads.find(location.root);
+        borrowed != env.borrowed_enum_payloads.end())
+      err(line, "cannot take from borrowed enum payload '" + location.root +
+          "' of '" + borrowed->second + "'",
+          "BORROWED_ENUM_PAYLOAD_ACCESS");
+    require_available(line, location.root, env);
+    if (auto borrowed = active_read_overlap(location, env))
+      err(line, "cannot take this place while '" + *borrowed +
+          "' is READ-borrowed by a match or traversal",
+          "MATCH_READ_BORROW_ACTIVE");
+
+    const std::string fact_context = expression_fact_context();
+    auto checked_type = [&](est::ExprId id) -> TypeRef {
+      const auto* facts = arena->facts(id, fact_context);
+      if (facts && facts->type) return facts->type;
+      return nullptr;
+    };
+    auto terminal = checked_type(place_id);
+    if (!terminal || terminal->kind != moss::TypeKind::Builtin ||
+        (terminal->name != "option" && terminal->name != "vector" &&
+         terminal->name != "map" && terminal->name != "queue"))
+      err(line, "take terminal field must have type option[T], Vector[T], "
+          "Map[K,V], or Queue[T]", "TAKE_INELIGIBLE_TERMINAL");
+
+    std::string root_binding;
+    if (auto binding = env.binding_identities.find(location.root);
+        binding != env.binding_identities.end()) {
+      root_binding = binding->second;
+    } else if (env.state_fields.count(location.root)) {
+      const auto separator = current_semantic_context_.find('.');
+      const std::string domain_name =
+          starts_with(current_semantic_context_, "handler:") &&
+                  separator != std::string::npos
+              ? current_semantic_context_.substr(8, separator - 8)
+              : std::string();
+      auto domain = domains_.find(domain_name);
+      if (domain != domains_.end()) {
+        const auto field = std::find_if(domain->second->state.begin(),
+            domain->second->state.end(), [&](const Field& candidate) {
+              return candidate.name == location.root;
+            });
+        if (field != domain->second->state.end())
+          root_binding = moss::declaration_identity(
+              moss::DeclarationKind::Domain,
+              program_module_identity(p_, domain->second->defining_module),
+              domain->second->declaration_name.empty()
+                  ? domain->second->name : domain->second->declaration_name) +
+              ":state-field:" + field->name + "@" +
+              std::to_string(field->line);
+      }
+    } else if (current_object_ && location.root == "self") {
+      root_binding = moss::declaration_identity(
+          moss::DeclarationKind::Record,
+          program_module_identity(p_, current_object_->defining_module),
+          current_object_->declaration_name.empty()
+              ? current_object_->name : current_object_->declaration_name);
+    } else {
+      err(line, "take root has no checker-issued binding identity",
+          "TAKE_BINDING_IDENTITY_MISSING");
+    }
+
+    TypedTakeFactV1 fact;
+    fact.est_arena_index = cursor.arena_index;
+    fact.take_occurrence_id = cursor.expr;
+    fact.place_occurrence_id = take->arguments.front();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.est_fact_context = expression_fact_context();
+    fact.root_binding_identity = root_binding;
+    fact.root_name = location.root;
+    fact.terminal_type = terminal;
+    fact.result_type = terminal;
+    fact.required_access = Effect::Write;
+    fact.transfers_original_value = true;
+    fact.exclusive_projection_access = true;
+    if (terminal->name == "option")
+      fact.replacement = TypedTakeReplacementV1::OptionNone;
+    else if (terminal->name == "vector")
+      fact.replacement = TypedTakeReplacementV1::VectorEmpty;
+    else if (terminal->name == "map")
+      fact.replacement = TypedTakeReplacementV1::MapEmpty;
+    else
+      fact.replacement = TypedTakeReplacementV1::QueueEmpty;
+
+    if (current_body_types_) {
+      auto statement = current_body_types_->statement_occurrence_ids.find(
+          ownership_current_stmt_);
+      if (statement != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = statement->second;
+    }
+
+    std::function<void(est::ExprId)> append_projection = [&](est::ExprId id) {
+      const auto& node = arena->at(id);
+      if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+        append_projection(grouped->inner);
+        return;
+      }
+      if (const auto* member = std::get_if<est::Member>(&node)) {
+        append_projection(member->base);
+        TypedTakeProjectionV1 projection;
+        projection.kind = TypedTakeProjectionKindV1::RecordField;
+        projection.expression_occurrence_id = id;
+        projection.input_type = checked_type(member->base);
+        projection.output_type = checked_type(id);
+        if (projection.input_type) {
+          const auto object = objects_.find(
+              canonical_type_name(projection.input_type));
+          if (object != objects_.end()) {
+            const auto field = std::find_if(object->second->fields.begin(),
+                object->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == member->name;
+                });
+            if (field != object->second->fields.end())
+              projection.semantic_identity =
+                  moss::declaration_identity(
+                      moss::DeclarationKind::Record,
+                      program_module_identity(p_,
+                          object->second->defining_module),
+                      object->second->declaration_name.empty()
+                          ? object->second->name
+                          : object->second->declaration_name) +
+                  ":field:" + field->name + "@" +
+                  std::to_string(field->line);
+          }
+        }
+        projection.ordinal = static_cast<std::uint32_t>(
+            fact.projection_path.size());
+        fact.projection_path.push_back(std::move(projection));
+        return;
+      }
+      if (const auto* index = std::get_if<est::Index>(&node)) {
+        append_projection(index->base);
+        auto input = checked_type(index->base);
+        TypedTakeProjectionV1 projection;
+        projection.kind = input && input->name == "map"
+            ? TypedTakeProjectionKindV1::MapIndex
+            : input && input->name == "queue"
+                ? TypedTakeProjectionKindV1::QueueIndex
+                : TypedTakeProjectionKindV1::VectorIndex;
+        projection.expression_occurrence_id = id;
+        projection.selector_occurrence_id = index->index;
+        projection.semantic_identity = input
+            ? "builtin-index:" + input->name : "";
+        projection.ordinal = static_cast<std::uint32_t>(
+            fact.projection_path.size());
+        projection.input_type = std::move(input);
+        projection.output_type = checked_type(id);
+        fact.projection_path.push_back(std::move(projection));
+      }
+    };
+    append_projection(take->arguments.front());
+
+    est::SemanticFacts checked_facts;
+    checked_facts.type = terminal;
+    checked_facts.resolved_target = "builtin:take-place-v1";
+    checked_facts.inferred_effect = Effect::Write;
+    arena->record_facts(cursor.expr, fact.est_fact_context,
+                        std::move(checked_facts));
+    const auto* retained = arena->facts(cursor.expr, fact.est_fact_context);
+    if (!retained || !retained->type ||
+        !terminal->structurally_equal(*retained->type) ||
+        retained->resolved_target != "builtin:take-place-v1" ||
+        retained->inferred_effect != Effect::Write)
+      fact.availability = TypedTakeFactV1::Availability::Contradictory;
+    else if (fact.statement_occurrence_id == UINT32_MAX)
+      fact.availability = TypedTakeFactV1::Availability::MissingStatementOccurrence;
+    else if (root_binding.empty())
+      fact.availability = TypedTakeFactV1::Availability::MissingBindingIdentity;
+    else
+      fact.availability = TypedTakeFactV1::Availability::Present;
+
+    if (fact.availability != TypedTakeFactV1::Availability::Present)
+      err(line, "required take ownership fact is incomplete",
+          "TAKE_FACT_UNAVAILABLE");
+    TypedTakeRequirementV1 requirement;
+    requirement.est_arena_index = fact.est_arena_index;
+    requirement.take_occurrence_id = fact.take_occurrence_id;
+    requirement.place_occurrence_id = fact.place_occurrence_id;
+    requirement.statement_occurrence_id = fact.statement_occurrence_id;
+    requirement.specialization_identity = fact.specialization_identity;
+    requirement.specialization_context = fact.specialization_context;
+    requirement.est_fact_context = fact.est_fact_context;
+    requirement.root_binding_identity = fact.root_binding_identity;
+    requirement.root_name = fact.root_name;
+    requirement.terminal_type = fact.terminal_type;
+    requirement.result_type = fact.result_type;
+    requirement.projection_path = fact.projection_path;
+    requirement.replacement = fact.replacement;
+    requirement.required_access = fact.required_access;
+    requirement.transfers_original_value = fact.transfers_original_value;
+    requirement.exclusive_projection_access =
+        fact.exclusive_projection_access;
+    for (const auto& existing : required_take_occurrences_) {
+      if (existing.est_arena_index != requirement.est_arena_index ||
+          existing.take_occurrence_id != requirement.take_occurrence_id ||
+          existing.specialization_context != requirement.specialization_context)
+        continue;
+      auto same_type = [](const TypeRef& left, const TypeRef& right) {
+        return left && right && left->structurally_equal(*right);
+      };
+      const bool same_path = existing.projection_path.size() ==
+              requirement.projection_path.size() &&
+          std::equal(existing.projection_path.begin(),
+              existing.projection_path.end(), requirement.projection_path.begin(),
+              [](const auto& left, const auto& right) {
+                return left.kind == right.kind &&
+                    left.expression_occurrence_id ==
+                        right.expression_occurrence_id &&
+                    left.selector_occurrence_id ==
+                        right.selector_occurrence_id &&
+                    left.semantic_identity == right.semantic_identity &&
+                    left.ordinal == right.ordinal && left.input_type &&
+                    right.input_type &&
+                    left.input_type->structurally_equal(*right.input_type) &&
+                    left.output_type && right.output_type &&
+                    left.output_type->structurally_equal(*right.output_type);
+              });
+      if (same_path &&
+          existing.place_occurrence_id == requirement.place_occurrence_id &&
+          existing.statement_occurrence_id ==
+              requirement.statement_occurrence_id &&
+          existing.specialization_identity ==
+              requirement.specialization_identity &&
+          existing.est_fact_context == requirement.est_fact_context &&
+          existing.root_binding_identity == requirement.root_binding_identity &&
+          existing.root_name == requirement.root_name &&
+          same_type(existing.terminal_type, requirement.terminal_type) &&
+          same_type(existing.result_type, requirement.result_type) &&
+          existing.replacement == requirement.replacement &&
+          existing.required_access == requirement.required_access &&
+          existing.transfers_original_value ==
+              requirement.transfers_original_value &&
+          existing.exclusive_projection_access ==
+              requirement.exclusive_projection_access)
+        return;
+      err(line, "duplicate checker-issued take occurrence conflicts",
+          "TAKE_FACT_CONTRADICTORY");
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_PERTURB_TAKE_FACT"))
+      fact.required_access = Effect::Read;
+    if (std::getenv("MOSS_TEST_PERTURB_TAKE_IDENTITY"))
+      ++fact.place_occurrence_id;
+    const bool drop_fact = std::getenv("MOSS_TEST_DROP_TAKE_FACT") != nullptr;
+    if (!drop_fact) {
+      const bool duplicate_fact =
+          std::getenv("MOSS_TEST_DUPLICATE_TAKE_FACT") != nullptr;
+#endif
+      take_facts_.push_back(std::move(fact));
+#ifdef MOSS_TEST_BUILD
+      if (duplicate_fact) take_facts_.push_back(take_facts_.back());
+    }
+#endif
+    required_take_occurrences_.push_back(std::move(requirement));
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_DUPLICATE_TAKE_REQUIREMENT"))
+      required_take_occurrences_.push_back(required_take_occurrences_.back());
+#endif
+  }
+
   void check_ownership_expression_walk(int line, const string& expression,
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
+    if (auto take = ownership_take_cursor(original)) {
+      check_take_ownership(line, original, env, *take);
+      return;
+    }
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
@@ -27096,6 +27508,8 @@ class Checker {
       } else if constexpr (std::is_same_v<T, est::Call>) {
         result.push_back(node.callee);
         result.insert(result.end(), node.arguments.begin(), node.arguments.end());
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        result.insert(result.end(), node.arguments.begin(), node.arguments.end());
       } else if constexpr (std::is_same_v<T, est::Member>) result.push_back(node.base);
       else if constexpr (std::is_same_v<T, est::Index>) {
         result.push_back(node.base); result.push_back(node.index);
@@ -27117,6 +27531,31 @@ class Checker {
       }
     }, arena.at(expression));
     return result;
+  }
+
+  static bool est_take_place_path(const est::Arena& arena,
+                                 est::ExprId expression) {
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena.at(expression)))
+      expression = grouped->inner;
+    if (std::holds_alternative<est::Identifier>(arena.at(expression)))
+      return true;
+    if (const auto* member =
+            std::get_if<est::Member>(&arena.at(expression)))
+      return est_take_place_path(arena, member->base);
+    if (const auto* indexed =
+            std::get_if<est::Index>(&arena.at(expression)))
+      return est_take_place_path(arena, indexed->base);
+    return false;
+  }
+
+  static bool est_take_place_shape(const est::Arena& arena,
+                                  est::ExprId expression) {
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena.at(expression)))
+      expression = grouped->inner;
+    return std::holds_alternative<est::Member>(arena.at(expression)) &&
+        est_take_place_path(arena, expression);
   }
 
   static bool source_span_matches(const est::Arena& arena,
@@ -27174,6 +27613,11 @@ class Checker {
           if (const auto* named = std::get_if<est::NamedArgument>(&arena.at(arg)))
             candidates.push_back(named->value);
         } else candidates = syntax_children(arena, parent);
+      } else if constexpr (std::is_same_v<T, est::Take>) {
+        if ((role == "place" || role == "argument:0") &&
+            node.arguments.size() == 1)
+          candidates.push_back(node.arguments.front());
+        else candidates = syntax_children(arena, parent);
       } else if constexpr (std::is_same_v<T, est::Message>) {
         if (role == "target" || role == "receiver") candidates.push_back(node.target);
         else if (auto index = expression_role_index(role,
@@ -27577,6 +28021,66 @@ class Checker {
                 }
               })
             : std::function<void()>{});
+    if (tree_cursor) {
+      const auto* arena = expression_arena(tree_cursor->arena_index);
+      const auto* take = arena
+          ? std::get_if<est::Take>(&arena->at(tree_cursor->expr)) : nullptr;
+      if (take) {
+        bool direct_value_slot = false;
+        auto inspect_handles = [&](const vector<est::Handle>& handles) {
+          for (const auto& handle : handles) {
+            if (handle.arena_index != tree_cursor->arena_index ||
+                handle.expr != tree_cursor->expr || handle.argument_index != 0)
+              continue;
+            direct_value_slot |= handle.slot == est::ExprSlot::Initializer ||
+                handle.slot == est::ExprSlot::RhsValue ||
+                handle.slot == est::ExprSlot::ReturnValue ||
+                handle.slot == est::ExprSlot::RaisedValue;
+          }
+        };
+        if (current_check_statement_)
+          inspect_handles(current_check_statement_->expression_handles);
+        if (current_check_result_function_)
+          inspect_handles(current_check_result_function_->expression_handles);
+        if (!direct_value_slot)
+          err(line, "take(place) requires a direct initializer, assignment, "
+              "return, reply, or raise value", "TAKE_CONTEXT_UNSUPPORTED");
+        mark_active_expression(OccurrenceKind::Take, "builtin:take-place-v1");
+        retain_active_expression_target("builtin:take-place-v1");
+        if (take->arguments.size() != 1)
+          err(line, "take expects exactly one field place",
+              "TAKE_ARGUMENT_ARITY");
+        const auto expression_view = est::view(*arena, tree_cursor->expr,
+                                               original);
+        const auto place_source =
+            expression_view.source_text(take->arguments.front());
+        if (!place_source || place_source->empty())
+          err(line, "take place has no retained EST source occurrence",
+              "TAKE_PLACE_OCCURRENCE_MISSING");
+        check_expression(line, *place_source, env, {}, "place");
+        if (!est_take_place_shape(*arena, take->arguments.front()))
+          err(line, "take requires a field place; locals and collection elements "
+              "cannot be taken directly", "TAKE_REQUIRES_FIELD_PLACE");
+        auto terminal = current_body_types_
+            ? current_body_types_->known_expression(*place_source) : nullptr;
+        if (!terminal) terminal = inferred_expr_term(*place_source, env);
+        terminal = terminal && current_body_types_
+            ? current_body_types_->solver.resolve(terminal) : terminal;
+        if (!terminal || terminal->kind != moss::TypeKind::Builtin ||
+            (terminal->name != "option" && terminal->name != "vector" &&
+             terminal->name != "map" && terminal->name != "queue"))
+          err(line, "take terminal field must have type option[T], Vector[T], "
+              "Map[K,V], or Queue[T]", "TAKE_INELIGIBLE_TERMINAL");
+        if (current_body_types_ &&
+            !current_body_types_->active_expression_occurrences.empty())
+          current_body_types_->retain_active_expression_type(terminal);
+        est::SemanticFacts facts;
+        facts.type = terminal;
+        facts.resolved_target = "builtin:take-place-v1";
+        record_active_expression_facts(std::move(facts));
+        return;
+      }
+    }
     if (est::begins_with_keyword(original, "match"))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");

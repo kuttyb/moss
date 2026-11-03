@@ -155,7 +155,8 @@ bool callee_contains_parenthesis(const Arena& arena, ExprId id) {
   const auto& node = arena.at(id);
   return std::visit([&](const auto& value) -> bool {
     using T = std::decay_t<decltype(value)>;
-    if constexpr (std::is_same_v<T, Parenthesized> || std::is_same_v<T, Call>)
+    if constexpr (std::is_same_v<T, Parenthesized> || std::is_same_v<T, Call> ||
+                  std::is_same_v<T, Take>)
       return true;
     else if constexpr (std::is_same_v<T, Member>)
       return callee_contains_parenthesis(arena, value.base);
@@ -213,6 +214,11 @@ bool contains_message_node(const Arena& arena, ExprId id) {
   return std::visit([&](const auto& value) -> bool {
     using T = std::decay_t<decltype(value)>;
     if constexpr (std::is_same_v<T, Message>) return true;
+    else if constexpr (std::is_same_v<T, Take>) {
+      for (const auto child : value.arguments)
+        if (contains_message_node(arena, child)) return true;
+      return false;
+    }
     else if constexpr (std::is_same_v<T, Call>) {
       if (contains_message_node(arena, value.callee)) return true;
       for (const auto child : value.arguments)
@@ -260,7 +266,8 @@ bool has_earlier_call_or_group(const Arena& arena, ExprId id,
   const auto& node = arena.at(id);
   return std::visit([&](const auto& value) -> bool {
     using T = std::decay_t<decltype(value)>;
-    if constexpr (std::is_same_v<T, Call> || std::is_same_v<T, Parenthesized> ||
+    if constexpr (std::is_same_v<T, Call> || std::is_same_v<T, Take> ||
+                  std::is_same_v<T, Parenthesized> ||
                   std::is_same_v<T, Constructor>)
       return arena.span(id).source_end <= before;
     else if constexpr (std::is_same_v<T, Binary>)
@@ -310,6 +317,8 @@ bool equal_node(const Arena& left, ExprId lhs, const Arena& right, ExprId rhs) {
     else if constexpr (std::is_same_v<T, Call>)
       return equal_node(left, node.callee, right, other->callee) &&
              same_children(node.arguments, other->arguments);
+    else if constexpr (std::is_same_v<T, Take>)
+      return same_children(node.arguments, other->arguments);
     else if constexpr (std::is_same_v<T, Member>)
       return node.name == other->name && equal_node(left, node.base, right, other->base);
     else if constexpr (std::is_same_v<T, Index>)
@@ -352,6 +361,7 @@ void mentions_node(const Arena& arena, ExprId id, std::string_view name, bool& f
     else if constexpr (std::is_same_v<T, Unary>) visit(node.operand);
     else if constexpr (std::is_same_v<T, Binary>) { visit(node.left); visit(node.right); }
     else if constexpr (std::is_same_v<T, Call>) { visit(node.callee); visit_all(node.arguments); }
+    else if constexpr (std::is_same_v<T, Take>) visit_all(node.arguments);
     else if constexpr (std::is_same_v<T, Member>) { found = node.name == name; if (!found) visit(node.base); }
     else if constexpr (std::is_same_v<T, Index>) { visit(node.base); visit(node.index); }
     else if constexpr (std::is_same_v<T, Parenthesized>) visit(node.inner);
@@ -381,6 +391,8 @@ void identifier_occurs_node(const Arena& arena, ExprId id,
       visit(node.left); visit(node.right);
     } else if constexpr (std::is_same_v<T, Call>) {
       visit(node.callee); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, Take>) {
+      visit_all(node.arguments);
     } else if constexpr (std::is_same_v<T, Member>) visit(node.base);
     else if constexpr (std::is_same_v<T, Index>) {
       visit(node.base); visit(node.index);
@@ -1177,6 +1189,8 @@ std::vector<MemberAccess> member_accesses(const ExpressionView& e) {
         visit_one(value.base);
       } else if constexpr (std::is_same_v<T, Call>) {
         visit_one(value.callee, true);
+        visit_all(value.arguments);
+      } else if constexpr (std::is_same_v<T, Take>) {
         visit_all(value.arguments);
       } else if constexpr (std::is_same_v<T, Unary>) visit_one(value.operand);
       else if constexpr (std::is_same_v<T, Binary>) {

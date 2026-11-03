@@ -1,0 +1,5 @@
+fn invalid(values: Vector[Int], index: Int) -> Int:
+  return take(values[index])
+
+fn main():
+  echo 1

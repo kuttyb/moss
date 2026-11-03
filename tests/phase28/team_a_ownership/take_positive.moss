@@ -1,0 +1,55 @@
+type Cell:
+  maybe: option[Int]
+  items: Vector[Int]
+  counts: Map[Int, Int]
+  pending: Queue[Int]
+  normal: Int
+
+type Holder:
+  cell: Cell
+
+type Result:
+  items: Vector[Int]
+
+type Tool:
+  fn take(amount: Int) -> Int:
+    return amount
+
+fn take_option(cell: Cell) -> option[Int]:
+  return take(cell.maybe)
+
+fn take_vector(cell: Cell) -> Vector[Int]:
+  return take(cell.items)
+
+fn take_map(cell: Cell) -> Map[Int, Int]:
+  return take(cell.counts)
+
+fn take_queue(cell: Cell) -> Queue[Int]:
+  return take(cell.pending)
+
+fn take_nested(holder: Holder) -> Vector[Int]:
+  return take(holder.cell.items)
+
+fn take_vector_element(cells: Vector[Cell], index: Int) -> option[Int]:
+  return take(cells[index].maybe)
+
+fn take_map_value(cells: Map[Int, Cell], index: Int) -> Vector[Int]:
+  return take(cells[index].items)
+
+fn take_twice(cell: Cell):
+  first = take(cell.maybe)
+  second = take(cell.maybe)
+
+fn ordinary_method_call(tool: Tool) -> Int:
+  return tool.take(1)
+
+domain Owner:
+  store = Cell(maybe: None, items: [], counts: Map(), pending: Queue(), normal: 0)
+
+  fn TakeState() -> Vector[Int]:
+    reply take(store.items)
+
+fn main():
+  owner = Owner()
+  items = message owner.TakeState()
+  echo items

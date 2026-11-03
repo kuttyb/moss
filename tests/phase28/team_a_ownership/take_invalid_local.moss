@@ -1,0 +1,5 @@
+fn invalid(local: option[Int]) -> option[Int]:
+  return take(local)
+
+fn main():
+  echo 1
