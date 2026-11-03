@@ -1,0 +1,17 @@
+type Box:
+  value: Int
+
+fn consume_box(b: Box) -> Box:
+  return b
+
+fn early_return_consumed(source: Box, choose: Bool) -> Int:
+  var alias = source
+  if choose:
+    var consumed = consume_box(source)
+    return consumed.value
+  echo alias.value
+  return 0
+
+fn main():
+  var b = Box(value: 42)
+  echo early_return_consumed(b, false)

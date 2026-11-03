@@ -1,0 +1,18 @@
+type Box:
+  value: Int
+
+enum Choice:
+  One(b: Box)
+  Two(b: Box)
+
+fn bad_join_consume(c: Choice, fallback: Box) -> Box:
+  match c:
+    case One(b):
+      var alias = b
+    case Two(b):
+      var alias = fallback
+  return alias
+
+fn main():
+  var b = Box(value: 1)
+  bad_join_consume(Choice.Two(b: b), b)

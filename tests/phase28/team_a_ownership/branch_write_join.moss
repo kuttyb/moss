@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn branch_write(source: Box, choose: Bool):
+  if choose:
+    var alias = source
+  else:
+    var alias = source
+  alias.value = 100
+
+fn main():
+  box = Box(value: 1)
+  branch_write(box, true)
+  echo box.value

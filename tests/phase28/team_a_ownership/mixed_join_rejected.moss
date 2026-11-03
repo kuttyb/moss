@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn bad_join(s: Box, c: Bool) -> Int:
+  if c:
+    var alias = s
+  else:
+    var alias = Box(value: 1)
+  echo alias.value
+  return 0
+
+fn main():
+  b = Box(value: 42)
+  echo bad_join(b, true)

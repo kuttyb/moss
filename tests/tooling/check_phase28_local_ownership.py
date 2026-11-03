@@ -246,6 +246,24 @@ def main() -> int:
     check(compiler, "vector_consume_iteration.moss",
           expected_error="OWNERSHIP_VECTOR_ELEMENT_CONSUME")
     check(compiler, "implicit_method_argument_effect.moss")
+    # Slice B: General Ownership Joins and Early Exits
+    check(compiler, "nested_branch_read.moss")
+    check(compiler, "dead_branch_local.moss")
+    check(compiler, "branch_write_join.moss")
+    check(compiler, "branch_early_return.moss")
+    check(compiler, "branch_early_return_unreachable_excluded.moss")
+    check(compiler, "match_reaching_defs.moss")
+    check(compiler, "rebind_branches.moss")
+    check(compiler, "mixed_join_rejected.moss",
+          expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
+    check(compiler, "branch_write_unsatisfied.moss",
+          expected_error="OWNERSHIP_JOIN_WRITE_UNSATISFIED")
+    check(compiler, "branch_consume_unsatisfied.moss",
+          expected_error="OWNERSHIP_JOIN_CONSUME_UNSATISFIED")
+    check(compiler, "conditional_consume_use.moss",
+          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
+    check(compiler, "borrow_escapes_scope.moss",
+          expected_error="OWNERSHIP_BORROW_ESCAPES_SCOPE")
     check(compiler, "read_alias.moss",
           expected_error="MOSS_INTERNAL_INVARIANT",
           hooks=("MOSS_TEST_DROP_OWNERSHIP_FACT",))

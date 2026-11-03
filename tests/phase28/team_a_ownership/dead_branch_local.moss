@@ -1,0 +1,16 @@
+type Box:
+  value: Int
+
+fn local_only_in_arm(source: Box, choose: Bool):
+  if choose:
+    alias = source
+    echo alias.value
+  else:
+    other = source
+    echo other.value
+  echo 0
+
+fn main():
+  box = Box(value: 7)
+  local_only_in_arm(box, true)
+  echo box.value

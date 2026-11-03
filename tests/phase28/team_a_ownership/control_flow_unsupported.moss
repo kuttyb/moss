@@ -1,11 +1,16 @@
 type Box:
   value: Int
 
-fn local_only_in_arm(source: Box, choose: Bool):
-  if choose:
+enum Fault:
+  Bad
+
+fn local_only_in_arm(source: Box):
+  try:
     alias = source
     echo alias.value
+  recover Fault.Bad:
+    echo 0
 
 fn main():
   box = Box(value: 7)
-  local_only_in_arm(box, true)
+  local_only_in_arm(box)
