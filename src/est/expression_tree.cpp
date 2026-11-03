@@ -74,6 +74,112 @@ void Arena::test_mutate_call_targets(bool drop) {
     else target = "fn:__moss_test_perturbed_call_target__";
   }
 }
+
+void Arena::test_contradict_selector_type(TypeRef wrong_type) {
+  std::vector<ExprId> typed_exprs;
+  for (const auto& entry : semantic_facts_) {
+    if (entry.second.type) {
+      typed_exprs.push_back(entry.first.expression);
+    }
+  }
+  for (auto expr : typed_exprs) {
+    for (auto& entry : semantic_facts_) {
+      if (entry.first.expression == expr && entry.first.specialization_context.rfind("source:", 0) == 0) {
+        entry.second.type = wrong_type;
+      }
+    }
+  }
+}
+
+void Arena::test_contradict_selector_target(const std::string& wrong_target) {
+  std::vector<ExprId> targets;
+  for (const auto& entry : semantic_facts_) {
+    if (!entry.second.resolved_target.empty()) {
+      targets.push_back(entry.first.expression);
+    }
+  }
+  for (auto expr : targets) {
+    for (auto& entry : semantic_facts_) {
+      if (entry.first.expression == expr && entry.first.specialization_context.rfind("source:", 0) == 0) {
+        entry.second.resolved_target = wrong_target;
+      }
+    }
+  }
+}
+
+void Arena::test_contradict_selector_effect() {
+  std::vector<std::pair<ExprId, Effect>> effects;
+  for (const auto& entry : semantic_facts_) {
+    if (entry.second.inferred_effect) {
+      effects.push_back({entry.first.expression, *entry.second.inferred_effect});
+    }
+  }
+  for (const auto& [expr, eff] : effects) {
+    for (auto& entry : semantic_facts_) {
+      if (entry.first.expression == expr && entry.first.specialization_context.rfind("fn:", 0) == 0) {
+        entry.second.inferred_effect = (eff == Effect::Read) ? Effect::Write : Effect::Read;
+      }
+    }
+  }
+}
+
+void Arena::test_drop_primary_selector_fact() {
+  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
+    if (it->first.specialization_context.rfind("fn:", 0) == 0) {
+      it = semantic_facts_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Arena::test_drop_secondary_selector_fact() {
+  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
+    if (it->first.specialization_context.rfind("source:", 0) == 0) {
+      it = semantic_facts_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Arena::test_perturb_primary_effect() {
+  test_contradict_selector_effect();
+}
+
+void Arena::test_drop_selector_op_type() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.type = nullptr;
+  }
+}
+
+void Arena::test_drop_selector_target() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.resolved_target.clear();
+  }
+}
+
+void Arena::test_perturb_selector_target(const std::string& wrong_target) {
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.resolved_target.empty()) {
+      entry.second.resolved_target = wrong_target;
+    }
+  }
+}
+
+void Arena::test_drop_selector_effect() {
+  for (auto& entry : semantic_facts_) {
+    entry.second.inferred_effect = std::nullopt;
+  }
+}
+
+void Arena::test_perturb_specialization_identity(const std::string& wrong_spec) {
+  for (auto& entry : semantic_facts_) {
+    if (!entry.second.specialization_result.empty()) {
+      entry.second.specialization_result = wrong_spec;
+    }
+  }
+}
 #endif
 
 std::optional<ParsedFunctionalPipeline> functional_pipeline(

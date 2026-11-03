@@ -385,6 +385,61 @@ class Generator {
         }
       }
     }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_type(Type::primitive("float"));
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_target("callable-v1:module-v1:corrupted::target");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_contradict_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_primary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_secondary_selector_fact();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_primary_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_op_type();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_target();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_selector_target("callable-v1:module-v1:corrupted::unknown");
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_drop_selector_effect();
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
+      for (const auto& arena : p_.expression_arenas) {
+        if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
+      }
+    }
 #endif
   }
 
@@ -5967,15 +6022,6 @@ class Generator {
     const auto* primary = arena.facts(id, fact_context);
     const auto* secondary = !source_context.empty() ? arena.facts(id, source_context) : nullptr;
 
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT")) {
-      primary = nullptr;
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT")) {
-      secondary = nullptr;
-    }
-#endif
-
     // Validate consistency across contexts to prevent contradictory or conflicting facts:
     if (primary && secondary) {
       if (primary->type && secondary->type &&
@@ -6004,18 +6050,6 @@ class Generator {
       }
     }
 
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
-      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector type facts across contexts");
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
-      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector target facts across contexts");
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT")) {
-      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector inferred effect facts across contexts");
-    }
-#endif
-
     SelectorNodeFacts result;
     bool found_any = false;
 
@@ -6036,23 +6070,6 @@ class Generator {
       }
     }
 
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
-      result.resolved_target = "";
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET")) {
-      result.resolved_target = "callable-v1:module-v1:corrupted::unknown";
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT")) {
-      result.inferred_effect = std::nullopt;
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
-      result.type = nullptr;
-    }
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
-      result.specialization_result = "specialization-v2:sha256:corrupted_wrong_key";
-    }
-#endif
     if (!found_any) return std::nullopt;
     return result;
   }

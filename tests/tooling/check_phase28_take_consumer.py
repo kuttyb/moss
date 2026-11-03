@@ -102,6 +102,7 @@ def main() -> int:
         "MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT",
         "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET",
         "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT",
+        "MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT",
     ]
     for hook in selector_hooks:
         verify_selector_fail_closed(compiler, hook)
@@ -131,7 +132,7 @@ def main() -> int:
     print("[PASS] typed_take_contract_test: multi-specialization exact lookup and targeted corruption passed")
 
     print("-" * 50)
-    print("RESULT: SUCCESS (All 19 take and selector semantic authority fail-closed tests passed)")
+    print("RESULT: SUCCESS (All 20 take and selector semantic authority fail-closed tests passed)")
     return 0
 
 

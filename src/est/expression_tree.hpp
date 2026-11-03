@@ -148,6 +148,17 @@ class Arena {
                              std::string_view specialization_context) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
+  void test_contradict_selector_type(TypeRef wrong_type);
+  void test_contradict_selector_target(const std::string& wrong_target);
+  void test_contradict_selector_effect();
+  void test_drop_primary_selector_fact();
+  void test_drop_secondary_selector_fact();
+  void test_perturb_primary_effect();
+  void test_drop_selector_op_type();
+  void test_drop_selector_target();
+  void test_perturb_selector_target(const std::string& wrong_target);
+  void test_drop_selector_effect();
+  void test_perturb_specialization_identity(const std::string& wrong_spec);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.
