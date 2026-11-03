@@ -80,8 +80,19 @@ def main() -> int:
         verify_fail_closed(compiler, hook)
         print(f"[PASS] {hook}: correctly failed closed with MOSS_INTERNAL_INVARIANT")
 
+    # 8. Multi-specialization & targeted contract corruption test
+    contract_bin = TMP / "typed_take_contract_test"
+    contract_src = ROOT / "tests/tooling/typed_take_contract_test.cpp"
+    compile_contract = run(["c++", "-std=c++17", "-Isrc", str(contract_src), "-o", str(contract_bin)])
+    if compile_contract.returncode != 0:
+        raise AssertionError(f"Failed to build typed_take_contract_test:\n{compile_contract.stderr}")
+    run_contract = run([str(contract_bin)])
+    if run_contract.returncode != 0:
+        raise AssertionError(f"typed_take_contract_test failed:\n{run_contract.stderr}")
+    print("[PASS] typed_take_contract_test: multi-specialization exact lookup and targeted corruption passed")
+
     print("-" * 50)
-    print("RESULT: SUCCESS (All 7 take semantic authority fail-closed tests passed)")
+    print("RESULT: SUCCESS (All 8 take semantic authority fail-closed tests passed)")
     return 0
 
 
