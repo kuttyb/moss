@@ -1,3 +1,22 @@
+### Phase 28 Round 3 Team B — Remove Independent Selector Semantics (W03) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Corrected L7 architectural finding on independent selector semantics:
+1. Strict Checker Semantic Authority:
+   - Eliminated independent call-target resolution via `functions_` in `lower_est_selector`; resolves strictly via checker-issued `facts->resolved_target` and validates `specialization_result`.
+   - Eliminated independent parameter effect re-derivation via `function_effect`; arguments consume exact checker-issued `arg_facts->inferred_effect`.
+   - Replaced string-only binary operator lowering with type-driven dispatch using checker-issued `left_facts->type` (handling integer wrapping arithmetic, float operations, string formatting, and boolean logic).
+   - Enforced fail-closed behavior on missing or unauthoritative facts with `MOSS_INTERNAL_INVARIANT`.
+2. Fast Debug Parity:
+   - Verified that `FastInterpreter` take evaluation fails closed with `MOSS_INTERNAL_INVARIANT` if a requirement with a non-empty specialization identity is evaluated in an unspecialized frame.
+3. Verification & Review:
+   - Added `tests/phase28/take_fixtures/take_selector_operators.moss` fixture exercising integer arithmetic operators in index selectors with zero hidden clones.
+   - Added 4 selector corruption fault injection checks to `tests/tooling/check_phase28_take_consumer.py` (`DROP_SELECTOR_TARGET`, `PERTURB_SELECTOR_TARGET`, `DROP_SELECTOR_EFFECT`, `DROP_SELECTOR_OP_TYPE`), all failing closed with `MOSS_INTERNAL_INVARIANT`.
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (15/15 cases, zero hidden clones).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (12/12 cases in default and `MOSS_EST=shadow`).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - Agent 2 independently reviewed implementation commit `6bdec1eeb4cf8e7fafbf0b4e070c32fbe14b72ae` and returned GO with no findings.
+
 ### Phase 28 Round 3 Team B — `take(place)` Architectural Corrections (2026-11-02)
 
 Branch `phase28-r3-team-b`. Corrected the three L7 findings:
