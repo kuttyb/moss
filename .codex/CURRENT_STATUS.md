@@ -3,7 +3,8 @@
 Branch `phase28-r4-slice-b`, based on authorized `phase28-r4-slice-a` at
 `2ed0df34642c58ac84101f66eac483417d830f96`. Implementation frozen at
 `0460274a7d206f1a68ed90d34a35c694a1539dfd`; Agent 2 review GO on this exact SHA
-(Slice B only).
+(Slice B only). Reconciled with published Slice A integration HEAD on
+`phase28-work` (`123bd4e02a0a207ec29a4358a9e7fbe2b1a03e67`).
 
 - Extended shared StatementOccurrence in BodyTypeState with CFG predecessor/successor
   edges, terminal exit flags, and reachable flags. Computed shared control flow graph
@@ -31,6 +32,37 @@ Branch `phase28-r4-slice-b`, based on authorized `phase28-r4-slice-a` at
   and `match consume`.
 - Pushed to `origin/phase28-r4-slice-b`. No merge to `phase28-work` or `main`. Do not start
   Slice C without L7 authorization.
+
+### Phase 28 Round 4 T02 — Slice A integration (2026-11-03)
+
+Integration branch `phase28-r4-slice-a-integration` is based on target
+`phase28-work` / `5be319ba3c3f6bc165fd30474f790ff43c3241d9`. Source branch
+`phase28-r4-slice-a` was fetched at `2ed0df34642c58ac84101f66eac483417d830f96`.
+Reviewed implementation `9b0fb7ef559c4a307ba168faec1b9bddd84b1c5f` is unchanged
+through source HEAD; intervening source branch commits only update docs/status.
+Normal `--no-ff` integration merge is `4d83969ecf94c887e40eb897cd05641eb4dcf7b0`;
+there were no conflicts.
+
+- Targeted ownership, specialized ownership contract, selector effects, Round 3
+  take consumer, Team B consumer, fixture parity, and 42/7 string debt gates
+  passed. Ownership/selector/consumer gates passed default and EST shadow;
+  take fixtures passed 18/18 including native/Fast Debug/optimized parity.
+- One full `make --jobs="$(nproc)" check` run built dev/optimized and completed
+  the 167-job default suite at 149 PASS / 18 FAIL (exit 2). Seventeen failures
+  match the Round 3 ledger: 8 intentional compatibility changes, 6 incomplete
+  Phase 28/migration cases, 2 preexisting failures, and 1 intermittent
+  incremental-build infrastructure failure. Full shadow suite did not start
+  because the default suite failed.
+- The additional `check_phase21_standard_write_order` failure in the full run
+  was not reproduced: target-base direct run passed; integrated direct runs
+  passed four times; isolated filtered runner and 43-job Phase 21 group passed.
+  It remains disclosed as an unconfirmed full-suite-only anomaly in
+  `docs/phase28/ROUND_4_SLICE_A_INTEGRATION.md`; no semantic regression is
+  confirmed. Integration decision: **GO with the anomaly disclosed**.
+- No source/test correction or test expectation change was made. Integration
+  merge `4d83969ecf94c887e40eb897cd05641eb4dcf7b0` and closeout commit
+  `4b309b502b6b0001392005293848049ed0fc0b9b` were pushed to
+  `origin/phase28-work`. No merge to `main` or Slice B consumer migration.
 
 ### Phase 28 Round 4 Slice A — General Per-Definition Ownership (2026-11-03)
 
