@@ -1,3 +1,53 @@
+### Phase 28 Round 4 Slice A — General Per-Definition Ownership (2026-11-03)
+
+Branch `phase28-r4-slice-a`, based on authorized `phase28-work` SHA
+`5be319ba3c3f6bc165fd30474f790ff43c3241d9`. Initial implementation SHA `1f85e54dfbe5b467013e333059fa801fa607d6d2` received an Agent 2
+NO-GO. The three findings were repaired and the implementation is now frozen at
+`9b0fb7ef559c4a307ba168faec1b9bddd84b1c5f`; implementation reviews converged
+from NO-GO to Agent 2 GO on this exact SHA (Slice A only).
+
+- Added separate lexical binding and assignment-definition identities to typed
+  local ownership facts and requirements, including the prior definition
+  killed by rebinding. The checker updates the current definition only after
+  RHS ownership checking and retains exact RHS EST occurrence/source binding.
+- Reused the existing checker ownership environment and typed statement/EST
+  handles. No new CFG, consumer analysis, or Slices B-D were added. Existing
+  control-flow joins remain outside this Slice A expansion.
+- Added checker fixtures for distinct READ/CONSUME definitions across rebinding,
+  rebind after final borrow use, RHS typed raise, open FileIO rebinding, and
+  ordinary plus specialized callee READ/CONSUME effects; extended typed API
+  drop/perturb coverage for binding and killed-definition identities. Nested
+  assignment and return expressions cover ordinary and member READ calls.
+- Validation on frozen implementation SHA: `make --jobs="$(nproc)" moss-dev`
+  PASS; `check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow`;
+  string debt PASS at 42 name / 7 binding comparisons; `check_agent_feedback.py`
+  PASS; `verify_defects.py` PASS (4 PASS, 4 KNOWN FAILURE); `git diff --check`
+  PASS. No full 167-job parallel suite was run; the Round 3 17-job ledger in
+  `docs/phase28/ROUND_3_INTEGRATION.md` is unchanged and no ledger outcomes are
+  reclassified here. Agent 2 independently verified default/shadow ownership
+  checks, the ownership contract, and 42/7 string debt on the exact final SHA.
+- Agent 2's first review found: (1) bounded alias scan lacked exact future-use
+  identities, (2) ordinary-call arguments ignored checked callee effects, and
+  (3) the rebinding test did not assert independent effects. Repair commit
+  `d0a34c84` simulated exact lexical binding identities while walking the
+  straight-line body, consumed checked ordinary/member/specialized call
+  effects, and asserted READ then CONSUME. Agent 2 then found nested assignment
+  and return calls were still declined. Commit `9a5229f0` resolves ordinary
+  calls by exact EST occurrence and checker-selected callee effects. Agent 2
+  found nested member calls also needed checked dispatch effects; commit
+  `b94135ee` reads nested member receiver/argument access from EST effect facts
+  and covers assignment/return member calls. Review found outer-call effects
+  could be misapplied to aliases nested in computed arguments. `9b0fb7ef`
+  limits call attribution to direct alias operands and adds a consuming outer
+  call over a rebuilding inner call, proving the original source stays live.
+  Known unsupported cases remain general branch/match joins beyond current
+  checker-supported joins, loops, typed exception/recover edges, projection
+  origins, imported summary propagation, and source aliases nested in arbitrary
+  computed expressions without a checked direct-call operand. No Slices B-D
+  were started. Agent 2 final review is GO at the exact implementation SHA;
+  team closeout is recorded in `docs/phase28/agent-patterns/team-a-r4-slice-a.md`.
+  The authorized normal push remains. No merge.
+
 ### Phase 28 Round 3 — Integration into `phase28-work` (W08) (2026-11-03)
 
 Branch `phase28-work`. Completed W08 integration of Phase 28 Round 3 `take(place)` from `phase28-r3-team-b-effect-consumer` into `phase28-work`:
