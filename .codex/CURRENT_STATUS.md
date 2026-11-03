@@ -1,3 +1,30 @@
+### Phase 28 Round 2 specialized ownership identity correction (2026-11-02)
+
+Branch `phase28-r2-specialization-fix-a`, based on the reviewed integration
+baseline `536cf415da9cc54ffdfda48e4445ec21058495b7`. Repaired the ownership
+coverage contract after the specialized-context audit found that checker stable
+specialization keys and consumer function contexts did not match. Checker now
+publishes an explicit context-to-stable-key mapping, stamps local/Vector facts
+and requirements with the checker key, and resolves requirements/facts using
+exact EST, statement, specialization, definition and effect/status identities.
+Ambiguous, missing, perturbed and contradictory required records fail closed;
+explicitly unsupported facts remain discoverable as unsupported. Added a
+two-specialization Moss fixture and a direct typed API contract harness.
+
+Validation completed so far: `make --jobs="$(nproc)" moss-dev`; default and
+shadow `tests/tooling/check_phase28_local_ownership.py
+build/compiler/moss-dev`; `git diff --check`. These are focused checks only; no
+corpus suite was run. I added a test-only checker hook that runs the new exact
+typed lookup against the real published fixture records; rerun the focused
+checks after that change. Pending: freeze and self-review correction SHA, obtain
+the requested Agent 2 adversarial review, then commit/push after any focused
+correction. Team B should
+call `find_local_ownership_requirement(arena, expr, consumer_context)` to get
+the requirement's checker-issued `specialization_identity`, or use the overload
+with statement, context, specialization identity, and definition identity;
+`find_local_ownership_fact(requirement)` then returns the unique validated fact
+or throws on missing, duplicate, altered, unavailable, or contradictory facts.
+
 ### Phase 28 Round 1 Team B fan-in corrections (2026-11-02, defect gate and handoff alignment)
 
 Branch `phase28-r1-team-b`. Completed bounded fan-in corrections requested by L7:
