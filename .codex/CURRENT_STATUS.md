@@ -14522,5 +14522,9 @@ corrections are committed locally at implementation SHA
 inference, Copy-valued EST field projections retain READ, and projected WRITE
 facts use only the EST LHS base chain. Regressions cover both P1 findings. The
 candidate's dev build and focused harness in default and shadow modes,
-py_compile, feedback validation, and diff check pass. The implementation SHA
-is not yet pushed or re-reviewed; exact-SHA CP1 re-review is pending.
+py_compile, feedback validation, and diff check pass. Corrected implementation
+SHA `73da9d9db0fd35dce195acc1de142994fd756af4` and handoff/status commit
+`a22568a9eff30f05ad89b2745b8d6a0eb6c26153` are pushed; `git ls-remote`
+confirmed the branch ref at the handoff/status commit. Agent 2 exact-SHA CP1
+re-review of the corrected implementation is in progress. No implementation
+changes are planned while it reviews.
