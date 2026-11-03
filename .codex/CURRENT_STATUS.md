@@ -1,3 +1,38 @@
+### Phase 28 Round 4 — Slice B Regression Repairs (2026-11-03)
+
+Branch `phase28-r4-slice-b-fix`, based on integration baseline `ba81668be597d5a43744e694457e533206fff807`.
+Targeted repairs for the 3 regressions identified during Slice B integration:
+
+1. R1 — Selector Argument Effects (`check_phase28_selector_argument_effects.py`):
+   - Restored `env.count(statement.a)` guard in `analyze_effect_block` for `Stmt::Kind::Assign`
+     so that assignment to undeclared local names infers consuming transfer rather than an alias.
+2. R2 — Phase 21 Expression Ownership (`check_phase21_expression_ownership_edges.py`):
+   - Restored consuming transfer on whole-variable assignment (`discarded = data`) in
+     `consume_and_fail`, properly marking `data` consumed before `raise` and rejecting use in `recover`.
+3. R3 — Enum Payload Ownership (`shard_enum_modules` / `check_enum_semantics.py`):
+   - Guarded `check_ownership` definition-effect inferences so borrowed enum payloads
+     (`borrowed_enum_payloads`) and message payloads (`message_payloads`) are not aliased into
+     borrowing local definitions that bypass `BORROWED_ENUM_PAYLOAD_CONSUME`.
+   - In `analyze_body_ownership_flow`, marked match case payload bindings in `unborrowable_sources`
+     so they are not converted into borrowing local alias definitions.
+   - Updated `parser.cpp` to correctly distinguish `Stmt::Kind::Let` from `Stmt::Kind::Var`,
+     preserving `let` immutable semantics without textual readers in `semantic_checker.cpp`.
+   - Updated Slice B join test fixtures (`branch_write_unsatisfied.moss` and `branch_consume_unsatisfied.moss`)
+     to test immutable source join write/consume unsat directly via `let origin = Box(...)` without
+     entangling enum payload borrow restrictions. Added `enum_payload_escape_rejected.moss`.
+
+Validation:
+- `check_phase28_local_ownership.py` in default and shadow EST mode: PASS.
+- `check_phase28_selector_argument_effects.py` in default and shadow EST mode: PASS.
+- `check_phase21_expression_ownership_edges.py`: PASS.
+- `check_enum_semantics.py`: PASS (30/30 enum rejection cases).
+- `check_phase27_string_debt.py`: PASS (42 Stmt names / 7 binding comparisons).
+- `check_phase28_specialized_ownership_contract.py` & `check_phase28_specialized_native_consumer.py`: PASS.
+- `check_phase28_take_consumer.py` (22/22) & `check_phase28_team_b_consumer.py`: PASS.
+- `verify_defects.py`: PASS (4 PASS, 4 KNOWN FAILURES).
+- `check_agent_feedback.py`: PASS.
+- Full parallel suite (167 jobs): 149 PASS, 16 KNOWN FAIL, 1 SKIP, 0 NEW REGRESSIONS. Exactly matches the 17-failure baseline ledger.
+
 ### Phase 28 Round 4 T03 — Slice B integration (2026-11-03)
 
 Integration of branch `phase28-r4-slice-b` (`cc86da2e5538740e977b5db5cddb9c0196a71736`)

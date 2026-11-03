@@ -1,0 +1,18 @@
+enum Choice:
+  One(b: Box)
+  Two(b: Box)
+
+type Box:
+  value: Int
+
+fn bad_escape(c: Choice) -> Int:
+  match c:
+    case One(b):
+      var alias = b
+    case Two(b):
+      var alias = b
+  return alias.value
+
+fn main():
+  var b = Box(value: 1)
+  bad_escape(Choice.One(b: b))
