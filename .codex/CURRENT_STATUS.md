@@ -14613,29 +14613,32 @@ Agent 2 adversarial review remains pending until CP2.
 
 ### Phase 28 Round 2 integration checkpoint (2026-11-02, Team A checker facts & Team B native ownership lowering reconciled)
 
-Branch `phase28-r2-integration`. Merged `origin/phase28-r2-team-a` (`43d87556`) into `phase28-r2-integration` (ancestor `phase28-r2-team-b` at `a90faf87`) preserving full ancestry.
+Branch `phase28-r2-integration`. Merged `origin/phase28-r2-team-a` (`43d87556`) into `phase28-r2-integration` (ancestor `phase28-r2-team-b` at `a90faf87`) preserving full ancestry at merge commit `e225259503920107e0718f46cddca1f0b81d769f`.
 
 Completed integration scope:
 1. Reconciled checker-owned ownership facts:
    - Updated `TypedSemanticModuleV1` with `required_local_ownership_occurrences` and `find_local_ownership_requirement()`.
    - Updated native consumer (`resolve_local_ownership_fact`) to honor `is_authoritative()`, `is_intentionally_unsupported()`, `InferenceStatus`, and `UnsupportedReason`.
    - Explicitly unsupported facts safely preserve authorized legacy lowering without inventing new heuristics. Contradictory/incomplete facts fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Status: Native local-alias migration is delivered; general Fast Debug and optimizer ownership-fact consumption remains open.
 2. Proved whole-record deletion fails closed:
    - Checker records required ownership occurrences in `required_local_ownership_occurrences`.
    - Native consumer detects when a required fact is omitted completely from `local_ownership_facts` and throws `MOSS_INTERNAL_INVARIANT required local ownership fact record missing`.
    - Genuine test-build hook `MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD` verified in `tests/tooling/check_phase28_team_b_consumer.py`.
 3. Validated semantic identities:
    - Consumer lookup uses exact retained EST handles (`matched_handle->arena_index`, `matched_handle->expr`), `specialization_context`, statement occurrence identity when exposed by the checker, and binding identities. Context mismatches and loose cross-definition matches fail closed.
-4. Reconciled E1 scalar Copy lowering:
-   - Native `gen_block()` for `s.b == "push"` updated to `phase28_copy_primitive_type()` admitting only designated primitives (`Int`, `Float`, `Bool`, `Char`, `Byte`).
-   - Non-primitive types like `option[Int]` are never treated as Copy.
-5. Reconciled E3 and E4 in `tests/phase28/verify_defects.py`:
-   - E3 Shapes callable-argument inference (`implicit_method_argument_effect.moss`) verified as PASS.
-   - E3 full Shapes verified as KNOWN FAILURE with `MODULE_IDENTITY_UNRESOLVED` (the callable-argument defect is fully repaired).
-   - E4 mutate loop element verified as KNOWN FAILURE (`E0596`), respecting checker VectorElement authority without independent iteration mutability inference.
+4. Removed independent Copy classification from emitter:
+   - Native `gen_block()` for `s.b == "push"` inspects the available checker-issued `TypeRef` on the exact argument EST occurrence via `arena->facts(arg_handle->expr)`.
+   - Enforces `is_primitive_copy_type()` checking `type->kind == TypeKind::Primitive` for designated primitives (`Int`, `Float`, `Bool`, `Char`, `Byte`).
+   - Removed `phase28_copy_primitive_type(const string&)` and `generated_expr_type()` string inference from this path.
+   - Non-primitive types (`option[T]`, records, Vector elements of nonprimitive type) are strictly rejected from implicit copies.
+5. Corrected defect regression harness (`tests/phase28/verify_defects.py`):
+   - Implemented explicit handling for `expected_rustc == "SKIP"`, classifying checker/Fast Debug-only tests as PASS without attempting native compilation.
+   - Exactly one result per case: 8 cases total: 5 PASS (1 checker/Fast Debug-only), 3 KNOWN FAILURE, 0 XPASS, 0 UNEXPECTED FAILURE.
+   - Recorded merge SHA `e225259503920107e0718f46cddca1f0b81d769f`.
 6. Validation:
    - `tests/tooling/check_phase28_team_b_consumer.py` PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed).
    - `tests/tooling/check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow` modes.
-   - `tests/phase28/verify_defects.py` PASS (4 PASS, 3 KNOWN FAILURES, 0 UNEXPECTED FAILURES).
+   - `tests/phase28/verify_defects.py` PASS (5 PASS, 3 KNOWN FAILURES, 0 XPASS, 0 UNEXPECTED FAILURES).
    - `tests/tooling/check_agent_feedback.py` PASS.
    - `git diff --check` PASS.

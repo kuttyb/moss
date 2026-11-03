@@ -170,7 +170,13 @@ def main() -> None:
                 continue
             print(f"  Fast Debug: PASS (output: '{interp_out}')")
 
-        # 3. Native emit
+        # 3. Native emit & rustc compile (if not SKIP)
+        if case.get("expected_rustc") == "SKIP":
+            print("  Rustc compile: SKIP (checker/Fast Debug-only test)")
+            print(f"  Status: PASS ({case['defect_note']})")
+            pass_count += 1
+            continue
+
         rs_path = TMP / f"{cid}.rs"
         bin_path = TMP / cid
         emit = run([str(COMPILER), str(source), "-o", str(rs_path)])

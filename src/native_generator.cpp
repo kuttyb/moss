@@ -1119,14 +1119,15 @@ class Generator {
     return copy_type_name(canonical_type_name(type));
   }
 
-  bool phase28_copy_primitive_type(const string& type) const {
-    const string canonical = canonical_type_name(type);
-    return canonical == "Int" || canonical == "int" ||
-           canonical == "Float" || canonical == "float" ||
-           canonical == "Bool" || canonical == "bool" ||
-           canonical == "Char" || canonical == "char" ||
-           canonical == "Byte" || canonical == "byte" ||
-           canonical == "i64" || canonical == "f64" || canonical == "u8";
+  bool is_primitive_copy_type(const moss::TypeRef& type) const {
+    if (!type || type->kind != moss::TypeKind::Primitive) return false;
+    const auto& name = type->name;
+    return name == "Int" || name == "int" ||
+           name == "Float" || name == "float" ||
+           name == "Bool" || name == "bool" ||
+           name == "Char" || name == "char" ||
+           name == "Byte" || name == "byte" ||
+           name == "i64" || name == "f64" || name == "u8";
   }
 
   std::optional<est::ExpressionView> expression_view_from_est(
@@ -6949,8 +6950,27 @@ class Generator {
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
             if (s.b == "push" && s.args.size() == 1) {
-              auto arg_type = generated_expr_type(s.args[0], &types);
-              if (arg_type && phase28_copy_primitive_type(*arg_type)) {
+              const est::Handle* arg_handle = nullptr;
+              for (const auto& handle : s.expression_handles) {
+                if (handle.slot == est::ExprSlot::Argument && handle.argument_index == 0) {
+                  arg_handle = &handle;
+                  break;
+                }
+              }
+              const est::Arena* arena = nullptr;
+              if (arg_handle && arg_handle->arena_index < p_.expression_arenas.size() &&
+                  p_.expression_arenas[arg_handle->arena_index]) {
+                arena = p_.expression_arenas[arg_handle->arena_index].get();
+              } else if (arg_handle && arg_handle->arena_index == 0 && p_.expression_arena) {
+                arena = p_.expression_arena.get();
+              }
+              const est::SemanticFacts* arg_facts = nullptr;
+              if (arg_handle && arena) {
+                arg_facts = arena->facts(arg_handle->expr, functional_context);
+                if (!arg_facts || !arg_facts->type)
+                  arg_facts = arena->facts(arg_handle->expr);
+              }
+              if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);
                 string temp_var = "__moss_push_arg_" + std::to_string(call_argument_temp_++);
                 o << indent(level) << "{ let " << temp_var << " = " << arg_val << "; ("

@@ -65,6 +65,15 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
+const SemanticFacts* Arena::facts(ExprId id) const {
+  if (id >= nodes_.size()) return nullptr;
+  for (const auto& entry : semantic_facts_) {
+    if (entry.first.expression == id && entry.second.type)
+      return &entry.second;
+  }
+  return nullptr;
+}
+
 #ifdef MOSS_TEST_BUILD
 void Arena::test_mutate_call_targets(bool drop) {
   for (auto& entry : semantic_facts_) {

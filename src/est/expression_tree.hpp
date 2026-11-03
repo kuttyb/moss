@@ -142,6 +142,7 @@ class Arena {
                     SemanticFacts facts);
   const SemanticFacts* facts(ExprId id,
                              std::string_view specialization_context) const;
+  const SemanticFacts* facts(ExprId id) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
 #endif
