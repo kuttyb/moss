@@ -2,8 +2,8 @@
 
 **Branch:** `phase28-r2-team-a`  
 **Base:** `phase28-r1-team-a` at `a73d8a6b`  
-**Implementation SHA:** `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`  
-**Handoff documentation SHA:** `bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`
+**Implementation SHA:** `73da9d9db0fd35dce195acc1de142994fd756af4`
+**Prior handoff documentation checkpoint:** `bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`
 **Status:** bounded checker facts and fixtures delivered; no engine-consumer migration or Phase 28 completion is claimed.
 
 ## Typed fact contract
@@ -44,7 +44,11 @@ availability and use-after-move diagnostics. The slice declines unsupported
 nested control flow rather than building an independent control-flow engine.
 
 Executable fixtures cover live READ, WRITE and CONSUME joins, an illegal use
-after a joined consume, and an explicit unsupported branch-local case.
+after a joined consume, an alias embedded in a returned owned aggregate, a
+copy-valued field return that remains READ, and an explicit unsupported
+branch-local case. Non-direct returns that cannot be proven to be a
+copy-valued field projection explicitly decline inference and preserve the
+existing ownership path.
 
 ### Vector iteration
 
@@ -54,7 +58,10 @@ checked collection binding; its statement occurrence identifies the loop;
 and its EST occurrence is the exact iterable expression. The checker starts at
 READ and strengthens to WRITE for checked mutations, including projected
 field writes. Element consumption or escape into an owned local is rejected.
-Fixtures cover element READ, projected WRITE, and rejected transfer.
+Fixtures cover element READ, projected WRITE, an element used only as an
+index while another Vector is written, and rejected transfer. The index-use
+case remains READ because only the checked place's EST base chain determines
+which loop binding is being written.
 
 This starts the per-loop occurrence contract; it does not solve loop-carried
 local definitions or iterate ownership requirements to a fixed point.
@@ -75,12 +82,19 @@ identity setup, not by the repaired callable-argument path.
 
 ## Validation and known boundaries
 
+The first frozen implementation, `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`,
+received CP1 NO-GO for under-classifying non-direct alias returns and marking a
+Vector loop element WRITE when it appeared only as an index. Both P1 findings
+were fixed at implementation SHA
+`73da9d9db0fd35dce195acc1de142994fd756af4`; the source-kind occurrence comment
+was clarified at the same time. Exact-SHA Agent 2 re-review is pending.
+
 Focused validation: `make --jobs="$(nproc)" moss-dev`,
-`tests/tooling/check_phase28_local_ownership.py` against `build/compiler/moss-dev`
-in default and `MOSS_EST=shadow` modes, Python compilation of the focused
-harness and parallel runner, `python3 tests/tooling/check_agent_feedback.py`,
-and `git diff --check`. The harness is registered in `make check` for both EST
-modes.
+`tests/tooling/check_phase28_local_ownership.py` (17 unique source fixtures)
+against `build/compiler/moss-dev` in default and `MOSS_EST=shadow` modes, Python
+compilation of the focused harness and parallel runner,
+`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`. The
+harness is registered in `make check` for both EST modes.
 The Shapes direct check was rerun and returns the module identity diagnostic
 above. No full `make check`, `make check-shadow`, native/Fast Debug/optimizer
 parity, or corpus suite was run; none is claimed green.
@@ -102,4 +116,4 @@ must not derive ownership from expression text. Round 2 fixtures and assertions
 are under `tests/phase28/team_a_ownership/` and
 `tests/tooling/check_phase28_local_ownership.py`.
 
-**Implementation SHA:** `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`.
+**Implementation SHA:** `73da9d9db0fd35dce195acc1de142994fd756af4`.

@@ -14509,12 +14509,18 @@ tests/tooling/check_phase28_local_ownership.py tests/run_parallel.py`;
 pass. Shapes direct checking returns the module identity error above. Full
 `make check`, `make check-shadow`, three-engine parity and corpus runs have not
 been run. The current AGENTS.md had no general no-push prohibition; its scoped
-authorization now explicitly includes this Round 2 branch. Implementation is
-committed as `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`; handoff docs,
-contract status and feedback are committed as
-`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`. SHA/status follow-up is
-`2f310c2b0ff518269a87c17ba28006cdf4edc063`; all three commits are pushed to
-`origin/phase28-r2-team-a` and `git ls-remote` confirmed that exact ref. Agent 2
-CP1 adversarial review is now in progress against frozen implementation SHA
-`37028a7f3f33a6a4d79b9ef3c7b14b777bee47df` (branch handoff SHA above); no code
-changes are being made during the review.
+authorization now explicitly includes this Round 2 branch. The initial
+implementation `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`, docs commit
+`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`, and status commit
+`2f310c2b0ff518269a87c17ba28006cdf4edc063` were pushed to
+`origin/phase28-r2-team-a`. Agent 2 returned CP1 NO-GO on the initial
+implementation with two P1 findings: non-direct return alias uses were too
+broadly classified as READ, and a Vector loop element used only as an index
+could be marked WRITE. It also flagged the header occurrence comment. The
+corrections are committed locally at implementation SHA
+`73da9d9db0fd35dce195acc1de142994fd756af4`: unsupported nested returns decline
+inference, Copy-valued EST field projections retain READ, and projected WRITE
+facts use only the EST LHS base chain. Regressions cover both P1 findings. The
+candidate's dev build and focused harness in default and shadow modes,
+py_compile, feedback validation, and diff check pass. The implementation SHA
+is not yet pushed or re-reviewed; exact-SHA CP1 re-review is pending.
