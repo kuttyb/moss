@@ -2,7 +2,7 @@
 
 **Branch:** `phase28-r2-team-a`  
 **Base:** `phase28-r1-team-a` at `a73d8a6b`  
-**Implementation SHA:** `73da9d9db0fd35dce195acc1de142994fd756af4`
+**Implementation SHA:** `5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`
 **Prior handoff documentation checkpoint:** `bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`
 **Status:** bounded checker facts and fixtures delivered; no engine-consumer migration or Phase 28 completion is claimed.
 
@@ -47,8 +47,8 @@ Executable fixtures cover live READ, WRITE and CONSUME joins, an illegal use
 after a joined consume, an alias embedded in a returned owned aggregate, a
 copy-valued field return that remains READ, and an explicit unsupported
 branch-local case. Non-direct returns that cannot be proven to be a
-copy-valued field projection explicitly decline inference and preserve the
-existing ownership path.
+designated-primitive field projection explicitly decline inference and
+preserve the existing ownership path; `option[T]` remains non-Copy.
 
 ### Vector iteration
 
@@ -86,11 +86,16 @@ The first frozen implementation, `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`,
 received CP1 NO-GO for under-classifying non-direct alias returns and marking a
 Vector loop element WRITE when it appeared only as an index. Both P1 findings
 were fixed at implementation SHA
-`73da9d9db0fd35dce195acc1de142994fd756af4`; the source-kind occurrence comment
-was clarified at the same time. Exact-SHA Agent 2 re-review is pending.
+`73da9d9db0fd35dce195acc1de142994fd756af4`; its re-review found that the
+legacy `copy_type` helper treats `option[Int]` as Copy, contrary to the Phase 28
+contract. Implementation SHA `5fbdccdcb48702dffbbbbd98967d3162e7dfa54b` admits
+only designated primitive field projections, preserves the alias source type
+during inference, and adds an option-return rejection fixture. The focused
+harness passes in default and shadow modes; exact-SHA Agent 2 re-review is
+pending.
 
 Focused validation: `make --jobs="$(nproc)" moss-dev`,
-`tests/tooling/check_phase28_local_ownership.py` (17 unique source fixtures)
+`tests/tooling/check_phase28_local_ownership.py` (18 unique source fixtures)
 against `build/compiler/moss-dev` in default and `MOSS_EST=shadow` modes, Python
 compilation of the focused harness and parallel runner,
 `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`. The
@@ -116,4 +121,4 @@ must not derive ownership from expression text. Round 2 fixtures and assertions
 are under `tests/phase28/team_a_ownership/` and
 `tests/tooling/check_phase28_local_ownership.py`.
 
-**Implementation SHA:** `73da9d9db0fd35dce195acc1de142994fd756af4`.
+**Implementation SHA:** `5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`.

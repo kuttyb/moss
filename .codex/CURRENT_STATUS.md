@@ -14525,6 +14525,15 @@ candidate's dev build and focused harness in default and shadow modes,
 py_compile, feedback validation, and diff check pass. Corrected implementation
 SHA `73da9d9db0fd35dce195acc1de142994fd756af4` and handoff/status commit
 `a22568a9eff30f05ad89b2745b8d6a0eb6c26153` are pushed; `git ls-remote`
-confirmed the branch ref at the handoff/status commit. Agent 2 exact-SHA CP1
-re-review of the corrected implementation is in progress. No implementation
-changes are planned while it reviews.
+confirmed the branch ref at the handoff/status commit. Agent 2 re-review of
+implementation SHA `73da9d9db0fd35dce195acc1de142994fd756af4` found a third P1:
+the legacy `copy_type` predicate considers `option[Int]` Copy, contrary to the
+Phase 28 contract. The local correction now admits only designated primitive
+field projections and adds an Option-return rejection regression. The
+Copy-field projection type query also receives the source binding's checked
+type under the local alias. Latest dev build, 18-fixture focused harness in
+default and shadow modes, py_compile, feedback validation and diff check pass.
+The correction is committed locally at implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`. Updated handoff docs, scoped push,
+and exact-SHA CP1 re-review remain pending. Earlier pushed commits remain
+intact; no history was rewritten.
