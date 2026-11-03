@@ -11,26 +11,28 @@ Ambiguous, missing, perturbed and contradictory required records fail closed;
 explicitly unsupported facts remain discoverable as unsupported. Added a
 two-specialization Moss fixture and a direct typed API contract harness.
 
-The first frozen correction commit `d72982aff0faed767d1855aa18fd317b202db09f`
-was pushed and independently reviewed by Agent 2 (NO-GO). Review found that
-requirements omitted source-binding identity and that a specialization key
-could be erased from both fact and requirement while leaving the mapped context.
-The working follow-up adds source/join IDs to requirement matching and rejects
-empty keys for checker-mapped contexts. The direct C++ contract test covers
-both findings. The live Moss fixture uses a test-only checker hook to run typed
-lookup against actual published records.
+The correction is committed and pushed as
+`26bccd8d492a0fcafd333b30ec64e17e1116281a`. Agent 2 initially returned NO-GO
+on the preceding commit for missing source identity and jointly erasable
+specialization IDs. The follow-up added source/join identities to requirement
+matching and rejects missing IDs for checker-mapped specialization contexts.
+Agent 2's focused re-review returned GO on the corrected SHA.
 
-After these follow-up edits, `make --jobs="$(nproc)" moss-dev`, default and
-shadow `tests/tooling/check_phase28_local_ownership.py
-build/compiler/moss-dev`, and `git diff --check` pass. These are focused checks
-only; no corpus suite was run. The task instructions reference
-`docs/COMPILER_ARCHITECTURE.md`, which is absent on the baseline branch. Pending:
-commit/push the follow-up and request Agent 2 focused re-review. Team B should
-call `find_local_ownership_requirement(arena, expr, consumer_context)` to get
-the requirement's checker-issued `specialization_identity`, or use the overload
-with statement, context, specialization identity, and definition identity;
-`find_local_ownership_fact(requirement)` then returns the unique validated fact
-or throws on missing, duplicate, altered, unavailable, or contradictory facts.
+Validation completed: `make --jobs="$(nproc)" moss-dev`; default and shadow
+`tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`; and
+`git diff --check`. The harness compiles the direct typed API contract test and
+checks a Moss fixture with two specializations against actual published
+requirements. No corpus suite was run. `docs/COMPILER_ARCHITECTURE.md`, which
+the startup instructions reference, is absent on this baseline branch.
+
+Team B should call
+`find_local_ownership_requirement(arena, expr, consumer_context)` to get the
+requirement's checker-issued `specialization_identity`, or use the overload
+with statement, context, specialization identity, and definition identity.
+Then `find_local_ownership_fact(requirement)` returns the unique validated
+fact or throws on missing, duplicate, altered, unavailable, or contradictory
+facts. Broader ownership language scope and native-consumer integration remain
+outside this correction.
 
 ### Phase 28 Round 1 Team B fan-in corrections (2026-11-02, defect gate and handoff alignment)
 
