@@ -14,12 +14,19 @@ Validation on the repaired working tree:
 - Local ownership and selector effects: PASS in default and `MOSS_EST=shadow`.
 - Expression ownership edges, specialized ownership authority, take consumer
   (22/22), Team B consumer, enum positive fixture, and string debt (42/7): PASS.
-- Frozen input SHA full regression suite: 167 selected, 150 PASS, 16 FAIL,
-  1 SKIP. This reconciles the 17-job Round 3 ledger: 16 expected ledger
-  failures reproduced; `check_make_incremental_dependencies` passed, so the
-  intermittent seventeenth ledger failure was absent. Arithmetic is complete:
-  150 + 16 + 1 = 167. The run has no additional failures beyond the ledger.
-- Final repaired SHA and independent Agent 2 review: pending.
+- Frozen input SHA `90e08d...` full regression suite: 167 selected, 150 PASS,
+  16 FAIL, 1 SKIP. `shard_phase4_diff` failed and its dependency caused
+  `shard_phase5_tooling` to skip; the intermittent
+  `check_make_incremental_dependencies` passed. Arithmetic: 150 + 16 + 1 = 167.
+- Repaired SHA full suite: 167 selected, 151 PASS, 16 FAIL, 0 SKIP.
+  `shard_phase4_diff` passed, allowing `shard_phase5_tooling` to run and fail on
+  its existing ledgered `use_after_transfer` expectation. All 16 failures match
+  the Round 3 ledger; `check_make_incremental_dependencies` passed. Arithmetic:
+  151 + 16 = 167. No new failures.
+- Agent 2 final review: GO on exact implementation SHA
+  `75e08071fb16222b4c676f8326a4e0cae75abdaf`.
+- Reviewer-noted stale `let stays immutable` sentence in
+  `docs/LANGUAGE_SYNTAX.md` was corrected to the existing alias contract.
 
 No merge to `phase28-work` or `main`; Slice C has not started.
 
