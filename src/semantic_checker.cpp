@@ -22570,6 +22570,64 @@ class Checker {
           pending.pop_back();
           const auto* call = std::get_if<est::Call>(&arena->at(node_id));
           if (call) {
+            const auto* member_callee =
+                std::get_if<est::Member>(&arena->at(call->callee));
+            if (member_callee) {
+            // Argument and receiver effect facts are already checker-issued on
+            // these exact EST occurrences. They cover member dispatches whose
+            // closed requirements are retained under a different checking
+            // phase/context than this ownership walk.
+            const string effect_context = statement.source_file.empty()
+                ? string() : "source:" + statement.source_file + ":" +
+                    std::to_string(statement.line);
+            auto checked_occurrence_effect = [&](est::ExprId occurrence_id)
+                -> std::optional<Effect> {
+              if (effect_context.empty()) return std::nullopt;
+              const auto* facts = arena->facts(occurrence_id, effect_context);
+              return facts ? facts->inferred_effect : std::nullopt;
+            };
+            if (est_subtree_uses_definition(*arena, member_callee->base)) {
+              if (auto effect = checked_occurrence_effect(member_callee->base))
+                result = result
+                    ? stronger_ownership_effect(*result, *effect) : *effect;
+            }
+            for (const auto argument : call->arguments) {
+              if (!est_subtree_uses_definition(*arena, argument)) continue;
+              if (auto effect = checked_occurrence_effect(argument))
+                result = result
+                    ? stronger_ownership_effect(*result, *effect) : *effect;
+            }
+              const auto requirements = statement.member_requirements_by_context.find(
+                  current_semantic_context_);
+              if (requirements != statement.member_requirements_by_context.end()) {
+                auto as_effect = [](moss::AccessMode mode) {
+                  return mode == moss::AccessMode::Consume ? Effect::Consume
+                      : mode == moss::AccessMode::Write ? Effect::Write
+                                                        : Effect::Read;
+                };
+                for (const auto& requirement : requirements->second) {
+                  if (requirement.member_name != member_callee->name ||
+                      requirement.argument_access.size() != call->arguments.size())
+                    continue;
+                  if (est_subtree_uses_definition(
+                          *arena, member_callee->base)) {
+                    const Effect effect = as_effect(requirement.receiver_access);
+                    result = result
+                        ? stronger_ownership_effect(*result, effect) : effect;
+                  }
+                  for (size_t argument = 0;
+                       argument < call->arguments.size(); ++argument) {
+                    if (!est_subtree_uses_definition(
+                            *arena, call->arguments[argument]))
+                      continue;
+                    const Effect effect =
+                        as_effect(requirement.argument_access[argument]);
+                    result = result
+                        ? stronger_ownership_effect(*result, effect) : effect;
+                  }
+                }
+              }
+            }
             const auto occurrence = std::find_if(
                 current_body_types_->expression_occurrences.begin(),
                 current_body_types_->expression_occurrences.end(),

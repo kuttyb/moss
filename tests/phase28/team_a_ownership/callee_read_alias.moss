@@ -4,6 +4,10 @@ type Box:
 fn inspect(value: Box) -> Int:
   return value.value
 
+type Reader:
+  fn inspect(value: Box) -> Int:
+    return value.value
+
 fn forward(value: Box) -> Int:
   alias = value
   observed = inspect(alias)
@@ -14,6 +18,19 @@ fn forward_return(value: Box) -> Int:
   alias = value
   return inspect(alias)
 
+fn forward_member(value: Box, reader: Reader) -> Int:
+  alias = value
+  observed = reader.inspect(alias)
+  echo value.value
+  return observed
+
+fn forward_member_return(value: Box, reader: Reader) -> Int:
+  alias = value
+  return reader.inspect(alias)
+
 fn main():
+  reader = Reader()
   echo forward(Box(value = 4))
   echo forward_return(Box(value = 5))
+  echo forward_member(Box(value = 6), reader)
+  echo forward_member_return(Box(value = 7), reader)
