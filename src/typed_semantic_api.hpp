@@ -87,6 +87,10 @@ struct TypedLocalOwnershipFactV1 {
   };
 
   std::string definition_identity;
+  // Lexical binding identity is stable across whole-local rebinding; each
+  // assignment has its own definition_identity and may kill the previous one.
+  std::string binding_identity;
+  std::string killed_definition_identity;
   // Non-empty for a branch definition reaching a checked live join. All
   // predecessor facts for that joined local share this identity.
   std::string join_definition_identity;
@@ -114,6 +118,8 @@ struct TypedLocalOwnershipFactV1 {
     return inference_status == InferenceStatus::Inferred &&
         availability == Availability::Present &&
         !definition_identity.empty() && !source_binding_identity.empty() &&
+        (source_kind != SourceKind::LocalBinding ||
+         !binding_identity.empty()) &&
         !specialization_context.empty() &&
         statement_occurrence_id != UINT32_MAX &&
         est_arena_index != UINT32_MAX &&
@@ -144,6 +150,8 @@ struct TypedLocalOwnershipRequirementV1 {
   // Exact context alias published by the checker for existing consumers.
   std::string specialization_context;
   std::string definition_identity;
+  std::string binding_identity;
+  std::string killed_definition_identity;
   std::string join_definition_identity;
   std::string source_binding_identity;
   Effect access{Effect::Read};
@@ -439,6 +447,8 @@ struct TypedSemanticModuleV1 {
           candidate.specialization_context == req.specialization_context &&
           candidate.specialization_identity == req.specialization_identity &&
           candidate.definition_identity == req.definition_identity &&
+          candidate.binding_identity == req.binding_identity &&
+          candidate.killed_definition_identity == req.killed_definition_identity &&
           candidate.join_definition_identity == req.join_definition_identity &&
           candidate.source_binding_identity == req.source_binding_identity &&
           candidate.access == req.access &&
@@ -462,6 +472,8 @@ struct TypedSemanticModuleV1 {
           fact.specialization_context != req.specialization_context ||
           fact.specialization_identity != req.specialization_identity ||
           fact.definition_identity != req.definition_identity ||
+          fact.binding_identity != req.binding_identity ||
+          fact.killed_definition_identity != req.killed_definition_identity ||
           fact.join_definition_identity != req.join_definition_identity ||
           fact.source_binding_identity != req.source_binding_identity)
         continue;

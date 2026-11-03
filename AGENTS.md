@@ -200,6 +200,12 @@ When working with Moss:
   scoped local commits and normal pushes to the configured remote for the
   `take(place)` checker handoff. Keep this work on that branch; no merge is
   authorized.
+  For Phase 28 Round 4 Slice A on `phase28-r4-slice-a`, the user authorized
+  scoped local commits and normal pushes to the configured remote for the
+  general per-definition ownership checker handoff. Keep this work on that
+  branch; this scoped authorization permits the normal push for this task. Do
+  not merge into `phase28-work` or `main`, and do not begin Slice B without L7
+  authorization.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
