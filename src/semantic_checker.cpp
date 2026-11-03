@@ -22539,22 +22539,17 @@ class Checker {
       return argument < statement.args.size() &&
           tree_expression_mentions_identifier(statement.args[argument], name);
     };
-    auto est_subtree_uses_definition = [&](const est::Arena& arena,
-                                           est::ExprId root) {
-      std::vector<est::ExprId> pending{root};
-      while (!pending.empty()) {
-        const auto node_id = pending.back();
-        pending.pop_back();
-        const auto& node = arena.at(node_id);
-        if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
-          const auto found = binding_identities.find(identifier->name);
-          if (found != binding_identities.end() &&
-              found->second == alias_binding_identity) return true;
-        }
-        auto children = syntax_children(arena, node_id);
-        pending.insert(pending.end(), children.begin(), children.end());
-      }
-      return false;
+    auto est_expression_is_definition = [&](const est::Arena& arena,
+                                            est::ExprId expression) {
+      while (const auto* grouped =
+                 std::get_if<est::Parenthesized>(&arena.at(expression)))
+        expression = grouped->inner;
+      const auto* identifier =
+          std::get_if<est::Identifier>(&arena.at(expression));
+      if (!identifier) return false;
+      const auto found = binding_identities.find(identifier->name);
+      return found != binding_identities.end() &&
+          found->second == alias_binding_identity;
     };
     auto checked_nested_call_effect = [&](const Stmt& statement)
         -> std::optional<Effect> {
@@ -22586,47 +22581,17 @@ class Checker {
               const auto* facts = arena->facts(occurrence_id, effect_context);
               return facts ? facts->inferred_effect : std::nullopt;
             };
-            if (est_subtree_uses_definition(*arena, member_callee->base)) {
+            if (est_expression_is_definition(*arena, member_callee->base)) {
               if (auto effect = checked_occurrence_effect(member_callee->base))
                 result = result
                     ? stronger_ownership_effect(*result, *effect) : *effect;
             }
             for (const auto argument : call->arguments) {
-              if (!est_subtree_uses_definition(*arena, argument)) continue;
+              if (!est_expression_is_definition(*arena, argument)) continue;
               if (auto effect = checked_occurrence_effect(argument))
                 result = result
                     ? stronger_ownership_effect(*result, *effect) : *effect;
             }
-              const auto requirements = statement.member_requirements_by_context.find(
-                  current_semantic_context_);
-              if (requirements != statement.member_requirements_by_context.end()) {
-                auto as_effect = [](moss::AccessMode mode) {
-                  return mode == moss::AccessMode::Consume ? Effect::Consume
-                      : mode == moss::AccessMode::Write ? Effect::Write
-                                                        : Effect::Read;
-                };
-                for (const auto& requirement : requirements->second) {
-                  if (requirement.member_name != member_callee->name ||
-                      requirement.argument_access.size() != call->arguments.size())
-                    continue;
-                  if (est_subtree_uses_definition(
-                          *arena, member_callee->base)) {
-                    const Effect effect = as_effect(requirement.receiver_access);
-                    result = result
-                        ? stronger_ownership_effect(*result, effect) : effect;
-                  }
-                  for (size_t argument = 0;
-                       argument < call->arguments.size(); ++argument) {
-                    if (!est_subtree_uses_definition(
-                            *arena, call->arguments[argument]))
-                      continue;
-                    const Effect effect =
-                        as_effect(requirement.argument_access[argument]);
-                    result = result
-                        ? stronger_ownership_effect(*result, effect) : effect;
-                  }
-                }
-              }
             }
             const auto occurrence = std::find_if(
                 current_body_types_->expression_occurrences.begin(),
@@ -22662,7 +22627,7 @@ class Checker {
                 if (checked_effects)
                   for (size_t argument = 0;
                        argument < call->arguments.size(); ++argument)
-                    if (est_subtree_uses_definition(
+                    if (est_expression_is_definition(
                             *arena, call->arguments[argument])) {
                       const Effect effect = checked_effects->at(argument);
                       result = result

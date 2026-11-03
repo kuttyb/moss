@@ -4,6 +4,12 @@ type Box:
 fn inspect(value: Box) -> Int:
   return value.value
 
+fn rebuild(value: Box) -> Box:
+  return Box(value: value.value)
+
+fn consume(value: Box) -> Box:
+  return value
+
 type Reader:
   fn inspect(value: Box) -> Int:
     return value.value
@@ -28,9 +34,16 @@ fn forward_member_return(value: Box, reader: Reader) -> Int:
   alias = value
   return reader.inspect(alias)
 
+fn forward_nested(value: Box) -> Int:
+  alias = value
+  observed = consume(rebuild(alias))
+  echo value.value
+  return observed.value
+
 fn main():
   reader = Reader()
   echo forward(Box(value = 4))
   echo forward_return(Box(value = 5))
   echo forward_member(Box(value = 6), reader)
   echo forward_member_return(Box(value = 7), reader)
+  echo forward_nested(Box(value = 8))
