@@ -1,3 +1,25 @@
+### Phase 28 Round 3 Team B — Selector Fact Integrity & Specialization Identity (W04) (2026-11-02)
+
+Branch `phase28-r3-team-b`. Resolved the two L7 P1 findings on selector fact integrity and specialization identity:
+1. Context Coherence in `lookup_selector_facts`:
+   - Enforced primary checker context (`fact.est_fact_context` from `TypedTakeFactV1`) precedence.
+   - Cross-context consistency validation: if both primary and secondary (`source:`) contexts supply type, resolved target, specialization key, or inferred effect, they must agree structurally; contradictions fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Secondary context cannot supply missing semantic types or targets if primary dropped them.
+   - Added fault-injection hooks for primary/secondary fact drops and cross-context contradictions (`MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT`, `MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET`, `MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT`).
+2. Checked Specialization Resolution to Generated Function Names:
+   - Eliminated string concatenation of callable name and specialization key in `lower_est_selector`.
+   - Validates that `facts->specialization_result` is registered in `p_.typed_semantics->specializations` and that its `callable_id` strictly matches `facts->resolved_target`.
+   - Resolves specialization directly to `exact_fn_spec->generated_name` in `fn->specializations`.
+   - Retained exact specialization keys on static dispatch call expressions in `src/semantic_checker.cpp`.
+   - Added `tests/phase28/take_fixtures/take_specialized_selector.moss` fixture exercising real native specialized selector call lowering with exact parity (`15`) and zero hidden clones.
+   - Added `MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION` wrong-specialization corruption hook failing closed with `MOSS_INTERNAL_INVARIANT`.
+3. Verification & Review:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (16/16 cases, zero hidden clones).
+   - `tests/tooling/check_phase28_take_consumer.py`: PASS (19/19 cases in default and `MOSS_EST=shadow`, including binary arithmetic selector operator corruption and contradiction).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 cases confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons).
+   - Agent 2 independently reviewed implementation commit `a05cbb8f9046f8522d6091dccb879165d33a637f` and returned GO with no findings.
+
 ### Phase 28 Round 3 Team B — Remove Independent Selector Semantics (W03) (2026-11-02)
 
 Branch `phase28-r3-team-b`. Corrected L7 architectural finding on independent selector semantics:
