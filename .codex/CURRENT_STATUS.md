@@ -23,8 +23,13 @@ Branch `phase28-r4-slice-b`, based on authorized `phase28-r4-slice-a` at
 - Tested: nested branches, dead branch-locals, write joins, early returns, unreachable
   terminal exits, match reaching definitions, rebind across branches, and all negative
   legality cases.
-- Validation on frozen implementation SHA: `make --jobs="$(nproc)" moss-dev` PASS;
+- Validation on reconciled branch HEAD: `make --jobs="$(nproc)" moss-dev` PASS;
   `check_phase28_local_ownership.py` PASS in default and `MOSS_EST=shadow`;
+  `check_phase28_specialized_ownership_contract.py` PASS in default and `MOSS_EST=shadow`;
+  `check_phase28_selector_argument_effects.py` PASS in default and `MOSS_EST=shadow`;
+  `check_phase28_take_consumer.py` PASS in default and `MOSS_EST=shadow`;
+  `check_phase28_team_b_consumer.py` PASS in default and `MOSS_EST=shadow`;
+  `verify_take_fixtures.py` PASS (18/18 with zero clones and native/Fast Debug parity);
   string debt PASS at 42 name / 7 binding comparisons; `check_agent_feedback.py` PASS;
   `verify_defects.py` PASS (4 PASS, 4 KNOWN FAILURE); `git diff --check` PASS.
 - Remaining exclusions: Slice C (loops / loop fixed points), Slice D (general typed
