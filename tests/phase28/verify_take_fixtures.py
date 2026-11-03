@@ -106,6 +106,18 @@ TAKE_FIXTURES = [
         },
     },
     {
+        "id": "take_specialized_selector",
+        "description": "Selector call to specialized generic function resolved to checked generated name",
+        "source": ROOT / "tests/phase28/take_fixtures/take_specialized_selector.moss",
+        "kind": "ACCEPTED",
+        "expected_fast_debug": "15",
+        "expected_native": "15",
+        "invariants": {
+            "specialized_selector_call": True,
+            "zero_hidden_clones": True,
+        },
+    },
+    {
         "id": "take_raise_mutation",
         "description": "Successful take before typed raise remains a mutation (no invented rollback)",
         "source": ROOT / "tests/phase28/take_fixtures/take_raise_mutation.moss",

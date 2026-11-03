@@ -55,8 +55,8 @@ def verify_fail_closed(compiler: str, hook: str) -> None:
         )
 
 
-def verify_selector_fail_closed(compiler: str, hook: str) -> None:
-    fixture = ROOT / "tests/phase28/take_fixtures/take_nested_projection.moss"
+def verify_selector_fail_closed(compiler: str, hook: str, fixture_path: Path | None = None) -> None:
+    fixture = fixture_path or (ROOT / "tests/phase28/take_fixtures/take_nested_projection.moss")
     rs_path = TMP / f"selector_fail_{hook}.rs"
     env = os.environ.copy()
     env[hook] = "1"
@@ -98,12 +98,28 @@ def main() -> int:
         "MOSS_TEST_CONSUMER_PERTURB_SELECTOR_TARGET",
         "MOSS_TEST_CONSUMER_DROP_SELECTOR_EFFECT",
         "MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE",
+        "MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT",
+        "MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT",
+        "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET",
+        "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT",
     ]
     for hook in selector_hooks:
         verify_selector_fail_closed(compiler, hook)
         print(f"[PASS] {hook}: selector correctly failed closed with MOSS_INTERNAL_INVARIANT")
 
-    # 8. Multi-specialization & targeted contract corruption test
+    # Binary arithmetic selector operator-fact corruption & context contradiction tests
+    arithmetic_fixture = ROOT / "tests/phase28/take_fixtures/take_selector_operators.moss"
+    verify_selector_fail_closed(compiler, "MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE", arithmetic_fixture)
+    print("[PASS] MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE (binary arithmetic selector): correctly failed closed with MOSS_INTERNAL_INVARIANT")
+    verify_selector_fail_closed(compiler, "MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE", arithmetic_fixture)
+    print("[PASS] MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE (binary arithmetic selector): correctly failed closed with MOSS_INTERNAL_INVARIANT")
+
+    # Real native specialized selector call: wrong specialization corruption test
+    spec_fixture = ROOT / "tests/phase28/take_fixtures/take_specialized_selector.moss"
+    verify_selector_fail_closed(compiler, "MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION", spec_fixture)
+    print("[PASS] MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION (specialized selector call): correctly failed closed with MOSS_INTERNAL_INVARIANT")
+
+    # Multi-specialization & targeted contract corruption test
     contract_bin = TMP / "typed_take_contract_test"
     contract_src = ROOT / "tests/tooling/typed_take_contract_test.cpp"
     compile_contract = run(["c++", "-std=c++17", "-Isrc", str(contract_src), "-o", str(contract_bin)])
@@ -115,7 +131,7 @@ def main() -> int:
     print("[PASS] typed_take_contract_test: multi-specialization exact lookup and targeted corruption passed")
 
     print("-" * 50)
-    print("RESULT: SUCCESS (All 12 take and selector semantic authority fail-closed tests passed)")
+    print("RESULT: SUCCESS (All 19 take and selector semantic authority fail-closed tests passed)")
     return 0
 
 

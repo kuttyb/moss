@@ -1,0 +1,27 @@
+# Projection selector calling a specialized generic helper function
+type Element:
+  tag: Int
+
+type Group:
+  items: Vector[Element]
+
+type Container:
+  groups: Vector[Group]
+
+fn select_index(dummy, base: Int) -> Int:
+  return base + 1
+
+fn take_group(c: Container, tag: String) -> Vector[Element]:
+  return take(c.groups[select_index(tag, 1)].items)
+
+fn main():
+  var c = Container(groups: [Group(items: [Element(tag: 1)]), Group(items: [Element(tag: 2)]), Group(items: [Element(tag: 3)])])
+  let v = take_group(c, "alpha")
+  let count_v = v |> count
+  let count_remaining = c.groups[2].items |> count
+  var sum = 0
+  if count_v == 1:
+    sum = sum + 10
+  if count_remaining == 0:
+    sum = sum + 5
+  echo sum

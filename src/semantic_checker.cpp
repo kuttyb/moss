@@ -26341,16 +26341,27 @@ class Checker {
                                      open_result ? std::optional<moss::TypeRef>(
                                                        open_result->result)
                                                  : std::nullopt);
+      if (function->second->static_dispatch) {
+        auto key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
+            std::nullopt, open_result ? open_result->ordered_bindings
+                                      : vector<std::pair<uint32_t,
+                                            moss::TypeRef>>{});
+        if (open_result && (!key || !key->stable_key()))
+          err(line, "open-result specialization has unresolved type bindings",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        if (key && key->stable_key()) {
+          const string exact_key = *key->stable_key();
+          retain_active_expression_specialization(exact_key);
+        }
+      }
       if (open_result && function->second->static_dispatch) {
         auto key = specialization_key_inputs(
             function->second->semantic_callable_id,
             semantic_specialization_arguments(line, actual_types),
             std::nullopt, open_result->ordered_bindings);
-        if (!key || !key->stable_key())
-          err(line, "open-result specialization has unresolved type bindings",
-              "TYPE_AMBIGUOUS_OPEN_RESULT");
         const string exact_key = *key->stable_key();
-        retain_active_expression_specialization(exact_key);
         if (nested_result && current_check_statement_) {
           auto& keys = const_cast<Stmt*>(current_check_statement_)
               ->nested_open_call_keys_by_context[current_check_body_context_]

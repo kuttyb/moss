@@ -5961,21 +5961,81 @@ class Generator {
   std::optional<SelectorNodeFacts> lookup_selector_facts(
       const est::Arena& arena, est::ExprId id,
       const string& fact_context, const string& source_context) const {
+    if (fact_context.empty()) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector fact lookup missing primary checker context");
+    }
+    const auto* primary = arena.facts(id, fact_context);
+    const auto* secondary = !source_context.empty() ? arena.facts(id, source_context) : nullptr;
+
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PRIMARY_SELECTOR_FACT")) {
+      primary = nullptr;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_SECONDARY_SELECTOR_FACT")) {
+      secondary = nullptr;
+    }
+#endif
+
+    // Validate consistency across contexts to prevent contradictory or conflicting facts:
+    if (primary && secondary) {
+      if (primary->type && secondary->type &&
+          !primary->type->structurally_equal(*secondary->type)) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT contradictory selector type facts across contexts: primary '" +
+            primary->type->to_canonical_string() + "' vs secondary '" +
+            secondary->type->to_canonical_string() + "'");
+      }
+      if (!primary->resolved_target.empty() && !secondary->resolved_target.empty() &&
+          primary->resolved_target != secondary->resolved_target) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT contradictory selector target facts across contexts: primary '" +
+            primary->resolved_target + "' vs secondary '" + secondary->resolved_target + "'");
+      }
+      if (!primary->specialization_result.empty() && !secondary->specialization_result.empty() &&
+          primary->specialization_result != secondary->specialization_result) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT contradictory selector specialization facts across contexts: primary '" +
+            primary->specialization_result + "' vs secondary '" + secondary->specialization_result + "'");
+      }
+      if (primary->inferred_effect && secondary->inferred_effect &&
+          *primary->inferred_effect != *secondary->inferred_effect) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT contradictory selector inferred effect facts across contexts");
+      }
+    }
+
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TYPE")) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector type facts across contexts");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_TARGET")) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector target facts across contexts");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_CONTRADICT_SELECTOR_EFFECT")) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT contradictory selector inferred effect facts across contexts");
+    }
+#endif
+
     SelectorNodeFacts result;
     bool found_any = false;
-    auto merge = [&](const est::SemanticFacts* facts) {
-      if (!facts) return;
+
+    // Prefer exact checker-issued semantic fact context:
+    if (primary) {
       found_any = true;
-      if (!result.type && facts->type) result.type = facts->type;
-      if (result.resolved_target.empty() && !facts->resolved_target.empty())
-        result.resolved_target = facts->resolved_target;
-      if (result.specialization_result.empty() && !facts->specialization_result.empty())
-        result.specialization_result = facts->specialization_result;
-      if (!result.inferred_effect && facts->inferred_effect)
-        result.inferred_effect = facts->inferred_effect;
-    };
-    if (!fact_context.empty()) merge(arena.facts(id, fact_context));
-    if (!source_context.empty()) merge(arena.facts(id, source_context));
+      if (primary->type) result.type = primary->type;
+      if (!primary->resolved_target.empty()) result.resolved_target = primary->resolved_target;
+      if (!primary->specialization_result.empty()) result.specialization_result = primary->specialization_result;
+      if (primary->inferred_effect) result.inferred_effect = primary->inferred_effect;
+    }
+
+    // Secondary context only supplies verified non-conflicting effect authority if primary lacked it:
+    if (secondary) {
+      found_any = true;
+      if (!result.inferred_effect && secondary->inferred_effect) {
+        result.inferred_effect = secondary->inferred_effect;
+      }
+    }
+
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_TARGET")) {
       result.resolved_target = "";
@@ -5988,6 +6048,9 @@ class Generator {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_SELECTOR_OP_TYPE")) {
       result.type = nullptr;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
+      result.specialization_result = "specialization-v2:sha256:corrupted_wrong_key";
     }
 #endif
     if (!found_any) return std::nullopt;
@@ -6120,17 +6183,40 @@ class Generator {
           throw std::runtime_error("MOSS_INTERNAL_INVARIANT checker target callable not found: " + facts->resolved_target);
         }
 
-        // Validate specialization identity if specialized:
+        // Validate and resolve specialization identity to existing generated function name:
         string fn_name;
         if (!facts->specialization_result.empty()) {
-          if (p_.typed_semantics &&
-              p_.typed_semantics->specializations.find(facts->specialization_result) ==
-                  p_.typed_semantics->specializations.end()) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization identity mismatch: " +
+          if (!p_.typed_semantics) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT typed semantics unavailable for selector specialization");
+          }
+          auto spec_it = p_.typed_semantics->specializations.find(facts->specialization_result);
+          if (spec_it == p_.typed_semantics->specializations.end()) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization identity not found in typed semantics: " +
                                      facts->specialization_result);
           }
-          fn_name = rust_identifier(fn->name) + "_" + facts->specialization_result;
+          if (spec_it->second.callable_id != facts->resolved_target) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization callable mismatch: expected " +
+                                     facts->resolved_target + " but specialization belongs to " + spec_it->second.callable_id);
+          }
+          auto exact_fn_spec = std::find_if(
+              fn->specializations.begin(), fn->specializations.end(),
+              [&](const FunctionSpecialization& cand) {
+                return cand.stable_type_key == facts->specialization_result;
+              });
+          if (exact_fn_spec == fn->specializations.end() || exact_fn_spec->generated_name.empty()) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization missing generated function name: " +
+                                     facts->specialization_result);
+          }
+          bool is_view_fn = false;
+          for (const auto& p : fn->params) {
+            if (view_object_type(p.type)) { is_view_fn = true; break; }
+          }
+          fn_name = is_view_fn ? "__moss_view_" + exact_fn_spec->generated_name : exact_fn_spec->generated_name;
         } else {
+          if (fn->generic || fn->static_dispatch) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call to generic function requires specialization identity: " +
+                                     facts->resolved_target);
+          }
           bool is_view_fn = false;
           for (const auto& p : fn->params) {
             if (view_object_type(p.type)) { is_view_fn = true; break; }
