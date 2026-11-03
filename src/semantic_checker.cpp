@@ -18849,7 +18849,7 @@ class Checker {
                 statement, est::ExprSlot::RhsValue);
             if (source && transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
-                !receiver_fields.count(statement.a))
+                env.count(statement.a) && !receiver_fields.count(statement.a))
               if (auto inferred = infer_straight_line_definition_effect(
                       statements, index, statement.a, {}, *source, {}, env, {}))
                 source_access = *inferred;
