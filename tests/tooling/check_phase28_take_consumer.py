@@ -118,6 +118,11 @@ def main() -> int:
     verify_selector_fail_closed(compiler, "MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION", spec_fixture)
     print("[PASS] MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION (specialized selector call): correctly failed closed with MOSS_INTERNAL_INVARIANT")
 
+    # Multi-specialization distinct effects selector call: perturbed effect corruption test
+    spec_effects_fixture = ROOT / "tests/phase28/take_fixtures/take_specialized_effects.moss"
+    verify_selector_fail_closed(compiler, "MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT", spec_effects_fixture)
+    print("[PASS] MOSS_TEST_CONSUMER_PERTURB_PRIMARY_EFFECT (multi-specialization distinct effects): correctly failed closed with MOSS_INTERNAL_INVARIANT")
+
     # Multi-specialization & targeted contract corruption test
     contract_bin = TMP / "typed_take_contract_test"
     contract_src = ROOT / "tests/tooling/typed_take_contract_test.cpp"

@@ -6193,6 +6193,7 @@ class Generator {
 
         // Validate and resolve specialization identity to existing generated function name:
         string fn_name;
+        const std::vector<Effect>* callee_parameter_effects = nullptr;
         if (!facts->specialization_result.empty()) {
           if (!p_.typed_semantics) {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT typed semantics unavailable for selector specialization");
@@ -6215,6 +6216,7 @@ class Generator {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization missing generated function name: " +
                                      facts->specialization_result);
           }
+          callee_parameter_effects = &spec_it->second.parameter_access;
           bool is_view_fn = false;
           for (const auto& p : fn->params) {
             if (view_object_type(p.type)) { is_view_fn = true; break; }
@@ -6225,6 +6227,7 @@ class Generator {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call to generic function requires specialization identity: " +
                                      facts->resolved_target);
           }
+          callee_parameter_effects = &fn->parameter_effects;
           bool is_view_fn = false;
           for (const auto& p : fn->params) {
             if (view_object_type(p.type)) { is_view_fn = true; break; }
@@ -6240,7 +6243,8 @@ class Generator {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument missing checker-issued effect");
           }
           Effect eff = *arg_facts->inferred_effect;
-          if (i < fn->parameter_effects.size() && eff != fn->parameter_effects[i]) {
+          if (!callee_parameter_effects || i >= callee_parameter_effects->size() ||
+              eff != (*callee_parameter_effects)[i]) {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument effect mismatch with callee parameter effect");
           }
           const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
@@ -6249,8 +6253,7 @@ class Generator {
           if (eff == Effect::Write) {
             if (arg_id && view_parameters_.count(arg_id->name)) {
               call_str += "&mut (*" + arg_id->name + ")";
-            } else if (arg_id && types && types->count(arg_id->name) &&
-                       view_object_type(types->at(arg_id->name))) {
+            } else if (arg_id && borrowed_function_parameters_.count(arg_id->name)) {
               call_str += rust_identifier(arg_id->name);
             } else {
               call_str += "&mut (" + arg_rendered + ")";
@@ -6258,8 +6261,7 @@ class Generator {
           } else if (eff == Effect::Read) {
             if (arg_id && view_parameters_.count(arg_id->name)) {
               call_str += "&(*" + arg_id->name + ")";
-            } else if (arg_id && types && types->count(arg_id->name) &&
-                       view_object_type(types->at(arg_id->name))) {
+            } else if (arg_id && borrowed_function_parameters_.count(arg_id->name)) {
               call_str += rust_identifier(arg_id->name);
             } else if (arg_facts->type && (arg_facts->type->kind == TypeKind::NominalInstance ||
                                            !is_primitive_copy_type(arg_facts->type))) {

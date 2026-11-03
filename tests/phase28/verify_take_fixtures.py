@@ -118,6 +118,18 @@ TAKE_FIXTURES = [
         },
     },
     {
+        "id": "take_specialized_effects",
+        "description": "Two specializations of the same selector function with distinct inferred parameter effects (READ vs WRITE)",
+        "source": ROOT / "tests/phase28/take_fixtures/take_specialized_effects.moss",
+        "kind": "ACCEPTED",
+        "expected_fast_debug": "330",
+        "expected_native": "330",
+        "invariants": {
+            "specialized_distinct_effects": True,
+            "zero_hidden_clones": True,
+        },
+    },
+    {
         "id": "take_multi_selector",
         "description": "Multiple distinct selector occurrences in one function proving selector isolation",
         "source": ROOT / "tests/phase28/take_fixtures/take_multi_selector.moss",
