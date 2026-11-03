@@ -90,6 +90,10 @@ struct TypedLocalOwnershipFactV1 {
   // predecessor facts for that joined local share this identity.
   std::string join_definition_identity;
   std::string source_binding_identity;
+  // Stable checker-issued key for the checked specialization, empty for a
+  // non-specialized body. This is distinct from specialization_context, which
+  // is the checker-published consumer lookup alias used by existing engines.
+  std::string specialization_identity;
   std::string specialization_context;
   std::uint32_t statement_occurrence_id{UINT32_MAX};
   std::uint32_t est_arena_index{UINT32_MAX};
@@ -127,11 +131,25 @@ struct TypedLocalOwnershipFactV1 {
 // fail closed with MOSS_INTERNAL_INVARIANT if no authoritative or
 // intentionally unsupported fact is present in local_ownership_facts.
 struct TypedLocalOwnershipRequirementV1 {
+  using SourceKind = TypedLocalOwnershipFactV1::SourceKind;
+  using InferenceStatus = TypedLocalOwnershipFactV1::InferenceStatus;
+  using UnsupportedReason = TypedLocalOwnershipFactV1::UnsupportedReason;
+  using Availability = TypedLocalOwnershipFactV1::Availability;
   std::uint32_t est_arena_index{UINT32_MAX};
   est::ExprId expression_occurrence_id{UINT32_MAX};
   std::uint32_t statement_occurrence_id{UINT32_MAX};
+  // Stable checker-issued specialization key; empty for ordinary bodies.
+  std::string specialization_identity;
+  // Exact context alias published by the checker for existing consumers.
   std::string specialization_context;
   std::string definition_identity;
+  std::string join_definition_identity;
+  std::string source_binding_identity;
+  Effect access{Effect::Read};
+  SourceKind source_kind{SourceKind::LocalBinding};
+  InferenceStatus inference_status{InferenceStatus::Inferred};
+  UnsupportedReason unsupported_reason{UnsupportedReason::None};
+  Availability availability{Availability::MissingEstOccurrence};
 };
 
 // A missing or incomplete checker summary is represented as unavailable,
@@ -210,6 +228,9 @@ struct TypedSemanticModuleV1 {
   // Checker-owned occurrences where a local ownership fact is required.
   // Whole-record omission of a required fact causes consumer fail-closed.
   std::vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences;
+  // Checker-issued bridge from a consumer's existing function-context alias
+  // to the stable key in `specializations`. Consumers must not decode either.
+  std::map<std::string, std::string> local_ownership_specialization_contexts;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -218,21 +239,138 @@ struct TypedSemanticModuleV1 {
   // terms. ABI consumers must call require_complete_open_summaries().
   bool open_summaries_complete{true};
 
+  const std::string& local_ownership_specialization_identity(
+      const std::string& consumer_context) const {
+    const auto found = local_ownership_specialization_contexts.find(
+        consumer_context);
+    if (found == local_ownership_specialization_contexts.end() ||
+        specializations.find(found->second) == specializations.end())
+      throw std::invalid_argument(
+          "unknown checker-issued local ownership specialization context");
+    return found->second;
+  }
+
+  void validate_local_ownership_requirement_specialization(
+      const TypedLocalOwnershipRequirementV1& requirement) const {
+    const auto mapping = local_ownership_specialization_contexts.find(
+        requirement.specialization_context);
+    if (mapping == local_ownership_specialization_contexts.end()) {
+      if (!requirement.specialization_identity.empty())
+        throw std::invalid_argument(
+            "local ownership specialization identity has no checker mapping");
+      return;
+    }
+    if (requirement.specialization_identity.empty() ||
+        local_ownership_specialization_identity(
+            requirement.specialization_context) !=
+            requirement.specialization_identity)
+      throw std::invalid_argument(
+          "local ownership specialization identity mismatch");
+  }
+
   const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
       std::uint32_t arena_index, est::ExprId expr_id,
       const std::string& context) const {
-    const auto bracket = context.find('<');
-    const std::string base_context =
-        bracket != std::string::npos ? context.substr(0, bracket) : context;
+    const TypedLocalOwnershipRequirementV1* result = nullptr;
     for (const auto& req : required_local_ownership_occurrences) {
       if (req.est_arena_index == arena_index &&
           req.expression_occurrence_id == expr_id &&
-          (req.specialization_context == context ||
-           req.specialization_context == base_context)) {
-        return &req;
+          req.specialization_context == context) {
+        if (result)
+          throw std::invalid_argument(
+              "ambiguous required local ownership occurrence");
+        result = &req;
       }
     }
-    return nullptr;
+    if (result) {
+      validate_local_ownership_requirement_specialization(*result);
+      (void)find_local_ownership_fact(*result);
+    }
+    return result;
+  }
+
+  const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
+      std::uint32_t arena_index, est::ExprId expr_id,
+      std::uint32_t statement_occurrence_id,
+      const std::string& specialization_context,
+      const std::string& specialization_identity,
+      const std::string& definition_identity) const {
+    const TypedLocalOwnershipRequirementV1* result = nullptr;
+    for (const auto& req : required_local_ownership_occurrences) {
+      if (req.est_arena_index != arena_index ||
+          req.expression_occurrence_id != expr_id ||
+          req.statement_occurrence_id != statement_occurrence_id ||
+          req.specialization_context != specialization_context ||
+          req.specialization_identity != specialization_identity ||
+          req.definition_identity != definition_identity)
+        continue;
+      if (result)
+        throw std::invalid_argument(
+            "duplicate required local ownership identity");
+      result = &req;
+    }
+    if (result) {
+      validate_local_ownership_requirement_specialization(*result);
+      (void)find_local_ownership_fact(*result);
+    }
+    return result;
+  }
+
+  // Resolve one exact checker-issued requirement to its fact. No first-match
+  // behavior: omitted, duplicate, altered, unavailable or contradictory
+  // records are all missing authority and therefore errors.
+  const TypedLocalOwnershipFactV1& find_local_ownership_fact(
+      const TypedLocalOwnershipRequirementV1& req) const {
+    std::size_t matching_requirements = 0;
+    for (const auto& candidate : required_local_ownership_occurrences) {
+      if (candidate.est_arena_index == req.est_arena_index &&
+          candidate.expression_occurrence_id == req.expression_occurrence_id &&
+          candidate.statement_occurrence_id == req.statement_occurrence_id &&
+          candidate.specialization_context == req.specialization_context &&
+          candidate.specialization_identity == req.specialization_identity &&
+          candidate.definition_identity == req.definition_identity &&
+          candidate.join_definition_identity == req.join_definition_identity &&
+          candidate.source_binding_identity == req.source_binding_identity &&
+          candidate.access == req.access &&
+          candidate.source_kind == req.source_kind &&
+          candidate.inference_status == req.inference_status &&
+          candidate.unsupported_reason == req.unsupported_reason &&
+          candidate.availability == req.availability)
+        ++matching_requirements;
+    }
+    if (matching_requirements != 1)
+      throw std::invalid_argument(matching_requirements
+          ? "duplicate required local ownership identity"
+          : "local ownership requirement was not checker-issued");
+    validate_local_ownership_requirement_specialization(req);
+
+    const TypedLocalOwnershipFactV1* result = nullptr;
+    for (const auto& fact : local_ownership_facts) {
+      if (fact.est_arena_index != req.est_arena_index ||
+          fact.expression_occurrence_id != req.expression_occurrence_id ||
+          fact.statement_occurrence_id != req.statement_occurrence_id ||
+          fact.specialization_context != req.specialization_context ||
+          fact.specialization_identity != req.specialization_identity ||
+          fact.definition_identity != req.definition_identity ||
+          fact.join_definition_identity != req.join_definition_identity ||
+          fact.source_binding_identity != req.source_binding_identity)
+        continue;
+      if (result)
+        throw std::invalid_argument("duplicate local ownership fact");
+      result = &fact;
+    }
+    if (!result)
+      throw std::invalid_argument("required local ownership fact missing");
+    if (result->access != req.access ||
+        result->source_kind != req.source_kind ||
+        result->inference_status != req.inference_status ||
+        result->unsupported_reason != req.unsupported_reason ||
+        result->availability != req.availability)
+      throw std::invalid_argument("required local ownership fact contradicts requirement");
+    if (result->is_intentionally_unsupported()) return *result;
+    if (!result->is_authoritative())
+      throw std::invalid_argument("required local ownership fact unavailable");
+    return *result;
   }
 
   void require_complete_open_summaries() const {

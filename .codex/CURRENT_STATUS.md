@@ -1,4 +1,40 @@
-### Phase 28 Round 2 Final Integration Corrections (2026-11-02, specialization safety & context audit)
+### Phase 28 Round 2 specialized ownership identity correction (2026-11-02, Team A)
+
+Branch `phase28-r2-specialization-fix-a`, based on the reviewed integration
+baseline `536cf415da9cc54ffdfda48e4445ec21058495b7`. Repaired the ownership
+coverage contract after the specialized-context audit found that checker stable
+specialization keys and consumer function contexts did not match. Checker now
+publishes an explicit context-to-stable-key mapping, stamps local/Vector facts
+and requirements with the checker key, and resolves requirements/facts using
+exact EST, statement, specialization, definition and effect/status identities.
+Ambiguous, missing, perturbed and contradictory required records fail closed;
+explicitly unsupported facts remain discoverable as unsupported. Added a
+two-specialization Moss fixture and a direct typed API contract harness.
+
+The correction is committed and pushed as
+`26bccd8d492a0fcafd333b30ec64e17e1116281a`. Agent 2 initially returned NO-GO
+on the preceding commit for missing source identity and jointly erasable
+specialization IDs. The follow-up added source/join identities to requirement
+matching and rejects missing IDs for checker-mapped specialization contexts.
+Agent 2's focused re-review returned GO on the corrected SHA.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev`; default and shadow
+`tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`; and
+`git diff --check`. The harness compiles the direct typed API contract test and
+checks a Moss fixture with two specializations against actual published
+requirements. No corpus suite was run. `docs/COMPILER_ARCHITECTURE.md`, which
+the startup instructions reference, is absent on this baseline branch.
+
+Team B should call
+`find_local_ownership_requirement(arena, expr, consumer_context)` to get the
+requirement's checker-issued `specialization_identity`, or use the overload
+with statement, context, specialization identity, and definition identity.
+Then `find_local_ownership_fact(requirement)` returns the unique validated
+fact or throws on missing, duplicate, altered, unavailable, or contradictory
+facts. Broader ownership language scope and native-consumer integration remain
+outside this correction.
+
+### Phase 28 Round 2 Final Integration Corrections (2026-11-02, Team B specialization safety & context audit)
 
 Branch `phase28-r2-integration`. Completed bounded integration corrections directed by L7:
 1. P1 AST/EST context-free fact removal: Reverted `Arena::facts(ExprId)` overload in `src/est/expression_tree.hpp` and `src/est/expression_tree.cpp` under one-time file lease. Emitter in `src/native_generator.cpp` queries only the exact specialization context (`"specialization:" + codegen_active_specialization_key_` or `functional_context`).

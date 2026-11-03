@@ -127,6 +127,14 @@ def main() -> int:
     check(compiler, "read_alias.moss",
           expected_error="MOSS_INTERNAL_INVARIANT",
           hooks=("MOSS_TEST_PERTURB_OWNERSHIP_FACT",))
+    contract = subprocess.run(
+        [sys.executable,
+         str(ROOT / "tests/tooling/check_phase28_specialized_ownership_contract.py"),
+         compiler], cwd=ROOT, text=True, capture_output=True, check=False)
+    if contract.returncode:
+        raise AssertionError(
+            f"specialized ownership contract failed:\n{contract.stdout}\n"
+            f"{contract.stderr}")
     print("phase28 ownership facts: PASS (local effects, if/else joins, Vector iteration, negatives, drop/perturb)")
     return 0
 

@@ -1911,7 +1911,28 @@ class Checker {
       p_.typed_semantics->local_ownership_facts = local_ownership_facts_;
       p_.typed_semantics->required_local_ownership_occurrences =
           required_local_ownership_occurrences_;
-      if (std::getenv("MOSS_EST_FACTS_DUMP"))
+      p_.typed_semantics->local_ownership_specialization_contexts =
+          local_ownership_specialization_contexts_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT")) {
+        for (const auto& requirement :
+             p_.typed_semantics->required_local_ownership_occurrences) {
+          const auto* retained =
+              p_.typed_semantics->find_local_ownership_requirement(
+                  requirement.est_arena_index,
+                  requirement.expression_occurrence_id,
+                  requirement.specialization_context);
+          if (!retained || retained->statement_occurrence_id !=
+                               requirement.statement_occurrence_id ||
+              retained->specialization_identity !=
+                  requirement.specialization_identity ||
+              retained->definition_identity != requirement.definition_identity)
+            throw std::invalid_argument(
+                "checker local ownership requirement failed exact resolution");
+        }
+      }
+#endif
+      if (std::getenv("MOSS_EST_FACTS_DUMP")) {
         for (const auto& fact : local_ownership_facts_)
           std::cerr << "MOSS_EST_OWNERSHIP_RECORD source_kind="
                     << static_cast<int>(fact.source_kind) << " definition="
@@ -1919,13 +1940,34 @@ class Checker {
                     << std::quoted(fact.join_definition_identity) << " source="
                     << std::quoted(fact.source_binding_identity) << " expr="
                     << fact.expression_occurrence_id << " context="
-                    << std::quoted(fact.specialization_context) << " access="
+                    << std::quoted(fact.specialization_context) << " specialization="
+                    << std::quoted(fact.specialization_identity) << " statement="
+                    << fact.statement_occurrence_id << " access="
                     << static_cast<int>(fact.access) << " inference_status="
                     << static_cast<int>(fact.inference_status)
                     << " unsupported_reason="
                     << static_cast<int>(fact.unsupported_reason)
                     << " availability="
                     << static_cast<int>(fact.availability) << '\n';
+        for (const auto& req : required_local_ownership_occurrences_)
+          std::cerr << "MOSS_EST_OWNERSHIP_REQUIREMENT arena="
+                    << req.est_arena_index << " expr="
+                    << req.expression_occurrence_id << " statement="
+                    << req.statement_occurrence_id << " context="
+                    << std::quoted(req.specialization_context)
+                    << " specialization="
+                    << std::quoted(req.specialization_identity)
+                    << " definition=" << std::quoted(req.definition_identity)
+                    << " join=" << std::quoted(req.join_definition_identity)
+                    << " source=" << std::quoted(req.source_binding_identity)
+                    << " access=" << static_cast<int>(req.access)
+                    << " inference_status="
+                    << static_cast<int>(req.inference_status)
+                    << " unsupported_reason="
+                    << static_cast<int>(req.unsupported_reason)
+                    << " availability=" << static_cast<int>(req.availability)
+                    << '\n';
+      }
       p_.assert_declaration_type_consistency();
     }
     if (CompilerTraceRecorder::instance().is_enabled()) {
@@ -2265,6 +2307,7 @@ class Checker {
   vector<Warning> warnings_;
   vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
   vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
+  std::map<string, string> local_ownership_specialization_contexts_;
   bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = moss::TypeEnv;
@@ -22418,7 +22461,8 @@ class Checker {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = definition_identity;
     fact.source_binding_identity = source_binding_identity;
-    fact.specialization_context = expression_fact_context();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
     fact.access = access;
     fact.provenance = {statement.source_file.empty() ? current_source_file_
                                                      : statement.source_file,
@@ -22545,8 +22589,16 @@ class Checker {
     req.est_arena_index = fact.est_arena_index;
     req.expression_occurrence_id = fact.expression_occurrence_id;
     req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
     required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
     return checked_access;
@@ -22558,7 +22610,8 @@ class Checker {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = element_binding;
     fact.source_binding_identity = collection_binding;
-    fact.specialization_context = expression_fact_context();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
     fact.source_kind = TypedLocalOwnershipFactV1::SourceKind::VectorElement;
     fact.access = Effect::Read;
     fact.provenance = {loop.source_file.empty() ? current_source_file_
@@ -22614,8 +22667,16 @@ class Checker {
     req.est_arena_index = fact.est_arena_index;
     req.expression_occurrence_id = fact.expression_occurrence_id;
     req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
     required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
     return fact_index;
@@ -22628,7 +22689,8 @@ class Checker {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = definition_identity;
     fact.source_binding_identity = source_binding_identity;
-    fact.specialization_context = expression_fact_context();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
     fact.inference_status =
         TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
     fact.unsupported_reason = reason;
@@ -22691,8 +22753,16 @@ class Checker {
     req.est_arena_index = fact.est_arena_index;
     req.expression_occurrence_id = fact.expression_occurrence_id;
     req.statement_occurrence_id = fact.statement_occurrence_id;
+    req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
+    req.access = fact.access;
+    req.source_kind = fact.source_kind;
+    req.inference_status = fact.inference_status;
+    req.unsupported_reason = fact.unsupported_reason;
+    req.availability = fact.availability;
     required_local_ownership_occurrences_.push_back(std::move(req));
     local_ownership_facts_.push_back(std::move(fact));
   }
@@ -26893,6 +26963,31 @@ class Checker {
       return "source:" + current_check_statement_->source_file + ":" +
           std::to_string(current_check_statement_->line);
     return {};
+  }
+
+  std::string local_ownership_consumer_context() {
+    if (checking_specialization_ &&
+        starts_with(current_semantic_context_, "fn:")) {
+      const auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end()) {
+        const std::string consumer_context = functional_function_context(
+            *function->second, checking_specialization_);
+        const auto [mapping, inserted] =
+            local_ownership_specialization_contexts_.emplace(
+                consumer_context, checking_specialization_->stable_type_key);
+        if (!inserted &&
+            mapping->second != checking_specialization_->stable_type_key)
+          throw std::invalid_argument(
+              "conflicting checker local ownership specialization context");
+        return consumer_context;
+      }
+    }
+    return expression_fact_context();
+  }
+
+  std::string local_ownership_specialization_identity() const {
+    return checking_specialization_
+        ? checking_specialization_->stable_type_key : std::string();
   }
 
   void record_statement_expression_facts(
