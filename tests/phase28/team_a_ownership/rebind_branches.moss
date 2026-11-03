@@ -1,0 +1,17 @@
+type Box:
+  value: Int
+
+fn rebind_branches(s1: Box, s2: Box, choose: Bool) -> Int:
+  var alias = s1
+  if choose:
+    alias = s2
+  echo alias.value
+  return 0
+
+fn main():
+  b1 = Box(value: 10)
+  b2 = Box(value: 20)
+  echo rebind_branches(b1, b2, true)
+  echo rebind_branches(b1, b2, false)
+  echo b1.value
+  echo b2.value

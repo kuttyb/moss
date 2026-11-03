@@ -1,0 +1,15 @@
+type Box:
+  value: Int
+
+fn consume_box(b: Box) -> Box:
+  return b
+
+fn test_conditional_consume(b: Box, cond: Bool) -> Int:
+  if cond:
+    var sink = consume_box(b)
+  echo b.value
+  return 0
+
+fn main():
+  var b = Box(value: 42)
+  test_conditional_consume(b, true)

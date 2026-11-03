@@ -1,0 +1,17 @@
+type Box:
+  value: Int
+
+fn early_return(source: Box, choose: Bool) -> Int:
+  if choose:
+    var alias = source
+    return alias.value
+  else:
+    var alias = source
+  echo alias.value
+  return 0
+
+fn main():
+  box = Box(value: 5)
+  echo early_return(box, true)
+  echo early_return(box, false)
+  echo box.value

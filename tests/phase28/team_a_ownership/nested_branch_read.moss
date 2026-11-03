@@ -1,0 +1,18 @@
+type Box:
+  value: Int
+
+fn nested_read(s: Box, c1: Bool, c2: Bool) -> Int:
+  if c1:
+    if c2:
+      var alias = s
+    else:
+      var alias = s
+  else:
+    var alias = s
+  echo alias.value
+  return 0
+
+fn main():
+  b = Box(value: 42)
+  echo nested_read(b, true, false)
+  echo b.value

@@ -1,0 +1,28 @@
+enum Tag:
+  One
+  Two
+  Other
+
+type Box:
+  value: Int
+
+fn match_read(s: Box, tag: Tag) -> Int:
+  match tag:
+    case One:
+      var alias = s
+      echo alias.value
+    case Two:
+      var alias = s
+      echo alias.value
+    case Other:
+      var alias = s
+      echo alias.value
+  echo alias.value
+  return 0
+
+fn main():
+  b = Box(value: 99)
+  echo match_read(b, Tag.One)
+  echo match_read(b, Tag.Two)
+  echo match_read(b, Tag.Other)
+  echo b.value

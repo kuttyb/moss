@@ -1,0 +1,15 @@
+type Box:
+  value: Int
+
+fn escape_scope(cond: Bool) -> Int:
+  if cond:
+    inner = Box(value: 10)
+    var alias = inner
+  else:
+    inner2 = Box(value: 20)
+    var alias = inner2
+  echo alias.value
+  return 0
+
+fn main():
+  escape_scope(true)
