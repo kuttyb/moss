@@ -90,9 +90,10 @@ were fixed at implementation SHA
 legacy `copy_type` helper treats `option[Int]` as Copy, contrary to the Phase 28
 contract. Implementation SHA `5fbdccdcb48702dffbbbbd98967d3162e7dfa54b` admits
 only designated primitive field projections, preserves the alias source type
-during inference, and adds an option-return rejection fixture. The focused
-harness passes in default and shadow modes; exact-SHA Agent 2 re-review is
-pending.
+during inference, and adds an option-return rejection fixture. Agent 2 returned
+CP1 GO scoped to this checker handoff at that exact SHA. The reviewer reran the
+18-fixture focused harness in default and shadow modes and found no additional
+related soundness defects. Full repository and engine suites were not run.
 
 Focused validation: `make --jobs="$(nproc)" moss-dev`,
 `tests/tooling/check_phase28_local_ownership.py` (18 unique source fixtures)
@@ -122,3 +123,4 @@ are under `tests/phase28/team_a_ownership/` and
 `tests/tooling/check_phase28_local_ownership.py`.
 
 **Implementation SHA:** `5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`.
+**CP1 review:** GO, scoped to the checker handoff at this exact SHA.
