@@ -1,3 +1,24 @@
+### Phase 28 Round 2 Final Integration & Verification (2026-11-02, Team B)
+
+Branch `phase28-r2-integration`. Completed final Round 2 integration of Team A's reviewed specialization identity contract and typed API into the native consumer:
+1. Merge: Merged `phase28-r2-specialization-fix-a` (`a794f1ea`) into `phase28-r2-integration` (`bc9d9156`), preserving ancestry. Resolved `.codex/CURRENT_STATUS.md` conflict preserving both teams' records.
+2. Adopted Team A Typed API: Replaced manual loop matching in `resolve_local_ownership_fact` in `src/native_generator.cpp` with `p_.typed_semantics->find_local_ownership_requirement(...)` and `p_.typed_semantics->find_local_ownership_fact(...)`. Matches exact retained EST occurrence, checker-published consumer context, and validates all identity/effect/status fields through typed API. Converted all checked-API integrity exceptions into `MOSS_INTERNAL_INVARIANT` compiler diagnostics.
+3. EST Lookup Exactness: Removed context-free lookups and artificial context string concatenation from the emitter; E1 scalar push queries strictly under `functional_context` and safely declines optimization when exact facts are absent.
+4. Specialized Native Consumer Tests: Added `tests/tooling/check_phase28_specialized_native_consumer.py` covering:
+   - Generic function instantiated with two nonprimitive types (`specialized_identity.moss`).
+   - Correct ownership fact selected for each specialization and verified parity (`1\n2`).
+   - Targeted failure injection for specialized facts: deleting record, perturbing effect, perturbing specialization ID, perturbing source ID, duplicating fact, duplicating requirement all fail closed with `MOSS_INTERNAL_INVARIANT`.
+   - Unsupported facts remain distinguishable from missing authority.
+   - Verified pure move lowering (zero `.clone()` on local alias).
+5. Validation Ledger:
+   - `tests/tooling/check_phase28_specialized_ownership_contract.py`: PASS.
+   - `tests/tooling/check_phase28_local_ownership.py` (default & shadow): PASS.
+   - `tests/tooling/check_phase28_team_b_consumer.py`: PASS.
+   - `tests/tooling/check_phase28_specialized_native_consumer.py`: PASS.
+   - `tests/phase28/verify_defects.py`: PASS (8 cases: 4 PASS, 4 KNOWN FAILURE, 0 UNEXPECTED FAILURE).
+   - `tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
 ### Phase 28 Round 2 specialized ownership identity correction (2026-11-02, Team A)
 
 Branch `phase28-r2-specialization-fix-a`, based on the reviewed integration

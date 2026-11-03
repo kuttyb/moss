@@ -113,7 +113,13 @@ def main() -> int:
     if iso_res.returncode != 0:
         raise AssertionError(f"Specialization fact isolation failed:\n{iso_res.stderr}")
 
-    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation)")
+    # Specialized native consumer verification
+    spec_consumer_script = ROOT / "tests/tooling/check_phase28_specialized_native_consumer.py"
+    spec_res = run(["python3", str(spec_consumer_script), compiler])
+    if spec_res.returncode != 0:
+        raise AssertionError(f"Specialized native consumer verification failed:\n{spec_res.stderr}")
+
+    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation + specialized consumer contract)")
     return 0
 
 

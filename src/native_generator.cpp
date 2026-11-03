@@ -232,22 +232,82 @@ class Generator {
       }
     }
 #ifdef MOSS_TEST_BUILD
+    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_req = [&](std::vector<TypedLocalOwnershipRequirementV1>& reqs) -> TypedLocalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
       if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        p_.typed_semantics->local_ownership_facts.front().availability =
-            TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->availability = TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+        }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")) {
       if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        auto& fact = p_.typed_semantics->local_ownership_facts.front();
-        fact.access = (fact.access == Effect::Read) ? Effect::Write : Effect::Read;
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->access = (fact->access == Effect::Read) ? Effect::Write : Effect::Read;
+        }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
       if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        p_.typed_semantics->local_ownership_facts.erase(
-            p_.typed_semantics->local_ownership_facts.begin());
+        if (target_spec) {
+          for (auto it = p_.typed_semantics->local_ownership_facts.begin();
+               it != p_.typed_semantics->local_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              p_.typed_semantics->local_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          p_.typed_semantics->local_ownership_facts.erase(
+              p_.typed_semantics->local_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->specialization_identity = "perturbed-specialization-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SOURCE_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          fact->source_binding_identity = "perturbed-source-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+          p_.typed_semantics->local_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_local_ownership_occurrences.empty()) {
+        if (auto* req = find_target_req(p_.typed_semantics->required_local_ownership_occurrences)) {
+          p_.typed_semantics->required_local_ownership_occurrences.push_back(*req);
+        }
       }
     }
 #endif
@@ -5682,46 +5742,25 @@ class Generator {
     if (!matched_handle) return nullptr;
 
     const string context = functional_context.empty() ? "main" : functional_context;
-    const auto bracket = context.find('<');
-    const string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
-    const string canonical_spec_context =
-        !codegen_active_specialization_key_.empty()
-            ? "specialization:" + codegen_active_specialization_key_
-            : string();
 
-    // Check checker-owned requirement coverage:
-    const auto* requirement = p_.typed_semantics->find_local_ownership_requirement(
-        matched_handle->arena_index, matched_handle->expr, context);
-    if (!requirement && !canonical_spec_context.empty()) {
-      requirement = p_.typed_semantics->find_local_ownership_requirement(
-          matched_handle->arena_index, matched_handle->expr, canonical_spec_context);
-    }
-
-    const auto& facts = p_.typed_semantics->local_ownership_facts;
+    // Resolve requirement and validated fact through Team A's typed API:
+    const TypedLocalOwnershipRequirementV1* requirement = nullptr;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
-    for (const auto& fact : facts) {
-      if (fact.est_arena_index == matched_handle->arena_index &&
-          fact.expression_occurrence_id == matched_handle->expr) {
-        if (fact.specialization_context == context ||
-            (!canonical_spec_context.empty() &&
-             fact.specialization_context == canonical_spec_context) ||
-            fact.specialization_context == base_context) {
-          if (requirement && !requirement->definition_identity.empty() &&
-              fact.definition_identity != requirement->definition_identity) {
-            continue; // Reject loose matches across different definitions
-          }
-          found_fact = &fact;
-          break;
-        }
+    try {
+      requirement = p_.typed_semantics->find_local_ownership_requirement(
+          matched_handle->arena_index, matched_handle->expr, context);
+      if (!requirement) {
+        return nullptr;
       }
+      found_fact = &p_.typed_semantics->find_local_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
     }
 
     if (!found_fact) {
-      if (requirement) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT required local ownership fact record missing");
-      }
-      return nullptr;
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required local ownership fact record missing");
     }
 
     // Intentionally unsupported facts decline bounded inference;
@@ -5735,34 +5774,6 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
           std::to_string(static_cast<int>(found_fact->availability)));
-    }
-
-    // Semantic identity validation:
-    if (found_fact->definition_identity.empty() ||
-        found_fact->source_binding_identity.empty()) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT missing checker-issued binding identity");
-    }
-
-    // Verify definition identity belongs to this semantic context:
-    const auto at_pos = found_fact->definition_identity.find('@');
-    if (at_pos != string::npos) {
-      const string def_ctx = found_fact->definition_identity.substr(0, at_pos);
-      if (def_ctx != context &&
-          (canonical_spec_context.empty() || def_ctx != canonical_spec_context) &&
-          def_ctx != base_context) {
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT definition identity context mismatch: " +
-            found_fact->definition_identity + " for context " + context);
-      }
-    }
-
-    // Verify statement occurrence ID when exposed by checker:
-    if (found_fact->statement_occurrence_id != UINT32_MAX &&
-        requirement && requirement->statement_occurrence_id != UINT32_MAX &&
-        found_fact->statement_occurrence_id != requirement->statement_occurrence_id) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT statement occurrence mismatch in ownership fact");
     }
 
     // Verify EST arena and facts:
@@ -5783,13 +5794,6 @@ class Generator {
         *tree_facts->inferred_effect != found_fact->access) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena");
-    }
-
-    if (found_fact->specialization_context != base_context &&
-        found_fact->specialization_context != context) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT specialization context mismatch: expected " +
-          context + " got " + found_fact->specialization_context);
     }
 
     return found_fact;
@@ -6978,12 +6982,7 @@ class Generator {
               }
               const est::SemanticFacts* arg_facts = nullptr;
               if (arg_handle && arena) {
-                std::string arg_context;
-                if (!codegen_active_specialization_key_.empty())
-                  arg_context = "specialization:" + codegen_active_specialization_key_;
-                else
-                  arg_context = functional_context;
-                arg_facts = arena->facts(arg_handle->expr, arg_context);
+                arg_facts = arena->facts(arg_handle->expr, functional_context);
               }
               if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);
