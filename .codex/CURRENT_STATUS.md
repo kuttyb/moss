@@ -1,3 +1,33 @@
+### Phase 28 Round 3 — Integration into `phase28-work` (W08) (2026-11-03)
+
+Branch `phase28-work`. Completed W08 integration of Phase 28 Round 3 `take(place)` from `phase28-r3-team-b-effect-consumer` into `phase28-work`:
+1. Integration Lineage:
+   - Target branch: `phase28-work` (remote `origin/phase28-work` base: `569d3092594e84207a53f84ffe400d752b460e7b`).
+   - Source branch: `phase28-r3-team-b-effect-consumer` (HEAD `e24cc4944f77c38573176ef77fa3ec08e4d2bfb9`).
+   - Reviewed implementation SHA: `403ff035e5dd851f0a18bc74e556b2169dbcd2f4` (Agent 2 Adversarial CP2 Review GO).
+   - Normal merge executed cleanly with 0 code or semantic conflicts.
+2. Corrected 17-Failure Regression Ledger:
+   - Reconciled all 17 full-suite failures into 4 distinct categories in `docs/phase28/ROUND_3_INTEGRATION.md`:
+     * Preexisting failures (2 jobs): `check_phase21_borrowed_view_write` (cross-crate view parameter write missing rejection), `check_phase27_accepts_rustc` (unallowlisted negative tests failing rustc).
+     * Intentional compatibility changes (8 jobs): `check_phase21_addendum_a_c`, `check_phase21_on_fail_capture`, `check_phase21_recovery_semantics`, `check_phase21_recover_reinit`, `check_builtin_generic_typing` (historical tests rejected with `[TAKE_REQUIRES_FIELD_PLACE]`); `check_phase25_team_a_semantics`, `shard_swarm_cases`, `check_phase26_1_c1_corpus_cases` (rejected with `[OWNERSHIP_VECTOR_ELEMENT_CONSUME]`).
+     * Incomplete Phase 28 implementation / Test migration pending (6 jobs): `check_generic_specialization`, `check_phase25_s1_checker_authority` (nested `take` in expression context awaiting Round 4 generalized expression composition); `shard_negative`, `shard_phase25_int_payloads`, `check_semantic_queries`, `shard_phase5_tooling` (`use_after_transfer.moss` accepted under Phase 28 local borrow inference).
+     * Infrastructure or unrelated defect (1 job): `check_make_incremental_dependencies` (intermittent parallel cache/PCH timestamp race; passed in current run).
+   - Zero intentional compatibility changes or incomplete implementations falsely classified as "preexisting".
+3. Comprehensive Validation Suite:
+   - `python3 tests/phase28/verify_take_fixtures.py`: PASS (18/18 cases in default and `MOSS_EST=shadow`, zero hidden clones, parity across checker, Fast Debug, native, and optimized-native `-O`).
+   - `tests/tooling/check_phase28_take_consumer.py ./moss`: PASS (23/23 cases in default and `MOSS_EST=shadow`).
+   - `tests/tooling/check_phase28_selector_argument_effects.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_local_ownership.py ./moss`: PASS (default and shadow).
+   - `tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS.
+   - `tests/tooling/check_phase27_string_debt.py`: PASS (42 name comparisons, 7 binding comparisons).
+   - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+   - `tests/run_parallel.py`: 151/167 PASS, 16 FAIL (all 16 accounted for in the 17-job ledger; 0 new regressions).
+4. Checkpoint Status:
+   - Phase 28 Round 3 Integration: **GO**.
+   - Ready for Phase 28 Round 4 kickoff.
+
 ### Phase 28 Round 3 Team B — Specialization Effect Correction & Failure Reconciliation (W07) (2026-11-03)
 
 Branch `phase28-r3-team-b-effect-consumer`. Completed W07 specialization-effect authority and full-suite failure reconciliation:
