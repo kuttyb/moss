@@ -24,9 +24,10 @@ there were no conflicts.
   It remains disclosed as an unconfirmed full-suite-only anomaly in
   `docs/phase28/ROUND_4_SLICE_A_INTEGRATION.md`; no semantic regression is
   confirmed. Integration decision: **GO with the anomaly disclosed**.
-- No source/test correction or test expectation change was made. Before ending,
-  commit and push the validated integration to `phase28-work`; do not merge to
-  `main` or begin Slice B.
+- No source/test correction or test expectation change was made. Integration
+  merge `4d83969ecf94c887e40eb897cd05641eb4dcf7b0` and closeout commit
+  `4b309b502b6b0001392005293848049ed0fc0b9b` were pushed to
+  `origin/phase28-work`. No merge to `main` or Slice B consumer migration.
 
 ### Phase 28 Round 4 Slice A — General Per-Definition Ownership (2026-11-03)
 
