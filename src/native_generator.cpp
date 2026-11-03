@@ -231,6 +231,20 @@ class Generator {
           callable_id_to_function_.emplace(f.semantic_callable_id, &f);
       }
     }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        p_.typed_semantics->local_ownership_facts.front().availability =
+            TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+        auto& fact = p_.typed_semantics->local_ownership_facts.front();
+        fact.access = (fact.access == Effect::Read) ? Effect::Write : Effect::Read;
+      }
+    }
+#endif
   }
 
   string generate() {
@@ -5637,15 +5651,6 @@ class Generator {
       const Stmt& s, const string& functional_context) const {
     if (!p_.typed_semantics) return nullptr;
 
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_DROP_OWNERSHIP_FACT"))
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT test dropped ownership fact in native generator");
-    if (std::getenv("MOSS_TEST_PERTURB_OWNERSHIP_FACT"))
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT test perturbed ownership fact in native generator");
-#endif
-
     const auto& facts = p_.typed_semantics->local_ownership_facts;
     if (facts.empty()) return nullptr;
 
@@ -5660,21 +5665,18 @@ class Generator {
         break;
       }
     }
+    if (!matched_handle) return nullptr;
 
     string context = functional_context.empty() ? "main" : functional_context;
     auto bracket = context.find('<');
     string base_context = (bracket != string::npos) ? context.substr(0, bracket) : context;
 
-    string expected_def_id = (s.kind == Stmt::Kind::Assign)
-        ? base_context + "@" + std::to_string(s.line) + ":statement:" + s.a
-        : base_context + "@" + std::to_string(s.line) + ":statement";
-
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     for (const auto& fact : facts) {
-      if (fact.provenance.line == s.line) {
-        if (fact.definition_identity == expected_def_id ||
-            (matched_handle && fact.est_arena_index == matched_handle->arena_index &&
-             fact.expression_occurrence_id == matched_handle->expr)) {
+      if (fact.est_arena_index == matched_handle->arena_index &&
+          fact.expression_occurrence_id == matched_handle->expr) {
+        if (fact.specialization_context == base_context ||
+            fact.specialization_context == context) {
           found_fact = &fact;
           break;
         }
@@ -5686,26 +5688,13 @@ class Generator {
     if (found_fact->availability != TypedLocalOwnershipFactV1::Availability::Present) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
-          std::to_string(static_cast<int>(found_fact->availability)) +
-          " line=" + std::to_string(s.line));
+          std::to_string(static_cast<int>(found_fact->availability)));
     }
 
-    if (found_fact->definition_identity != expected_def_id) {
+    if (found_fact->definition_identity.empty() ||
+        found_fact->source_binding_identity.empty()) {
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT definition identity mismatch: expected " +
-          expected_def_id + " got " + found_fact->definition_identity);
-    }
-
-    if (!matched_handle) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT missing EST handle for statement line=" +
-          std::to_string(s.line));
-    }
-    if (found_fact->est_arena_index != matched_handle->arena_index ||
-        found_fact->expression_occurrence_id != matched_handle->expr) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT EST occurrence mismatch line=" +
-          std::to_string(s.line));
+          "MOSS_INTERNAL_INVARIANT missing checker-issued binding identity");
     }
 
     const est::Arena* arena = nullptr;
@@ -5716,9 +5705,7 @@ class Generator {
       arena = p_.expression_arena.get();
     }
     if (!arena) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT missing EST arena line=" +
-          std::to_string(s.line));
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing EST arena");
     }
 
     const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
@@ -5726,8 +5713,7 @@ class Generator {
     if (!tree_facts || !tree_facts->inferred_effect ||
         *tree_facts->inferred_effect != found_fact->access) {
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena line=" +
-          std::to_string(s.line));
+          "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena");
     }
 
     if (found_fact->specialization_context != base_context &&
@@ -6906,6 +6892,17 @@ class Generator {
                  starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
+            if (s.b == "push" && s.args.size() == 1) {
+              auto arg_type = generated_expr_type(s.args[0], &types);
+              if (arg_type && copy_type(*arg_type)) {
+                string arg_val = expr(s.args[0], d, locals, &types);
+                string temp_var = "__moss_push_arg_" + std::to_string(call_argument_temp_++);
+                o << indent(level) << "{ let " << temp_var << " = " << arg_val << "; ("
+                  << write_call_place(s.a, d, locals, &types) << ").push(" << temp_var << "); }\n";
+                ++i;
+                break;
+              }
+            }
             string call = s.a + "." + s.b + "(";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
               if (argument) call += ", ";

@@ -14511,21 +14511,27 @@ and push are pending.
 Branch `phase28-r2-team-b` merged Team A's Round 1 handoff (`a73d8a6b`).
 Team B migrated one direct local-alias path in the native code generator
 (`src/native_generator.cpp`) to consume Team A's `TypedLocalOwnershipFactV1` and
-exact EST occurrence facts. The consumer strictly validates definition identity,
-EST occurrence (arena index, expression occurrence ID, and arena fact parity),
-specialization context, and availability (`Availability::Present`).
+exact EST occurrence facts.
 
-Missing or perturbed facts fail closed with `MOSS_INTERNAL_INVARIANT` under
-`MOSS_TEST_DROP_OWNERSHIP_FACT` and `MOSS_TEST_PERTURB_OWNERSHIP_FACT`. Unsupported
-definitions remain outside the migrated slice on existing baseline lowering
-without guessing.
-
-Defect investigation on E1 confirmed that Rust `MossAccess_*` trait methods
-prevent simultaneous cross-field borrows on `self`; a sound correction across
-trait boundaries requires checker-owned disjoint field projection facts. E4 loop
-mutability interface requirements (`ForLoopElementFacts`) were formally specified.
-The defect harness `tests/phase28/verify_defects.py` was enhanced to support
-verified `XPASS` tracking with output parity validation across all 6 fixtures.
+In the L7 Round 2 fan-in corrective pass:
+1. P1: Removed emitter shortcut throws and implemented genuine fault injection
+   in `Generator::Generator` under `MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT` and
+   `MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT`. The production consumer's
+   ordinary validation logic catches corrupted availability (`MissingEstOccurrence`)
+   or contradictory access effects and fails closed with `MOSS_INTERNAL_INVARIANT`.
+2. P2: Refactored `resolve_local_ownership_fact()` to look up strictly by
+   retained EST handles (`est_arena_index`, `expression_occurrence_id`) and
+   specialization context. Eliminated all definition-identity string formatting
+   and source line number matching.
+3. E1: Repaired the scalar Copy argument case of `nxt.push(head[u])` by evaluating
+   the Copy argument into an owned temporary scalar prior to acquiring the mutable
+   receiver borrow. Separated this from the general non-Copy disjoint-field borrowing
+   defect (`defect_e1_group_a_push_self_field_noncopy.moss`), which remains an open
+   known failure requiring checker disjoint projection facts.
+4. Harness: `tests/phase28/verify_defects.py` now protects all 7 fixtures
+   (4 PASS, 0 XPASS, 3 KNOWN FAILURE, 0 UNEXPECTED FAILURE).
+5. Dependencies: Documented requirement for checker-owned fact applicability/coverage
+   to formally prove missing-fact detection without heuristics.
 
 Validation completed: `make --jobs="$(nproc)" moss-dev`,
 `python3 tests/tooling/check_phase28_local_ownership.py ./moss`,

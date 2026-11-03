@@ -8,12 +8,13 @@
 
 ## 1. Executive Summary
 
-In Round 2, Team B:
+In Round 2 (including Fan-in Corrections), Team B:
 1. **Integrated Team A's Local Ownership Facts:** Migrated the direct local-alias path in the native code generator (`src/native_generator.cpp`) to consume `TypedLocalOwnershipFactV1` from `TypedSemanticModuleV1::local_ownership_facts` alongside exact EST occurrence facts.
-2. **Enforced Strict Fail-Closed Verification:** Validated definition identity, EST occurrence (arena index + expression occurrence ID + arena fact parity), specialization context, and availability (`Availability::Present`). Ensured missing/perturbed facts trigger `MOSS_INTERNAL_INVARIANT`.
-3. **Investigated E1 Cross-Field Lowering:** Confirmed that whole-self trait accessor methods in Rust (`MossAccess_*`) prevent disjoint field borrows across method calls unless either argument evaluation order decouples borrow lifetimes in time or the checker publishes explicit disjoint field projection facts.
-4. **Enhanced Defect Regression Harness:** Upgraded `tests/phase28/verify_defects.py` to support explicit **XPASS** tracking with full execution and output parity validation.
-5. **Specified E4 Mutable Iteration Interface:** Documented the exact consumer contract required for `ForLoopElementFacts` (loop binding identity, element access mode `READ`/`WRITE`, collection access mode `READ`/`WRITE`, and enclosing receiver write effect propagation).
+2. **P2 Refactoring (No String Reconstruction):** Refactored `resolve_local_ownership_fact()` to look up facts strictly by retained EST handles (`matched_handle->arena_index`, `matched_handle->expr`) and specialization context. Eliminated all definition identity string formatting and source line number matching.
+3. **P1 Genuine Fault Injection:** Removed shortcut throws from the emitter. Implemented genuine fault injection in `Generator::Generator` under test hooks (`MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT` and `MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT`), allowing the production consumer's validation logic to directly catch corrupted availability (`Availability::MissingEstOccurrence`) or contradictory effects against the EST arena and fail closed with `MOSS_INTERNAL_INVARIANT`.
+4. **E1 Scalar Temporary Push Repair:** Repaired the scalar Copy argument case of Group A `push_self_field_read` (`nxt.push(head[u])`) by evaluating Copy arguments into an owned scalar temporary before acquiring the mutable receiver borrow. This eliminates Rust E0502 without clones. Separated this from the general non-Copy disjoint-field borrowing defect (`defect_e1_group_a_push_self_field_noncopy.moss`), which remains an open known failure awaiting checker facts.
+5. **Enhanced Defect Regression Harness:** Upgraded `tests/phase28/verify_defects.py` to enforce explicit **XPASS** tracking with execution and output parity across 7 targeted fixtures.
+6. **Specified E4 Mutable Iteration Interface:** Documented the exact consumer contract required for `ForLoopElementFacts`.
 
 ---
 
@@ -31,13 +32,13 @@ The native emitter accesses checker ownership facts via `Program::typed_semantic
   - `access`: typed `Effect::Read`, `Effect::Write`, or `Effect::Consume`
   - `availability`: `Present`
 
-### Semantic Authority & Invariant Validation
-The consumer enforces semantic authority:
-1. **Definition Identity Check:** `found_fact->definition_identity == expected_def_id`.
-2. **EST Occurrence Check:** `found_fact->est_arena_index == matched_handle->arena_index` and `found_fact->expression_occurrence_id == matched_handle->expr`.
-3. **EST Arena Parity Check:** Queries `arena->facts(found_fact->expression_occurrence_id, found_fact->specialization_context)->inferred_effect == found_fact->access`.
-4. **Specialization Context Check:** Matches base callable or active specialization context.
-5. **Availability Check:** `found_fact->availability == Availability::Present`. Any missing, perturbed, or contradictory state fails closed immediately with `MOSS_INTERNAL_INVARIANT`.
+### Semantic Authority & Invariant Validation (P2 Compliant)
+The consumer enforces semantic authority without string reconstruction or source line matching:
+1. **EST Handle Lookup:** Finds candidate fact matching `fact.est_arena_index == matched_handle->arena_index` and `fact.expression_occurrence_id == matched_handle->expr`.
+2. **Specialization Context Validation:** Confirms `fact.specialization_context` matches base callable or active specialization context.
+3. **Availability Check:** `found_fact->availability == Availability::Present`. Any missing or unavailable state fails closed immediately with `MOSS_INTERNAL_INVARIANT`.
+4. **Checker Identity Validation:** Verifies non-empty `definition_identity` and `source_binding_identity`.
+5. **EST Arena Parity Check:** Queries `arena->facts(found_fact->expression_occurrence_id, found_fact->specialization_context)->inferred_effect == found_fact->access`. Contradictory effects fail closed immediately with `MOSS_INTERNAL_INVARIANT`.
 6. **Unsupported Boundaries:** When no fact exists in `local_ownership_facts`, the definition is outside the Phase 28 straight-line slice and preserved on existing baseline lowering without inventing heuristics.
 
 ### Generated Rust Lowering Parity
@@ -50,14 +51,15 @@ Based on the validated checked fact:
 - `tests/phase28/team_a_ownership/read_alias.moss` -> compiles cleanly with rustc, outputs `7\n7` (verified Fast Debug parity).
 - `tests/phase28/team_a_ownership/write_alias.moss` -> compiles cleanly with rustc, outputs `9` (verified Fast Debug parity).
 - `tests/phase28/team_a_ownership/consume_transfer.moss` -> compiles cleanly with rustc, outputs `7` (verified Fast Debug parity).
-- `MOSS_TEST_DROP_OWNERSHIP_FACT` and `MOSS_TEST_PERTURB_OWNERSHIP_FACT` -> both fail closed with `MOSS_INTERNAL_INVARIANT`.
+- `MOSS_TEST_DROP_OWNERSHIP_FACT` and `MOSS_TEST_PERTURB_OWNERSHIP_FACT` (checker level) -> fail closed with `MOSS_INTERNAL_INVARIANT`.
+- `MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT` and `MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT` (consumer genuine fault injection) -> fail closed with `MOSS_INTERNAL_INVARIANT`.
 - Regulated under targeted test `tests/tooling/check_phase28_team_b_consumer.py`.
 
 ---
 
-## 3. Investigation: E1 Cross-Field Lowering (`push_self_field_read`)
+## 3. Investigation & Resolution: E1 Cross-Field Lowering
 
-### The Defect
+### The Scalar Temporary Repair (Resolved)
 In `defect_e1_group_a_push_self_field.moss`:
 ```moss
 type Links:
@@ -69,66 +71,58 @@ type Links:
     head[u] = u
     return 0
 ```
-In `MossAccess_Links::link`:
-```rust
-(*self.__moss_field_nxt_mut()).push((*self.__moss_field_head())[(u) as usize]);
-```
-Rust emits `E0502: cannot borrow *self as immutable because it is also borrowed as mutable`.
+- In `MossAccess_Links::link`:
+  ```rust
+  (*self.__moss_field_nxt_mut()).push((*self.__moss_field_head())[(u) as usize]);
+  ```
+- Because Rust borrows the receiver `*self` mutably before evaluating method call arguments, `self.__moss_field_nxt_mut()` created an active mutable borrow during the evaluation of `self.__moss_field_head()`, triggering `E0502`.
+- **Resolution:** In `native_generator.cpp:gen_block` for `Stmt::Kind::Call`, when `s.b == "push"` and `s.args[0]` has a Copy type (`copy_type(*arg_type) == true`), the generator evaluates the argument into an owned temporary scalar prior to acquiring the receiver's write call place:
+  ```rust
+  {
+      let __moss_push_arg_1 = (*self.__moss_field_head())[(u) as usize];
+      (*self.__moss_field_nxt_mut()).push(__moss_push_arg_1);
+  }
+  ```
+- Because `i64` is a Copy type, the immutable borrow of `*self` completes at the temporary binding, leaving `*self` free to be borrowed mutably by `nxt_mut()`.
+- Verified: compiles with rustc, runs, and outputs `0` with exact Fast Debug parity.
 
-### Analysis & Soundness Boundaries
-1. **Receiver-Borrow Precedence:** In standard Rust method-call syntax `recv.meth(arg)`, the receiver is borrowed *before* arguments are evaluated. Calling `self.__moss_field_nxt_mut()` mutably borrows all of `*self`. When evaluating argument `self.__moss_field_head()`, `*self` is already mutably borrowed.
-2. **Disjointness in Memory:** `nxt` and `head` are distinct struct fields. In concrete `impl Links`, `self.nxt.push(...)` compiles because Rust understands disjoint struct field borrows. However, across trait methods (`MossAccess_Links`), Rust enforces whole-receiver exclusivity.
-3. **Sequential Decoupling vs True Disjointness:**
-   - If argument evaluation is hoisted before receiver borrowing (`let __elem = (*self.__moss_field_head())[(u) as usize].clone(); (*self.__moss_field_nxt_mut()).push(__elem);`), the immutable borrow ends before the mutable borrow begins.
-   - However, if an argument requires *retaining* a reference across the call, hoisting alone is insufficient without a split-borrow method on the trait (e.g. `fn __moss_project_head_nxt(&mut self) -> (&Head, &mut Nxt)`).
-4. **Checker Fact Requirement for Team A:**
-   - To lower disjoint field access soundly without guessing, Team B requires checker-owned `CheckedDisjointFieldProjectionFacts`:
-     - Disjoint storage leaf paths for receiver accesses in each statement.
-     - Specification of simultaneously active field borrow sets on `self`.
+### The Non-Copy Disjoint Field Borrowing Defect (Open Known Failure)
+In `defect_e1_group_a_push_self_field_noncopy.moss`:
+- When elements are non-Copy (e.g. `head: Vector[Box]`), evaluating `head[u]` cannot be copied without `.clone()` (which violates the compiler contract).
+- Rust rejects moving out of the index (`E0507`) and rejects overlapping whole-receiver borrows (`E0502`).
+- Resolving this without `.clone()` requires checker-owned disjoint field projection facts and split-borrow accessors on `MossAccess_*`. Classified separately as an open known failure.
 
 ---
 
-## 4. Defect Regression Gate & XPASS Handling
+## 4. Defect Regression Gate
 
-`tests/phase28/verify_defects.py` now enforces:
-- **PASS:** Feature/bug fix is complete with full native binary execution and Fast Debug output parity.
-- **KNOWN FAILURE:** Documented defect fails with exact expected compiler/rustc error code.
-- **XPASS:** When a known failure fixture unexpectedly succeeds, the harness does not naively pass; it executes the generated native binary, verifies stdout matches Fast Debug output parity, and marks it as a verified repaired defect (`XPASS`).
-- **UNEXPECTED FAILURE:** Any regression, crash, or parity mismatch immediately triggers exit code 1.
+`tests/phase28/verify_defects.py` enforces expected outcomes across 7 fixtures:
+- `E1_group_a_push_self_field_scalar`: **PASS** (Repaired scalar temporary push, output `0`)
+- `E1_group_a_push_self_field_noncopy`: **KNOWN FAILURE** (Rust `E0502`/`E0507` on non-Copy disjoint field access)
+- `E1_group_a_field_self_assign`: **PASS** (Repaired in Round 1 via RHS-before-LHS temporary binding, output `1`)
+- `E2_swarm_035_nested_mutating_calls`: **PASS** (Canonical reproducer passes with parity, output `1`)
+- `E3_t6_untyped_for_read`: **PASS** (Standalone read-only loop passes with parity, output `3`)
+- `E3_t6_shapes_inference`: **KNOWN FAILURE** (Checker leaf-effect analysis failure: `unresolved callable argument`)
+- `E4_mutate_loop_element`: **KNOWN FAILURE** (Rust `E0596`: checker infers `&self`; emitter hardcodes `.iter()`)
 
-Current Status:
 ```text
 === Summary ===
-Total: 6 | PASS: 3 | XPASS: 0 | KNOWN FAILURES: 3 | UNEXPECTED FAILURES: 0
+Total: 7 | PASS: 4 | XPASS: 0 | KNOWN FAILURES: 3 | UNEXPECTED FAILURES: 0
 GATE RESULT: PASSED (all expected passes and known failures confirmed)
 ```
 
 ---
 
-## 5. E4 Mutable Iteration Lowering Specification
+## 5. Outstanding Checker Dependencies for Team A
 
-For `defect_e4_mutate_loop_element.moss`:
-```moss
-type Stock:
-  items: Vector[Item]
-
-  fn take_all(n: Int):
-    for it in items:
-      it.take(n)
-```
-
-### Required Checker Contract from Team A (`ForLoopElementFacts`)
-1. **Fact Structure:**
-   - `statement_occurrence_id`: AST / EST occurrence of `Stmt::Kind::For`.
-   - `element_binding`: Name and binding identity of the induction variable (`it`).
-   - `collection_expression_id`: EST occurrence of the collection being iterated (`items`).
-   - `element_access`: `Effect::Read` vs `Effect::Write` (inferred from induction variable uses in the loop body).
-   - `collection_access`: `Effect::Read` vs `Effect::Write` (must propagate mutation of elements back to a mutable borrow of the collection).
-   - `availability`: `Present`.
-2. **Consumer Action in Native Emitter:**
-   - When `element_access == Effect::Write`:
-     - Emit traversal via `(<collection>).iter_mut()`.
-     - Emit loop variable as mutable: `for mut <it> in ...`.
-     - Enclosing function/method receiver must be declared `&mut self` (driven by the checker's write effect).
-   - When `element_access == Effect::Read`:
-     - Preserve existing `(<collection>).iter()` traversal (with `.copied()` for Copy types).
+1. **Checker-Owned Fact Applicability / Coverage Record:**
+   - To fully prove fail-closed behavior when a required fact is absent (dropped from `local_ownership_facts` entirely), the checker must publish an applicability list (e.g. `required_ownership_definitions` or statement IDs requiring ownership facts). Without this, the consumer cannot distinguish an unsupported statement from a missing required fact without inventing heuristics.
+2. **Loop Element Mutation Facts (`ForLoopElementFacts` for E4):**
+   - Statement occurrence ID for `Stmt::Kind::For`.
+   - Induction element binding identity and access effect (`Effect::Read` vs `Effect::Write`).
+   - Collection expression occurrence ID and access effect (`Effect::Read` vs `Effect::Write`).
+   - Receiver write effect propagation (inferred `&mut self` when iterating mutably over fields).
+3. **Disjoint Field Projection Facts (for Non-Copy E1):**
+   - Storage leaf identities and active borrow sets for simultaneous field accesses on receivers across trait methods.
+4. **Control-Flow Local Ownership Facts:**
+   - Ownership facts across CFG branches and joins (`if`/`match`), allowing consumer borrow lowering beyond straight-line blocks.

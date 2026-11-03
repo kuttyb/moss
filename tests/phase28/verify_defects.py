@@ -21,15 +21,26 @@ TMP.mkdir(parents=True, exist_ok=True)
 # kind: "PASS" (fully working with parity) or "KNOWN_FAILURE" (documented compiler defect).
 TEST_CASES = [
     {
-        "id": "E1_group_a_push_self_field",
-        "description": "Group A push_self_field_read: whole-self field accessor borrowing conflict",
+        "id": "E1_group_a_push_self_field_scalar",
+        "description": "Group A push_self_field_read: scalar Copy element evaluated before mutable receiver borrow",
         "source": ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field.moss",
+        "kind": "PASS",
+        "expected_checker": "PASS",
+        "expected_fast_debug": "0",
+        "expected_rustc": "PASS",
+        "expected_native": "0",
+        "defect_note": "Repaired: scalar Copy element evaluated into temporary before acquiring mutable receiver borrow",
+    },
+    {
+        "id": "E1_group_a_push_self_field_noncopy",
+        "description": "Group A push_self_field_read: non-Copy disjoint field access across whole-self trait methods",
+        "source": ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field_noncopy.moss",
         "kind": "KNOWN_FAILURE",
         "expected_checker": "PASS",
         "expected_fast_debug": "0",
         "expected_rustc": "FAIL",
         "expected_rustc_error": "E0502",
-        "defect_note": "Open defect: whole-self field accessors via MossAccess_* trait take &mut self, conflicting with immutable field borrows",
+        "defect_note": "Open defect: non-Copy disjoint field access across MossAccess_* whole-self trait methods requires checker-owned disjoint projection facts",
     },
     {
         "id": "E1_group_a_field_self_assign",

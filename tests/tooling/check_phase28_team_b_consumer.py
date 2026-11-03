@@ -75,14 +75,34 @@ def main() -> int:
         raise SystemExit("usage: check_phase28_team_b_consumer.py COMPILER")
     compiler = sys.argv[1]
 
+    # Positive native execution with output parity
     verify_native(compiler, "read_alias.moss", "7\n7")
     verify_native(compiler, "write_alias.moss", "9")
     verify_native(compiler, "consume_transfer.moss", "7")
 
+    # E1 Group A scalar temporary push repair
+    e1_source = ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field.moss"
+    e1_rs = TMP / "defect_e1_group_a_push_self_field.rs"
+    e1_bin = TMP / "defect_e1_group_a_push_self_field.bin"
+    emit = run([compiler, str(e1_source), "-o", str(e1_rs)])
+    if emit.returncode != 0:
+        raise AssertionError(f"E1 scalar push emit failed: {emit.stderr}")
+    rustc = run(["rustc", "--edition=2021", str(e1_rs), "-o", str(e1_bin)])
+    if rustc.returncode != 0:
+        raise AssertionError(f"E1 scalar push rustc failed: {rustc.stderr}")
+    run_bin = run([str(e1_bin)])
+    if run_bin.returncode != 0 or run_bin.stdout.strip() != "0":
+        raise AssertionError(f"E1 scalar push run failed: {run_bin.stdout.strip()}")
+
+    # Checker-level drop and perturb
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_DROP_OWNERSHIP_FACT")
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_PERTURB_OWNERSHIP_FACT")
 
-    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + drop/perturb fail-closed)")
+    # Consumer-level genuine fault injection (production validation logic detection)
+    verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
+    verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
+
+    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb fail-closed)")
     return 0
 
 
