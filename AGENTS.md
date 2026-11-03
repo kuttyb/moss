@@ -206,6 +206,10 @@ When working with Moss:
   branch; this scoped authorization permits the normal push for this task. Do
   not merge into `phase28-work` or `main`, and do not begin Slice B without L7
   authorization.
+  For Phase 28 Round 4 T02 Slice A integration on
+  `phase28-r4-slice-a-integration`, the user authorized normal commits and push
+  to `phase28-work` after integration validation. Do not merge into `main` or
+  begin Slice B consumer migration.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
