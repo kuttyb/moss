@@ -210,6 +210,11 @@ When working with Moss:
   `phase28-r4-slice-a-integration`, the user authorized normal commits and push
   to `phase28-work` after integration validation. Do not merge into `main` or
   begin Slice B consumer migration.
+  For Phase 28 Round 4 Slice B repair and final review on
+  `phase28-r4-slice-b-fix`, the user authorized scoped local commits and normal
+  pushes to the configured remote after the exact implementation SHA receives
+  independent Agent 2 GO. Do not merge into `phase28-work` or `main`, and do
+  not begin Slice C.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

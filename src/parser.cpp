@@ -751,6 +751,7 @@ class Parser {
     }
     if (starts_with(L.text, "let ") || starts_with(L.text, "var ")) {
       bool is_var = starts_with(L.text, "var ");
+      // `let` is an alias for `var`; mutability is inferred by the checker.
       s.kind = Stmt::Kind::Var;
       string rest = trim(L.text.substr(4));
       auto eq = top_level_assignment(rest);

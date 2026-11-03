@@ -269,10 +269,11 @@ match consume old:
     phase = Phase.Done(name: name)
 ```
 
-A consumed `var` may be assigned a new whole value; it must be initialized on
-every path before its next read, including a loop's next iteration. `let` stays
-immutable. `pass` is a reserved, effect-free no-op statement in any statement
-block. Tag-only cases use `Idle` in declarations and patterns, never `Idle()`.
+A consumed local declared with `let` or `var` may be assigned a new whole value;
+it must be initialized on every path before its next read, including a loop's
+next iteration. `let` is an alias for `var`, and local mutability is inferred.
+`pass` is a reserved, effect-free no-op statement in any statement block.
+Tag-only cases use `Idle` in declarations and patterns, never `Idle()`.
 Enums remain functions-only and cannot declare methods. An untyped ordinary
 function parameter may be matched after static specialization supplies a
 concrete enum type; each specialization is checked independently.

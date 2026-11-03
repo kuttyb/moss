@@ -257,9 +257,11 @@ def main() -> int:
     check(compiler, "mixed_join_rejected.moss",
           expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
     check(compiler, "branch_write_unsatisfied.moss",
-          expected_error="OWNERSHIP_JOIN_WRITE_UNSATISFIED")
+          expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
     check(compiler, "branch_consume_unsatisfied.moss",
-          expected_error="OWNERSHIP_JOIN_CONSUME_UNSATISFIED")
+          expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
+    check(compiler, "enum_payload_escape_rejected.moss",
+          expected_error="BORROWED_ENUM_PAYLOAD_CONSUME")
     check(compiler, "conditional_consume_use.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "borrow_escapes_scope.moss",

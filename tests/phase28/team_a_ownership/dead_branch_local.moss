@@ -3,10 +3,10 @@ type Box:
 
 fn local_only_in_arm(source: Box, choose: Bool):
   if choose:
-    alias = source
+    var alias = source
     echo alias.value
   else:
-    other = source
+    var other = source
     echo other.value
   echo 0
 

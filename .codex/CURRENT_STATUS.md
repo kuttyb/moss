@@ -1,3 +1,35 @@
+### Phase 28 Round 4 — Slice B final review repair (2026-11-03)
+
+Working branch `phase28-r4-slice-b-fix`; reviewed input frozen at
+`90e08d3916f88240b0bc2d1cef670f3bd446ddbd`. Independent Agent 2 found a
+contract defect: the parser split `let` from `var`, contradicting the language
+documentation's alias rule. Restored parsing both spellings to the same Var
+statement kind; mutability remains checker-inferred. Replaced two join fixtures
+that depended on the unauthorized immutability rule with the prior enum-payload
+cases and updated their expected safe rejection to
+`OWNERSHIP_INCOMPATIBLE_JOIN`.
+
+Validation on the repaired working tree:
+- `make --jobs="$(nproc)" moss-dev`: PASS.
+- Local ownership and selector effects: PASS in default and `MOSS_EST=shadow`.
+- Expression ownership edges, specialized ownership authority, take consumer
+  (22/22), Team B consumer, enum positive fixture, and string debt (42/7): PASS.
+- Frozen input SHA `90e08d...` full regression suite: 167 selected, 150 PASS,
+  16 FAIL, 1 SKIP. `shard_phase4_diff` failed and its dependency caused
+  `shard_phase5_tooling` to skip; the intermittent
+  `check_make_incremental_dependencies` passed. Arithmetic: 150 + 16 + 1 = 167.
+- Repaired SHA full suite: 167 selected, 151 PASS, 16 FAIL, 0 SKIP.
+  `shard_phase4_diff` passed, allowing `shard_phase5_tooling` to run and fail on
+  its existing ledgered `use_after_transfer` expectation. All 16 failures match
+  the Round 3 ledger; `check_make_incremental_dependencies` passed. Arithmetic:
+  151 + 16 = 167. No new failures.
+- Agent 2 final review: GO on exact implementation SHA
+  `75e08071fb16222b4c676f8326a4e0cae75abdaf`.
+- Reviewer-noted stale `let stays immutable` sentence in
+  `docs/LANGUAGE_SYNTAX.md` was corrected to the existing alias contract.
+
+No merge to `phase28-work` or `main`; Slice C has not started.
+
 ### Phase 28 Round 4 T03 — Slice B integration (2026-11-03)
 
 Integration of branch `phase28-r4-slice-b` (`cc86da2e5538740e977b5db5cddb9c0196a71736`)

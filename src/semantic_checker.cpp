@@ -18849,7 +18849,7 @@ class Checker {
                 statement, est::ExprSlot::RhsValue);
             if (source && transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
-                !receiver_fields.count(statement.a))
+                env.count(statement.a) && !receiver_fields.count(statement.a))
               if (auto inferred = infer_straight_line_definition_effect(
                       statements, index, statement.a, {}, *source, {}, env, {}))
                 source_access = *inferred;
@@ -22993,6 +22993,7 @@ class Checker {
     if (N == 0) return analysis;
 
     std::set<string> immutable_sources = initial_immutable_locals;
+    std::set<string> unborrowable_sources;
 
     // 1. Collect parameter / initial definitions
     for (const auto& [name, identity] : initial_binding_identities) {
@@ -23037,7 +23038,8 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        if (transfers && local_source && current_binding_identities.count(*local_source) &&
+            !unborrowable_sources.count(*local_source)) {
           def.is_borrow = true;
           def.is_owned = false;
           def.source_name = *local_source;
@@ -23075,7 +23077,8 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        if (transfers && local_source && current_binding_identities.count(*local_source) &&
+            !unborrowable_sources.count(*local_source)) {
           def.is_borrow = true;
           def.is_owned = false;
           def.source_name = *local_source;
@@ -23121,6 +23124,7 @@ class Checker {
           def.is_owned = false;
           def.is_mutable = false;
           immutable_sources.insert(payload);
+          unborrowable_sources.insert(payload);
           def.def_identity = statement_binding_identity(
               current_semantic_context_, s.line) + ":" + payload;
           def.binding_identity = def.def_identity;
@@ -25697,7 +25701,9 @@ class Checker {
               ? env.binding_identities.find(*local_source)
               : env.binding_identities.end();
           if (transfers && source_binding != env.binding_identities.end() &&
-              !source_binding->second.empty() && transfer_type(*source_type)) {
+              !source_binding->second.empty() && transfer_type(*source_type) &&
+              (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
+                                 !env.message_payloads.count(*local_source)))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             std::optional<Effect> inferred;
@@ -25829,7 +25835,9 @@ class Checker {
               : env.binding_identities.end();
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
-              !env.state_fields.count(s.a)) {
+              !env.state_fields.count(s.a) &&
+              (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
+                                 !env.message_payloads.count(*local_source)))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             std::optional<Effect> inferred;
