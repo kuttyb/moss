@@ -14506,6 +14506,75 @@ suites were not run; no result for those gates is claimed. Implementation is com
 `df94b292b86eed6dbcd7048a33cbd3dfc1e97e46`; the handoff-document follow-up
 and push are pending.
 
+### Phase 28 Round 2 Team A checkpoint
+
+Round 2 continues from the accepted Team A R1 handoff on branch
+`phase28-r2-team-a`, based on `phase28-r1-team-a` at `a73d8a6b`. The typed
+ownership contract now distinguishes intentional `Unsupported` inference
+(`Availability::NotRequired`) from inferred records with missing occurrence or
+binding identities and contradictory EST effects. Its `is_authoritative()`
+and `is_intentionally_unsupported()` helpers expose the consumer gate.
+`TypedLocalOwnershipFactV1` also carries a logical `join_definition_identity`.
+Existing checker join and
+predecessor binding tables drive bounded explicit-local `if`/`else` inference
+for READ, WRITE and CONSUME demands; no parallel CFG engine was added. Vector
+iteration emits loop-occurrence facts for READ/WRITE element access, keyed by
+the exact iterable EST root and checker loop binding. Consumer migration,
+exception edges, general CFG/liveness, loop-carried fixed points and imported
+effects remain open.
+
+E3 Shapes diagnosis: nested leaf-effect capture lost the method's implicit-self
+owner while evaluating a callable argument. A scoped capture owner plus
+preservation of checked callable identities repairs the reduced case. The
+original Shapes path now returns the separate `MODULE_IDENTITY_UNRESOLVED`
+diagnostic (`module 'shapes' has no package identity`); package-level Shapes
+validation is consequently still blocked.
+
+The ownership harness is registered in `make check` for default and shadow
+modes, including its drop/perturb checks. Validation after the checker edits:
+`make --jobs="$(nproc)" moss-dev`; focused ownership harness against
+`build/compiler/moss-dev` in default and shadow; `python3 -m py_compile
+tests/tooling/check_phase28_local_ownership.py tests/run_parallel.py`;
+`python3 tests/tooling/check_agent_feedback.py`; and `git diff --check` all
+pass. Shapes direct checking returns the module identity error above. Full
+`make check`, `make check-shadow`, three-engine parity and corpus runs have not
+been run. The current AGENTS.md had no general no-push prohibition; its scoped
+authorization now explicitly includes this Round 2 branch. The initial
+implementation `37028a7f3f33a6a4d79b9ef3c7b14b777bee47df`, docs commit
+`bbeba8fc53a36485a5a3c038d10ad9dcc3ee890b`, and status commit
+`2f310c2b0ff518269a87c17ba28006cdf4edc063` were pushed to
+`origin/phase28-r2-team-a`. Agent 2 returned CP1 NO-GO on the initial
+implementation with two P1 findings: non-direct return alias uses were too
+broadly classified as READ, and a Vector loop element used only as an index
+could be marked WRITE. It also flagged the header occurrence comment. The
+corrections are committed locally at implementation SHA
+`73da9d9db0fd35dce195acc1de142994fd756af4`: unsupported nested returns decline
+inference, Copy-valued EST field projections retain READ, and projected WRITE
+facts use only the EST LHS base chain. Regressions cover both P1 findings. The
+candidate's dev build and focused harness in default and shadow modes,
+py_compile, feedback validation, and diff check pass. Corrected implementation
+SHA `73da9d9db0fd35dce195acc1de142994fd756af4` and handoff/status commit
+`a22568a9eff30f05ad89b2745b8d6a0eb6c26153` are pushed; `git ls-remote`
+confirmed the branch ref at the handoff/status commit. Agent 2 re-review of
+implementation SHA `73da9d9db0fd35dce195acc1de142994fd756af4` found a third P1:
+the legacy `copy_type` predicate considers `option[Int]` Copy, contrary to the
+Phase 28 contract. The local correction now admits only designated primitive
+field projections and adds an Option-return rejection regression. The
+Copy-field projection type query also receives the source binding's checked
+type under the local alias. Latest dev build, 18-fixture focused harness in
+default and shadow modes, py_compile, feedback validation and diff check pass.
+The correction is committed at implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`; updated handoff docs are committed
+at `56fcc00929133a3fee83c9bb22ee3d5e46292ffa`. Both are pushed to
+`origin/phase28-r2-team-a`. Agent 2 returned CP1 GO, scoped to this checker
+handoff, for exact implementation SHA
+`5fbdccdcb48702dffbbbbd98967d3162e7dfa54b`; no additional related soundness
+findings were reported. The reviewer reran the 18-fixture harness in default
+and shadow modes. No source changes followed the reviewed implementation SHA;
+this final status/documentation update is docs-only. Full repository and
+engine suites remain unrun. Earlier NO-GO commits remain in published history;
+no history was rewritten.
+
 ### Phase 28 Round 2 Team B checkpoint
 
 Branch `phase28-r2-team-b` merged Team A's Round 1 handoff (`a73d8a6b`).

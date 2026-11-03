@@ -1,0 +1,11 @@
+type Box:
+  value: Int
+
+fn read_field(source: Box) -> Int:
+  let alias = source
+  return alias.value
+
+fn main():
+  original = Box(value: 5)
+  echo read_field(original)
+  echo original.value

@@ -1,0 +1,15 @@
+fn identity(value: Int) -> Int:
+  return value
+
+type Box:
+  value: Int
+
+  fn nested_value() -> Int:
+    return identity(value())
+
+  fn value() -> Int:
+    return value
+
+fn main():
+  box = Box(value: 3)
+  echo box.nested_value()
