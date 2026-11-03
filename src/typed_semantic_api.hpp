@@ -143,6 +143,8 @@ struct TypedLocalOwnershipRequirementV1 {
   // Exact context alias published by the checker for existing consumers.
   std::string specialization_context;
   std::string definition_identity;
+  std::string join_definition_identity;
+  std::string source_binding_identity;
   Effect access{Effect::Read};
   SourceKind source_kind{SourceKind::LocalBinding};
   InferenceStatus inference_status{InferenceStatus::Inferred};
@@ -248,6 +250,24 @@ struct TypedSemanticModuleV1 {
     return found->second;
   }
 
+  void validate_local_ownership_requirement_specialization(
+      const TypedLocalOwnershipRequirementV1& requirement) const {
+    const auto mapping = local_ownership_specialization_contexts.find(
+        requirement.specialization_context);
+    if (mapping == local_ownership_specialization_contexts.end()) {
+      if (!requirement.specialization_identity.empty())
+        throw std::invalid_argument(
+            "local ownership specialization identity has no checker mapping");
+      return;
+    }
+    if (requirement.specialization_identity.empty() ||
+        local_ownership_specialization_identity(
+            requirement.specialization_context) !=
+            requirement.specialization_identity)
+      throw std::invalid_argument(
+          "local ownership specialization identity mismatch");
+  }
+
   const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
       std::uint32_t arena_index, est::ExprId expr_id,
       const std::string& context) const {
@@ -263,11 +283,7 @@ struct TypedSemanticModuleV1 {
       }
     }
     if (result) {
-      if (!result->specialization_identity.empty() &&
-          local_ownership_specialization_identity(context) !=
-              result->specialization_identity)
-        throw std::invalid_argument(
-            "local ownership specialization identity mismatch");
+      validate_local_ownership_requirement_specialization(*result);
       (void)find_local_ownership_fact(*result);
     }
     return result;
@@ -294,11 +310,7 @@ struct TypedSemanticModuleV1 {
       result = &req;
     }
     if (result) {
-      if (!result->specialization_identity.empty() &&
-          local_ownership_specialization_identity(specialization_context) !=
-              result->specialization_identity)
-        throw std::invalid_argument(
-            "local ownership specialization identity mismatch");
+      validate_local_ownership_requirement_specialization(*result);
       (void)find_local_ownership_fact(*result);
     }
     return result;
@@ -317,6 +329,8 @@ struct TypedSemanticModuleV1 {
           candidate.specialization_context == req.specialization_context &&
           candidate.specialization_identity == req.specialization_identity &&
           candidate.definition_identity == req.definition_identity &&
+          candidate.join_definition_identity == req.join_definition_identity &&
+          candidate.source_binding_identity == req.source_binding_identity &&
           candidate.access == req.access &&
           candidate.source_kind == req.source_kind &&
           candidate.inference_status == req.inference_status &&
@@ -328,6 +342,7 @@ struct TypedSemanticModuleV1 {
       throw std::invalid_argument(matching_requirements
           ? "duplicate required local ownership identity"
           : "local ownership requirement was not checker-issued");
+    validate_local_ownership_requirement_specialization(req);
 
     const TypedLocalOwnershipFactV1* result = nullptr;
     for (const auto& fact : local_ownership_facts) {
@@ -336,7 +351,9 @@ struct TypedSemanticModuleV1 {
           fact.statement_occurrence_id != req.statement_occurrence_id ||
           fact.specialization_context != req.specialization_context ||
           fact.specialization_identity != req.specialization_identity ||
-          fact.definition_identity != req.definition_identity)
+          fact.definition_identity != req.definition_identity ||
+          fact.join_definition_identity != req.join_definition_identity ||
+          fact.source_binding_identity != req.source_binding_identity)
         continue;
       if (result)
         throw std::invalid_argument("duplicate local ownership fact");

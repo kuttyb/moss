@@ -15,6 +15,8 @@ static TypedLocalOwnershipRequirementV1 requirement(
   result.specialization_context = context;
   result.specialization_identity = specialization;
   result.definition_identity = definition;
+  result.join_definition_identity = "join:inspect:alias";
+  result.source_binding_identity = "parameter:0";
   result.access = Effect::Consume;
   result.source_kind = TypedLocalOwnershipFactV1::SourceKind::LocalBinding;
   result.availability = TypedLocalOwnershipFactV1::Availability::Present;
@@ -30,7 +32,8 @@ static TypedLocalOwnershipFactV1 fact(
   result.specialization_context = req.specialization_context;
   result.specialization_identity = req.specialization_identity;
   result.definition_identity = req.definition_identity;
-  result.source_binding_identity = "parameter:0";
+  result.join_definition_identity = req.join_definition_identity;
+  result.source_binding_identity = req.source_binding_identity;
   result.access = req.access;
   result.source_kind = req.source_kind;
   result.availability = req.availability;
@@ -91,6 +94,24 @@ int main() {
   auto perturbed_identity = module;
   perturbed_identity.local_ownership_facts[0].specialization_identity = "spec:second";
   require_throw([&] { perturbed_identity.find_local_ownership_fact(*first_req); });
+
+  auto perturbed_source = module;
+  perturbed_source.local_ownership_facts[0].source_binding_identity = "parameter:1";
+  require_throw([&] { perturbed_source.find_local_ownership_fact(*first_req); });
+
+  auto perturbed_join = module;
+  perturbed_join.local_ownership_facts[0].join_definition_identity = "join:other";
+  require_throw([&] { perturbed_join.find_local_ownership_fact(*first_req); });
+
+  auto missing_specialization_identity = module;
+  missing_specialization_identity.required_local_ownership_occurrences[0]
+      .specialization_identity.clear();
+  missing_specialization_identity.local_ownership_facts[0]
+      .specialization_identity.clear();
+  require_throw([&] {
+    missing_specialization_identity.find_local_ownership_requirement(
+        3, 17, "fn:inspect<First>");
+  });
 
   auto perturbed_mapping = module;
   perturbed_mapping.local_ownership_specialization_contexts[

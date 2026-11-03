@@ -1958,6 +1958,8 @@ class Checker {
                     << " specialization="
                     << std::quoted(req.specialization_identity)
                     << " definition=" << std::quoted(req.definition_identity)
+                    << " join=" << std::quoted(req.join_definition_identity)
+                    << " source=" << std::quoted(req.source_binding_identity)
                     << " access=" << static_cast<int>(req.access)
                     << " inference_status="
                     << static_cast<int>(req.inference_status)
@@ -22590,6 +22592,8 @@ class Checker {
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -22666,6 +22670,8 @@ class Checker {
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -22750,6 +22756,8 @@ class Checker {
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
     req.definition_identity = fact.definition_identity;
+    req.join_definition_identity = fact.join_definition_identity;
+    req.source_binding_identity = fact.source_binding_identity;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;

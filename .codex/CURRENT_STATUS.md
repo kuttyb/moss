@@ -11,14 +11,21 @@ Ambiguous, missing, perturbed and contradictory required records fail closed;
 explicitly unsupported facts remain discoverable as unsupported. Added a
 two-specialization Moss fixture and a direct typed API contract harness.
 
-Validation completed so far: `make --jobs="$(nproc)" moss-dev`; default and
+The first frozen correction commit `d72982aff0faed767d1855aa18fd317b202db09f`
+was pushed and independently reviewed by Agent 2 (NO-GO). Review found that
+requirements omitted source-binding identity and that a specialization key
+could be erased from both fact and requirement while leaving the mapped context.
+The working follow-up adds source/join IDs to requirement matching and rejects
+empty keys for checker-mapped contexts. The direct C++ contract test covers
+both findings. The live Moss fixture uses a test-only checker hook to run typed
+lookup against actual published records.
+
+After these follow-up edits, `make --jobs="$(nproc)" moss-dev`, default and
 shadow `tests/tooling/check_phase28_local_ownership.py
-build/compiler/moss-dev`; `git diff --check`. These are focused checks only; no
-corpus suite was run. I added a test-only checker hook that runs the new exact
-typed lookup against the real published fixture records; rerun the focused
-checks after that change. Pending: freeze and self-review correction SHA, obtain
-the requested Agent 2 adversarial review, then commit/push after any focused
-correction. Team B should
+build/compiler/moss-dev`, and `git diff --check` pass. These are focused checks
+only; no corpus suite was run. The task instructions reference
+`docs/COMPILER_ARCHITECTURE.md`, which is absent on the baseline branch. Pending:
+commit/push the follow-up and request Agent 2 focused re-review. Team B should
 call `find_local_ownership_requirement(arena, expr, consumer_context)` to get
 the requirement's checker-issued `specialization_identity`, or use the overload
 with statement, context, specialization identity, and definition identity;
