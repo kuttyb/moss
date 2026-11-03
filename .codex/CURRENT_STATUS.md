@@ -21,7 +21,13 @@ Branch `phase28-r3-team-b-effect-consumer`. Completed W06 integration and Round 
    - `python3 tests/phase28/verify_defects.py`: PASS (8/8 confirmed: 4 PASS, 4 KNOWN FAILURE).
    - `python3 tests/tooling/check_agent_feedback.py`: PASS.
    - `git diff --check`: PASS.
-   - Agent 2 independently reviewed implementation commit `a8ab5d6259079555c42bc2e30fa64ba248c8dfa4` and issued final CP2 review verdict **GO**.
+   - `make check`: 14/14 tooling/focused gates PASS; parallel suite (`tests/run_parallel.py`) 150/167 PASS, 17 FAIL (all 17 confirmed preexisting known failures: legacy `take` syntax in Phase 21/generics, `use_after_transfer` negative fixture, vector element consume, incremental dependency; 0 regressions).
+   - Agent 2 independently reviewed implementation commit `a8ab5d6283b1f14d250c582c6609a0e428e98f21` and issued final CP2 review verdict **GO** (review provenance corrected from earlier SHA typo).
+5. Architectural Audit:
+   - `lookup_selector_facts()` queries strictly primary `fact.est_fact_context`; zero `source:` context fallback remains.
+   - Selector argument effects consume checker-issued facts directly; specialization names resolve directly to `exact_fn_spec->generated_name`.
+   - Occurrence-targeted corruption changes only the selected composite key `(arena_idx, ExprId, context)`; sibling selector facts remain intact.
+   - Audited argument effect vs callee parameter effect comparison: unspecialized declaration effects and checker specialization effects agree (`READ, READ`) across all selector fixtures; zero concrete discrepancy.
 
 ### Phase 28 Round 3 Team B — Stored Fact Corruption & Selector Authority (W05) (2026-11-02)
 
