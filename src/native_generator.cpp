@@ -2694,6 +2694,9 @@ class Generator {
         auto value_type = generated_expr_type(call_args.front(), types);
         return value_type ? "option[" + *value_type + "]" : "option[_]";
       }
+      if (callee == "copy" && call_args.size() == 1) {
+        return generated_expr_type(call_args.front(), types);
+      }
       if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
         return "range[int]";
       string callee_id = resolved_callable_identity(callee, types);
@@ -4818,6 +4821,24 @@ class Generator {
               viewed_method_name(member_receiver, member_name, member_arguments,
                                  d, locals, types) +
               "().unwrap_or_else(|| std::process::abort())";
+        if (collection_named(parsed_type(concrete), {"vector"}) &&
+            (member_name == "remove" || member_name == "swap_remove") &&
+            member_arguments.size() == 1) {
+          return receiver_expression + "." + member_name + "((" +
+              expr(member_arguments.front(), d, locals, types) + ") as usize)";
+        }
+        if (collection_named(parsed_type(concrete), {"map"}) &&
+            member_name == "remove" && member_arguments.size() == 1) {
+          return receiver_expression + ".remove(&(" +
+              expr(member_arguments.front(), d, locals, types) + "))" +
+              ".unwrap_or_else(|| std::process::abort())";
+        }
+        if (collection_named(parsed_type(concrete), {"map"}) &&
+            member_name == "get" && member_arguments.size() == 1) {
+          return receiver_expression + ".get(&(" +
+              expr(member_arguments.front(), d, locals, types) + "))" +
+              ".cloned().unwrap_or_else(|| std::process::abort())";
+        }
       }
       // Trait/duck-typed calls are already statically specialized by the
       // checker; retain their ordinary Rust method spelling when the concrete
@@ -4837,6 +4858,8 @@ class Generator {
     if (tree_parse_simple_call(e, builtin, builtin_args)) {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
+      if (builtin == "copy" && builtin_args.size() == 1)
+        return "(" + expr(builtin_args.front(), d, locals, types) + ").clone()";
       if (builtin == "sqrt" && builtin_args.size() == 1)
         return "{ let __moss_sqrt_value: f64 = " +
             expr(builtin_args.front(), d, locals, types) +
@@ -7153,9 +7176,29 @@ class Generator {
         }
         case Stmt::Kind::Match: {
           auto scrutinee_type = generated_expr_type(s.a, &types);
-          if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
+          bool is_option = scrutinee_type &&
+              starts_with(canonical_type_name(*scrutinee_type), "option[");
+          static const EnumType option_enum = [] {
+            EnumType opt;
+            opt.name = "option";
+            EnumCase some_c;
+            some_c.name = "Some";
+            Field f;
+            f.name = "value";
+            some_c.fields.push_back(f);
+            opt.cases.push_back(some_c);
+            EnumCase none_c;
+            none_c.name = "None";
+            opt.cases.push_back(none_c);
+            return opt;
+          }();
+          const EnumType* declaration_ptr = is_option
+              ? &option_enum
+              : (scrutinee_type && enums_.count(canonical_type_name(*scrutinee_type)))
+                  ? enums_.at(canonical_type_name(*scrutinee_type)) : nullptr;
+          if (!declaration_ptr)
             throw std::runtime_error("unchecked enum match");
-          const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
+          const EnumType& declaration = *declaration_ptr;
           if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");

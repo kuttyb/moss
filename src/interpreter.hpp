@@ -2442,6 +2442,10 @@ class FastInterpreter {
           some.object->fields["value"] = evaluate_call_argument(0);
           return some;
         }
+        if (callee == "copy" && args.size() == 1) {
+          Value val = evaluate_call_argument(0);
+          return independent(val);
+        }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
@@ -2908,6 +2912,29 @@ class FastInterpreter {
               else values->pop_back();
               return result;
             }
+            if (method_name == "remove" && method_args.size() == 1) {
+              Value idx_val = evaluate_method_argument(0);
+              if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "remove expects integer index");
+              int64_t idx = idx_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size())
+                throw RuntimeError(line, "index out of range");
+              Value result = (*values)[idx];
+              values->erase(values->begin() + idx);
+              return result;
+            }
+            if (method_name == "swap_remove" && method_args.size() == 1) {
+              Value idx_val = evaluate_method_argument(0);
+              if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "swap_remove expects integer index");
+              int64_t idx = idx_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size())
+                throw RuntimeError(line, "index out of range");
+              Value result = (*values)[idx];
+              if (static_cast<size_t>(idx) + 1 < values->size()) {
+                (*values)[idx] = values->back();
+              }
+              values->pop_back();
+              return result;
+            }
           }
           if (receiver.kind == Value::Kind::Map) {
             if (method_name == "delete" && method_args.size() == 3) {
@@ -2925,6 +2952,25 @@ class FastInterpreter {
               }
               assign(method_args[2], Value::boolean_value(false), frame, line, output);
               return independent(fallback);
+            }
+            if (method_name == "remove" && method_args.size() == 1) {
+              Value key = evaluate_method_argument(0);
+              if (auto position = map_position(receiver, key, frame, line, output)) {
+                Value removed = independent(receiver.map->at(*position).second);
+                receiver.map->erase(receiver.map->begin() + *position);
+                if (staged_abi_v10()) {
+                  receiver.map_hashes->erase(receiver.map_hashes->begin() + *position);
+                  rebuild_map_index(receiver);
+                }
+                return removed;
+              }
+              throw RuntimeError(line, "key not found in map");
+            }
+            if (method_name == "get" && method_args.size() == 1) {
+              Value key = evaluate_method_argument(0);
+              if (auto position = map_position(receiver, key, frame, line, output))
+                return independent(receiver.map->at(*position).second);
+              throw RuntimeError(line, "key not found in map");
             }
             if (method_name == "get" && method_args.size() == 2) {
               Value key = evaluate_method_argument(0);
@@ -3828,9 +3874,27 @@ class FastInterpreter {
           frame.locals.erase(statement.a);
           frame.consumed.insert(statement.a);
         }
+        static const EnumType option_enum = [] {
+          EnumType opt;
+          opt.name = "option";
+          EnumCase some_c;
+          some_c.name = "Some";
+          Field f;
+          f.name = "value";
+          some_c.fields.push_back(f);
+          opt.cases.push_back(some_c);
+          EnumCase none_c;
+          none_c.name = "None";
+          opt.cases.push_back(none_c);
+          return opt;
+        }();
         const EnumType* declaration = nullptr;
-        for (const auto& candidate : program_.enums)
-          if (candidate.name == selected.object->type) declaration = &candidate;
+        if (selected.object->type == "option" || selected.object->case_name == "Some" || selected.object->case_name == "None") {
+          declaration = &option_enum;
+        } else {
+          for (const auto& candidate : program_.enums)
+            if (candidate.name == selected.object->type) declaration = &candidate;
+        }
         if (!declaration) throw RuntimeError(statement.line, "unknown matched enum");
         size_t cursor = index + 1;
         bool taken = false;
@@ -3871,7 +3935,9 @@ class FastInterpreter {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
               frame.aliases.erase(binding);
-              auto field = selected.object->fields.find(item->fields[field_index].name);
+              auto field = (declaration == &option_enum)
+                  ? selected.object->fields.find("value")
+                  : selected.object->fields.find(item->fields[field_index].name);
               if (field == selected.object->fields.end())
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||

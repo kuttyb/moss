@@ -374,6 +374,107 @@ struct TypedTakeRequirementV1 {
   bool exclusive_projection_access{false};
 };
 
+struct TypedCopyFactV1 {
+  enum class Availability {
+    Present, MissingCopyOccurrence, MissingSourceOccurrence,
+    MissingStatementOccurrence, MissingType, IneligibleType,
+    Contradictory
+  };
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId copy_occurrence_id{UINT32_MAX};
+  est::ExprId source_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef source_type;
+  TypeRef result_type;
+  Effect required_source_access{Effect::Read};
+  bool creates_independent_owner{true};
+  Availability availability{Availability::MissingCopyOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        est_arena_index != UINT32_MAX &&
+        copy_occurrence_id != UINT32_MAX &&
+        source_occurrence_id != UINT32_MAX &&
+        statement_occurrence_id != UINT32_MAX &&
+        !specialization_context.empty() &&
+        !est_fact_context.empty() &&
+        source_type && result_type &&
+        source_type->structurally_equal(*result_type) &&
+        required_source_access == Effect::Read &&
+        creates_independent_owner;
+  }
+};
+
+struct TypedCopyRequirementV1 {
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId copy_occurrence_id{UINT32_MAX};
+  est::ExprId source_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef source_type;
+  TypeRef result_type;
+  Effect required_source_access{Effect::Read};
+  bool creates_independent_owner{true};
+};
+
+enum class TypedMatchScrutineeKindV1 { Enum, Option };
+
+struct TypedMatchArmFactV1 {
+  std::string case_name;
+  std::vector<std::string> payload_binding_names;
+  std::vector<std::string> payload_binding_identities;
+  std::vector<TypeRef> payload_types;
+  Effect payload_access{Effect::Read};
+  bool transfers_ownership{false};
+};
+
+struct TypedMatchOwnershipFactV1 {
+  enum class Availability {
+    Present, MissingMatchOccurrence, MissingScrutineeOccurrence,
+    MissingStatementOccurrence, Contradictory
+  };
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId scrutinee_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string scrutinee_binding_identity;
+  std::string scrutinee_name;
+  TypeRef scrutinee_type;
+  TypedMatchScrutineeKindV1 scrutinee_kind{TypedMatchScrutineeKindV1::Enum};
+  bool is_consuming{false};
+  std::vector<TypedMatchArmFactV1> arms;
+  Availability availability{Availability::MissingMatchOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        scrutinee_occurrence_id != UINT32_MAX &&
+        !specialization_context.empty() &&
+        scrutinee_type && !arms.empty();
+  }
+};
+
+struct TypedMatchOwnershipRequirementV1 {
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId scrutinee_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string scrutinee_binding_identity;
+  std::string scrutinee_name;
+  TypeRef scrutinee_type;
+  TypedMatchScrutineeKindV1 scrutinee_kind{TypedMatchScrutineeKindV1::Enum};
+  bool is_consuming{false};
+  std::vector<TypedMatchArmFactV1> arms;
+};
+
 // A missing or incomplete checker summary is represented as unavailable,
 // never guessed from the function's display result or source text.
 struct TypedOpenCallableSummaryV1 {
@@ -526,6 +627,10 @@ struct TypedSemanticModuleV1 {
   std::map<std::string, std::string> local_ownership_specialization_contexts;
   std::vector<TypedTakeFactV1> take_facts;
   std::vector<TypedTakeRequirementV1> required_take_occurrences;
+  std::vector<TypedCopyFactV1> copy_facts;
+  std::vector<TypedCopyRequirementV1> required_copy_occurrences;
+  std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
+  std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -917,6 +1022,174 @@ struct TypedSemanticModuleV1 {
         arena_index, take_occurrence, specialization_context);
     if (requirement.specialization_identity != specialization_identity)
       throw std::invalid_argument("checker take requirement specialization mismatch");
+    return requirement;
+  }
+
+  const TypedCopyFactV1* find_copy_fact(
+      const TypedCopyRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return (left == right) || (left && right && left->structurally_equal(*right));
+    };
+    const TypedCopyRequirementV1* required = nullptr;
+    std::size_t matching_requirements = 0;
+    for (const auto& candidate : required_copy_occurrences) {
+      if (candidate.est_arena_index != requirement.est_arena_index ||
+          candidate.copy_occurrence_id != requirement.copy_occurrence_id ||
+          candidate.specialization_identity != requirement.specialization_identity ||
+          candidate.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_requirements;
+      required = &candidate;
+    }
+    if (matching_requirements != 1 || !required)
+      throw std::invalid_argument(matching_requirements
+          ? "duplicate or contradictory required checked copy requirement"
+          : "unknown required checked copy occurrence");
+
+    const TypedCopyFactV1* result = nullptr;
+    std::size_t matching_facts = 0;
+    for (const auto& fact : copy_facts) {
+      if (fact.est_arena_index != requirement.est_arena_index ||
+          fact.copy_occurrence_id != requirement.copy_occurrence_id ||
+          fact.specialization_identity != requirement.specialization_identity ||
+          fact.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_facts;
+      result = &fact;
+    }
+    if (matching_facts != 1 || !result) {
+      if (matching_facts > 1)
+        throw std::invalid_argument("duplicate or contradictory checked copy facts");
+      throw std::invalid_argument("required checked copy fact missing");
+    }
+    if (result->source_occurrence_id != requirement.source_occurrence_id ||
+        result->statement_occurrence_id != requirement.statement_occurrence_id ||
+        result->est_fact_context != requirement.est_fact_context ||
+        !same_type(result->source_type, requirement.source_type) ||
+        !same_type(result->result_type, requirement.result_type) ||
+        result->required_source_access != requirement.required_source_access ||
+        result->creates_independent_owner != requirement.creates_independent_owner)
+      throw std::invalid_argument("required checked copy fact contradicts requirement");
+    if (!result->is_authoritative())
+      throw std::invalid_argument("required checked copy fact unavailable");
+    return result;
+  }
+
+  const TypedCopyRequirementV1& find_copy_requirement(
+      std::uint32_t arena_index, est::ExprId copy_occurrence,
+      const std::string& specialization_context) const {
+    const TypedCopyRequirementV1* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& requirement : required_copy_occurrences) {
+      if (requirement.est_arena_index != arena_index ||
+          requirement.copy_occurrence_id != copy_occurrence ||
+          requirement.specialization_context != specialization_context)
+        continue;
+      ++matches;
+      result = &requirement;
+    }
+    if (matches != 1 || !result)
+      throw std::invalid_argument(matches
+          ? "ambiguous checker copy requirement"
+          : "checker copy requirement missing");
+    (void)find_copy_fact(*result);
+    return *result;
+  }
+
+  const TypedCopyRequirementV1& find_copy_requirement(
+      std::uint32_t arena_index, est::ExprId copy_occurrence,
+      const std::string& specialization_context,
+      const std::string& specialization_identity) const {
+    const auto& requirement = find_copy_requirement(
+        arena_index, copy_occurrence, specialization_context);
+    if (requirement.specialization_identity != specialization_identity)
+      throw std::invalid_argument("checker copy requirement specialization mismatch");
+    return requirement;
+  }
+
+  const TypedMatchOwnershipFactV1* find_match_ownership_fact(
+      const TypedMatchOwnershipRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return (left == right) || (left && right && left->structurally_equal(*right));
+    };
+    const TypedMatchOwnershipRequirementV1* required = nullptr;
+    std::size_t matching_requirements = 0;
+    for (const auto& candidate : required_match_occurrences) {
+      if (candidate.est_arena_index != requirement.est_arena_index ||
+          candidate.scrutinee_occurrence_id != requirement.scrutinee_occurrence_id ||
+          candidate.statement_occurrence_id != requirement.statement_occurrence_id ||
+          candidate.specialization_identity != requirement.specialization_identity ||
+          candidate.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_requirements;
+      required = &candidate;
+    }
+    if (matching_requirements != 1 || !required)
+      throw std::invalid_argument(matching_requirements
+          ? "duplicate or contradictory required match requirement"
+          : "unknown required match requirement");
+
+    const TypedMatchOwnershipFactV1* result = nullptr;
+    std::size_t matching_facts = 0;
+    for (const auto& fact : match_ownership_facts) {
+      if (fact.est_arena_index != requirement.est_arena_index ||
+          fact.scrutinee_occurrence_id != requirement.scrutinee_occurrence_id ||
+          fact.statement_occurrence_id != requirement.statement_occurrence_id ||
+          fact.specialization_identity != requirement.specialization_identity ||
+          fact.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_facts;
+      result = &fact;
+    }
+    if (matching_facts != 1 || !result) {
+      if (matching_facts > 1)
+        throw std::invalid_argument("duplicate or contradictory checked match facts");
+      throw std::invalid_argument("required checked match fact missing");
+    }
+    if (result->is_consuming != requirement.is_consuming ||
+        result->scrutinee_kind != requirement.scrutinee_kind ||
+        result->scrutinee_binding_identity != requirement.scrutinee_binding_identity ||
+        result->scrutinee_name != requirement.scrutinee_name ||
+        !same_type(result->scrutinee_type, requirement.scrutinee_type) ||
+        result->arms.size() != requirement.arms.size())
+      throw std::invalid_argument("required checked match fact contradicts requirement");
+    if (!result->is_authoritative())
+      throw std::invalid_argument("required checked match fact unavailable");
+    return result;
+  }
+
+  const TypedMatchOwnershipRequirementV1& find_match_ownership_requirement(
+      std::uint32_t arena_index, est::ExprId scrutinee_occurrence,
+      std::uint32_t statement_occurrence,
+      const std::string& specialization_context) const {
+    const TypedMatchOwnershipRequirementV1* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& requirement : required_match_occurrences) {
+      if (requirement.est_arena_index != arena_index ||
+          requirement.scrutinee_occurrence_id != scrutinee_occurrence ||
+          requirement.statement_occurrence_id != statement_occurrence ||
+          requirement.specialization_context != specialization_context)
+        continue;
+      ++matches;
+      result = &requirement;
+    }
+    if (matches != 1 || !result)
+      throw std::invalid_argument(matches
+          ? "ambiguous checker match requirement"
+          : "checker match requirement missing");
+    (void)find_match_ownership_fact(*result);
+    return *result;
+  }
+
+  const TypedMatchOwnershipRequirementV1& find_match_ownership_requirement(
+      std::uint32_t arena_index, est::ExprId scrutinee_occurrence,
+      std::uint32_t statement_occurrence,
+      const std::string& specialization_context,
+      const std::string& specialization_identity) const {
+    const auto& requirement = find_match_ownership_requirement(
+        arena_index, scrutinee_occurrence, statement_occurrence, specialization_context);
+    if (requirement.specialization_identity != specialization_identity)
+      throw std::invalid_argument("checker match requirement specialization mismatch");
     return requirement;
   }
 

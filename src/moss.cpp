@@ -667,7 +667,11 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
   static const vector<BuiltinOperationDescriptor> operations = {
       {BuiltinReceiverFamily::Vector, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Vector, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::Vector, "remove", "remove(index)", "$element", Effect::Write, {Effect::Read}, {"int"}, true},
+      {BuiltinReceiverFamily::Vector, "swap_remove", "swap_remove(index)", "$element", Effect::Write, {Effect::Read}, {"int"}, true},
       {BuiltinReceiverFamily::Map, "get", "get(key, default)", "$value", Effect::Read, {Effect::Read, Effect::Read}, {"$key", "$value"}},
+      {BuiltinReceiverFamily::Map, "get", "get(key)", "$value", Effect::Read, {Effect::Read}, {"$key"}, true},
+      {BuiltinReceiverFamily::Map, "remove", "remove(key)", "$value", Effect::Write, {Effect::Read}, {"$key"}, true},
       {BuiltinReceiverFamily::Map, "keys", "keys()", "$keys", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::Map, "values", "values()", "$values", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}, {"$key", "$value", "bool"}},
@@ -728,13 +732,16 @@ std::optional<BuiltinReceiverFamily> builtin_receiver_family(
 }
 
 const BuiltinOperationDescriptor* builtin_operation(
-    const string& receiver_type, const string& name) {
+    const string& receiver_type, const string& name,
+    std::optional<size_t> arity) {
   auto family = builtin_receiver_family(receiver_type);
   if (!family) return nullptr;
   auto operation = std::find_if(
       builtin_operations().begin(), builtin_operations().end(),
       [&](const BuiltinOperationDescriptor& candidate) {
-        return candidate.receiver == *family && candidate.name == name;
+        if (candidate.receiver != *family || candidate.name != name) return false;
+        if (arity && candidate.argument_types.size() != *arity) return false;
+        return true;
       });
   return operation == builtin_operations().end() ? nullptr : &*operation;
 }
@@ -766,8 +773,8 @@ std::optional<string> builtin_operation_type(
 
 std::optional<string> builtin_operation_result(
     const string& receiver_type, const string& name, size_t arity) {
-  const auto* operation = builtin_operation(receiver_type, name);
-  if (!operation || operation->argument_types.size() != arity) return std::nullopt;
+  const auto* operation = builtin_operation(receiver_type, name, arity);
+  if (!operation) return std::nullopt;
   return builtin_operation_type(receiver_type, operation->result);
 }
 
@@ -849,13 +856,16 @@ string keyed_operation_specialization_id(
 }
 
 const BuiltinOperationDescriptor* builtin_operation(
-    const moss::TypeRef& receiver_type, const string& name) {
+    const moss::TypeRef& receiver_type, const string& name,
+    std::optional<size_t> arity) {
   auto family = builtin_receiver_family(receiver_type);
   if (!family) return nullptr;
   auto operation = std::find_if(
       builtin_operations().begin(), builtin_operations().end(),
       [&](const BuiltinOperationDescriptor& candidate) {
-        return candidate.receiver == *family && candidate.name == name;
+        if (candidate.receiver != *family || candidate.name != name) return false;
+        if (arity && candidate.argument_types.size() != *arity) return false;
+        return true;
       });
   return operation == builtin_operations().end() ? nullptr : &*operation;
 }
