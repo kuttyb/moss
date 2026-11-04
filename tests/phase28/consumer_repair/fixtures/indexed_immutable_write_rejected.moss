@@ -1,0 +1,15 @@
+# Spec: Proposal §10 WRITE borrow of an element of an immutable (pattern-borrowed) container is rejected.
+type Item:
+  cost: Int
+
+enum Box:
+  Wrap(items: Vector[Item])
+
+fn bump(b: Box):
+  match b:
+    case Wrap(items):
+      x = items[0]
+      x.cost = 9
+
+fn main():
+  pass

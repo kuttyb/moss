@@ -4201,9 +4201,13 @@ class FastInterpreter {
           if (ownership_fact && (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
             auto rhs_tree = expression_tree(statement.b, "locate_init",
                 std::pair{est::ExprSlot::Initializer, 0u});
-            auto place = rhs_tree
-                ? locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output)
-                : locate(statement.b, frame, statement.line, output);
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")) rhs_tree.reset();
+#endif
+            if (!rhs_tree)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked expression tree for borrowed place");
+            auto place = locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
             } else {
@@ -4245,9 +4249,13 @@ class FastInterpreter {
               (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
             auto rhs_tree = expression_tree(statement.b, "locate_rhs",
                 std::pair{est::ExprSlot::RhsValue, 0u});
-            auto place = rhs_tree
-                ? locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output)
-                : locate(statement.b, frame, statement.line, output);
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")) rhs_tree.reset();
+#endif
+            if (!rhs_tree)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked expression tree for borrowed place");
+            auto place = locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
               if (statement.a != "_")

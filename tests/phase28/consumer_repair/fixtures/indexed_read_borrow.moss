@@ -1,0 +1,9 @@
+# Spec: Proposal §10 indexed borrow with READ access; provenance is the container binding.
+type Item:
+  cost: Int
+
+fn main():
+  let v = [Item(cost: 4)]
+  b = v[0]
+  echo b.cost
+  echo v[0].cost

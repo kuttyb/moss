@@ -29,6 +29,7 @@ def verify_execution(compiler: str, fixture_path: Path, expected_output: str) ->
     stem = fixture_path.stem
     rs_path = TMP / f"{stem}.rs"
     bin_path = TMP / f"{stem}.bin"
+    rs_opt_path = TMP / f"{stem}_opt.rs"
     bin_opt_path = TMP / f"{stem}_opt.bin"
 
     # Fast Debug
@@ -59,8 +60,14 @@ def verify_execution(compiler: str, fixture_path: Path, expected_output: str) ->
             f"{fixture_path.name}: native output mismatch: expected '{expected_output.strip()}', got '{run_bin.stdout.strip()}'"
         )
 
-    # Rustc compile (Optimized)
-    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_path), "-o", str(bin_opt_path)])
+    # Native Optimized: `moss -O` emits a separate optimized Rust file, never
+    # reusing the debug-generated Rust.
+    emit_opt = run([compiler, "-O", str(fixture_path), "-o", str(rs_opt_path)])
+    if emit_opt.returncode != 0:
+        raise AssertionError(f"{fixture_path.name}: moss -O emit failed: {emit_opt.stderr}")
+    if rs_opt_path == rs_path or not rs_opt_path.exists():
+        raise AssertionError(f"{fixture_path.name}: optimized Rust file is not separate")
+    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_opt_path), "-o", str(bin_opt_path)])
     if rustc_opt.returncode != 0:
         raise AssertionError(f"{fixture_path.name}: rustc -O compilation failed: {rustc_opt.stderr}")
 

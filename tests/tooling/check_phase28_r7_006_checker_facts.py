@@ -29,6 +29,7 @@ def verify_execution(compiler: str, fixture_path: Path, expected_output: str) ->
     stem = fixture_path.stem
     rs_path = TMP / f"{stem}.rs"
     bin_path = TMP / f"{stem}.bin"
+    rs_opt_path = TMP / f"{stem}_opt.rs"
     bin_opt_path = TMP / f"{stem}_opt.bin"
 
     # Fast Debug
@@ -59,8 +60,14 @@ def verify_execution(compiler: str, fixture_path: Path, expected_output: str) ->
             f"{fixture_path.name}: native output mismatch: expected '{expected_output.strip()}', got '{run_bin.stdout.strip()}'"
         )
 
-    # Rustc compile (Optimized)
-    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_path), "-o", str(bin_opt_path)])
+    # Native Optimized: `moss -O` emits a separate optimized Rust file, never
+    # reusing the debug-generated Rust.
+    emit_opt = run([compiler, "-O", str(fixture_path), "-o", str(rs_opt_path)])
+    if emit_opt.returncode != 0:
+        raise AssertionError(f"{fixture_path.name}: moss -O emit failed: {emit_opt.stderr}")
+    if rs_opt_path == rs_path or not rs_opt_path.exists():
+        raise AssertionError(f"{fixture_path.name}: optimized Rust file is not separate")
+    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_opt_path), "-o", str(bin_opt_path)])
     if rustc_opt.returncode != 0:
         raise AssertionError(f"{fixture_path.name}: rustc -O compilation failed: {rustc_opt.stderr}")
 
@@ -110,6 +117,34 @@ def verify_fast_debug_fail_closed(compiler: str, fixture_path: Path, hook: str) 
         )
 
 
+def ownership_facts(compiler: str, fixture_path: Path) -> list[dict[str, str]]:
+    """Return checker-issued EST ownership facts (MOSS_EST_FACTS_DUMP)."""
+    import re
+
+    env = os.environ.copy()
+    env["MOSS_EST_FACTS_DUMP"] = "1"
+    proc = run([compiler, "check", str(fixture_path), "--json"], env=env)
+    if proc.returncode != 0:
+        raise AssertionError(f"{fixture_path.name}: check failed: {proc.stdout}{proc.stderr}")
+    facts = []
+    for line in proc.stderr.splitlines():
+        if line.startswith("MOSS_EST_OWNERSHIP_FACT "):
+            facts.append(dict(re.findall(r'(\w+)=("[^"]*"|\S+)', line)))
+    return facts
+
+
+def verify_provenance(compiler: str, fixture_path: Path, binding: str, source_line: int, access: int) -> None:
+    facts = ownership_facts(compiler, fixture_path)
+    matches = [f for f in facts if f["definition"].strip('"').endswith(":" + binding)]
+    if len(matches) != 1:
+        raise AssertionError(f"{fixture_path.name}: expected one fact for '{binding}', got {facts}")
+    fact = matches[0]
+    if fact["source"].strip('"') != f"main@{source_line}:statement":
+        raise AssertionError(f"{fixture_path.name}: wrong source storage {fact['source']} (want line {source_line})")
+    if int(fact["access"]) != access or fact["availability"] != "1":
+        raise AssertionError(f"{fixture_path.name}: wrong access/availability {fact} (want access {access})")
+
+
 def main() -> int:
     compiler = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "moss")
 
@@ -139,6 +174,18 @@ def main() -> int:
     print(f"Checking rejection on ORACLE-14: {oracle_14.name}...")
     verify_rejected(compiler, oracle_14, "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
 
+    # 4b. Indexed provenance: READ vs WRITE borrow and source storage (access 0=Read, 1=Write).
+    read_fixture = FIXTURES / "indexed_read_borrow.moss"
+    print(f"Checking indexed READ provenance: {read_fixture.name}...")
+    verify_execution(compiler, read_fixture, "4\n4")
+    verify_provenance(compiler, read_fixture, "b", 6, 0)
+    print("Checking indexed WRITE provenance on ORACLE-01/04...")
+    verify_provenance(compiler, oracle_01, "b", 6, 1)
+    verify_provenance(compiler, oracle_04, "e", 6, 1)
+    immutable = FIXTURES / "indexed_immutable_write_rejected.moss"
+    print(f"Checking immutable-container rejection: {immutable.name}...")
+    verify_rejected(compiler, immutable, "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE")
+
     # 5. Fail-closed tests for dropped / perturbed checker facts
     if "moss-opt" not in compiler:
         print("Checking fail-closed hooks on ORACLE-01...")
@@ -148,6 +195,10 @@ def main() -> int:
         verify_fail_closed(compiler, oracle_01, "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
         verify_fast_debug_fail_closed(compiler, oracle_01, "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
         verify_fast_debug_fail_closed(compiler, oracle_01, "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
+
+        print("Checking missing-expression-tree corruption (Fast Debug)...")
+        for fixture in (oracle_01, oracle_04):
+            verify_fast_debug_fail_closed(compiler, fixture, "MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")
 
         print("Checking fail-closed hooks on ORACLE-40...")
         verify_fail_closed(compiler, oracle_40, "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
