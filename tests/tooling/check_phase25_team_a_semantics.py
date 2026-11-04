@@ -606,9 +606,9 @@ fn main():
         print("PASS assignment projects one solved TypeRef", flush=True)
 
         moved_collection = source(scratch, "moved_collection_term", '''fn main():
-  a = []
+  var a = []
+  a.push(1)
   b = a
-  b.push(1)
   echo b[0]
 ''')
         parity(moved_collection, scratch, "1\n")
@@ -636,8 +636,10 @@ fn require_column(column: Column):
 
 fn copy_ints(values: Vector[Int]) -> Vector[Int]:
   var result = Vector[Int]()
-  for value in values:
-    result.push(value)
+  var i = 0
+  while i < (values |> count):
+    result.push(values[i])
+    i = i + 1
   return result
 
 export fn add_column(column: Column) -> Table:
