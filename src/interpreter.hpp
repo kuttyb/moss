@@ -4125,7 +4125,13 @@ class FastInterpreter {
           Value assigned = evaluate_expression_source(
               statement.b, frame, statement.line, output,
               std::pair{est::ExprSlot::RhsValue, 0u});
-          if (ownership_fact && !ownership_fact->killed_definition_identity.empty()) {
+          bool is_self_field = false;
+          auto self_it = frame.locals.find("self");
+          if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct &&
+              self_it->second.object && self_it->second.object->fields.count(statement.a)) {
+            is_self_field = true;
+          }
+          if (!is_self_field && ownership_fact && !ownership_fact->killed_definition_identity.empty()) {
             frame.consumed.erase(statement.a);
             frame.aliases.erase(statement.a);
           }
@@ -4139,7 +4145,9 @@ class FastInterpreter {
               break;
             }
           }
-          frame.aliases.erase(statement.a);
+          if (!is_self_field) {
+            frame.aliases.erase(statement.a);
+          }
           assign(statement.a, std::move(assigned), frame, statement.line,
                  output, target_tree ? &*target_tree : nullptr,
                  target_tree ? std::optional<est::ExprId>(target_tree->root)

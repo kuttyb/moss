@@ -7795,7 +7795,7 @@ class Generator {
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types) && !tree_plain_identifier(s.a)) {
+            else if (is_object_view(s.a, d, locals, &types) && (!tree_plain_identifier(s.a) || !locals.count(s.a))) {
               string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
               o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
@@ -7890,7 +7890,7 @@ class Generator {
                   o << indent(level) << "let " << (mutable_decl ? "mut " : "")
                     << rust_identifier(s.a) << " = " << assigned << ";\n";
                 } else {
-                  string target_lhs = tree_plain_identifier(s.a) ? rust_identifier(s.a) : lhs;
+                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a)) ? rust_identifier(s.a) : lhs;
                   o << indent(level) << target_lhs << " = " << assigned << ";\n";
                 }
               }

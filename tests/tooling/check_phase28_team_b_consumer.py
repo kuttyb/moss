@@ -54,6 +54,21 @@ def verify_native(compiler: str, fixture: str, expected_output: str) -> None:
             f"{fixture}: native output mismatch: expected '{expected_output}', got '{run_bin.stdout.strip()}'"
         )
 
+    # Rustc compile (Optimized)
+    bin_opt_path = TMP / f"{stem}_opt.bin"
+    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_path), "-o", str(bin_opt_path)])
+    if rustc_opt.returncode != 0:
+        raise AssertionError(f"{fixture}: rustc -O compilation failed: {rustc_opt.stderr}")
+
+    # Run binary (Optimized)
+    run_bin_opt = run([str(bin_opt_path)])
+    if run_bin_opt.returncode != 0:
+        raise AssertionError(f"{fixture}: native optimized binary crashed: {run_bin_opt.stderr}")
+    if run_bin_opt.stdout.strip() != expected_output:
+        raise AssertionError(
+            f"{fixture}: native optimized output mismatch: expected '{expected_output}', got '{run_bin_opt.stdout.strip()}'"
+        )
+
 
 def verify_fail_closed(compiler: str, fixture: str, hook: str) -> None:
     source = FIXTURES / fixture
@@ -188,7 +203,7 @@ def main() -> int:
     if spec_res.returncode != 0:
         raise AssertionError(f"Specialized native consumer verification failed:\n{spec_res.stderr}")
 
-    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation + specialized consumer contract)")
+    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation + specialized consumer contract + 3-way parity)")
     return 0
 
 
