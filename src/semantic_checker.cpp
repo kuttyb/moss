@@ -1992,7 +1992,8 @@ class Checker {
                     << fact.recovery_statement_occurrence_id << " arena="
                     << fact.source_est_arena_index << " expr="
                     << fact.source_expression_occurrence_id << " slot="
-                    << exceptional_slot_name(fact.source_est_slot) << " variant="
+                    << exceptional_slot_name(fact.source_est_slot) << " arg="
+                    << fact.source_est_argument_index << " variant="
                     << std::quoted(fact.raised_variant_identity) << " context="
                     << std::quoted(fact.specialization_context) << " specialization="
                     << std::quoted(fact.specialization_identity) << " provenance="
@@ -10925,7 +10926,57 @@ class Checker {
     RaiseSet alternatives;
     OwnershipEnv ownership;
     const Stmt* source = nullptr;
+    std::uint32_t source_est_arena_index = UINT32_MAX;
+    est::ExprId source_expression_occurrence_id = UINT32_MAX;
+    std::uint8_t source_est_slot = UINT8_MAX;
+    std::uint32_t source_est_argument_index = UINT32_MAX;
   };
+
+  const est::Handle* exceptional_source_handle(
+      const Stmt& source, std::uint32_t argument_index = UINT32_MAX) const {
+    std::optional<est::ExprSlot> slot;
+    std::uint32_t selected_argument = 0;
+    switch (source.kind) {
+      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
+      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
+      case Stmt::Kind::If:
+      case Stmt::Kind::While: slot = est::ExprSlot::Condition; break;
+      case Stmt::Kind::For: slot = est::ExprSlot::Iterable; break;
+      case Stmt::Kind::Match: slot = est::ExprSlot::Scrutinee; break;
+      case Stmt::Kind::Call: slot = est::ExprSlot::Expression; break;
+      case Stmt::Kind::Message: slot = est::ExprSlot::Receiver; break;
+      case Stmt::Kind::Return:
+      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
+      case Stmt::Kind::Raw:
+        slot = source.est_raw_form && *source.est_raw_form != est::RawForm::ExprStmt
+            ? est::ExprSlot::RhsValue : est::ExprSlot::Expression;
+        break;
+      case Stmt::Kind::Echo:
+        if (argument_index != UINT32_MAX && argument_index < source.args.size()) {
+          slot = est::ExprSlot::Argument;
+          selected_argument = argument_index;
+        } else if (source.args.size() == 1) {
+          slot = est::ExprSlot::Argument;
+        }
+        break;
+      case Stmt::Kind::Try:
+      case Stmt::Kind::Recover:
+      case Stmt::Kind::Case:
+      case Stmt::Kind::Else:
+      case Stmt::Kind::Pass:
+        break;
+    }
+    if (!slot) return nullptr;
+    const auto handle = std::find_if(
+        source.expression_handles.begin(), source.expression_handles.end(),
+        [&](const est::Handle& candidate) {
+          return candidate.slot == *slot &&
+              candidate.argument_index == selected_argument;
+        });
+    return handle == source.expression_handles.end() ? nullptr : &*handle;
+  }
 
   void update_borrowed_local_provenance(OwnershipEnv& env,
                                          const string& target,
@@ -10966,6 +11017,7 @@ class Checker {
   };
   vector<ExceptionalOwnershipExit>* ownership_exceptional_sink_ = nullptr;
   const Stmt* ownership_exceptional_source_ = nullptr;
+  std::uint32_t ownership_exceptional_argument_index_ = UINT32_MAX;
   OwnershipExpressionFrame* ownership_expression_frame_ = nullptr;
 
   void retain_semantic_use(const string& target_identity, const string& kind,
@@ -25234,9 +25286,21 @@ class Checker {
           std::move(frame.parent->child_raises), frame.all_raises);
     RaiseSet at_this_point = raise_set_union(
         raise_set_without(frame.all_raises, frame.child_raises), direct);
-    if (!at_this_point.empty())
-      ownership_exceptional_sink_->push_back(
-          {std::move(at_this_point), env, ownership_exceptional_source_});
+    if (!at_this_point.empty()) {
+      ExceptionalOwnershipExit exit{
+          std::move(at_this_point), env, ownership_exceptional_source_};
+      if (ownership_exceptional_source_) {
+        const auto* handle = exceptional_source_handle(
+            *ownership_exceptional_source_, ownership_exceptional_argument_index_);
+        if (handle) {
+          exit.source_est_arena_index = handle->arena_index;
+          exit.source_expression_occurrence_id = handle->expr;
+          exit.source_est_slot = static_cast<std::uint8_t>(handle->slot);
+          exit.source_est_argument_index = handle->argument_index;
+        }
+      }
+      ownership_exceptional_sink_->push_back(std::move(exit));
+    }
   }
 
   std::optional<EstExpressionCursor> ownership_take_cursor(
@@ -26151,8 +26215,16 @@ class Checker {
       const RaiseSet direct_raises = exceptional
           ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
       auto record_direct_raise = [&] {
-        if (exceptional && !direct_raises.empty())
-          exceptional->push_back({direct_raises, env, &s});
+        if (exceptional && !direct_raises.empty()) {
+          ExceptionalOwnershipExit exit{direct_raises, env, &s};
+          if (const auto* handle = exceptional_source_handle(s)) {
+            exit.source_est_arena_index = handle->arena_index;
+            exit.source_expression_occurrence_id = handle->expr;
+            exit.source_est_slot = static_cast<std::uint8_t>(handle->slot);
+            exit.source_est_argument_index = handle->argument_index;
+          }
+          exceptional->push_back(std::move(exit));
+        }
       };
 
       if (s.kind == Stmt::Kind::Match) {
@@ -26297,71 +26369,12 @@ class Checker {
                     current_body_types_->statement_occurrence_ids.end())
                   fact.recovery_statement_occurrence_id =
                       recovery_occurrence->second;
-                std::optional<est::ExprSlot> source_slot;
-                switch (raised.source->kind) {
-                  case Stmt::Kind::Assign:
-                    source_slot = est::ExprSlot::RhsValue;
-                    break;
-                  case Stmt::Kind::Let:
-                  case Stmt::Kind::Var:
-                    source_slot = est::ExprSlot::Initializer;
-                    break;
-                  case Stmt::Kind::Raise:
-                    source_slot = est::ExprSlot::RaisedValue;
-                    break;
-                  case Stmt::Kind::If:
-                  case Stmt::Kind::While:
-                    source_slot = est::ExprSlot::Condition;
-                    break;
-                  case Stmt::Kind::For:
-                    source_slot = est::ExprSlot::Iterable;
-                    break;
-                  case Stmt::Kind::Match:
-                    source_slot = est::ExprSlot::Scrutinee;
-                    break;
-                  case Stmt::Kind::Call:
-                    source_slot = est::ExprSlot::Expression;
-                    break;
-                  case Stmt::Kind::Message:
-                    source_slot = est::ExprSlot::Receiver;
-                    break;
-                  case Stmt::Kind::Return:
-                  case Stmt::Kind::Reply:
-                    source_slot = est::ExprSlot::ReturnValue;
-                    break;
-                  case Stmt::Kind::Raw:
-                    source_slot = raised.source->est_raw_form &&
-                            *raised.source->est_raw_form !=
-                                est::RawForm::ExprStmt
-                        ? est::ExprSlot::RhsValue
-                        : est::ExprSlot::Expression;
-                    break;
-                  case Stmt::Kind::Echo:
-                    if (raised.source->args.size() == 1)
-                      source_slot = est::ExprSlot::Argument;
-                    break;
-                  case Stmt::Kind::Try:
-                  case Stmt::Kind::Recover:
-                  case Stmt::Kind::Case:
-                  case Stmt::Kind::Else:
-                  case Stmt::Kind::Pass:
-                    break;
-                }
-                if (source_slot) {
-                  const auto handle = std::find_if(
-                      raised.source->expression_handles.begin(),
-                      raised.source->expression_handles.end(),
-                      [&](const est::Handle& candidate) {
-                        return candidate.slot == *source_slot &&
-                            candidate.argument_index == 0;
-                      });
-                  if (handle != raised.source->expression_handles.end()) {
-                    fact.source_est_arena_index = handle->arena_index;
-                    fact.source_expression_occurrence_id = handle->expr;
-                    fact.source_est_slot =
-                        static_cast<std::uint8_t>(handle->slot);
-                  }
-                }
+                fact.source_est_arena_index = raised.source_est_arena_index;
+                fact.source_expression_occurrence_id =
+                    raised.source_expression_occurrence_id;
+                fact.source_est_slot = raised.source_est_slot;
+                fact.source_est_argument_index =
+                    raised.source_est_argument_index;
                 for (const auto& [name, type] : raised.ownership.types) {
                   TypedExceptionalOwnershipFactV1::BindingState state;
                   state.name = name;
@@ -26482,6 +26495,8 @@ class Checker {
                 requirement.source_expression_occurrence_id =
                     fact.source_expression_occurrence_id;
                 requirement.source_est_slot = fact.source_est_slot;
+                requirement.source_est_argument_index =
+                    fact.source_est_argument_index;
                 requirement.raised_variant_identity =
                     fact.raised_variant_identity;
                 requirement.source_raise_alternatives =
@@ -27044,8 +27059,19 @@ class Checker {
           break;
         }
         case Stmt::Kind::Echo:
-          for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
-          record_direct_raise();
+          for (std::uint32_t arg_index = 0; arg_index < s.args.size();
+               ++arg_index) {
+            struct EchoArgumentOwnershipScope {
+              std::uint32_t& slot;
+              std::uint32_t prior;
+              EchoArgumentOwnershipScope(std::uint32_t& target,
+                                         std::uint32_t current)
+                  : slot(target), prior(target) { slot = current; }
+              ~EchoArgumentOwnershipScope() { slot = prior; }
+            } argument_scope(ownership_exceptional_argument_index_, arg_index);
+            check_ownership_expression(s.line, s.args[arg_index], env,
+                                      Effect::Read);
+          }
           ++index;
           break;
         case Stmt::Kind::Call:

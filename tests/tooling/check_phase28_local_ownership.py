@@ -311,16 +311,17 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
             f"exceptional recover ownership fact failed: {result!r}\n{proc.stderr}")
     facts = re.findall(
         r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT source=(\d+) recovery=(\d+) '
-        r'arena=(\d+) expr=(\d+) slot=([^ ]+) variant="([^"]+)" '
+        r'arena=(\d+) expr=(\d+) slot=([^ ]+) arg=(\d+) '
+        r'variant="([^"]+)" '
         r'context="([^"]+)" '
         r'specialization="([^"]*)" provenance="([^"]+)" state=(\d+) '
         r'availability=(\d+) mutations=(\d+) consumes=(\d+) borrows=(\d+)',
         proc.stderr)
     if len(facts) != 1 or facts[0][4] != "RaisedValue" or \
-            facts[0][5] != "enum:Failure:Bad" or \
+            facts[0][5] != "0" or facts[0][6] != "enum:Failure:Bad" or \
             int(facts[0][2]) == 2**32 - 1 or int(facts[0][3]) == 2**32 - 1 or \
-            int(facts[0][9]) < 1 or int(facts[0][10]) != 0 or \
-            int(facts[0][13]) < 1:
+            int(facts[0][10]) < 1 or int(facts[0][11]) != 0 or \
+            int(facts[0][14]) < 1:
         raise AssertionError(
             f"expected exact typed variant, EST and state-at-raise fact: {facts!r}")
     records = re.findall(
@@ -375,6 +376,19 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
     if not json.loads(rebinding.stdout).get("ok"):
         raise AssertionError(
             f"rebind after recover borrow's final use was rejected: {rebinding.stdout}")
+
+    echo_arguments = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_echo_argument_origin.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    echo_result = json.loads(echo_arguments.stdout)
+    echo_facts = re.findall(
+        r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT .*? slot=Argument arg=(\d+) '
+        r'variant="enum:Failure:Bad"', echo_arguments.stderr)
+    if not echo_result.get("ok") or echo_facts != ["1"]:
+        raise AssertionError(
+            f"raising second echo argument lost exact EST identity: "
+            f"{echo_result!r} {echo_facts!r}\n{echo_arguments.stderr}")
     overlapping = subprocess.run(
         [compiler, "check", str(FIXTURES /
          "exceptional_rebind_while_borrowed.moss"), "--json"],

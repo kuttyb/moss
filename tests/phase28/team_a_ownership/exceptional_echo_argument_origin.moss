@@ -1,0 +1,11 @@
+enum Failure:
+  Bad
+
+fn fail_value() -> Int:
+  raise Failure.Bad
+
+fn main():
+  try:
+    echo 1, fail_value()
+  recover Failure.Bad:
+    echo 2
