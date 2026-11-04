@@ -197,7 +197,7 @@
       "name": "tests/branch_confined_open_type.moss",
       "category": "tests",
       "entry_file": "tests/branch_confined_open_type.moss",
-      "sha256": "c0f4db1d42549011208a826e3e1ad40f360dad4888cce00a2470e0519aafc152",
+      "sha256": "766648f7d6e5df1088d444756479c44637dd473e0c99dba890773212d31c83e9",
       "description": "Branch-confined open generic inference",
       "is_deduplicated_closure": false,
       "deduplicated_target": null,

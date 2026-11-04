@@ -43,7 +43,7 @@ REGRESSION_COHORT = {
         "expected_specs": 272,
         "baseline_median_ms": 728.0,
         "max_allowed_ms": 1150.0,
-        "max_rss_kib": 28000,
+        "max_rss_kib": 25000,
     },
     "w3_spec_repeated_n016": {
         "category": "specialization",

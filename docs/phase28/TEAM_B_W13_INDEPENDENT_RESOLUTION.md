@@ -59,7 +59,7 @@ Phase 28 ownership rules enforce that elements yielded by `for x in collection:`
    - **Result:** PASS (all 53 cases pass).
 3. **`shard_swarm_cases`**:
    - `tests/swarm_048_callable_argument.moss`: migrated `filter_ints` from `for x in items: out.push(x)` to indexed `while i < (items |> count):` traversal.
-   - `tests/branch_confined_open_type.moss`: migrated line 19 `result.push(item)` to `result.push(1)` to retain type confinement testing without illegal loop-borrow consumption.
+   - `tests/branch_confined_open_type.moss`: migrated `for item in [1]:` to `for item in range(1, 2):`, preserving genuine loop-variable consumption `result.push(item)` and full type confinement coverage without illegal vector-borrow consumption.
    - **Result:** PASS (all 45 shard cases pass).
 
 ---
@@ -109,7 +109,7 @@ These fixtures defined ordinary user functions named `take` in non-place context
    - `tests/negative/consume_read_alias.moss`: migrated `conflict` to genuinely consume `taken` via `sink(taken)`.
    - `tests/negative/double_consume_alias.moss`: migrated `conflict` to genuinely consume both parameters via `sink`.
    - `tests/phase47_iteration.moss`: migrated `first_positive` from returning borrowed loop element to indexed `while` loop. Updated corresponding entry in `benchmarks/real_world/manifest.json`.
-   - `tests/tooling/check_phase25_4_performance_baseline.py`: updated `w2_spec_distinct_n016` RSS headroom from 25000 to 28000 KiB to accommodate nested worktree path length overhead.
+   - `tests/tooling/check_phase25_4_performance_baseline.py`: verified `w2_spec_distinct_n016` RSS is 24,856 KiB (< 25,000 KiB) in root checkout; audited and confirmed RSS threshold remains at certified baseline `25000` KiB.
 3. **Affected Jobs Verified**:
    - `check_semantic_queries`: **PASS**.
    - `shard_negative`: **PASS** (all negative cases pass).
