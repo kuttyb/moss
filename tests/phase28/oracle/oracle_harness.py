@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Phase 28 Independent Semantic Oracle Suite Harness.
+"""Phase 28 draft independent semantic oracle suite harness.
 
-Enforces the frozen Phase 28 ownership proposal (§10 and §12) across:
+Evaluates the draft Phase 28 expectation table across:
 1. Checker semantic verification
 2. Fast Debug interpreted execution
 3. Native Debug compilation and execution
 4. Native Optimized (-O) compilation and execution
-5. Hidden clone budget audit (zero hidden clones for borrowed/moved places)
-6. Exact rejection diagnostics for invalid programs
+5. Occurrence-level native clone provenance validation
+6. Structured rejection diagnostics tied to the fixture's source construct
 
 Specification Authority:
 tests/phase28/oracle/expectations.json (draft pending L7 approval)
@@ -110,6 +110,8 @@ for _expectation in _expectation_doc["fixtures"]:
 
 
 def validate_oracle_data() -> None:
+    if len(_expectation_doc.get("fixtures", [])) != 56:
+        raise ValueError("approval package must contain exactly 56 permanent fixtures")
     if _expectation_doc.get("approval_status") != "DRAFT_PENDING_L7_APPROVAL":
         raise ValueError("expectation table must remain explicitly unapproved until L7 approval")
     ids = [item["id"] for item in ORACLE_FIXTURES]
@@ -126,8 +128,11 @@ def validate_oracle_data() -> None:
         path = FIXTURES_DIR / item["file"]
         if not path.exists():
             raise ValueError(f"fixture path is missing: {item['id']} -> {path}")
-        if item["kind"] == "REJECTED" and item["id"] not in _diagnostic_doc["mappings"]:
-            raise ValueError(f"rejected fixture lacks oracle-owned diagnostic mapping: {item['id']}")
+        if item["kind"] == "REJECTED":
+            spec = _diagnostic_doc["mappings"].get(item["id"])
+            required = ("semantic_category", "codes", "severity", "message_regex", "source_line_regex")
+            if not isinstance(spec, dict) or any(not spec.get(key) for key in required):
+                raise ValueError(f"rejected fixture lacks structured oracle diagnostic contract: {item['id']}")
         if item["kind"] == "ACCEPTED":
             expected = item["expected"]
             for engine in ("fast_debug", "native_debug", "native_optimized"):
@@ -157,10 +162,75 @@ def run_process(cmd: list[str], cwd: Path | None = None, timeout: int = 15,
         return -1, "", "TIMEOUT", elapsed
 
 
+def validate_rejection_diagnostic(payload: object, spec: dict,
+                                  source_path: Path) -> tuple[bool, str]:
+    """Validate the structured checker error and anchor its cause to Moss source."""
+    if not isinstance(payload, dict) or payload.get("ok") is not False:
+        return False, "checker output is not a structured rejection response"
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return False, "structured response lacks error object"
+    if error.get("severity") != spec.get("severity", "error"):
+        return False, f"severity mismatch: {error.get('severity')!r}"
+    accepted_codes = spec.get("codes", [spec.get("code")])
+    if error.get("code") not in accepted_codes:
+        return False, f"diagnostic code mismatch: {error.get('code')!r}"
+    msg = error.get("message")
+    if not isinstance(msg, str) or not re.search(spec["message_regex"], msg, re.I):
+        return False, f"diagnostic message does not match {spec['message_regex']!r}"
+    reported_file = error.get("source_file")
+    if not isinstance(reported_file, str) or Path(reported_file).resolve() != source_path.resolve():
+        return False, f"source location file mismatch: {reported_file!r}"
+    line = error.get("line")
+    column = error.get("column")
+    lines = source_path.read_text().splitlines()
+    if (not isinstance(line, int) or line < 1 or line > len(lines) or
+            not isinstance(column, int) or column < 1 or column > len(lines[line - 1]) + 1):
+        return False, f"invalid diagnostic source location: {line!r}:{column!r}"
+    if not re.search(spec["source_line_regex"], lines[line - 1], re.I):
+        return False, f"diagnostic line {line} does not identify the rejected construct"
+    return True, f"{spec.get('semantic_category')}:{error['code']}@{line}"
+
+
+def expected_panic_matches(exit_code: int, stdout: str, stderr: str,
+                           patterns: list[str], expected_stdout: str = "") -> tuple[bool, str]:
+    """Accept only a non-timeout runtime panic carrying the specified evidence."""
+    if exit_code == -1 or stderr == "TIMEOUT":
+        return False, "execution timed out"
+    if exit_code == 0:
+        return False, "program completed instead of panicking"
+    if stdout.strip() != expected_stdout:
+        return False, f"panic stdout mismatch: {stdout.strip()!r}"
+    diagnostic = stderr + "\n" + stdout
+    if not any(re.search(pattern, diagnostic, re.I) for pattern in patterns):
+        return False, "runtime failure lacks indexing-panic evidence"
+    return True, "indexing panic confirmed"
+
+
 def _position(source: str, offset: int) -> dict:
     line = source.count("\n", 0, offset) + 1
     line_start = source.rfind("\n", 0, offset) + 1
     return {"line": line, "column": offset - line_start + 1}
+
+
+def _span_offsets(source: str, span: dict) -> tuple[int, int]:
+    def offset(pos: dict) -> int:
+        line, column = pos["line"], pos["column"]
+        if line < 1 or column < 1:
+            raise ValueError("span coordinates must be 1-based")
+        lines = source.splitlines(keepends=True)
+        if line > len(lines) or column - 1 > len(lines[line - 1]):
+            raise ValueError("span coordinate is outside artifact")
+        return sum(len(part) for part in lines[:line - 1]) + column - 1
+    start, end = offset(span["start"]), offset(span["end"])
+    if end < start:
+        raise ValueError("span end precedes start")
+    return start, end
+
+
+def _span_key(span: dict) -> tuple[int, int, int, int]:
+    return (span["start"]["line"], span["start"]["column"],
+            span["end"]["line"], span["end"]["column"])
 
 
 def moss_copy_call_spans(source: str) -> list[dict]:
@@ -294,7 +364,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 "unauthorized": 0, "unclassified": len(rust_occurrences),
                 "error": f"Moss source has {len(source_copies)} copy(...) calls; expectation table declares {expected_copy_calls}",
                 "source_copy_spans": source_copies, "occurrences": rust_occurrences}
-    sidecar = rust_path.with_suffix(".mossclone.json")
+    # Exact convention: append `.mossclone.json` to the complete Rust path,
+    # e.g. `generated.rs.mossclone.json`.
+    sidecar = Path(str(rust_path) + ".mossclone.json")
     if not sidecar.exists():
         missing = len(rust_occurrences) + len(source_copies)
         return {"status": "PROVENANCE_MISSING" if missing else "PASS", "authorized": 0,
@@ -302,7 +374,7 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 "source_copy_spans": source_copies, "occurrences": rust_occurrences}
     try:
         manifest = json.loads(sidecar.read_text())
-        if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 1:
+        if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 2:
             raise ValueError("unsupported clone provenance format")
         if manifest.get("mode") != mode:
             raise ValueError(f"mode mismatch: expected {mode}")
@@ -316,30 +388,90 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         indexed = {}
         for row in rows:
             span = row.get("rust_span", {})
-            key = (span.get("start", {}).get("line"), span.get("start", {}).get("column"),
-                   span.get("end", {}).get("line"), span.get("end", {}).get("column"))
+            key = _span_key(span)
             if key in indexed:
                 raise ValueError(f"duplicate Rust occurrence mapping at {key}")
             indexed[key] = row
-        rust_keys = {(x["start"]["line"], x["start"]["column"], x["end"]["line"], x["end"]["column"]) for x in rust_occurrences}
+        rust_keys = {_span_key(x) for x in rust_occurrences}
         if set(indexed) != rust_keys:
             raise ValueError(f"incomplete or extra Rust clone mappings: rust={len(rust_keys)}, mapped={len(indexed)}")
-        source_keys = {(x["start"]["line"], x["start"]["column"], x["end"]["line"], x["end"]["column"]) for x in source_copies}
-        explicit_keys = []
+        source_by_id = {}
+        source_rows = manifest.get("source_copy_occurrences")
+        if not isinstance(source_rows, list):
+            raise ValueError("source_copy_occurrences is not an array")
+        for source_row in source_rows:
+            copy_id = source_row.get("copy_id")
+            span = source_row.get("source_span", {})
+            if not isinstance(copy_id, str) or not copy_id or copy_id in source_by_id:
+                raise ValueError("missing or duplicate source copy identity")
+            start, end = _span_offsets(source, span)
+            if source[start:end] != "copy" and not re.fullmatch(r"copy\s*\(.*\)", source[start:end], re.S):
+                raise ValueError(f"source copy span does not cover a copy(...) occurrence: {copy_id}")
+            if source_row.get("semantic_status") != "implemented":
+                raise ValueError(f"source copy semantics not attested as implemented: {copy_id}")
+            if not isinstance(source_row.get("rust_clone_spans"), list):
+                raise ValueError(f"source copy lacks emitted clone list: {copy_id}")
+            source_by_id[copy_id] = source_row
+        source_keys = {_span_key(x) for x in source_copies}
+        manifest_source_keys = {_span_key(x["source_span"]) for x in source_rows}
+        if manifest_source_keys != source_keys or len(source_rows) != len(source_copies):
+            raise ValueError("source-copy manifest does not exactly cover Moss copy(...) occurrences")
+        explicit_by_id: dict[str, list[tuple[int, int, int, int]]] = {key: [] for key in source_by_id}
         unauthorized = 0
+        unclassified = 0
+        rust_by_key = {_span_key(x): x for x in rust_occurrences}
         for row in indexed.values():
             origin = row.get("origin_kind")
+            evidence = row.get("evidence")
+            if not isinstance(evidence, dict):
+                raise ValueError("clone occurrence lacks independently checkable evidence")
+            context_span = evidence.get("rust_context_span")
+            context_hash = evidence.get("rust_context_sha256")
+            if not isinstance(context_span, dict):
+                raise ValueError("clone evidence lacks Rust context span")
+            context_start, context_end = _span_offsets(rust, context_span)
+            clone_start, clone_end = _span_offsets(rust, row["rust_span"])
+            if context_start > clone_start or context_end < clone_end:
+                raise ValueError("clone Rust context does not enclose the occurrence")
+            if not isinstance(context_hash, str) or hashlib.sha256(rust[context_start:context_end].encode()).hexdigest() != context_hash:
+                raise ValueError("clone Rust context evidence is stale or forged")
+            if not all(isinstance(evidence.get(k), str) and evidence[k].strip()
+                       for k in ("semantic_type", "ownership_fact", "semantic_identity")):
+                raise ValueError("clone evidence lacks type, ownership, or semantic identity")
             if origin == "explicit_copy":
-                span = row.get("source_span", {})
-                key = (span.get("start", {}).get("line"), span.get("start", {}).get("column"),
-                       span.get("end", {}).get("line"), span.get("end", {}).get("column"))
-                explicit_keys.append(key)
-            elif origin not in {"compiler_runtime_handle", "runtime_support"}:
+                copy_id = row.get("source_copy_id")
+                if copy_id not in source_by_id:
+                    raise ValueError("explicit clone points to unknown Moss copy occurrence")
+                explicit_by_id[copy_id].append(_span_key(row["rust_span"]))
+            elif origin in {"compiler_runtime_handle", "runtime_support"}:
+                repo_path = evidence.get("repository_evidence_path")
+                repo_hash = evidence.get("repository_evidence_sha256")
+                if not isinstance(repo_path, str) or not isinstance(repo_hash, str):
+                    raise ValueError("runtime classification lacks repository source evidence")
+                evidence_path = (ROOT / repo_path).resolve()
+                if ROOT.resolve() not in evidence_path.parents or not evidence_path.is_file():
+                    raise ValueError("runtime evidence path is not a repository file")
+                if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != repo_hash:
+                    raise ValueError("runtime repository evidence digest mismatch")
+                source_span = evidence.get("repository_evidence_span")
+                if not isinstance(source_span, dict):
+                    raise ValueError("runtime classification lacks source evidence span")
+                runtime_source = evidence_path.read_text()
+                evidence_start, evidence_end = _span_offsets(runtime_source, source_span)
+                evidence_text = runtime_source[evidence_start:evidence_end]
+                if not re.search(r"clone|Clone::clone|to_owned|to_string|shared handle", evidence_text, re.I):
+                    raise ValueError("runtime source span does not substantiate a duplication/handle operation")
+                if evidence["semantic_type"].lower() not in evidence_text.lower():
+                    raise ValueError("runtime source span does not identify the claimed semantic type")
+            else:
                 unauthorized += 1
-        if set(explicit_keys) != source_keys or len(explicit_keys) != len(source_keys):
-            raise ValueError(f"explicit copy provenance disagrees with Moss source: source={len(source_keys)}, mapped={len(explicit_keys)}")
-        return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(explicit_keys),
-                "unauthorized": unauthorized, "unclassified": 0, "occurrences": rows}
+                unclassified += 1
+        for copy_id, source_row in source_by_id.items():
+            declared = [_span_key(x) for x in source_row["rust_clone_spans"]]
+            if declared != explicit_by_id[copy_id]:
+                raise ValueError(f"source-to-Rust copy lowering links mismatch: {copy_id}")
+        return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(source_by_id),
+                "unauthorized": unauthorized, "unclassified": unclassified, "occurrences": rows}
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
         return {"status": "INVALID_PROVENANCE", "authorized": 0, "unauthorized": 0,
                 "unclassified": len(rust_occurrences), "error": str(error), "occurrences": rust_occurrences}
@@ -546,25 +678,28 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
     combined_check = check_stdout + "\n" + check_stderr
 
     if kind == "REJECTED":
-        exp_diag = fixture["expected_diagnostic"]
-        alts = fixture.get("alternative_diagnostics", [])
-        all_expected = [exp_diag] + alts
         if check_code == 0:
             result["status"] = "FAIL"
             result["modes"]["checker"] = "UNEXPECTED_ACCEPT"
             result["failures"].append(
-                f"Checker unexpectedly ACCEPTED invalid program; expected rejection with [{exp_diag}]"
+                "Checker unexpectedly ACCEPTED invalid program; expected the oracle-mapped structured rejection"
             )
         else:
-            diag_matched = any(d in combined_check for d in all_expected)
+            try:
+                diagnostic_payload = json.loads(check_stdout)
+            except json.JSONDecodeError:
+                diagnostic_payload = None
+            mapping = _diagnostic_doc["mappings"][fid]
+            diag_matched, diag_summary = validate_rejection_diagnostic(
+                diagnostic_payload, mapping, fpath)
             if diag_matched:
                 result["modes"]["checker"] = "PASS"
-                result["engine_results"]["checker"] = {"status": "PASS", "exit_code": check_code, "diagnostic": next((d for d in all_expected if d in combined_check), exp_diag)}
+                result["engine_results"]["checker"] = {"status": "PASS", "exit_code": check_code, "diagnostic": diag_summary}
             else:
                 result["status"] = "FAIL"
                 result["modes"]["checker"] = "WRONG_DIAGNOSTIC"
                 result["failures"].append(
-                    f"Checker rejected but expected diagnostic [{exp_diag}] not found; output: {combined_check.strip()}"
+                    f"Checker rejection was unrelated or malformed ({diag_summary}); output: {combined_check.strip()}"
                 )
         # REJECTED programs do not execute in Fast Debug or Native
         return result
@@ -612,13 +747,17 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["status"] = "FAIL"
         result["failures"].append("Fast Debug observable mutation expectation failed")
 
-    if fixture.get("expected_fast_debug_status") == "panic" and fd_code == 0:
-        result["status"] = "FAIL"
-        result["modes"]["fast_debug"] = "EXPECTED_PANIC_BUT_COMPLETED"
-        result["failures"].append("Fast Debug completed normally; specification requires a nonrecoverable panic")
-    elif fixture.get("expected_fast_debug_status") == "panic" and fd_code != 0:
-        result["modes"]["fast_debug"] = "EXPECTED_PANIC"
-        result["engine_results"]["fast_debug"]["status"] = "PASS_EXPECTED_PANIC"
+    if fixture.get("expected_fast_debug_status") == "panic":
+        patterns = fixture["expected"]["fast_debug"]["panic_patterns"]
+        panic_ok, panic_reason = expected_panic_matches(fd_code, fd_stdout, fd_stderr, patterns,
+            fixture["expected"]["fast_debug"].get("stdout", ""))
+        if panic_ok:
+            result["modes"]["fast_debug"] = "EXPECTED_PANIC"
+            result["engine_results"]["fast_debug"]["status"] = "PASS_EXPECTED_PANIC"
+        else:
+            result["status"] = "FAIL"
+            result["modes"]["fast_debug"] = "PANIC_MISMATCH"
+            result["failures"].append(f"Fast Debug expected indexing panic: {panic_reason}; stderr={fd_stderr.strip()}")
     elif fd_code != 0:
         result["status"] = "FAIL"
         result["modes"]["fast_debug"] = "CRASH"
@@ -674,13 +813,17 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
             if any(item["status"] == "FAIL" for item in mutation_checks):
                 result["status"] = "FAIL"
                 result["failures"].append("Native debug observable mutation expectation failed")
-            if fixture.get("expected_native_status") == "panic" and nat_code == 0:
-                result["status"] = "FAIL"
-                result["modes"]["native_debug"] = "EXPECTED_PANIC_BUT_COMPLETED"
-                result["failures"].append("Native debug completed normally; specification requires a nonrecoverable panic")
-            elif fixture.get("expected_native_status") == "panic" and nat_code != 0:
-                result["modes"]["native_debug"] = "EXPECTED_PANIC"
-                result["engine_results"]["native_debug"]["status"] = "PASS_EXPECTED_PANIC"
+            if fixture.get("expected_native_status") == "panic":
+                patterns = fixture["expected"]["native_debug"]["panic_patterns"]
+                panic_ok, panic_reason = expected_panic_matches(nat_code, nat_stdout, nat_stderr, patterns,
+                    fixture["expected"]["native_debug"].get("stdout", ""))
+                if panic_ok:
+                    result["modes"]["native_debug"] = "EXPECTED_PANIC"
+                    result["engine_results"]["native_debug"]["status"] = "PASS_EXPECTED_PANIC"
+                else:
+                    result["status"] = "FAIL"
+                    result["modes"]["native_debug"] = "PANIC_MISMATCH"
+                    result["failures"].append(f"Native debug expected indexing panic: {panic_reason}; stderr={nat_stderr.strip()}")
             elif nat_code != 0:
                 result["status"] = "FAIL"
                 result["modes"]["native_debug"] = "CRASH"
@@ -733,13 +876,17 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
             if any(item["status"] == "FAIL" for item in mutation_checks):
                 result["status"] = "FAIL"
                 result["failures"].append("Native optimized observable mutation expectation failed")
-            if fixture.get("expected_native_opt_status") == "panic" and nat_opt_code == 0:
-                result["status"] = "FAIL"
-                result["modes"]["native_opt"] = "EXPECTED_PANIC_BUT_COMPLETED"
-                result["failures"].append("Native optimized completed normally; specification requires a nonrecoverable panic")
-            elif fixture.get("expected_native_opt_status") == "panic" and nat_opt_code != 0:
-                result["modes"]["native_opt"] = "EXPECTED_PANIC"
-                result["engine_results"]["native_optimized"]["status"] = "PASS_EXPECTED_PANIC"
+            if fixture.get("expected_native_opt_status") == "panic":
+                patterns = fixture["expected"]["native_optimized"]["panic_patterns"]
+                panic_ok, panic_reason = expected_panic_matches(nat_opt_code, nat_opt_stdout, nat_opt_stderr, patterns,
+                    fixture["expected"]["native_optimized"].get("stdout", ""))
+                if panic_ok:
+                    result["modes"]["native_opt"] = "EXPECTED_PANIC"
+                    result["engine_results"]["native_optimized"]["status"] = "PASS_EXPECTED_PANIC"
+                else:
+                    result["status"] = "FAIL"
+                    result["modes"]["native_opt"] = "PANIC_MISMATCH"
+                    result["failures"].append(f"Native optimized expected indexing panic: {panic_reason}; stderr={nat_opt_stderr.strip()}")
             elif nat_opt_code != 0:
                 result["status"] = "FAIL"
                 result["modes"]["native_opt"] = "CRASH"
@@ -759,7 +906,7 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
     lines = []
     lines.append(f"# Phase 28 Independent Semantic Oracle — Failure Ledger")
     lines.append(f"\nEvaluated against: `{compiler_desc}`")
-    lines.append(f"Specification Baseline: `docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md` (§10 & §12)\n")
+    lines.append("Specification Baseline: draft P28-R7-005 table and L7-approved language addendum; table remains unfrozen.\n")
 
     failed_cases = [r for r in results if r["status"] == "FAIL"]
     passed_cases = [r for r in results if r["status"] == "PASS"]
@@ -768,10 +915,12 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
     lines.append(f"- **Total Fixtures:** {len(results)}")
     lines.append(f"- **Passing (Compliant with Spec):** {len(passed_cases)}")
     lines.append(f"- **Failing (Compiler Defect / Non-Compliant):** {len(failed_cases)}")
+    lines.append(f"- **Semantic failures excluding clone provenance:** {sum(r.get('semantic_status') == 'FAIL' for r in results)}")
+    lines.append(f"- **Fixtures blocked by missing/invalid provenance:** {sum(r.get('clone_provenance_status') == 'BLOCKED_MISSING_OR_INVALID' for r in results)}")
     total_unclassified = sum(sum(m.get("unclassified", 0) for m in r.get("clone_audit", {}).values()) for r in results)
     total_unauthorized = sum(sum(m.get("unauthorized", 0) for m in r.get("clone_audit", {}).values()) for r in results)
-    lines.append(f"- **Unclassified clone occurrences:** {total_unclassified}")
-    lines.append(f"- **Unauthorized clone occurrences:** {total_unauthorized}")
+    lines.append(f"- **Unverified generated `.clone()` occurrences:** {total_unclassified}")
+    lines.append(f"- **Unauthorized rows with submitted provenance:** {total_unauthorized}")
     lines.append("")
 
     lines.append("## Detailed Defect Entries\n")
@@ -795,6 +944,8 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
         modes_detail = " | ".join(f"{k}: {v}" for k, v in r["modes"].items())
         lines.append(f"- **Engine Modes:** {modes_detail}")
         lines.append(f"- **Clone Provenance:** `{json.dumps(r['clone_audit'], sort_keys=True)}`")
+        lines.append(f"- **Semantic Status:** `{r.get('semantic_status', 'not classified')}`")
+        lines.append(f"- **Clone Provenance Gate:** `{r.get('clone_provenance_status', 'not classified')}`")
         if r["failures"]:
             lines.append(f"- **Observed Failures:**")
             for f in r["failures"]:
@@ -843,11 +994,24 @@ def main() -> int:
 
     for fixture in ORACLE_FIXTURES:
         res = evaluate_fixture(fixture, compiler, tmp_dir)
+        res["semantic_failures"] = [failure for failure in res["failures"]
+                                     if "clone provenance" not in failure.lower()]
+        res["semantic_status"] = "FAIL" if res["semantic_failures"] else "PASS"
+        clone_statuses = [audit.get("status") for audit in res.get("clone_audit", {}).values()]
+        if not clone_statuses:
+            res["clone_provenance_status"] = "NOT_APPLICABLE"
+        elif all(status == "PASS" for status in clone_statuses):
+            res["clone_provenance_status"] = "PASS"
+        elif any(status in {"PROVENANCE_MISSING", "INVALID_PROVENANCE"}
+                 for status in clone_statuses):
+            res["clone_provenance_status"] = "BLOCKED_MISSING_OR_INVALID"
+        else:
+            res["clone_provenance_status"] = "FAIL"
         results.append(res)
         status_tag = "[PASS]" if res["status"] == "PASS" else "[FAIL]"
         modes_str = " ".join(f"{k}={v}" for k, v in res["modes"].items())
         clone_str = f"clone-unclassified={sum(x.get('unclassified', 0) for x in res['clone_audit'].values())}"
-        print(f"{status_tag} {res['id']:<35} | {res['category']:<25} | {modes_str} {clone_str}")
+        print(f"{status_tag} {res['id']:<35} | {res['category']:<25} | semantic={res['semantic_status']} provenance={res['clone_provenance_status']} {modes_str} {clone_str}")
         if res["failures"]:
             for fail in res["failures"]:
                 print(f"       -> {fail}")
@@ -858,9 +1022,13 @@ def main() -> int:
 
     print("\n--------------------------------------------------------------------------------")
     print(f"Total: {len(results)} | Passed: {passed} | Defective / Failed: {failed}")
+    semantic_failed = sum(result["semantic_status"] == "FAIL" for result in results)
+    provenance_blocked = sum(result["clone_provenance_status"] == "BLOCKED_MISSING_OR_INVALID" for result in results)
+    print(f"Semantic failures (excluding provenance): {semantic_failed}")
+    print(f"Fixtures blocked by missing/invalid provenance: {provenance_blocked}")
     total_unclassified = sum(sum(m.get("unclassified", 0) for m in r.get("clone_audit", {}).values()) for r in results)
     total_unauthorized = sum(sum(m.get("unauthorized", 0) for m in r.get("clone_audit", {}).values()) for r in results)
-    print(f"Clone occurrences: unclassified={total_unclassified} unauthorized={total_unauthorized}")
+    print(f"Observed generated Rust .clone() occurrences unverified={total_unclassified}; unauthorized={total_unauthorized} only counts rows with provenance")
     print("--------------------------------------------------------------------------------\n")
 
     if args.json_out:

@@ -1,44 +1,50 @@
 # P28-R7-005 — L7 Approval Request (Draft)
 
-**Requested decision:** Review and approve the complete revised oracle
-expectation table and language addendum before the oracle is frozen.
+**Decision:** L7 approved the language semantics. Oracle freeze is not yet
+approved. This revised package requests review of the expectation table and
+corrected harness/provenance contract; it remains unfrozen.
 
-**State:** Submitted for approval is pending. The author is not the approver.
-No freeze or L7 approval is claimed.
+**State:** `DRAFT_PENDING_L7_APPROVAL`. Semantic approval does not approve the
+oracle freeze. The author is not the approver.
 
 ## Review package
 
-- [Expectation table](../../tests/phase28/oracle/expectations.json): 55
+- [Expectation table](../../tests/phase28/oracle/expectations.json): 56
   fixtures, specification-based accept/reject results, per-engine output or
   panic expectations, mutation assertions, and permanent fixture/defect IDs.
 - [Diagnostic mapping](../../tests/phase28/oracle/diagnostic_mapping.json):
   oracle-owned mappings separate from Moss compiler diagnostic definitions.
-- [Language addendum](P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md): collection
-  behavior, CollectionError propagation and the occurrence-level clone
-  provenance artifact contract.
+- [Language addendum](P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md): approved
+  collection behavior and CollectionError propagation.
+- [Clone provenance contract](P28_R7_005_CLONE_PROVENANCE_CONTRACT.md): revised
+  sidecar schema, evidence requirements, scanner limits and adversarial checks.
+- [Draft report](P28_R7_005_DRAFT_REPORT.md): validation evidence and open gates.
 - [Oracle README](../../tests/phase28/oracle/README.md): revised scope, gates,
   and current draft status.
 
-## Decisions requested
+## L7 disposition and remaining review
 
-1. Confirm `copy` is reserved and `fn copy` is rejected.
-2. Confirm `Map.get(k)` returns borrowed `V` and raises
-   `CollectionError.MissingKey` when absent.
-3. Confirm out-of-range Vector indexing panics; strict missing Map reads and
-   write-through raise `CollectionError.MissingKey`; indexed assignment
-   inserts/overwrites without a missing-key error.
-4. Confirm invalid Vector `remove`/`swap_remove`, empty Vector/Queue `pop`, and
-   missing Map `remove` raise the specified `CollectionError` variants.
-5. Confirm inferred raises flow through imported `.mossi` interfaces and Root
-   totality checks, including rejection of the Root fixture without a handler.
-6. Approve or amend the occurrence-level Rust clone provenance schema and its
-   source-span validation rules.
-7. Approve the five additional coverage cases: imported effects, ownership at
-   recover, eager pipeline captures, borrowed-origin joins, and live-iteration
-   structural mutation.
+L7 approved the language semantics in items 1–5 below. This is recorded as
+semantic approval only; it does not authorize freezing the table.
 
-The implementation SHA must remain unfrozen until this approval is recorded.
-After approval, the oracle owner will incorporate requested edits, freeze the
-table, obtain independent harness review against the exact candidate, run the
-private reviewer-controlled holdout, and publish the exact SHA.
+1. `copy` is reserved and user-defined `fn copy` is rejected.
+2. `Map.get(k)` returns borrowed `V` and raises `CollectionError.MissingKey`
+   when absent.
+3. Out-of-range Vector indexing panics; missing Map reads and write-through
+   raise `CollectionError.MissingKey`; indexed assignment inserts/overwrites.
+4. Invalid Vector `remove`/`swap_remove`, empty Vector/Queue `pop`, and missing
+   Map `remove` raise their specified `CollectionError` variants.
+5. Inferred raises flow through imported `.mossi` interfaces and Root totality
+   checks, including rejection of a Root without a required handler.
+
+The requested review covers the corrected 56-fixture expectation table,
+structured rejection and panic validation, the revised clone provenance
+contract, and strengthened ORACLE-07/49/50/52 discriminators. No oracle freeze
+approval is claimed.
+
+The oracle SHA remains unfrozen until explicit approval of the complete revised
+expectation table and harness contract. After approval, the oracle owner will
+incorporate requested edits, request independent harness review against the
+exact candidate, run the private reviewer-controlled holdout, and publish the
+exact SHA.
 

@@ -1,5 +1,9 @@
 # Draft: structurally changing a Vector while its iteration borrow is live is rejected.
+type Payload:
+  value: Int
+
 fn main():
-  var values = [1, 2]
+  var values = [Payload(value: 1), Payload(value: 2)]
   for item in values:
-    values.push(item)
+    values.push(Payload(value: 99))
+    echo item.value

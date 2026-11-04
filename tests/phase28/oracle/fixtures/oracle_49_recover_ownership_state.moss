@@ -4,13 +4,14 @@ type Payload:
 
 fn risky(values: Vector[Payload], index: Int) -> Int:
   try:
-    let item = values.remove(index)
+    let item = values.remove(0)
+    let fail = values.remove(index)
     return item.value
   recover CollectionError.InvalidIndex:
     echo values[0].value
-    return values[0].value
+    return 7
 
 fn main():
-  values = [Payload(value: 7)]
+  values = [Payload(value: 7), Payload(value: 8)]
   echo risky(values, 99)
   echo values[0].value

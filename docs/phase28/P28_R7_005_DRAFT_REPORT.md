@@ -1,71 +1,82 @@
-# P28-R7-005 — Oracle Hardening Draft Report
+# P28-R7-005 — Oracle Hardening Revised Draft Report
 
-**State: Draft published for L7 approval. Not frozen or independently
-reviewed.** Draft package commit:
-`86e283bd1618d0b3a755ed0c0a34b95d69711b72` on `phase28-r7-005`, branched from
-`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff` (`phase28-r7-oracle`). No compiler
-source files were changed.
+**State: Semantic language decisions approved by L7; oracle freeze not approved.**
+This revised package continues from published draft
+`74065f4ee841707a2637b7c75f839c766b65c049` on `phase28-r7-005`. No compiler
+source was changed. The revised candidate must remain
+`DRAFT_PENDING_L7_APPROVAL` until explicit approval of the expectation table and
+harness contract.
 
-## Draft contents
+## Approval package
 
-- 56 specification-based fixture expectations, stored independently from the
-  harness in `tests/phase28/oracle/expectations.json`.
-- Separate oracle-owned diagnostic normalization in
-  `tests/phase28/oracle/diagnostic_mapping.json`.
-- Corrected ORACLE-05/07/08 plus new tests for collection errors, an unhandled
-  Root, imported `.mossi` effects, inferred raise sets, ownership at recover,
-  eager pipeline capture, borrowed-origin joins, and live-iteration mutation.
-- An occurrence-level clone provenance contract covering every generated Rust
-  `.clone()` occurrence in debug and optimized outputs. The harness checks the
-  entire generated artifact, including helpers before `main`, and validates
-  explicit-copy source spans independently. The current emitter supplies no
-  `.mossclone.json` artifact, so clone occurrences fail closed as unclassified.
-- A reviewer-only holdout file in local `.git` metadata. It is not in the
-  branch or available to Teams A/B through the remote.
+- [Complete 56-fixture expectation table](../../tests/phase28/oracle/expectations.json)
+- [Oracle-owned structured diagnostic mapping](../../tests/phase28/oracle/diagnostic_mapping.json)
+- [Normative language addendum](P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md)
+- [Clone provenance contract](P28_R7_005_CLONE_PROVENANCE_CONTRACT.md)
+- [Per-fixture, per-engine draft results](../../tests/phase28/oracle/reports/P28_R7_005_DRAFT_RESULTS.json)
+- [Draft failure ledger](../../tests/phase28/oracle/reports/P28_R7_005_DRAFT_FAILURE_LEDGER.md)
+- [This draft report](P28_R7_005_DRAFT_REPORT.md)
 
-## Validation
+Permanent fixture IDs and defect IDs are unchanged. The private holdout remains
+under local `.git/oracle-review/holdout.json`; it is not part of this branch or
+approval package.
 
-Built `build/compiler/moss-dev` from the task baseline, then ran the revised
-oracle harness against it. Results: **11 PASS / 45 FAIL** across 56 fixtures.
-These are draft conformance results for the requested expected behavior, not an
-L7 verdict. The 298 observed generated Rust `.clone()` occurrences across debug
-and optimized output remain **unverified**: without occurrence provenance they
-are not established as hidden Moss-value clones or as harmless runtime clones.
-They remain unclassified because the compiler does not provide the specified
-provenance artifact.
+## Corrections and discriminating fixtures
 
-Evidence from the baseline includes:
+- The package contains 56 fixtures, not 55.
+- ORACLE-07 now covers negative indices for both `remove` and `swap_remove`.
+- ORACLE-49 removes an element successfully, then raises on a later invalid
+  removal; recovery verifies that the source already reflects the successful
+  mutation.
+- ORACLE-50 changes the captured `offset` after constructing the pipeline and
+  expects the materialized values to retain the eager results.
+- ORACLE-52 mutates the iterated Vector with a fresh independent record, then
+  uses the borrowed loop element. The rejection must come from the active
+  iteration borrow, not consuming that element.
+- Rejection checks parse structured JSON and verify severity, accepted stable
+  diagnostic code, message pattern, source file, and a source line identifying
+  the rejected construct. ORACLE-08 requires `RESERVED_KEYWORD`; generic
+  `MOSS_COMPILE_ERROR` is not accepted for `fn copy`.
+- ORACLE-47 accepts only a non-timeout runtime failure with explicit indexing
+  panic evidence and the expected stdout. A compiler failure, unrelated crash,
+  or timeout cannot satisfy the panic result.
 
-- ORACLE-05: one-argument `Map.get` is rejected with `TYPE_MISMATCH` because the
-  baseline requires two arguments.
-- ORACLE-07 and other typed collection fixtures: `CollectionError` is rejected
-  as `UNKNOWN_ERROR_TYPE`.
-- ORACLE-08: a user-defined `fn copy` is accepted, contrary to the requested
-  reserved-name decision.
-- The no-handler Root fixture is accepted on the baseline because its Map index
-  operation carries no `CollectionError` raise effect there.
-- ORACLE-47 panics in Fast Debug, native debug, and optimized native execution;
-  its typed recovery arm is unreachable.
-- The live Vector structural-mutation fixture is rejected with the message
-  “cannot structurally mutate collection … during an active READ traversal”; the
-  oracle-owned diagnostic map normalizes that current diagnostic.
-- The eager pipeline capture fixture passes checker and execution output parity.
-  The joined-borrow fixture passes Fast Debug but native output does not reflect
-  the expected write-through mutation.
-- The imported `.mossi` provider build currently fails because the baseline
-  rejects one-argument `Map.get`.
+## Validation and draft results
 
-Also completed: `python3 -m py_compile tests/phase28/oracle/oracle_harness.py`,
-`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`.
-No full repository suite was run. The draft is committed and pushed for review;
-no merge or freeze is claimed.
+The oracle data validator passed for all 56 fixtures. Harness self-tests passed
+11/11, covering unrelated crashes, mismatched panic evidence, timeouts, structured
+diagnostic code/message/location mismatches, missing provenance, forged runtime
+labels, incorrect source spans, and stale manifests.
 
-## Remaining gates
+The full draft oracle completed against the repository compiler at the prior
+published package HEAD. It reported 8 fixtures passing all applicable gates, 34
+semantic failures excluding provenance, and 19 fixtures blocked by missing or
+invalid clone provenance. These categories overlap. Per-fixture and per-engine
+results are in the linked JSON report; the failure ledger records each observed
+engine outcome.
 
-1. L7 approval of the expectation table and language addendum.
-2. Independent review of the harness and expectation/diagnostic separation.
-3. Emitter support for the stated occurrence-level clone provenance interface
-   is outside this task's no-compiler-source scope; without it, clone-audit
-   acceptance remains blocked.
-4. After the required approvals, freeze the exact table and publish its SHA.
+ORACLE-47 produced indexing-panic evidence in Fast Debug, Native Debug and
+Native Optimized. ORACLE-50 passed checker and execution-output parity across
+all three engines, while its clone audit remained blocked by absent provenance.
+ORACLE-52 was rejected with a structured diagnostic at the structural mutation
+line. The approved collection behavior remains nonconforming on this baseline;
+for example, one-argument `Map.get` is rejected as expecting two arguments,
+and `CollectionError` is unknown to the checker. ORACLE-48's missing-handler
+Root is accepted on the baseline.
 
+The harness observed 298 generated Rust `.clone()` occurrences across debug
+and optimized output. They remain **unverified**, not proven hidden Moss-value
+clones or harmless runtime clones. The compiler does not emit the required v2
+sidecar. The revised contract also states that `.clone()` text scanning alone
+cannot prove absence of duplication through alternate Rust mechanisms; the
+independent AST/MIR duplication audit remains open.
+
+No full repository suite was run. No oracle freeze, merge, compiler change, or
+independent self-approval is claimed.
+
+## Checkpoint
+
+Submit this revised package to L7 through the project owner. Stop until L7
+returns explicit approval or required corrections. After approval, obtain
+independent harness review and run the private holdout before freezing any
+expectations.

@@ -7,30 +7,40 @@ fn main():
   var m = Map()
   m["present"] = Payload(value: 10)
   try:
-    let r = v.remove(99)
+    let invalid_remove = v.remove(99)
     echo "unreached_remove"
   recover CollectionError.InvalidIndex:
     echo "invalid_index"
   try:
-    let r = v.swap_remove(99)
+    let negative_remove = v.remove(-1)
+    echo "unreached_negative_remove"
+  recover CollectionError.InvalidIndex:
+    echo "negative_invalid_index"
+  try:
+    let invalid_swap_remove = v.swap_remove(99)
     echo "unreached_swap_remove"
   recover CollectionError.InvalidIndex:
     echo "invalid_index"
+  try:
+    let negative_swap_remove = v.swap_remove(-1)
+    echo "unreached_negative_swap_remove"
+  recover CollectionError.InvalidIndex:
+    echo "negative_invalid_index"
   let first = v.pop()
   let second = v.pop()
   try:
-    let r = v.pop()
+    let empty_vector_pop = v.pop()
     echo "unreached_vector_pop"
   recover CollectionError.Empty:
     echo "empty_vector"
   q = Queue()
   try:
-    let r = q.pop()
+    let empty_queue_pop = q.pop()
     echo "unreached_queue_pop"
   recover CollectionError.Empty:
     echo "empty_queue"
   try:
-    let r = m["missing"]
+    let missing_map_read = m["missing"]
     echo "unreached_map_read"
   recover CollectionError.MissingKey:
     echo "missing_key_read"
@@ -40,12 +50,12 @@ fn main():
   recover CollectionError.MissingKey:
     echo "missing_key_write_through"
   try:
-    let r = m.remove("missing")
+    let missing_map_remove = m.remove("missing")
     echo "unreached_map_remove"
   recover CollectionError.MissingKey:
     echo "missing_key_remove"
   try:
-    let r = m.get("missing")
+    let missing_map_get = m.get("missing")
     echo "unreached_map_get"
   recover CollectionError.MissingKey:
     echo "missing_key_get"

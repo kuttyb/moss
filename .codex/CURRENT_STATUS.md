@@ -15341,38 +15341,37 @@ Branch `phase28-r4-slice-d`, based on exact requested baseline
   to `origin/phase28-r4-slice-d`. No merge to `phase28-work`/`main`; no
   consumer migration.
 
-### P28-R7-005 — Oracle Hardening draft (awaiting L7 approval)
+### P28-R7-005 — Oracle Hardening revised draft (L7 checkpoint)
 
-Work is on local branch `phase28-r7-005`, based exactly on
-`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. The 56-fixture expectation table,
-separate oracle diagnostic mapping, corrected ORACLE-05/07/08, coverage additions,
-and proposed language/clone provenance addendum are drafted. No compiler source
-was changed. The reviewer-controlled holdout is local-only under
-`.git/oracle-review/holdout.json`, outside the branch and remote.
+Continue on `phase28-r7-005` from published HEAD
+`74065f4ee841707a2637b7c75f839c766b65c049`, based on
+`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. L7 approved the language
+semantics; the oracle freeze is still NOT approved. The revised expectation
+table remains `DRAFT_PENDING_L7_APPROVAL`. No compiler source was changed.
+The private holdout remains local-only at `.git/oracle-review/holdout.json`.
 
-The draft was committed and pushed to `origin/phase28-r7-005` for the project
-owner to relay to L7. Draft package commit: `86e283bd1618d0b3a755ed0c0a34b95d69711b72`.
-The expectation table remains `DRAFT_PENDING_L7_APPROVAL`; it is not frozen,
-and independent harness review remains pending. This handoff does not authorize
-freeze or merge.
-The required occurrence-level clone provenance artifact is not emitted by the
-current compiler. The harness found 298 unverified `.clone()` occurrences
-across debug and optimized artifacts on the task baseline. Without provenance,
-these are not established as hidden Moss-value clones or harmless runtime
-clones; they remain unclassified.
+Corrections preserve all permanent fixture and defect IDs and retain 56 fixtures.
+ORACLE-07 now tests negative removal indices; ORACLE-49 successfully removes
+before a later typed raise and checks mutated state in recovery; ORACLE-50
+rebinds the eager pipeline capture after construction; ORACLE-52 mutates with an
+independently owned record and then reads the borrowed iteration element.
+Structured rejection checking verifies code, severity, message and source
+location. ORACLE-08 requires `RESERVED_KEYWORD`, not generic
+`MOSS_COMPILE_ERROR`. ORACLE-47 accepts only specific indexing-panic evidence,
+not unrelated errors or timeouts. Clone provenance uses a v2 draft schema with
+separate source-copy and emitted-clone occurrences, checked source/Rust spans,
+context hashes and runtime source evidence; alternate duplication mechanisms
+remain an explicitly documented audit limitation.
 
-Validation completed: `make --jobs="$(nproc)" moss-dev` (build passed with two
-existing `type_ir.hpp` missing-field-initializer warnings); oracle harness on
-`build/compiler/moss-dev` (56 fixtures, 11 PASS / 45 FAIL; draft conformance
-results, not an L7 verdict); `python3 -m py_compile
-tests/phase28/oracle/oracle_harness.py`; harness `--validate-only` (56 fixture
-records and source copy counts valid); `python3
-tests/tooling/check_agent_feedback.py`; and `git diff --check`. No full `make
-check` suite was run. Harness output and generated builds are in disposable
-`tmp/phase28_oracle/`; see `docs/phase28/P28_R7_005_DRAFT_REPORT.md` for durable
-results.
+Validation on the revised tree: harness self-tests 11/11; oracle data validation
+56/56; full draft oracle 8 complete passes, 34 semantic failures excluding
+provenance, and 19 fixtures blocked by missing/invalid provenance (overlapping
+categories). The run observed 298 generated Rust `.clone()` occurrences, all
+still **unverified**, not proven hidden clones. Durable per-fixture/per-engine
+results and ledger are under `tests/phase28/oracle/reports/`. `git diff --check`
+and `python3 tests/tooling/check_agent_feedback.py` remain to be rerun after the
+final documentation/report edits. No full repository suite was run.
 
-Remaining: identify the L7 reviewer/channel and obtain approval before freezing;
-obtain independent harness review; resolve emitter provenance support outside
-this no-compiler-source scope; then publish the exact approved SHA and stop at
-handoff. No merge is authorized.
+Next: publish this revised draft for L7 review and stop at the approval
+checkpoint. Do not freeze or merge. After explicit approval, independent harness
+review and private holdout review remain required before any freeze.

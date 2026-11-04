@@ -169,20 +169,20 @@
       "fixture_id": "ORACLE-07-CATCHABLE-COLL-ERRORS",
       "defect_id": "DEFECT-ORACLE-07-CATCHABLE-COLL-ERRORS",
       "expectation": "ACCEPT",
-      "specification_basis": "P28-R7-005 addendum: invalid remove/swap_remove, empty pops and missing map accesses/removal raise typed CollectionError variants; Map insertion succeeds.",
+      "specification_basis": "L7-approved language addendum: positive and negative invalid remove/swap_remove, empty pops, missing Map operations raise typed CollectionError variants; insertion succeeds.",
       "expected": {
         "checker": "accept",
         "fast_debug": {
           "status": "execute",
-          "stdout": "invalid_index\ninvalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
         },
         "native_debug": {
           "status": "execute",
-          "stdout": "invalid_index\ninvalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
         },
         "native_optimized": {
           "status": "execute",
-          "stdout": "invalid_index\ninvalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
         },
         "clone_audit": {
           "authorized_copy_calls": 0,
@@ -1063,15 +1063,24 @@
         "checker": "accept",
         "fast_debug": {
           "status": "panic",
-          "stdout": ""
+          "stdout": "",
+          "panic_patterns": [
+            "vector index out of bounds"
+          ]
         },
         "native_debug": {
           "status": "panic",
-          "stdout": ""
+          "stdout": "",
+          "panic_patterns": [
+            "index out of bounds"
+          ]
         },
         "native_optimized": {
           "status": "panic",
-          "stdout": ""
+          "stdout": "",
+          "panic_patterns": [
+            "index out of bounds"
+          ]
         },
         "clone_audit": {
           "authorized_copy_calls": 0,
@@ -1097,21 +1106,21 @@
       "fixture_id": "ORACLE-49-OWNERSHIP-AT-RECOVER",
       "defect_id": "DEFECT-ORACLE-49-OWNERSHIP-AT-RECOVER",
       "expectation": "ACCEPT",
-      "specification_basis": "P28-R7-005 coverage: ownership state at recover reflects the exact exceptional predecessor.",
+      "specification_basis": "P28-R7-005-09: successful destructive remove precedes typed raise; recover observes the already-mutated source Vector.",
       "fixture_file": "oracle_49_recover_ownership_state.moss",
       "expected": {
         "checker": "accept",
         "fast_debug": {
           "status": "execute",
-          "stdout": "7\n7\n7"
+          "stdout": "8\n7\n8"
         },
         "native_debug": {
           "status": "execute",
-          "stdout": "7\n7\n7"
+          "stdout": "8\n7\n8"
         },
         "native_optimized": {
           "status": "execute",
-          "stdout": "7\n7\n7"
+          "stdout": "8\n7\n8"
         },
         "clone_audit": {
           "authorized_copy_calls": 0,

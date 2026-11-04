@@ -5,132 +5,194 @@
   "mappings": {
     "ORACLE-03-COLL-ELEM-CONSUME-REJECT": {
       "primary": "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
-      "accepted_mappings": [
-        "OWNERSHIP_ILLEGAL_CONSUME",
-        "ILLEGAL_CONSUME_FROM_BORROWED"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|consum|ownership",
+      "source_line_regex": "push|head\\[0\\]",
+      "codes": [
+        "OWNERSHIP_COLLECTION_ELEMENT_CONSUME"
       ]
     },
     "ORACLE-10B-CLONE-ALIAS-REJECTED": {
       "primary": "CLONE_ALIAS_UNSUPPORTED",
-      "accepted_mappings": [
-        "UNKNOWN_MEMBER_FUNCTION"
+      "semantic_category": "unsupported_member",
+      "severity": "error",
+      "message_regex": "clone|member|unknown",
+      "source_line_regex": "clone",
+      "codes": [
+        "CLONE_ALIAS_UNSUPPORTED"
       ]
     },
     "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT": {
       "primary": "OWNERSHIP_ILLEGAL_CONSUME",
-      "accepted_mappings": [
-        "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
-        "ILLEGAL_MOVE_BORROWED"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|consum|ownership",
+      "source_line_regex": "return|archive",
+      "codes": [
+        "OWNERSHIP_ILLEGAL_CONSUME"
       ]
     },
     "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT": {
       "primary": "OWNERSHIP_ILLEGAL_CONSUME",
-      "accepted_mappings": [
-        "CANNOT_IMPLICITLY_EMPTY_FIELD",
-        "TAKE_REQUIRED_FOR_FIELD_MOVE"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "field|consum|take|ownership",
+      "source_line_regex": "archive|frontier",
+      "codes": [
+        "OWNERSHIP_ILLEGAL_CONSUME"
       ]
     },
     "ORACLE-21-TAKE-LOCAL-REJECTED": {
       "primary": "TAKE_REQUIRES_FIELD_PLACE",
-      "accepted_mappings": [
-        "TAKE_INVALID_TARGET"
+      "semantic_category": "take_target",
+      "severity": "error",
+      "message_regex": "take|field|target",
+      "source_line_regex": "take",
+      "codes": [
+        "TAKE_REQUIRES_FIELD_PLACE"
       ]
     },
     "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT": {
       "primary": "TAKE_INELIGIBLE_TERMINAL",
-      "accepted_mappings": [
-        "TAKE_REQUIRES_FIELD_PLACE",
-        "UNIFIED_FIELD_EXTRACT_REJECTED"
+      "semantic_category": "take_target",
+      "severity": "error",
+      "message_regex": "take|field|extract",
+      "source_line_regex": "take",
+      "codes": [
+        "TAKE_INELIGIBLE_TERMINAL"
       ]
     },
     "ORACLE-23-TAKE-VEC-ELEM-REJECTED": {
       "primary": "TAKE_REQUIRES_FIELD_PLACE",
-      "accepted_mappings": [
-        "COLLECTION_ELEMENT_TAKE_REJECTED"
+      "semantic_category": "take_target",
+      "severity": "error",
+      "message_regex": "take|element|target",
+      "source_line_regex": "take",
+      "codes": [
+        "TAKE_REQUIRES_FIELD_PLACE"
       ]
     },
     "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT": {
       "primary": "TAKE_REQUIRES_FIELD_PLACE",
-      "accepted_mappings": [
-        "TAKE_INELIGIBLE_TERMINAL"
+      "semantic_category": "take_target",
+      "severity": "error",
+      "message_regex": "take|field|target",
+      "source_line_regex": "take",
+      "codes": [
+        "TAKE_REQUIRES_FIELD_PLACE"
       ]
     },
     "ORACLE-28-REBIND-WHILE-BORROWED-REJECT": {
       "primary": "OWNERSHIP_USE_AFTER_REBIND",
-      "accepted_mappings": [
-        "OWNERSHIP_SOURCE_BORROWED",
-        "OWNERSHIP_CONFLICTING_ACCESS",
-        "DROP_WHILE_BORROWED"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|rebind|ownership",
+      "source_line_regex": "=",
+      "codes": [
+        "OWNERSHIP_USE_AFTER_REBIND"
       ]
     },
     "ORACLE-30-JOIN-BORROW-FRESH-REJECT": {
       "primary": "OWNERSHIP_MIXED_JOIN",
-      "accepted_mappings": [
-        "OWNERSHIP_ILLEGAL_PROMOTION",
-        "ILLEGAL_JOIN_BORROWED_OWNED"
+      "semantic_category": "ownership_join",
+      "severity": "error",
+      "message_regex": "borrow|join|ownership",
+      "source_line_regex": "=",
+      "codes": [
+        "OWNERSHIP_MIXED_JOIN"
       ]
     },
     "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT": {
       "primary": "OWNERSHIP_CONFLICTING_ACCESS",
-      "accepted_mappings": [
-        "MATCH_READ_BORROW_ACTIVE",
-        "OVERWRITE_WHILE_BORROWED",
-        "MATCH_PAYLOAD_BORROW_ACTIVE"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|overwrite|ownership",
+      "source_line_regex": "=",
+      "codes": [
+        "OWNERSHIP_CONFLICTING_ACCESS"
       ]
     },
     "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT": {
       "primary": "OWNERSHIP_ILLEGAL_CONSUME",
-      "accepted_mappings": [
-        "BORROWED_ENUM_PAYLOAD_ACCESS",
-        "MATCH_ORDINARY_CANNOT_CONSUME"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|consum|match",
+      "source_line_regex": "match|archive",
+      "codes": [
+        "OWNERSHIP_ILLEGAL_CONSUME"
       ]
     },
     "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT": {
       "primary": "MATCH_CONSUME_INTERIOR_PLACE",
-      "accepted_mappings": [
-        "MATCH_CONSUME_FIELD_REJECTED"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "field|consume|match",
+      "source_line_regex": "match|take",
+      "codes": [
+        "MATCH_CONSUME_INTERIOR_PLACE"
       ]
     },
     "ORACLE-41-VEC-FOR-CONSUME-REJECT": {
       "primary": "OWNERSHIP_VECTOR_ELEMENT_CONSUME",
-      "accepted_mappings": [
-        "OWNERSHIP_ILLEGAL_CONSUME"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|consum|iteration|ownership",
+      "source_line_regex": "push|item",
+      "codes": [
+        "OWNERSHIP_VECTOR_ELEMENT_CONSUME"
       ]
     },
     "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT": {
       "primary": "IMMUTABLE_MESSAGE_PAYLOAD",
-      "accepted_mappings": [
-        "CANNOT_REBIND_PARAMETER",
-        "IMMUTABLE_PARAMETER_MUTATION",
-        "message payloads are immutable snapshots",
-        "cannot WRITE incoming message payload"
+      "semantic_category": "immutable_payload",
+      "severity": "error",
+      "message_regex": "payload|immutable|write",
+      "source_line_regex": "n\\s*=|n\\+",
+      "codes": [
+        "IMMUTABLE_MESSAGE_PAYLOAD",
+        "MOSS_COMPILE_ERROR"
       ]
     },
     "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT": {
       "primary": "OWNERSHIP_ILLEGAL_CONSUME",
-      "accepted_mappings": [
-        "IMMUTABLE_MESSAGE_PAYLOAD",
-        "CANNOT_REPLY_NONPRIMITIVE_INPUT"
+      "semantic_category": "ownership",
+      "severity": "error",
+      "message_regex": "borrow|reply|consume|ownership",
+      "source_line_regex": "reply",
+      "codes": [
+        "OWNERSHIP_ILLEGAL_CONSUME"
       ]
     },
     "ORACLE-08-USER-COPY-RESOLUTION": {
-      "normalized": "COPY_RESERVED",
       "primary": "RESERVED_KEYWORD",
-      "accepted_mappings": [
-        "MOSS_COMPILE_ERROR"
+      "semantic_category": "reserved_name",
+      "severity": "error",
+      "message_regex": "\\bcopy\\b.*(reserved|keyword)|(reserved|keyword).*\\bcopy\\b",
+      "source_line_regex": "fn\\s+copy\\b",
+      "codes": [
+        "RESERVED_KEYWORD"
       ]
     },
     "ORACLE-48-ROOT-MISSING-COLLECTION-ERROR": {
-      "normalized": "ROOT_UNHANDLED_RAISE",
       "primary": "ROOT_UNHANDLED_RAISE",
-      "accepted_mappings": []
+      "semantic_category": "root_totality",
+      "severity": "error",
+      "message_regex": "CollectionError|unhandled|handler|raise",
+      "source_line_regex": "Root|root|main",
+      "codes": [
+        "ROOT_UNHANDLED_RAISE"
+      ]
     },
     "ORACLE-52-MUTATE-DURING-ITERATION-REJECTED": {
-      "normalized": "OWNERSHIP_CONFLICTING_ACCESS",
       "primary": "OWNERSHIP_CONFLICTING_ACCESS",
-      "accepted_mappings": [
-        "COLLECTION_STRUCTURAL_MUTATION_DURING_BORROW",
-        "cannot structurally mutate collection"
+      "semantic_category": "iteration_borrow",
+      "severity": "error",
+      "message_regex": "borrow|structural|iteration|mutation",
+      "source_line_regex": "push|item",
+      "codes": [
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "MOSS_COMPILE_ERROR"
       ]
     }
   }
