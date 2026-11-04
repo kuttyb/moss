@@ -1,0 +1,8 @@
+# Spec: Proposal §10 row "n = n + 1 where n: Int is an incoming handler parameter | Reject | Incoming bindings are immutable even when primitive", §7.5
+domain Worker:
+  fn Bump(n: Int) -> Int:
+    n = n + 1
+    reply n
+
+fn main():
+  pass

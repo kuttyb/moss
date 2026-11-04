@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "nxt.push(head[0]) | Reject for non-Copy element | Push needs ownership, indexed access borrows"
+type Resource:
+  tag: String
+
+fn consume_resource(r: Resource) -> Resource:
+  return r
+
+fn main():
+  var v = [Resource(tag: "res")]
+  let x = consume_resource(v[0])
+  echo x.tag

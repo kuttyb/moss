@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "b = v[0]; b.cost = 9 | Accept with WRITE permission | Writes through borrowed element"
+type Item:
+  cost: Int
+
+fn main():
+  var v = [Item(cost: 1)]
+  b = v[0]
+  b.cost = 9
+  echo b.cost
+  echo v[0].cost

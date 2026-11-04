@@ -1,0 +1,19 @@
+# Spec: Proposal §10 row "take(v[i].pending) | Accept if projection exclusively writable | Takes eligible terminal option field; element v[i] stays in place"
+type Node:
+  id: Int
+  pending: option[String]
+
+fn main():
+  var v = [Node(id = 1, pending = Some("task"))]
+  p = take(v[0].pending)
+  match p:
+    case Some(val):
+      echo val
+    case None:
+      echo "empty"
+  echo v[0].id
+  match v[0].pending:
+    case Some(s):
+      echo s
+    case None:
+      echo "cleared"

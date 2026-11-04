@@ -1,0 +1,8 @@
+# Spec: Proposal §1.2, §1.3, §10, §12
+type Data:
+  tag: String
+  values: Vector[Int]
+
+fn main():
+  var v = [Data(tag: "hello", values: [1, 2, 3])]
+  echo v[0].tag

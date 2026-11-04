@@ -1,0 +1,12 @@
+# Spec: Proposal §5.3 ("Map.get(key): 1-argument borrowed lookup returning option[V]"), §10, §12
+type Payload:
+  tag: String
+
+fn main():
+  var m = Map()
+  m["live"] = Payload(tag: "active")
+  match m.get("live"):
+    case Some(p):
+      echo p.tag
+    case None:
+      echo "absent"

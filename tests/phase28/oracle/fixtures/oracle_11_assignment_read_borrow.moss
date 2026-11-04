@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "b = a; echo b; echo a | Accept if no conflicting overlapping use | b is READ borrow"
+type Point:
+  x: Int
+  y: Int
+
+fn main():
+  a = Point(x = 10, y = 20)
+  b = a
+  echo b.x
+  echo a.x

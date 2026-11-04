@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "copy(v[0])", §11 Phase D, §12
+type Data:
+  value: Int
+
+fn copy(d: Data) -> Data:
+  return Data(value = d.value + 100)
+
+fn main():
+  d = Data(value = 5)
+  d2 = copy(d)
+  echo d2.value

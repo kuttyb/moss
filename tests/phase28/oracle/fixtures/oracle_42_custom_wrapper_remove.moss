@@ -1,0 +1,13 @@
+# Spec: Proposal §10 row "User-defined wrapper fn remove_at(a, i): return a.elements.remove(i) | Accept if backing Vector removal is legal | Custom APIs can delegate ownership transfers to built-in storage"
+type Bag:
+  elements: Vector[String]
+
+fn remove_at(a: Bag, i: Int) -> String:
+  return a.elements.remove(i)
+
+fn main():
+  var b = Bag(elements = ["x", "y", "z"])
+  val = remove_at(b, 1)
+  echo val
+  echo (b.elements |> count)
+  echo b.elements[1]

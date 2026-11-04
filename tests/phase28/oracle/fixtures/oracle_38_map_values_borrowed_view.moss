@@ -1,0 +1,9 @@
+# Spec: Proposal §10 row "Map.values() bound temporarily then source mutated after last use | Accept if borrow ended | Eager borrowed view, not cloned snapshot"
+fn main():
+  var m = Map()
+  m["a"] = 1
+  m["b"] = 2
+  vals = m.values()
+  echo (vals |> count)
+  m["c"] = 3
+  echo (m.keys() |> count)

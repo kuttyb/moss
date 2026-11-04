@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "b = a; b.field = 1 | Accept if source writable | b is WRITE borrow"
+type Counter:
+  count: Int
+
+fn main():
+  var a = Counter(count: 0)
+  b = a
+  b.count = 1
+  echo b.count
+  echo a.count

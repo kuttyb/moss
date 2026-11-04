@@ -1,0 +1,17 @@
+# Spec: Proposal §10 row "if c: b = left else: b = Fresh(); echo b | Accept if left movable | Promoted CONSUME from owned local"
+type Packet:
+  val: Int
+
+fn Fresh() -> Packet:
+  return Packet(val = 99)
+
+fn test(c: Bool, left: Packet):
+  if c:
+    b = left
+  else:
+    b = Fresh()
+  echo b.val
+
+fn main():
+  test(true, Packet(val = 42))
+  test(false, Packet(val = 1))

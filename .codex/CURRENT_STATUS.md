@@ -1,3 +1,25 @@
+### Phase 28 Independent Semantic Oracle Suite (2026-11-04)
+
+Created independent Phase 28 Semantic Oracle Suite under L7 directive P28-R7-001 (Phase 28 CP2 reopened; W12 integration suspended).
+Base commit: `150ab36b41e45504aaa400aa717da241be7542fb` (`phase28-work`).
+Branch: `phase28-r7-oracle`.
+Specification Authority: `docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md` (§10 & §12).
+Report: `docs/phase28/PHASE_28_SEMANTIC_ORACLE_REPORT.md`.
+
+- Scope:
+  - 47 executable oracle fixtures in `tests/phase28/oracle/fixtures/` and comprehensive test harness `tests/phase28/oracle/oracle_harness.py`.
+  - Exact reproduction of all 10 concrete clean-room review findings against W12 commit `cfc9d739` and baseline `150ab36b`.
+  - Comprehensive coverage of remaining §10 rows and §12 adversarial matrix (assignment inference, rebinding, joins, take restrictions, pattern borrows, collection iteration, and handler immutability/replies).
+  - Multi-engine execution across Checker, Fast Debug, Native Debug, and Native Optimized.
+  - Clone budget enforcement: strictly 0 unauthorized hidden clones permitted.
+- Ledger & Metrics:
+  - Baseline `150ab36b`: 19 PASS, 28 FAIL, 11 hidden clones.
+  - W12 commit `cfc9d739`: 20 PASS, 27 FAIL, 21 hidden clones.
+- Invariants:
+  - Zero compiler source edits (`src/` completely untouched).
+  - Test expectations derived strictly from frozen specification, never weakened to match compiler defects.
+  - No merge to `main`. STOP after oracle handoff.
+
 ### Phase 28 Team B W13 Integration into phase28-work (2026-11-04)
 
 Integration of branch `phase28-r6-w13-independent` (`a65e3aba0931f66997a1aac2c6ca1ef52e17aa54`)

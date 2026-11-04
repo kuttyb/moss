@@ -1,0 +1,21 @@
+# Spec: Proposal §5.3, §7.2, §12; Phase 21 error handling spec §13
+fn test_vec_remove_out_of_bounds() -> String:
+  var v = [1, 2]
+  try:
+    let r = v.remove(99)
+    return "unreached"
+  recover:
+    return "caught_vec_index"
+
+fn test_map_remove_missing() -> String:
+  var m = Map()
+  m["present"] = 10
+  try:
+    let r = m.remove("missing")
+    return "unreached"
+  recover:
+    return "caught_map_key"
+
+fn main():
+  echo test_vec_remove_out_of_bounds()
+  echo test_map_remove_missing()

@@ -1,0 +1,9 @@
+# Spec: Proposal §10 row "copy(v[0]) for an eligible value | Accept | Explicit source-level duplication", §11 Phase D
+type Record:
+  tag: String
+
+fn main():
+  var v = [Record(tag: "init")]
+  r = copy(v[0])
+  echo r.tag
+  echo v[0].tag
