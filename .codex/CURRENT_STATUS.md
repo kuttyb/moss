@@ -1,3 +1,31 @@
+### Phase 28 Round 4 — Slice D Integration (2026-11-03)
+
+Integration of branch `origin/phase28-r4-slice-d` (`9aef4d2df6c83846f9bc00694a9a62713f2432ee`)
+into target `phase28-work` (`6b0433c8af071dc972b2bd89109e6be0e498de9b`).
+Reviewed implementation SHA `0c722497f2c6639cf84c96b80a9748ead9308b0a` (Agent 2 GO) preserved exactly.
+Integration merge commit: `464f2a8fb7529ddbc3cdefa5359f1fb5d92aa3e3`.
+
+- Source/test integrity: verified diff on `src/` and `tests/` between reviewed SHA
+  `0c722497` and branch tip `9aef4d2d` is empty.
+- Targeted gates: `moss-dev`, `moss-opt`, `check_phase28_local_ownership.py` (default & shadow),
+  `check_phase21_source_free_standard_write_recovery.py` (default & shadow),
+  `check_phase28_selector_argument_effects.py` (default & shadow),
+  `check_phase21_expression_ownership_edges.py` (default & shadow),
+  `check_enum_semantics.py` (30/30 default & shadow), `check_enum_source_free.py`,
+  `check_phase28_specialized_ownership_contract.py` (default & shadow),
+  `check_phase28_specialized_native_consumer.py` (default & shadow),
+  `check_phase28_take_consumer.py` (default & shadow, 22/22), `check_phase28_team_b_consumer.py`
+  (default & shadow), `verify_take_fixtures.py` (18/18 with zero clones, default & shadow),
+  `check_phase27_string_debt.py` (42/7), `verify_defects.py` (4 PASS, 4 KNOWN FAILURES),
+  `check_agent_feedback.py`, and `git diff --check` all PASS.
+- Full parallel suite:
+  - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match Round 3 ledger, 341.25s).
+  - Shadow EST mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match Round 3 ledger, 348.33s).
+  - Intermittent failure `check_make_incremental_dependencies` passed in both runs.
+  - Zero new regressions; zero unexpected failures; zero skips.
+- Report documented in `docs/phase28/ROUND_4_SLICE_D_INTEGRATION.md`.
+- No merge to `main`. No consumer migration. No compiler source or test changes made during integration.
+
 ### Phase 28 Round 4 — Slice C Integration (2026-11-03)
 
 Integration of branch `origin/phase28-r4-slice-c` (`10fb7361560418f36a321b15db4987835ac1fe53`)
