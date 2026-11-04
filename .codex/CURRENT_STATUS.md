@@ -1,3 +1,30 @@
+### Phase 28 Team B W13 Integration into phase28-work (2026-11-04)
+
+Integration of branch `phase28-r6-w13-independent` (`a65e3aba0931f66997a1aac2c6ca1ef52e17aa54`)
+into target `phase28-work` (`2a60693cd4251e85cbda08a2481974882b9eca93`).
+Reviewed implementation SHA `a65e3aba0931f66997a1aac2c6ca1ef52e17aa54` (Agent 2 Renewed GO) preserved exactly.
+Integration merge commit: `31f744fc416c1411516eef83fbfe6a94a5009a2b`.
+
+- Scope & Audits:
+  - Audited performance baseline RSS threshold in `tests/tooling/check_phase25_4_performance_baseline.py`: confirmed peak RSS is 24,680 KiB (< 25,000 KiB limit) in the repository root, proved that >25,000 KiB readings during parallel testing were an artifact of deep nested worktree filesystem paths in compiler AST/EST string allocations, and reverted `max_rss_kib` back to certified `25000` KiB.
+  - Audited `tests/branch_confined_open_type.moss`: restored unweakened semantics via `for item in range(1, 2): result.push(item)`.
+  - Zero modifications to checker semantics or `src/semantic_checker.*`.
+- Targeted gates:
+  - `check_phase25_4_performance_baseline.py` PASS (100% SHA256 integrity, 100% REPORT.md consistency, all workloads within certified B1 baseline).
+  - `check_phase28_team_b_consumer.py` PASS.
+  - `check_phase28_take_consumer.py` 22/22 PASS.
+  - `verify_take_fixtures.py` 18/18 PASS with zero clones.
+  - `check_phase27_string_debt.py` 42/7 PASS.
+  - `check_agent_feedback.py` PASS.
+  - `git diff --check` PASS.
+- Full parallel suite:
+  - Default mode: 167 selected, 166 PASS, 1 FAIL (`check_phase21_borrowed_view_write`), 0 SKIP (349.22s).
+  - Shadow EST mode: 167 selected, 165 PASS, 2 FAIL (`check_phase21_borrowed_view_write` and known shadow-only structural divergence in `shard_swarm_cases` for `put(take())`), 0 SKIP (358.78s).
+  - Zero new regressions; zero unexpected failures; zero skips.
+- Failure ledger reconciliation: 15 of 16 baseline failures resolved. The single remaining test failure in default mode is the pre-existing Phase 21 checker defect (`check_phase21_borrowed_view_write`), preserved without consumer workarounds for Team A checker authority correction.
+- Integration report documented in `docs/phase28/TEAM_B_W13_INTEGRATION.md`.
+- No merge to `main`. Results returned to L7.
+
 ### Phase 28 Team B W13 Independent Resolution (2026-11-04)
 
 Branch `phase28-r6-w13-independent`. Completed independent W13 regression resolution under L7 directive without waiting for Team A W12 handoff:
