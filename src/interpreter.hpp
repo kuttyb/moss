@@ -3635,6 +3635,8 @@ class FastInterpreter {
       if (req.specialization_context == context ||
           (!frame.specialization_identity.empty() &&
            req.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+        if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
         try {
           const auto& fact = program_.typed_semantics->find_exceptional_ownership_fact(req);
           facts.push_back(&fact);
@@ -3647,6 +3649,8 @@ class FastInterpreter {
       if (fact.specialization_context == context ||
           (!frame.specialization_identity.empty() &&
            fact.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+        if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&

@@ -6220,6 +6220,8 @@ class Generator {
       if (req.specialization_context == context ||
           (!codegen_active_specialization_key_.empty() &&
            req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
         try {
           const auto& fact = p_.typed_semantics->find_exceptional_ownership_fact(req);
           facts.push_back(&fact);
@@ -6232,6 +6234,8 @@ class Generator {
       if (fact.specialization_context == context ||
           (!codegen_active_specialization_key_.empty() &&
            fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
