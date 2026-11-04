@@ -3,7 +3,8 @@ type Record:
   tag: String
 
 fn main():
-  var v = [Record(tag: "init")]
-  r = copy(v[0])
-  echo r.tag
+  var v = [Record(tag: "original")]
+  var copied = copy(v[0])
+  copied.tag = "copy"
+  echo copied.tag
   echo v[0].tag

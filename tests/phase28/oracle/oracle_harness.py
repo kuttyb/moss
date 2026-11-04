@@ -33,6 +33,8 @@ MARGO = ROOT / "margo"
 # Specification expectations and diagnostic normalization are independent oracle-owned data.
 _expectation_doc = json.loads((Path(__file__).resolve().parent / "expectations.json").read_text())
 _diagnostic_doc = json.loads((Path(__file__).resolve().parent / "diagnostic_mapping.json").read_text())
+_runtime_callsite_doc = json.loads((Path(__file__).resolve().parent / "runtime_callsite_allowlist.json").read_text())
+_runtime_callsites = {item["callsite_id"]: item for item in _runtime_callsite_doc.get("callsites", [])}
 _fixture_files = {
     "ORACLE-01-VEC-WRITE-THROUGH": "oracle_01_write_through_vector.moss",
     "ORACLE-02-INDEXED-FIELD-READ-NO-CLONE": "oracle_02_indexed_field_read_no_clone.moss",
@@ -109,11 +111,62 @@ for _expectation in _expectation_doc["fixtures"]:
     })
 
 
+def validate_mutation_assertions(fixture: dict) -> None:
+    expected = fixture["expected"]
+    fixture_id = fixture.get("id", fixture.get("fixture_id", "<unknown>"))
+    assertions = expected.get("observable_mutations", [])
+    for assertion in assertions:
+        line_number = assertion.get("stdout_line")
+        if not isinstance(line_number, int) or line_number < 1:
+            raise ValueError(f"invalid observable mutation stdout line in {fixture_id}")
+        for engine in ("fast_debug", "native_debug", "native_optimized"):
+            stdout = expected[engine].get("stdout")
+            lines = stdout.splitlines() if isinstance(stdout, str) else []
+            actual = lines[line_number - 1] if line_number <= len(lines) else None
+            if actual != assertion.get("expected"):
+                raise ValueError(f"observable mutation expectation contradicts {engine} stdout in {fixture_id}: "
+                                 f"line {line_number} is {actual!r}, assertion says {assertion.get('expected')!r}")
+
+
 def validate_oracle_data() -> None:
     if len(_expectation_doc.get("fixtures", [])) != 56:
         raise ValueError("approval package must contain exactly 56 permanent fixtures")
     if _expectation_doc.get("approval_status") != "DRAFT_PENDING_L7_APPROVAL":
         raise ValueError("expectation table must remain explicitly unapproved until L7 approval")
+    if (_runtime_callsite_doc.get("format") != "moss-runtime-clone-callsites" or
+            _runtime_callsite_doc.get("version") != 1 or
+            _runtime_callsite_doc.get("approval_status") != "DRAFT_PENDING_INDEPENDENT_REVIEW" or
+            _runtime_callsite_doc.get("owner") != "oracle-maintainers"):
+        raise ValueError("runtime callsite classifications must remain in the reviewed oracle-owned registry")
+    callsite_ids = [row.get("callsite_id") for row in _runtime_callsite_doc.get("callsites", [])]
+    if len(callsite_ids) != len(set(callsite_ids)):
+        raise ValueError("runtime callsite registry contains duplicate identities")
+    for row in _runtime_callsite_doc.get("callsites", []):
+        required = ("callsite_id", "origin_kind", "repository_evidence_path",
+                    "repository_evidence_sha256", "repository_evidence_span",
+                    "semantic_type", "ownership_fact", "semantic_identity",
+                    "independent_reviewer", "review_record_path", "review_record_sha256")
+        if any(not row.get(key) for key in required) or row.get("review_status") != "INDEPENDENTLY_REVIEWED":
+            raise ValueError("runtime callsite registry entry lacks independent review or exact evidence")
+        if row["origin_kind"] not in {"compiler_runtime_handle", "runtime_support"}:
+            raise ValueError("runtime callsite registry has an unsupported origin kind")
+        if row["independent_reviewer"] == _runtime_callsite_doc["owner"]:
+            raise ValueError("runtime callsite registry cannot self-review its classifications")
+        evidence_path = (ROOT / row["repository_evidence_path"]).resolve()
+        if ROOT.resolve() not in evidence_path.parents or not evidence_path.is_file():
+            raise ValueError("runtime callsite evidence must reference a repository file")
+        evidence_bytes = evidence_path.read_bytes()
+        if hashlib.sha256(evidence_bytes).hexdigest() != row["repository_evidence_sha256"]:
+            raise ValueError(f"runtime callsite source digest is stale: {row['callsite_id']}")
+        _span_offsets(evidence_bytes.decode(), row["repository_evidence_span"])
+        review_path = (ROOT / row["review_record_path"]).resolve()
+        if ROOT.resolve() not in review_path.parents or not review_path.is_file():
+            raise ValueError("runtime callsite review record must be a repository file")
+        review_bytes = review_path.read_bytes()
+        if hashlib.sha256(review_bytes).hexdigest() != row["review_record_sha256"]:
+            raise ValueError(f"runtime callsite review record digest is stale: {row['callsite_id']}")
+        if row["callsite_id"].encode() not in review_bytes:
+            raise ValueError("runtime callsite review record does not identify its callsite")
     ids = [item["id"] for item in ORACLE_FIXTURES]
     defects = [item["defect_id"] for item in ORACLE_FIXTURES]
     if len(ids) != len(set(ids)) or len(defects) != len(set(defects)):
@@ -124,6 +177,11 @@ def validate_oracle_data() -> None:
     moss_probe = '# copy(ignored)\ntext = "copy(ignored)"\nvalue = copy(source)\n'
     if len(moss_copy_call_spans(moss_probe)) != 1:
         raise ValueError("Moss copy scanner must ignore comments and string literals")
+    nested_probe = "value = copy(copy(x))\n"
+    nested_spans = moss_copy_call_spans(nested_probe)
+    if (len(nested_spans) != 2 or len({item["copy_id"] for item in nested_spans}) != 2 or
+            nested_spans[0]["copy_id"] == nested_spans[1]["copy_id"]):
+        raise ValueError("Moss copy scanner must independently identify nested calls")
     for item in ORACLE_FIXTURES:
         path = FIXTURES_DIR / item["file"]
         if not path.exists():
@@ -140,6 +198,7 @@ def validate_oracle_data() -> None:
                     raise ValueError(f"fixture lacks a specification-based {engine} result: {item['id']}")
             if "clone_audit" not in expected:
                 raise ValueError(f"fixture lacks clone-audit expectation: {item['id']}")
+            validate_mutation_assertions(item)
             source_files = list(path.rglob("*.moss")) if path.is_dir() else [path]
             source_copy_count = sum(len(moss_copy_call_spans(source.read_text()))
                                     for source in source_files)
@@ -234,7 +293,7 @@ def _span_key(span: dict) -> tuple[int, int, int, int]:
 
 
 def moss_copy_call_spans(source: str) -> list[dict]:
-    """Find copy(expr) call spans without counting comments or quoted text."""
+    """Enumerate each copy(expr), including nested calls, with stable source IDs."""
     spans = []
     i = 0
     while i < len(source):
@@ -284,14 +343,20 @@ def moss_copy_call_spans(source: str) -> list[dict]:
                             if depth == 0:
                                 k += 1
                                 spans.append({"start": _position(source, i), "end": _position(source, k)})
-                                i = k
+                                # Continue inside this call so nested copy calls
+                                # are independently enumerated.
+                                i = end_name + 1
                                 break
                         k += 1
                     else:
                         i = end_name
-                    if i == k:
+                    if i == end_name + 1:
                         continue
         i += 1
+    spans.sort(key=lambda span: _span_key(span))
+    for span in spans:
+        start = span["start"]
+        span["copy_id"] = f"copy@{start['line']}:{start['column']}"
     return spans
 
 
@@ -396,6 +461,7 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         if set(indexed) != rust_keys:
             raise ValueError(f"incomplete or extra Rust clone mappings: rust={len(rust_keys)}, mapped={len(indexed)}")
         source_by_id = {}
+        scanned_copy_ids = {_span_key(span): span["copy_id"] for span in source_copies}
         source_rows = manifest.get("source_copy_occurrences")
         if not isinstance(source_rows, list):
             raise ValueError("source_copy_occurrences is not an array")
@@ -407,6 +473,8 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
             start, end = _span_offsets(source, span)
             if source[start:end] != "copy" and not re.fullmatch(r"copy\s*\(.*\)", source[start:end], re.S):
                 raise ValueError(f"source copy span does not cover a copy(...) occurrence: {copy_id}")
+            if scanned_copy_ids.get(_span_key(span)) != copy_id:
+                raise ValueError(f"source copy identity does not match independent scanner: {copy_id}")
             if source_row.get("semantic_status") != "implemented":
                 raise ValueError(f"source copy semantics not attested as implemented: {copy_id}")
             if not isinstance(source_row.get("rust_clone_spans"), list):
@@ -444,25 +512,15 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                     raise ValueError("explicit clone points to unknown Moss copy occurrence")
                 explicit_by_id[copy_id].append(_span_key(row["rust_span"]))
             elif origin in {"compiler_runtime_handle", "runtime_support"}:
-                repo_path = evidence.get("repository_evidence_path")
-                repo_hash = evidence.get("repository_evidence_sha256")
-                if not isinstance(repo_path, str) or not isinstance(repo_hash, str):
-                    raise ValueError("runtime classification lacks repository source evidence")
-                evidence_path = (ROOT / repo_path).resolve()
-                if ROOT.resolve() not in evidence_path.parents or not evidence_path.is_file():
-                    raise ValueError("runtime evidence path is not a repository file")
-                if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != repo_hash:
-                    raise ValueError("runtime repository evidence digest mismatch")
-                source_span = evidence.get("repository_evidence_span")
-                if not isinstance(source_span, dict):
-                    raise ValueError("runtime classification lacks source evidence span")
-                runtime_source = evidence_path.read_text()
-                evidence_start, evidence_end = _span_offsets(runtime_source, source_span)
-                evidence_text = runtime_source[evidence_start:evidence_end]
-                if not re.search(r"clone|Clone::clone|to_owned|to_string|shared handle", evidence_text, re.I):
-                    raise ValueError("runtime source span does not substantiate a duplication/handle operation")
-                if evidence["semantic_type"].lower() not in evidence_text.lower():
-                    raise ValueError("runtime source span does not identify the claimed semantic type")
+                callsite_id = evidence.get("runtime_callsite_id")
+                callsite = _runtime_callsites.get(callsite_id)
+                if callsite is None:
+                    raise ValueError("runtime clone classification is not in independently reviewed callsite registry")
+                for key in ("origin_kind", "repository_evidence_path", "repository_evidence_sha256",
+                            "repository_evidence_span", "semantic_type", "ownership_fact", "semantic_identity"):
+                    actual = row.get("origin_kind") if key == "origin_kind" else evidence.get(key)
+                    if actual != callsite.get(key):
+                        raise ValueError(f"runtime clone evidence disagrees with reviewed callsite field: {key}")
             else:
                 unauthorized += 1
                 unclassified += 1
@@ -913,8 +971,8 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
 
     lines.append(f"## Summary Statistics")
     lines.append(f"- **Total Fixtures:** {len(results)}")
-    lines.append(f"- **Passing (Compliant with Spec):** {len(passed_cases)}")
-    lines.append(f"- **Failing (Compiler Defect / Non-Compliant):** {len(failed_cases)}")
+    lines.append(f"- **Passing all applicable gates:** {len(passed_cases)}")
+    lines.append(f"- **Failing at least one semantic or infrastructure gate:** {len(failed_cases)}")
     lines.append(f"- **Semantic failures excluding clone provenance:** {sum(r.get('semantic_status') == 'FAIL' for r in results)}")
     lines.append(f"- **Fixtures blocked by missing/invalid provenance:** {sum(r.get('clone_provenance_status') == 'BLOCKED_MISSING_OR_INVALID' for r in results)}")
     total_unclassified = sum(sum(m.get("unclassified", 0) for m in r.get("clone_audit", {}).values()) for r in results)
@@ -1021,7 +1079,7 @@ def main() -> int:
             failed += 1
 
     print("\n--------------------------------------------------------------------------------")
-    print(f"Total: {len(results)} | Passed: {passed} | Defective / Failed: {failed}")
+    print(f"Total: {len(results)} | Passed all applicable gates: {passed} | Failed at least one gate: {failed}")
     semantic_failed = sum(result["semantic_status"] == "FAIL" for result in results)
     provenance_blocked = sum(result["clone_provenance_status"] == "BLOCKED_MISSING_OR_INVALID" for result in results)
     print(f"Semantic failures (excluding provenance): {semantic_failed}")

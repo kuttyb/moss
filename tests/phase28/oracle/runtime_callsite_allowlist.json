@@ -1,0 +1,8 @@
+{
+  "format": "moss-runtime-clone-callsites",
+  "version": 1,
+  "owner": "oracle-maintainers",
+  "approval_status": "DRAFT_PENDING_INDEPENDENT_REVIEW",
+  "review_policy": "Every runtime callsite must be independently reviewed and tied to exact source path, digest, span, semantic type, ownership fact, and identity.",
+  "callsites": []
+}

@@ -15341,37 +15341,31 @@ Branch `phase28-r4-slice-d`, based on exact requested baseline
   to `origin/phase28-r4-slice-d`. No merge to `phase28-work`/`main`; no
   consumer migration.
 
-### P28-R7-005 — Oracle Hardening revised draft (L7 checkpoint)
+### P28-R7-005 — Oracle Hardening final-corrections draft (L7 checkpoint)
 
-Continue on `phase28-r7-005` from published HEAD
-`74065f4ee841707a2637b7c75f839c766b65c049`, based on
-`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. L7 approved the language
-semantics; the oracle freeze is still NOT approved. The revised expectation
-table remains `DRAFT_PENDING_L7_APPROVAL`. No compiler source was changed.
-The private holdout remains local-only at `.git/oracle-review/holdout.json`.
+Continue on `phase28-r7-005` from requested HEAD
+`4eb5c0cfc3b3754534b749cca91b4a337c899a3b`, based on
+`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. L7 language semantics remain
+approved; oracle freeze is blocked. Expectations remain
+`DRAFT_PENDING_L7_APPROVAL`. No compiler source or private holdout was changed.
 
-Corrections preserve all permanent fixture and defect IDs and retain 56 fixtures.
-ORACLE-07 now tests negative removal indices; ORACLE-49 successfully removes
-before a later typed raise and checks mutated state in recovery; ORACLE-50
-rebinds the eager pipeline capture after construction; ORACLE-52 mutates with an
-independently owned record and then reads the borrowed iteration element.
-Structured rejection checking verifies code, severity, message and source
-location. ORACLE-08 requires `RESERVED_KEYWORD`, not generic
-`MOSS_COMPILE_ERROR`. ORACLE-47 accepts only specific indexing-panic evidence,
-not unrelated errors or timeouts. Clone provenance uses a v2 draft schema with
-separate source-copy and emitted-clone occurrences, checked source/Rust spans,
-context hashes and runtime source evidence; alternate duplication mechanisms
-remain an explicitly documented audit limitation.
+Corrected ORACLE-07 stdout mutation line 11 and ORACLE-49 recovery/post-recovery
+values to 8. Mandatory preflight validates every mutation assertion against its
+expected stdout in Fast Debug, Native Debug and Native Optimized. ORACLE-10A now
+mutates its copied record and checks the original remains unchanged. Moss copy
+source scanning reports every nested call (including `copy(copy(x))`) with a
+unique location identity. Runtime clone authorization now requires an exact
+match with an independently reviewed, digest-pinned callsite registry; the
+registry is empty in this draft. ORACLE-44/52 generic diagnostics require the
+specific approved error message and source line.
 
-Validation on the revised tree: harness self-tests 11/11; oracle data validation
-56/56; full draft oracle 8 complete passes, 34 semantic failures excluding
-provenance, and 19 fixtures blocked by missing/invalid provenance (overlapping
-categories). The run observed 298 generated Rust `.clone()` occurrences, all
-still **unverified**, not proven hidden clones. Durable per-fixture/per-engine
-results and ledger are under `tests/phase28/oracle/reports/`. `git diff --check`
-and `python3 tests/tooling/check_agent_feedback.py` remain to be rerun after the
-final documentation/report edits. No full repository suite was run.
+Final-correction validation: 15/15 harness tests pass; all 56 expectation rows
+pass oracle-data validation; full draft suite completes with 8 full passes, 34
+semantic failures, 19 missing/invalid provenance blocks (categories overlap),
+and 298 unverified generated Rust `.clone()` occurrences. Per-fixture/per-engine
+results and ledger are in `tests/phase28/oracle/reports/`. Feedback validation and final diff checks pass after report/status updates. No compiler build
+or full repository suite was requested or run.
 
-Next: publish this revised draft for L7 review and stop at the approval
-checkpoint. Do not freeze or merge. After explicit approval, independent harness
-review and private holdout review remain required before any freeze.
+Push the corrected draft, report its exact SHA, and stop for L7 approval. Do not
+self-approve, freeze or merge. The private holdout remains local-only and
+untouched.

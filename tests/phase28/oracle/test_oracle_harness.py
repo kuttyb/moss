@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Adversarial self-tests for fail-closed oracle validation."""
 import hashlib
+import copy
 import importlib.util
 import json
 from pathlib import Path
@@ -66,6 +67,52 @@ class RejectionAndPanicTests(unittest.TestCase):
             mapping = harness._diagnostic_doc["mappings"]["ORACLE-08-USER-COPY-RESOLUTION"]
             self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
 
+    def test_unrelated_generic_errors_do_not_satisfy_oracle_44_or_52(self):
+        for fixture_id, line, column, approved_message in (
+            ("ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT", 4, 5,
+             "cannot WRITE incoming message payload 'n'; message payloads are immutable snapshots"),
+            ("ORACLE-52-MUTATE-DURING-ITERATION-REJECTED", 8, 5,
+             "cannot structurally mutate collection 'values' during an active READ traversal"),
+        ):
+            with self.subTest(fixture=fixture_id):
+                expectation = next(x for x in harness._expectation_doc["fixtures"] if x["fixture_id"] == fixture_id)
+                source = harness.FIXTURES_DIR / expectation["fixture_file"]
+                mapping = harness._diagnostic_doc["mappings"][fixture_id]
+                payload = {"ok": False, "error": {"code": "MOSS_COMPILE_ERROR",
+                    "severity": "error", "message": approved_message,
+                    "source_file": str(source.resolve()), "line": line, "column": column}}
+                self.assertTrue(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+                payload["error"]["message"] = "unrelated type mismatch in another expression"
+                self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+
+
+class OracleDataValidationTests(unittest.TestCase):
+    def test_nested_copy_calls_get_independent_spans_and_ids(self):
+        spans = harness.moss_copy_call_spans("result = copy(copy(x))\n")
+        self.assertEqual(len(spans), 2)
+        self.assertEqual(len({span["copy_id"] for span in spans}), 2)
+        self.assertNotEqual(spans[0]["start"], spans[1]["start"])
+        self.assertLessEqual(spans[0]["start"]["column"], spans[1]["start"]["column"])
+        self.assertGreaterEqual(spans[0]["end"]["column"], spans[1]["end"]["column"])
+
+    def test_mutation_assertions_must_match_every_engine_stdout(self):
+        fixture = next(x for x in harness._expectation_doc["fixtures"]
+                       if x["fixture_id"] == "ORACLE-07-CATCHABLE-COLL-ERRORS")
+        harness.validate_mutation_assertions(fixture)
+        broken = copy.deepcopy(fixture)
+        broken["expected"]["observable_mutations"][0]["stdout_line"] = 9
+        with self.assertRaisesRegex(ValueError, "contradicts fast_debug stdout"):
+            harness.validate_mutation_assertions(broken)
+
+    def test_explicit_copy_fixture_mutates_copy_and_preserves_source_expectation(self):
+        row = next(x for x in harness._expectation_doc["fixtures"]
+                   if x["fixture_id"] == "ORACLE-10A-EXPLICIT-COPY-ONLY")
+        source = (harness.FIXTURES_DIR / row["fixture_file"]).read_text()
+        self.assertIn("var copied = copy(v[0])", source)
+        self.assertIn('copied.tag = "copy"', source)
+        self.assertEqual(row["expected"]["native_debug"]["stdout"], "copy\noriginal")
+        harness.validate_mutation_assertions(row)
+
 
 class CloneProvenanceTests(unittest.TestCase):
     def setUp(self):
@@ -84,7 +131,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.temp.cleanup()
 
     def manifest(self, origin="explicit_copy"):
-        copy_id = "copy-1"
+        copy_id = self.source_occ["copy_id"]
         return {"format": "moss-clone-provenance", "version": 2, "mode": "debug",
                 "rust_sha256": hashlib.sha256(self.rust.encode()).hexdigest(),
                 "source_sha256": hashlib.sha256(self.source.encode()).hexdigest(),
@@ -118,13 +165,14 @@ class CloneProvenanceTests(unittest.TestCase):
     def test_forged_runtime_source_claim_is_rejected(self):
         manifest = self.manifest("runtime_support")
         forged = self.root / "runtime_evidence.txt"
-        forged.write_text("Runtime helper handles String data.\n")
+        forged.write_text("// clone String unrelated comment\n")
         relative = forged.relative_to(ROOT).as_posix()
         evidence = manifest["occurrences"][0]["evidence"]
         evidence.update({"repository_evidence_path": relative,
             "repository_evidence_sha256": hashlib.sha256(forged.read_bytes()).hexdigest(),
             "repository_evidence_span": {"start": {"line": 1, "column": 1},
-                                         "end": {"line": 1, "column": len(forged.read_text().rstrip()) + 1}}})
+                                         "end": {"line": 1, "column": len(forged.read_text().rstrip()) + 1}},
+            "runtime_callsite_id": "forged-reviewed-callsite"})
         self.write_manifest(manifest)
         audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")

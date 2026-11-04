@@ -147,8 +147,8 @@
       "primary": "IMMUTABLE_MESSAGE_PAYLOAD",
       "semantic_category": "immutable_payload",
       "severity": "error",
-      "message_regex": "payload|immutable|write",
-      "source_line_regex": "n\\s*=|n\\+",
+      "message_regex": "cannot WRITE incoming message payload .*; message payloads are immutable snapshots",
+      "source_line_regex": "^\\s*n\\s*=\\s*n\\s*\\+\\s*1\\s*$",
       "codes": [
         "IMMUTABLE_MESSAGE_PAYLOAD",
         "MOSS_COMPILE_ERROR"
@@ -188,8 +188,8 @@
       "primary": "OWNERSHIP_CONFLICTING_ACCESS",
       "semantic_category": "iteration_borrow",
       "severity": "error",
-      "message_regex": "borrow|structural|iteration|mutation",
-      "source_line_regex": "push|item",
+      "message_regex": "cannot structurally mutate collection .* during an active READ traversal",
+      "source_line_regex": "^\\s*values\\.push\\(Payload\\(value:\\s*99\\)\\)\\s*$",
       "codes": [
         "OWNERSHIP_CONFLICTING_ACCESS",
         "MOSS_COMPILE_ERROR"

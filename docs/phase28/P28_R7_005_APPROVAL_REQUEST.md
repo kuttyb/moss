@@ -18,6 +18,8 @@ oracle freeze. The author is not the approver.
   collection behavior and CollectionError propagation.
 - [Clone provenance contract](P28_R7_005_CLONE_PROVENANCE_CONTRACT.md): revised
   sidecar schema, evidence requirements, scanner limits and adversarial checks.
+- [Runtime callsite allowlist](../../tests/phase28/oracle/runtime_callsite_allowlist.json):
+  currently empty; no runtime clone classifications are authorized by this draft.
 - [Draft report](P28_R7_005_DRAFT_REPORT.md): validation evidence and open gates.
 - [Oracle README](../../tests/phase28/oracle/README.md): revised scope, gates,
   and current draft status.
@@ -38,8 +40,7 @@ semantic approval only; it does not authorize freezing the table.
    checks, including rejection of a Root without a required handler.
 
 The requested review covers the corrected 56-fixture expectation table,
-structured rejection and panic validation, the revised clone provenance
-contract, and strengthened ORACLE-07/49/50/52 discriminators. No oracle freeze
+structured rejection and panic validation, the reviewed runtime-callsite registry, corrected mutation expectations, nested source-copy identities, the revised clone provenance contract, and strengthened ORACLE-07/10A/49/50/52 discriminators. No oracle freeze
 approval is claimed.
 
 The oracle SHA remains unfrozen until explicit approval of the complete revised

@@ -36,20 +36,25 @@ lowering emits no `.clone()` call.
 Each Rust row has `rust_span`, `origin_kind`, and an `evidence` object containing
 nonempty `semantic_type`, `ownership_fact`, and `semantic_identity`, plus the
 exact enclosing `rust_context_span` and SHA-256 of those Rust context bytes.
-Runtime classifications (`compiler_runtime_handle` and `runtime_support`) also
-require a repository-relative evidence path, file digest and source span. A
-runtime label by itself never authorizes a clone. Missing, stale, malformed,
-duplicate, extra, unlinked or out-of-bounds evidence fails closed.
+Runtime classifications (`compiler_runtime_handle` and `runtime_support`) must
+name a `runtime_callsite_id` in the separate oracle-owned
+`tests/phase28/oracle/runtime_callsite_allowlist.json`. Each allowlist row must
+be independently reviewed and bind the origin kind, repository-relative path,
+whole-file digest, exact source span, semantic type, ownership fact and semantic
+identity, independent reviewer identity, and a digest-pinned repository review
+record that names the callsite. The registry validator rejects self-review.
+The sidecar's evidence must exactly match that reviewed row. Arbitrary
+repository text, comments, matching keywords or a runtime label do not authorize
+a clone. The registry is currently empty, so no runtime classification is
+authorized by this draft. Missing, stale, malformed, duplicate, extra, unlinked
+or out-of-bounds evidence fails closed.
 
 The harness independently checks Rust/source digests, exact clone occurrence
-spans, exact source-copy spans, source-to-Rust links, context hashes, repository
-evidence file hashes and coordinates, requires the source slice to substantiate
-a duplication/handle operation and name the claimed semantic type, and checks
-mode and uniqueness. The contract expects
-evidence to support a reviewer checking the stated type, ownership role and
-runtime implementation against the referenced source. A sidecar assertion is
-not itself semantic proof; independent harness review must assess that evidence
-is sufficient and that the implementation does not accept labels as authority.
+spans, exact source-copy spans and identities, source-to-Rust links, context
+hashes, and exact equality with an independently reviewed runtime callsite row.
+A sidecar assertion is not itself semantic proof; independent harness review
+must assess that the allowlisted callsite actually accounts for the generated
+clone and that its ownership/type evidence is sufficient.
 
 ## Scanner limits and alternate duplication mechanisms
 

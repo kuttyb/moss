@@ -192,7 +192,7 @@
         "observable_mutations": [
           {
             "observable": "map[\"inserted\"] after indexed assignment to absent key",
-            "stdout_line": 9,
+            "stdout_line": 11,
             "expected": "11"
           }
         ]
@@ -246,22 +246,28 @@
         "checker": "accept",
         "fast_debug": {
           "status": "execute",
-          "stdout": "init\ninit"
+          "stdout": "copy\noriginal"
         },
         "native_debug": {
           "status": "execute",
-          "stdout": "init\ninit"
+          "stdout": "copy\noriginal"
         },
         "native_optimized": {
           "status": "execute",
-          "stdout": "init\ninit"
+          "stdout": "copy\noriginal"
         },
         "clone_audit": {
           "authorized_copy_calls": 1,
           "max_unclassified": 0,
           "max_unauthorized": 0
         },
-        "observable_mutations": []
+        "observable_mutations": [
+          {
+            "observable": "original Vector record remains unchanged after copied record mutation",
+            "stdout_line": 2,
+            "expected": "original"
+          }
+        ]
       },
       "fixture_file": "oracle_10a_explicit_copy_only.moss"
     },
@@ -1131,12 +1137,12 @@
           {
             "observable": "Vector element inside recover",
             "stdout_line": 1,
-            "expected": "7"
+            "expected": "8"
           },
           {
             "observable": "Vector element after recover",
             "stdout_line": 3,
-            "expected": "7"
+            "expected": "8"
           }
         ]
       },

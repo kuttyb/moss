@@ -5,8 +5,8 @@ Specification Baseline: draft P28-R7-005 table and L7-approved language addendum
 
 ## Summary Statistics
 - **Total Fixtures:** 56
-- **Passing (Compliant with Spec):** 8
-- **Failing (Compiler Defect / Non-Compliant):** 48
+- **Passing all applicable gates:** 8
+- **Failing at least one semantic or infrastructure gate:** 48
 - **Semantic failures excluding clone provenance:** 34
 - **Fixtures blocked by missing/invalid provenance:** 19
 - **Unverified generated `.clone()` occurrences:** 298
@@ -226,6 +226,7 @@ Specification Baseline: draft P28-R7-005 table and L7-approved language addendum
   "ok": false,
   "error": {"code": "UNKNOWN_SYMBOL_OR_TYPE", "severity": "error", "message": "unknown local function 'copy'", "source_file": "/home/owner/daji/code/moss/tests/phase28/oracle/fixtures/oracle_10a_explicit_copy_only.moss", "line": 7, "column": 1, "span": {"start_line": 7, "start_column": 1, "end_line": 7, "end_column": 1}, "source": {"file": "/home/owner/daji/code/moss/tests/phase28/oracle/fixtures/oracle_10a_explicit_copy_only.moss", "line": 7, "column": 1, "span": {"start_line": 7, "start_column": 1, "end_line": 7, "end_column": 1}}, "semantic_identity": "main@5", "symbol": null, "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": null}, "fixes": [], "legal_alternatives": ["rename the reference to an existing static symbol", "declare the missing symbol or concrete type"]}
 }`
+  - `Fast Debug observable mutation expectation failed`
   - `Fast Debug crashed (exit 1): moss:7: error: [UNKNOWN_SYMBOL_OR_TYPE] unknown local function 'copy'`
   - `Native emission failed: moss:7: error: [UNKNOWN_SYMBOL_OR_TYPE] unknown local function 'copy'`
   - `Native -O emission failed: moss:7: error: [UNKNOWN_SYMBOL_OR_TYPE] unknown local function 'copy'`
@@ -492,22 +493,22 @@ Specification Baseline: draft P28-R7-005 table and L7-approved language addendum
 - **Observed Failures:**
   - `Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_revised/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9
+    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9
      |
 3425 |     let mut b = &(a);
      |                 ---- expected due to this value
 ...
 3429 |     b = Box { num: 2_i64 };
-     |         ^^^^^^^^^^^^^^^^^^ ex`
+     |         ^^^^^^^^^^^^^^^^^^ `
   - `Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc -O compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_revised/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9
+    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9
      |
 3425 |     let mut b = &(a);
      |                 ---- expected due to this value
 ...
 3429 |     b = Box { num: 2_i64 };
-     |         ^^^^^^^^^^^^^^^^^`
+     |         ^^^^^^^^^^^^^^^`
 
 ### ORACLE-28-REBIND-WHILE-BORROWED-REJECT: ORACLE-28-REBIND-WHILE-BORROWED-REJECT (❌ FAIL)
 - **Category:** oracle
@@ -705,20 +706,20 @@ Specification Baseline: draft P28-R7-005 table and L7-approved language addendum
 - **Observed Failures:**
   - `Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=9, unauthorized=0, error=`
   - `rustc compilation failed: error[E0596]: cannot borrow data in a `&` reference as mutable
-    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_revised/ORACLE-40-VEC-FOR-WRITE.rs:3445:14
+    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/ORACLE-40-VEC-FOR-WRITE.rs:3445:14
      |
 3445 |         bump(&mut (item));
      |              ^^^^^^^^^^^ cannot borrow as mutable
 
-error[E0596]: cannot borrow `item` as mut`
+error[E0596]: cannot borrow `item` as m`
   - `Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=9, unauthorized=0, error=`
   - `rustc -O compilation failed: error[E0596]: cannot borrow data in a `&` reference as mutable
-    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_revised/ORACLE-40-VEC-FOR-WRITE_opt.rs:3445:14
+    --> /home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/ORACLE-40-VEC-FOR-WRITE_opt.rs:3445:14
      |
 3445 |         bump(&mut (item));
      |              ^^^^^^^^^^^ cannot borrow as mutable
 
-error[E0596]: cannot borrow `item` as`
+error[E0596]: cannot borrow `item` `
 
 ### ORACLE-41-VEC-FOR-CONSUME-REJECT: ORACLE-41-VEC-FOR-CONSUME-REJECT (✅ PASS)
 - **Category:** oracle
@@ -906,7 +907,7 @@ error[E0596]: cannot borrow `item` as`
 - **Semantic Status:** `FAIL`
 - **Clone Provenance Gate:** `NOT_APPLICABLE`
 - **Observed Failures:**
-  - `Provider .mossi build failed: {"schema_version": "margo-1", "ok": false, "error": "command failed (/home/owner/daji/code/moss/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"TYPE_MISMATCH\", \"severity\": \"error\", \"message\": \"builtin get(key, default) expects 2 arguments, got 1\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28_r7_005_revised/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/provider/src/provider.moss\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28_r7_005_revised/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/provider/src/provider.moss\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": \"callable-v1:module-v1:phase28_oracle_imported_provider@0.1.0::provider:fn:lookup\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"}
+  - `Provider .mossi build failed: {"schema_version": "margo-1", "ok": false, "error": "command failed (/home/owner/daji/code/moss/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"TYPE_MISMATCH\", \"severity\": \"error\", \"message\": \"builtin get(key, default) expects 2 arguments, got 1\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/provider/src/provider.moss\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28_r7_005_finalcorr/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/provider/src/provider.moss\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": \"callable-v1:module-v1:phase28_oracle_imported_provider@0.1.0::provider:fn:lookup\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"}
 `
 
 ### ORACLE-55-COLLECTION-ERROR-INFERRED-RAISE: ORACLE-55-COLLECTION-ERROR-INFERRED-RAISE (❌ FAIL)
