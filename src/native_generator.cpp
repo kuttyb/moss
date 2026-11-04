@@ -313,6 +313,153 @@ class Generator {
       }
     }
 
+    auto find_target_loop_fact = [&](std::vector<TypedLoopOwnershipFactV1>& facts) -> TypedLoopOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_loop_req = [&](std::vector<TypedLoopOwnershipRequirementV1>& reqs) -> TypedLoopOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOOP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(p_.typed_semantics->loop_ownership_facts)) {
+          fact->availability = TypedLoopOwnershipFactV1::Availability::MissingLoopOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(p_.typed_semantics->loop_ownership_facts)) {
+          fact->converged_access = (fact->converged_access == Effect::Read) ? Effect::Write : Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = p_.typed_semantics->loop_ownership_facts.begin();
+               it != p_.typed_semantics->loop_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              p_.typed_semantics->loop_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          p_.typed_semantics->loop_ownership_facts.erase(
+              p_.typed_semantics->loop_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_loop_ownership_occurrences.empty()) {
+        p_.typed_semantics->required_loop_ownership_occurrences.erase(
+            p_.typed_semantics->required_loop_ownership_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOOP_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(p_.typed_semantics->loop_ownership_facts)) {
+          p_.typed_semantics->loop_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOOP_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_loop_ownership_occurrences.empty()) {
+        if (auto* req = find_target_loop_req(p_.typed_semantics->required_loop_ownership_occurrences)) {
+          p_.typed_semantics->required_loop_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_SPECIALIZATION_ID")) {
+      if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(p_.typed_semantics->loop_ownership_facts)) {
+          fact->specialization_identity = "perturbed-loop-spec-id";
+        }
+      }
+    }
+
+    auto find_target_ex_fact = [&](std::vector<TypedExceptionalOwnershipFactV1>& facts) -> TypedExceptionalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_ex_req = [&](std::vector<TypedExceptionalOwnershipRequirementV1>& reqs) -> TypedExceptionalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          fact->availability = TypedExceptionalOwnershipFactV1::Availability::MissingOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          fact->raised_variant_identity = "perturbed-variant-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = p_.typed_semantics->exceptional_ownership_facts.begin();
+               it != p_.typed_semantics->exceptional_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              p_.typed_semantics->exceptional_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          p_.typed_semantics->exceptional_ownership_facts.erase(
+              p_.typed_semantics->exceptional_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_exceptional_ownership_occurrences.empty()) {
+        p_.typed_semantics->required_exceptional_ownership_occurrences.erase(
+            p_.typed_semantics->required_exceptional_ownership_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          p_.typed_semantics->exceptional_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_exceptional_ownership_occurrences.empty()) {
+        if (auto* req = find_target_ex_req(p_.typed_semantics->required_exceptional_ownership_occurrences)) {
+          p_.typed_semantics->required_exceptional_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -1450,6 +1597,8 @@ class Generator {
           replacement = (objects_.count(domain->name) ? "self." : "state.") + name;
         if (!replacement && write_through_parameters_.count(name))
           replacement = "(*" + name + ")";
+        if (!replacement && rust_identifier(name) != name)
+          replacement = rust_identifier(name);
         if (replacement)
           edits.push_back({span.source_begin, span.source_end,
                            std::move(*replacement)});
@@ -5277,7 +5426,22 @@ class Generator {
         !f.generic && !container_generic && !open_return;
     o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
       << "fn " << generated_symbol;
-    if (open_return || (!specialization && (f.generic || container_generic))) {
+    std::unordered_map<string, size_t> view_type_counts;
+    if (view) {
+      for (size_t index = 0; index < f.params.size(); ++index) {
+        string pt = specialization ? specialization->parameter_types[index]
+                                   : f.params[index].type;
+        auto abi = function_parameter_abi(f, index, pt, specialization);
+        if (abi.effect != Effect::Consume && view_object_type(pt))
+          view_type_counts[pt]++;
+      }
+    }
+    bool has_shared_view_generics = false;
+    for (const auto& [vt, count] : view_type_counts) {
+      if (count > 1) has_shared_view_generics = true;
+    }
+    bool has_generics = open_return || (!specialization && (f.generic || container_generic)) || has_shared_view_generics;
+    if (has_generics) {
       o << "<";
       size_t gi = 0;
       for (const auto& p : f.params)
@@ -5290,6 +5454,14 @@ class Generator {
         if (gi++) o << ", ";
         if (*f.return_type == "map") o << "K, V";
         else o << "T";
+      }
+      if (has_shared_view_generics) {
+        for (const auto& [vt, count] : view_type_counts) {
+          if (count > 1) {
+            if (gi++) o << ", ";
+            o << "T_" << vt << ": " << access_trait(vt);
+          }
+        }
       }
       o << ">";
     }
@@ -5319,7 +5491,11 @@ class Generator {
       auto abi = function_parameter_abi(f, index, pt, specialization);
       Effect effect = abi.effect;
       if (view && effect != Effect::Consume && view_object_type(pt)) {
-        o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
+        if (view_type_counts[pt] > 1) {
+          o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "T_" << pt;
+        } else {
+          o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
+        }
         continue;
       }
       bool borrow = abi.passing != ParameterPassingMode::Value;
@@ -5970,6 +6146,113 @@ class Generator {
     return found_fact;
   }
 
+  std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return {};
+
+    const est::ExprSlot wanted = (s.kind == Stmt::Kind::For)
+        ? est::ExprSlot::Iterable : est::ExprSlot::Condition;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == wanted && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return {};
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+
+    std::vector<const TypedLoopOwnershipFactV1*> facts;
+    for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
+      if (req.loop_est_arena_index == matched_handle->arena_index &&
+          req.loop_expression_occurrence_id == matched_handle->expr &&
+          (req.specialization_context == context ||
+           (!codegen_active_specialization_key_.empty() &&
+            req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
+        try {
+          const auto* fact = p_.typed_semantics->find_loop_ownership_fact(req);
+          if (!fact) {
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT required loop ownership fact missing");
+          }
+          facts.push_back(fact);
+        } catch (const std::exception& e) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+        }
+      }
+    }
+    for (const auto& fact : p_.typed_semantics->loop_ownership_facts) {
+      if (fact.loop_est_arena_index == matched_handle->arena_index &&
+          fact.loop_expression_occurrence_id == matched_handle->expr &&
+          (fact.specialization_context == context ||
+           (!codegen_active_specialization_key_.empty() &&
+            fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
+        bool found_req = false;
+        for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
+          if (req.loop_est_arena_index == fact.loop_est_arena_index &&
+              req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
+              req.definition_identity == fact.definition_identity &&
+              req.edge_kind == fact.edge_kind) {
+            found_req = true;
+            break;
+          }
+        }
+        if (!found_req) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT loop ownership requirement missing for fact");
+        }
+      }
+    }
+    return facts;
+  }
+
+  std::vector<const TypedExceptionalOwnershipFactV1*> resolve_exceptional_ownership_facts(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return {};
+    (void)s;
+    const string context = functional_context.empty() ? "main" : functional_context;
+
+    std::vector<const TypedExceptionalOwnershipFactV1*> facts;
+    for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
+      if (req.specialization_context == context ||
+          (!codegen_active_specialization_key_.empty() &&
+           req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
+        try {
+          const auto& fact = p_.typed_semantics->find_exceptional_ownership_fact(req);
+          facts.push_back(&fact);
+        } catch (const std::exception& e) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+        }
+      }
+    }
+    for (const auto& fact : p_.typed_semantics->exceptional_ownership_facts) {
+      if (fact.specialization_context == context ||
+          (!codegen_active_specialization_key_.empty() &&
+           fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
+          continue;
+        bool found_req = false;
+        for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
+          if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
+              req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
+              req.raised_variant_identity == fact.raised_variant_identity) {
+            found_req = true;
+            break;
+          }
+        }
+        if (!found_req) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT exceptional ownership requirement missing for fact");
+        }
+      }
+    }
+    return facts;
+  }
+
   const TypedTakeFactV1* resolve_take_fact(
       const Stmt& s, const string& functional_context,
       std::uint32_t* out_arena_index = nullptr,
@@ -6499,6 +6782,8 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::Try: {
+          auto ex_facts = resolve_exceptional_ownership_facts(s, functional_context);
+          (void)ex_facts;
           // Rust cannot infer that a move on one exceptional variant leaves
           // an owned local available on another. The checker has already
           // proved the recovery path; retain only affected locals in slots.
@@ -6557,10 +6842,32 @@ class Generator {
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(joined_types.at(binding)) << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(joined_types.at(binding)) << ";\n";
+            }
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
+            if (!view_parameters_.empty() && view_object_type(joined_types.at(binding)))
+              view_parameters_.insert(binding);
           }
 
           if (s.exceptional_alternatives.empty()) {
@@ -6861,10 +7168,32 @@ class Generator {
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(joined_types.at(binding)) << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(joined_types.at(binding)) << ";\n";
+            }
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
+            if (!view_parameters_.empty() && view_object_type(joined_types.at(binding)))
+              view_parameters_.insert(binding);
           }
           string match_callee;
           vector<string> match_arguments;
@@ -6977,11 +7306,33 @@ class Generator {
             const string& type = joined_types.at(binding);
             backend_comment(o, (base + level) * 4,
                             "CONTROL-FLOW JOIN: binding has one definite static type on every path");
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(type)
-              << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(type)
+                << ";\n";
+            }
             locals.insert(binding);
             types[binding] = type;
+            if (!view_parameters_.empty() && view_object_type(type))
+              view_parameters_.insert(binding);
           }
           o << indent(level) << "if "
             << expr(s.a, d, locals, &types,
@@ -7015,6 +7366,8 @@ class Generator {
           break;
         }
         case Stmt::Kind::While: {
+          auto loop_facts = resolve_loop_ownership_facts(s, functional_context);
+          (void)loop_facts;
           o << indent(level) << "while "
             << expr(s.a, d, locals, &types,
                     statement_functional_pipeline_id(
@@ -7030,6 +7383,7 @@ class Generator {
           break;
         }
         case Stmt::Kind::For: {
+          auto loop_facts = resolve_loop_ownership_facts(s, functional_context);
           string source = trim(s.b);
           string range_name;
           vector<string> range_args;
@@ -7116,9 +7470,23 @@ class Generator {
             string traversal = "(" + collection_expression + ").iter()";
             // FileIO.chunks yields Agent B's MossChunks, already an
             // Iterator<Item = Range> borrowing the FileIO.
-            if (canonical_type_name(element_type) == "seq[Range]")
+            if (canonical_type_name(element_type) == "seq[Range]") {
               traversal = collection_expression;
-            else if (copy_type(element)) traversal += ".copied()";
+            } else {
+              bool write_iteration = false;
+              for (const auto* fact : loop_facts) {
+                if ((fact->binding_identity == s.a || ends_with(fact->binding_identity, ":" + s.a)) &&
+                    fact->converged_access == Effect::Write) {
+                  write_iteration = true;
+                  break;
+                }
+              }
+              if (write_iteration) {
+                traversal = "(" + collection_expression + ").iter_mut()";
+              } else if (copy_type(element)) {
+                traversal += ".copied()";
+              }
+            }
             o << indent(level) << "for " << s.a << " in " << traversal
               << " {\n";
             auto child_locals = locals;
@@ -7248,6 +7616,7 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          bool joined_assignment = join_assignments.erase(s.a) != 0;
           if (s.a == "_") {
             o << indent(level) << "let _ = "
               << expr(s.b, d, locals, &types,
@@ -7356,20 +7725,31 @@ class Generator {
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
             if (take_fact) {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
-              o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+              o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
             } else if (ownership_fact) {
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
+              const auto rhs_name = tree_identifier_name(s.b);
+              bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
+              bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
               if (ownership_fact->access == Effect::Read) {
-                o << indent(level) << "let " << s.a << " = &(" << rhs_val << ");\n";
+                if (rhs_is_borrow) {
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = " << rhs_val << ";\n";
+                } else {
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = &(" << rhs_val << ");\n";
+                }
               } else if (ownership_fact->access == Effect::Write) {
-                o << indent(level) << "let mut " << s.a << " = &mut (" << rhs_val << ");\n";
+                if (rhs_is_borrow) {
+                  o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
+                } else {
+                  o << indent(level) << "let mut " << rust_identifier(s.a) << " = &mut (" << rhs_val << ");\n";
+                }
               } else {
-                o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+                o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
               }
             } else {
-              o << indent(level) << "let mut " << s.a;
+              o << indent(level) << "let mut " << rust_identifier(s.a);
               if (!annotation.empty()) o << ": " << annotation;
               o << " = "
                 << expr(s.b, d, locals, &types,
@@ -7391,6 +7771,8 @@ class Generator {
                   source_binding->second.instance);
             else
               forget_domain_instance_binding(s.a);
+            if (source_name && view_parameters_.count(*source_name))
+              view_parameters_.insert(s.a);
           } else {
             string mb, mi;
             bool map_assignment = tree_parse_index(s.a, mb, mi);
@@ -7430,7 +7812,7 @@ class Generator {
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types)) {
+            else if (is_object_view(s.a, d, locals, &types) && (!tree_plain_identifier(s.a) || !locals.count(s.a))) {
               string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
               o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
@@ -7508,16 +7890,31 @@ class Generator {
               if (take_fact) {
                 assigned = emit_take_expression(*take_fact, s, d, locals, &types);
               } else if (ownership_fact) {
+                const auto rhs_name = tree_identifier_name(s.b);
+                bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
                 if (ownership_fact->access == Effect::Read) {
-                  assigned = "&(" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&(" + assigned + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  assigned = "&mut (" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&mut (" + assigned + ")";
                 }
               }
               if (reuse_string_buffer)
                 o << indent(level) << assigned << ";\n";
-              else
-                o << indent(level) << lhs << " = " << assigned << ";\n";
+              else {
+                bool shadow_killed_definition = ownership_fact &&
+                    !ownership_fact->killed_definition_identity.empty() &&
+                    tree_plain_identifier(s.a) && !joined_assignment && level == 0;
+                if (shadow_killed_definition) {
+                  bool mutable_decl = (ownership_fact->access != Effect::Read);
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "")
+                    << rust_identifier(s.a) << " = " << assigned << ";\n";
+                } else {
+                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) && !write_through_parameters_.count(s.a)) ? rust_identifier(s.a) : lhs;
+                  o << indent(level) << target_lhs << " = " << assigned << ";\n";
+                }
+              }
+              if (source_binding && view_parameters_.count(*source_binding))
+                view_parameters_.insert(s.a);
             }
             if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
@@ -7853,7 +8250,7 @@ class Generator {
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
-            o << s.a << " = ";
+            o << rust_identifier(s.a) << " = ";
             emit_domain_construction(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
@@ -7882,13 +8279,37 @@ class Generator {
             o << indent(level);
             if (!joined_assignment) {
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
-              if (ownership_fact) {
-                mutable_decl = (ownership_fact->access == Effect::Write);
+              if (ownership_fact && ownership_fact->access == Effect::Write) {
+                mutable_decl = true;
               }
               o << "let " << (mutable_decl ? "mut " : "");
             }
-            o << s.a;
-            if (take_fact) {
+            bool is_killed_by_borrow = false;
+            if (p_.typed_semantics && s.kind == Stmt::Kind::Var && !ownership_fact) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& killed_id = fact.killed_definition_identity;
+                if (!killed_id.empty() && ends_with(killed_id, ":" + s.a) &&
+                    (fact.access == Effect::Read || fact.access == Effect::Write)) {
+                  is_killed_by_borrow = true;
+                  break;
+                }
+              }
+              if (!is_killed_by_borrow) {
+                for (const auto& ex_fact : p_.typed_semantics->exceptional_ownership_facts) {
+                  for (const auto& bs : ex_fact.state_at_raise) {
+                    if (bs.name == s.a && (!bs.borrow_source_binding_identities.empty() || !bs.borrow_storage_paths.empty())) {
+                      is_killed_by_borrow = true;
+                      break;
+                    }
+                  }
+                  if (is_killed_by_borrow) break;
+                }
+              }
+            }
+            o << rust_identifier(s.a);
+            if (is_killed_by_borrow) {
+              o << ";\n";
+            } else if (take_fact) {
               o << " = " << emit_take_expression(*take_fact, s, d, locals, &types) << ";\n";
             } else {
               if (!joined_assignment && !domain_capability && !ownership_fact &&
@@ -7903,10 +8324,12 @@ class Generator {
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
               if (ownership_fact) {
+                const auto rhs_name = tree_identifier_name(s.b);
+                bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
                 if (ownership_fact->access == Effect::Read) {
-                  rhs_val = "&(" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&(" + rhs_val + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  rhs_val = "&mut (" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&mut (" + rhs_val + ")";
                 }
               }
               o << " = " << rhs_val;
@@ -7930,6 +8353,8 @@ class Generator {
             } else {
               forget_domain_instance_binding(s.a);
             }
+            if (source_name && view_parameters_.count(*source_name))
+              view_parameters_.insert(s.a);
           }
           locals.insert(s.a);
           ++i;

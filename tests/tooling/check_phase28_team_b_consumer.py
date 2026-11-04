@@ -54,6 +54,21 @@ def verify_native(compiler: str, fixture: str, expected_output: str) -> None:
             f"{fixture}: native output mismatch: expected '{expected_output}', got '{run_bin.stdout.strip()}'"
         )
 
+    # Rustc compile (Optimized)
+    bin_opt_path = TMP / f"{stem}_opt.bin"
+    rustc_opt = run(["rustc", "--edition=2021", "-O", str(rs_path), "-o", str(bin_opt_path)])
+    if rustc_opt.returncode != 0:
+        raise AssertionError(f"{fixture}: rustc -O compilation failed: {rustc_opt.stderr}")
+
+    # Run binary (Optimized)
+    run_bin_opt = run([str(bin_opt_path)])
+    if run_bin_opt.returncode != 0:
+        raise AssertionError(f"{fixture}: native optimized binary crashed: {run_bin_opt.stderr}")
+    if run_bin_opt.stdout.strip() != expected_output:
+        raise AssertionError(
+            f"{fixture}: native optimized output mismatch: expected '{expected_output}', got '{run_bin_opt.stdout.strip()}'"
+        )
+
 
 def verify_fail_closed(compiler: str, fixture: str, hook: str) -> None:
     source = FIXTURES / fixture
@@ -70,6 +85,19 @@ def verify_fail_closed(compiler: str, fixture: str, hook: str) -> None:
         )
 
 
+def verify_fast_debug_fail_closed(compiler: str, fixture: str, hook: str) -> None:
+    source = FIXTURES / fixture
+    env = os.environ.copy()
+    env[hook] = "1"
+    proc = run([compiler, "run", "--interp", str(source)], env=env)
+    if proc.returncode == 0:
+        raise AssertionError(f"Fast Debug {fixture} with {hook}: expected failure, but succeeded!")
+    if "MOSS_INTERNAL_INVARIANT" not in proc.stderr and "MOSS_INTERNAL_INVARIANT" not in proc.stdout:
+        raise AssertionError(
+            f"Fast Debug {fixture} with {hook}: expected MOSS_INTERNAL_INVARIANT, got: {proc.stderr}"
+        )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_team_b_consumer.py COMPILER")
@@ -79,6 +107,25 @@ def main() -> int:
     verify_native(compiler, "read_alias.moss", "7\n7")
     verify_native(compiler, "write_alias.moss", "9")
     verify_native(compiler, "consume_transfer.moss", "7")
+    verify_native(compiler, "rebinding_definitions.moss", "1\n2")
+    verify_native(compiler, "rebind_after_borrow.moss", "1\n2")
+    verify_native(compiler, "if_else_live_join.moss", "7\n0\n7")
+    verify_native(compiler, "branch_write_join.moss", "100")
+    verify_native(compiler, "if_else_live_consume.moss", "7")
+    verify_native(compiler, "match_reaching_defs.moss", "99\n99\n0\n99\n99\n0\n99\n99\n0\n99")
+    verify_native(compiler, "rebind_branches.moss", "20\n0\n10\n0\n10\n20")
+    verify_native(compiler, "loop_reinitialize.moss", "4")
+    verify_native(compiler, "for_loop_reinitialize.moss", "4")
+    verify_native(compiler, "loop_zero_iteration_preserves.moss", "4")
+    verify_native(compiler, "loop_borrow_last_use.moss", "1\n2")
+    verify_native(compiler, "vector_read_iteration.moss", "1\n2")
+    verify_native(compiler, "exceptional_recover_read.moss", "4")
+    verify_native(compiler, "exceptional_borrow_join_provenance.moss", "1")
+    verify_native(compiler, "exceptional_mutation_preserved.moss", "0")
+    verify_native(compiler, "exceptional_rebind_after_last_borrow.moss", "4\n9")
+    verify_native(compiler, "exceptional_echo_argument_origin.moss", "2")
+    verify_native(compiler, "exceptional_message_nested_argument.moss", "2")
+    verify_native(compiler, "exceptional_pipeline_callback.moss", "2")
 
     # E1 Group A scalar temporary push repair
     e1_source = ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field.moss"
@@ -107,6 +154,43 @@ def main() -> int:
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")
 
+    # Fast Debug fail-closed fault injection
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")
+
+    # Loop consumer genuine fault injection (native)
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DROP_LOOP_FACT")
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_PERTURB_LOOP_FACT")
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DELETE_LOOP_REQUIREMENT")
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_FACT")
+    verify_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_REQUIREMENT")
+
+    # Loop consumer genuine fault injection (Fast Debug)
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DROP_LOOP_FACT")
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_PERTURB_LOOP_FACT")
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DELETE_LOOP_REQUIREMENT")
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_FACT")
+    verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_REQUIREMENT")
+
+    # Exceptional consumer genuine fault injection (native)
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")
+
+    # Exceptional consumer genuine fault injection (Fast Debug)
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")
+
     # Specialization fact isolation
     isolation_script = ROOT / "tests/phase28/test_specialization_fact_isolation.py"
     iso_res = run(["python3", str(isolation_script), compiler])
@@ -119,7 +203,7 @@ def main() -> int:
     if spec_res.returncode != 0:
         raise AssertionError(f"Specialized native consumer verification failed:\n{spec_res.stderr}")
 
-    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation + specialized consumer contract)")
+    print("phase28 team b consumer: PASS (Read/Write/Consume lowering + E1 scalar temporary push + drop/perturb/delete fail-closed + specialization isolation + specialized consumer contract + 3-way parity)")
     return 0
 
 
