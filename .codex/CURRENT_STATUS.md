@@ -15131,10 +15131,15 @@ Branch `phase28-r3-team-a-effect-facts`, based on requested `4dc62e9437f00363286
 - Validation completed: targeted selector effect harness (default and shadow), local ownership gate (default and shadow), `verify_take_fixtures.py` (16/16), specialized ownership contract, string debt (42 names / 7 binding comparisons), and `git diff --check`.
 - Remaining before handoff: document feedback, freeze and request Agent 2 review, address findings if any, final push and status record. Abstract trait-call effects remain unsupported because no checked argument-effect vector is available there. No full integration suite run.
 
-### Phase 28 Round 4 Slice C — Loop Ownership (in progress)
+### Phase 28 Round 4 Slice C — Loop Ownership (reviewed; push pending)
 
 Branch `phase28-r4-slice-c`, based on exact baseline
 `ea7208964b29edb3363aa5cd58acf6d5321af833`.
+- Final implementation SHA: `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b`.
+  Agent 2 returned NO-GO on `c758efab5e1864d298296b2cadfbb1307f3a2b01`
+  because loop fact lookup did not verify its authoritative requirement or
+  specialization mapping. Fixed that contract and added API fail-closed tests;
+  Agent 2 returned GO on the final SHA.
 - Implemented checker-owned while/for edge facts and per-definition ownership
   availability on the existing statement-occurrence graph. Entry, backedge,
   zero-iteration, and converged exits use exact loop and RHS EST occurrences,
@@ -15144,7 +15149,7 @@ Branch `phase28-r4-slice-c`, based on exact baseline
   missing-reinitialization, and unused-owner-transfer fixtures. Restored the
   EXPRESS-005 F11c/F11d loop regression pair after the first full run exposed
   an accepted dead local transfer; the final targeted cases pass.
-- Validation completed on the corrected implementation: local ownership tests
+- Validation completed on the final reviewed implementation: local ownership tests
   pass in default and EST-shadow modes; F11c/F11d pass; the final default
   `make check` and full EST-shadow parallel suite each report 167 jobs,
   151 PASS / 16 FAIL / 0 SKIP, with all 16 failing job names matching the
@@ -15155,10 +15160,10 @@ Branch `phase28-r4-slice-c`, based on exact baseline
   structural divergence for `put(take())`; the same exact failure was
   reproduced on the baseline compiler at `ea7208964b29edb3363aa5cd58acf6d5321af833`.
 - One ancillary `margo --root sdk/tables build --check` attempt reached a
-  pre-existing-looking test-target `TYPE_MISMATCH` for `ignored` at
-  `tables_test.moss:151`; the final full suite's SDK oracle Debug/Release jobs
-  passed. This ancillary failure was not altered or counted as a suite failure.
-- Remaining: finalize durable handoff and Team closeout records, commit/freeze
-  exact SHA, obtain independent Agent 2 review on that SHA, fix confirmed
-  findings if needed, and push to `phase28-r4-slice-c`. No merge to
+  test-target `TYPE_MISMATCH` for `ignored` at `tables_test.moss:151`; its
+  baseline status was not established. The final full suite's SDK oracle
+  Debug/Release jobs passed. This ancillary result was not altered or counted
+  as a regression-suite failure.
+- Remaining: commit documentation/status closeout, verify the implementation
+  commit is unchanged, and push the reviewed branch. No merge to
   `phase28-work`/`main`; do not begin Slice D absent L7 authorization.

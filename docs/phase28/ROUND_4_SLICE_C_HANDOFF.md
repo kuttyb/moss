@@ -4,8 +4,11 @@
 
 - Branch: `phase28-r4-slice-c` from authorized baseline
   `ea7208964b29edb3363aa5cd58acf6d5321af833`.
-- Implementation SHA: exact source/test commit recorded in the final review
-  closeout; no source or test edits follow that SHA unless Agent 2 re-reviews.
+- Implementation SHA: `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b`.
+- Agent 2 final verdict: **GO** on that exact SHA. The earlier review of
+  `c758efab5e1864d298296b2cadfbb1307f3a2b01` was NO-GO on requirement-table
+  registration and specialization authority; the exact-requirement lookup fix
+  and API tests are included in the final reviewed SHA.
 - Scope: checker-owned while/for ownership across loop entry, backedges,
   zero-iteration exits, and converged exits. No merge to `phase28-work` or
   `main`; Slice D is not started.
@@ -45,6 +48,9 @@ these facts.
   parity on supported loop fixtures.
 - Slice A/B ownership, specialized-fact, selector, `take`, and consumer gates:
   PASS. `verify_take_fixtures.py`: 18/18.
+- Typed ownership API authority tests pass for exact registration, missing and
+  duplicate requirements, altered identity, specialization mismatch, missing
+  facts, and perturbed effects.
 - EXPRESS-005 F11c/F11d: 2/2 PASS.
 - String debt: 42 raw Stmt name comparisons / 7 binding comparisons.
 - Agent feedback validation and `git diff --check`: PASS.
@@ -58,6 +64,10 @@ these facts.
   implementation defect is fixed, covered by
   `for_loop_unused_owner_move.moss`, and both final suites pass
   `shard_enum_modules`.
+- An ancillary `margo --root sdk/tables build --check` attempt failed in the
+  package test target with `TYPE_MISMATCH` for `ignored` at
+  `tables_test.moss:151`. Its baseline status was not established and it was
+  not altered; the full suite's SDK oracle Debug/Release jobs passed.
 
 ## Known limits
 
@@ -68,6 +78,10 @@ outside Slice C. Ownership consumer debt remains open.
 
 ## Review and handoff
 
-- Independent Agent 2 verdict and exact reviewed SHA: pending.
+- Independent Agent 2 verdict: **GO**, exact reviewed implementation SHA
+  `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b`. The preceding SHA
+  `c758efab5e1864d298296b2cadfbb1307f3a2b01` received NO-GO for missing
+  registration and specialization validation; that finding is fixed and
+  covered by the typed API authority tests.
 - Recommended next slice after L7 authorization: Slice D, subject to its
   approved scope; do not begin it under this authorization.
