@@ -51,7 +51,8 @@ def check_effects():
     exceptional_facts = [line for line in checked_run.stderr.splitlines()
                          if line.startswith("MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT ") and
                          'variant="enum:provider__Failure:Bad"' in line]
-    assert len(exceptional_facts) == 1 and "slot=RhsValue" in exceptional_facts[0], (
+    assert len(exceptional_facts) == 1 and "slot=RhsValue" in exceptional_facts[0] \
+        and "arg=0" in exceptional_facts[0], (
         "imported WRITE/recovery fact must identify the checked assignment RHS call",
         exceptional_facts, checked_run.stderr)
     effects = json.loads(run(
