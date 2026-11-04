@@ -3,8 +3,8 @@
 **State: Oracle expectations certified frozen after independent GO.**
 Independent Agent 2 reviewed candidate `d37ea08fa853c994b69c16bd90671ffcf34c72ea`
 and returned GO after the reviewer-controlled private holdout passed. The exact
-freeze commit SHA is recorded in `tests/phase28/oracle/certification.json`. No
-compiler source was changed.
+freeze commit is `544506774211fbb5b9d4d3e8116525b389faa3dd`, recorded in
+`tests/phase28/oracle/certification.json`. No compiler source was changed.
 
 ## Approval package
 

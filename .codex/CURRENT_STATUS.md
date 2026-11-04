@@ -12,8 +12,8 @@ unknown-origin, and missing-copy-row cases.
 
 Expectations and runtime callsite registry are `CERTIFIED_FROZEN` and digest
 pinned in `tests/phase28/oracle/certification.json`; harness validation accepts
-the approved state and rejects expectation/registry digest drift. Freeze commit
-SHA is to be recorded after the certification commit is created.
+the approved state and rejects expectation/registry digest drift. Exact frozen
+SHA: `544506774211fbb5b9d4d3e8116525b389faa3dd`.
 
 Validation on certified state: oracle data validation PASS (56 rows), harness
 tests 16/16 PASS, agent-feedback validator PASS, `git diff --check` PASS. Full

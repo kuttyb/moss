@@ -8,5 +8,5 @@
   "holdout_summary": "Reviewer-owned private provenance cases passed, including clone-free artifact with missing sidecar rejected as PROVENANCE_MISSING.",
   "expectations_sha256": "223a15436046767175de9c1f30637bb80c76505cb402f5dadb700c64520f4431",
   "runtime_callsite_allowlist_sha256": "1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d",
-  "frozen_sha": "d37ea08fa853c994b69c16bd90671ffcf34c72ea"
+  "frozen_sha": "544506774211fbb5b9d4d3e8116525b389faa3dd"
 }
