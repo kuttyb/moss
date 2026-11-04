@@ -215,6 +215,10 @@ When working with Moss:
   pushes to the configured remote after the exact implementation SHA receives
   independent Agent 2 GO. Do not merge into `phase28-work` or `main`, and do
   not begin Slice C.
+  For Phase 28 Round 4 Slice C on `phase28-r4-slice-c`, L7 authorized scoped
+  local commits and a normal push to the configured remote after the exact
+  implementation SHA receives independent Agent 2 GO. Do not merge into
+  `phase28-work` or `main`, and do not begin Slice D without L7 authorization.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

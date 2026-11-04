@@ -1,0 +1,9 @@
+enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  let owned = Box.Full(value: "x")
+  for index in range(0, 2):
+    let discarded = owned
+    echo index

@@ -1,0 +1,13 @@
+type Box:
+  value: Int
+
+fn take_box(box: Box) -> Box:
+  return box
+
+fn main():
+  var slot = Box(value = 4)
+  var i = 0
+  while i < 3:
+    consumed = take_box(slot)
+    i = i + consumed.value
+  echo slot.value

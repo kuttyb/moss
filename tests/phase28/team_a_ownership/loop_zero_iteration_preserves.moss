@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn main():
+  var slot = Box(value = 4)
+  i = 0
+  while i < 0:
+    i = i + 1
+  echo slot.value
