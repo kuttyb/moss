@@ -10,7 +10,7 @@ Evaluates the draft Phase 28 expectation table across:
 6. Structured rejection diagnostics tied to the fixture's source construct
 
 Specification Authority:
-tests/phase28/oracle/expectations.json (draft pending L7 approval)
+tests/phase28/oracle/expectations.json (draft or certified frozen)
 """
 from __future__ import annotations
 
@@ -34,6 +34,8 @@ MARGO = ROOT / "margo"
 _expectation_doc = json.loads((Path(__file__).resolve().parent / "expectations.json").read_text())
 _diagnostic_doc = json.loads((Path(__file__).resolve().parent / "diagnostic_mapping.json").read_text())
 _runtime_callsite_doc = json.loads((Path(__file__).resolve().parent / "runtime_callsite_allowlist.json").read_text())
+_certification_path = Path(__file__).resolve().parent / "certification.json"
+_certification_doc = json.loads(_certification_path.read_text()) if _certification_path.exists() else None
 _runtime_callsites = {item["callsite_id"]: item for item in _runtime_callsite_doc.get("callsites", [])}
 _fixture_files = {
     "ORACLE-01-VEC-WRITE-THROUGH": "oracle_01_write_through_vector.moss",
@@ -131,11 +133,34 @@ def validate_mutation_assertions(fixture: dict) -> None:
 def validate_oracle_data() -> None:
     if len(_expectation_doc.get("fixtures", [])) != 56:
         raise ValueError("approval package must contain exactly 56 permanent fixtures")
-    if _expectation_doc.get("approval_status") != "DRAFT_PENDING_L7_APPROVAL":
-        raise ValueError("expectation table must remain explicitly unapproved until L7 approval")
+    expectation_status = _expectation_doc.get("approval_status")
+    runtime_status = _runtime_callsite_doc.get("approval_status")
+    if expectation_status == "CERTIFIED_FROZEN":
+        if not isinstance(_certification_doc, dict):
+            raise ValueError("certified expectation table requires digest-pinned certification.json")
+        if _certification_doc.get("format") != "moss-phase28-oracle-certification" or _certification_doc.get("version") != 1:
+            raise ValueError("unsupported oracle certification record")
+        if _certification_doc.get("reviewer_verdict") != "GO" or not _certification_doc.get("approval_candidate_sha"):
+            raise ValueError("certification record lacks approved candidate SHA or independent GO")
+        if _certification_doc.get("holdout_result") != "PASS":
+            raise ValueError("certification record lacks a passing reviewer-controlled holdout")
+        expected_hash = _certification_doc.get("expectations_sha256")
+        actual_hash = hashlib.sha256((Path(__file__).resolve().parent / "expectations.json").read_bytes()).hexdigest()
+        if expected_hash != actual_hash:
+            raise ValueError("frozen expectations digest mismatch; new L7 review is required")
+        runtime_hash = _certification_doc.get("runtime_callsite_allowlist_sha256")
+        actual_runtime_hash = hashlib.sha256((Path(__file__).resolve().parent / "runtime_callsite_allowlist.json").read_bytes()).hexdigest()
+        if runtime_hash != actual_runtime_hash:
+            raise ValueError("frozen runtime callsite registry digest mismatch; new independent review is required")
+        if not _certification_doc.get("frozen_sha"):
+            raise ValueError("certification record lacks exact frozen SHA")
+        if runtime_status != "CERTIFIED_FROZEN":
+            raise ValueError("certified expectations require a certified-frozen runtime registry")
+    elif expectation_status != "DRAFT_PENDING_L7_APPROVAL":
+        raise ValueError("expectation table has an unsupported approval state")
     if (_runtime_callsite_doc.get("format") != "moss-runtime-clone-callsites" or
             _runtime_callsite_doc.get("version") != 1 or
-            _runtime_callsite_doc.get("approval_status") != "DRAFT_PENDING_INDEPENDENT_REVIEW" or
+            runtime_status not in {"DRAFT_PENDING_INDEPENDENT_REVIEW", "CERTIFIED_FROZEN"} or
             _runtime_callsite_doc.get("owner") != "oracle-maintainers"):
         raise ValueError("runtime callsite classifications must remain in the reviewed oracle-owned registry")
     callsite_ids = [row.get("callsite_id") for row in _runtime_callsite_doc.get("callsites", [])]
@@ -965,7 +990,7 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
     lines = []
     lines.append(f"# Phase 28 Independent Semantic Oracle — Failure Ledger")
     lines.append(f"\nEvaluated against: `{compiler_desc}`")
-    lines.append("Specification Baseline: draft P28-R7-005 table and L7-approved language addendum; table remains unfrozen.\n")
+    lines.append(f"Specification Baseline: P28-R7-005 expectation table ({_expectation_doc['approval_status']}) and L7-approved language addendum.\n")
 
     failed_cases = [r for r in results if r["status"] == "FAIL"]
     passed_cases = [r for r in results if r["status"] == "PASS"]
@@ -1029,7 +1054,7 @@ def main() -> int:
         print(f"Invalid oracle data: {error}", file=sys.stderr)
         return 2
     if args.validate_only:
-        print(f"Oracle data valid: {len(ORACLE_FIXTURES)} fixtures; L7 approval pending")
+        print(f"Oracle data valid: {len(ORACLE_FIXTURES)} fixtures; state={_expectation_doc['approval_status']}")
         return 0
 
     compiler = args.compiler.resolve()
@@ -1044,7 +1069,7 @@ def main() -> int:
     print(f"Phase 28 Independent Semantic Oracle Suite")
     print(f"Compiler: {compiler}")
     print(f"Fixtures: {len(ORACLE_FIXTURES)}")
-    print("Specification: draft P28-R7-005 expectation table and language addendum")
+    print(f"Specification: P28-R7-005 expectation table ({_expectation_doc['approval_status']}) and language addendum")
     print(f"================================================================================\n")
 
     results = []

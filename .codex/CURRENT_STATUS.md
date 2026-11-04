@@ -1,3 +1,28 @@
+### P28-R7-005 — Independent Oracle Certification (2026-11-04)
+
+Certified the 56-row Phase 28 semantic oracle after L7 GO and independent Agent 2
+review. Candidate `d37ea08fa853c994b69c16bd90671ffcf34c72ea` received initial
+NO-GO for a fail-open path: missing clone provenance sidecar passed when the
+artifact had no `.clone()` calls and the Moss source had no `copy(...)` call.
+The harness now fails closed for every artifact without its v2 sidecar, with a
+regression test and explicit contract language. Independent Agent 2 returned GO
+on the repaired exact candidate; reviewer-controlled private holdout passed
+missing-sidecar, explicit-copy, digest-tamper, source-link, duplicate-row,
+unknown-origin, and missing-copy-row cases.
+
+Expectations and runtime callsite registry are `CERTIFIED_FROZEN` and digest
+pinned in `tests/phase28/oracle/certification.json`; harness validation accepts
+the approved state and rejects expectation/registry digest drift. Freeze commit
+SHA is to be recorded after the certification commit is created.
+
+Validation on certified state: oracle data validation PASS (56 rows), harness
+tests 16/16 PASS, agent-feedback validator PASS, `git diff --check` PASS. Full
+oracle run: 8 fixtures pass all applicable gates; 34 semantic failures and 19
+provenance blocks (overlapping); 298 `.clone()` occurrences are unverified. The
+compiler lacks v2 provenance output, and independent generated-Rust duplication
+audit remains open. Oracle certification does not establish compiler
+compliance. No compiler source changes or `main` merge.
+
 ### Phase 28 Independent Semantic Oracle Suite (2026-11-04)
 
 Created independent Phase 28 Semantic Oracle Suite under L7 directive P28-R7-001 (Phase 28 CP2 reopened; W12 integration suspended).

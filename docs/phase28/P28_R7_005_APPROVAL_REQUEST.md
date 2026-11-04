@@ -1,11 +1,12 @@
-# P28-R7-005 — L7 Approval Request (Draft)
+# P28-R7-005 — L7 Approval and Independent Certification Record
 
-**Decision:** L7 approved the language semantics. Oracle freeze is not yet
-approved. This revised package requests review of the expectation table and
-corrected harness/provenance contract; it remains unfrozen.
+**Decision:** L7 approved the language semantics, expectation table, language
+addendum, diagnostic mapping, and v2 clone-provenance interface. Independent
+Agent 2 returned GO on repaired candidate
+`d37ea08fa853c994b69c16bd90671ffcf34c72ea`.
 
-**State:** `DRAFT_PENDING_L7_APPROVAL`. Semantic approval does not approve the
-oracle freeze. The author is not the approver.
+**State:** `CERTIFIED_FROZEN`. See the [certification record](../../tests/phase28/oracle/certification.json)
+for digest pins and reviewer-controlled holdout outcome.
 
 ## Review package
 

@@ -1,11 +1,10 @@
 # P28-R7-005 — Oracle Hardening Revised Draft Report
 
-**State: Semantic language decisions approved by L7; oracle freeze not approved.**
-This revised package continues from published draft
-`4eb5c0cfc3b3754534b749cca91b4a337c899a3b` on `phase28-r7-005`. No compiler
-source was changed. The revised candidate must remain
-`DRAFT_PENDING_L7_APPROVAL` until explicit approval of the expectation table and
-harness contract.
+**State: Oracle expectations certified frozen after independent GO.**
+Independent Agent 2 reviewed candidate `d37ea08fa853c994b69c16bd90671ffcf34c72ea`
+and returned GO after the reviewer-controlled private holdout passed. The exact
+freeze commit SHA is recorded in `tests/phase28/oracle/certification.json`. No
+compiler source was changed.
 
 ## Approval package
 
@@ -14,13 +13,13 @@ harness contract.
 - [Runtime callsite allowlist](../../tests/phase28/oracle/runtime_callsite_allowlist.json): empty; runtime labels authorize no clone
 - [Normative language addendum](P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md)
 - [Clone provenance contract](P28_R7_005_CLONE_PROVENANCE_CONTRACT.md)
-- [Per-fixture, per-engine draft results](../../tests/phase28/oracle/reports/P28_R7_005_DRAFT_RESULTS.json)
-- [Draft failure ledger](../../tests/phase28/oracle/reports/P28_R7_005_DRAFT_FAILURE_LEDGER.md)
+- [Certified per-fixture, per-engine results](../../tests/phase28/oracle/reports/P28_R7_005_CERTIFIED_RESULTS.json)
+- [Certified failure ledger](../../tests/phase28/oracle/reports/P28_R7_005_CERTIFIED_FAILURE_LEDGER.md)
 - [This draft report](P28_R7_005_DRAFT_REPORT.md)
+- [Certification record](../../tests/phase28/oracle/certification.json)
 
-Permanent fixture IDs and defect IDs are unchanged. The private holdout remains
-under local `.git/oracle-review/holdout.json`; it is not part of this branch or
-approval package.
+Permanent fixture IDs and defect IDs are unchanged. Reviewer-owned holdout tests
+remain private and are not part of this branch.
 
 ## Corrections and discriminating fixtures
 
@@ -53,13 +52,12 @@ errors, missing provenance, forged runtime labels and keyword-bearing unrelated
 evidence, incorrect source spans, stale manifests, nested copy identities,
 mutation-line consistency, and copied-record independence.
 
-The full draft oracle completed against the repository compiler at the specified
-continuation base `4eb5c0cfc3b3754534b749cca91b4a337c899a3b`; no compiler source
-was changed. It reported 8 fixtures passing all applicable gates, 34
-semantic failures excluding provenance, and 19 fixtures blocked by missing or
-invalid clone provenance. These categories overlap. Per-fixture and per-engine
-results are in the linked JSON report; the failure ledger records each observed
-engine outcome.
+The full oracle completed against the repository compiler at candidate
+`d37ea08fa853c994b69c16bd90671ffcf34c72ea`; no compiler source was changed.
+It reported 8 fixtures passing all applicable gates, 34 semantic failures
+excluding provenance, and 19 fixtures blocked by missing or invalid clone
+provenance. These categories overlap. Per-fixture and per-engine results are in
+the linked JSON report; the failure ledger records each observed engine outcome.
 
 ORACLE-47 produced indexing-panic evidence in Fast Debug, Native Debug and
 Native Optimized. ORACLE-50 passed checker and execution-output parity across
@@ -77,12 +75,16 @@ sidecar. The revised contract also states that `.clone()` text scanning alone
 cannot prove absence of duplication through alternate Rust mechanisms; the
 independent AST/MIR duplication audit remains open.
 
-No full repository suite was run. No oracle freeze, merge, compiler change, or
-independent self-approval is claimed.
+The independent holdout also found and verified a repair for a missing-sidecar
+fail-open case: clone-free Rust artifacts now fail the provenance gate without
+their v2 sidecar. Holdout controls for explicit-copy links, tampered context
+digests, unlinking, duplicate rows, unknown origins and missing source-copy rows
+passed. Certification does not close the separate generated-Rust duplication
+audit or establish compiler compliance.
+
+No full repository suite was run. The oracle was independently certified; no
+compiler compliance claim is made.
 
 ## Checkpoint
 
-Submit this revised package to L7 through the project owner. Stop until L7
-returns explicit approval or required corrections. After approval, obtain
-independent harness review and run the private holdout before freezing any
-expectations.
+Certification handoff complete. No merge to `main`.

@@ -1,8 +1,8 @@
-# P28-R7-005 Language Addendum — Draft for L7 Approval
+# P28-R7-005 Language Addendum — Certified Frozen
 
-**Language semantics: APPROVED by L7. Oracle freeze: NOT APPROVED.** These
-normative decisions are approved; the expectation table and harness remain
-`DRAFT_PENDING_L7_APPROVAL`. The oracle owner cannot approve or freeze them.
+**Language semantics: APPROVED by L7. Oracle: CERTIFIED FROZEN.** Independent
+Agent 2 returned GO for candidate `d37ea08fa853c994b69c16bd90671ffcf34c72ea`;
+see `tests/phase28/oracle/certification.json` for approval and holdout details.
 
 ## Collection and error semantics
 

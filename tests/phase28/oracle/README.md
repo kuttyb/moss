@@ -3,8 +3,9 @@
 ## Overview
 
 This suite provides an independent semantic oracle for Moss Phase 28 ownership semantics.
-Its revised expectation table and language addendum are **drafts pending L7 approval**:
-`expectations.json` and `docs/phase28/P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md`.
+Its 56-row expectation table and language addendum are certified frozen under
+P28-R7-005. `certification.json` records the approved candidate, independent
+review verdict, reviewer-controlled holdout result, and digest pins.
 
 The oracle is decoupled from Team A and Team B implementations and asserts expected values, mutations, rejection diagnostics, no unclassified clone occurrences, and multi-engine parity across:
 1. **Semantic Checker** (`moss check --json`)
@@ -42,10 +43,10 @@ The suite currently contains 56 fixtures covering:
 
 ## Invocation
 
-Current status: proposed expectations are not frozen, the private reviewer
-holdout is local-only, and the emitter does not yet provide the specified
-occurrence-level clone provenance sidecar. Harness results must not be labeled
-an L7-approved conformance verdict until these gates are resolved.
+Current status: expectations are frozen after independent GO. The emitter does
+not yet provide the specified v2 clone provenance sidecar. A generated-Rust
+duplication audit beyond `.clone()` scanning also remains open. Oracle
+certification does not establish compiler compliance.
 
 Run against the repository compiler:
 ```bash
