@@ -1,0 +1,5 @@
+# Draft: structurally changing a Vector while its iteration borrow is live is rejected.
+fn main():
+  var values = [1, 2]
+  for item in values:
+    values.push(item)

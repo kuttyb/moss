@@ -1,21 +1,53 @@
-# Spec: Proposal §5.3, §7.2, §12; Phase 21 error handling spec §13
-fn test_vec_remove_out_of_bounds() -> String:
-  var v = [1, 2]
-  try:
-    let r = v.remove(99)
-    return "unreached"
-  recover:
-    return "caught_vec_index"
-
-fn test_map_remove_missing() -> String:
-  var m = Map()
-  m["present"] = 10
-  try:
-    let r = m.remove("missing")
-    return "unreached"
-  recover:
-    return "caught_map_key"
+# Draft: typed collection failures are recoverable and retain their variant.
+type Payload:
+  value: Int
 
 fn main():
-  echo test_vec_remove_out_of_bounds()
-  echo test_map_remove_missing()
+  var v = [1, 2]
+  var m = Map()
+  m["present"] = Payload(value: 10)
+  try:
+    let r = v.remove(99)
+    echo "unreached_remove"
+  recover CollectionError.InvalidIndex:
+    echo "invalid_index"
+  try:
+    let r = v.swap_remove(99)
+    echo "unreached_swap_remove"
+  recover CollectionError.InvalidIndex:
+    echo "invalid_index"
+  let first = v.pop()
+  let second = v.pop()
+  try:
+    let r = v.pop()
+    echo "unreached_vector_pop"
+  recover CollectionError.Empty:
+    echo "empty_vector"
+  q = Queue()
+  try:
+    let r = q.pop()
+    echo "unreached_queue_pop"
+  recover CollectionError.Empty:
+    echo "empty_queue"
+  try:
+    let r = m["missing"]
+    echo "unreached_map_read"
+  recover CollectionError.MissingKey:
+    echo "missing_key_read"
+  try:
+    m["missing"].value = 2
+    echo "unreached_map_write_through"
+  recover CollectionError.MissingKey:
+    echo "missing_key_write_through"
+  try:
+    let r = m.remove("missing")
+    echo "unreached_map_remove"
+  recover CollectionError.MissingKey:
+    echo "missing_key_remove"
+  try:
+    let r = m.get("missing")
+    echo "unreached_map_get"
+  recover CollectionError.MissingKey:
+    echo "missing_key_get"
+  m["inserted"] = Payload(value: 11)
+  echo m["inserted"].value

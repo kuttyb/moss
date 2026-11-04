@@ -15340,3 +15340,37 @@ Branch `phase28-r4-slice-d`, based on exact requested baseline
 - Handoff recorded in `docs/phase28/ROUND_4_SLICE_D_HANDOFF.md`; branch pushed
   to `origin/phase28-r4-slice-d`. No merge to `phase28-work`/`main`; no
   consumer migration.
+
+### P28-R7-005 — Oracle Hardening draft (awaiting L7 approval)
+
+Work is on local branch `phase28-r7-005`, based exactly on
+`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. The 56-fixture expectation table,
+separate oracle diagnostic mapping, corrected ORACLE-05/07/08, coverage additions,
+and proposed language/clone provenance addendum are drafted. No compiler source
+was changed. The reviewer-controlled holdout is local-only under
+`.git/oracle-review/holdout.json`, outside the branch and remote.
+
+L7 approval routing was requested but no reviewer/channel has been identified
+yet. The expectation table remains `DRAFT_PENDING_L7_APPROVAL`; no freeze,
+commit, push, independent harness review, or exact-SHA publication has occurred.
+The required occurrence-level clone provenance artifact is not emitted by the
+current compiler. The harness found 298 unverified `.clone()` occurrences
+across debug and optimized artifacts on the task baseline. Without provenance,
+these are not established as hidden Moss-value clones or harmless runtime
+clones; they remain unclassified.
+
+Validation completed: `make --jobs="$(nproc)" moss-dev` (build passed with two
+existing `type_ir.hpp` missing-field-initializer warnings); oracle harness on
+`build/compiler/moss-dev` (56 fixtures, 11 PASS / 45 FAIL; draft conformance
+results, not an L7 verdict); `python3 -m py_compile
+tests/phase28/oracle/oracle_harness.py`; harness `--validate-only` (56 fixture
+records and source copy counts valid); `python3
+tests/tooling/check_agent_feedback.py`; and `git diff --check`. No full `make
+check` suite was run. Harness output and generated builds are in disposable
+`tmp/phase28_oracle/`; see `docs/phase28/P28_R7_005_DRAFT_REPORT.md` for durable
+results.
+
+Remaining: identify the L7 reviewer/channel and obtain approval before freezing;
+obtain independent harness review; resolve emitter provenance support outside
+this no-compiler-source scope; then publish the exact approved SHA and stop at
+handoff. No merge is authorized.

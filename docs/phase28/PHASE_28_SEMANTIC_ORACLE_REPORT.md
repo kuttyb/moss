@@ -2,6 +2,15 @@
 
 ## 1. Executive Summary
 
+> **Historical report notice (P28-R7-005):** The expectations in this report
+> were superseded by approved L7 decisions. ORACLE-05's `option[V]` expectation
+> was incorrect; its observed `Payload` result agrees with `Map.get(k) -> V`.
+> ORACLE-07 incorrectly grouped Vector indexing panics with recoverable
+> collection failures. ORACLE-08 tested a user `fn copy` as callable even
+> though the revised contract reserves `copy`. The old run remains historical
+> evidence only and is not a valid conformance result for those cases. The
+> replacement table/addendum is pending L7 approval and is not frozen.
+
 - **Task:** P28-R7-001 — Independent Semantic Oracle
 - **L7 Decision:** GO. Phase 28 CP2 reopened. W12 integration suspended.
 - **Base Commit:** `150ab36b41e45504aaa400aa717da241be7542fb` (`phase28-work`)
@@ -27,10 +36,10 @@ Every concrete failure identified during the clean-room review was independently
 | 2 | Indexed field reads without hidden clones | `ORACLE-02-INDEXED-FIELD-READ-NO-CLONE` | 0 hidden clones in lowering | **1 hidden clone** (`(v[0]).clone().tag`) | **1 hidden clone** (`(v[0]).clone().tag`) |
 | 3 | Rejection of consuming borrowed collection elements | `ORACLE-03-COLL-ELEM-CONSUME-REJECT` | Checker REJECT (`OWNERSHIP_COLLECTION_ELEMENT_CONSUME`) | **UNEXPECTED_ACCEPT** (emitted `consume(v[0].clone())`) | **UNEXPECTED_ACCEPT** (emitted `consume(v[0].clone())`) |
 | 4 | Write-through borrowed Map entries | `ORACLE-04-MAP-WRITE-THROUGH` | Native & FD output: `9\n9` | Fast Debug: `9\n9`; **Native: `9\n1`** (2 hidden clones) | Fast Debug: `9\n9`; **Native: `9\n1`** (2 hidden clones) |
-| 5 | Borrowed `Map.get(key)` semantics | `ORACLE-05-MAP-GET-BORROW` | Returns `option[V]` without clones | **REJECTED**: `MATCH_REQUIRES_ENUM; found Payload` | **REJECTED**: `MATCH_REQUIRES_ENUM; found Payload` |
+| 5 | Borrowed `Map.get(key)` semantics | `ORACLE-05-MAP-GET-BORROW` | Returns borrowed `V`; missing key raises `CollectionError.MissingKey` | Historical fixture used an invalid `option[V]` expectation; checker returned `Payload`, which is consistent with the revised contract | Same historical oracle error |
 | 6 | Native compilation of `match consume` on options | `ORACLE-06-MATCH-CONSUME-OPT-NATIVE` | Clean rustc compilation, output: `target` | Checker/FD pass; **rustc FAIL**: `error[E0433]: cannot find module or crate option` | **REJECTED**: `match requires an enum; found option[Box]` |
-| 7 | Catchable errors for missing map keys and invalid removals | `ORACLE-07-CATCHABLE-COLL-ERRORS` | Catchable via `recover:` | **FD: `interpreter error: index out of range`**; **Native: panic/SIGABRT** | **FD: `interpreter error: index out of range`**; **Native: panic/SIGABRT** |
-| 8 | User-defined `copy` resolution vs built-in | `ORACLE-08-USER-COPY-RESOLUTION` | Calls user function, output: `105` | Intercepted by intrinsic, **output: `5`** | Intercepted by intrinsic, **output: `5`** |
+| 7 | Collection failures and Vector bounds | `ORACLE-07-CATCHABLE-COLL-ERRORS` | Missing Map keys, invalid removal indices and empty pops raise typed `CollectionError`; out-of-range `v[i]` panics | Historical fixture conflated these cases; its `remove(99)` failure is relevant, while a `v[i]` panic is expected | Same historical fixture limitation |
+| 8 | Reserved `copy` declaration | `ORACLE-08-USER-COPY-RESOLUTION` | Reject user-defined `fn copy` | Historical fixture invoked a declaration now forbidden by the revised contract; output `5` is not a valid conformance verdict | Same historical oracle error |
 | 9 | User-defined enum cases named `Some`/`None` | `ORACLE-09-USER-ENUM-SOME-NONE` | Matches user variant, output: `42` | Native: `42`; **FD CRASH: `interpreter error: missing enum payload`** | Native: `42`; **FD CRASH: `interpreter error: missing enum payload`** |
 | 10a| Explicit-copy-only duplication | `ORACLE-10A-EXPLICIT-COPY-ONLY` | 1 authorized clone, 0 hidden clones | Total 3 clones: **2 hidden clones detected** | Total 3 clones: **2 hidden clones detected** |
 | 10b| Rejection of source `.clone()` | `ORACLE-10B-CLONE-ALIAS-REJECTED` | Checker REJECT (`CLONE_ALIAS_UNSUPPORTED`) | **REJECTED** (`CLONE_ALIAS_UNSUPPORTED`) ✅ | **REJECTED** (`CLONE_ALIAS_UNSUPPORTED`) ✅ |
@@ -47,10 +56,10 @@ The following ledger details all failures observed when evaluating against the d
 | `DEFECT-002` | `ORACLE-02-INDEXED-FIELD-READ-NO-CLONE` | NO-GO Review | `Clones` | Lowering emitted `(v[0]).clone().tag` instead of borrowing projection; 1 unauthorized clone | Proposal §1.2, §1.3, §10, §12 |
 | `DEFECT-003` | `ORACLE-03-COLL-ELEM-CONSUME-REJECT` | NO-GO Review | `Checker` | Checker accepted consuming borrowed `v[0]` without explicit copy; inserted hidden clone in lowering | Proposal §10 row `nxt.push(head[0])`, §5.3 |
 | `DEFECT-004` | `ORACLE-04-MAP-WRITE-THROUGH` | NO-GO Review | `Native, Native -O, Clones` | Lowering cloned `m["key"]`; mutation didn't write through (got `9\n1`, expected `9\n9`); 2 hidden clones | Proposal §10, §5.3, §12 |
-| `DEFECT-005` | `ORACLE-05-MAP-GET-BORROW` | NO-GO Review | `Checker, FD, Native` | 1-arg `Map.get(key)` unboxed value rather than returning `option[V]`; match failed with `MATCH_REQUIRES_ENUM` | Proposal §5.3, §10, §12 |
+| `DEFECT-005` | `ORACLE-05-MAP-GET-BORROW` | Historical oracle false positive | `Checker` | Prior oracle incorrectly required `option[V]`; observed borrowed `Payload` is consistent with revised `Map.get(k) -> V` semantics. Retained as a permanent historical ID; no new defect is assigned. | P28-R7-005 addendum draft |
 | `DEFECT-006` | `ORACLE-06-MATCH-CONSUME-OPT-NATIVE` | NO-GO Review | `Native, Native -O` | Native generator emitted `option::Some` instead of `Option::Some`; rustc compilation failed with E0433 | Proposal §6.2, §10, §12 |
-| `DEFECT-007` | `ORACLE-07-CATCHABLE-COLL-ERRORS` | NO-GO Review | `FD, Native, Native -O` | Out-of-bounds removal crashed Fast Debug with uncatchable error and panicked/SIGABRT in native | Proposal §5.3, §7.2, §12; Phase 21 §13 |
-| `DEFECT-008` | `ORACLE-08-USER-COPY-RESOLUTION` | NO-GO Review | `FD, Native, Native -O` | Compiler shadowed user-defined `copy(d: Data)` with built-in clone intrinsic (output `5` instead of `105`) | Proposal §10 row `copy(v[0])`, §11 Phase D, §12 |
+| `DEFECT-007` | `ORACLE-07-CATCHABLE-COLL-ERRORS` | Historical mixed finding | `FD, Native, Native -O` | The invalid `remove(99)` result remains a typed-error conformance question; old broad catch cannot determine its variant and old indexing language was incorrect. Re-run the corrected operation matrix. | P28-R7-005 addendum draft |
+| `DEFECT-008` | `ORACLE-08-USER-COPY-RESOLUTION` | Historical oracle false positive | `Checker, FD, Native` | Old fixture expected a user-defined `copy` call to work. Revised contract reserves this name, so the correct test rejects the declaration. Retained as a permanent historical ID. | P28-R7-005 addendum draft |
 | `DEFECT-009` | `ORACLE-09-USER-ENUM-SOME-NONE` | NO-GO Review | `Fast Debug` | Fast Debug special-cased variant name `Some` to built-in option, crashing with `missing enum payload` | Proposal §6, §10, §12 |
 | `DEFECT-010` | `ORACLE-10A-EXPLICIT-COPY-ONLY` | NO-GO Review | `Clones` | Lowering inserted 2 unauthorized hidden clones alongside authorized `copy(x)` | Proposal §10 row `copy(v[0])`, §11 Phase D |
 | `DEFECT-011` | `ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT` | Assignment & Locals | `Checker` | Checker accepted returning borrowed collection element `v[0]`, inserting unauthorized hidden clone | Proposal §10 row `b = a; return b`, §3 |
@@ -94,6 +103,10 @@ The following ledger details all failures observed when evaluating against the d
 ---
 
 ## 5. Frozen Implementation SHA & Integrity Assurance
+
+This section describes only the original P28-R7-001 historical snapshot. It
+does not freeze the revised P28-R7-005 oracle. Revised freeze requires L7
+approval, independent harness review, and the exact post-approval delivery SHA.
 
 - **Harness Path:** `tests/phase28/oracle/oracle_harness.py`
 - **Fixtures Directory:** `tests/phase28/oracle/fixtures/` (47 files)

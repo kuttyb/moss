@@ -10,11 +10,12 @@ Enforces the frozen Phase 28 ownership proposal (§10 and §12) across:
 6. Exact rejection diagnostics for invalid programs
 
 Specification Authority:
-docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md (§10 and §12)
+tests/phase28/oracle/expectations.json (draft pending L7 approval)
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -27,628 +28,127 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 DEFAULT_TMP = ROOT / "tmp/phase28_oracle"
+MARGO = ROOT / "margo"
 
-# Complete fixture specification definitions per Proposal §10 & §12
-ORACLE_FIXTURES = [
-    # ─── NO-GO Clean-Room Review Concrete Failures (Items 1-10) ───────────────
-    {
-        "id": "ORACLE-01-VEC-WRITE-THROUGH",
-        "name": "Write-through borrowed Vector elements",
-        "file": "oracle_01_write_through_vector.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10 row 'b = v[0]; b.cost = 9', §1.2 ('One owner, temporary borrows'), §5.3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "9\n9",
-        "expected_native": "9\n9",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Mutating a borrowed vector element writes through to the underlying vector; expected 9,9."
-    },
-    {
-        "id": "ORACLE-02-INDEXED-FIELD-READ-NO-CLONE",
-        "name": "Indexed field reads without hidden clones",
-        "file": "oracle_02_indexed_field_read_no_clone.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §1.2, §1.3 ('Layout cannot change ownership'), §10, §12 ('Zero hidden clones')",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "hello",
-        "expected_native": "hello",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Reading an aggregate field through an index projection must not clone the entire element."
-    },
-    {
-        "id": "ORACLE-03-COLL-ELEM-CONSUME-REJECT",
-        "name": "Rejection of consuming borrowed collection elements",
-        "file": "oracle_03_collection_element_consume_rejected.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10 row 'nxt.push(head[0])', §5.3, §12",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
-        "alternative_diagnostics": ["OWNERSHIP_ILLEGAL_CONSUME", "ILLEGAL_CONSUME_FROM_BORROWED"],
-        "description": "Collection elements are borrowed; consuming them without remove/pop or explicit copy must be rejected."
-    },
-    {
-        "id": "ORACLE-04-MAP-WRITE-THROUGH",
-        "name": "Write-through borrowed Map entries",
-        "file": "oracle_04_write_through_map_entry.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10, §5.3 ('Collection ownership APIs'), §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "9\n9",
-        "expected_native": "9\n9",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Mutating a borrowed map entry writes through to the map; expected 9,9."
-    },
-    {
-        "id": "ORACLE-05-MAP-GET-BORROW",
-        "name": "Borrowed Map.get(key) semantics",
-        "file": "oracle_05_map_get_borrowed.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §5.3 ('Map.get(key): 1-argument borrowed lookup returning option[V]'), §10, §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "active",
-        "expected_native": "active",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "1-argument Map.get(key) returns a borrowed option[V] without cloning map entries."
-    },
-    {
-        "id": "ORACLE-06-MATCH-CONSUME-OPT-NATIVE",
-        "name": "Native compilation and execution of match consume on options",
-        "file": "oracle_06_match_consume_option_native.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §6.2 ('match consume: transfer payloads from an owned enum'), §10, §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "target",
-        "expected_native": "target",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "match consume on option[T] must compile cleanly to rustc and execute without unlinked crate errors."
-    },
-    {
-        "id": "ORACLE-07-CATCHABLE-COLL-ERRORS",
-        "name": "Catchable errors for missing map keys and invalid removals",
-        "file": "oracle_07_catchable_collection_errors.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §5.3, §7.2 ('Exception edges are effect-precise'), §12; Phase 21 spec §13",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "caught_vec_index\ncaught_map_key",
-        "expected_native": "caught_vec_index\ncaught_map_key",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Out-of-bounds removal and missing key access raise catchable errors rather than uncatchable panics/SIGABRT."
-    },
-    {
-        "id": "ORACLE-08-USER-COPY-RESOLUTION",
-        "name": "Correct resolution of user-defined copy functions versus the built-in",
-        "file": "oracle_08_user_defined_copy_resolution.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10 row 'copy(v[0])', §11 Phase D ('explicit copy(x) only'), §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "105",
-        "expected_native": "105",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "A user-defined function named copy must resolve to the user function, not the built-in intrinsic."
-    },
-    {
-        "id": "ORACLE-09-USER-ENUM-SOME-NONE",
-        "name": "User-defined enum cases named Some/None",
-        "file": "oracle_09_user_enum_some_none.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §6 ('Applying Rule 4 to enums'), §10, §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "42",
-        "expected_native": "42",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "User-defined enums with variant names Some or None must not collide with the built-in option type."
-    },
-    {
-        "id": "ORACLE-10A-EXPLICIT-COPY-ONLY",
-        "name": "Explicit-copy-only duplication",
-        "file": "oracle_10a_explicit_copy_only.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10 row 'copy(v[0]) for an eligible value', §11 Phase D",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "init\ninit",
-        "expected_native": "init\ninit",
-        "authorized_explicit_copies": 1,
-        "max_hidden_clones": 0,
-        "description": "copy(x) explicitly duplicates nonprimitive values and produces an independent copy."
-    },
-    {
-        "id": "ORACLE-10B-CLONE-ALIAS-REJECTED",
-        "name": "Rejection of source .clone() alias",
-        "file": "oracle_10b_clone_alias_rejected.moss",
-        "category": "NO-GO Review",
-        "spec_citation": "Proposal §10 row 'v[0].clone() as a source-language duplication alias', §11 Phase D",
-        "kind": "REJECTED",
-        "expected_diagnostic": "CLONE_ALIAS_UNSUPPORTED",
-        "alternative_diagnostics": ["UNKNOWN_MEMBER_FUNCTION"],
-        "description": "Source-level .clone() is rejected; copy(x) is the sole explicit duplication syntax."
-    },
-
-    # ─── Assignment and Local Inference (§10) ─────────────────────────────────
-    {
-        "id": "ORACLE-11-ASSIGN-READ-BORROW",
-        "name": "Assignment inference: READ borrow",
-        "file": "oracle_11_assignment_read_borrow.moss",
-        "category": "Assignment & Locals",
-        "spec_citation": "Proposal §10 row 'b = a; echo b; echo a', §3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "10\n10",
-        "expected_native": "10\n10",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Local assignment without mutation infers a READ borrow; both bindings remain accessible."
-    },
-    {
-        "id": "ORACLE-12-ASSIGN-WRITE-BORROW",
-        "name": "Assignment inference: WRITE borrow",
-        "file": "oracle_12_assignment_write_borrow.moss",
-        "category": "Assignment & Locals",
-        "spec_citation": "Proposal §10 row 'b = a; b.field = 1', §3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "1\n1",
-        "expected_native": "1\n1",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Local assignment with subsequent mutation infers a WRITE borrow on writable storage."
-    },
-    {
-        "id": "ORACLE-13-ASSIGN-CONSUME-RETURN",
-        "name": "Assignment inference: CONSUME return",
-        "file": "oracle_13_assignment_consume_return.moss",
-        "category": "Assignment & Locals",
-        "spec_citation": "Proposal §10 row 'b = a; return b', §3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "hello",
-        "expected_native": "hello",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Returning a local infers a CONSUME demand, satisfied when source is owned and movable."
-    },
-    {
-        "id": "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT",
-        "name": "Assignment inference: CONSUME from borrowed place rejected",
-        "file": "oracle_14_assignment_consume_borrowed_rejected.moss",
-        "category": "Assignment & Locals",
-        "spec_citation": "Proposal §10 row 'b = a; return b' (reject borrowed non-movable place), §3",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_ILLEGAL_CONSUME",
-        "alternative_diagnostics": ["OWNERSHIP_COLLECTION_ELEMENT_CONSUME", "ILLEGAL_MOVE_BORROWED"],
-        "description": "CONSUME demand cannot be satisfied from a borrowed collection element."
-    },
-    {
-        "id": "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
-        "name": "Plain field access cannot implicitly empty field",
-        "file": "oracle_15_plain_field_access_consume_rejected.moss",
-        "category": "Assignment & Locals",
-        "spec_citation": "Proposal §10 row 'b = state.frontier; archive(b)', §5.2",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_ILLEGAL_CONSUME",
-        "alternative_diagnostics": ["CANNOT_IMPLICITLY_EMPTY_FIELD", "TAKE_REQUIRED_FOR_FIELD_MOVE"],
-        "description": "Accessing a field without take cannot implicitly empty it when passed to a consuming callee."
-    },
-
-    # ─── Take Moves and Restrictions (§10) ────────────────────────────────────
-    {
-        "id": "ORACLE-16-TAKE-FRONTIER-ARCHIVE",
-        "name": "Explicit whole-field take",
-        "file": "oracle_16_take_frontier_archive.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'b = take(state.frontier); archive(b)', §5.1, §5.2",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "3\n0",
-        "expected_native": "3\n0",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "take(state.frontier) extracts the vector field and leaves an empty vector in place."
-    },
-    {
-        "id": "ORACLE-17-TAKE-OPTION-FIELD",
-        "name": "Whole option field take",
-        "file": "oracle_17_take_option_field.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'b = take(job.pending)', §5.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "42\n999",
-        "expected_native": "42\n999",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "take(job.pending) moves the option value and leaves None in place."
-    },
-    {
-        "id": "ORACLE-18-TAKE-QUEUE-FIELD",
-        "name": "Whole Queue field take",
-        "file": "oracle_18_take_queue_field.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(state.queue)', §5.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "10\n100",
-        "expected_native": "10\n100",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "take(state.queue) moves the queue and leaves an empty queue in place."
-    },
-    {
-        "id": "ORACLE-19-TAKE-NESTED-VEC-OPTION",
-        "name": "Nested take(v[i].pending)",
-        "file": "oracle_19_take_nested_vector_option.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(v[i].pending)', §5.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "task\n1\ncleared",
-        "expected_native": "task\n1\ncleared",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Takes eligible terminal option field; the containing element v[i] stays in place."
-    },
-    {
-        "id": "ORACLE-20-TAKE-NESTED-MAP-VECTOR",
-        "name": "Nested take(m[k].items)",
-        "file": "oracle_20_take_nested_map_vector.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(m[k].items)', §5.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "2\nb1\n0",
-        "expected_native": "2\nb1\n0",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Takes eligible terminal Vector field; entry m[k] stays in place with empty vector."
-    },
-    {
-        "id": "ORACLE-21-TAKE-LOCAL-REJECTED",
-        "name": "take(local) rejected",
-        "file": "oracle_21_take_local_rejected.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(local)', §5.1",
-        "kind": "REJECTED",
-        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
-        "alternative_diagnostics": ["TAKE_INVALID_TARGET"],
-        "description": "take is for surviving eligible fields; local moves are inferred per definition."
-    },
-    {
-        "id": "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT",
-        "name": "take(job.report) unified field rejected",
-        "file": "oracle_22_take_unified_field_rejected.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(job.report)', §5.1, §9",
-        "kind": "REJECTED",
-        "expected_diagnostic": "TAKE_INELIGIBLE_TERMINAL",
-        "alternative_diagnostics": ["TAKE_REQUIRES_FIELD_PLACE", "UNIFIED_FIELD_EXTRACT_REJECTED"],
-        "description": "Unified record fields cannot be extracted with take."
-    },
-    {
-        "id": "ORACLE-23-TAKE-VEC-ELEM-REJECTED",
-        "name": "take(v[0]) collection element rejected",
-        "file": "oracle_23_take_vector_element_rejected.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(v[0])', §5.1",
-        "kind": "REJECTED",
-        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
-        "alternative_diagnostics": ["COLLECTION_ELEMENT_TAKE_REJECTED"],
-        "description": "Collection elements cannot be extracted with take; use remove/pop instead."
-    },
-    {
-        "id": "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT",
-        "name": "take(my_array.slots[i]) custom slots rejected",
-        "file": "oracle_24_take_custom_slot_rejected.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'take(my_array.slots[i])', §9",
-        "kind": "REJECTED",
-        "expected_diagnostic": "TAKE_REQUIRES_FIELD_PLACE",
-        "alternative_diagnostics": ["TAKE_INELIGIBLE_TERMINAL"],
-        "description": "Custom array slots are not in the closed set of take-eligible terminal field types."
-    },
-    {
-        "id": "ORACLE-25-TAKE-BEFORE-RAISE-MUTATION",
-        "name": "take followed by raise and partial mutation",
-        "file": "oracle_25_take_before_raise_no_rollback.moss",
-        "category": "Take Moves & Restrictions",
-        "spec_citation": "Proposal §10 row 'b = take(state.frontier); may_raise(); use(b)', §8, §9",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "0",
-        "expected_native": "0",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Explicit destructive take is not transactional; state remains emptied on typed raise."
-    },
-
-    # ─── Rebinding and Loops (§10) ────────────────────────────────────────────
-    {
-        "id": "ORACLE-26-VEC-REMOVE-API",
-        "name": "Vector remove API transfers ownership",
-        "file": "oracle_26_vector_remove_api.moss",
-        "category": "Rebinding & Loops",
-        "spec_citation": "Proposal §10 row 'nxt.push(head.remove(0))', §5.3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "alpha\n1\nbeta",
-        "expected_native": "alpha\n1\nbeta",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Collection API remove(index) transfers owned element out of vector."
-    },
-    {
-        "id": "ORACLE-27-REBIND-AFTER-BORROWS",
-        "name": "Rebinding after outstanding borrows end",
-        "file": "oracle_27_rebind_after_borrows_end.moss",
-        "category": "Rebinding & Loops",
-        "spec_citation": "Proposal §10 row 'b = a; b = new_value', §3.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "1\n2",
-        "expected_native": "1\n2",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Rebinding a non-primitive local is legal after earlier borrows end."
-    },
-    {
-        "id": "ORACLE-28-REBIND-WHILE-BORROWED-REJECT",
-        "name": "Drop/rebind while borrowed rejected",
-        "file": "oracle_28_rebind_while_borrowed_rejected.moss",
-        "category": "Rebinding & Loops",
-        "spec_citation": "Proposal §10 row 'c = b; b = make2(); echo c', §3.2",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_USE_AFTER_REBIND",
-        "alternative_diagnostics": [
-            "OWNERSHIP_SOURCE_BORROWED",
-            "OWNERSHIP_CONFLICTING_ACCESS",
-            "DROP_WHILE_BORROWED"
-        ],
-        "description": "Rebinding or dropping an owned local while an active borrow is live is rejected."
-    },
-    {
-        "id": "ORACLE-29-LOOP-CARRIED-OWNERSHIP",
-        "name": "Loop-carried ownership handled by fixed point",
-        "file": "oracle_29_loop_carried_ownership_rebind.moss",
-        "category": "Rebinding & Loops",
-        "spec_citation": "Proposal §10 row 'frontier = expand(frontier) in a loop', §4.2, §7.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "3\n4",
-        "expected_native": "3\n4",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Rebinding a non-primitive local across loop iterations is supported via effect fixed points."
-    },
-
-    # ─── Joins and Control Flow Widening (§10) ────────────────────────────────
-    {
-        "id": "ORACLE-30-JOIN-BORROW-FRESH-REJECT",
-        "name": "Join borrowed element cannot promote to owned",
-        "file": "oracle_30_join_borrowed_and_fresh_rejected.moss",
-        "category": "Joins",
-        "spec_citation": "Proposal §10 row 'if c: b = left[0] else: b = Fresh(); echo b', §4",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_MIXED_JOIN",
-        "alternative_diagnostics": ["OWNERSHIP_ILLEGAL_PROMOTION", "ILLEGAL_JOIN_BORROWED_OWNED"],
-        "description": "A borrowed collection element cannot promote to owned at a live control-flow join."
-    },
-    {
-        "id": "ORACLE-31-JOIN-PROMOTED-CONSUME",
-        "name": "Join promoted consume from owned local",
-        "file": "oracle_31_join_promoted_consume.moss",
-        "category": "Joins",
-        "spec_citation": "Proposal §10 row 'if c: b = left else: b = Fresh(); echo b', §4",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "42\n99",
-        "expected_native": "42\n99",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Promoted CONSUME from an owned local merges with a fresh owned constructor at a live join."
-    },
-
-    # ─── Enums and Pattern Borrows (§10) ──────────────────────────────────────
-    {
-        "id": "ORACLE-32-MATCH-PAYLOAD-WRITE",
-        "name": "Pattern WRITE borrow",
-        "file": "oracle_32_match_payload_write_borrow.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'match job.state and mutate a payload', §6.1",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "20",
-        "expected_native": "20",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Pattern bindings on a writable scrutinee can infer WRITE borrows and mutate payloads."
-    },
-    {
-        "id": "ORACLE-33-MATCH-LAST-USE-OVERWRITE",
-        "name": "Pattern last-use overwrite",
-        "file": "oracle_33_match_payload_last_use_overwrite.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'match job.state then overwrite state after last pattern use', §6.1, §8",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "old\nnow_idle",
-        "expected_native": "old\nnow_idle",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Pattern borrow ends at last use inside arm, permitting whole-field overwrite afterward."
-    },
-    {
-        "id": "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT",
-        "name": "Overwrite matched state while payload borrowed rejected",
-        "file": "oracle_34_match_payload_overwrite_while_borrowed_rejected.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'Overwrite matched state while its payload is still borrowed', §6.1",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_CONFLICTING_ACCESS",
-        "alternative_diagnostics": [
-            "MATCH_READ_BORROW_ACTIVE",
-            "OVERWRITE_WHILE_BORROWED",
-            "MATCH_PAYLOAD_BORROW_ACTIVE"
-        ],
-        "description": "Overwriting a matched state while its payload binding is still live is rejected."
-    },
-    {
-        "id": "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT",
-        "name": "Ordinary match cannot consume",
-        "file": "oracle_35_match_ordinary_consume_rejected.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'match job.state and transfer payload', §6.1",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_ILLEGAL_CONSUME",
-        "alternative_diagnostics": [
-            "BORROWED_ENUM_PAYLOAD_ACCESS",
-            "MATCH_ORDINARY_CANNOT_CONSUME"
-        ],
-        "description": "Ordinary match produces borrowed payload views and cannot transfer or consume payloads."
-    },
-    {
-        "id": "ORACLE-36-MATCH-CONSUME-QUEUE-POP",
-        "name": "match consume queue.pop()",
-        "file": "oracle_36_match_consume_queue_pop.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'match consume queue.pop()', §6.2",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "hello",
-        "expected_native": "hello",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "match consume on an owned rvalue from queue.pop() dismantles the enum and transfers payloads."
-    },
-    {
-        "id": "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT",
-        "name": "match consume unified field rejected",
-        "file": "oracle_37_match_consume_unified_field_rejected.moss",
-        "category": "Patterns & Match Consume",
-        "spec_citation": "Proposal §10 row 'match consume job.state', §6.2, §9",
-        "kind": "REJECTED",
-        "expected_diagnostic": "MATCH_CONSUME_INTERIOR_PLACE",
-        "alternative_diagnostics": ["MATCH_CONSUME_FIELD_REJECTED"],
-        "description": "match consume on a unified field place is rejected; fields cannot be taken implicitly."
-    },
-
-    # ─── Collections and Iteration (§10) ──────────────────────────────────────
-    {
-        "id": "ORACLE-38-MAP-VALUES-BORROWED-VIEW",
-        "name": "Map.values() bound temporarily then mutated after borrow ends",
-        "file": "oracle_38_map_values_borrowed_view.moss",
-        "category": "Collections & Iteration",
-        "spec_citation": "Proposal §10 row 'Map.values() bound temporarily then source mutated after last use', §5.3",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "2\n3",
-        "expected_native": "2\n3",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Map views end at last use, allowing source mutation after the borrow expires."
-    },
-    {
-        "id": "ORACLE-39-VEC-FOR-READ",
-        "name": "Vector iteration: READ borrow",
-        "file": "oracle_39_vector_for_read.moss",
-        "category": "Collections & Iteration",
-        "spec_citation": "Proposal §10 row 'for item in items: echo item for a Vector', §5.3, §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "1\n2",
-        "expected_native": "1\n2",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Vector for-loop elements are borrowed READ views without mutable iteration overhead."
-    },
-    {
-        "id": "ORACLE-40-VEC-FOR-WRITE",
-        "name": "Vector iteration: WRITE element mutation",
-        "file": "oracle_40_vector_for_write.moss",
-        "category": "Collections & Iteration",
-        "spec_citation": "Proposal §10 row 'for item in items: item.bump() for writable Vector elements', §5.3, §12",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "11\n21",
-        "expected_native": "11\n21",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "for-loop on writable vector elements infers WRITE and mutates elements in place."
-    },
-    {
-        "id": "ORACLE-41-VEC-FOR-CONSUME-REJECT",
-        "name": "Vector iteration: consume element rejected",
-        "file": "oracle_41_vector_for_consume_rejected.moss",
-        "category": "Collections & Iteration",
-        "spec_citation": "Proposal §10 row 'for item in items: consume(item)', §5.3, §12",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_VECTOR_ELEMENT_CONSUME",
-        "alternative_diagnostics": ["OWNERSHIP_ILLEGAL_CONSUME"],
-        "description": "Loop elements are borrowed views and cannot be consumed."
-    },
-    {
-        "id": "ORACLE-42-CUSTOM-WRAPPER-REMOVE",
-        "name": "User-defined wrapper around Vector.remove",
-        "file": "oracle_42_custom_wrapper_remove.moss",
-        "category": "Collections & Iteration",
-        "spec_citation": "Proposal §10 row 'User-defined wrapper fn remove_at(a, i): return a.elements.remove(i)', §9",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "y\n2\nz",
-        "expected_native": "y\n2\nz",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Custom record types can wrap Vector and delegate element removal."
-    },
-
-    # ─── Handlers and Messages (§10 & §7.5) ───────────────────────────────────
-    {
-        "id": "ORACLE-43-HANDLER-PRIMITIVE-REPLY",
-        "name": "Primitive incoming handler parameter reply permitted",
-        "file": "oracle_43_handler_primitive_reply.moss",
-        "category": "Handlers & Messages",
-        "spec_citation": "Proposal §10 row 'reply n where n: Int', §7.5",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "42",
-        "expected_native": "42",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Primitive Copy input values may be directly replied from handlers."
-    },
-    {
-        "id": "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT",
-        "name": "Incoming handler parameter mutation rejected even when primitive",
-        "file": "oracle_44_handler_primitive_mutate_rejected.moss",
-        "category": "Handlers & Messages",
-        "spec_citation": "Proposal §10 row 'n = n + 1 where n: Int', §7.5",
-        "kind": "REJECTED",
-        "expected_diagnostic": "IMMUTABLE_MESSAGE_PAYLOAD",
-        "alternative_diagnostics": [
-            "CANNOT_REBIND_PARAMETER",
-            "IMMUTABLE_PARAMETER_MUTATION",
-            "message payloads are immutable snapshots",
-            "cannot WRITE incoming message payload"
-        ],
-        "description": "Handler parameter bindings are immutable snapshots even for primitive types."
-    },
-    {
-        "id": "ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL",
-        "name": "Independent primitive local copy and reply in handler",
-        "file": "oracle_45_handler_primitive_rebind_local.moss",
-        "category": "Handlers & Messages",
-        "spec_citation": "Proposal §10 row 'result = n; result = result + 1; reply result', §7.5",
-        "kind": "ACCEPTED",
-        "expected_fast_debug": "11",
-        "expected_native": "11",
-        "authorized_explicit_copies": 0,
-        "max_hidden_clones": 0,
-        "description": "Copying primitive input into a mutable local and modifying it is legal."
-    },
-    {
-        "id": "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT",
-        "name": "Non-primitive incoming handler parameter reply rejected",
-        "file": "oracle_46_handler_nonprimitive_reply_rejected.moss",
-        "category": "Handlers & Messages",
-        "spec_citation": "Proposal §10 row 'reply payload where payload: Report', §7.5",
-        "kind": "REJECTED",
-        "expected_diagnostic": "OWNERSHIP_ILLEGAL_CONSUME",
-        "alternative_diagnostics": ["IMMUTABLE_MESSAGE_PAYLOAD", "CANNOT_REPLY_NONPRIMITIVE_INPUT"],
-        "description": "Non-primitive input parameters cannot be replied without explicit copy(x)."
-    },
-]
+# Specification expectations and diagnostic normalization are independent oracle-owned data.
+_expectation_doc = json.loads((Path(__file__).resolve().parent / "expectations.json").read_text())
+_diagnostic_doc = json.loads((Path(__file__).resolve().parent / "diagnostic_mapping.json").read_text())
+_fixture_files = {
+    "ORACLE-01-VEC-WRITE-THROUGH": "oracle_01_write_through_vector.moss",
+    "ORACLE-02-INDEXED-FIELD-READ-NO-CLONE": "oracle_02_indexed_field_read_no_clone.moss",
+    "ORACLE-03-COLL-ELEM-CONSUME-REJECT": "oracle_03_collection_element_consume_rejected.moss",
+    "ORACLE-04-MAP-WRITE-THROUGH": "oracle_04_write_through_map_entry.moss",
+    "ORACLE-05-MAP-GET-BORROW": "oracle_05_map_get_borrowed.moss",
+    "ORACLE-06-MATCH-CONSUME-OPT-NATIVE": "oracle_06_match_consume_option_native.moss",
+    "ORACLE-07-CATCHABLE-COLL-ERRORS": "oracle_07_catchable_collection_errors.moss",
+    "ORACLE-08-USER-COPY-RESOLUTION": "oracle_08_user_defined_copy_resolution.moss",
+    "ORACLE-09-USER-ENUM-SOME-NONE": "oracle_09_user_enum_some_none.moss",
+    "ORACLE-10A-EXPLICIT-COPY-ONLY": "oracle_10a_explicit_copy_only.moss",
+    "ORACLE-10B-CLONE-ALIAS-REJECTED": "oracle_10b_clone_alias_rejected.moss",
+    "ORACLE-11-ASSIGN-READ-BORROW": "oracle_11_assignment_read_borrow.moss",
+    "ORACLE-12-ASSIGN-WRITE-BORROW": "oracle_12_assignment_write_borrow.moss",
+    "ORACLE-13-ASSIGN-CONSUME-RETURN": "oracle_13_assignment_consume_return.moss",
+    "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT": "oracle_14_assignment_consume_borrowed_rejected.moss",
+    "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT": "oracle_15_plain_field_access_consume_rejected.moss",
+    "ORACLE-16-TAKE-FRONTIER-ARCHIVE": "oracle_16_take_frontier_archive.moss",
+    "ORACLE-17-TAKE-OPTION-FIELD": "oracle_17_take_option_field.moss",
+    "ORACLE-18-TAKE-QUEUE-FIELD": "oracle_18_take_queue_field.moss",
+    "ORACLE-19-TAKE-NESTED-VEC-OPTION": "oracle_19_take_nested_vector_option.moss",
+    "ORACLE-20-TAKE-NESTED-MAP-VECTOR": "oracle_20_take_nested_map_vector.moss",
+    "ORACLE-21-TAKE-LOCAL-REJECTED": "oracle_21_take_local_rejected.moss",
+    "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT": "oracle_22_take_unified_field_rejected.moss",
+    "ORACLE-23-TAKE-VEC-ELEM-REJECTED": "oracle_23_take_vector_element_rejected.moss",
+    "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT": "oracle_24_take_custom_slot_rejected.moss",
+    "ORACLE-25-TAKE-BEFORE-RAISE-MUTATION": "oracle_25_take_before_raise_no_rollback.moss",
+    "ORACLE-26-VEC-REMOVE-API": "oracle_26_vector_remove_api.moss",
+    "ORACLE-27-REBIND-AFTER-BORROWS": "oracle_27_rebind_after_borrows_end.moss",
+    "ORACLE-28-REBIND-WHILE-BORROWED-REJECT": "oracle_28_rebind_while_borrowed_rejected.moss",
+    "ORACLE-29-LOOP-CARRIED-OWNERSHIP": "oracle_29_loop_carried_ownership_rebind.moss",
+    "ORACLE-30-JOIN-BORROW-FRESH-REJECT": "oracle_30_join_borrowed_and_fresh_rejected.moss",
+    "ORACLE-31-JOIN-PROMOTED-CONSUME": "oracle_31_join_promoted_consume.moss",
+    "ORACLE-32-MATCH-PAYLOAD-WRITE": "oracle_32_match_payload_write_borrow.moss",
+    "ORACLE-33-MATCH-LAST-USE-OVERWRITE": "oracle_33_match_payload_last_use_overwrite.moss",
+    "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT": "oracle_34_match_payload_overwrite_while_borrowed_rejected.moss",
+    "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT": "oracle_35_match_ordinary_consume_rejected.moss",
+    "ORACLE-36-MATCH-CONSUME-QUEUE-POP": "oracle_36_match_consume_queue_pop.moss",
+    "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT": "oracle_37_match_consume_unified_field_rejected.moss",
+    "ORACLE-38-MAP-VALUES-BORROWED-VIEW": "oracle_38_map_values_borrowed_view.moss",
+    "ORACLE-39-VEC-FOR-READ": "oracle_39_vector_for_read.moss",
+    "ORACLE-40-VEC-FOR-WRITE": "oracle_40_vector_for_write.moss",
+    "ORACLE-41-VEC-FOR-CONSUME-REJECT": "oracle_41_vector_for_consume_rejected.moss",
+    "ORACLE-42-CUSTOM-WRAPPER-REMOVE": "oracle_42_custom_wrapper_remove.moss",
+    "ORACLE-43-HANDLER-PRIMITIVE-REPLY": "oracle_43_handler_primitive_reply.moss",
+    "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT": "oracle_44_handler_primitive_mutate_rejected.moss",
+    "ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL": "oracle_45_handler_primitive_rebind_local.moss",
+    "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT": "oracle_46_handler_nonprimitive_reply_rejected.moss",
+}
+ORACLE_FIXTURES = []
+for _expectation in _expectation_doc["fixtures"]:
+    _fixture_id = _expectation["fixture_id"]
+    _expected = _expectation["expected"]
+    _diagnostic = _diagnostic_doc["mappings"].get(_fixture_id, {})
+    ORACLE_FIXTURES.append({
+        "id": _fixture_id,
+        "defect_id": _expectation["defect_id"],
+        "name": _fixture_id,
+        "file": _expectation.get("fixture_file", _fixture_files.get(_fixture_id)),
+        "category": "oracle",
+        "spec_citation": _expectation["specification_basis"],
+        "kind": "REJECTED" if _expectation["expectation"] == "REJECT" else "ACCEPTED",
+        **({"expected_diagnostic": _diagnostic.get("primary", _diagnostic.get("normalized")), "alternative_diagnostics": _diagnostic.get("accepted_mappings", [])} if _diagnostic else {}),
+        "expected": _expected,
+        **({
+            "expected_fast_debug": _expected["fast_debug"]["stdout"],
+            "expected_native": _expected["native_debug"]["stdout"],
+            "expected_fast_debug_status": _expected["fast_debug"]["status"],
+            "expected_native_status": _expected["native_debug"]["status"],
+            "expected_native_opt_status": _expected["native_optimized"]["status"],
+            "authorized_explicit_copies": _expected["clone_audit"]["authorized_copy_calls"],
+            "max_hidden_clones": _expected["clone_audit"]["max_unauthorized"],
+        } if _expectation["expectation"] == "ACCEPT" else {}),
+    })
 
 
-def run_process(cmd: list[str], cwd: Path | None = None, timeout: int = 15) -> tuple[int, str, str, float]:
+def validate_oracle_data() -> None:
+    if _expectation_doc.get("approval_status") != "DRAFT_PENDING_L7_APPROVAL":
+        raise ValueError("expectation table must remain explicitly unapproved until L7 approval")
+    ids = [item["id"] for item in ORACLE_FIXTURES]
+    defects = [item["defect_id"] for item in ORACLE_FIXTURES]
+    if len(ids) != len(set(ids)) or len(defects) != len(set(defects)):
+        raise ValueError("fixture and permanent defect identifiers must be unique")
+    rust_probe = '// ignored.clone()\nlet a = "ignored.clone()"; let b = r#"ignored.clone()"#; value.clone();'
+    if len(clone_occurrences(rust_probe)) != 1:
+        raise ValueError("Rust clone scanner must ignore comments and string literals")
+    moss_probe = '# copy(ignored)\ntext = "copy(ignored)"\nvalue = copy(source)\n'
+    if len(moss_copy_call_spans(moss_probe)) != 1:
+        raise ValueError("Moss copy scanner must ignore comments and string literals")
+    for item in ORACLE_FIXTURES:
+        path = FIXTURES_DIR / item["file"]
+        if not path.exists():
+            raise ValueError(f"fixture path is missing: {item['id']} -> {path}")
+        if item["kind"] == "REJECTED" and item["id"] not in _diagnostic_doc["mappings"]:
+            raise ValueError(f"rejected fixture lacks oracle-owned diagnostic mapping: {item['id']}")
+        if item["kind"] == "ACCEPTED":
+            expected = item["expected"]
+            for engine in ("fast_debug", "native_debug", "native_optimized"):
+                if engine not in expected or expected[engine].get("status") not in {"execute", "panic"}:
+                    raise ValueError(f"fixture lacks a specification-based {engine} result: {item['id']}")
+            if "clone_audit" not in expected:
+                raise ValueError(f"fixture lacks clone-audit expectation: {item['id']}")
+            source_files = list(path.rglob("*.moss")) if path.is_dir() else [path]
+            source_copy_count = sum(len(moss_copy_call_spans(source.read_text()))
+                                    for source in source_files)
+            declared_copy_count = expected["clone_audit"]["authorized_copy_calls"]
+            if source_copy_count != declared_copy_count:
+                raise ValueError(f"source/table copy occurrence mismatch for {item['id']}: "
+                    f"source={source_copy_count}, table={declared_copy_count}")
+def run_process(cmd: list[str], cwd: Path | None = None, timeout: int = 15,
+                env: dict | None = None) -> tuple[int, str, str, float]:
     start = time.perf_counter()
     try:
         proc = subprocess.run(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(cwd or ROOT), timeout=timeout
+            cwd=str(cwd or ROOT), timeout=timeout, env=env
         )
         elapsed = time.perf_counter() - start
         return proc.returncode, proc.stdout, proc.stderr, elapsed
@@ -657,22 +157,353 @@ def run_process(cmd: list[str], cwd: Path | None = None, timeout: int = 15) -> t
         return -1, "", "TIMEOUT", elapsed
 
 
-def count_clones_in_rust(rs_path: Path) -> int:
-    if not rs_path.exists():
-        return 0
-    content = rs_path.read_text()
-    # Find fn main() or function bodies, ignore standard library runtime blocks
-    # Focus on lines after moss__main or in generated functions
-    clone_count = 0
-    in_user_code = False
-    for line in content.splitlines():
-        if "fn main()" in line or "moss__main" in line:
-            in_user_code = True
-        if in_user_code:
-            # Match .clone()
-            matches = re.findall(r"\.clone\(\)", line)
-            clone_count += len(matches)
-    return clone_count
+def _position(source: str, offset: int) -> dict:
+    line = source.count("\n", 0, offset) + 1
+    line_start = source.rfind("\n", 0, offset) + 1
+    return {"line": line, "column": offset - line_start + 1}
+
+
+def moss_copy_call_spans(source: str) -> list[dict]:
+    """Find copy(expr) call spans without counting comments or quoted text."""
+    spans = []
+    i = 0
+    while i < len(source):
+        if source[i] == "#":
+            newline = source.find("\n", i)
+            i = len(source) if newline < 0 else newline + 1
+            continue
+        if source[i] in ('"', "'"):
+            quote = source[i]
+            i += 1
+            while i < len(source):
+                if source[i] == "\\":
+                    i += 2
+                elif source[i] == quote:
+                    i += 1
+                    break
+                else:
+                    i += 1
+            continue
+        if source.startswith("copy", i) and (i == 0 or not (source[i - 1].isalnum() or source[i - 1] == "_")):
+            end_name = i + 4
+            if end_name == len(source) or not (source[end_name].isalnum() or source[end_name] == "_"):
+                j = end_name
+                while j < len(source) and source[j].isspace():
+                    j += 1
+                if j < len(source) and source[j] == "(":
+                    depth = 0
+                    k = j
+                    quote = None
+                    while k < len(source):
+                        ch = source[k]
+                        if quote:
+                            if ch == "\\":
+                                k += 2
+                                continue
+                            if ch == quote:
+                                quote = None
+                        elif ch in ('"', "'"):
+                            quote = ch
+                        elif ch == "#":
+                            newline = source.find("\n", k)
+                            k = len(source) if newline < 0 else newline
+                        elif ch == "(":
+                            depth += 1
+                        elif ch == ")":
+                            depth -= 1
+                            if depth == 0:
+                                k += 1
+                                spans.append({"start": _position(source, i), "end": _position(source, k)})
+                                i = k
+                                break
+                        k += 1
+                    else:
+                        i = end_name
+                    if i == k:
+                        continue
+        i += 1
+    return spans
+
+
+def clone_occurrences(rust: str) -> list[dict]:
+    occurrences = []
+    i = 0
+    while i < len(rust):
+        if rust.startswith("//", i):
+            newline = rust.find("\n", i)
+            i = len(rust) if newline < 0 else newline + 1
+            continue
+        if rust.startswith("/*", i):
+            depth = 1
+            i += 2
+            while i < len(rust) and depth:
+                if rust.startswith("/*", i):
+                    depth += 1
+                    i += 2
+                elif rust.startswith("*/", i):
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
+            continue
+        raw = re.match(r"r(#+)?\"", rust[i:])
+        if raw:
+            hashes = raw.group(1) or ""
+            terminator = '"' + hashes
+            start = i + raw.end()
+            end = rust.find(terminator, start)
+            i = len(rust) if end < 0 else end + len(terminator)
+            continue
+        if rust[i] == '"':
+            i += 1
+            while i < len(rust):
+                if rust[i] == "\\":
+                    i += 2
+                elif rust[i] == '"':
+                    i += 1
+                    break
+                else:
+                    i += 1
+            continue
+        if rust[i] == "'":
+            char_literal = re.match(r"'(?:\\.|[^'\\])'", rust[i:])
+            if char_literal:
+                i += char_literal.end()
+                continue
+        match = re.match(r"\.clone\s*\(\s*\)", rust[i:])
+        if match:
+            end = i + match.end()
+            occurrences.append({"start": _position(rust, i), "end": _position(rust, end)})
+            i = end
+        else:
+            i += 1
+    return occurrences
+
+
+def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
+                           expected_copy_calls: int) -> dict:
+    """Require a bijective artifact map for every Rust clone occurrence."""
+    if not rust_path.exists():
+        return {"status": "RUST_MISSING", "authorized": 0, "unauthorized": 0, "unclassified": 0, "occurrences": []}
+    rust = rust_path.read_text()
+    source = source_path.read_text()
+    rust_occurrences = clone_occurrences(rust)
+    source_copies = moss_copy_call_spans(source)
+    if len(source_copies) != expected_copy_calls:
+        return {"status": "EXPECTATION_SOURCE_MISMATCH", "authorized": 0,
+                "unauthorized": 0, "unclassified": len(rust_occurrences),
+                "error": f"Moss source has {len(source_copies)} copy(...) calls; expectation table declares {expected_copy_calls}",
+                "source_copy_spans": source_copies, "occurrences": rust_occurrences}
+    sidecar = rust_path.with_suffix(".mossclone.json")
+    if not sidecar.exists():
+        missing = len(rust_occurrences) + len(source_copies)
+        return {"status": "PROVENANCE_MISSING" if missing else "PASS", "authorized": 0,
+                "unauthorized": 0, "unclassified": len(rust_occurrences),
+                "source_copy_spans": source_copies, "occurrences": rust_occurrences}
+    try:
+        manifest = json.loads(sidecar.read_text())
+        if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 1:
+            raise ValueError("unsupported clone provenance format")
+        if manifest.get("mode") != mode:
+            raise ValueError(f"mode mismatch: expected {mode}")
+        if manifest.get("rust_sha256") != hashlib.sha256(rust.encode()).hexdigest():
+            raise ValueError("generated Rust digest mismatch")
+        if manifest.get("source_sha256") != hashlib.sha256(source.encode()).hexdigest():
+            raise ValueError("Moss source digest mismatch")
+        rows = manifest.get("occurrences")
+        if not isinstance(rows, list):
+            raise ValueError("occurrences is not an array")
+        indexed = {}
+        for row in rows:
+            span = row.get("rust_span", {})
+            key = (span.get("start", {}).get("line"), span.get("start", {}).get("column"),
+                   span.get("end", {}).get("line"), span.get("end", {}).get("column"))
+            if key in indexed:
+                raise ValueError(f"duplicate Rust occurrence mapping at {key}")
+            indexed[key] = row
+        rust_keys = {(x["start"]["line"], x["start"]["column"], x["end"]["line"], x["end"]["column"]) for x in rust_occurrences}
+        if set(indexed) != rust_keys:
+            raise ValueError(f"incomplete or extra Rust clone mappings: rust={len(rust_keys)}, mapped={len(indexed)}")
+        source_keys = {(x["start"]["line"], x["start"]["column"], x["end"]["line"], x["end"]["column"]) for x in source_copies}
+        explicit_keys = []
+        unauthorized = 0
+        for row in indexed.values():
+            origin = row.get("origin_kind")
+            if origin == "explicit_copy":
+                span = row.get("source_span", {})
+                key = (span.get("start", {}).get("line"), span.get("start", {}).get("column"),
+                       span.get("end", {}).get("line"), span.get("end", {}).get("column"))
+                explicit_keys.append(key)
+            elif origin not in {"compiler_runtime_handle", "runtime_support"}:
+                unauthorized += 1
+        if set(explicit_keys) != source_keys or len(explicit_keys) != len(source_keys):
+            raise ValueError(f"explicit copy provenance disagrees with Moss source: source={len(source_keys)}, mapped={len(explicit_keys)}")
+        return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(explicit_keys),
+                "unauthorized": unauthorized, "unclassified": 0, "occurrences": rows}
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+        return {"status": "INVALID_PROVENANCE", "authorized": 0, "unauthorized": 0,
+                "unclassified": len(rust_occurrences), "error": str(error), "occurrences": rust_occurrences}
+
+
+def check_mutation_expectations(expected: dict, actual_stdout: str) -> list[dict]:
+    lines = actual_stdout.splitlines()
+    checks = []
+    for assertion in expected.get("observable_mutations", []):
+        line_number = assertion["stdout_line"]
+        actual = lines[line_number - 1] if 0 < line_number <= len(lines) else None
+        checks.append({"observable": assertion["observable"],
+                       "expected": assertion["expected"], "actual": actual,
+                       "status": "PASS" if actual == assertion["expected"] else "FAIL"})
+    return checks
+
+
+def evaluate_project_fixture(fixture: dict, compiler: Path, tmp_dir: Path,
+                             fixture_dir: Path) -> dict:
+    """Run a checked-in multi-package fixture through source and .mossi paths."""
+    fid = fixture["id"]
+    work = tmp_dir / "projects" / fid
+    if work.exists():
+        shutil.rmtree(work)
+    shutil.copytree(fixture_dir, work)
+    project = work / "consumer"
+    provider = work / "provider"
+    source = project / "src/main.moss"
+    env = os.environ.copy()
+    env["MOSS"] = str(compiler)
+    provider_code, provider_out, provider_err, provider_time = run_process(
+        [str(MARGO), "build", "--json"], cwd=provider,
+        timeout=180, env=env)
+    result = {
+        "id": fid, "defect_id": fixture["defect_id"], "name": fixture["name"],
+        "file": fixture["file"], "category": fixture["category"],
+        "spec_citation": fixture["spec_citation"], "kind": fixture["kind"],
+        "status": "PASS", "modes": {}, "engine_results": {},
+        "expected": fixture.get("expected", {}), "failures": [],
+        "clone_audit": {}, "explicit_copies": 0,
+        "timings": {"provider_build": provider_time},
+    }
+    if provider_code != 0:
+        result["status"] = "FAIL"
+        result["modes"]["provider_mossi"] = "BUILD_FAIL"
+        result["engine_results"]["provider_mossi"] = {"exit_code": provider_code,
+            "stdout": provider_out, "stderr": provider_err}
+        result["failures"].append(f"Provider .mossi build failed: {provider_out}{provider_err}")
+        return result
+    try:
+        provider_build = json.loads(provider_out)
+        provider_debug_rust = Path(provider_build["artifacts"]["artifacts"]["generated_rust"])
+    except (json.JSONDecodeError, KeyError, TypeError):
+        provider_debug_rust = None
+    provider_interface = provider / "build/debug/provider.mossi"
+    if not provider_interface.exists():
+        result["status"] = "FAIL"
+        result["modes"]["provider_mossi"] = "MISSING"
+        result["failures"].append("Provider build did not produce provider.mossi")
+        return result
+    env["MOSS_MODULE_PATH"] = str(provider / "build/debug")
+    check_code, check_out, check_err, check_time = run_process(
+        [str(compiler), "check", "--json", str(source)], cwd=project,
+        timeout=180, env=env)
+    result["timings"]["checker"] = check_time
+    result["engine_results"]["checker"] = {"exit_code": check_code,
+                                               "stdout": check_out, "stderr": check_err}
+    result["modes"]["checker"] = "PASS" if check_code == 0 else "UNEXPECTED_REJECT"
+    if check_code != 0:
+        result["status"] = "FAIL"
+        result["failures"].append(f"Consumer checker rejected imported effect fixture: {check_out}{check_err}")
+        return result
+    effect_code, effect_out, effect_err, effect_time = run_process(
+        [str(compiler), "effects", "provider__lookup", "--source", str(source), "--json"],
+        cwd=project, timeout=180, env=env)
+    result["timings"]["imported_effects"] = effect_time
+    expected_raise_set = fixture["expected"]["imported_mossi_effects"]["raise_set"]
+    try:
+        effect_json = json.loads(effect_out)
+        raise_set = effect_json["result"]["observable_effects"]["raise_set"]
+        observed = raise_set == expected_raise_set
+    except (json.JSONDecodeError, KeyError, TypeError):
+        raise_set, observed = [], False
+    result["engine_results"]["imported_mossi_effects"] = {"exit_code": effect_code,
+        "raise_set": raise_set, "expected_raise_set": expected_raise_set}
+    result["modes"]["imported_mossi_effects"] = "PASS" if observed else "MISSING_EFFECT"
+    if effect_code != 0 or not observed:
+        result["status"] = "FAIL"
+        result["failures"].append(f"Imported .mossi omitted CollectionError.MissingKey raise effect: {effect_out}{effect_err}")
+        return result
+    fd_code, fd_out, fd_err, fd_time = run_process(
+        [str(compiler), "run", "--interp", str(source)], cwd=project,
+        timeout=180, env=env)
+    result["timings"]["fast_debug"] = fd_time
+    result["engine_results"]["fast_debug"] = {"expected_stdout": fixture["expected_fast_debug"],
+        "actual_stdout": fd_out.strip(), "exit_code": fd_code}
+    result["modes"]["fast_debug"] = "PASS" if fd_code == 0 and fd_out.strip() == fixture["expected_fast_debug"] else "FAIL"
+    if result["modes"]["fast_debug"] == "FAIL":
+        result["status"] = "FAIL"
+        result["failures"].append(f"Fast Debug imported fixture mismatch: {fd_out}{fd_err}")
+    for profile, release, mode in (("native_debug", False, "debug"),
+                                    ("native_optimized", True, "optimized")):
+        provider_rust = provider_debug_rust
+        if release:
+            provider_cmd = [str(MARGO), "build", "--release", "--json"]
+            pcode, pout, perr, ptime = run_process(provider_cmd, cwd=provider,
+                timeout=300, env=env)
+            result["timings"]["provider_release_build"] = ptime
+            try:
+                provider_rust = Path(json.loads(pout)["artifacts"]["artifacts"]["generated_rust"])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                provider_rust = None
+            if pcode != 0:
+                result["status"] = "FAIL"
+                result["failures"].append(f"Provider optimized .mossi build failed: {pout}{perr}")
+        cmd = [str(MARGO), "build", "--json"]
+        if release:
+            cmd.insert(2, "--release")
+        code, stdout, stderr, elapsed = run_process(cmd, cwd=project, timeout=300, env=env)
+        result["timings"][profile + "_build"] = elapsed
+        try:
+            payload = json.loads(stdout)
+            binary = Path(payload["artifacts"]["artifacts"]["executable"])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            binary = None
+        if code != 0 or binary is None or not binary.exists():
+            result["status"] = "FAIL"
+            result["modes"][profile] = "BUILD_FAIL"
+            result["engine_results"][profile] = {"exit_code": code, "stdout": stdout, "stderr": stderr}
+            result["failures"].append(f"{profile} package build failed: {stderr}")
+            continue
+        try:
+            generated_rust = Path(payload["artifacts"]["artifacts"]["generated_rust"])
+        except (KeyError, TypeError):
+            generated_rust = None
+        if generated_rust is None or provider_rust is None:
+            result["status"] = "FAIL"
+            result["modes"][profile + "_clone_audit"] = "GENERATED_RUST_MISSING"
+            result["failures"].append(f"{profile} Margo result lacks generated Rust artifact path")
+        else:
+            consumer_audit = audit_clone_provenance(generated_rust, source, mode, 0)
+            provider_source = provider / "src/provider.moss"
+            provider_audit = audit_clone_provenance(provider_rust, provider_source, mode, 0)
+            result["clone_audit"][profile + "_consumer"] = consumer_audit
+            result["clone_audit"][profile + "_provider"] = provider_audit
+            for package_name, audit in (("consumer", consumer_audit), ("provider", provider_audit)):
+                if audit["status"] != "PASS" or audit["unclassified"] or audit["unauthorized"]:
+                    result["status"] = "FAIL"
+                    result["modes"][profile + "_clone_audit"] = "FAIL"
+                    result["failures"].append(f"{profile} {package_name} clone provenance: "
+                        f"status={audit['status']}, unclassified={audit['unclassified']}, "
+                        f"unauthorized={audit['unauthorized']}")
+            result["modes"].setdefault(profile + "_clone_audit", "PASS")
+        run_code, run_out, run_err, run_time = run_process([str(binary)], cwd=project, timeout=180, env=env)
+        result["timings"][profile + "_execute"] = run_time
+        expected = fixture["expected_native"]
+        ok = run_code == 0 and run_out.strip() == expected
+        result["modes"][profile] = "PASS" if ok else "FAIL"
+        result["engine_results"][profile] = {"expected_stdout": expected,
+            "actual_stdout": run_out.strip(), "exit_code": run_code, "stderr": run_err}
+        if not ok:
+            result["status"] = "FAIL"
+            result["failures"].append(f"{profile} imported fixture mismatch: {run_out}{run_err}")
+    return result
 
 
 def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
@@ -681,8 +512,12 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
     kind = fixture["kind"]
     fpath = FIXTURES_DIR / fname
 
+    if fpath.is_dir():
+        return evaluate_project_fixture(fixture, compiler, tmp_dir, fpath)
+
     result = {
         "id": fid,
+        "defect_id": fixture["defect_id"],
         "name": fixture["name"],
         "file": fname,
         "category": fixture["category"],
@@ -690,8 +525,10 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         "kind": kind,
         "status": "PASS",
         "modes": {},
+        "engine_results": {},
+        "expected": fixture.get("expected", {}),
         "failures": [],
-        "hidden_clones": 0,
+        "clone_audit": {},
         "explicit_copies": fixture.get("authorized_explicit_copies", 0),
         "timings": {},
     }
@@ -722,6 +559,7 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
             diag_matched = any(d in combined_check for d in all_expected)
             if diag_matched:
                 result["modes"]["checker"] = "PASS"
+                result["engine_results"]["checker"] = {"status": "PASS", "exit_code": check_code, "diagnostic": next((d for d in all_expected if d in combined_check), exp_diag)}
             else:
                 result["status"] = "FAIL"
                 result["modes"]["checker"] = "WRONG_DIAGNOSTIC"
@@ -738,6 +576,27 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["failures"].append(f"Checker unexpectedly REJECTED valid program: {combined_check.strip()}")
     else:
         result["modes"]["checker"] = "PASS"
+        result["engine_results"]["checker"] = {"status": "PASS", "exit_code": check_code}
+
+    if check_code == 0 and "inferred_effects" in fixture["expected"]:
+        effect_expectation = fixture["expected"]["inferred_effects"]
+        effect_code, effect_out, effect_err, effect_time = run_process(
+            [str(compiler), "effects", effect_expectation["target"],
+             "--source", str(fpath), "--json"])
+        result["timings"]["inferred_effects"] = effect_time
+        try:
+            effect_result = json.loads(effect_out)["result"]["observable_effects"]
+            actual_raises = effect_result["raise_set"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            actual_raises = []
+        effect_ok = effect_code == 0 and actual_raises == effect_expectation["raise_set"]
+        result["engine_results"]["inferred_effects"] = {
+            "expected_raise_set": effect_expectation["raise_set"],
+            "actual_raise_set": actual_raises, "exit_code": effect_code}
+        result["modes"]["inferred_effects"] = "PASS" if effect_ok else "RAISE_SET_MISMATCH"
+        if not effect_ok:
+            result["status"] = "FAIL"
+            result["failures"].append(f"Inferred raise-set mismatch: expected {effect_expectation['raise_set']}, got {actual_raises}; {effect_err}")
 
     # 2. Fast Debug Execution
     fd_code, fd_stdout, fd_stderr, fd_time = run_process(
@@ -746,8 +605,21 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
     result["timings"]["fast_debug"] = fd_time
     actual_fd = fd_stdout.strip()
     exp_fd = fixture["expected_fast_debug"]
+    result["engine_results"]["fast_debug"] = {"expected_stdout": exp_fd, "actual_stdout": actual_fd, "exit_code": fd_code}
+    mutation_checks = check_mutation_expectations(fixture["expected"], actual_fd)
+    result["engine_results"]["fast_debug"]["mutation_checks"] = mutation_checks
+    if any(item["status"] == "FAIL" for item in mutation_checks):
+        result["status"] = "FAIL"
+        result["failures"].append("Fast Debug observable mutation expectation failed")
 
-    if fd_code != 0:
+    if fixture.get("expected_fast_debug_status") == "panic" and fd_code == 0:
+        result["status"] = "FAIL"
+        result["modes"]["fast_debug"] = "EXPECTED_PANIC_BUT_COMPLETED"
+        result["failures"].append("Fast Debug completed normally; specification requires a nonrecoverable panic")
+    elif fixture.get("expected_fast_debug_status") == "panic" and fd_code != 0:
+        result["modes"]["fast_debug"] = "EXPECTED_PANIC"
+        result["engine_results"]["fast_debug"]["status"] = "PASS_EXPECTED_PANIC"
+    elif fd_code != 0:
         result["status"] = "FAIL"
         result["modes"]["fast_debug"] = "CRASH"
         result["failures"].append(f"Fast Debug crashed (exit {fd_code}): {fd_stderr.strip()}")
@@ -757,6 +629,7 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["failures"].append(f"Fast Debug value mismatch: expected {exp_fd!r}, got {actual_fd!r}")
     else:
         result["modes"]["fast_debug"] = "PASS"
+        result["engine_results"]["fast_debug"]["status"] = "PASS"
 
     # 3. Native Debug Lowering & Rustc Compilation
     out_rs = tmp_dir / f"{fid}.rs"
@@ -771,17 +644,14 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["modes"]["native_debug"] = "EMIT_FAIL"
         result["failures"].append(f"Native emission failed: {emit_stderr.strip()}")
     else:
-        # Hidden clone budget audit
-        total_clones = count_clones_in_rust(out_rs)
-        auth_clones = fixture.get("authorized_explicit_copies", 0)
-        hidden_clones = max(0, total_clones - auth_clones)
-        result["hidden_clones"] = hidden_clones
-
-        if hidden_clones > fixture.get("max_hidden_clones", 0):
+        clone_audit = audit_clone_provenance(out_rs, fpath, "debug", fixture.get("authorized_explicit_copies", 0))
+        result["clone_audit"]["native_debug"] = clone_audit
+        if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
+                clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):
             result["status"] = "FAIL"
-            result["failures"].append(
-                f"Hidden clone budget exceeded: found {hidden_clones} unauthorized .clone() calls (total {total_clones}, authorized {auth_clones})"
-            )
+            result["failures"].append("Native debug clone provenance audit: " +
+                f"status={clone_audit['status']}, unclassified={clone_audit['unclassified']}, " +
+                f"unauthorized={clone_audit['unauthorized']}, error={clone_audit.get('error', '')}")
 
         # rustc compilation
         rustc_code, rustc_stdout, rustc_stderr, rustc_time = run_process(
@@ -798,7 +668,20 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
             result["timings"]["native_exec"] = nat_time
             actual_nat = nat_stdout.strip()
             exp_nat = fixture["expected_native"]
-            if nat_code != 0:
+            result["engine_results"]["native_debug"] = {"expected_stdout": exp_nat, "actual_stdout": actual_nat, "exit_code": nat_code}
+            mutation_checks = check_mutation_expectations(fixture["expected"], actual_nat)
+            result["engine_results"]["native_debug"]["mutation_checks"] = mutation_checks
+            if any(item["status"] == "FAIL" for item in mutation_checks):
+                result["status"] = "FAIL"
+                result["failures"].append("Native debug observable mutation expectation failed")
+            if fixture.get("expected_native_status") == "panic" and nat_code == 0:
+                result["status"] = "FAIL"
+                result["modes"]["native_debug"] = "EXPECTED_PANIC_BUT_COMPLETED"
+                result["failures"].append("Native debug completed normally; specification requires a nonrecoverable panic")
+            elif fixture.get("expected_native_status") == "panic" and nat_code != 0:
+                result["modes"]["native_debug"] = "EXPECTED_PANIC"
+                result["engine_results"]["native_debug"]["status"] = "PASS_EXPECTED_PANIC"
+            elif nat_code != 0:
                 result["status"] = "FAIL"
                 result["modes"]["native_debug"] = "CRASH"
                 result["failures"].append(f"Native binary crashed (exit {nat_code}): {nat_stderr.strip()}")
@@ -808,6 +691,7 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
                 result["failures"].append(f"Native value mismatch: expected {exp_nat!r}, got {actual_nat!r}")
             else:
                 result["modes"]["native_debug"] = "PASS"
+                result["engine_results"]["native_debug"]["status"] = "PASS"
 
     # 4. Native Optimized (-O) Lowering & Rustc Compilation
     out_opt_rs = tmp_dir / f"{fid}_opt.rs"
@@ -822,6 +706,14 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["modes"]["native_opt"] = "EMIT_FAIL"
         result["failures"].append(f"Native -O emission failed: {emit_opt_stderr.strip()}")
     else:
+        clone_audit = audit_clone_provenance(out_opt_rs, fpath, "optimized", fixture.get("authorized_explicit_copies", 0))
+        result["clone_audit"]["native_optimized"] = clone_audit
+        if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
+                clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):
+            result["status"] = "FAIL"
+            result["failures"].append("Native optimized clone provenance audit: " +
+                f"status={clone_audit['status']}, unclassified={clone_audit['unclassified']}, " +
+                f"unauthorized={clone_audit['unauthorized']}, error={clone_audit.get('error', '')}")
         rustc_opt_code, rustc_opt_stdout, rustc_opt_stderr, rustc_opt_time = run_process(
             ["rustc", "-O", str(out_opt_rs), "-o", str(out_opt_bin)]
         )
@@ -835,7 +727,20 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
             result["timings"]["native_opt_exec"] = nat_opt_time
             actual_nat_opt = nat_opt_stdout.strip()
             exp_nat_opt = fixture["expected_native"]
-            if nat_opt_code != 0:
+            result["engine_results"]["native_optimized"] = {"expected_stdout": exp_nat_opt, "actual_stdout": actual_nat_opt, "exit_code": nat_opt_code}
+            mutation_checks = check_mutation_expectations(fixture["expected"], actual_nat_opt)
+            result["engine_results"]["native_optimized"]["mutation_checks"] = mutation_checks
+            if any(item["status"] == "FAIL" for item in mutation_checks):
+                result["status"] = "FAIL"
+                result["failures"].append("Native optimized observable mutation expectation failed")
+            if fixture.get("expected_native_opt_status") == "panic" and nat_opt_code == 0:
+                result["status"] = "FAIL"
+                result["modes"]["native_opt"] = "EXPECTED_PANIC_BUT_COMPLETED"
+                result["failures"].append("Native optimized completed normally; specification requires a nonrecoverable panic")
+            elif fixture.get("expected_native_opt_status") == "panic" and nat_opt_code != 0:
+                result["modes"]["native_opt"] = "EXPECTED_PANIC"
+                result["engine_results"]["native_optimized"]["status"] = "PASS_EXPECTED_PANIC"
+            elif nat_opt_code != 0:
                 result["status"] = "FAIL"
                 result["modes"]["native_opt"] = "CRASH"
                 result["failures"].append(f"Native -O binary crashed (exit {nat_opt_code}): {nat_opt_stderr.strip()}")
@@ -845,6 +750,7 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
                 result["failures"].append(f"Native -O value mismatch: expected {exp_nat_opt!r}, got {actual_nat_opt!r}")
             else:
                 result["modes"]["native_opt"] = "PASS"
+                result["engine_results"]["native_optimized"]["status"] = "PASS"
 
     return result
 
@@ -862,18 +768,18 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
     lines.append(f"- **Total Fixtures:** {len(results)}")
     lines.append(f"- **Passing (Compliant with Spec):** {len(passed_cases)}")
     lines.append(f"- **Failing (Compiler Defect / Non-Compliant):** {len(failed_cases)}")
-    total_hidden_clones = sum(r.get("hidden_clones", 0) for r in results)
-    lines.append(f"- **Total Unauthorized Hidden Clones Detected:** {total_hidden_clones}")
+    total_unclassified = sum(sum(m.get("unclassified", 0) for m in r.get("clone_audit", {}).values()) for r in results)
+    total_unauthorized = sum(sum(m.get("unauthorized", 0) for m in r.get("clone_audit", {}).values()) for r in results)
+    lines.append(f"- **Unclassified clone occurrences:** {total_unclassified}")
+    lines.append(f"- **Unauthorized clone occurrences:** {total_unauthorized}")
     lines.append("")
 
     lines.append("## Detailed Defect Entries\n")
     lines.append("| Failure ID | Fixture ID | Category | Mode | Description | Specification Citation |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
 
-    fail_counter = 1
     for r in failed_cases:
-        fail_id = f"DEFECT-{fail_counter:03d}"
-        fail_counter += 1
+        fail_id = r["defect_id"]
         modes_str = ", ".join(f"{k}:{v}" for k, v in r["modes"].items() if v != "PASS") or "CLONES"
         desc = "; ".join(r["failures"]).replace("\n", " ")[:120]
         spec = r["spec_citation"]
@@ -888,7 +794,7 @@ def generate_failure_ledger(results: list[dict], compiler_desc: str) -> str:
         lines.append(f"- **Expected Outcome:** {r['kind']}")
         modes_detail = " | ".join(f"{k}: {v}" for k, v in r["modes"].items())
         lines.append(f"- **Engine Modes:** {modes_detail}")
-        lines.append(f"- **Hidden Clones:** {r['hidden_clones']} (authorized: {r['explicit_copies']})")
+        lines.append(f"- **Clone Provenance:** `{json.dumps(r['clone_audit'], sort_keys=True)}`")
         if r["failures"]:
             lines.append(f"- **Observed Failures:**")
             for f in r["failures"]:
@@ -904,7 +810,17 @@ def main() -> int:
     parser.add_argument("--tmp", type=Path, default=DEFAULT_TMP, help="Scratch directory for artifacts")
     parser.add_argument("--json-out", type=Path, default=None, help="Output JSON results path")
     parser.add_argument("--ledger-out", type=Path, default=None, help="Output failure ledger Markdown path")
+    parser.add_argument("--validate-only", action="store_true", help="Validate oracle-owned data and fixture coverage without invoking a compiler")
     args = parser.parse_args()
+
+    try:
+        validate_oracle_data()
+    except ValueError as error:
+        print(f"Invalid oracle data: {error}", file=sys.stderr)
+        return 2
+    if args.validate_only:
+        print(f"Oracle data valid: {len(ORACLE_FIXTURES)} fixtures; L7 approval pending")
+        return 0
 
     compiler = args.compiler.resolve()
     if not compiler.exists():
@@ -918,7 +834,7 @@ def main() -> int:
     print(f"Phase 28 Independent Semantic Oracle Suite")
     print(f"Compiler: {compiler}")
     print(f"Fixtures: {len(ORACLE_FIXTURES)}")
-    print(f"Specification: docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md §10 & §12")
+    print("Specification: draft P28-R7-005 expectation table and language addendum")
     print(f"================================================================================\n")
 
     results = []
@@ -930,7 +846,7 @@ def main() -> int:
         results.append(res)
         status_tag = "[PASS]" if res["status"] == "PASS" else "[FAIL]"
         modes_str = " ".join(f"{k}={v}" for k, v in res["modes"].items())
-        clone_str = f"clones={res['hidden_clones']}"
+        clone_str = f"clone-unclassified={sum(x.get('unclassified', 0) for x in res['clone_audit'].values())}"
         print(f"{status_tag} {res['id']:<35} | {res['category']:<25} | {modes_str} {clone_str}")
         if res["failures"]:
             for fail in res["failures"]:
@@ -942,8 +858,9 @@ def main() -> int:
 
     print("\n--------------------------------------------------------------------------------")
     print(f"Total: {len(results)} | Passed: {passed} | Defective / Failed: {failed}")
-    total_hidden = sum(r.get("hidden_clones", 0) for r in results)
-    print(f"Total Hidden Clones Detected: {total_hidden}")
+    total_unclassified = sum(sum(m.get("unclassified", 0) for m in r.get("clone_audit", {}).values()) for r in results)
+    total_unauthorized = sum(sum(m.get("unauthorized", 0) for m in r.get("clone_audit", {}).values()) for r in results)
+    print(f"Clone occurrences: unclassified={total_unclassified} unauthorized={total_unauthorized}")
     print("--------------------------------------------------------------------------------\n")
 
     if args.json_out:

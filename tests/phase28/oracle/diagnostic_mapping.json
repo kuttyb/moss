@@ -1,0 +1,137 @@
+{
+  "format": "moss-phase28-oracle-diagnostic-mapping",
+  "version": 1,
+  "owner": "oracle-maintainers",
+  "mappings": {
+    "ORACLE-03-COLL-ELEM-CONSUME-REJECT": {
+      "primary": "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+      "accepted_mappings": [
+        "OWNERSHIP_ILLEGAL_CONSUME",
+        "ILLEGAL_CONSUME_FROM_BORROWED"
+      ]
+    },
+    "ORACLE-10B-CLONE-ALIAS-REJECTED": {
+      "primary": "CLONE_ALIAS_UNSUPPORTED",
+      "accepted_mappings": [
+        "UNKNOWN_MEMBER_FUNCTION"
+      ]
+    },
+    "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT": {
+      "primary": "OWNERSHIP_ILLEGAL_CONSUME",
+      "accepted_mappings": [
+        "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+        "ILLEGAL_MOVE_BORROWED"
+      ]
+    },
+    "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT": {
+      "primary": "OWNERSHIP_ILLEGAL_CONSUME",
+      "accepted_mappings": [
+        "CANNOT_IMPLICITLY_EMPTY_FIELD",
+        "TAKE_REQUIRED_FOR_FIELD_MOVE"
+      ]
+    },
+    "ORACLE-21-TAKE-LOCAL-REJECTED": {
+      "primary": "TAKE_REQUIRES_FIELD_PLACE",
+      "accepted_mappings": [
+        "TAKE_INVALID_TARGET"
+      ]
+    },
+    "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT": {
+      "primary": "TAKE_INELIGIBLE_TERMINAL",
+      "accepted_mappings": [
+        "TAKE_REQUIRES_FIELD_PLACE",
+        "UNIFIED_FIELD_EXTRACT_REJECTED"
+      ]
+    },
+    "ORACLE-23-TAKE-VEC-ELEM-REJECTED": {
+      "primary": "TAKE_REQUIRES_FIELD_PLACE",
+      "accepted_mappings": [
+        "COLLECTION_ELEMENT_TAKE_REJECTED"
+      ]
+    },
+    "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT": {
+      "primary": "TAKE_REQUIRES_FIELD_PLACE",
+      "accepted_mappings": [
+        "TAKE_INELIGIBLE_TERMINAL"
+      ]
+    },
+    "ORACLE-28-REBIND-WHILE-BORROWED-REJECT": {
+      "primary": "OWNERSHIP_USE_AFTER_REBIND",
+      "accepted_mappings": [
+        "OWNERSHIP_SOURCE_BORROWED",
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "DROP_WHILE_BORROWED"
+      ]
+    },
+    "ORACLE-30-JOIN-BORROW-FRESH-REJECT": {
+      "primary": "OWNERSHIP_MIXED_JOIN",
+      "accepted_mappings": [
+        "OWNERSHIP_ILLEGAL_PROMOTION",
+        "ILLEGAL_JOIN_BORROWED_OWNED"
+      ]
+    },
+    "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT": {
+      "primary": "OWNERSHIP_CONFLICTING_ACCESS",
+      "accepted_mappings": [
+        "MATCH_READ_BORROW_ACTIVE",
+        "OVERWRITE_WHILE_BORROWED",
+        "MATCH_PAYLOAD_BORROW_ACTIVE"
+      ]
+    },
+    "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT": {
+      "primary": "OWNERSHIP_ILLEGAL_CONSUME",
+      "accepted_mappings": [
+        "BORROWED_ENUM_PAYLOAD_ACCESS",
+        "MATCH_ORDINARY_CANNOT_CONSUME"
+      ]
+    },
+    "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT": {
+      "primary": "MATCH_CONSUME_INTERIOR_PLACE",
+      "accepted_mappings": [
+        "MATCH_CONSUME_FIELD_REJECTED"
+      ]
+    },
+    "ORACLE-41-VEC-FOR-CONSUME-REJECT": {
+      "primary": "OWNERSHIP_VECTOR_ELEMENT_CONSUME",
+      "accepted_mappings": [
+        "OWNERSHIP_ILLEGAL_CONSUME"
+      ]
+    },
+    "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT": {
+      "primary": "IMMUTABLE_MESSAGE_PAYLOAD",
+      "accepted_mappings": [
+        "CANNOT_REBIND_PARAMETER",
+        "IMMUTABLE_PARAMETER_MUTATION",
+        "message payloads are immutable snapshots",
+        "cannot WRITE incoming message payload"
+      ]
+    },
+    "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT": {
+      "primary": "OWNERSHIP_ILLEGAL_CONSUME",
+      "accepted_mappings": [
+        "IMMUTABLE_MESSAGE_PAYLOAD",
+        "CANNOT_REPLY_NONPRIMITIVE_INPUT"
+      ]
+    },
+    "ORACLE-08-USER-COPY-RESOLUTION": {
+      "normalized": "COPY_RESERVED",
+      "primary": "RESERVED_KEYWORD",
+      "accepted_mappings": [
+        "MOSS_COMPILE_ERROR"
+      ]
+    },
+    "ORACLE-48-ROOT-MISSING-COLLECTION-ERROR": {
+      "normalized": "ROOT_UNHANDLED_RAISE",
+      "primary": "ROOT_UNHANDLED_RAISE",
+      "accepted_mappings": []
+    },
+    "ORACLE-52-MUTATE-DURING-ITERATION-REJECTED": {
+      "normalized": "OWNERSHIP_CONFLICTING_ACCESS",
+      "primary": "OWNERSHIP_CONFLICTING_ACCESS",
+      "accepted_mappings": [
+        "COLLECTION_STRUCTURAL_MUTATION_DURING_BORROW",
+        "cannot structurally mutate collection"
+      ]
+    }
+  }
+}

@@ -1,12 +1,9 @@
-# Spec: Proposal §5.3 ("Map.get(key): 1-argument borrowed lookup returning option[V]"), §10, §12
+# Draft: P28-R7-005 §Collection and error semantics. Map.get returns borrowed V.
 type Payload:
   tag: String
 
 fn main():
   var m = Map()
   m["live"] = Payload(tag: "active")
-  match m.get("live"):
-    case Some(p):
-      echo p.tag
-    case None:
-      echo "absent"
+  p = m.get("live")
+  echo p.tag

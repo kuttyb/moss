@@ -1,0 +1,16 @@
+# Draft: exceptional successors retain ownership state at each possible raise.
+type Payload:
+  value: Int
+
+fn risky(values: Vector[Payload], index: Int) -> Int:
+  try:
+    let item = values.remove(index)
+    return item.value
+  recover CollectionError.InvalidIndex:
+    echo values[0].value
+    return values[0].value
+
+fn main():
+  values = [Payload(value: 7)]
+  echo risky(values, 99)
+  echo values[0].value
