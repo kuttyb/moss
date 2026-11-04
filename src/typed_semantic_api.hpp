@@ -161,6 +161,62 @@ struct TypedLocalOwnershipRequirementV1 {
   Availability availability{Availability::MissingEstOccurrence};
 };
 
+// Checker-owned per-definition observations on the shared control-flow edges
+// of a while/for loop. The loop expression and definition EST occurrence make
+// each backedge/exit result addressable without reconstructing source text.
+struct TypedLoopOwnershipFactV1 {
+  enum class EdgeKind { Entry, Backedge, ZeroIterationExit, ConvergedExit };
+  enum class ValueState { Available, Consumed, MaybeAvailable, Unavailable };
+  enum class Availability {
+    Present, MissingLoopOccurrence, MissingEdge, MissingDefinition,
+    MissingEstOccurrence, ContradictoryEffect
+  };
+  std::uint32_t loop_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t target_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t definition_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t loop_est_arena_index{UINT32_MAX};
+  est::ExprId loop_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t definition_est_arena_index{UINT32_MAX};
+  est::ExprId definition_expression_occurrence_id{UINT32_MAX};
+  std::string definition_identity;
+  std::string binding_identity;
+  std::vector<std::string> killed_definition_identities;
+  std::string source_binding_identity;
+  std::string specialization_context;
+  std::string specialization_identity;
+  EdgeKind edge_kind{EdgeKind::Entry};
+  Effect converged_access{Effect::Read};
+  ValueState value_state{ValueState::Unavailable};
+  bool reachable{false};
+  Availability availability{Availability::MissingEdge};
+  TypedSourceProvenanceV1 provenance;
+};
+
+struct TypedLoopOwnershipRequirementV1 {
+  using EdgeKind = TypedLoopOwnershipFactV1::EdgeKind;
+  using ValueState = TypedLoopOwnershipFactV1::ValueState;
+  using Availability = TypedLoopOwnershipFactV1::Availability;
+  std::uint32_t loop_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t target_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t definition_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t loop_est_arena_index{UINT32_MAX};
+  est::ExprId loop_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t definition_est_arena_index{UINT32_MAX};
+  est::ExprId definition_expression_occurrence_id{UINT32_MAX};
+  std::string definition_identity;
+  std::string binding_identity;
+  std::vector<std::string> killed_definition_identities;
+  std::string source_binding_identity;
+  std::string specialization_context;
+  std::string specialization_identity;
+  EdgeKind edge_kind{EdgeKind::Entry};
+  Effect converged_access{Effect::Read};
+  ValueState value_state{ValueState::Unavailable};
+  Availability availability{Availability::MissingEdge};
+};
+
 enum class TypedTakeReplacementV1 { OptionNone, VectorEmpty, MapEmpty, QueueEmpty };
 enum class TypedTakeProjectionKindV1 {
   RecordField, VectorIndex, MapIndex, QueueIndex
@@ -344,6 +400,9 @@ struct TypedSemanticModuleV1 {
   // Checker-owned occurrences where a local ownership fact is required.
   // Whole-record omission of a required fact causes consumer fail-closed.
   std::vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences;
+  std::vector<TypedLoopOwnershipFactV1> loop_ownership_facts;
+  std::vector<TypedLoopOwnershipRequirementV1>
+      required_loop_ownership_occurrences;
   // Checker-issued bridge from a consumer's existing function-context alias
   // to the stable key in `specializations`. Consumers must not decode either.
   std::map<std::string, std::string> local_ownership_specialization_contexts;
@@ -404,6 +463,115 @@ struct TypedSemanticModuleV1 {
       validate_local_ownership_requirement_specialization(*result);
       (void)find_local_ownership_fact(*result);
     }
+    return result;
+  }
+
+  void validate_loop_ownership_requirement_specialization(
+      const TypedLoopOwnershipRequirementV1& requirement) const {
+    const auto mapping = local_ownership_specialization_contexts.find(
+        requirement.specialization_context);
+    if (mapping == local_ownership_specialization_contexts.end()) {
+      if (!requirement.specialization_identity.empty())
+        throw std::invalid_argument(
+            "loop ownership specialization identity has no checker mapping");
+      return;
+    }
+    if (requirement.specialization_identity.empty() ||
+        local_ownership_specialization_identity(
+            requirement.specialization_context) !=
+            requirement.specialization_identity)
+      throw std::invalid_argument(
+          "loop ownership specialization identity mismatch");
+  }
+
+  static bool same_loop_ownership_requirement(
+      const TypedLoopOwnershipRequirementV1& left,
+      const TypedLoopOwnershipRequirementV1& right) {
+    return left.loop_statement_occurrence_id ==
+               right.loop_statement_occurrence_id &&
+        left.source_statement_occurrence_id ==
+               right.source_statement_occurrence_id &&
+        left.target_statement_occurrence_id ==
+               right.target_statement_occurrence_id &&
+        left.definition_statement_occurrence_id ==
+               right.definition_statement_occurrence_id &&
+        left.loop_est_arena_index == right.loop_est_arena_index &&
+        left.loop_expression_occurrence_id ==
+               right.loop_expression_occurrence_id &&
+        left.definition_est_arena_index == right.definition_est_arena_index &&
+        left.definition_expression_occurrence_id ==
+               right.definition_expression_occurrence_id &&
+        left.definition_identity == right.definition_identity &&
+        left.binding_identity == right.binding_identity &&
+        left.killed_definition_identities ==
+               right.killed_definition_identities &&
+        left.source_binding_identity == right.source_binding_identity &&
+        left.specialization_context == right.specialization_context &&
+        left.specialization_identity == right.specialization_identity &&
+        left.edge_kind == right.edge_kind &&
+        left.converged_access == right.converged_access &&
+        left.value_state == right.value_state &&
+        left.availability == right.availability;
+  }
+
+  const TypedLoopOwnershipFactV1* find_loop_ownership_fact(
+      const TypedLoopOwnershipRequirementV1& requirement) const {
+    const std::size_t matching_requirements = std::count_if(
+        required_loop_ownership_occurrences.begin(),
+        required_loop_ownership_occurrences.end(), [&](const auto& candidate) {
+          return same_loop_ownership_requirement(candidate, requirement);
+        });
+    if (matching_requirements != 1)
+      throw std::invalid_argument(
+          "required checker loop ownership requirement missing or duplicated");
+    validate_loop_ownership_requirement_specialization(requirement);
+
+    const TypedLoopOwnershipFactV1* result = nullptr;
+    for (const auto& fact : loop_ownership_facts) {
+      if (fact.loop_statement_occurrence_id !=
+              requirement.loop_statement_occurrence_id ||
+          fact.source_statement_occurrence_id !=
+              requirement.source_statement_occurrence_id ||
+          fact.target_statement_occurrence_id !=
+              requirement.target_statement_occurrence_id ||
+          fact.definition_statement_occurrence_id !=
+              requirement.definition_statement_occurrence_id ||
+          fact.loop_est_arena_index != requirement.loop_est_arena_index ||
+          fact.loop_expression_occurrence_id !=
+              requirement.loop_expression_occurrence_id ||
+          fact.definition_est_arena_index !=
+              requirement.definition_est_arena_index ||
+          fact.definition_expression_occurrence_id !=
+              requirement.definition_expression_occurrence_id ||
+          fact.definition_identity != requirement.definition_identity ||
+          fact.binding_identity != requirement.binding_identity ||
+          fact.killed_definition_identities !=
+              requirement.killed_definition_identities ||
+          fact.source_binding_identity != requirement.source_binding_identity ||
+          fact.specialization_context != requirement.specialization_context ||
+          fact.specialization_identity != requirement.specialization_identity ||
+          fact.edge_kind != requirement.edge_kind)
+        continue;
+      if (result)
+        throw std::invalid_argument(
+            "duplicate or contradictory checker loop ownership facts");
+      result = &fact;
+    }
+    if (!result || result->availability != requirement.availability ||
+        result->converged_access != requirement.converged_access ||
+        result->value_state != requirement.value_state ||
+        result->availability != TypedLoopOwnershipFactV1::Availability::Present ||
+        !result->reachable || result->definition_identity.empty() ||
+        result->binding_identity.empty() ||
+        result->loop_statement_occurrence_id == UINT32_MAX ||
+        result->loop_est_arena_index == UINT32_MAX ||
+        result->loop_expression_occurrence_id == UINT32_MAX ||
+        result->definition_statement_occurrence_id == UINT32_MAX ||
+        result->definition_est_arena_index == UINT32_MAX ||
+        result->definition_expression_occurrence_id == UINT32_MAX ||
+        result->value_state == TypedLoopOwnershipFactV1::ValueState::Unavailable)
+      throw std::invalid_argument(
+          "required checker loop ownership fact missing or contradictory");
     return result;
   }
 

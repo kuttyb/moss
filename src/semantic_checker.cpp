@@ -1911,6 +1911,9 @@ class Checker {
       p_.typed_semantics->local_ownership_facts = local_ownership_facts_;
       p_.typed_semantics->required_local_ownership_occurrences =
           required_local_ownership_occurrences_;
+      p_.typed_semantics->loop_ownership_facts = loop_ownership_facts_;
+      p_.typed_semantics->required_loop_ownership_occurrences =
+          required_loop_ownership_occurrences_;
       p_.typed_semantics->local_ownership_specialization_contexts =
           local_ownership_specialization_contexts_;
       p_.typed_semantics->take_facts = take_facts_;
@@ -1940,8 +1943,34 @@ class Checker {
                 "checker local ownership requirement failed exact resolution");
         }
       }
+      if (std::getenv("MOSS_TEST_VALIDATE_LOOP_OWNERSHIP_CONTRACT")) {
+        for (const auto& requirement :
+             p_.typed_semantics->required_loop_ownership_occurrences)
+          (void)p_.typed_semantics->find_loop_ownership_fact(requirement);
+      }
 #endif
       if (std::getenv("MOSS_EST_FACTS_DUMP")) {
+        for (const auto& fact : loop_ownership_facts_)
+          std::cerr << "MOSS_EST_LOOP_OWNERSHIP_FACT loop="
+                    << fact.loop_statement_occurrence_id << " source="
+                    << fact.source_statement_occurrence_id << " target="
+                    << fact.target_statement_occurrence_id << " definition="
+                    << std::quoted(fact.definition_identity) << " binding="
+                    << std::quoted(fact.binding_identity) << " edge="
+                    << static_cast<int>(fact.edge_kind) << " access="
+                    << static_cast<int>(fact.converged_access) << " availability="
+                    << static_cast<int>(fact.availability) << " state="
+                    << static_cast<int>(fact.value_state) << '\n';
+        for (const auto& req : required_loop_ownership_occurrences_)
+          std::cerr << "MOSS_EST_LOOP_OWNERSHIP_REQUIREMENT loop="
+                    << req.loop_statement_occurrence_id << " source="
+                    << req.source_statement_occurrence_id << " target="
+                    << req.target_statement_occurrence_id << " definition="
+                    << std::quoted(req.definition_identity) << " edge="
+                    << static_cast<int>(req.edge_kind) << " access="
+                    << static_cast<int>(req.converged_access) << " availability="
+                    << static_cast<int>(req.availability) << " state="
+                    << static_cast<int>(req.value_state) << '\n';
         for (const auto& fact : local_ownership_facts_)
           std::cerr << "MOSS_EST_OWNERSHIP_RECORD source_kind="
                     << static_cast<int>(fact.source_kind) << " definition="
@@ -2345,6 +2374,9 @@ class Checker {
   vector<Warning> warnings_;
   vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
   vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
+  vector<TypedLoopOwnershipFactV1> loop_ownership_facts_;
+  vector<TypedLoopOwnershipRequirementV1>
+      required_loop_ownership_occurrences_;
   std::map<string, string> local_ownership_specialization_contexts_;
   struct BodyOwnershipFlowAnalysis;
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
@@ -2361,6 +2393,17 @@ class Checker {
   // environment remains a projection for older walkers and lowering; it is
   // never used to recreate the term of a local already present here.
   struct BodyTypeState {
+    enum class ControlEdgeKind {
+      Normal, BranchTrue, BranchFalse, BranchBody, MatchArm,
+      LoopEntry, LoopZeroIterationExit, LoopConvergedExit, LoopBackedge
+    };
+    struct ControlEdgeOccurrence {
+      std::uint32_t source_statement_id = UINT32_MAX;
+      std::uint32_t target_statement_id = UINT32_MAX;
+      std::uint32_t control_statement_id = UINT32_MAX;
+      ControlEdgeKind kind = ControlEdgeKind::Normal;
+      bool reachable = false;
+    };
     struct LinkedCallableFact {
       string semantic_callable_id;
       TypeRef argument_type;
@@ -2467,6 +2510,7 @@ class Checker {
       // Slice B: Shared per-body control-flow graph edges
       vector<std::uint32_t> predecessor_statement_ids;
       vector<std::uint32_t> successor_statement_ids;
+      vector<ControlEdgeOccurrence> control_edges;
       bool is_terminal_exit = false;
       bool is_reachable = true;
     };
@@ -21313,108 +21357,175 @@ class Checker {
                                       const vector<Stmt>& statements) {
     const size_t N = checked_types.statement_occurrences.size();
     if (N == 0) return;
-    for (size_t i = 0; i < N; ++i) {
-      auto& occ = checked_types.statement_occurrences[i];
-      occ.predecessor_statement_ids.clear();
-      occ.successor_statement_ids.clear();
-      occ.is_terminal_exit = false;
-      occ.is_reachable = false;
+    for (auto& occurrence : checked_types.statement_occurrences) {
+      occurrence.predecessor_statement_ids.clear();
+      occurrence.successor_statement_ids.clear();
+      occurrence.control_edges.clear();
+      occurrence.is_terminal_exit = false;
+      occurrence.is_reachable = false;
     }
 
+    auto add_edge = [&](size_t source, size_t target,
+                        BodyTypeState::ControlEdgeKind kind,
+                        size_t control = SIZE_MAX) {
+      if (source >= N || target >= N) return;
+      auto& occurrence = checked_types.statement_occurrences[source];
+      const auto source_id = static_cast<std::uint32_t>(source);
+      const auto target_id = static_cast<std::uint32_t>(target);
+      const auto control_id = control < N
+          ? static_cast<std::uint32_t>(control) : UINT32_MAX;
+      occurrence.control_edges.push_back(
+          {source_id, target_id, control_id, kind, false});
+      if (std::find(occurrence.successor_statement_ids.begin(),
+                    occurrence.successor_statement_ids.end(), target_id) ==
+          occurrence.successor_statement_ids.end())
+        occurrence.successor_statement_ids.push_back(target_id);
+    };
+
+    auto enclosing_loop = [&](size_t index) {
+      size_t result = SIZE_MAX;
+      for (size_t candidate = 0; candidate < index; ++candidate) {
+        if ((statements[candidate].kind == Stmt::Kind::While ||
+             statements[candidate].kind == Stmt::Kind::For) &&
+            index < nested_block_end(statements, candidate))
+          result = candidate;
+      }
+      return result;
+    };
+    auto routed_continuation = [&](size_t index) {
+      const size_t candidate = find_normal_continuation(statements, index);
+      const size_t loop = enclosing_loop(index);
+      if (loop != SIZE_MAX &&
+          candidate >= nested_block_end(statements, loop))
+        return std::pair<size_t, size_t>{loop, loop};
+      return std::pair<size_t, size_t>{candidate, SIZE_MAX};
+    };
+
     for (size_t i = 0; i < N; ++i) {
-      auto& occ = checked_types.statement_occurrences[i];
-      const auto& stmt = statements[i];
-
-      if (stmt.kind == Stmt::Kind::Return ||
-          stmt.kind == Stmt::Kind::Reply ||
-          stmt.kind == Stmt::Kind::Raise) {
-        occ.is_terminal_exit = true;
+      auto& occurrence = checked_types.statement_occurrences[i];
+      const auto& statement = statements[i];
+      if (statement.kind == Stmt::Kind::Return ||
+          statement.kind == Stmt::Kind::Reply ||
+          statement.kind == Stmt::Kind::Raise) {
+        occurrence.is_terminal_exit = true;
         continue;
       }
-
-      if (stmt.kind == Stmt::Kind::If) {
-        if (i + 1 < N) {
-          occ.successor_statement_ids.push_back(static_cast<uint32_t>(i + 1));
-        }
-        size_t then_end = nested_block_end(statements, i);
-        if (then_end < N && statements[then_end].indent == stmt.indent &&
+      if (statement.kind == Stmt::Kind::If) {
+        if (i + 1 < N)
+          add_edge(i, i + 1, BodyTypeState::ControlEdgeKind::BranchTrue, i);
+        const size_t then_end = nested_block_end(statements, i);
+        if (then_end < N && statements[then_end].indent == statement.indent &&
             statements[then_end].kind == Stmt::Kind::Else) {
-          occ.successor_statement_ids.push_back(static_cast<uint32_t>(then_end));
+          add_edge(i, then_end, BodyTypeState::ControlEdgeKind::BranchFalse, i);
         } else {
-          size_t cont = find_normal_continuation(statements, i);
-          if (cont < N) {
-            occ.successor_statement_ids.push_back(static_cast<uint32_t>(cont));
-          }
+          const auto [target, backedge] = routed_continuation(i);
+          if (target < N)
+            add_edge(i, target, backedge == SIZE_MAX
+                ? BodyTypeState::ControlEdgeKind::BranchFalse
+                : BodyTypeState::ControlEdgeKind::LoopBackedge,
+                backedge == SIZE_MAX ? i : backedge);
         }
         continue;
       }
-
-      if (stmt.kind == Stmt::Kind::Else) {
-        if (i + 1 < N && statements[i + 1].indent > stmt.indent) {
-          occ.successor_statement_ids.push_back(static_cast<uint32_t>(i + 1));
+      if (statement.kind == Stmt::Kind::Else) {
+        if (i + 1 < N && statements[i + 1].indent > statement.indent) {
+          add_edge(i, i + 1, BodyTypeState::ControlEdgeKind::BranchBody,
+                   occurrence.control_parent_id);
         } else {
-          size_t cont = find_normal_continuation(statements, i);
-          if (cont < N) {
-            occ.successor_statement_ids.push_back(static_cast<uint32_t>(cont));
-          }
+          const auto [target, backedge] = routed_continuation(i);
+          if (target < N)
+            add_edge(i, target, backedge == SIZE_MAX
+                ? BodyTypeState::ControlEdgeKind::Normal
+                : BodyTypeState::ControlEdgeKind::LoopBackedge,
+                backedge);
         }
         continue;
       }
-
-      if (stmt.kind == Stmt::Kind::Match) {
-        size_t match_end = nested_block_end(statements, i);
-        for (size_t c = i + 1; c < match_end; ++c) {
-          if (statements[c].indent == stmt.indent + 1 &&
-              statements[c].kind == Stmt::Kind::Case) {
-            occ.successor_statement_ids.push_back(static_cast<uint32_t>(c));
-          }
+      if (statement.kind == Stmt::Kind::Match) {
+        const size_t match_end = nested_block_end(statements, i);
+        for (size_t arm = i + 1; arm < match_end; ++arm)
+          if (statements[arm].indent == statement.indent + 1 &&
+              statements[arm].kind == Stmt::Kind::Case)
+            add_edge(i, arm, BodyTypeState::ControlEdgeKind::MatchArm, i);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For) {
+        const size_t body_end = nested_block_end(statements, i);
+        const size_t body_start = i + 1;
+        if (body_start < body_end)
+          add_edge(i, body_start, BodyTypeState::ControlEdgeKind::LoopEntry, i);
+        // The generic branch continuation starts at i + 1 and therefore
+        // points back into a loop body. A loop condition exits after its
+        // complete body, which is required for post-loop liveness and joins.
+        size_t exit_target = nested_block_end(statements, i);
+        const size_t outer_loop = enclosing_loop(i);
+        if (outer_loop != SIZE_MAX &&
+            exit_target >= nested_block_end(statements, outer_loop))
+          exit_target = outer_loop;
+        if (exit_target < N) {
+          add_edge(i, exit_target,
+                   BodyTypeState::ControlEdgeKind::LoopZeroIterationExit, i);
+          add_edge(i, exit_target,
+                   BodyTypeState::ControlEdgeKind::LoopConvergedExit, i);
+          if (outer_loop != SIZE_MAX && exit_target == outer_loop)
+            add_edge(i, exit_target,
+                     BodyTypeState::ControlEdgeKind::LoopBackedge, outer_loop);
         }
         continue;
       }
-
-      if (stmt.kind == Stmt::Kind::Case) {
-        if (i + 1 < N && statements[i + 1].indent > stmt.indent) {
-          occ.successor_statement_ids.push_back(static_cast<uint32_t>(i + 1));
+      if (statement.kind == Stmt::Kind::Case) {
+        if (i + 1 < N && statements[i + 1].indent > statement.indent) {
+          add_edge(i, i + 1, BodyTypeState::ControlEdgeKind::BranchBody,
+                   occurrence.control_parent_id);
         } else {
-          size_t cont = find_normal_continuation(statements, i);
-          if (cont < N) {
-            occ.successor_statement_ids.push_back(static_cast<uint32_t>(cont));
-          }
+          const auto [target, backedge] = routed_continuation(i);
+          if (target < N)
+            add_edge(i, target, backedge == SIZE_MAX
+                ? BodyTypeState::ControlEdgeKind::Normal
+                : BodyTypeState::ControlEdgeKind::LoopBackedge,
+                backedge);
         }
         continue;
       }
-
-      size_t cont = find_normal_continuation(statements, i);
-      if (cont < N) {
-        occ.successor_statement_ids.push_back(static_cast<uint32_t>(cont));
-      }
+      const auto [target, backedge] = routed_continuation(i);
+      if (target < N)
+        add_edge(i, target, backedge == SIZE_MAX
+            ? BodyTypeState::ControlEdgeKind::Normal
+            : BodyTypeState::ControlEdgeKind::LoopBackedge,
+            backedge);
     }
 
     vector<bool> reachable(N, false);
     vector<size_t> worklist = {0};
     reachable[0] = true;
     while (!worklist.empty()) {
-      size_t curr = worklist.back();
+      const size_t current = worklist.back();
       worklist.pop_back();
-      for (auto succ : checked_types.statement_occurrences[curr].successor_statement_ids) {
-        if (succ < N && !reachable[succ]) {
-          reachable[succ] = true;
-          worklist.push_back(succ);
+      for (const auto successor :
+           checked_types.statement_occurrences[current].successor_statement_ids) {
+        if (successor < N && !reachable[successor]) {
+          reachable[successor] = true;
+          worklist.push_back(successor);
         }
       }
     }
-
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < N; ++i)
       checked_types.statement_occurrences[i].is_reachable = reachable[i];
-    }
-
     for (size_t i = 0; i < N; ++i) {
-      if (!checked_types.statement_occurrences[i].is_reachable) continue;
-      for (auto succ : checked_types.statement_occurrences[i].successor_statement_ids) {
-        if (succ < N && checked_types.statement_occurrences[succ].is_reachable) {
-          checked_types.statement_occurrences[succ].predecessor_statement_ids.push_back(
-              static_cast<uint32_t>(i));
-        }
+      auto& occurrence = checked_types.statement_occurrences[i];
+      for (auto& edge : occurrence.control_edges)
+        edge.reachable = reachable[i] && edge.target_statement_id < N &&
+            reachable[edge.target_statement_id];
+      if (!reachable[i]) continue;
+      for (const auto successor : occurrence.successor_statement_ids) {
+        if (successor >= N || !reachable[successor]) continue;
+        auto& predecessors =
+            checked_types.statement_occurrences[successor].predecessor_statement_ids;
+        const auto source_id = static_cast<std::uint32_t>(i);
+        if (std::find(predecessors.begin(), predecessors.end(), source_id) ==
+            predecessors.end())
+          predecessors.push_back(source_id);
       }
     }
   }
@@ -22958,12 +23069,14 @@ class Checker {
       size_t statement_index = SIZE_MAX;
       int statement_line = 0;
       bool is_param = false;
+      bool is_enum_payload = false;
       bool is_owned = true;
       bool is_borrow = false;
       bool is_mutable = false;
       string source_name;
       string source_binding_identity;
       Effect demand = Effect::Read;
+      bool has_reachable_use = false;
       string join_definition_identity;
       bool is_unsupported = false;
       TypedLocalOwnershipFactV1::UnsupportedReason unsupported_reason =
@@ -22981,6 +23094,8 @@ class Checker {
 
     vector<DefinitionInfo> definitions;
     std::unordered_map<size_t, StatementDecision> decisions_by_statement_index;
+    vector<TypedLoopOwnershipFactV1> loop_facts;
+    vector<TypedLoopOwnershipRequirementV1> loop_requirements;
   };
 
   BodyOwnershipFlowAnalysis analyze_body_ownership_flow(
@@ -22993,7 +23108,6 @@ class Checker {
     if (N == 0) return analysis;
 
     std::set<string> immutable_sources = initial_immutable_locals;
-    std::set<string> unborrowable_sources;
 
     // 1. Collect parameter / initial definitions
     for (const auto& [name, identity] : initial_binding_identities) {
@@ -23038,8 +23152,7 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source) &&
-            !unborrowable_sources.count(*local_source)) {
+        if (transfers && local_source && current_binding_identities.count(*local_source)) {
           def.is_borrow = true;
           def.is_owned = false;
           def.source_name = *local_source;
@@ -23077,8 +23190,7 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source) &&
-            !unborrowable_sources.count(*local_source)) {
+        if (transfers && local_source && current_binding_identities.count(*local_source)) {
           def.is_borrow = true;
           def.is_owned = false;
           def.source_name = *local_source;
@@ -23123,8 +23235,8 @@ class Checker {
           def.is_borrow = true;
           def.is_owned = false;
           def.is_mutable = false;
+          def.is_enum_payload = true;
           immutable_sources.insert(payload);
-          unborrowable_sources.insert(payload);
           def.def_identity = statement_binding_identity(
               current_semantic_context_, s.line) + ":" + payload;
           def.binding_identity = def.def_identity;
@@ -23223,25 +23335,285 @@ class Checker {
       }
     }
 
-    // 5. Compute statement effects on reaching definitions
-    for (size_t u = 0; u < N; ++u) {
-      if (u >= body_state.statement_occurrences.size() ||
-          !body_state.statement_occurrences[u].is_reachable)
-        continue;
-      for (const auto& v : used_vars[u]) {
-        for (auto d : in_defs[u]) {
-          if (analysis.definitions[d].name == v) {
+    // 5. Solve effects on reaching definitions to a monotone fixed point.
+    // The lattice is READ < WRITE < CONSUME and each iteration only raises a
+    // demand, so this terminates after finitely many changes without a cap.
+    bool effects_changed = true;
+    while (effects_changed) {
+      effects_changed = false;
+      for (size_t u = 0; u < N; ++u) {
+        if (u >= body_state.statement_occurrences.size() ||
+            !body_state.statement_occurrences[u].is_reachable)
+          continue;
+        for (const auto& v : used_vars[u]) {
+          for (auto d : in_defs[u]) {
+            if (analysis.definitions[d].name != v) continue;
+            analysis.definitions[d].has_reachable_use = true;
             auto eff = determine_statement_use_effect(
                 statements[u], v, analysis.definitions[d].binding_identity,
                 analysis.definitions[d].source_name, env_types,
                 current_binding_identities);
-            if (eff) {
-              analysis.definitions[d].demand = stronger_ownership_effect(
-                  analysis.definitions[d].demand, *eff);
+            if (!eff) continue;
+            const Effect joined = stronger_ownership_effect(
+                analysis.definitions[d].demand, *eff);
+            if (joined != analysis.definitions[d].demand) {
+              analysis.definitions[d].demand = joined;
+              effects_changed = true;
+            }
+          }
+        }
+
+        // A direct alias definition carries the future demand of its own
+        // reaching definitions back to the source definition. This is the
+        // edge that lets an effect discovered after a loop backedge converge
+        // onto each earlier loop-carried definition.
+        for (const auto generated : stmt_gen_defs[u]) {
+          const auto& target = analysis.definitions[generated];
+          const auto source_name = direct_statement_identifier(
+              statements[u], statements[u].kind == Stmt::Kind::Let ||
+                      statements[u].kind == Stmt::Kind::Var
+                  ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue);
+          if (!source_name) continue;
+          for (const auto source_id : in_defs[u]) {
+            auto& source = analysis.definitions[source_id];
+            if (source.name != *source_name) continue;
+            const Effect joined = stronger_ownership_effect(
+                source.demand, target.demand);
+            if (joined != source.demand) {
+              source.demand = joined;
+              effects_changed = true;
             }
           }
         }
       }
+    }
+
+    // A nontrivial local initialized from another local is an owning
+    // definition when no reachable use provides a reason to keep it as a
+    // borrow. This matters in loops: `let discarded = owner` still transfers
+    // the owner, even if `discarded` itself is dead in the body.
+    bool unused_transfer_changed = false;
+    for (auto& definition : analysis.definitions) {
+      if (definition.statement_index == SIZE_MAX ||
+          definition.statement_index >= N ||
+          !body_state.statement_occurrences[definition.statement_index].is_reachable ||
+          definition.has_reachable_use || !definition.is_borrow ||
+          definition.source_name.empty())
+        continue;
+      const bool inside_loop = [&] {
+        for (size_t loop = 0; loop < definition.statement_index; ++loop)
+          if ((statements[loop].kind == Stmt::Kind::While ||
+               statements[loop].kind == Stmt::Kind::For) &&
+              definition.statement_index < nested_block_end(statements, loop))
+            return true;
+        return false;
+      }();
+      if (!inside_loop) continue;
+      if (definition.demand != Effect::Consume) {
+        definition.demand = Effect::Consume;
+        unused_transfer_changed = true;
+      }
+    }
+    while (unused_transfer_changed) {
+      unused_transfer_changed = false;
+      for (size_t u = 0; u < N; ++u) {
+        if (!body_state.statement_occurrences[u].is_reachable) continue;
+        for (const auto generated : stmt_gen_defs[u]) {
+          const auto& target = analysis.definitions[generated];
+          if (target.demand != Effect::Consume) continue;
+          const auto source_name = direct_statement_identifier(
+              statements[u], statements[u].kind == Stmt::Kind::Let ||
+                      statements[u].kind == Stmt::Kind::Var
+                  ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue);
+          if (!source_name) continue;
+          for (const auto source_id : in_defs[u]) {
+            auto& source = analysis.definitions[source_id];
+            if (source.name != *source_name ||
+                source.demand == Effect::Consume)
+              continue;
+            source.demand = Effect::Consume;
+            unused_transfer_changed = true;
+          }
+        }
+      }
+    }
+
+    // A syntactic storage alias can become an owned transfer after effects
+    // converge, but only when every reaching source definition is owned.
+    // Borrowed enum payloads and other borrowed sources remain borrows even
+    // when a later use asks to consume them (the use must still be rejected).
+    auto is_effective_borrow = [&](const auto& definition) {
+      if (!definition.is_borrow) return false;
+      if (definition.demand != Effect::Consume ||
+          definition.source_name.empty() ||
+          definition.statement_index == SIZE_MAX)
+        return true;
+      bool found_source = false;
+      for (const auto source_id : in_defs[definition.statement_index]) {
+        const auto& source = analysis.definitions[source_id];
+        if (source.name != definition.source_name) continue;
+        found_source = true;
+        if (source.is_borrow) return true;
+      }
+      // Missing provenance stays conservative: it cannot prove that a
+      // consuming alias was sourced from an owned definition.
+      return !found_source;
+    };
+    auto has_owned_reaching_source = [&](const auto& definition) {
+      if (definition.source_name.empty() ||
+          definition.statement_index == SIZE_MAX)
+        return false;
+      bool found_source = false;
+      for (const auto source_id : in_defs[definition.statement_index]) {
+        const auto& source = analysis.definitions[source_id];
+        if (source.name != definition.source_name) continue;
+        found_source = true;
+        if (source.is_borrow) return false;
+      }
+      return found_source;
+    };
+
+    // A source may be overwritten or consumed only after its inferred READ
+    // aliases have reached their final reachable use. Liveness is graph-based,
+    // so aliases used on a later loop iteration remain live at earlier loop
+    // nodes and borrows ending in the loop do not escape to post-loop writes.
+    for (size_t u = 0; u < N; ++u) {
+      if (u >= body_state.statement_occurrences.size() ||
+          !body_state.statement_occurrences[u].is_reachable)
+        continue;
+      std::set<string> reported_sources;
+      for (const auto source_id : in_defs[u]) {
+        const auto& source = analysis.definitions[source_id];
+        bool consumed_here = false;
+        for (const auto& name : used_vars[u]) {
+          if (name != source.name) continue;
+          auto effect = determine_statement_use_effect(
+              statements[u], name, source.binding_identity,
+              source.source_name, env_types, current_binding_identities);
+          consumed_here |= effect && *effect == Effect::Consume;
+        }
+        bool overwritten_here = std::any_of(
+            stmt_gen_defs[u].begin(), stmt_gen_defs[u].end(),
+            [&](uint32_t generated) {
+              return analysis.definitions[generated].name == source.name;
+            });
+        if (!consumed_here && !overwritten_here) continue;
+        for (const auto& alias : analysis.definitions) {
+          // Storage provenance is known before the effect fixed point. A
+          // direct alias whose converged demand is CONSUME transfers the
+          // value; it is not a live borrow of the source.
+          if (!is_effective_borrow(alias) ||
+              alias.source_name != source.name ||
+              alias.source_binding_identity != source.binding_identity ||
+              alias.statement_index == SIZE_MAX ||
+              !in_defs[u].count(alias.id))
+            continue;
+          const bool live_after = live_out[u].count(alias.name) != 0;
+          const bool alias_used_while_consuming = consumed_here &&
+              used_vars[u].count(alias.name) != 0;
+          if (!live_after && !alias_used_while_consuming) continue;
+          if (reported_sources.insert(source.name).second)
+            err(statements[u].line,
+                "cannot overwrite or consume '" + source.name +
+                    "' while READ alias '" + alias.name +
+                    "' remains live",
+                "OWNERSHIP_SOURCE_BORROWED");
+          break;
+        }
+      }
+    }
+
+    // 5b. Propagate per-definition availability over the same CFG. Each
+    // definition has a finite state lattice; joins can only move Available or
+    // Consumed to MaybeAvailable. A successful whole-local assignment kills
+    // the prior version after its RHS and creates an Available new version.
+    using LoopValueState = TypedLoopOwnershipFactV1::ValueState;
+    using DefinitionStates = std::map<uint32_t, LoopValueState>;
+    auto merge_value_state = [](LoopValueState left, LoopValueState right) {
+      if (left == right) return left;
+      if (left == LoopValueState::Unavailable) return right;
+      if (right == LoopValueState::Unavailable) return left;
+      return LoopValueState::MaybeAvailable;
+    };
+    vector<DefinitionStates> available_in(N), available_out(N);
+    vector<size_t> availability_worklist;
+    vector<bool> in_availability_worklist(N, false);
+    for (size_t node = 0; node < N; ++node)
+      if (body_state.statement_occurrences[node].is_reachable) {
+        availability_worklist.push_back(node);
+        in_availability_worklist[node] = true;
+      }
+    while (!availability_worklist.empty()) {
+      const size_t u = availability_worklist.back();
+      availability_worklist.pop_back();
+      in_availability_worklist[u] = false;
+      DefinitionStates next_in;
+      auto merge_state = [&](uint32_t definition_id, LoopValueState value) {
+        auto [position, inserted] = next_in.emplace(definition_id, value);
+        if (!inserted)
+          position->second = merge_value_state(position->second, value);
+      };
+      if (u == 0)
+        for (const auto definition_id : in_defs[u])
+          if (analysis.definitions[definition_id].is_param)
+            merge_state(definition_id, LoopValueState::Available);
+      for (const auto predecessor :
+           body_state.statement_occurrences[u].predecessor_statement_ids) {
+        if (predecessor >= N ||
+            !body_state.statement_occurrences[predecessor].is_reachable)
+          continue;
+        for (const auto definition_id : out_defs[predecessor]) {
+          if (!in_defs[u].count(definition_id)) continue;
+          auto state = available_out[predecessor].find(definition_id);
+          if (state != available_out[predecessor].end())
+            merge_state(definition_id, state->second);
+        }
+      }
+      available_in[u] = next_in;
+
+      DefinitionStates next_out = next_in;
+      // Consume uses before replacing a target. Direct aliases carry the
+      // already-converged target-definition demand back to the RHS source.
+      for (const auto& name : used_vars[u]) {
+        for (const auto definition_id : in_defs[u]) {
+          auto& definition = analysis.definitions[definition_id];
+          if (definition.name != name) continue;
+          auto effect = determine_statement_use_effect(
+              statements[u], name, definition.binding_identity,
+              definition.source_name, env_types, current_binding_identities);
+          if (effect && *effect == Effect::Consume)
+            next_out[definition_id] = LoopValueState::Consumed;
+        }
+      }
+      for (const auto generated : stmt_gen_defs[u]) {
+        const auto& target = analysis.definitions[generated];
+        const auto source_name = direct_statement_identifier(
+            statements[u], statements[u].kind == Stmt::Kind::Let ||
+                    statements[u].kind == Stmt::Kind::Var
+                ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue);
+        if (source_name)
+          for (const auto definition_id : in_defs[u])
+            if (analysis.definitions[definition_id].name == *source_name &&
+                target.demand == Effect::Consume)
+              next_out[definition_id] = LoopValueState::Consumed;
+        for (auto current = next_out.begin(); current != next_out.end();) {
+          if (analysis.definitions[current->first].name == target.name)
+            current = next_out.erase(current);
+          else
+            ++current;
+        }
+        next_out[generated] = LoopValueState::Available;
+      }
+      if (next_out == available_out[u]) continue;
+      available_out[u] = std::move(next_out);
+      for (const auto successor :
+           body_state.statement_occurrences[u].successor_statement_ids)
+        if (successor < N &&
+            body_state.statement_occurrences[successor].is_reachable &&
+            !in_availability_worklist[successor]) {
+          availability_worklist.push_back(successor);
+          in_availability_worklist[successor] = true;
+        }
     }
 
     // 6. Live join resolution and legality
@@ -23259,8 +23631,14 @@ class Checker {
             bool has_borrow = false;
             bool has_owned = false;
             for (auto d : reaching_v) {
-              if (analysis.definitions[d].is_borrow) has_borrow = true;
-              if (analysis.definitions[d].is_owned) has_owned = true;
+              const auto& definition = analysis.definitions[d];
+              const bool borrowed = definition.is_borrow &&
+                  !(definition.demand != Effect::Read &&
+                    has_owned_reaching_source(definition));
+              if (borrowed)
+                has_borrow = true;
+              if (definition.is_owned || (definition.is_borrow && !borrowed))
+                has_owned = true;
             }
             if (has_borrow && has_owned) {
               err(statements[J].line,
@@ -23307,10 +23685,11 @@ class Checker {
             }
 
             for (auto d : reaching_v) {
-              if (analysis.definitions[d].is_borrow &&
+              if (is_effective_borrow(analysis.definitions[d]) &&
                   !analysis.definitions[d].source_name.empty()) {
                 for (const auto& src_def : analysis.definitions) {
                   if (src_def.name == analysis.definitions[d].source_name &&
+                      !src_def.is_enum_payload &&
                       !src_def.is_param && src_def.statement_index != SIZE_MAX) {
                     if (statements[src_def.statement_index].indent >
                         statements[J].indent) {
@@ -23351,19 +23730,10 @@ class Checker {
       }
     }
 
-    // 7. Check unsupported control flow (Slice C loops & Slice D try/recover)
+    // 7. Check unsupported control flow (Slice D try/recover)
     for (auto& def : analysis.definitions) {
       if (def.statement_index == SIZE_MAX) continue;
       for (size_t cand = def.statement_index; cand-- > 0;) {
-        if ((statements[cand].kind == Stmt::Kind::While ||
-             statements[cand].kind == Stmt::Kind::For) &&
-            statements[cand].indent < statements[def.statement_index].indent &&
-            def.statement_index < nested_block_end(statements, cand)) {
-          def.is_unsupported = true;
-          def.unsupported_reason =
-              TypedLocalOwnershipFactV1::UnsupportedReason::LoopCarriedUse;
-          break;
-        }
         if ((statements[cand].kind == Stmt::Kind::Try ||
              statements[cand].kind == Stmt::Kind::Recover) &&
             statements[cand].indent < statements[def.statement_index].indent &&
@@ -23386,6 +23756,196 @@ class Checker {
         dec.is_unsupported = def.is_unsupported;
         dec.unsupported_reason = def.unsupported_reason;
         analysis.decisions_by_statement_index[def.statement_index] = std::move(dec);
+      }
+    }
+
+    // Publish the loop joins from the same checker-owned graph used above.
+    // Unreachable edges are deliberately omitted, so dead backedges cannot
+    // enter the authority contract or an ownership join.
+    auto loop_est_handle = [&](const Stmt& loop) -> const est::Handle* {
+      const est::ExprSlot wanted = loop.kind == Stmt::Kind::For
+          ? est::ExprSlot::Iterable : est::ExprSlot::Condition;
+      for (const auto& handle : loop.expression_handles)
+        if (handle.slot == wanted && handle.argument_index == 0)
+          return &handle;
+      return nullptr;
+    };
+    auto definition_est_handle = [&](const Stmt& definition)
+        -> const est::Handle* {
+      const est::ExprSlot wanted =
+          definition.kind == Stmt::Kind::Let ||
+                  definition.kind == Stmt::Kind::Var
+              ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+      for (const auto& handle : definition.expression_handles)
+        if (handle.slot == wanted && handle.argument_index == 0)
+          return &handle;
+      return nullptr;
+    };
+    auto add_loop_fact = [&](size_t loop_index, size_t source_index,
+                             size_t target_index,
+                             TypedLoopOwnershipFactV1::EdgeKind edge_kind,
+                             const std::set<uint32_t>& reaching,
+                             const DefinitionStates& value_states) {
+      if (loop_index >= N || loop_index >= body_state.statement_occurrences.size() ||
+          source_index >= N || target_index >= N ||
+          !body_state.statement_occurrences[loop_index].is_reachable ||
+          !body_state.statement_occurrences[source_index].is_reachable ||
+          !body_state.statement_occurrences[target_index].is_reachable)
+        return;
+      const Stmt& loop = statements[loop_index];
+      const auto* loop_handle = loop_est_handle(loop);
+      for (const auto definition_id : reaching) {
+        if (definition_id >= analysis.definitions.size()) continue;
+        const auto& definition = analysis.definitions[definition_id];
+        if (definition.statement_index == SIZE_MAX ||
+            definition.statement_index >= statements.size())
+          continue;  // Parameters have no RHS EST occurrence in the body.
+        const auto* definition_handle =
+            definition_est_handle(statements[definition.statement_index]);
+        TypedLoopOwnershipFactV1 fact;
+        fact.loop_statement_occurrence_id = static_cast<uint32_t>(loop_index);
+        fact.source_statement_occurrence_id = static_cast<uint32_t>(source_index);
+        fact.target_statement_occurrence_id = static_cast<uint32_t>(target_index);
+        fact.definition_statement_occurrence_id =
+            static_cast<uint32_t>(definition.statement_index);
+        if (loop_handle) {
+          fact.loop_est_arena_index = loop_handle->arena_index;
+          fact.loop_expression_occurrence_id = loop_handle->expr;
+        }
+        if (definition_handle) {
+          fact.definition_est_arena_index = definition_handle->arena_index;
+          fact.definition_expression_occurrence_id = definition_handle->expr;
+        }
+        fact.definition_identity = definition.def_identity;
+        fact.binding_identity = definition.binding_identity;
+        fact.source_binding_identity = definition.source_binding_identity;
+        fact.converged_access = definition.demand;
+        auto value_state = value_states.find(definition_id);
+        if (value_state != value_states.end())
+          fact.value_state = value_state->second;
+        fact.edge_kind = edge_kind;
+        fact.reachable = true;
+        fact.availability = !loop_handle
+            ? TypedLoopOwnershipFactV1::Availability::MissingLoopOccurrence
+            : definition.binding_identity.empty()
+                ? TypedLoopOwnershipFactV1::Availability::MissingDefinition
+                : !definition_handle
+                    ? TypedLoopOwnershipFactV1::Availability::MissingEstOccurrence
+                    : value_state == value_states.end()
+                        ? TypedLoopOwnershipFactV1::Availability::MissingDefinition
+                    : TypedLoopOwnershipFactV1::Availability::Present;
+        fact.specialization_context = current_semantic_context_;
+        fact.specialization_identity = local_ownership_specialization_identity();
+        fact.provenance = {
+            loop.source_file.empty() ? current_source_file_ : loop.source_file,
+            loop.line, {}, current_semantic_context_};
+        for (const auto previous_id : in_defs[definition.statement_index]) {
+          const auto& previous = analysis.definitions[previous_id];
+          if (previous.name == definition.name &&
+              previous.binding_identity == definition.binding_identity)
+            fact.killed_definition_identities.push_back(previous.def_identity);
+        }
+
+        TypedLoopOwnershipRequirementV1 requirement;
+        requirement.loop_statement_occurrence_id =
+            fact.loop_statement_occurrence_id;
+        requirement.source_statement_occurrence_id =
+            fact.source_statement_occurrence_id;
+        requirement.target_statement_occurrence_id =
+            fact.target_statement_occurrence_id;
+        requirement.definition_statement_occurrence_id =
+            fact.definition_statement_occurrence_id;
+        requirement.loop_est_arena_index = fact.loop_est_arena_index;
+        requirement.loop_expression_occurrence_id =
+            fact.loop_expression_occurrence_id;
+        requirement.definition_est_arena_index =
+            fact.definition_est_arena_index;
+        requirement.definition_expression_occurrence_id =
+            fact.definition_expression_occurrence_id;
+        requirement.definition_identity = fact.definition_identity;
+        requirement.binding_identity = fact.binding_identity;
+        requirement.killed_definition_identities =
+            fact.killed_definition_identities;
+        requirement.source_binding_identity = fact.source_binding_identity;
+        requirement.specialization_context = fact.specialization_context;
+        requirement.specialization_identity = fact.specialization_identity;
+        requirement.edge_kind = edge_kind;
+        requirement.converged_access = fact.converged_access;
+        requirement.value_state = fact.value_state;
+        requirement.availability = fact.availability;
+        analysis.loop_requirements.push_back(std::move(requirement));
+        analysis.loop_facts.push_back(std::move(fact));
+      }
+    };
+    for (size_t loop_index = 0; loop_index < N; ++loop_index) {
+      if (statements[loop_index].kind != Stmt::Kind::While &&
+          statements[loop_index].kind != Stmt::Kind::For)
+        continue;
+      for (const auto& owner : body_state.statement_occurrences) {
+        for (const auto& edge : owner.control_edges) {
+          if (!edge.reachable || edge.control_statement_id != loop_index)
+            continue;
+          const size_t source = edge.source_statement_id;
+          const size_t target = edge.target_statement_id;
+          std::set<uint32_t> reaching;
+          DefinitionStates reaching_states;
+          if (source == loop_index) {
+            if (edge.kind == BodyTypeState::ControlEdgeKind::LoopEntry ||
+                edge.kind == BodyTypeState::ControlEdgeKind::LoopZeroIterationExit) {
+              // Entry and zero-iteration exit observe only the pre-loop
+              // definitions. Backedge definitions belong to the converged
+              // header and must not contaminate the zero-iteration path.
+              for (const auto predecessor :
+                   body_state.statement_occurrences[loop_index]
+                       .predecessor_statement_ids) {
+                if (predecessor >= N) continue;
+                const auto& pred_occurrence =
+                    body_state.statement_occurrences[predecessor];
+                const bool is_backedge = std::any_of(
+                    pred_occurrence.control_edges.begin(),
+                    pred_occurrence.control_edges.end(),
+                    [&](const auto& pred_edge) {
+                      return pred_edge.reachable &&
+                          pred_edge.target_statement_id == loop_index &&
+                          pred_edge.control_statement_id == loop_index &&
+                          pred_edge.kind ==
+                              BodyTypeState::ControlEdgeKind::LoopBackedge;
+                    });
+                if (!is_backedge) {
+                  reaching.insert(out_defs[predecessor].begin(),
+                                  out_defs[predecessor].end());
+                  for (const auto& [definition_id, value] :
+                       available_out[predecessor])
+                    if (in_defs[loop_index].count(definition_id)) {
+                      auto [found, inserted] =
+                          reaching_states.emplace(definition_id, value);
+                      if (!inserted)
+                        found->second = merge_value_state(found->second, value);
+                    }
+                }
+              }
+            } else if (edge.kind ==
+                       BodyTypeState::ControlEdgeKind::LoopConvergedExit) {
+              reaching = in_defs[loop_index];
+              reaching_states = available_in[loop_index];
+            }
+          } else if (edge.kind == BodyTypeState::ControlEdgeKind::LoopBackedge) {
+            reaching = out_defs[source];
+            reaching_states = available_out[source];
+          }
+          std::optional<TypedLoopOwnershipFactV1::EdgeKind> kind;
+          if (edge.kind == BodyTypeState::ControlEdgeKind::LoopEntry)
+            kind = TypedLoopOwnershipFactV1::EdgeKind::Entry;
+          else if (edge.kind == BodyTypeState::ControlEdgeKind::LoopBackedge)
+            kind = TypedLoopOwnershipFactV1::EdgeKind::Backedge;
+          else if (edge.kind == BodyTypeState::ControlEdgeKind::LoopZeroIterationExit)
+            kind = TypedLoopOwnershipFactV1::EdgeKind::ZeroIterationExit;
+          else if (edge.kind == BodyTypeState::ControlEdgeKind::LoopConvergedExit)
+            kind = TypedLoopOwnershipFactV1::EdgeKind::ConvergedExit;
+          if (kind)
+            add_loop_fact(loop_index, source, target, *kind, reaching,
+                          reaching_states);
+        }
       }
     }
 
@@ -25273,10 +25833,27 @@ class Checker {
     BodyTypeScope body_scope(current_body_types_,
         retained == checked_body_states_.end() ? nullptr : retained->second.get());
     if (current_body_types_) {
+      auto analysis = analyze_body_ownership_flow(
+          statements, *current_body_types_, env.types, env.binding_identities,
+          env.immutable_locals);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_LOOP_OWNERSHIP_FACT") &&
+          !analysis.loop_facts.empty())
+        analysis.loop_facts.erase(analysis.loop_facts.begin());
+      if (std::getenv("MOSS_TEST_PERTURB_LOOP_OWNERSHIP_FACT") &&
+          !analysis.loop_facts.empty()) {
+        auto& access = analysis.loop_facts.front().converged_access;
+        access = access == Effect::Read ? Effect::Write
+            : access == Effect::Write ? Effect::Consume : Effect::Read;
+      }
+#endif
+      loop_ownership_facts_.insert(loop_ownership_facts_.end(),
+          analysis.loop_facts.begin(), analysis.loop_facts.end());
+      required_loop_ownership_occurrences_.insert(
+          required_loop_ownership_occurrences_.end(),
+          analysis.loop_requirements.begin(), analysis.loop_requirements.end());
       current_ownership_flow_ = std::make_unique<BodyOwnershipFlowAnalysis>(
-          analyze_body_ownership_flow(
-              statements, *current_body_types_, env.types, env.binding_identities,
-              env.immutable_locals));
+          std::move(analysis));
     }
     size_t index = 0;
     check_ownership_block(statements, index, 0, env, current_domain,

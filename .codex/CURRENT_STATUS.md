@@ -15130,3 +15130,43 @@ Branch `phase28-r3-team-a-effect-facts`, based on requested `4dc62e9437f00363286
 - Added a fixture and focused harness for READ/WRITE/CONSUME, exact `(arena, ExprId, context)` lookup, same-call specialization isolation, and abstract trait dispatch producing no invented primary effect. Registered in default and EST-shadow make check paths.
 - Validation completed: targeted selector effect harness (default and shadow), local ownership gate (default and shadow), `verify_take_fixtures.py` (16/16), specialized ownership contract, string debt (42 names / 7 binding comparisons), and `git diff --check`.
 - Remaining before handoff: document feedback, freeze and request Agent 2 review, address findings if any, final push and status record. Abstract trait-call effects remain unsupported because no checked argument-effect vector is available there. No full integration suite run.
+
+### Phase 28 Round 4 Slice C — Loop Ownership (pushed)
+
+Branch `phase28-r4-slice-c`, based on exact baseline
+`ea7208964b29edb3363aa5cd58acf6d5321af833`.
+- Final implementation SHA: `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b`.
+  Agent 2 returned NO-GO on `c758efab5e1864d298296b2cadfbb1307f3a2b01`
+  because loop fact lookup did not verify its authoritative requirement or
+  specialization mapping. Fixed that contract and added API fail-closed tests;
+  Agent 2 returned GO on the final SHA.
+- Implemented checker-owned while/for edge facts and per-definition ownership
+  availability on the existing statement-occurrence graph. Entry, backedge,
+  zero-iteration, and converged exits use exact loop and RHS EST occurrences,
+  definition/binding identities, provenance, killed definitions, and effect
+  facts. No ownership-only CFG or SSA conversion was introduced.
+- Added loop reinitialization, zero-iteration, last-borrow-use, still-live-borrow,
+  missing-reinitialization, and unused-owner-transfer fixtures. Restored the
+  EXPRESS-005 F11c/F11d loop regression pair after the first full run exposed
+  an accepted dead local transfer; the final targeted cases pass.
+- Validation completed on the final reviewed implementation: local ownership tests
+  pass in default and EST-shadow modes; F11c/F11d pass; the final default
+  `make check` and full EST-shadow parallel suite each report 167 jobs,
+  151 PASS / 16 FAIL / 0 SKIP, with all 16 failing job names matching the
+  established Round 3 ledger. Slice A/B consumer,
+  selector, typed-fact, and take gates pass; 18/18 take fixtures pass;
+  string debt is 42/7; feedback validation and `git diff --check` pass.
+- In the full shadow run, `shard_swarm_cases` reports the existing shadow
+  structural divergence for `put(take())`; the same exact failure was
+  reproduced on the baseline compiler at `ea7208964b29edb3363aa5cd58acf6d5321af833`.
+- One ancillary `margo --root sdk/tables build --check` attempt reached a
+  test-target `TYPE_MISMATCH` for `ignored` at `tables_test.moss:151`; its
+  baseline status was not established. The final full suite's SDK oracle
+  Debug/Release jobs passed. This ancillary result was not altered or counted
+  as a regression-suite failure.
+- Pushed `origin/phase28-r4-slice-c` at delivery HEAD
+  `788aa8dfd8b52c51eea50f10f261d2dee946ce16`. The implementation SHA remains
+  `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b`; the final delivery commit adds
+  documentation/status only, and its `src/` and `tests/` diff from the reviewed
+  SHA is empty. No merge to `phase28-work`/`main`; Slice D still requires L7
+  authorization.

@@ -200,6 +200,102 @@ def check_take_contract(compiler: str) -> None:
             f"take before a typed raise lacked its pre-raise fact: {raised_result!r}")
 
 
+def check_loop_ownership_contract(compiler: str) -> None:
+    env = os.environ.copy()
+    env["MOSS_EST_FACTS_DUMP"] = "1"
+    env["MOSS_TEST_VALIDATE_LOOP_OWNERSHIP_CONTRACT"] = "1"
+    fixture = FIXTURES / "loop_reinitialize.moss"
+    facts: list[tuple[str, ...]] = []
+    for name in ("loop_reinitialize.moss", "for_loop_reinitialize.moss",
+                 "loop_borrow_last_use.moss"):
+        source = FIXTURES / name
+        proc = subprocess.run([compiler, "check", str(source), "--json"],
+                              cwd=ROOT, text=True, capture_output=True,
+                              env=env, check=False)
+        result = json.loads(proc.stdout)
+        if proc.returncode != 0 or not result.get("ok"):
+            raise AssertionError(
+                f"{name} loop fact contract failed: {result!r}\n{proc.stderr}")
+        observed = re.findall(
+            r'MOSS_EST_LOOP_OWNERSHIP_FACT loop=(\d+) source=(\d+) target=(\d+) '
+            r'definition="([^"]+)" binding="([^"]+)" edge=(\d+) access=(\d+) '
+            r'availability=(\d+) state=(\d+)', proc.stderr)
+        if not observed or {int(row[5]) for row in observed} != {0, 1, 2, 3}:
+            raise AssertionError(
+                f"{name}: expected entry/backedge/zero/converged facts, got {observed!r}")
+        if any(not row[3] or not row[4] or int(row[7]) != 0 or
+               int(row[8]) == 3
+               for row in observed):
+            raise AssertionError(
+                f"{name}: loop facts lack exact identity/availability: {observed!r}")
+        if name == "loop_reinitialize.moss":
+            facts = observed
+    zero_exit_facts = [row for row in facts if int(row[5]) == 2]
+    backedge_facts = [row for row in facts if int(row[5]) == 1]
+    zero_exit_defs = {row[3] for row in zero_exit_facts}
+    backedge_defs = {row[3] for row in backedge_facts}
+    if any("consumed" in identity or "@13:" in identity
+           for identity in zero_exit_defs):
+        raise AssertionError(
+            f"zero-iteration exit included loop-created definitions: {zero_exit_defs!r}")
+    if not any("@13:" in identity for identity in backedge_defs):
+        raise AssertionError(
+            f"backedge omitted the reinitialized loop-carried definition: {backedge_defs!r}")
+    if not any(row[3].endswith(":slot") and int(row[8]) == 0
+               for row in zero_exit_facts):
+        raise AssertionError(
+            f"zero-iteration path did not preserve an available initial value: {zero_exit_facts!r}")
+    if not any("@13:" in row[3] and int(row[8]) == 0
+               for row in backedge_facts):
+        raise AssertionError(
+            f"successful loop reinitialization did not restore availability: {backedge_facts!r}")
+
+    for hook in ("MOSS_TEST_DROP_LOOP_OWNERSHIP_FACT",
+                 "MOSS_TEST_PERTURB_LOOP_OWNERSHIP_FACT"):
+        hooked = {**env, hook: "1"}
+        rejected = subprocess.run(
+            [compiler, "check", str(fixture), "--json"], cwd=ROOT,
+            text=True, capture_output=True, env=hooked, check=False)
+        rejected_result = json.loads(rejected.stdout)
+        if rejected_result.get("ok") or "loop ownership fact missing or contradictory" not in \
+                rejected_result.get("error", {}).get("message", ""):
+            raise AssertionError(
+                f"{hook} did not fail closed as expected: {rejected_result!r}")
+
+    loop_tmp = ROOT / "tmp/phase28_loop_ownership"
+    loop_tmp.mkdir(parents=True, exist_ok=True)
+    for name in ("loop_reinitialize.moss", "for_loop_reinitialize.moss",
+                 "loop_borrow_last_use.moss"):
+        source = FIXTURES / name
+        expected = "1\n2" if name == "loop_borrow_last_use.moss" else "4"
+        fast = subprocess.run([compiler, "run", "--interp", str(source)],
+                              cwd=ROOT, text=True, capture_output=True,
+                              check=False)
+        if fast.returncode != 0 or fast.stdout.strip() != expected:
+            raise AssertionError(
+                f"{name}: Fast Debug expected {expected!r}, got {fast.stdout!r} "
+                f"{fast.stderr!r}")
+        rust = loop_tmp / f"{source.stem}.rs"
+        binary = loop_tmp / source.stem
+        emitted = subprocess.run([compiler, str(source), "-o", str(rust)],
+                                 cwd=ROOT, text=True, capture_output=True,
+                                 check=False)
+        if emitted.returncode != 0:
+            raise AssertionError(f"{name}: native emission failed: {emitted.stderr}")
+        compiled = subprocess.run(["rustc", str(rust), "-o", str(binary)],
+                                  cwd=ROOT, text=True, capture_output=True,
+                                  check=False)
+        if compiled.returncode != 0:
+            raise AssertionError(f"{name}: rustc failed: {compiled.stderr}")
+        native = subprocess.run([str(binary)], cwd=ROOT, text=True,
+                                capture_output=True, check=False)
+        if native.returncode != 0 or native.stdout.strip() != fast.stdout.strip():
+            raise AssertionError(
+                f"{name}: Fast Debug/native mismatch: {fast.stdout!r} vs "
+                f"{native.stdout!r}; {native.stderr}")
+
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
@@ -218,6 +314,17 @@ def main() -> int:
     check(compiler, "rebind_rhs_raise.moss")
     check(compiler, "fileio_rebinding.moss",
           expected_error="FILEIO_PINNED_OWNERSHIP")
+    check(compiler, "loop_reinitialize.moss")
+    check(compiler, "for_loop_reinitialize.moss")
+    check(compiler, "loop_zero_iteration_preserves.moss")
+    check(compiler, "loop_borrow_last_use.moss")
+    check(compiler, "loop_borrow_still_live.moss",
+          expected_error="OWNERSHIP_SOURCE_BORROWED")
+    check(compiler, "loop_missing_reinitialize.moss",
+          expected_error="LOOP_OUTER_BINDING_CONSUMED")
+    check(compiler, "for_loop_unused_owner_move.moss",
+          expected_error="LOOP_OUTER_BINDING_CONSUMED")
+    check_loop_ownership_contract(compiler)
     check(compiler, "use_after_move.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "surviving_field_demand.moss",
@@ -281,7 +388,7 @@ def main() -> int:
         raise AssertionError(
             f"specialized ownership contract failed:\n{contract.stdout}\n"
             f"{contract.stderr}")
-    print("phase28 ownership facts: PASS (local effects, if/else joins, Vector iteration, negatives, drop/perturb)")
+    print("phase28 ownership facts: PASS (local effects, branch joins, while/for loop fixed points, Vector iteration, negatives, drop/perturb)")
     return 0
 
 
