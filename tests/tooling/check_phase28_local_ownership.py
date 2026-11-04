@@ -311,14 +311,16 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
             f"exceptional recover ownership fact failed: {result!r}\n{proc.stderr}")
     facts = re.findall(
         r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT source=(\d+) recovery=(\d+) '
-        r'arena=(\d+) expr=(\d+) variant="([^"]+)" context="([^"]+)" '
+        r'arena=(\d+) expr=(\d+) slot=([^ ]+) variant="([^"]+)" '
+        r'context="([^"]+)" '
         r'specialization="([^"]*)" provenance="([^"]+)" state=(\d+) '
         r'availability=(\d+) mutations=(\d+) consumes=(\d+) borrows=(\d+)',
         proc.stderr)
-    if len(facts) != 1 or facts[0][4] != "enum:Failure:Bad" or \
+    if len(facts) != 1 or facts[0][4] != "RaisedValue" or \
+            facts[0][5] != "enum:Failure:Bad" or \
             int(facts[0][2]) == 2**32 - 1 or int(facts[0][3]) == 2**32 - 1 or \
-            int(facts[0][8]) < 1 or int(facts[0][9]) != 0 or \
-            int(facts[0][12]) < 1:
+            int(facts[0][9]) < 1 or int(facts[0][10]) != 0 or \
+            int(facts[0][13]) < 1:
         raise AssertionError(
             f"expected exact typed variant, EST and state-at-raise fact: {facts!r}")
     records = re.findall(

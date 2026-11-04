@@ -237,6 +237,7 @@ struct TypedExceptionalOwnershipFactV1 {
   std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
   std::uint32_t source_est_arena_index{UINT32_MAX};
   est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
   std::string raised_variant_identity;
   std::vector<std::string> source_raise_alternatives;
   std::vector<std::string> recovery_alternatives;
@@ -255,6 +256,7 @@ struct TypedExceptionalOwnershipRequirementV1 {
   std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
   std::uint32_t source_est_arena_index{UINT32_MAX};
   est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
   std::string raised_variant_identity;
   std::vector<std::string> source_raise_alternatives;
   std::vector<std::string> recovery_alternatives;
@@ -461,6 +463,10 @@ struct TypedSemanticModuleV1 {
               requirement.source_statement_occurrence_id &&
           candidate.recovery_statement_occurrence_id ==
               requirement.recovery_statement_occurrence_id &&
+          candidate.source_est_arena_index == requirement.source_est_arena_index &&
+          candidate.source_expression_occurrence_id ==
+              requirement.source_expression_occurrence_id &&
+          candidate.source_est_slot == requirement.source_est_slot &&
           candidate.raised_variant_identity ==
               requirement.raised_variant_identity &&
           candidate.source_raise_alternatives ==
@@ -480,6 +486,10 @@ struct TypedSemanticModuleV1 {
               requirement.source_statement_occurrence_id &&
           fact.recovery_statement_occurrence_id ==
               requirement.recovery_statement_occurrence_id &&
+          fact.source_est_arena_index == requirement.source_est_arena_index &&
+          fact.source_expression_occurrence_id ==
+              requirement.source_expression_occurrence_id &&
+          fact.source_est_slot == requirement.source_est_slot &&
           fact.raised_variant_identity == requirement.raised_variant_identity &&
           fact.source_raise_alternatives == requirement.source_raise_alternatives &&
           fact.recovery_alternatives == requirement.recovery_alternatives &&
@@ -496,6 +506,7 @@ struct TypedSemanticModuleV1 {
         result->source_est_arena_index != requirement.source_est_arena_index ||
         result->source_expression_occurrence_id !=
             requirement.source_expression_occurrence_id ||
+        result->source_est_slot != requirement.source_est_slot ||
         result->source_raise_alternatives != requirement.source_raise_alternatives ||
         result->recovery_alternatives != requirement.recovery_alternatives)
       throw std::invalid_argument(

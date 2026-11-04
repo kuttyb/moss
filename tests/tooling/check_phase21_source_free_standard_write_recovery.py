@@ -30,9 +30,11 @@ export type Carrier:
 consumer = project / "src/main.moss"
 
 
-def run(*args, expected=0):
+def run(*args, expected=0, extra_env=None):
     environment = os.environ.copy()
     environment["MOSS"] = str(compiler)
+    if extra_env:
+        environment.update(extra_env)
     result = subprocess.run([str(arg) for arg in args], cwd=project,
                             env=environment, capture_output=True, text=True,
                             timeout=180)
@@ -42,8 +44,16 @@ def run(*args, expected=0):
 
 
 def check_effects():
-    checked = json.loads(run(compiler, "check", consumer, "--json").stdout)
+    checked_run = run(compiler, "check", consumer, "--json",
+                      extra_env={"MOSS_EST_FACTS_DUMP": "1"})
+    checked = json.loads(checked_run.stdout)
     assert checked["ok"], checked
+    exceptional_facts = [line for line in checked_run.stderr.splitlines()
+                         if line.startswith("MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT ") and
+                         'variant="enum:provider__Failure:Bad"' in line]
+    assert len(exceptional_facts) == 1 and "slot=RhsValue" in exceptional_facts[0], (
+        "imported WRITE/recovery fact must identify the checked assignment RHS call",
+        exceptional_facts, checked_run.stderr)
     effects = json.loads(run(
         compiler, "effects", "entity-v1:method:provider__Carrier.Reset",
         "--source", consumer, "--json").stdout)["result"]

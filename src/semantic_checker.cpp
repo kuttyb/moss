@@ -1969,12 +1969,30 @@ class Checker {
       }
 #endif
       if (std::getenv("MOSS_EST_FACTS_DUMP")) {
+        const auto exceptional_slot_name = [](std::uint8_t slot) {
+          switch (static_cast<est::ExprSlot>(slot)) {
+            case est::ExprSlot::Condition: return "Condition";
+            case est::ExprSlot::Initializer: return "Initializer";
+            case est::ExprSlot::ReturnValue: return "ReturnValue";
+            case est::ExprSlot::Iterable: return "Iterable";
+            case est::ExprSlot::Receiver: return "Receiver";
+            case est::ExprSlot::Argument: return "Argument";
+            case est::ExprSlot::LhsPlace: return "LhsPlace";
+            case est::ExprSlot::RhsValue: return "RhsValue";
+            case est::ExprSlot::Scrutinee: return "Scrutinee";
+            case est::ExprSlot::Pattern: return "Pattern";
+            case est::ExprSlot::RaisedValue: return "RaisedValue";
+            case est::ExprSlot::Expression: return "Expression";
+          }
+          return "Missing";
+        };
         for (const auto& fact : exceptional_ownership_facts_)
           std::cerr << "MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT source="
                     << fact.source_statement_occurrence_id << " recovery="
                     << fact.recovery_statement_occurrence_id << " arena="
                     << fact.source_est_arena_index << " expr="
-                    << fact.source_expression_occurrence_id << " variant="
+                    << fact.source_expression_occurrence_id << " slot="
+                    << exceptional_slot_name(fact.source_est_slot) << " variant="
                     << std::quoted(fact.raised_variant_identity) << " context="
                     << std::quoted(fact.specialization_context) << " specialization="
                     << std::quoted(fact.specialization_identity) << " provenance="
@@ -26279,10 +26297,70 @@ class Checker {
                     current_body_types_->statement_occurrence_ids.end())
                   fact.recovery_statement_occurrence_id =
                       recovery_occurrence->second;
-                for (const auto& handle : raised.source->expression_handles) {
-                  fact.source_est_arena_index = handle.arena_index;
-                  fact.source_expression_occurrence_id = handle.expr;
-                  break;
+                std::optional<est::ExprSlot> source_slot;
+                switch (raised.source->kind) {
+                  case Stmt::Kind::Assign:
+                    source_slot = est::ExprSlot::RhsValue;
+                    break;
+                  case Stmt::Kind::Let:
+                  case Stmt::Kind::Var:
+                    source_slot = est::ExprSlot::Initializer;
+                    break;
+                  case Stmt::Kind::Raise:
+                    source_slot = est::ExprSlot::RaisedValue;
+                    break;
+                  case Stmt::Kind::If:
+                  case Stmt::Kind::While:
+                    source_slot = est::ExprSlot::Condition;
+                    break;
+                  case Stmt::Kind::For:
+                    source_slot = est::ExprSlot::Iterable;
+                    break;
+                  case Stmt::Kind::Match:
+                    source_slot = est::ExprSlot::Scrutinee;
+                    break;
+                  case Stmt::Kind::Call:
+                    source_slot = est::ExprSlot::Expression;
+                    break;
+                  case Stmt::Kind::Message:
+                    source_slot = est::ExprSlot::Receiver;
+                    break;
+                  case Stmt::Kind::Return:
+                  case Stmt::Kind::Reply:
+                    source_slot = est::ExprSlot::ReturnValue;
+                    break;
+                  case Stmt::Kind::Raw:
+                    source_slot = raised.source->est_raw_form &&
+                            *raised.source->est_raw_form !=
+                                est::RawForm::ExprStmt
+                        ? est::ExprSlot::RhsValue
+                        : est::ExprSlot::Expression;
+                    break;
+                  case Stmt::Kind::Echo:
+                    if (raised.source->args.size() == 1)
+                      source_slot = est::ExprSlot::Argument;
+                    break;
+                  case Stmt::Kind::Try:
+                  case Stmt::Kind::Recover:
+                  case Stmt::Kind::Case:
+                  case Stmt::Kind::Else:
+                  case Stmt::Kind::Pass:
+                    break;
+                }
+                if (source_slot) {
+                  const auto handle = std::find_if(
+                      raised.source->expression_handles.begin(),
+                      raised.source->expression_handles.end(),
+                      [&](const est::Handle& candidate) {
+                        return candidate.slot == *source_slot &&
+                            candidate.argument_index == 0;
+                      });
+                  if (handle != raised.source->expression_handles.end()) {
+                    fact.source_est_arena_index = handle->arena_index;
+                    fact.source_expression_occurrence_id = handle->expr;
+                    fact.source_est_slot =
+                        static_cast<std::uint8_t>(handle->slot);
+                  }
                 }
                 for (const auto& [name, type] : raised.ownership.types) {
                   TypedExceptionalOwnershipFactV1::BindingState state;
@@ -26403,6 +26481,7 @@ class Checker {
                 requirement.source_est_arena_index = fact.source_est_arena_index;
                 requirement.source_expression_occurrence_id =
                     fact.source_expression_occurrence_id;
+                requirement.source_est_slot = fact.source_est_slot;
                 requirement.raised_variant_identity =
                     fact.raised_variant_identity;
                 requirement.source_raise_alternatives =
