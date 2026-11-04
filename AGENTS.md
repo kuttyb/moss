@@ -228,6 +228,10 @@ When working with Moss:
   authorized W08 through W11; the user authorized scoped local commits and
   normal pushes, and reviewed integration into `phase28-work` after final Agent 2
   GO. Do not merge into `main`.
+  For Phase 28 Team A W12 checker work on `phase28-r6-w12-checker`, L7
+  authorized execution; the user authorized scoped local commits and normal
+  pushes to the configured remote after independent Agent 2 GO. Do not merge
+  into `phase28-work` or `main`.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
