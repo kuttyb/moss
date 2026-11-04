@@ -52,6 +52,9 @@ or out-of-bounds evidence fails closed.
 The harness independently checks Rust/source digests, exact clone occurrence
 spans, exact source-copy spans and identities, source-to-Rust links, context
 hashes, and exact equality with an independently reviewed runtime callsite row.
+A v2 sidecar is mandatory for every generated Rust artifact, including artifacts
+whose Rust has no `.clone()` occurrence and whose Moss source has no `copy(...)`
+call. An empty textual scan cannot stand in for provenance evidence.
 A sidecar assertion is not itself semantic proof; independent harness review
 must assess that the allowlisted callsite actually accounts for the generated
 clone and that its ownership/type evidence is sufficient.

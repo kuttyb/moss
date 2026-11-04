@@ -433,8 +433,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
     # e.g. `generated.rs.mossclone.json`.
     sidecar = Path(str(rust_path) + ".mossclone.json")
     if not sidecar.exists():
-        missing = len(rust_occurrences) + len(source_copies)
-        return {"status": "PROVENANCE_MISSING" if missing else "PASS", "authorized": 0,
+        # Every generated artifact requires an attested v2 sidecar, even when
+        # its current text contains no clone or explicit Moss copy call.
+        return {"status": "PROVENANCE_MISSING", "authorized": 0,
                 "unauthorized": 0, "unclassified": len(rust_occurrences),
                 "source_copy_spans": source_copies, "occurrences": rust_occurrences}
     try:

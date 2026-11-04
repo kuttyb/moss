@@ -157,6 +157,12 @@ class CloneProvenanceTests(unittest.TestCase):
         audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
         self.assertEqual(audit["status"], "PROVENANCE_MISSING")
 
+    def test_missing_sidecar_fails_closed_without_clone_or_copy_calls(self):
+        self.rust_path.write_text("fn main() {}\n")
+        self.source_path.write_text("fn main(): pass\n")
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 0)
+        self.assertEqual(audit["status"], "PROVENANCE_MISSING")
+
     def test_runtime_label_without_source_evidence_is_rejected(self):
         self.write_manifest(self.manifest("runtime_support"))
         audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
