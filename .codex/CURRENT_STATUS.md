@@ -15350,9 +15350,11 @@ and proposed language/clone provenance addendum are drafted. No compiler source
 was changed. The reviewer-controlled holdout is local-only under
 `.git/oracle-review/holdout.json`, outside the branch and remote.
 
-L7 approval routing was requested but no reviewer/channel has been identified
-yet. The expectation table remains `DRAFT_PENDING_L7_APPROVAL`; no freeze,
-commit, push, independent harness review, or exact-SHA publication has occurred.
+The draft was committed and pushed to `origin/phase28-r7-005` for the project
+owner to relay to L7. Draft package commit: `86e283bd1618d0b3a755ed0c0a34b95d69711b72`.
+The expectation table remains `DRAFT_PENDING_L7_APPROVAL`; it is not frozen,
+and independent harness review remains pending. This handoff does not authorize
+freeze or merge.
 The required occurrence-level clone provenance artifact is not emitted by the
 current compiler. The harness found 298 unverified `.clone()` occurrences
 across debug and optimized artifacts on the task baseline. Without provenance,

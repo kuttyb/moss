@@ -1,7 +1,8 @@
 # P28-R7-005 — Oracle Hardening Draft Report
 
-**State: Awaiting L7 approval. Not frozen, not independently reviewed, and not
-published.** Work is on `phase28-r7-005`, branched from
+**State: Draft published for L7 approval. Not frozen or independently
+reviewed.** Draft package commit:
+`86e283bd1618d0b3a755ed0c0a34b95d69711b72` on `phase28-r7-005`, branched from
 `4755ed2fcdf8b1654bb6b36d23bb44cd857838ff` (`phase28-r7-oracle`). No compiler
 source files were changed.
 
@@ -56,8 +57,8 @@ Evidence from the baseline includes:
 
 Also completed: `python3 -m py_compile tests/phase28/oracle/oracle_harness.py`,
 `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`.
-No full repository suite was run. No commit, push, merge, freeze, or exact-SHA
-publication is claimed.
+No full repository suite was run. The draft is committed and pushed for review;
+no merge or freeze is claimed.
 
 ## Remaining gates
 
