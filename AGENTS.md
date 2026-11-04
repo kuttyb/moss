@@ -235,6 +235,14 @@ When working with Moss:
   For P28-R7-005 independent oracle certification on `phase28-r7-005`, the user
   authorized scoped local commits and normal pushes to the configured remote
   after independent Agent 2 GO. Do not merge into `main`.
+  For Phase 28 Team A W12 checker work on `phase28-r6-w12-checker`, L7
+  authorized execution; the user authorized scoped local commits and normal
+  pushes to the configured remote after independent Agent 2 GO. Do not merge
+  into `phase28-work` or `main`.
+  For P28-R7-008 controlled staging integration on
+  `phase28-r7-008-integration`, L7 authorized staging integration and scoped
+  local commits only. Do not merge into `phase28-work` or `main` without
+  separate L7 authorization.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "b = a; return b | Accept for owned movable a; reject borrowed non-movable place"
+type Packet:
+  payload: String
+
+fn transfer_borrowed(p: Packet) -> Packet:
+  var v = [p]
+  borrowed = v[0]
+  return borrowed
+
+fn main():
+  pass

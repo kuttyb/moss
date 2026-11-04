@@ -1933,11 +1933,25 @@ class Checker {
       p_.typed_semantics->take_facts = take_facts_;
       p_.typed_semantics->required_take_occurrences =
           required_take_occurrences_;
+      p_.typed_semantics->copy_facts = copy_facts_;
+      p_.typed_semantics->required_copy_occurrences =
+          required_copy_occurrences_;
+      p_.typed_semantics->match_ownership_facts = match_ownership_facts_;
+      p_.typed_semantics->required_match_occurrences =
+          required_match_occurrences_;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_VALIDATE_TAKE_CONTRACT"))
         for (const auto& requirement :
              p_.typed_semantics->required_take_occurrences)
           (void)p_.typed_semantics->find_take_fact(requirement);
+      if (std::getenv("MOSS_TEST_VALIDATE_COPY_CONTRACT"))
+        for (const auto& requirement :
+             p_.typed_semantics->required_copy_occurrences)
+          (void)p_.typed_semantics->find_copy_fact(requirement);
+      if (std::getenv("MOSS_TEST_VALIDATE_MATCH_CONTRACT"))
+        for (const auto& requirement :
+             p_.typed_semantics->required_match_occurrences)
+          (void)p_.typed_semantics->find_match_ownership_fact(requirement);
 #endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT")) {
@@ -2453,6 +2467,14 @@ class Checker {
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
   vector<TypedTakeFactV1> take_facts_;
   vector<TypedTakeRequirementV1> required_take_occurrences_;
+  vector<TypedCopyFactV1> copy_facts_;
+  vector<TypedCopyRequirementV1> required_copy_occurrences_;
+  vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
+  vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
+  std::unordered_map<std::string, EnumType> option_enums_cache_;
+  std::set<std::string> taken_places_in_current_stmt_;
+  std::set<std::pair<std::uint32_t, est::ExprId>> visited_takes_in_current_stmt_;
+  std::set<std::pair<std::uint32_t, est::ExprId>> visited_copies_in_current_stmt_;
   bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = moss::TypeEnv;
@@ -11350,6 +11372,95 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
+  const EnumType* resolve_enum_or_option(const string& type_name) {
+    string concrete = canonical_type_name(type_name);
+    if (auto it = enums_.find(concrete); it != enums_.end()) {
+      return it->second;
+    }
+    if (starts_with(concrete, "option[") && ends_with(concrete, "]")) {
+      auto& opt = option_enums_cache_[concrete];
+      if (opt.name.empty()) {
+        opt.name = concrete;
+        string inner = concrete.substr(7, concrete.size() - 8);
+        EnumCase some_c;
+        some_c.name = "Some";
+        Field f;
+        f.name = "value";
+        f.type = inner;
+        some_c.fields.push_back(f);
+        opt.cases.push_back(some_c);
+        EnumCase none_c;
+        none_c.name = "None";
+        opt.cases.push_back(none_c);
+      }
+      return &opt;
+    }
+    return nullptr;
+  }
+
+  const EnumType* resolve_enum_or_option(const moss::TypeRef& type) {
+    if (!type) return nullptr;
+    return resolve_enum_or_option(canonical_type_name(type));
+  }
+
+  bool is_copy_eligible(const string& type_name, std::set<string>& visited) const {
+    string concrete = canonical_type_name(type_name);
+    if (concrete.empty()) return false;
+    if (phase20_is_nontransferable_capability(concrete)) return false;
+    if (domains_.count(concrete)) return false;
+    if (concrete == "FileIO" || concrete == "Range" || concrete == "RangeBatch" ||
+        concrete == "executor" || concrete == "FileError")
+      return false;
+    if (copy_type_name(concrete)) return true;
+    if (concrete == "string" || concrete == "String") return true;
+
+    if (visited.count(concrete)) return true;
+    visited.insert(concrete);
+
+    auto bracket = concrete.find('[');
+    if (bracket != string::npos && ends_with(concrete, "]")) {
+      string outer = concrete.substr(0, bracket);
+      string inner = concrete.substr(bracket + 1, concrete.size() - bracket - 2);
+      auto args = moss::split_top_level(inner, ',');
+      if (outer == "option" || outer == "vector" || outer == "queue" || outer == "set" ||
+          outer == "Vector" || outer == "Queue" || outer == "Set" ||
+          outer == "map" || outer == "Map") {
+        for (const auto& arg : args) {
+          if (!is_copy_eligible(trim(arg), visited)) return false;
+        }
+        return true;
+      }
+    }
+
+    if (auto obj = objects_.find(concrete); obj != objects_.end()) {
+      for (const auto& f : obj->second->fields) {
+        if (!is_copy_eligible(f.type, visited)) return false;
+      }
+      return true;
+    }
+
+    if (auto enm = enums_.find(concrete); enm != enums_.end()) {
+      for (const auto& c : enm->second->cases) {
+        for (const auto& f : c.fields) {
+          if (!is_copy_eligible(f.type, visited)) return false;
+        }
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  bool is_copy_eligible(const string& type_name) const {
+    std::set<string> visited;
+    return is_copy_eligible(type_name, visited);
+  }
+
+  bool is_copy_eligible(const moss::TypeRef& type) const {
+    if (!type) return false;
+    return is_copy_eligible(canonical_type_name(type));
+  }
+
   static bool tree_expressions_structurally_equal(const string& left,
                                         const string& right) {
     auto left_tree = checker_est_view(left);
@@ -12191,6 +12302,18 @@ class Checker {
           if (auto place = view.source_text(take->arguments.front()))
             if (auto result = inferred_expr(*place, env)) return result;
         }
+      }
+    }
+    if (starts_with(original, "take(") && ends_with(original, ")")) {
+      string inner = trim(original.substr(5, original.size() - 6));
+      if (!inner.empty()) {
+        if (auto result = inferred_expr(inner, env)) return result;
+      }
+    }
+    if (starts_with(original, "copy(") && ends_with(original, ")")) {
+      string inner = trim(original.substr(5, original.size() - 6));
+      if (!inner.empty()) {
+        if (auto result = inferred_expr(inner, env)) return result;
       }
     }
     if (tree_placeholder_expression(original) && current_body_types_ &&
@@ -13316,8 +13439,10 @@ class Checker {
             (open_generic(*scrutinee_type) ||
              *scrutinee_type == "_selected_error")) ||
             (!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
-        if (!deferred && (!scrutinee_type ||
-            !enums_.count(canonical_type_name(*scrutinee_type))))
+        const EnumType* declaration = deferred ? nullptr :
+            (scrutinee_type ? const_cast<Checker*>(this)->resolve_enum_or_option(*scrutinee_type) : nullptr);
+        bool is_option = declaration && declaration->name.rfind("option[", 0) == 0;
+        if (!deferred && (!scrutinee_type || !declaration))
           err(statement.line, scrutinee_type && !contains_internal_placeholder(*scrutinee_type)
                   ? "match requires an enum scrutinee; found " + *scrutinee_type
                   : "match scrutinee has an unknown or unresolved enum type",
@@ -13326,8 +13451,6 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type =
               deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
                        : canonical_type_name(*scrutinee_type);
-        const EnumType* declaration = deferred ? nullptr :
-            enums_.at(canonical_type_name(*scrutinee_type));
         std::set<string> seen;
         vector<TypeEnv> paths;
         ++index;
@@ -13363,7 +13486,7 @@ class Checker {
           TypeEnv branch = env;
           std::set<string> pattern_names;
           for (size_t field_index = 0; field_index < bindings.size(); ++field_index) {
-            if (declaration && bindings[field_index] != item->fields[field_index].name)
+            if (declaration && !is_option && bindings[field_index] != item->fields[field_index].name)
               err(arm.line, "case '" + case_name + "' requires payload field '" +
                   item->fields[field_index].name + "' in declaration order",
                   "MATCH_FIELD_NAME_MISMATCH");
@@ -14204,8 +14327,10 @@ class Checker {
                                 {}, false});
       if (statement.kind == Stmt::Kind::Match) {
         auto scrutinee_type = inferred_expr_type(statement.a, scan);
-        if (scrutinee_type && enums_.count(canonical_type_name(*scrutinee_type))) {
-          match_enums[statement.indent] = enums_.at(canonical_type_name(*scrutinee_type));
+        if (scrutinee_type) {
+          if (auto decl = const_cast<Checker*>(this)->resolve_enum_or_option(*scrutinee_type)) {
+            match_enums[statement.indent] = decl;
+          }
         }
       } else if (statement.kind == Stmt::Kind::Case) {
         const EnumType* declaration = nullptr;
@@ -18644,7 +18769,7 @@ class Checker {
           return;
         }
         string concrete = canonical_type_name(*receiver_type);
-        if (const auto* builtin = builtin_operation(concrete, method);
+        if (const auto* builtin = builtin_operation(concrete, method, arguments.size());
             builtin && builtin->argument_effects.size() == arguments.size()) {
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields,
@@ -18913,8 +19038,8 @@ class Checker {
                                   receiver_effect, receiver_fields,
                                   statement.b == "consume" ? Effect::Consume : Effect::Read);
         auto type = inferred_expr_type(statement.a, env);
-        const EnumType* declaration = type && enums_.count(canonical_type_name(*type))
-            ? enums_.at(canonical_type_name(*type)) : nullptr;
+        const EnumType* declaration = type
+            ? const_cast<Checker*>(this)->resolve_enum_or_option(*type) : nullptr;
         ++index;
         vector<TypeEnv> paths;
         while (index < statements.size() && statements[index].indent == level + 1) {
@@ -20596,9 +20721,9 @@ class Checker {
       }
       if (statement.kind == Stmt::Kind::Match) {
         const auto type = inferred_expr_type(statement.a, current);
-        const auto declaration = type
-            ? enums_.find(canonical_type_name(*type)) : enums_.end();
-        if (declaration != enums_.end()) {
+        const auto* declaration = type
+            ? const_cast<Checker*>(this)->resolve_enum_or_option(*type) : nullptr;
+        if (declaration != nullptr) {
           size_t index = static_cast<size_t>(
               &statement - handler.body.data()) + 1;
           while (index < handler.body.size() &&
@@ -20607,10 +20732,10 @@ class Checker {
             const Stmt& arm = handler.body[index];
             const auto& pattern = *arm.est_pattern;
             auto variant = std::find_if(
-                declaration->second->cases.begin(),
-                declaration->second->cases.end(),
+                declaration->cases.begin(),
+                declaration->cases.end(),
                 [&](const EnumCase& item) { return item.name == pattern.case_name; });
-            if (variant != declaration->second->cases.end())
+            if (variant != declaration->cases.end())
               for (size_t field = 0;
                    field < pattern.payload_bindings.size() && field < variant->fields.size();
                    ++field)
@@ -21265,7 +21390,7 @@ class Checker {
         return effects;
       }
       if (receiver_type) {
-        if (const auto* builtin = builtin_operation(*receiver_type, method);
+        if (const auto* builtin = builtin_operation(*receiver_type, method, arguments.size());
             builtin && builtin->argument_effects.size() == arguments.size()) {
           effects.may_panic = effects.may_panic || builtin->may_panic;
           auto mark_write = [&](const string& expression) {
@@ -22791,6 +22916,16 @@ class Checker {
           "'; " + enum_payload_transfer_guidance(borrowed->second, env) +
           " to transfer it",
           "BORROWED_ENUM_PAYLOAD_CONSUME");
+    auto paths_it = env.borrowed_local_storage_paths.find(name);
+    if (paths_it != env.borrowed_local_storage_paths.end()) {
+      for (const auto& path : paths_it->second) {
+        if (path.find(".[]") != string::npos) {
+          err(line, "cannot consume borrowed local '" + name + "'; collection elements and borrowed places cannot be moved",
+              "OWNERSHIP_ILLEGAL_CONSUME");
+          return;
+        }
+      }
+    }
     if (env.message_payloads.count(name)) {
       err(line, "cannot CONSUME incoming message payload '" + name +
           "'; message payloads may only be read or forwarded");
@@ -23392,16 +23527,22 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        string source_name;
+        if (local_source) {
+          source_name = *local_source;
+        } else if (auto loc = storage_location(s.b, flow_env_types)) {
+          source_name = loc->root;
+        }
+        if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
           def.is_borrow = true;
           def.is_owned = false;
-          def.source_name = *local_source;
-          def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_name = source_name;
+          def.source_binding_identity = current_binding_identities.at(source_name);
           def.source_storage_path = def.source_binding_identity;
           if (auto location = storage_location(s.b, flow_env_types))
             for (const auto& projection : location->path)
               def.source_storage_path += "." + projection;
-          if (immutable_sources.count(*local_source)) def.is_mutable = false;
+          if (immutable_sources.count(source_name)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
           def.is_owned = true;
@@ -23434,16 +23575,22 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        string source_name;
+        if (local_source) {
+          source_name = *local_source;
+        } else if (auto loc = storage_location(s.b, flow_env_types)) {
+          source_name = loc->root;
+        }
+        if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
           def.is_borrow = true;
           def.is_owned = false;
-          def.source_name = *local_source;
-          def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_name = source_name;
+          def.source_binding_identity = current_binding_identities.at(source_name);
           def.source_storage_path = def.source_binding_identity;
           if (auto location = storage_location(s.b, flow_env_types))
             for (const auto& projection : location->path)
               def.source_storage_path += "." + projection;
-          if (immutable_sources.count(*local_source)) def.is_mutable = false;
+          if (immutable_sources.count(source_name)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
           def.is_owned = true;
@@ -23638,14 +23785,19 @@ class Checker {
         // onto each earlier loop-carried definition.
         for (const auto generated : stmt_gen_defs[u]) {
           const auto& target = analysis.definitions[generated];
-          const auto source_name = direct_statement_identifier(
-              statements[u], statements[u].kind == Stmt::Kind::Let ||
-                      statements[u].kind == Stmt::Kind::Var
-                  ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue);
-          if (!source_name) continue;
+          string source_name;
+          if (const auto direct = direct_statement_identifier(
+                  statements[u], statements[u].kind == Stmt::Kind::Let ||
+                          statements[u].kind == Stmt::Kind::Var
+                      ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue)) {
+            source_name = *direct;
+          } else if (auto loc = storage_location(statements[u].b, env_types)) {
+            source_name = loc->root;
+          }
+          if (source_name.empty()) continue;
           for (const auto source_id : in_defs[u]) {
             auto& source = analysis.definitions[source_id];
-            if (source.name != *source_name) continue;
+            if (source.name != source_name) continue;
             const Effect joined = stronger_ownership_effect(
                 source.demand, target.demand);
             if (joined != source.demand) {
@@ -23667,7 +23819,8 @@ class Checker {
           definition.statement_index >= N ||
           !body_state.statement_occurrences[definition.statement_index].is_reachable ||
           definition.has_reachable_use || !definition.is_borrow ||
-          definition.source_name.empty())
+          definition.source_name.empty() ||
+          definition.source_storage_path.find(".[]") != string::npos)
         continue;
       const bool inside_loop = [&] {
         for (size_t loop = 0; loop < definition.statement_index; ++loop)
@@ -23713,6 +23866,7 @@ class Checker {
     // when a later use asks to consume them (the use must still be rejected).
     auto is_effective_borrow = [&](const auto& definition) {
       if (!definition.is_borrow) return false;
+      if (definition.source_storage_path.find(".[]") != string::npos) return true;
       if (definition.demand != Effect::Consume ||
           definition.source_name.empty() ||
           definition.statement_index == SIZE_MAX)
@@ -25038,12 +25192,30 @@ class Checker {
       fact.unsupported_reason =
           TypedLocalOwnershipFactV1::UnsupportedReason::ConsumingLoopElement;
       fact.availability = TypedLocalOwnershipFactV1::Availability::NotRequired;
+      if (tracked->second < required_local_ownership_occurrences_.size()) {
+        auto& req = required_local_ownership_occurrences_[tracked->second];
+        req.inference_status = fact.inference_status;
+        req.unsupported_reason = fact.unsupported_reason;
+        req.availability = fact.availability;
+      }
       err(line, "Vector iteration elements cannot be consumed; use an explicit "
           "owned collection operation for element transfer",
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
       return;
     }
     fact.access = stronger_ownership_effect(fact.access, requested);
+    if (tracked->second < required_local_ownership_occurrences_.size()) {
+      required_local_ownership_occurrences_[tracked->second].access = fact.access;
+    }
+    if (fact.est_arena_index != UINT32_MAX && fact.expression_occurrence_id != UINT32_MAX) {
+      if (auto* arena = expression_arena(fact.est_arena_index)) {
+        est::SemanticFacts semantic_fact;
+        semantic_fact.inferred_effect = fact.access;
+        const_cast<est::Arena*>(arena)->record_facts(
+            fact.expression_occurrence_id, fact.specialization_context,
+            std::move(semantic_fact));
+      }
+    }
   }
 
   bool vector_element_binding(const string& name,
@@ -25382,24 +25554,81 @@ class Checker {
   }
 
   std::optional<EstExpressionCursor> ownership_take_cursor(
-      const string& expression) const {
+      const string& expression) {
     if (!ownership_current_stmt_) return std::nullopt;
-    est::ExprSlot slot = est::ExprSlot::Expression;
-    switch (ownership_current_stmt_->kind) {
-      case Stmt::Kind::Let:
-      case Stmt::Kind::Var: slot = est::ExprSlot::Initializer; break;
-      case Stmt::Kind::Assign: slot = est::ExprSlot::RhsValue; break;
-      case Stmt::Kind::Return: slot = est::ExprSlot::ReturnValue; break;
-      case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
-      case Stmt::Kind::Raise: slot = est::ExprSlot::RaisedValue; break;
-      default: return std::nullopt;
-    }
+    string trimmed = trim(expression);
+    if (!starts_with(trimmed, "take(") || !ends_with(trimmed, ")"))
+      return std::nullopt;
     for (const auto& handle : ownership_current_stmt_->expression_handles) {
-      if (handle.slot != slot || handle.argument_index != 0) continue;
       auto* arena = expression_arena(handle.arena_index);
-      if (!arena || !std::holds_alternative<est::Take>(arena->at(handle.expr)))
-        continue;
-      return EstExpressionCursor{handle.arena_index, handle.expr, expression};
+      if (!arena) continue;
+      std::function<std::optional<est::ExprId>(est::ExprId)> find_take_node =
+          [&](est::ExprId id) -> std::optional<est::ExprId> {
+        if (id >= arena->size()) return std::nullopt;
+        const auto& node = arena->at(id);
+        if (std::holds_alternative<est::Take>(node)) {
+          if (!visited_takes_in_current_stmt_.count({handle.arena_index, id})) {
+            return id;
+          }
+        }
+        return std::visit(
+            [&](const auto& n) -> std::optional<est::ExprId> {
+              using T = std::decay_t<decltype(n)>;
+              if constexpr (std::is_same_v<T, est::Unary>) {
+                return find_take_node(n.operand);
+              } else if constexpr (std::is_same_v<T, est::Binary>) {
+                if (auto found = find_take_node(n.left)) return found;
+                return find_take_node(n.right);
+              } else if constexpr (std::is_same_v<T, est::Call>) {
+                if (auto found = find_take_node(n.callee)) return found;
+                for (auto arg : n.arguments)
+                  if (auto found = find_take_node(arg)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::Take>) {
+                for (auto arg : n.arguments)
+                  if (auto found = find_take_node(arg)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::Member>) {
+                return find_take_node(n.base);
+              } else if constexpr (std::is_same_v<T, est::Index>) {
+                if (auto found = find_take_node(n.base)) return found;
+                return find_take_node(n.index);
+              } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+                return find_take_node(n.inner);
+              } else if constexpr (std::is_same_v<T, est::Message>) {
+                if (auto found = find_take_node(n.target)) return found;
+                for (auto arg : n.arguments)
+                  if (auto found = find_take_node(arg)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
+                return find_take_node(n.value);
+              } else if constexpr (std::is_same_v<T, est::Collection>) {
+                for (auto elem : n.elements)
+                  if (auto found = find_take_node(elem)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::Tuple>) {
+                for (auto elem : n.elements)
+                  if (auto found = find_take_node(elem)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::Constructor>) {
+                for (auto arg : n.arguments)
+                  if (auto found = find_take_node(arg)) return found;
+                return std::nullopt;
+              } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+                if (auto found = find_take_node(n.input)) return found;
+                for (auto stage : n.stages)
+                  if (auto found = find_take_node(stage)) return found;
+                return std::nullopt;
+              } else {
+                return std::nullopt;
+              }
+            },
+            node);
+      };
+      if (auto found_id = find_take_node(handle.expr)) {
+        visited_takes_in_current_stmt_.insert({handle.arena_index, *found_id});
+        return EstExpressionCursor{handle.arena_index, *found_id, expression};
+      }
     }
     return std::nullopt;
   }
@@ -25438,6 +25667,12 @@ class Checker {
     if (location.root.empty() || location.path.empty())
       err(line, "take place has no checker-owned storage root",
           "TAKE_PLACE_IDENTITY_MISSING");
+    std::string place_key = location.root;
+    for (const auto& step : location.path) place_key += "." + step;
+    if (taken_places_in_current_stmt_.count(place_key))
+      err(line, "duplicate take of place '" + place_key + "' in statement",
+          "TAKE_DUPLICATE_PLACE_ACCESS");
+    taken_places_in_current_stmt_.insert(place_key);
     if (env.immutable_locals.count(location.root))
       err(line, "cannot take from immutable local '" + location.root + "'",
           "IMMUTABLE_LOCAL_MUTATION");
@@ -25863,7 +26098,7 @@ class Checker {
               check_ownership_expression(line, argument, env, Effect::Read);
           return;
         }
-        const auto* builtin = builtin_operation(concrete, method);
+        const auto* builtin = builtin_operation(concrete, method, arguments.size());
         if (builtin && concrete == "string" &&
             builtin->argument_effects.size() == arguments.size()) {
           vector<string> access_expressions{receiver};
@@ -25973,6 +26208,126 @@ class Checker {
         check_ownership_expression(line, call_arguments[0], env, Effect::Write);
         return;
       }
+      if (callee == "copy" && call_arguments.size() == 1) {
+        check_ownership_expression(line, call_arguments[0], env, Effect::Read);
+        auto arg_type = inferred_expr_type(call_arguments[0], env.types);
+        TypedCopyFactV1 fact;
+        fact.specialization_context = local_ownership_consumer_context();
+        fact.specialization_identity = local_ownership_specialization_identity();
+        fact.est_fact_context = expression_fact_context();
+        fact.source_type = arg_type ? moss::Type::parse_canonical(canonical_type_name(*arg_type)).value_or(nullptr) : nullptr;
+        fact.result_type = fact.source_type;
+        fact.required_source_access = Effect::Read;
+        fact.creates_independent_owner = true;
+        fact.availability = TypedCopyFactV1::Availability::Present;
+
+        if (ownership_current_stmt_) {
+          if (current_body_types_) {
+            auto statement_id = current_body_types_->statement_occurrence_ids.find(ownership_current_stmt_);
+            if (statement_id != current_body_types_->statement_occurrence_ids.end())
+              fact.statement_occurrence_id = statement_id->second;
+          }
+          for (const auto& handle : ownership_current_stmt_->expression_handles) {
+            auto* arena = expression_arena(handle.arena_index);
+            if (!arena) continue;
+            std::function<std::optional<est::ExprId>(est::ExprId)> find_copy =
+                [&](est::ExprId id) -> std::optional<est::ExprId> {
+              if (id >= arena->size()) return std::nullopt;
+              const auto& node = arena->at(id);
+              if (const auto* c = std::get_if<est::Call>(&node)) {
+                if (c->arguments.size() == 1 &&
+                    !visited_copies_in_current_stmt_.count({handle.arena_index, id})) {
+                  if (const auto* ident = std::get_if<est::Identifier>(&arena->at(c->callee))) {
+                    if (ident->name == "copy") return id;
+                  }
+                  const auto* facts = arena->facts(id, expression_fact_context());
+                  if (facts && facts->resolved_target == "builtin:copy-v1") return id;
+                }
+              }
+              return std::visit(
+                  [&](const auto& n) -> std::optional<est::ExprId> {
+                    using T = std::decay_t<decltype(n)>;
+                    if constexpr (std::is_same_v<T, est::Unary>) {
+                      return find_copy(n.operand);
+                    } else if constexpr (std::is_same_v<T, est::Binary>) {
+                      if (auto found = find_copy(n.left)) return found;
+                      return find_copy(n.right);
+                    } else if constexpr (std::is_same_v<T, est::Call>) {
+                      if (auto found = find_copy(n.callee)) return found;
+                      for (auto arg : n.arguments)
+                        if (auto found = find_copy(arg)) return found;
+                      return std::nullopt;
+                    } else if constexpr (std::is_same_v<T, est::Member>) {
+                      return find_copy(n.base);
+                    } else if constexpr (std::is_same_v<T, est::Index>) {
+                      if (auto found = find_copy(n.base)) return found;
+                      return find_copy(n.index);
+                    } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+                      return find_copy(n.inner);
+                    } else if constexpr (std::is_same_v<T, est::Collection>) {
+                      for (auto elem : n.elements)
+                        if (auto found = find_copy(elem)) return found;
+                      return std::nullopt;
+                    } else if constexpr (std::is_same_v<T, est::Tuple>) {
+                      for (auto elem : n.elements)
+                        if (auto found = find_copy(elem)) return found;
+                      return std::nullopt;
+                    } else if constexpr (std::is_same_v<T, est::Constructor>) {
+                      for (auto arg : n.arguments)
+                        if (auto found = find_copy(arg)) return found;
+                      return std::nullopt;
+                    } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
+                      return find_copy(n.value);
+                    } else {
+                      return std::nullopt;
+                    }
+                  },
+                  node);
+            };
+            if (auto found_id = find_copy(handle.expr)) {
+              visited_copies_in_current_stmt_.insert({handle.arena_index, *found_id});
+              fact.est_arena_index = handle.arena_index;
+              fact.copy_occurrence_id = *found_id;
+              const auto* c = std::get_if<est::Call>(&arena->at(*found_id));
+              if (c && !c->arguments.empty())
+                fact.source_occurrence_id = c->arguments.front();
+              break;
+            }
+          }
+        }
+
+        TypedCopyRequirementV1 req;
+        req.est_arena_index = fact.est_arena_index;
+        req.copy_occurrence_id = fact.copy_occurrence_id;
+        req.source_occurrence_id = fact.source_occurrence_id;
+        req.statement_occurrence_id = fact.statement_occurrence_id;
+        req.specialization_context = fact.specialization_context;
+        req.specialization_identity = fact.specialization_identity;
+        req.est_fact_context = fact.est_fact_context;
+        req.source_type = fact.source_type;
+        req.result_type = fact.result_type;
+        req.required_source_access = fact.required_source_access;
+        req.creates_independent_owner = fact.creates_independent_owner;
+
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_PERTURB_COPY_FACT"))
+          fact.specialization_identity += ":perturbed";
+        const bool drop_copy_fact = std::getenv("MOSS_TEST_DROP_COPY_FACT") != nullptr;
+        const bool duplicate_copy_fact = std::getenv("MOSS_TEST_DUPLICATE_COPY_FACT") != nullptr;
+        if (!drop_copy_fact) {
+          copy_facts_.push_back(std::move(fact));
+          if (duplicate_copy_fact)
+            copy_facts_.push_back(copy_facts_.back());
+        }
+        required_copy_occurrences_.push_back(std::move(req));
+        if (std::getenv("MOSS_TEST_DUPLICATE_COPY_REQUIREMENT"))
+          required_copy_occurrences_.push_back(required_copy_occurrences_.back());
+#else
+        copy_facts_.push_back(std::move(fact));
+        required_copy_occurrences_.push_back(std::move(req));
+#endif
+        return;
+      }
       if (callee == "replace" && call_arguments.size() == 2) {
         auto replacement_type = inferred_expr_type(call_arguments[1], env.types);
         Effect replacement_effect = replacement_type && transfer_type(*replacement_type)
@@ -26065,9 +26420,15 @@ class Checker {
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      // Indexed reads materialize an element; they do not move the whole
-      // collection. Only an explicit whole-place operation may consume it.
-      check_ownership_expression(line, base, env, Effect::Read);
+      if (requested == Effect::Consume) {
+        auto elem_type = inferred_expr_type(value, env.types);
+        if (elem_type && effect_requires_borrow(*elem_type)) {
+          err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
+              "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+          return;
+        }
+      }
+      check_ownership_expression(line, base, env, requested);
       check_ownership_expression(line, index, env, Effect::Read);
       return;
     }
@@ -26305,15 +26666,21 @@ class Checker {
         }
       };
 
+      taken_places_in_current_stmt_.clear();
+      visited_takes_in_current_stmt_.clear();
+      visited_copies_in_current_stmt_.clear();
       if (s.kind == Stmt::Kind::Match) {
         auto type = inferred_expr_type(s.a, env.types);
-        if (!type || !enums_.count(canonical_type_name(*type)))
+        const EnumType* declaration_ptr = type
+            ? resolve_enum_or_option(*type) : nullptr;
+        if (!type || !declaration_ptr)
           err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
+        const EnumType& declaration = *declaration_ptr;
         bool consuming = s.b == "consume";
         if (consuming) {
           if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
             err(s.line, "consuming match cannot move an enum from an interior place; "
-                "use replace(place, replacement) to obtain an owned value",
+                "use take(place), replace(place, replacement), or collection removal to obtain an owned value",
                 "MATCH_CONSUME_INTERIOR_PLACE");
           if (tree_simple_identifier(s.a)) {
             require_available(s.line, s.a, env);
@@ -26327,7 +26694,97 @@ class Checker {
         record_direct_raise();
         bool read_place = !consuming && storage_location(s.a, env.types).has_value();
         bool prior_read = env.active_read_traversals.count(s.a);
-        const EnumType& declaration = *enums_.at(canonical_type_name(*type));
+
+        TypedMatchOwnershipFactV1 fact;
+        for (const auto& handle : s.expression_handles) {
+          if (handle.slot == est::ExprSlot::Scrutinee || handle.argument_index == 0) {
+            fact.est_arena_index = handle.arena_index;
+            fact.scrutinee_occurrence_id = handle.expr;
+            break;
+          }
+        }
+        if (fact.scrutinee_occurrence_id == UINT32_MAX && !s.expression_handles.empty()) {
+          fact.est_arena_index = s.expression_handles.front().arena_index;
+          fact.scrutinee_occurrence_id = s.expression_handles.front().expr;
+        }
+        if (current_body_types_) {
+          auto statement_id = current_body_types_->statement_occurrence_ids.find(&s);
+          if (statement_id != current_body_types_->statement_occurrence_ids.end())
+            fact.statement_occurrence_id = statement_id->second;
+        }
+        fact.specialization_context = local_ownership_consumer_context();
+        fact.specialization_identity = local_ownership_specialization_identity();
+        fact.is_consuming = consuming;
+        bool is_option_type = starts_with(canonical_type_name(declaration.name), "option[");
+        fact.scrutinee_kind = is_option_type
+            ? TypedMatchScrutineeKindV1::Option
+            : TypedMatchScrutineeKindV1::Enum;
+        fact.scrutinee_binding_identity = env.binding_identities.count(s.a)
+            ? env.binding_identities.at(s.a) : "";
+        fact.scrutinee_name = s.a;
+        fact.scrutinee_type = type
+            ? moss::Type::parse_canonical(canonical_type_name(*type)).value_or(nullptr) : nullptr;
+        fact.availability = TypedMatchOwnershipFactV1::Availability::Present;
+
+        size_t scan_arm = index + 1;
+        while (scan_arm < statements.size() && statements[scan_arm].indent == level + 1) {
+          const Stmt& arm = statements[scan_arm];
+          if (arm.est_pattern) {
+            TypedMatchArmFactV1 arm_fact;
+            arm_fact.case_name = arm.est_pattern->case_name;
+            arm_fact.payload_binding_names = arm.est_pattern->payload_bindings;
+            for (const auto& bname : arm.est_pattern->payload_bindings) {
+              arm_fact.payload_binding_identities.push_back(
+                  statement_binding_identity(current_semantic_context_, arm.line) + ":" + bname);
+            }
+            auto it = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+                [&](const EnumCase& c) { return c.name == arm.est_pattern->case_name; });
+            if (it != declaration.cases.end()) {
+              for (const auto& f : it->fields) {
+                arm_fact.payload_types.push_back(
+                    moss::Type::parse_canonical(canonical_type_name(f.type)).value_or(moss::Type::primitive("unit")));
+              }
+            }
+            arm_fact.payload_access = consuming ? Effect::Consume : Effect::Read;
+            arm_fact.transfers_ownership = consuming;
+            fact.arms.push_back(std::move(arm_fact));
+          }
+          ++scan_arm;
+        }
+
+        TypedMatchOwnershipRequirementV1 req;
+        req.est_arena_index = fact.est_arena_index;
+        req.scrutinee_occurrence_id = fact.scrutinee_occurrence_id;
+        req.statement_occurrence_id = fact.statement_occurrence_id;
+        req.specialization_context = fact.specialization_context;
+        req.specialization_identity = fact.specialization_identity;
+        req.is_consuming = fact.is_consuming;
+        req.scrutinee_kind = fact.scrutinee_kind;
+        req.scrutinee_binding_identity = fact.scrutinee_binding_identity;
+        req.scrutinee_name = fact.scrutinee_name;
+        req.scrutinee_type = fact.scrutinee_type;
+        req.arms = fact.arms;
+
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_PERTURB_MATCH_FACT"))
+          fact.specialization_identity += ":perturbed";
+        if (std::getenv("MOSS_TEST_PERTURB_MATCH_SCRUTINEE"))
+          fact.scrutinee_name += ":perturbed";
+        const bool drop_match_fact = std::getenv("MOSS_TEST_DROP_MATCH_FACT") != nullptr;
+        const bool duplicate_match_fact = std::getenv("MOSS_TEST_DUPLICATE_MATCH_FACT") != nullptr;
+        if (!drop_match_fact) {
+          match_ownership_facts_.push_back(std::move(fact));
+          if (duplicate_match_fact)
+            match_ownership_facts_.push_back(match_ownership_facts_.back());
+        }
+        required_match_occurrences_.push_back(std::move(req));
+        if (std::getenv("MOSS_TEST_DUPLICATE_MATCH_REQUIREMENT"))
+          required_match_occurrences_.push_back(required_match_occurrences_.back());
+#else
+        match_ownership_facts_.push_back(std::move(fact));
+        required_match_occurrences_.push_back(std::move(req));
+#endif
+
         OwnershipEnv incoming = env;
         vector<TypeEnv> path_types;
         vector<OwnershipEnv> continuing_paths;
@@ -26350,7 +26807,8 @@ class Checker {
                 statement_binding_identity(current_semantic_context_, arm.line) +
                 ":" + name;
             branch.moved.erase(name);
-            branch.immutable_locals.insert(name);
+            if (!consuming) branch.immutable_locals.insert(name);
+            else branch.immutable_locals.erase(name);
             branch.message_payloads.erase(name);
             branch.borrowed_enum_payloads.erase(name);
             if (!consuming && transfer_type(field_type))
@@ -26827,9 +27285,16 @@ class Checker {
           Effect source_access = transfers ? Effect::Consume : Effect::Read;
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::Initializer);
-          auto source_binding = local_source
-              ? env.binding_identities.find(*local_source)
+          string source_root;
+          if (local_source) {
+            source_root = *local_source;
+          } else if (auto loc = storage_location(s.b, env.types)) {
+            source_root = loc->root;
+          }
+          auto source_binding = !source_root.empty()
+              ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const bool is_indexed_source = !source_root.empty() && !local_source;
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
               (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
@@ -26853,9 +27318,18 @@ class Checker {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  *local_source, source_binding->second, env.types,
+                  source_root, source_binding->second, env.types,
                   env.binding_identities,
                   &unsupported);
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Consume) {
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Write &&
+                env.immutable_locals.count(source_root)) {
+              err(s.line, "cannot borrow '" + source_root + "' as mutable because it is immutable",
+                  "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE");
             }
             if (inferred) {
               source_access = *inferred;
@@ -26976,9 +27450,16 @@ class Checker {
           Effect source_access = transfers ? Effect::Consume : Effect::Read;
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::RhsValue);
-          auto source_binding = local_source
-              ? env.binding_identities.find(*local_source)
+          string source_root;
+          if (local_source) {
+            source_root = *local_source;
+          } else if (auto loc = storage_location(s.b, env.types)) {
+            source_root = loc->root;
+          }
+          auto source_binding = !source_root.empty()
+              ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const bool is_indexed_source = !source_root.empty() && !local_source;
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
               !env.state_fields.count(s.a) &&
@@ -27002,9 +27483,18 @@ class Checker {
             if (!inferred && !current_ownership_flow_) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
-                  *local_source, source_binding->second, env.types,
+                  source_root, source_binding->second, env.types,
                   env.binding_identities,
                   &unsupported);
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Consume) {
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Write &&
+                env.immutable_locals.count(source_root)) {
+              err(s.line, "cannot borrow '" + source_root + "' as mutable because it is immutable",
+                  "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE");
             }
             if (inferred) {
               source_access = *inferred;
@@ -27261,7 +27751,7 @@ class Checker {
   const BuiltinOperationDescriptor* validate_builtin_argument_types(
       int line, const string& receiver_type, const string& method,
       const vector<string>& argument_types) const {
-    const auto* operation = builtin_operation(receiver_type, method);
+    const auto* operation = builtin_operation(receiver_type, method, argument_types.size());
     if (!operation)
       err(line, "invalid builtin operation '" + receiver_type + "." + method + "'",
           "TYPE_MISMATCH");
@@ -28168,6 +28658,27 @@ class Checker {
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt,
                            Function** resolved_target = nullptr) {
+    if (name == "copy") {
+      if (args.size() != 1)
+        err(line, "copy expects exactly one argument", "COPY_ARGUMENT_ARITY");
+      mark_active_expression(BodyTypeState::ExpressionOccurrence::Kind::Call, "builtin:copy-v1");
+      retain_active_expression_target("builtin:copy-v1");
+      check_expression(line, args.front(), env, {}, "argument:0");
+      auto actual_term = checked_expression_term(args.front(), env);
+      if (!actual_term) actual_term = inferred_expr_term(args.front(), env);
+      if (current_body_types_ && actual_term)
+        actual_term = current_body_types_->solver.resolve(actual_term);
+      if (actual_term && !is_copy_eligible(actual_term))
+        err(line, "type '" + canonical_type_name(actual_term) + "' is not eligible for copy(...)",
+            "COPY_INELIGIBLE_TYPE");
+      if (current_body_types_ && !current_body_types_->active_expression_occurrences.empty())
+        current_body_types_->retain_active_expression_type(actual_term);
+      est::SemanticFacts facts;
+      facts.type = actual_term;
+      facts.resolved_target = "builtin:copy-v1";
+      record_active_expression_facts(std::move(facts));
+      return;
+    }
     if (name == "sort" && !functions_.count(name)) {
       check_sort_call(line, args, env);
       return;
@@ -30677,25 +31188,23 @@ class Checker {
       const auto* take = arena
           ? std::get_if<est::Take>(&arena->at(tree_cursor->expr)) : nullptr;
       if (take) {
-        bool direct_value_slot = false;
-        auto inspect_handles = [&](const vector<est::Handle>& handles) {
-          for (const auto& handle : handles) {
-            if (handle.arena_index != tree_cursor->arena_index ||
-                handle.expr != tree_cursor->expr || handle.argument_index != 0)
-              continue;
-            direct_value_slot |= handle.slot == est::ExprSlot::Initializer ||
-                handle.slot == est::ExprSlot::RhsValue ||
-                handle.slot == est::ExprSlot::ReturnValue ||
-                handle.slot == est::ExprSlot::RaisedValue;
+        if (current_check_statement_ &&
+            current_check_statement_->kind == Stmt::Kind::Echo) {
+          err(line, "take(place) is not supported in echo statements",
+              "TAKE_CONTEXT_UNSUPPORTED");
+        }
+        if (current_check_statement_) {
+          for (const auto& handle : current_check_statement_->expression_handles) {
+            if (handle.arena_index == tree_cursor->arena_index) {
+              if (handle.slot == est::ExprSlot::Condition ||
+                  handle.slot == est::ExprSlot::Iterable ||
+                  handle.slot == est::ExprSlot::Scrutinee) {
+                err(line, "take(place) is not supported in condition or control-flow contexts",
+                    "TAKE_CONTEXT_UNSUPPORTED");
+              }
+            }
           }
-        };
-        if (current_check_statement_)
-          inspect_handles(current_check_statement_->expression_handles);
-        if (current_check_result_function_)
-          inspect_handles(current_check_result_function_->expression_handles);
-        if (!direct_value_slot)
-          err(line, "take(place) requires a direct initializer, assignment, "
-              "return, reply, or raise value", "TAKE_CONTEXT_UNSUPPORTED");
+        }
         mark_active_expression(OccurrenceKind::Take, "builtin:take-place-v1");
         retain_active_expression_target("builtin:take-place-v1");
         if (take->arguments.size() != 1)
@@ -31319,6 +31828,9 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (tree_parse_member_call(value, receiver, handler, args)) {
+      if (handler == "clone") {
+        err(line, "source-level .clone() is unsupported; use copy(...)", "CLONE_ALIAS_UNSUPPORTED");
+      }
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {

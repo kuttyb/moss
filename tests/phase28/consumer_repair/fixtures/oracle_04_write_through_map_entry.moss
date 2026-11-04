@@ -1,0 +1,11 @@
+# Spec: Proposal §10, §5.3, §12
+type Entry:
+  val: Int
+
+fn main():
+  var m = Map()
+  m["key"] = Entry(val: 1)
+  e = m["key"]
+  e.val = 9
+  echo e.val
+  echo m["key"].val

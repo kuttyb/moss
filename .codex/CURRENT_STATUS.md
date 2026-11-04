@@ -90,6 +90,89 @@ Branch `phase28-r6-w13-independent`. Completed independent W13 regression resolu
 - Report documented in `docs/phase28/TEAM_B_W13_INDEPENDENT_RESOLUTION.md`.
 - No merge to `phase28-work` or `main`. Results returned to L7.
 
+### Phase 28 Team B R7-006 Checker Fact Completion (2026-11-04)
+
+Branch `phase28-r7-006-checker-facts` based on `phase28-r7-003-consumers` at `480fa258265a0b6f05db1b4e353a84f6f82805f9`.
+Handoff documentation: `docs/phase28/TEAM_B_R7_006_CHECKER_FACT_COMPLETION.md`.
+
+- Scope & Invariant:
+  - Transferred responsibility from Team A to Team B under P28-R7-006 for indexed assignment ownership facts and loop fact synchronization.
+  - Temporary exclusive lease of `src/semantic_checker.cpp` and `src/typed_semantic_api.hpp` exercised and released at handoff.
+  - Mandatory semantic authority invariant preserved: all consumer decisions strictly governed by exact checker facts and requirements; zero string reconstruction or heuristics.
+- Status of Work Items:
+  1. `P28-R7-006-01` (Indexed assignment ownership): Flow analysis and main checker pass produce exact `TypedLocalOwnershipFactV1` for `b = v[0]` and `e = m["key"]` with exact occurrence/binding identity, `source_binding_identity`, and `access = *inferred` (Read or Write). Write borrowers from immutable containers rejected with `OWNERSHIP_MUTABLE_BORROW_IMMUTABLE`. Nonprimitive element moves rejected with `OWNERSHIP_COLLECTION_ELEMENT_CONSUME` / `OWNERSHIP_ILLEGAL_CONSUME`.
+  2. `P28-R7-006-02` (Loop fact synchronization): Synchronized `required_local_ownership_occurrences_` with `fact.access` when Vector iteration strengthens to `Effect::Write`. Fail-closed requirement-fact parity verified.
+  3. Consumer alignment: Fast Debug interpreter place resolution (`locate_tree_node`) enables direct in-place mutation of container storage.
+- Verification:
+  - `ORACLE-01`: Fast Debug, Native Debug, and Native Optimized output `9\n9`.
+  - `ORACLE-04`: Fast Debug, Native Debug, and Native Optimized output `9\n9`.
+  - `ORACLE-40`: Fast Debug, Native Debug, and Native Optimized output `11\n21`.
+  - `ORACLE-03`: Rejection with `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`.
+  - `ORACLE-14`: Rejection with `OWNERSHIP_ILLEGAL_CONSUME`.
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py build/compiler/moss-opt`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_w12_checker.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_take_consumer.py build/compiler/moss-dev`: PASS (22/22)
+  - `python3 tests/tooling/check_phase28_team_b_consumer.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS
+  - `git diff --check`: PASS
+- STOP after handoff. No integration or merge to `phase28-work` or `main`.
+
+### Phase 28 Team B R7-003 Consumer Repairs (2026-11-04)
+
+Branch `phase28-r7-003-consumers` based on suspended W12 branch `phase28-r6-w12-checker` at `31276eb16991561f969eea646b65c29a37c0bb39`.
+Handoff documentation: `docs/phase28/TEAM_B_R7_003_CONSUMER_REPAIRS.md`.
+
+- Scope & Invariant:
+  - Exclusive lease: `src/native_generator.cpp`, `src/native_generator_support.hpp`, `src/interpreter.hpp`, and consumer-specific tests (`tests/phase28/consumer_repair/`, `tests/tooling/check_phase28_r7_003_consumers.py`). Zero edits to `src/semantic_checker.cpp`.
+  - Mandatory semantic authority invariant: every ownership-sensitive consumer decision is governed strictly by exact checker-issued facts.
+- Status of Work Items:
+  1. `ORACLE-06` (Option match consume): GREEN across Fast Debug, Native Debug, and Native Optimized (`target`).
+  2. `ORACLE-09` (User enum Some/None): GREEN across Fast Debug, Native Debug, and Native Optimized (`42`).
+  3. `ORACLE-40` (Mutable Vector iteration): GREEN across Fast Debug, Native Debug, and Native Optimized (`11\n21`).
+  4. `ORACLE-02` (Indexed field read): GREEN across Fast Debug, Native Debug, and Native Optimized (`hello`); 0 clones of `Data` struct. (Provisional pending R7-005 audit).
+  5. `ORACLE-01` & `ORACLE-04` (Vector & Map write-through): Consumer implementation in place for `Effect::Write` facts. Preserved failing fixtures and documented missing checker contract for indexed assignment RHS for Team A.
+- Verification:
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py build/compiler/moss-opt`: PASS
+  - `python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_w12_checker.py ./moss`: PASS
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS
+  - `git diff --check`: PASS
+- STOP after handoff. No integration or merge to `phase28-work` or `main`.
+
+### Phase 28 Team A W12 Checker Completion (2026-11-04)
+
+Branch `phase28-r6-w12-checker` at implementation SHA `57b65dfca56447dca08fbe7bcbe9b31d4d03da2d`.
+Baseline commit: `2a60693cd4251e85cbda08a2481974882b9eca93` (W13 integrated into `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`).
+Handoff documentation: `docs/phase28/TEAM_A_W12_CHECKER_HANDOFF.md`.
+
+- Scope:
+  1. `copy(x)` — explicit duplication of eligible nonprimitive values; rejection of resources (`FileIO`, domain handles/routes) and unsupported types. Source-level `.clone()` rejected.
+  2. Nested `take(place)` — supported in expression contexts (calls, constructors, collection literals) with exact EST facts, single evaluation, and unchanged extraction restrictions.
+  3. `match consume` — owned enum/option destructuring, payload transfer, exhaustive cases, use-after-consume rejection, interior place rejection.
+  4. Collection ownership — complete Vector/Map/Queue borrowing, mutation, iteration, and removal rules (`Vector.remove`, `Vector.swap_remove`, `Map.remove`, `Map.get(key)` 1-arg; iteration element direct consume rejection).
+- Semantic authority invariant: Checker is sole semantic authority; publishes `TypedCopyFactV1`, `TypedCopyRequirementV1`, `TypedMatchOwnershipFactV1`, `TypedMatchOwnershipRequirementV1` in `TypedSemanticModuleV1`. Bidirectional fail-closed hooks active under `MOSS_TEST_BUILD=1`.
+- Targeted gates:
+  - `python3 tests/tooling/check_phase28_w12_checker.py`: PASS (dev and opt).
+  - `python3 tests/tooling/check_enum_semantics.py`: PASS (30/30 passed).
+  - `python3 tests/phase28/verify_take_fixtures.py`: PASS (18/18 with zero clones).
+  - `python3 tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`: PASS.
+  - `python3 tests/tooling/check_phase28_take_consumer.py build/compiler/moss-dev`: PASS (22/22).
+  - `python3 tests/tooling/check_agent_skills.py build/compiler/moss-dev`: PASS.
+  - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons preserved).
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+  - `git diff --check`: PASS (clean diff hygiene).
+- Parallel regression suite:
+  - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP. All 16 FAIL match baseline ledger (15 pre-existing fixtures resolved by W13 on `phase28-work`, 1 pre-existing Phase 21 checker defect `check_phase21_borrowed_view_write`).
+  - Zero new regressions.
+- String debt: 42 raw Stmt name comparisons, 7 raw Stmt binding comparisons (<= 42/7 threshold preserved).
+- Status: Independent Agent 2 GO certified. Ready for Team B integration into `phase28-work`. STOP after handoff; no merge to `phase28-work` or `main`.
+
 ### Phase 28 Team B W08–W11 Consumer Migration Integration (2026-11-04)
 
 Integration of branch `phase28-r5-team-b-consumers` (`62ff748a25baed6159bf2c3aabf318c7237d2685`)

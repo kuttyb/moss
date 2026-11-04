@@ -144,9 +144,11 @@ Effect specialized_iterator_parameter_effect(
     const std::unordered_map<std::string, const ObjectType*>& objects);
 
 const BuiltinOperationDescriptor* builtin_operation(
-    const std::string& receiver_type, const std::string& name);
+    const std::string& receiver_type, const std::string& name,
+    std::optional<std::size_t> arity = std::nullopt);
 const BuiltinOperationDescriptor* builtin_operation(
-    const TypeRef& receiver_type, const std::string& name);
+    const TypeRef& receiver_type, const std::string& name,
+    std::optional<std::size_t> arity = std::nullopt);
 std::optional<std::string> builtin_operation_result(
     const std::string& receiver_type, const std::string& name,
     std::size_t arity);

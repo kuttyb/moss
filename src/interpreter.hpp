@@ -2442,6 +2442,10 @@ class FastInterpreter {
           some.object->fields["value"] = evaluate_call_argument(0);
           return some;
         }
+        if (callee == "copy" && args.size() == 1) {
+          Value val = evaluate_call_argument(0);
+          return independent(val);
+        }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
@@ -2908,6 +2912,29 @@ class FastInterpreter {
               else values->pop_back();
               return result;
             }
+            if (method_name == "remove" && method_args.size() == 1) {
+              Value idx_val = evaluate_method_argument(0);
+              if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "remove expects integer index");
+              int64_t idx = idx_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size())
+                throw RuntimeError(line, "index out of range");
+              Value result = (*values)[idx];
+              values->erase(values->begin() + idx);
+              return result;
+            }
+            if (method_name == "swap_remove" && method_args.size() == 1) {
+              Value idx_val = evaluate_method_argument(0);
+              if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "swap_remove expects integer index");
+              int64_t idx = idx_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size())
+                throw RuntimeError(line, "index out of range");
+              Value result = (*values)[idx];
+              if (static_cast<size_t>(idx) + 1 < values->size()) {
+                (*values)[idx] = values->back();
+              }
+              values->pop_back();
+              return result;
+            }
           }
           if (receiver.kind == Value::Kind::Map) {
             if (method_name == "delete" && method_args.size() == 3) {
@@ -2925,6 +2952,25 @@ class FastInterpreter {
               }
               assign(method_args[2], Value::boolean_value(false), frame, line, output);
               return independent(fallback);
+            }
+            if (method_name == "remove" && method_args.size() == 1) {
+              Value key = evaluate_method_argument(0);
+              if (auto position = map_position(receiver, key, frame, line, output)) {
+                Value removed = independent(receiver.map->at(*position).second);
+                receiver.map->erase(receiver.map->begin() + *position);
+                if (staged_abi_v10()) {
+                  receiver.map_hashes->erase(receiver.map_hashes->begin() + *position);
+                  rebuild_map_index(receiver);
+                }
+                return removed;
+              }
+              throw RuntimeError(line, "key not found in map");
+            }
+            if (method_name == "get" && method_args.size() == 1) {
+              Value key = evaluate_method_argument(0);
+              if (auto position = map_position(receiver, key, frame, line, output))
+                return independent(receiver.map->at(*position).second);
+              throw RuntimeError(line, "key not found in map");
             }
             if (method_name == "get" && method_args.size() == 2) {
               Value key = evaluate_method_argument(0);
@@ -3668,6 +3714,37 @@ class FastInterpreter {
     return facts;
   }
 
+  const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
+      const Stmt& s, const Frame& frame, int line) const {
+    if (!program_.typed_semantics) return nullptr;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == est::ExprSlot::Scrutinee && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+    const TypedMatchOwnershipRequirementV1* requirement = nullptr;
+    for (const auto& req : program_.typed_semantics->required_match_occurrences) {
+      if (req.est_arena_index == matched_handle->arena_index &&
+          req.scrutinee_occurrence_id == matched_handle->expr &&
+          (req.specialization_context == context ||
+           (!frame.specialization_identity.empty() &&
+            req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        requirement = &req;
+        break;
+      }
+    }
+    if (!requirement) return nullptr;
+    try {
+      return program_.typed_semantics->find_match_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+  }
+
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
@@ -3834,9 +3911,31 @@ class FastInterpreter {
           frame.locals.erase(statement.a);
           frame.consumed.insert(statement.a);
         }
+        static const EnumType option_enum = [] {
+          EnumType opt;
+          opt.name = "option";
+          EnumCase some_c;
+          some_c.name = "Some";
+          Field f;
+          f.name = "value";
+          some_c.fields.push_back(f);
+          opt.cases.push_back(some_c);
+          EnumCase none_c;
+          none_c.name = "None";
+          opt.cases.push_back(none_c);
+          return opt;
+        }();
+        const auto* match_fact = resolve_match_ownership_fact(statement, frame, statement.line);
+        const bool is_option_match = match_fact
+            ? (match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option)
+            : (selected.object->type == "option" || selected.object->type.rfind("option[", 0) == 0);
         const EnumType* declaration = nullptr;
-        for (const auto& candidate : program_.enums)
-          if (candidate.name == selected.object->type) declaration = &candidate;
+        if (is_option_match) {
+          declaration = &option_enum;
+        } else {
+          for (const auto& candidate : program_.enums)
+            if (candidate.name == selected.object->type) declaration = &candidate;
+        }
         if (!declaration) throw RuntimeError(statement.line, "unknown matched enum");
         size_t cursor = index + 1;
         bool taken = false;
@@ -3877,7 +3976,9 @@ class FastInterpreter {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
               frame.aliases.erase(binding);
-              auto field = selected.object->fields.find(item->fields[field_index].name);
+              auto field = is_option_match
+                  ? selected.object->fields.find("value")
+                  : selected.object->fields.find(item->fields[field_index].name);
               if (field == selected.object->fields.end())
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||
@@ -4104,7 +4205,15 @@ class FastInterpreter {
             frame.aliases.erase(statement.a);
           }
           if (ownership_fact && (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
-            auto place = locate(statement.b, frame, statement.line, output);
+            auto rhs_tree = expression_tree(statement.b, "locate_init",
+                std::pair{est::ExprSlot::Initializer, 0u});
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")) rhs_tree.reset();
+#endif
+            if (!rhs_tree)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked expression tree for borrowed place");
+            auto place = locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
             } else {
@@ -4144,7 +4253,15 @@ class FastInterpreter {
           }
           if (binding_identifier(statement.a) && ownership_fact &&
               (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
-            auto place = locate(statement.b, frame, statement.line, output);
+            auto rhs_tree = expression_tree(statement.b, "locate_rhs",
+                std::pair{est::ExprSlot::RhsValue, 0u});
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")) rhs_tree.reset();
+#endif
+            if (!rhs_tree)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked expression tree for borrowed place");
+            auto place = locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
               if (statement.a != "_")
