@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Checker regressions for primitive Vector element ownership in P28-R7-009."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+COMPILER = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
+TMP = ROOT / "tmp/phase28_r7_009"
+TMP.mkdir(parents=True, exist_ok=True)
+
+CASES = {
+    "primitive_index_in_loop": '''fn main():
+  values = [1, 2, 3]
+  var result = Vector[Int]()
+  for i in range(0, 3):
+    result.push(values[i])
+  echo values[0]
+''',
+    "primitive_index_reused": '''fn main():
+  values = [1, 2]
+  var result = Vector[Int]()
+  result.push(values[0])
+  echo values[0]
+''',
+    "primitive_index_method_write": '''type Box:
+  values: Vector[Int]
+  fn Set(index: Int, value: Int) -> Int:
+    self.values[index] = value
+    self.values[index] = value + 1
+    return self.values[index]
+
+fn main():
+  box = Box(values = [1, 2])
+  echo box.Set(0, 9)
+  echo box.values[0]
+''',
+    "nonprimitive_index_consume_rejected": '''type Resource:
+  tag: String
+
+fn consume_resource(value: Resource) -> Resource:
+  return value
+
+fn main():
+  values = [Resource(tag = "x")]
+  moved = consume_resource(values[0])
+  echo moved.tag
+''',
+}
+
+
+def check(name: str, source: str, expected_code: str | None) -> None:
+    path = TMP / f"{name}.moss"
+    path.write_text(source, encoding="utf-8")
+    proc = subprocess.run([str(COMPILER), "check", str(path), "--json"],
+                          cwd=ROOT, capture_output=True, text=True, timeout=60)
+    try:
+        result = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"{name}: invalid checker JSON: {proc.stdout}\n{proc.stderr}") from exc
+    if expected_code is None:
+        if proc.returncode != 0 or not result.get("ok"):
+            raise AssertionError(f"{name}: expected acceptance, got {result}")
+    else:
+        error = result.get("error") or {}
+        if proc.returncode == 0 or result.get("ok") or error.get("code") != expected_code:
+            raise AssertionError(f"{name}: expected {expected_code}, got {result}")
+
+
+def main() -> int:
+    for name in ("primitive_index_in_loop", "primitive_index_reused",
+                 "primitive_index_method_write"):
+        check(name, CASES[name], None)
+        print(f"PASS {name}", flush=True)
+    check("nonprimitive_index_consume_rejected",
+          CASES["nonprimitive_index_consume_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS nonprimitive_index_consume_rejected", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -25186,7 +25186,12 @@ class Checker {
             binding->second)
       return;
     auto& fact = local_ownership_facts_[tracked->second];
-    if (requested == Effect::Consume) {
+    const string element_type = fact.value_type
+        ? canonical_type_name(fact.value_type) : string{};
+    const bool concrete_noncopy_element =
+        !element_type.empty() && !unresolved_semantic_type(element_type) &&
+        !copy_type(fact.value_type);
+    if (requested == Effect::Consume && concrete_noncopy_element) {
       fact.inference_status =
           TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
       fact.unsupported_reason =
@@ -25203,6 +25208,10 @@ class Checker {
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
       return;
     }
+    // A primitive Vector element is copied as a value. A consuming use of the
+    // loop-local element therefore reads the Vector's borrowed element view;
+    // it cannot consume the owning collection or invalidate its loop fact.
+    if (requested == Effect::Consume) requested = Effect::Read;
     fact.access = stronger_ownership_effect(fact.access, requested);
     if (tracked->second < required_local_ownership_occurrences_.size()) {
       required_local_ownership_occurrences_[tracked->second].access = fact.access;
@@ -26422,11 +26431,16 @@ class Checker {
     if (tree_parse_index(value, base, index)) {
       if (requested == Effect::Consume) {
         auto elem_type = inferred_expr_type(value, env.types);
-        if (elem_type && effect_requires_borrow(*elem_type)) {
+        const bool concrete_noncopy_element = elem_type &&
+            !unresolved_semantic_type(*elem_type) &&
+            !copy_type(*elem_type);
+        if (concrete_noncopy_element) {
           err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
               "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
-          return;
         }
+        // Indexing returns an element view. Even when the element is Copy, a
+        // consuming context applies to that scalar value, never to its owner.
+        requested = Effect::Read;
       }
       check_ownership_expression(line, base, env, requested);
       check_ownership_expression(line, index, env, Effect::Read);

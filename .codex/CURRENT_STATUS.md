@@ -1,3 +1,37 @@
+### P28-R7-009 — Primitive Vector Element Ownership Regression (2026-11-04)
+
+Working branch `phase28-r7-009-primitive-fix`, based on requested
+`c32bdddd2a364d156bfac9bb2160ef9c89dc9ce7`; comparison baseline
+`phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`.
+
+The checker now treats consuming a concrete primitive indexed value as a read of
+its element view, never as consumption of the Vector owner. Primitive Vector
+iteration element uses are likewise recorded as READ; concrete nonprimitive
+element consumption remains rejected. Exact source/EST occurrence logic is
+unchanged. Added a registered checker test for indexed reads in a loop and after
+push, indexed assignment inside a method followed by receiver use, and negative
+nonprimitive indexed consumption.
+
+The direct-file acceptance comparison feeds the same 238 candidate-branch
+`tests/*.moss` and `examples/*.moss` files to the baseline and candidate
+compilers. It reports 6 verdict changes: three primitive iteration rejections
+are fixed (`branch_confined_open_type.moss`, `phase47_iteration.moss`, and
+`swarm_048_callable_argument.moss`); `domain_name_collision_routes.moss` is the
+specified known exception; `examples/collections_and_methods.moss` and
+`swarm_044_index_specialization.moss` are new rejections because they return
+nonprimitive indexed elements from collection borrows, matching the task's
+required nonprimitive indexed-consume rejection. No unexplained new rejections
+remain.
+
+Validation: `make --jobs="$(nproc)" moss-dev` and `moss-opt` pass;
+P28-R7-009 focused checker cases pass 4/4; `check_phase28_local_ownership.py`,
+`check_phase28_w12_checker.py`, and `check_phase28_r7_006_checker_facts.py`
+pass. W13 `check_phase25_team_a_semantics.py` was run but fails at native Rust
+E0596 in `moved_collection_term`; the same failure reproduces on the specified
+150ab36b baseline compiler, so it is pre-existing and unrelated. Independent
+Agent 2 review, commit, and push are pending; agent-feedback validation passes.
+No consumer or frozen-oracle files were changed; no merge is authorized.
+
 ### Phase 28 Team B R7-006 Checker Fact Completion (2026-11-04)
 
 Branch `phase28-r7-006-checker-facts` based on `phase28-r7-003-consumers` at `480fa258265a0b6f05db1b4e353a84f6f82805f9`.
