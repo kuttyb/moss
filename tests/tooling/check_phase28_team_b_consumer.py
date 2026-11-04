@@ -104,6 +104,13 @@ def main() -> int:
     verify_native(compiler, "loop_zero_iteration_preserves.moss", "4")
     verify_native(compiler, "loop_borrow_last_use.moss", "1\n2")
     verify_native(compiler, "vector_read_iteration.moss", "1\n2")
+    verify_native(compiler, "exceptional_recover_read.moss", "4")
+    verify_native(compiler, "exceptional_borrow_join_provenance.moss", "1")
+    verify_native(compiler, "exceptional_mutation_preserved.moss", "0")
+    verify_native(compiler, "exceptional_rebind_after_last_borrow.moss", "4\n9")
+    verify_native(compiler, "exceptional_echo_argument_origin.moss", "2")
+    verify_native(compiler, "exceptional_message_nested_argument.moss", "2")
+    verify_native(compiler, "exceptional_pipeline_callback.moss", "2")
 
     # E1 Group A scalar temporary push repair
     e1_source = ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field.moss"
@@ -152,6 +159,22 @@ def main() -> int:
     verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DELETE_LOOP_REQUIREMENT")
     verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_FACT")
     verify_fast_debug_fail_closed(compiler, "loop_reinitialize.moss", "MOSS_TEST_CONSUMER_DUPLICATE_LOOP_REQUIREMENT")
+
+    # Exceptional consumer genuine fault injection (native)
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")
+    verify_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")
+
+    # Exceptional consumer genuine fault injection (Fast Debug)
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")
+    verify_fast_debug_fail_closed(compiler, "exceptional_recover_read.moss", "MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")
 
     # Specialization fact isolation
     isolation_script = ROOT / "tests/phase28/test_specialization_fact_isolation.py"

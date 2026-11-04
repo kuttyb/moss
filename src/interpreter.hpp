@@ -300,6 +300,76 @@ class FastInterpreter {
       }
     }
 
+    auto find_target_ex_fact = [&](std::vector<TypedExceptionalOwnershipFactV1>& facts) -> TypedExceptionalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_ex_req = [&](std::vector<TypedExceptionalOwnershipRequirementV1>& reqs) -> TypedExceptionalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")) {
+      if (!semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(semantics->exceptional_ownership_facts)) {
+          fact->availability = TypedExceptionalOwnershipFactV1::Availability::MissingOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")) {
+      if (!semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(semantics->exceptional_ownership_facts)) {
+          fact->raised_variant_identity = "perturbed-variant-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")) {
+      if (!semantics->exceptional_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = semantics->exceptional_ownership_facts.begin();
+               it != semantics->exceptional_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              semantics->exceptional_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          semantics->exceptional_ownership_facts.erase(
+              semantics->exceptional_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")) {
+      if (!semantics->required_exceptional_ownership_occurrences.empty()) {
+        semantics->required_exceptional_ownership_occurrences.erase(
+            semantics->required_exceptional_ownership_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")) {
+      if (!semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(semantics->exceptional_ownership_facts)) {
+          semantics->exceptional_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")) {
+      if (!semantics->required_exceptional_ownership_occurrences.empty()) {
+        if (auto* req = find_target_ex_req(semantics->required_exceptional_ownership_occurrences)) {
+          semantics->required_exceptional_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -3550,6 +3620,46 @@ class FastInterpreter {
     return facts;
   }
 
+  std::vector<const TypedExceptionalOwnershipFactV1*> resolve_exceptional_ownership_facts(
+      const Stmt& s, const Frame& frame, int line) const {
+    if (!program_.typed_semantics) return {};
+    (void)s;
+    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+
+    std::vector<const TypedExceptionalOwnershipFactV1*> facts;
+    for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
+      if (req.specialization_context == context ||
+          (!frame.specialization_identity.empty() &&
+           req.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+        try {
+          const auto& fact = program_.typed_semantics->find_exceptional_ownership_fact(req);
+          facts.push_back(&fact);
+        } catch (const std::exception& e) {
+          throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+        }
+      }
+    }
+    for (const auto& fact : program_.typed_semantics->exceptional_ownership_facts) {
+      if (fact.specialization_context == context ||
+          (!frame.specialization_identity.empty() &&
+           fact.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+        bool found_req = false;
+        for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
+          if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
+              req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
+              req.raised_variant_identity == fact.raised_variant_identity) {
+            found_req = true;
+            break;
+          }
+        }
+        if (!found_req) {
+          throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT exceptional ownership requirement missing for fact");
+        }
+      }
+    }
+    return facts;
+  }
+
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
@@ -3596,6 +3706,7 @@ class FastInterpreter {
       ExpressionHandlesScope expression_handles_scope(
           active_expression_handles_, &statement.expression_handles);
       if (statement.kind == Stmt::Kind::Try) {
+        auto ex_facts = resolve_exceptional_ownership_facts(statement, frame, statement.line);
         size_t try_end = index + 1;
         while (try_end < end && statements[try_end].indent > statement.indent)
           ++try_end;
@@ -3623,6 +3734,19 @@ class FastInterpreter {
               ++arm_end;
             if (!handled && recovery_matches(recovery, raised.identity)) {
               handled = true;
+              for (const auto* fact : ex_facts) {
+                if (fact->raised_variant_identity.find(raised.identity.type) != std::string::npos ||
+                    fact->raised_variant_identity.find(raised.identity.canonical()) != std::string::npos) {
+                  for (const auto& bs : fact->state_at_raise) {
+                    if (bs.consumed) {
+                      frame.locals.erase(bs.name);
+                      frame.consumed.insert(bs.name);
+                    } else if (!bs.name.empty()) {
+                      frame.consumed.erase(bs.name);
+                    }
+                  }
+                }
+              }
               emit("recover", frame, recovery.line,
                    raised.identity.canonical());
               const bool bound = !recovery.a.empty() &&
@@ -4037,17 +4161,23 @@ class FastInterpreter {
             frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;
         }
-        case Stmt::Kind::Echo:
+        case Stmt::Kind::Echo: {
+          std::vector<std::string> rendered_args;
+          rendered_args.reserve(statement.args.size());
           for (size_t i = 0; i < statement.args.size(); ++i) {
-            if (i) output << " ";
-            output << echo_text(evaluate_expression_source(statement.args[i],
+            rendered_args.push_back(echo_text(evaluate_expression_source(statement.args[i],
                                 frame, statement.line, output,
                                 std::pair{est::ExprSlot::Argument,
                                           static_cast<std::uint32_t>(i)}),
-                                statement.line);
+                                statement.line));
+          }
+          for (size_t i = 0; i < rendered_args.size(); ++i) {
+            if (i) output << " ";
+            output << rendered_args[i];
           }
           output << "\n";
           break;
+        }
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
           if (!statement.text.empty())

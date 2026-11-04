@@ -390,6 +390,76 @@ class Generator {
       }
     }
 
+    auto find_target_ex_fact = [&](std::vector<TypedExceptionalOwnershipFactV1>& facts) -> TypedExceptionalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_ex_req = [&](std::vector<TypedExceptionalOwnershipRequirementV1>& reqs) -> TypedExceptionalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          fact->availability = TypedExceptionalOwnershipFactV1::Availability::MissingOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          fact->raised_variant_identity = "perturbed-variant-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = p_.typed_semantics->exceptional_ownership_facts.begin();
+               it != p_.typed_semantics->exceptional_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              p_.typed_semantics->exceptional_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          p_.typed_semantics->exceptional_ownership_facts.erase(
+              p_.typed_semantics->exceptional_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_exceptional_ownership_occurrences.empty()) {
+        p_.typed_semantics->required_exceptional_ownership_occurrences.erase(
+            p_.typed_semantics->required_exceptional_ownership_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
+        if (auto* fact = find_target_ex_fact(p_.typed_semantics->exceptional_ownership_facts)) {
+          p_.typed_semantics->exceptional_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_EXCEPTIONAL_REQUIREMENT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->required_exceptional_ownership_occurrences.empty()) {
+        if (auto* req = find_target_ex_req(p_.typed_semantics->required_exceptional_ownership_occurrences)) {
+          p_.typed_semantics->required_exceptional_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -6137,6 +6207,46 @@ class Generator {
     return facts;
   }
 
+  std::vector<const TypedExceptionalOwnershipFactV1*> resolve_exceptional_ownership_facts(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return {};
+    (void)s;
+    const string context = functional_context.empty() ? "main" : functional_context;
+
+    std::vector<const TypedExceptionalOwnershipFactV1*> facts;
+    for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
+      if (req.specialization_context == context ||
+          (!codegen_active_specialization_key_.empty() &&
+           req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        try {
+          const auto& fact = p_.typed_semantics->find_exceptional_ownership_fact(req);
+          facts.push_back(&fact);
+        } catch (const std::exception& e) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+        }
+      }
+    }
+    for (const auto& fact : p_.typed_semantics->exceptional_ownership_facts) {
+      if (fact.specialization_context == context ||
+          (!codegen_active_specialization_key_.empty() &&
+           fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+        bool found_req = false;
+        for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
+          if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
+              req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
+              req.raised_variant_identity == fact.raised_variant_identity) {
+            found_req = true;
+            break;
+          }
+        }
+        if (!found_req) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT exceptional ownership requirement missing for fact");
+        }
+      }
+    }
+    return facts;
+  }
+
   const TypedTakeFactV1* resolve_take_fact(
       const Stmt& s, const string& functional_context,
       std::uint32_t* out_arena_index = nullptr,
@@ -6666,6 +6776,8 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::Try: {
+          auto ex_facts = resolve_exceptional_ownership_facts(s, functional_context);
+          (void)ex_facts;
           // Rust cannot infer that a move on one exceptional variant leaves
           // an owned local available on another. The checker has already
           // proved the recovery path; retain only affected locals in slots.
@@ -8153,8 +8265,32 @@ class Generator {
               }
               o << "let " << (mutable_decl ? "mut " : "");
             }
+            bool is_killed_by_borrow = false;
+            if (p_.typed_semantics && s.kind == Stmt::Kind::Var && !ownership_fact) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& killed_id = fact.killed_definition_identity;
+                if (!killed_id.empty() && ends_with(killed_id, ":" + s.a) &&
+                    (fact.access == Effect::Read || fact.access == Effect::Write)) {
+                  is_killed_by_borrow = true;
+                  break;
+                }
+              }
+              if (!is_killed_by_borrow) {
+                for (const auto& ex_fact : p_.typed_semantics->exceptional_ownership_facts) {
+                  for (const auto& bs : ex_fact.state_at_raise) {
+                    if (bs.name == s.a && (!bs.borrow_source_binding_identities.empty() || !bs.borrow_storage_paths.empty())) {
+                      is_killed_by_borrow = true;
+                      break;
+                    }
+                  }
+                  if (is_killed_by_borrow) break;
+                }
+              }
+            }
             o << rust_identifier(s.a);
-            if (take_fact) {
+            if (is_killed_by_borrow) {
+              o << ";\n";
+            } else if (take_fact) {
               o << " = " << emit_take_expression(*take_fact, s, d, locals, &types) << ";\n";
             } else {
               if (!joined_assignment && !domain_capability && !ownership_fact &&
