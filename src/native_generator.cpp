@@ -1450,6 +1450,10 @@ class Generator {
           replacement = (objects_.count(domain->name) ? "self." : "state.") + name;
         if (!replacement && write_through_parameters_.count(name))
           replacement = "(*" + name + ")";
+        if (!replacement && borrowed_function_parameters_.count(name))
+          replacement = "(*" + rust_identifier(name) + ")";
+        if (!replacement && rust_identifier(name) != name)
+          replacement = rust_identifier(name);
         if (replacement)
           edits.push_back({span.source_begin, span.source_end,
                            std::move(*replacement)});
@@ -5277,7 +5281,22 @@ class Generator {
         !f.generic && !container_generic && !open_return;
     o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
       << "fn " << generated_symbol;
-    if (open_return || (!specialization && (f.generic || container_generic))) {
+    std::unordered_map<string, size_t> view_type_counts;
+    if (view) {
+      for (size_t index = 0; index < f.params.size(); ++index) {
+        string pt = specialization ? specialization->parameter_types[index]
+                                   : f.params[index].type;
+        auto abi = function_parameter_abi(f, index, pt, specialization);
+        if (abi.effect != Effect::Consume && view_object_type(pt))
+          view_type_counts[pt]++;
+      }
+    }
+    bool has_shared_view_generics = false;
+    for (const auto& [vt, count] : view_type_counts) {
+      if (count > 1) has_shared_view_generics = true;
+    }
+    bool has_generics = open_return || (!specialization && (f.generic || container_generic)) || has_shared_view_generics;
+    if (has_generics) {
       o << "<";
       size_t gi = 0;
       for (const auto& p : f.params)
@@ -5290,6 +5309,14 @@ class Generator {
         if (gi++) o << ", ";
         if (*f.return_type == "map") o << "K, V";
         else o << "T";
+      }
+      if (has_shared_view_generics) {
+        for (const auto& [vt, count] : view_type_counts) {
+          if (count > 1) {
+            if (gi++) o << ", ";
+            o << "T_" << vt << ": " << access_trait(vt);
+          }
+        }
       }
       o << ">";
     }
@@ -5319,7 +5346,11 @@ class Generator {
       auto abi = function_parameter_abi(f, index, pt, specialization);
       Effect effect = abi.effect;
       if (view && effect != Effect::Consume && view_object_type(pt)) {
-        o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
+        if (view_type_counts[pt] > 1) {
+          o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "T_" << pt;
+        } else {
+          o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
+        }
         continue;
       }
       bool borrow = abi.passing != ParameterPassingMode::Value;
@@ -6557,10 +6588,32 @@ class Generator {
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(joined_types.at(binding)) << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(joined_types.at(binding)) << ";\n";
+            }
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
+            if (!view_parameters_.empty() && view_object_type(joined_types.at(binding)))
+              view_parameters_.insert(binding);
           }
 
           if (s.exceptional_alternatives.empty()) {
@@ -6861,10 +6914,32 @@ class Generator {
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(joined_types.at(binding)) << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(joined_types.at(binding)) << ";\n";
+            }
             locals.insert(binding);
             types[binding] = joined_types.at(binding);
+            if (!view_parameters_.empty() && view_object_type(joined_types.at(binding)))
+              view_parameters_.insert(binding);
           }
           string match_callee;
           vector<string> match_arguments;
@@ -6977,11 +7052,33 @@ class Generator {
             const string& type = joined_types.at(binding);
             backend_comment(o, (base + level) * 4,
                             "CONTROL-FLOW JOIN: binding has one definite static type on every path");
-            o << indent(level) << "let mut " << binding << ": "
-              << rust_type(type)
-              << ";\n";
+            bool is_joined_borrow = false;
+            if (p_.typed_semantics) {
+              for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+                const std::string& bind_id = fact.binding_identity;
+                if (!fact.join_definition_identity.empty() &&
+                    (ends_with(fact.definition_identity, ":" + binding) ||
+                     ends_with(fact.join_definition_identity, ":" + binding) ||
+                     bind_id == binding ||
+                     ends_with(bind_id, ":" + binding))) {
+                  if (fact.access == Effect::Read || fact.access == Effect::Write) {
+                    is_joined_borrow = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (is_joined_borrow || !view_parameters_.empty()) {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ";\n";
+            } else {
+              o << indent(level) << "let mut " << rust_identifier(binding) << ": "
+                << rust_type(type)
+                << ";\n";
+            }
             locals.insert(binding);
             types[binding] = type;
+            if (!view_parameters_.empty() && view_object_type(type))
+              view_parameters_.insert(binding);
           }
           o << indent(level) << "if "
             << expr(s.a, d, locals, &types,
@@ -7248,6 +7345,7 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          bool joined_assignment = join_assignments.erase(s.a) != 0;
           if (s.a == "_") {
             o << indent(level) << "let _ = "
               << expr(s.b, d, locals, &types,
@@ -7356,20 +7454,21 @@ class Generator {
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
             if (take_fact) {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
-              o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+              o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
             } else if (ownership_fact) {
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
+              bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
               if (ownership_fact->access == Effect::Read) {
-                o << indent(level) << "let " << s.a << " = &(" << rhs_val << ");\n";
+                o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = &(" << rhs_val << ");\n";
               } else if (ownership_fact->access == Effect::Write) {
-                o << indent(level) << "let mut " << s.a << " = &mut (" << rhs_val << ");\n";
+                o << indent(level) << "let mut " << rust_identifier(s.a) << " = &mut (" << rhs_val << ");\n";
               } else {
-                o << indent(level) << "let mut " << s.a << " = " << rhs_val << ";\n";
+                o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
               }
             } else {
-              o << indent(level) << "let mut " << s.a;
+              o << indent(level) << "let mut " << rust_identifier(s.a);
               if (!annotation.empty()) o << ": " << annotation;
               o << " = "
                 << expr(s.b, d, locals, &types,
@@ -7391,6 +7490,8 @@ class Generator {
                   source_binding->second.instance);
             else
               forget_domain_instance_binding(s.a);
+            if (source_name && view_parameters_.count(*source_name))
+              view_parameters_.insert(s.a);
           } else {
             string mb, mi;
             bool map_assignment = tree_parse_index(s.a, mb, mi);
@@ -7430,7 +7531,7 @@ class Generator {
                   << ");\n";
               }
             }
-            else if (is_object_view(s.a, d, locals, &types)) {
+            else if (is_object_view(s.a, d, locals, &types) && !tree_plain_identifier(s.a)) {
               string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
               o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
@@ -7516,8 +7617,21 @@ class Generator {
               }
               if (reuse_string_buffer)
                 o << indent(level) << assigned << ";\n";
-              else
-                o << indent(level) << lhs << " = " << assigned << ";\n";
+              else {
+                bool shadow_killed_definition = ownership_fact &&
+                    !ownership_fact->killed_definition_identity.empty() &&
+                    tree_plain_identifier(s.a) && !joined_assignment && level == 0;
+                if (shadow_killed_definition) {
+                  bool mutable_decl = (ownership_fact->access != Effect::Read);
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "")
+                    << rust_identifier(s.a) << " = " << assigned << ";\n";
+                } else {
+                  string target_lhs = tree_plain_identifier(s.a) ? rust_identifier(s.a) : lhs;
+                  o << indent(level) << target_lhs << " = " << assigned << ";\n";
+                }
+              }
+              if (source_binding && view_parameters_.count(*source_binding))
+                view_parameters_.insert(s.a);
             }
             if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
@@ -7853,7 +7967,7 @@ class Generator {
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
-            o << s.a << " = ";
+            o << rust_identifier(s.a) << " = ";
             emit_domain_construction(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
@@ -7882,12 +7996,12 @@ class Generator {
             o << indent(level);
             if (!joined_assignment) {
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
-              if (ownership_fact) {
-                mutable_decl = (ownership_fact->access == Effect::Write);
+              if (ownership_fact && ownership_fact->access == Effect::Write) {
+                mutable_decl = true;
               }
               o << "let " << (mutable_decl ? "mut " : "");
             }
-            o << s.a;
+            o << rust_identifier(s.a);
             if (take_fact) {
               o << " = " << emit_take_expression(*take_fact, s, d, locals, &types) << ";\n";
             } else {
@@ -7930,6 +8044,8 @@ class Generator {
             } else {
               forget_domain_instance_binding(s.a);
             }
+            if (source_name && view_parameters_.count(*source_name))
+              view_parameters_.insert(s.a);
           }
           locals.insert(s.a);
           ++i;

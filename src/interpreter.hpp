@@ -145,6 +145,84 @@ class FastInterpreter {
     if (!semantics) return;
 
     const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_req = [&](std::vector<TypedLocalOwnershipRequirementV1>& reqs) -> TypedLocalOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
+          fact->availability = TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
+          fact->access = (fact->access == Effect::Read) ? Effect::Write : Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = semantics->local_ownership_facts.begin();
+               it != semantics->local_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              semantics->local_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          semantics->local_ownership_facts.erase(
+              semantics->local_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
+          fact->specialization_identity = "perturbed-specialization-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SOURCE_ID")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
+          fact->source_binding_identity = "perturbed-source-id";
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_FACT")) {
+      if (!semantics->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
+          semantics->local_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_REQUIREMENT")) {
+      if (!semantics->required_local_ownership_occurrences.empty()) {
+        if (auto* req = find_target_req(semantics->required_local_ownership_occurrences)) {
+          semantics->required_local_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -2761,6 +2839,11 @@ class FastInterpreter {
           std::get_if<est::Identifier>(&tree->arena->at(current_root));
       if (identifier) {
         const auto& name = identifier->name;
+        auto alias = frame.aliases.find(name);
+        if (alias != frame.aliases.end() && alias->second.value) {
+          emit("LocalRead", frame, line, name);
+          return *alias->second.value;
+        }
         auto found = frame.locals.find(name);
         if (found != frame.locals.end()) {
           emit("LocalRead", frame, line, name);
@@ -3261,6 +3344,76 @@ class FastInterpreter {
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
+  const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
+      const Stmt& s, const Frame& frame, int line) const {
+    if (!program_.typed_semantics) return nullptr;
+
+    const est::ExprSlot slot =
+        (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+            ? est::ExprSlot::Initializer
+            : est::ExprSlot::RhsValue;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == slot && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+
+    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+
+    const TypedLocalOwnershipRequirementV1* requirement = nullptr;
+    const TypedLocalOwnershipFactV1* found_fact = nullptr;
+    try {
+      requirement = program_.typed_semantics->find_local_ownership_requirement(
+          matched_handle->arena_index, matched_handle->expr, context);
+      if (!requirement) {
+        return nullptr;
+      }
+      found_fact = &program_.typed_semantics->find_local_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+
+    if (!found_fact) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT required local ownership fact record missing");
+    }
+
+    if (found_fact->is_intentionally_unsupported()) {
+      return nullptr;
+    }
+
+    if (!found_fact->is_authoritative()) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT local ownership fact unavailable availability=" +
+          std::to_string(static_cast<int>(found_fact->availability)));
+    }
+
+    const est::Arena* arena = nullptr;
+    if (found_fact->est_arena_index < program_.expression_arenas.size() &&
+        program_.expression_arenas[found_fact->est_arena_index]) {
+      arena = program_.expression_arenas[found_fact->est_arena_index].get();
+    } else if (found_fact->est_arena_index == 0 && program_.expression_arena) {
+      arena = program_.expression_arena.get();
+    }
+    if (!arena) {
+      throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT missing EST arena");
+    }
+
+    const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
+                                          found_fact->specialization_context);
+    if (!tree_facts || !tree_facts->inferred_effect ||
+        *tree_facts->inferred_effect != found_fact->access) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT contradictory EST ownership fact in arena");
+    }
+
+    return found_fact;
+  }
+
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
@@ -3653,26 +3806,83 @@ class FastInterpreter {
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
+          const auto* ownership_fact = resolve_local_ownership_fact(statement, frame, statement.line);
           Value initial = evaluate_expression_source(statement.b, frame,
               statement.line, output,
               std::pair{est::ExprSlot::Initializer, 0u});
           declare_local(frame, statement.a);
-          frame.locals[statement.a] = std::move(initial);
+          if (ownership_fact && !ownership_fact->killed_definition_identity.empty()) {
+            frame.consumed.erase(statement.a);
+            frame.aliases.erase(statement.a);
+          }
+          if (ownership_fact && (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
+            auto place = locate(statement.b, frame, statement.line, output);
+            if (place.value) {
+              frame.aliases[statement.a] = place;
+            } else {
+              frame.locals[statement.a] = std::move(initial);
+            }
+          } else {
+            frame.aliases.erase(statement.a);
+            frame.locals[statement.a] = std::move(initial);
+          }
+          if (ownership_fact && ownership_fact->access == Effect::Consume) {
+            std::string source_name;
+            auto colon = ownership_fact->source_binding_identity.rfind(':');
+            if (colon != std::string::npos) source_name = ownership_fact->source_binding_identity.substr(colon + 1);
+            else if (binding_identifier(statement.b)) source_name = statement.b;
+            if (!source_name.empty() && frame.locals.count(source_name)) {
+              auto type = frame.local_types.find(source_name);
+              if (type != frame.local_types.end() && !type->second.empty() && !copy_type_name(type->second)) {
+                frame.locals.erase(source_name);
+                frame.consumed.insert(source_name);
+              }
+            }
+          }
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
           if (emit("LocalWrite", frame, statement.line, statement.a))
-            trace_.back().after = summary(frame.locals.at(statement.a));
+            trace_.back().after = summary(frame.locals.count(statement.a) ? frame.locals.at(statement.a) : (frame.aliases.count(statement.a) && frame.aliases.at(statement.a).value ? *frame.aliases.at(statement.a).value : Value::unit()));
           break;
         }
         case Stmt::Kind::Assign: {
+          const auto* ownership_fact = resolve_local_ownership_fact(statement, frame, statement.line);
           auto target_tree = expression_tree(statement.a, "assignment_target",
               std::pair{est::ExprSlot::LhsPlace, 0u});
           Value assigned = evaluate_expression_source(
               statement.b, frame, statement.line, output,
               std::pair{est::ExprSlot::RhsValue, 0u});
+          if (ownership_fact && !ownership_fact->killed_definition_identity.empty()) {
+            frame.consumed.erase(statement.a);
+            frame.aliases.erase(statement.a);
+          }
+          if (binding_identifier(statement.a) && ownership_fact &&
+              (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
+            auto place = locate(statement.b, frame, statement.line, output);
+            if (place.value) {
+              frame.aliases[statement.a] = place;
+              if (statement.a != "_")
+                frame.local_types[statement.a] = checked_binding_type(statement, frame);
+              break;
+            }
+          }
+          frame.aliases.erase(statement.a);
           assign(statement.a, std::move(assigned), frame, statement.line,
                  output, target_tree ? &*target_tree : nullptr,
                  target_tree ? std::optional<est::ExprId>(target_tree->root)
                              : std::nullopt);
+          if (ownership_fact && ownership_fact->access == Effect::Consume) {
+            std::string source_name;
+            auto colon = ownership_fact->source_binding_identity.rfind(':');
+            if (colon != std::string::npos) source_name = ownership_fact->source_binding_identity.substr(colon + 1);
+            else if (binding_identifier(statement.b)) source_name = statement.b;
+            if (!source_name.empty() && frame.locals.count(source_name)) {
+              auto type = frame.local_types.find(source_name);
+              if (type != frame.local_types.end() && !type->second.empty() && !copy_type_name(type->second)) {
+                frame.locals.erase(source_name);
+                frame.consumed.insert(source_name);
+              }
+            }
+          }
           if (binding_identifier(statement.a) && statement.a != "_")
             frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;

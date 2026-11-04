@@ -70,6 +70,19 @@ def verify_fail_closed(compiler: str, fixture: str, hook: str) -> None:
         )
 
 
+def verify_fast_debug_fail_closed(compiler: str, fixture: str, hook: str) -> None:
+    source = FIXTURES / fixture
+    env = os.environ.copy()
+    env[hook] = "1"
+    proc = run([compiler, "run", "--interp", str(source)], env=env)
+    if proc.returncode == 0:
+        raise AssertionError(f"Fast Debug {fixture} with {hook}: expected failure, but succeeded!")
+    if "MOSS_INTERNAL_INVARIANT" not in proc.stderr and "MOSS_INTERNAL_INVARIANT" not in proc.stdout:
+        raise AssertionError(
+            f"Fast Debug {fixture} with {hook}: expected MOSS_INTERNAL_INVARIANT, got: {proc.stderr}"
+        )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_team_b_consumer.py COMPILER")
@@ -79,6 +92,13 @@ def main() -> int:
     verify_native(compiler, "read_alias.moss", "7\n7")
     verify_native(compiler, "write_alias.moss", "9")
     verify_native(compiler, "consume_transfer.moss", "7")
+    verify_native(compiler, "rebinding_definitions.moss", "1\n2")
+    verify_native(compiler, "rebind_after_borrow.moss", "1\n2")
+    verify_native(compiler, "if_else_live_join.moss", "7\n0\n7")
+    verify_native(compiler, "branch_write_join.moss", "100")
+    verify_native(compiler, "if_else_live_consume.moss", "7")
+    verify_native(compiler, "match_reaching_defs.moss", "99\n99\n0\n99\n99\n0\n99\n99\n0\n99")
+    verify_native(compiler, "rebind_branches.moss", "20\n0\n10\n0\n10\n20")
 
     # E1 Group A scalar temporary push repair
     e1_source = ROOT / "tests/phase28/reproducers/defect_e1_group_a_push_self_field.moss"
@@ -106,6 +126,11 @@ def main() -> int:
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
     verify_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")
+
+    # Fast Debug fail-closed fault injection
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
+    verify_fast_debug_fail_closed(compiler, "read_alias.moss", "MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")
 
     # Specialization fact isolation
     isolation_script = ROOT / "tests/phase28/test_specialization_fact_isolation.py"
