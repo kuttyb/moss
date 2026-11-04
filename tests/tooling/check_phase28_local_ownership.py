@@ -389,6 +389,26 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
         raise AssertionError(
             f"raising second echo argument lost exact EST identity: "
             f"{echo_result!r} {echo_facts!r}\n{echo_arguments.stderr}")
+    message_arguments = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_message_nested_argument.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    message_result = json.loads(message_arguments.stdout)
+    message_facts = re.findall(
+        r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT .*? arena=(\d+) expr=(\d+) '
+        r'slot=Argument arg=(\d+) variant="enum:Failure:Bad"',
+        message_arguments.stderr)
+    raise_call_nodes = re.findall(
+        r'MOSS_EST_FACT expr=(\d+) context="main" .*?'
+        r'target="callable-v1:[^"]*::main:fn:fail_value"',
+        message_arguments.stderr)
+    if not message_result.get("ok") or len(message_facts) != 1 or \
+            message_facts[0][2] != "0" or len(raise_call_nodes) != 1 or \
+            message_facts[0][1] != raise_call_nodes[0]:
+        raise AssertionError(
+            f"nested raising message argument lost exact EST occurrence: "
+            f"{message_result!r} {message_facts!r} {raise_call_nodes!r}\n"
+            f"{message_arguments.stderr}")
     overlapping = subprocess.run(
         [compiler, "check", str(FIXTURES /
          "exceptional_rebind_while_borrowed.moss"), "--json"],

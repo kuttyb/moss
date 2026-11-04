@@ -10946,7 +10946,14 @@ class Checker {
       case Stmt::Kind::For: slot = est::ExprSlot::Iterable; break;
       case Stmt::Kind::Match: slot = est::ExprSlot::Scrutinee; break;
       case Stmt::Kind::Call: slot = est::ExprSlot::Expression; break;
-      case Stmt::Kind::Message: slot = est::ExprSlot::Receiver; break;
+      case Stmt::Kind::Message:
+        if (argument_index != UINT32_MAX && argument_index < source.args.size()) {
+          slot = est::ExprSlot::Argument;
+          selected_argument = argument_index;
+        } else {
+          slot = est::ExprSlot::Receiver;
+        }
+        break;
       case Stmt::Kind::Return:
       case Stmt::Kind::Reply: slot = est::ExprSlot::ReturnValue; break;
       case Stmt::Kind::Raw:
@@ -11019,6 +11026,29 @@ class Checker {
   const Stmt* ownership_exceptional_source_ = nullptr;
   std::uint32_t ownership_exceptional_argument_index_ = UINT32_MAX;
   OwnershipExpressionFrame* ownership_expression_frame_ = nullptr;
+  vector<std::optional<EstExpressionCursor>> ownership_est_expression_cursors_;
+
+  std::optional<EstExpressionCursor> ownership_expression_cursor(
+      const string& expression) {
+    if (!ownership_est_expression_cursors_.empty() &&
+        ownership_est_expression_cursors_.back()) {
+      auto& parent = *ownership_est_expression_cursors_.back();
+      const auto ordinal = parent.child_count++;
+      auto* arena = expression_arena(parent.arena_index);
+      if (!arena) return std::nullopt;
+      const auto child = matching_expression_child(*arena, parent.expr, {},
+          ordinal, parent.source, expression);
+      if (!child) return std::nullopt;
+      return EstExpressionCursor{parent.arena_index, *child, expression};
+    }
+    if (!ownership_exceptional_source_) return std::nullopt;
+    const auto* handle = exceptional_source_handle(
+        *ownership_exceptional_source_, ownership_exceptional_argument_index_);
+    if (!handle) return std::nullopt;
+    auto* arena = expression_arena(handle->arena_index);
+    if (!arena || handle->expr >= arena->size()) return std::nullopt;
+    return EstExpressionCursor{handle->arena_index, handle->expr, expression};
+  }
 
   void retain_semantic_use(const string& target_identity, const string& kind,
                            int line) {
@@ -25264,6 +25294,12 @@ class Checker {
   void check_ownership_expression(int line, const string& expression,
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
     observe_vector_element_access(expression, env, requested, line);
+    auto expression_cursor = ownership_expression_cursor(expression);
+    ownership_est_expression_cursors_.push_back(expression_cursor);
+    struct OwnershipEstCursorScope {
+      vector<std::optional<EstExpressionCursor>>& cursors;
+      ~OwnershipEstCursorScope() { cursors.pop_back(); }
+    } cursor_scope{ownership_est_expression_cursors_};
     if (!ownership_exceptional_sink_) {
       check_ownership_expression_walk(line, expression, env, requested);
       return;
@@ -25289,14 +25325,16 @@ class Checker {
     if (!at_this_point.empty()) {
       ExceptionalOwnershipExit exit{
           std::move(at_this_point), env, ownership_exceptional_source_};
-      if (ownership_exceptional_source_) {
-        const auto* handle = exceptional_source_handle(
-            *ownership_exceptional_source_, ownership_exceptional_argument_index_);
-        if (handle) {
-          exit.source_est_arena_index = handle->arena_index;
-          exit.source_expression_occurrence_id = handle->expr;
-          exit.source_est_slot = static_cast<std::uint8_t>(handle->slot);
-          exit.source_est_argument_index = handle->argument_index;
+      if (expression_cursor) {
+        exit.source_est_arena_index = expression_cursor->arena_index;
+        exit.source_expression_occurrence_id = expression_cursor->expr;
+        if (ownership_exceptional_source_) {
+          const auto* handle = exceptional_source_handle(
+              *ownership_exceptional_source_, ownership_exceptional_argument_index_);
+          if (handle) {
+            exit.source_est_slot = static_cast<std::uint8_t>(handle->slot);
+            exit.source_est_argument_index = handle->argument_index;
+          }
         }
       }
       ownership_exceptional_sink_->push_back(std::move(exit));
@@ -27029,6 +27067,15 @@ class Checker {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+            struct MessageArgumentOwnershipScope {
+              std::uint32_t& slot;
+              std::uint32_t prior;
+              MessageArgumentOwnershipScope(std::uint32_t& target,
+                                            std::uint32_t current)
+                  : slot(target), prior(target) { slot = current; }
+              ~MessageArgumentOwnershipScope() { slot = prior; }
+            } argument_scope(ownership_exceptional_argument_index_,
+                             static_cast<std::uint32_t>(arg_index));
             const auto& arg = s.args[arg_index];
             auto type = inferred_expr_type(arg, env.types);
             if (type && fileio_scoped_type(*type))

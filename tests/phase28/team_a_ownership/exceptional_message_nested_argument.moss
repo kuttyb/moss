@@ -1,0 +1,16 @@
+enum Failure:
+  Bad
+
+domain Sink:
+  fn Put(value: Int):
+    pass
+
+fn fail_value() -> Int:
+  raise Failure.Bad
+
+fn main():
+  sink = Sink()
+  try:
+    message sink.Put(1 + fail_value())
+  recover Failure.Bad:
+    echo 2
