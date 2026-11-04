@@ -24,7 +24,7 @@ Handoff documentation: `docs/phase28/TEAM_A_W12_CHECKER_HANDOFF.md`.
   - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP. All 16 FAIL match baseline ledger (15 pre-existing fixtures resolved by W13 on `phase28-work`, 1 pre-existing Phase 21 checker defect `check_phase21_borrowed_view_write`).
   - Zero new regressions.
 - String debt: 42 raw Stmt name comparisons, 7 raw Stmt binding comparisons (<= 42/7 threshold preserved).
-- Status: Awaiting independent Agent 2 GO review. Ready for Team B integration into `phase28-work`. STOP after handoff; no merge to `phase28-work` or `main`.
+- Status: Independent Agent 2 GO certified. Ready for Team B integration into `phase28-work`. STOP after handoff; no merge to `phase28-work` or `main`.
 
 ### Phase 28 Team B W08–W11 Consumer Migration Integration (2026-11-04)
 
