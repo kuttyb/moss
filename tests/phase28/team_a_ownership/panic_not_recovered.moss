@@ -1,0 +1,8 @@
+enum Failure:
+  Bad
+
+fn main():
+  try:
+    value = 1 / 0
+  recover Failure.Bad:
+    echo 1

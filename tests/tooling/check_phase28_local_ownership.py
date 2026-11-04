@@ -296,6 +296,114 @@ def check_loop_ownership_contract(compiler: str) -> None:
 
 
 
+
+def check_exceptional_ownership_contract(compiler: str) -> None:
+    source = FIXTURES / "exceptional_recover_read.moss"
+    env = os.environ.copy()
+    env["MOSS_EST_FACTS_DUMP"] = "1"
+    env["MOSS_TEST_VALIDATE_EXCEPTIONAL_OWNERSHIP_CONTRACT"] = "1"
+    proc = subprocess.run([compiler, "check", str(source), "--json"],
+                          cwd=ROOT, text=True, capture_output=True,
+                          env=env, check=False)
+    result = json.loads(proc.stdout)
+    if proc.returncode != 0 or not result.get("ok"):
+        raise AssertionError(
+            f"exceptional recover ownership fact failed: {result!r}\n{proc.stderr}")
+    facts = re.findall(
+        r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT source=(\d+) recovery=(\d+) '
+        r'arena=(\d+) expr=(\d+) variant="([^"]+)" context="([^"]+)" '
+        r'specialization="([^"]*)" provenance="([^"]+)" state=(\d+) '
+        r'availability=(\d+) mutations=(\d+) consumes=(\d+) borrows=(\d+)',
+        proc.stderr)
+    if len(facts) != 1 or facts[0][4] != "enum:Failure:Bad" or \
+            int(facts[0][2]) == 2**32 - 1 or int(facts[0][3]) == 2**32 - 1 or \
+            int(facts[0][8]) < 1 or int(facts[0][9]) != 0 or \
+            int(facts[0][12]) < 1:
+        raise AssertionError(
+            f"expected exact typed variant, EST and state-at-raise fact: {facts!r}")
+    records = re.findall(
+        r'MOSS_EST_OWNERSHIP_RECORD source_kind=0 definition="[^"]+" '
+        r'join="[^"]*" source="[^"]+" expr=\d+ context="[^"]+" '
+        r'specialization="[^"]*" statement=\d+ access=(\d+) '
+        r'inference_status=(\d+) unsupported_reason=(\d+) availability=(\d+)',
+        proc.stderr)
+    if not any(tuple(map(int, row)) == (0, 0, 0, 1) for row in records):
+        raise AssertionError(
+            f"recovery READ did not infer at its source assignment: {records!r}")
+
+    joined_borrows = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_borrow_join_provenance.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    joined_result = json.loads(joined_borrows.stdout)
+    joined_counts = [int(value) for value in re.findall(
+        r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT .*? borrows=(\d+)',
+        joined_borrows.stderr)]
+    if not joined_result.get("ok") or not joined_counts or max(joined_counts) < 2:
+        raise AssertionError(
+            f"recovery join omitted one possible borrow origin: "
+            f"{joined_result!r} {joined_counts!r}")
+
+    mutated = subprocess.run(
+        [compiler, "check", str(FIXTURES / "exceptional_mutation_preserved.moss"),
+         "--json"], cwd=ROOT, text=True, capture_output=True, env=env,
+        check=False)
+    mutated_result = json.loads(mutated.stdout)
+    if not mutated_result.get("ok") or not re.search(
+            r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT .*? mutations=[1-9]',
+            mutated.stderr):
+        raise AssertionError(
+            f"completed take mutation did not survive into recover fact: "
+            f"{mutated_result!r}\\n{mutated.stderr}")
+
+    negative = subprocess.run(
+        [compiler, "check", str(FIXTURES / "exceptional_recover_consume.moss"),
+         "--json"], cwd=ROOT, text=True, capture_output=True, env=env,
+        check=False)
+    rejected = json.loads(negative.stdout)
+    if rejected.get("ok") or rejected.get("error", {}).get("code") != \
+            "OWNERSHIP_USE_AFTER_CONSUME":
+        raise AssertionError(
+            f"recovery consume failed to invalidate its source: {rejected!r}")
+
+    rebinding = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_rebind_after_last_borrow.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    if not json.loads(rebinding.stdout).get("ok"):
+        raise AssertionError(
+            f"rebind after recover borrow's final use was rejected: {rebinding.stdout}")
+    overlapping = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_rebind_while_borrowed.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    overlapping_result = json.loads(overlapping.stdout)
+    if overlapping_result.get("ok") or overlapping_result.get("error", {}).get(
+            "code") != "OWNERSHIP_SOURCE_BORROWED":
+        raise AssertionError(
+            f"overlapping borrow through recover was not rejected: {overlapping_result!r}")
+
+    aborting = subprocess.run(
+        [compiler, "check", str(FIXTURES / "panic_not_recovered.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    aborting_result = json.loads(aborting.stdout)
+    if not aborting_result.get("ok") or \
+            "MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT" in aborting.stderr:
+        raise AssertionError(
+            f"panic-like operation fabricated a typed recover edge: {aborting_result!r}")
+
+    for hook in ("MOSS_TEST_DROP_EXCEPTIONAL_OWNERSHIP_FACT",
+                 "MOSS_TEST_PERTURB_EXCEPTIONAL_OWNERSHIP_FACT"):
+        corrupted = subprocess.run(
+            [compiler, "check", str(source), "--json"], cwd=ROOT,
+            text=True, capture_output=True,
+            env={**env, hook: "1"}, check=False)
+        corrupted_result = json.loads(corrupted.stdout)
+        if corrupted_result.get("ok") or "exceptional ownership fact missing or contradictory" not in \
+                corrupted_result.get("error", {}).get("message", ""):
+            raise AssertionError(
+                f"{hook} did not fail closed: {corrupted_result!r}")
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
@@ -325,6 +433,7 @@ def main() -> int:
     check(compiler, "for_loop_unused_owner_move.moss",
           expected_error="LOOP_OUTER_BINDING_CONSUMED")
     check_loop_ownership_contract(compiler)
+    check_exceptional_ownership_contract(compiler)
     check(compiler, "use_after_move.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "surviving_field_demand.moss",
@@ -343,7 +452,7 @@ def main() -> int:
     check(compiler, "option_field_return_consume.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "control_flow_unsupported.moss",
-          expected_unsupported=(0, 1))
+          expected_records=(0, 0, 1))
     check(compiler, "vector_read_iteration.moss",
           expected_records=(1, 0, 1))
     check(compiler, "vector_write_iteration.moss",

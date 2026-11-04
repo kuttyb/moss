@@ -1,0 +1,19 @@
+enum Failure:
+  Bad
+
+type Box:
+  value: Int
+
+fn main():
+  var first = Box(value = 1)
+  var second = Box(value = 2)
+  var alias = Box(value = 0)
+  choose = true
+  try:
+    if choose:
+      alias = first
+    else:
+      alias = second
+    raise Failure.Bad
+  recover Failure.Bad:
+    echo alias.value

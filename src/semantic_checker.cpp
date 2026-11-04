@@ -1914,6 +1914,20 @@ class Checker {
       p_.typed_semantics->loop_ownership_facts = loop_ownership_facts_;
       p_.typed_semantics->required_loop_ownership_occurrences =
           required_loop_ownership_occurrences_;
+      p_.typed_semantics->exceptional_ownership_facts =
+          exceptional_ownership_facts_;
+      p_.typed_semantics->required_exceptional_ownership_occurrences =
+          required_exceptional_ownership_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_EXCEPTIONAL_OWNERSHIP_FACT") &&
+          !p_.typed_semantics->exceptional_ownership_facts.empty())
+        p_.typed_semantics->exceptional_ownership_facts.erase(
+            p_.typed_semantics->exceptional_ownership_facts.begin());
+      if (std::getenv("MOSS_TEST_PERTURB_EXCEPTIONAL_OWNERSHIP_FACT") &&
+          !p_.typed_semantics->exceptional_ownership_facts.empty())
+        p_.typed_semantics->exceptional_ownership_facts.front()
+            .raised_variant_identity += ":perturbed";
+#endif
       p_.typed_semantics->local_ownership_specialization_contexts =
           local_ownership_specialization_contexts_;
       p_.typed_semantics->take_facts = take_facts_;
@@ -1948,8 +1962,43 @@ class Checker {
              p_.typed_semantics->required_loop_ownership_occurrences)
           (void)p_.typed_semantics->find_loop_ownership_fact(requirement);
       }
+      if (std::getenv("MOSS_TEST_VALIDATE_EXCEPTIONAL_OWNERSHIP_CONTRACT")) {
+        for (const auto& requirement :
+             p_.typed_semantics->required_exceptional_ownership_occurrences)
+          (void)p_.typed_semantics->find_exceptional_ownership_fact(requirement);
+      }
 #endif
       if (std::getenv("MOSS_EST_FACTS_DUMP")) {
+        for (const auto& fact : exceptional_ownership_facts_)
+          std::cerr << "MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT source="
+                    << fact.source_statement_occurrence_id << " recovery="
+                    << fact.recovery_statement_occurrence_id << " arena="
+                    << fact.source_est_arena_index << " expr="
+                    << fact.source_expression_occurrence_id << " variant="
+                    << std::quoted(fact.raised_variant_identity) << " context="
+                    << std::quoted(fact.specialization_context) << " specialization="
+                    << std::quoted(fact.specialization_identity) << " provenance="
+                    << std::quoted(fact.summary_provenance) << " state="
+                    << fact.state_at_raise.size() << " availability="
+                    << static_cast<int>(fact.availability) << " mutations="
+                    << fact.mutated_storage_paths.size() << " consumes="
+                    << fact.consumed_binding_identities.size() << " borrows="
+                    << std::accumulate(fact.state_at_raise.begin(),
+                        fact.state_at_raise.end(), size_t{0},
+                        [](size_t count, const auto& binding) {
+                          return count +
+                              binding.borrow_source_binding_identities.size();
+                        }) << '\n';
+        for (const auto& fact : exceptional_ownership_facts_)
+          for (const auto& binding : fact.state_at_raise)
+            std::cerr << "MOSS_EST_EXCEPTIONAL_OWNERSHIP_BINDING name="
+                      << std::quoted(binding.name) << " binding="
+                      << std::quoted(binding.binding_identity) << " definition="
+                      << std::quoted(binding.reaching_definition_identity)
+                      << " origins="
+                      << binding.borrow_source_binding_identities.size()
+                      << " paths=" << binding.borrow_storage_paths.size()
+                      << '\n';
         for (const auto& fact : loop_ownership_facts_)
           std::cerr << "MOSS_EST_LOOP_OWNERSHIP_FACT loop="
                     << fact.loop_statement_occurrence_id << " source="
@@ -2377,6 +2426,9 @@ class Checker {
   vector<TypedLoopOwnershipFactV1> loop_ownership_facts_;
   vector<TypedLoopOwnershipRequirementV1>
       required_loop_ownership_occurrences_;
+  vector<TypedExceptionalOwnershipFactV1> exceptional_ownership_facts_;
+  vector<TypedExceptionalOwnershipRequirementV1>
+      required_exceptional_ownership_occurrences_;
   std::map<string, string> local_ownership_specialization_contexts_;
   struct BodyOwnershipFlowAnalysis;
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
@@ -2395,7 +2447,8 @@ class Checker {
   struct BodyTypeState {
     enum class ControlEdgeKind {
       Normal, BranchTrue, BranchFalse, BranchBody, MatchArm,
-      LoopEntry, LoopZeroIterationExit, LoopConvergedExit, LoopBackedge
+      LoopEntry, LoopZeroIterationExit, LoopConvergedExit, LoopBackedge,
+      TypedExceptional
     };
     struct ControlEdgeOccurrence {
       std::uint32_t source_statement_id = UINT32_MAX;
@@ -2403,6 +2456,7 @@ class Checker {
       std::uint32_t control_statement_id = UINT32_MAX;
       ControlEdgeKind kind = ControlEdgeKind::Normal;
       bool reachable = false;
+      string raised_variant_identity;
     };
     struct LinkedCallableFact {
       string semantic_callable_id;
@@ -4002,7 +4056,9 @@ class Checker {
     // result only when the retained call operation, ordered argument
     // occurrences, summary dependency, and semantic call edge agree.
     std::set<std::uint32_t> verified_direct_return_calls;
-    for (const auto& [slot, root_id] : state.expression_root_slots) {
+    for (const auto& entry : state.expression_root_slots) {
+      const auto& slot = entry.first;
+      const auto root_id = entry.second;
       if (slot.second != "return-value" ||
           root_id >= state.expression_occurrences.size())
         continue;
@@ -4155,7 +4211,9 @@ class Checker {
     std::unordered_map<string, moss::TypeRef> returned_local_types;
     std::unordered_map<std::uint32_t, moss::TypeRef>
         returned_initializer_types;
-    for (const auto& [slot, root_id] : state.expression_root_slots) {
+    for (const auto& entry : state.expression_root_slots) {
+      const auto& slot = entry.first;
+      const auto root_id = entry.second;
       if (slot.second != "return-value") continue;
       const auto returned = std::find_if(
           state.expression_occurrences.begin(),
@@ -10834,6 +10892,10 @@ class Checker {
     // traversed collection.
     std::set<string> active_read_traversals;
     std::unordered_map<string,string> borrowed_enum_payloads;
+    std::unordered_map<string,std::set<string>> borrowed_local_sources;
+    std::unordered_map<string,std::set<string>> borrowed_local_storage_paths;
+    // Completed storage mutations are path state and survive typed raises.
+    std::set<string> mutated_storage_paths;
     // Vector loop element facts are attached to the checker-owned loop
     // binding. Branch copies retain the same fact index and join access with
     // READ < WRITE; they never infer a new effect in a consumer.
@@ -10846,6 +10908,38 @@ class Checker {
     OwnershipEnv ownership;
     const Stmt* source = nullptr;
   };
+
+  void update_borrowed_local_provenance(OwnershipEnv& env,
+                                         const string& target,
+                                         const string& source,
+                                         bool is_borrow) const {
+    env.borrowed_local_sources.erase(target);
+    env.borrowed_local_storage_paths.erase(target);
+    if (!is_borrow) return;
+    auto location = storage_location(source, env.types);
+    if (!location) return;
+    const auto source_identity = env.binding_identities.find(location->root);
+    if (source_identity == env.binding_identities.end()) return;
+    auto origins = env.borrowed_local_sources.find(location->root);
+    if (origins != env.borrowed_local_sources.end())
+      env.borrowed_local_sources[target] = origins->second;
+    else
+      env.borrowed_local_sources[target].insert(source_identity->second);
+    auto paths = env.borrowed_local_storage_paths.find(location->root);
+    if (paths != env.borrowed_local_storage_paths.end()) {
+      for (const auto& prefix : paths->second) {
+        string path = prefix;
+        for (const auto& projection : location->path)
+          path += "." + projection;
+        env.borrowed_local_storage_paths[target].insert(std::move(path));
+      }
+    } else {
+      string path = source_identity->second;
+      for (const auto& projection : location->path)
+        path += "." + projection;
+      env.borrowed_local_storage_paths[target].insert(std::move(path));
+    }
+  }
 
   struct OwnershipExpressionFrame {
     RaiseSet all_raises;
@@ -13311,7 +13405,10 @@ class Checker {
         env = merge_type_environments(paths, statement.line, reject_conflicts);
         if (current_body_types_ && else_index && paths.size() == 2) {
           vector<BodyTypeState::StatementOccurrence::BindingOccurrence> joins;
-          for (const auto& [name, joined_type] : env) {
+          for (const auto& entry : env) {
+            const auto& name = entry.first;
+            const auto& joined_type = entry.second;
+            const auto binding_name = name;
             if (incoming.count(name) || !joined_type) continue;
             auto branch_binding = [&](std::size_t begin, std::size_t end)
                 -> const Stmt* {
@@ -13319,7 +13416,7 @@ class Checker {
               for (std::size_t cursor = begin; cursor < end; ++cursor) {
                 const auto& candidate = statements[cursor];
                 if (candidate.indent != level + 1 ||
-                    candidate.a != name ||
+                    candidate.a != binding_name ||
                     (candidate.kind != Stmt::Kind::Let &&
                      candidate.kind != Stmt::Kind::Var))
                   continue;
@@ -21375,7 +21472,7 @@ class Checker {
       const auto control_id = control < N
           ? static_cast<std::uint32_t>(control) : UINT32_MAX;
       occurrence.control_edges.push_back(
-          {source_id, target_id, control_id, kind, false});
+          {source_id, target_id, control_id, kind, false, {}});
       if (std::find(occurrence.successor_statement_ids.begin(),
                     occurrence.successor_statement_ids.end(), target_id) ==
           occurrence.successor_statement_ids.end())
@@ -21494,6 +21591,47 @@ class Checker {
             ? BodyTypeState::ControlEdgeKind::Normal
             : BodyTypeState::ControlEdgeKind::LoopBackedge,
             backedge);
+    }
+
+    // Phase 21 has already resolved each statement's concrete raise
+    // alternatives and each recover arm's reachable alternatives. Connect
+    // only their exact intersection. Panic and unknown effects contribute no
+    // fabricated recover edge.
+    for (size_t try_index = 0; try_index < N; ++try_index) {
+      if (statements[try_index].kind != Stmt::Kind::Try) continue;
+      const size_t body_end = nested_block_end(statements, try_index);
+      size_t arm = body_end;
+      while (arm < N && statements[arm].indent == statements[try_index].indent &&
+             statements[arm].kind == Stmt::Kind::Recover) {
+        const size_t arm_end = nested_block_end(statements, arm);
+        for (size_t source = try_index + 1; source < body_end; ++source) {
+          if (statements[source].exceptional_alternatives.empty()) continue;
+          for (const auto& raised : statements[source].exceptional_alternatives) {
+            bool handled_by_inner_try = false;
+            for (size_t candidate = try_index + 1; candidate < source; ++candidate) {
+              if (statements[candidate].kind != Stmt::Kind::Try ||
+                  source >= nested_block_end(statements, candidate))
+                continue;
+              size_t inner_arm = nested_block_end(statements, candidate);
+              while (inner_arm < N &&
+                     statements[inner_arm].indent == statements[candidate].indent &&
+                     statements[inner_arm].kind == Stmt::Kind::Recover) {
+                handled_by_inner_try |=
+                    statements[inner_arm].exceptional_alternatives.count(raised) != 0;
+                inner_arm = nested_block_end(statements, inner_arm);
+              }
+            }
+            if (handled_by_inner_try ||
+                !statements[arm].exceptional_alternatives.count(raised))
+              continue;
+            add_edge(source, arm,
+                     BodyTypeState::ControlEdgeKind::TypedExceptional, try_index);
+            checked_types.statement_occurrences[source].control_edges.back()
+                .raised_variant_identity = raised.canonical();
+          }
+        }
+        arm = arm_end;
+      }
     }
 
     vector<bool> reachable(N, false);
@@ -23075,6 +23213,7 @@ class Checker {
       bool is_mutable = false;
       string source_name;
       string source_binding_identity;
+      string source_storage_path;
       Effect demand = Effect::Read;
       bool has_reachable_use = false;
       string join_definition_identity;
@@ -23096,6 +23235,7 @@ class Checker {
     std::unordered_map<size_t, StatementDecision> decisions_by_statement_index;
     vector<TypedLoopOwnershipFactV1> loop_facts;
     vector<TypedLoopOwnershipRequirementV1> loop_requirements;
+    vector<std::vector<uint32_t>> reaching_definitions_by_statement;
   };
 
   BodyOwnershipFlowAnalysis analyze_body_ownership_flow(
@@ -23157,6 +23297,10 @@ class Checker {
           def.is_owned = false;
           def.source_name = *local_source;
           def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_storage_path = def.source_binding_identity;
+          if (auto location = storage_location(s.b, flow_env_types))
+            for (const auto& projection : location->path)
+              def.source_storage_path += "." + projection;
           if (immutable_sources.count(*local_source)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
@@ -23195,6 +23339,10 @@ class Checker {
           def.is_owned = false;
           def.source_name = *local_source;
           def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_storage_path = def.source_binding_identity;
+          if (auto location = storage_location(s.b, flow_env_types))
+            for (const auto& projection : location->path)
+              def.source_storage_path += "." + projection;
           if (immutable_sources.count(*local_source)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
@@ -23274,19 +23422,30 @@ class Checker {
       if (cur != out_defs[u]) {
         out_defs[u] = std::move(cur);
         if (u < body_state.statement_occurrences.size()) {
-          for (auto succ : body_state.statement_occurrences[u].successor_statement_ids) {
-            if (succ < N) {
-              size_t old_sz = in_defs[succ].size();
-              in_defs[succ].insert(out_defs[u].begin(), out_defs[u].end());
-              if (in_defs[succ].size() != old_sz && !in_worklist[succ]) {
-                worklist.push_back(succ);
-                in_worklist[succ] = true;
-              }
+          for (const auto& edge : body_state.statement_occurrences[u].control_edges) {
+            const auto succ = edge.target_statement_id;
+            if (!edge.reachable || succ >= N) continue;
+            // RHS failure precedes a whole-local replacement. Its old
+            // definition reaches recover; only successful fallthrough sees
+            // the generated definition.
+            const auto& transfer = edge.kind ==
+                    BodyTypeState::ControlEdgeKind::TypedExceptional
+                ? in_defs[u] : out_defs[u];
+            size_t old_sz = in_defs[succ].size();
+            in_defs[succ].insert(transfer.begin(), transfer.end());
+            if (in_defs[succ].size() != old_sz && !in_worklist[succ]) {
+              worklist.push_back(succ);
+              in_worklist[succ] = true;
             }
           }
         }
       }
     }
+
+    analysis.reaching_definitions_by_statement.resize(N);
+    for (size_t statement_index = 0; statement_index < N; ++statement_index)
+      analysis.reaching_definitions_by_statement[statement_index].assign(
+          in_defs[statement_index].begin(), in_defs[statement_index].end());
 
     // 4. Backward Liveness
     vector<std::set<string>> used_vars(N);
@@ -23319,7 +23478,17 @@ class Checker {
       live_out[u] = cur_out;
 
       std::set<string> cur_in = std::move(cur_out);
-      for (const auto& d : defined_vars[u]) cur_in.erase(d);
+      for (const auto& d : defined_vars[u]) {
+        bool needed_on_raise = false;
+        if (u < body_state.statement_occurrences.size())
+          for (const auto& edge : body_state.statement_occurrences[u].control_edges)
+            if (edge.reachable && edge.kind ==
+                    BodyTypeState::ControlEdgeKind::TypedExceptional &&
+                edge.target_statement_id < N &&
+                live_in[edge.target_statement_id].count(d))
+              needed_on_raise = true;
+        if (!needed_on_raise) cur_in.erase(d);
+      }
       cur_in.insert(used_vars[u].begin(), used_vars[u].end());
 
       if (cur_in != live_in[u]) {
@@ -23562,11 +23731,38 @@ class Checker {
         if (predecessor >= N ||
             !body_state.statement_occurrences[predecessor].is_reachable)
           continue;
-        for (const auto definition_id : out_defs[predecessor]) {
+        bool exceptional_predecessor = false;
+        for (const auto& edge :
+             body_state.statement_occurrences[predecessor].control_edges)
+          if (edge.target_statement_id == u && edge.reachable &&
+              edge.kind == BodyTypeState::ControlEdgeKind::TypedExceptional)
+            exceptional_predecessor = true;
+        const auto& predecessor_defs = exceptional_predecessor
+            ? in_defs[predecessor] : out_defs[predecessor];
+        DefinitionStates exceptional_states;
+        if (exceptional_predecessor) {
+          exceptional_states = available_in[predecessor];
+          // Checked callee effects happen as part of evaluating the RHS even
+          // when the call raises; assignment-generated definitions do not.
+          for (const auto& used : used_vars[predecessor])
+            for (const auto definition_id : in_defs[predecessor]) {
+              const auto& definition = analysis.definitions[definition_id];
+              if (definition.name != used) continue;
+              auto effect = determine_statement_use_effect(
+                  statements[predecessor], used, definition.binding_identity,
+                  definition.source_name, env_types, current_binding_identities);
+              if (effect && *effect == Effect::Consume)
+                exceptional_states[definition_id] = LoopValueState::Consumed;
+            }
+        }
+        for (const auto definition_id : predecessor_defs) {
           if (!in_defs[u].count(definition_id)) continue;
-          auto state = available_out[predecessor].find(definition_id);
-          if (state != available_out[predecessor].end())
-            merge_state(definition_id, state->second);
+          auto state = exceptional_predecessor
+              ? exceptional_states.find(definition_id)
+              : available_out[predecessor].find(definition_id);
+          const auto end = exceptional_predecessor
+              ? exceptional_states.end() : available_out[predecessor].end();
+          if (state != end) merge_state(definition_id, state->second);
         }
       }
       available_in[u] = next_in;
@@ -23730,21 +23926,9 @@ class Checker {
       }
     }
 
-    // 7. Check unsupported control flow (Slice D try/recover)
-    for (auto& def : analysis.definitions) {
-      if (def.statement_index == SIZE_MAX) continue;
-      for (size_t cand = def.statement_index; cand-- > 0;) {
-        if ((statements[cand].kind == Stmt::Kind::Try ||
-             statements[cand].kind == Stmt::Kind::Recover) &&
-            statements[cand].indent < statements[def.statement_index].indent &&
-            def.statement_index < nested_block_end(statements, cand)) {
-          def.is_unsupported = true;
-          def.unsupported_reason =
-              TypedLocalOwnershipFactV1::UnsupportedReason::ControlFlowJoin;
-          break;
-        }
-      }
-    }
+    // Typed exceptional successors are part of the same checker graph. A
+    // source definition is therefore analyzed against matching recovery uses
+    // instead of being blanket-declined at try/recover boundaries.
 
     // 8. Populate statement decisions
     for (const auto& def : analysis.definitions) {
@@ -25338,6 +25522,10 @@ class Checker {
       err(line, "duplicate checker-issued take occurrence conflicts",
           "TAKE_FACT_CONTRADICTORY");
     }
+    string mutated_path = fact.root_binding_identity;
+    for (const auto& projection : fact.projection_path)
+      mutated_path += "." + projection.semantic_identity;
+    env.mutated_storage_paths.insert(std::move(mutated_path));
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_PERTURB_TAKE_FACT"))
       fact.required_access = Effect::Read;
@@ -25740,6 +25928,12 @@ class Checker {
     for (const auto& entry : branch.moved) {
       if (destination.types.count(entry.first)) destination.moved.emplace(entry.first, entry.second);
     }
+    destination.mutated_storage_paths.insert(
+        branch.mutated_storage_paths.begin(), branch.mutated_storage_paths.end());
+    for (const auto& [name, origins] : branch.borrowed_local_sources)
+      destination.borrowed_local_sources[name].insert(origins.begin(), origins.end());
+    for (const auto& [name, paths] : branch.borrowed_local_storage_paths)
+      destination.borrowed_local_storage_paths[name].insert(paths.begin(), paths.end());
   }
 
   void merge_binding_identities(OwnershipEnv& destination,
@@ -26024,6 +26218,7 @@ class Checker {
         if (env.can_continue) {
           env.types = merge_type_environments(path_types, s.line, false);
           env.moved = std::move(merged_moves);
+          for (const auto& path : continuing_paths) merge_moved(env, path);
           merge_binding_identities(env, continuing_paths, s.line);
         }
         continue;
@@ -26055,12 +26250,198 @@ class Checker {
             for (const auto& identity : arm.exceptional_alternatives)
               reaches_arm |= raised.alternatives.count(identity) != 0;
             if (!reaches_arm) continue;
+            // The Phase 21 raise set and this exact ownership snapshot are
+            // the authority for recovery input. Publish one typed edge per
+            // concrete alternative; do not reconstruct state from try entry.
+            if (current_body_types_ && raised.source) {
+              auto source_occurrence =
+                  current_body_types_->statement_occurrence_ids.find(
+                      raised.source);
+              auto recovery_occurrence =
+                  current_body_types_->statement_occurrence_ids.find(&arm);
+              for (const auto& identity : arm.exceptional_alternatives) {
+                if (!raised.alternatives.count(identity)) continue;
+                TypedExceptionalOwnershipFactV1 fact;
+                fact.raised_variant_identity = identity.canonical();
+                for (const auto& alternative : raised.alternatives)
+                  fact.source_raise_alternatives.push_back(alternative.canonical());
+                for (const auto& alternative : arm.exceptional_alternatives)
+                  fact.recovery_alternatives.push_back(alternative.canonical());
+                fact.specialization_context = current_semantic_context_;
+                fact.specialization_identity =
+                    local_ownership_specialization_identity();
+                fact.summary_provenance = "phase21-checked-raise-set";
+                if (source_occurrence !=
+                    current_body_types_->statement_occurrence_ids.end())
+                  fact.source_statement_occurrence_id =
+                      source_occurrence->second;
+                if (recovery_occurrence !=
+                    current_body_types_->statement_occurrence_ids.end())
+                  fact.recovery_statement_occurrence_id =
+                      recovery_occurrence->second;
+                for (const auto& handle : raised.source->expression_handles) {
+                  fact.source_est_arena_index = handle.arena_index;
+                  fact.source_expression_occurrence_id = handle.expr;
+                  break;
+                }
+                for (const auto& [name, type] : raised.ownership.types) {
+                  TypedExceptionalOwnershipFactV1::BindingState state;
+                  state.name = name;
+                  if (auto binding = raised.ownership.binding_identities.find(name);
+                      binding != raised.ownership.binding_identities.end())
+                    state.binding_identity = binding->second;
+                  if (auto definition =
+                          raised.ownership.definition_identities.find(name);
+                      definition != raised.ownership.definition_identities.end())
+                    state.reaching_definition_identity = definition->second;
+                  state.type_identity = canonical_type_name(type);
+                  state.consumed = raised.ownership.moved.count(name) != 0;
+                  if (auto origin =
+                          raised.ownership.borrowed_enum_payloads.find(name);
+                      origin != raised.ownership.borrowed_enum_payloads.end()) {
+                    state.borrow_source_binding_identities.push_back(origin->second);
+                    state.borrow_storage_paths.push_back(origin->second);
+                  }
+                  if (auto origins =
+                          raised.ownership.borrowed_local_sources.find(name);
+                      origins != raised.ownership.borrowed_local_sources.end())
+                    state.borrow_source_binding_identities.insert(
+                        state.borrow_source_binding_identities.end(),
+                        origins->second.begin(), origins->second.end());
+                  if (auto paths =
+                          raised.ownership.borrowed_local_storage_paths.find(name);
+                      paths != raised.ownership.borrowed_local_storage_paths.end())
+                    state.borrow_storage_paths.insert(
+                        state.borrow_storage_paths.end(), paths->second.begin(),
+                        paths->second.end());
+                  if (current_ownership_flow_) {
+                    const auto source_index =
+                        current_body_types_->statement_occurrence_ids.find(
+                            raised.source);
+                    if (source_index !=
+                            current_body_types_->statement_occurrence_ids.end() &&
+                        source_index->second < current_ownership_flow_
+                            ->reaching_definitions_by_statement.size())
+                      for (const auto definition_id : current_ownership_flow_
+                               ->reaching_definitions_by_statement[
+                                   source_index->second]) {
+                        if (definition_id >= current_ownership_flow_->definitions.size())
+                          continue;
+                        const auto& definition =
+                            current_ownership_flow_->definitions[definition_id];
+                        if (definition.name != name || !definition.is_borrow ||
+                            definition.source_binding_identity.empty())
+                          continue;
+                        state.borrow_source_binding_identities.push_back(
+                            definition.source_binding_identity);
+                        state.borrow_storage_paths.push_back(
+                            definition.source_storage_path.empty()
+                                ? definition.source_name
+                                : definition.source_storage_path);
+                      }
+                  }
+                  std::sort(state.borrow_source_binding_identities.begin(),
+                            state.borrow_source_binding_identities.end());
+                  state.borrow_source_binding_identities.erase(
+                      std::unique(state.borrow_source_binding_identities.begin(),
+                                  state.borrow_source_binding_identities.end()),
+                      state.borrow_source_binding_identities.end());
+                  std::sort(state.borrow_storage_paths.begin(),
+                            state.borrow_storage_paths.end());
+                  state.borrow_storage_paths.erase(
+                      std::unique(state.borrow_storage_paths.begin(),
+                                  state.borrow_storage_paths.end()),
+                      state.borrow_storage_paths.end());
+                  fact.state_at_raise.push_back(std::move(state));
+                }
+                for (const auto& consumed :
+                     raised.source->ownership_consumed_bindings) {
+                  auto binding = raised.ownership.binding_identities.find(consumed);
+                  if (binding != raised.ownership.binding_identities.end())
+                    fact.consumed_binding_identities.push_back(binding->second);
+                }
+                fact.mutated_storage_paths.assign(
+                    raised.ownership.mutated_storage_paths.begin(),
+                    raised.ownership.mutated_storage_paths.end());
+                for (const auto& take : take_facts_) {
+                  if (take.statement_occurrence_id !=
+                          fact.source_statement_occurrence_id ||
+                      take.specialization_context != fact.specialization_context ||
+                      take.availability != TypedTakeFactV1::Availability::Present)
+                    continue;
+                  string path = take.root_binding_identity;
+                  for (const auto& projection : take.projection_path)
+                    path += "." + projection.semantic_identity;
+                  fact.mutated_storage_paths.push_back(std::move(path));
+                }
+                std::sort(fact.consumed_binding_identities.begin(),
+                          fact.consumed_binding_identities.end());
+                fact.consumed_binding_identities.erase(
+                    std::unique(fact.consumed_binding_identities.begin(),
+                                fact.consumed_binding_identities.end()),
+                    fact.consumed_binding_identities.end());
+                std::sort(fact.mutated_storage_paths.begin(),
+                          fact.mutated_storage_paths.end());
+                fact.mutated_storage_paths.erase(
+                    std::unique(fact.mutated_storage_paths.begin(),
+                                fact.mutated_storage_paths.end()),
+                    fact.mutated_storage_paths.end());
+                fact.availability =
+                    fact.source_statement_occurrence_id == UINT32_MAX
+                        ? TypedExceptionalOwnershipFactV1::Availability::MissingSource
+                    : fact.recovery_statement_occurrence_id == UINT32_MAX
+                        ? TypedExceptionalOwnershipFactV1::Availability::MissingRecovery
+                    : fact.source_est_arena_index == UINT32_MAX ||
+                          fact.source_expression_occurrence_id == UINT32_MAX
+                        ? TypedExceptionalOwnershipFactV1::Availability::MissingOccurrence
+                        : TypedExceptionalOwnershipFactV1::Availability::Present;
+                TypedExceptionalOwnershipRequirementV1 requirement;
+                requirement.source_statement_occurrence_id =
+                    fact.source_statement_occurrence_id;
+                requirement.recovery_statement_occurrence_id =
+                    fact.recovery_statement_occurrence_id;
+                requirement.source_est_arena_index = fact.source_est_arena_index;
+                requirement.source_expression_occurrence_id =
+                    fact.source_expression_occurrence_id;
+                requirement.raised_variant_identity =
+                    fact.raised_variant_identity;
+                requirement.source_raise_alternatives =
+                    fact.source_raise_alternatives;
+                requirement.recovery_alternatives = fact.recovery_alternatives;
+                requirement.specialization_context =
+                    fact.specialization_context;
+                requirement.specialization_identity =
+                    fact.specialization_identity;
+                requirement.availability = fact.availability;
+                exceptional_ownership_facts_.push_back(std::move(fact));
+                required_exceptional_ownership_occurrences_.push_back(
+                    std::move(requirement));
+              }
+            }
             // Recovery sees the ownership state at a selected raise edge,
             // not the state at entry to the try. A consumed outer var can be
             // reinitialized on every reaching edge. Union unavailable facts
             // from those edges so any missing reinitialization still fails.
-            if (!selected_exit) recovered.moved.clear();
+            if (!selected_exit) {
+              recovered.moved.clear();
+              recovered.borrowed_local_sources =
+                  raised.ownership.borrowed_local_sources;
+              recovered.borrowed_local_storage_paths =
+                  raised.ownership.borrowed_local_storage_paths;
+            } else {
+              for (const auto& [name, origins] :
+                   raised.ownership.borrowed_local_sources)
+                recovered.borrowed_local_sources[name].insert(
+                    origins.begin(), origins.end());
+              for (const auto& [name, paths] :
+                   raised.ownership.borrowed_local_storage_paths)
+                recovered.borrowed_local_storage_paths[name].insert(
+                    paths.begin(), paths.end());
+            }
             selected_exit = true;
+            recovered.mutated_storage_paths.insert(
+                raised.ownership.mutated_storage_paths.begin(),
+                raised.ownership.mutated_storage_paths.end());
             for (const auto& binding : incoming.types) {
               const auto before_id = incoming.binding_identities.find(binding.first);
               const auto raised_id =
@@ -26334,7 +26715,20 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, source_access);
           }
+          if (!tree_simple_identifier(s.a)) {
+            if (auto location = storage_location(s.a, env.types)) {
+              string path = location->root;
+              if (auto binding = env.binding_identities.find(location->root);
+                  binding != env.binding_identities.end())
+                path = binding->second;
+              for (const auto& projection : location->path)
+                path += "." + projection;
+              env.mutated_storage_paths.insert(std::move(path));
+            }
+          }
           record_direct_raise();
+          env.borrowed_local_sources.erase(s.a);
+          env.borrowed_local_storage_paths.erase(s.a);
           std::optional<string> type;
           if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
@@ -26353,6 +26747,9 @@ class Checker {
               current_semantic_context_, s.line);
           env.definition_identities[s.a] = statement_binding_identity(
               current_semantic_context_, s.line) + ":" + s.a;
+          update_borrowed_local_provenance(
+              env, s.a, s.b,
+              transfers && source_access != Effect::Consume);
           if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
           else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
@@ -26467,7 +26864,20 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, source_access);
           }
+          if (!tree_simple_identifier(s.a)) {
+            if (auto location = storage_location(s.a, env.types)) {
+              string path = location->root;
+              if (auto binding = env.binding_identities.find(location->root);
+                  binding != env.binding_identities.end())
+                path = binding->second;
+              for (const auto& projection : location->path)
+                path += "." + projection;
+              env.mutated_storage_paths.insert(std::move(path));
+            }
+          }
           record_direct_raise();
+          env.borrowed_local_sources.erase(s.a);
+          env.borrowed_local_storage_paths.erase(s.a);
           if (auto constructed = domain_constructor(s.b)) {
             env.types[s.a] = *constructed;
             env.moved.erase(s.a);
@@ -26497,6 +26907,9 @@ class Checker {
               env.definition_identities[s.a] =
                   statement_binding_identity(current_semantic_context_, s.line) +
                   ":" + s.a;
+            update_borrowed_local_provenance(
+                env, s.a, s.b,
+                transfers && source_access != Effect::Consume);
             // Assignment creates or reinitializes the target, including a
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);

@@ -1,0 +1,14 @@
+enum Failure:
+  Bad
+
+type Storage:
+  buffer: Vector[Int]
+
+fn main():
+  var storage = Storage(buffer: [3, 5, 8])
+  try:
+    discarded = take(storage.buffer)
+    raise Failure.Bad
+  recover Failure.Bad:
+    remaining = storage.buffer |> count
+    echo remaining
