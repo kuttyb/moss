@@ -1,9 +1,12 @@
 type Box:
   value: Int
 
+fn sink(b: Box) -> Box:
+  return b
+
 fn conflict(first: Box, second: Box):
-  let moved_first = first
-  let moved_second = second
+  let moved_first = sink(first)
+  let moved_second = sink(second)
   echo moved_first.value, moved_second.value
 
 fn main():

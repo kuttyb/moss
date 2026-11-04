@@ -8,9 +8,12 @@ type Countdown:
     Some(value)
 
 fn first_positive(values: vector[Int]) -> Int:
-  for x in values:
+  var i = 0
+  while i < (values |> count):
+    let x = values[i]
     if x > 0:
       return x
+    i = i + 1
   return 0
 
 fn consume(values):

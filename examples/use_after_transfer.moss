@@ -1,14 +1,14 @@
-# This is an intentional negative example for the approved transfer rule.
-# A direct assignment transfers the owned value; the later source use is invalid.
-
 type Payload:
   text: string
+
+fn consume_payload(p: Payload) -> Payload:
+  return p
 
 domain OwnershipDemo:
   fn Trigger():
     let original = Payload(text: "owned value")
     let destination = original
-    echo "destination:", destination.text
+    consume_payload(destination)
     echo "original:", original.text
 
 fn main():
