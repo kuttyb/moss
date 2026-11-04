@@ -1,0 +1,13 @@
+enum Failure:
+  Bad
+
+fn fail_value(value: Int) -> Int:
+  raise Failure.Bad
+
+fn main():
+  values = [1]
+  try:
+    mapped = values |> map(fail_value)
+    echo mapped
+  recover Failure.Bad:
+    echo 2

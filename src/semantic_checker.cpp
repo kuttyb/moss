@@ -25085,7 +25085,9 @@ class Checker {
     // Functional collection transformations logically read their source.
     check_ownership_expression(line, parsed->source, env, Effect::Read);
     string current_element = *element;
-    for (const auto& stage : parsed->stages) {
+    for (std::size_t stage_index = 0;
+         stage_index < parsed->stages.size(); ++stage_index) {
+      const auto& stage = parsed->stages[stage_index];
       vector<string> callback_inputs;
       string callable;
       if ((stage.kind == FunctionalNodeKind::Map ||
@@ -25227,8 +25229,46 @@ class Checker {
       }
 
       if (ownership_exceptional_sink_ && !callback_raises.empty()) {
-        ownership_exceptional_sink_->push_back(
-            {callback_raises, env, ownership_exceptional_source_});
+        ExceptionalOwnershipExit exit{
+            callback_raises, env, ownership_exceptional_source_};
+        string stage_source = functional_node_name(stage.kind);
+        if (!stage.arguments.empty()) {
+          stage_source += "(";
+          for (std::size_t argument_index = 0;
+               argument_index < stage.arguments.size(); ++argument_index) {
+            if (argument_index) stage_source += ", ";
+            stage_source += stage.arguments[argument_index];
+          }
+          stage_source += ")";
+        }
+        std::optional<EstExpressionCursor> stage_cursor;
+        if (!stage_cursor && !ownership_est_expression_cursors_.empty() &&
+            ownership_est_expression_cursors_.back()) {
+          const auto& active_pipeline = *ownership_est_expression_cursors_.back();
+          if (auto* arena = expression_arena(active_pipeline.arena_index)) {
+            const auto root = est::unparenthesized(
+                *arena, active_pipeline.expr);
+            if (const auto* pipeline_node =
+                    std::get_if<est::Pipeline>(&arena->at(root));
+                pipeline_node && stage_index < pipeline_node->stages.size()) {
+              stage_cursor = EstExpressionCursor{
+                  active_pipeline.arena_index,
+                  pipeline_node->stages[stage_index], stage_source};
+            }
+          }
+        }
+        if (stage_cursor) {
+          exit.source_est_arena_index = stage_cursor->arena_index;
+          exit.source_expression_occurrence_id = stage_cursor->expr;
+          if (ownership_exceptional_source_)
+            if (const auto* handle = exceptional_source_handle(
+                    *ownership_exceptional_source_,
+                    ownership_exceptional_argument_index_)) {
+              exit.source_est_slot = static_cast<std::uint8_t>(handle->slot);
+              exit.source_est_argument_index = handle->argument_index;
+            }
+        }
+        ownership_exceptional_sink_->push_back(std::move(exit));
         // The enclosing expression frame has already accounted for this
         // variant at its exact stage; do not also emit a post-pipeline edge.
         if (ownership_expression_frame_)

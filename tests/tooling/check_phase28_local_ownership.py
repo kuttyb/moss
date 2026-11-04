@@ -409,6 +409,21 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
             f"nested raising message argument lost exact EST occurrence: "
             f"{message_result!r} {message_facts!r} {raise_call_nodes!r}\n"
             f"{message_arguments.stderr}")
+    pipeline_callback = subprocess.run(
+        [compiler, "check", str(FIXTURES /
+         "exceptional_pipeline_callback.moss"), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    pipeline_result = json.loads(pipeline_callback.stdout)
+    pipeline_facts = re.findall(
+        r'MOSS_EST_EXCEPTIONAL_OWNERSHIP_FACT .*? arena=(\d+) expr=(\d+) '
+        r'slot=RhsValue arg=0 variant="enum:Failure:Bad"',
+        pipeline_callback.stderr)
+    if not pipeline_result.get("ok") or len(pipeline_facts) != 1 or \
+            int(pipeline_facts[0][0]) == 2**32 - 1 or \
+            int(pipeline_facts[0][1]) == 2**32 - 1:
+        raise AssertionError(
+            f"raising checked pipeline callback lost exact stage EST identity: "
+            f"{pipeline_result!r} {pipeline_facts!r}\n{pipeline_callback.stderr}")
     overlapping = subprocess.run(
         [compiler, "check", str(FIXTURES /
          "exceptional_rebind_while_borrowed.moss"), "--json"],
