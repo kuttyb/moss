@@ -1,3 +1,31 @@
+### Phase 28 Team A W12 Checker Completion (2026-11-04)
+
+Branch `phase28-r6-w12-checker` at implementation SHA `57b65dfca56447dca08fbe7bcbe9b31d4d03da2d`.
+Baseline commit: `2a60693cd4251e85cbda08a2481974882b9eca93` (W13 integrated into `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`).
+Handoff documentation: `docs/phase28/TEAM_A_W12_CHECKER_HANDOFF.md`.
+
+- Scope:
+  1. `copy(x)` — explicit duplication of eligible nonprimitive values; rejection of resources (`FileIO`, domain handles/routes) and unsupported types. Source-level `.clone()` rejected.
+  2. Nested `take(place)` — supported in expression contexts (calls, constructors, collection literals) with exact EST facts, single evaluation, and unchanged extraction restrictions.
+  3. `match consume` — owned enum/option destructuring, payload transfer, exhaustive cases, use-after-consume rejection, interior place rejection.
+  4. Collection ownership — complete Vector/Map/Queue borrowing, mutation, iteration, and removal rules (`Vector.remove`, `Vector.swap_remove`, `Map.remove`, `Map.get(key)` 1-arg; iteration element direct consume rejection).
+- Semantic authority invariant: Checker is sole semantic authority; publishes `TypedCopyFactV1`, `TypedCopyRequirementV1`, `TypedMatchOwnershipFactV1`, `TypedMatchOwnershipRequirementV1` in `TypedSemanticModuleV1`. Bidirectional fail-closed hooks active under `MOSS_TEST_BUILD=1`.
+- Targeted gates:
+  - `python3 tests/tooling/check_phase28_w12_checker.py`: PASS (dev and opt).
+  - `python3 tests/tooling/check_enum_semantics.py`: PASS (30/30 passed).
+  - `python3 tests/phase28/verify_take_fixtures.py`: PASS (18/18 with zero clones).
+  - `python3 tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`: PASS.
+  - `python3 tests/tooling/check_phase28_take_consumer.py build/compiler/moss-dev`: PASS (22/22).
+  - `python3 tests/tooling/check_agent_skills.py build/compiler/moss-dev`: PASS.
+  - `python3 tests/tooling/check_phase27_string_debt.py`: PASS (42 name / 7 binding comparisons preserved).
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+  - `git diff --check`: PASS (clean diff hygiene).
+- Parallel regression suite:
+  - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP. All 16 FAIL match baseline ledger (15 pre-existing fixtures resolved by W13 on `phase28-work`, 1 pre-existing Phase 21 checker defect `check_phase21_borrowed_view_write`).
+  - Zero new regressions.
+- String debt: 42 raw Stmt name comparisons, 7 raw Stmt binding comparisons (<= 42/7 threshold preserved).
+- Status: Awaiting independent Agent 2 GO review. Ready for Team B integration into `phase28-work`. STOP after handoff; no merge to `phase28-work` or `main`.
+
 ### Phase 28 Team B W08–W11 Consumer Migration Integration (2026-11-04)
 
 Integration of branch `phase28-r5-team-b-consumers` (`62ff748a25baed6159bf2c3aabf318c7237d2685`)
