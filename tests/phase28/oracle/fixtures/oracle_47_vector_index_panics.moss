@@ -1,0 +1,10 @@
+# Draft: indexed Vector bounds violations panic and bypass recover.
+enum ProbeError:
+  Bad
+
+fn main():
+  var values = [1]
+  try:
+    echo values[9]
+  recover ProbeError.Bad:
+    echo "recover_must_not_run"

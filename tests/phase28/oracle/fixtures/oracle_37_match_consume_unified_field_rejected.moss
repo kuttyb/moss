@@ -1,0 +1,18 @@
+# Spec: Proposal §10 row "match consume job.state | Reject | Unified field cannot be taken implicitly"
+type Buffer:
+  tag: String
+
+enum State:
+  Active(buf: Buffer)
+  Idle
+
+type Job:
+  state: State
+
+fn main():
+  var j = Job(state = State.Active(buf: Buffer(tag = "active")))
+  match consume j.state:
+    case Active(buf):
+      echo buf.tag
+    case Idle:
+      pass

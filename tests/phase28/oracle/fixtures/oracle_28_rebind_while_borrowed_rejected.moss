@@ -1,0 +1,12 @@
+# Spec: Proposal §10 row "c = b; b = make2(); echo c with owned b | Reject | Drop/rebind while c borrows old value"
+type Box:
+  num: Int
+
+fn make2() -> Box:
+  return Box(num = 2)
+
+fn main():
+  var b = Box(num = 1)
+  c = b
+  b = make2()
+  echo c.num

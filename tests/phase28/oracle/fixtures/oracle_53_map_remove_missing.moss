@@ -1,0 +1,8 @@
+# Draft: m.remove(k) raises CollectionError.MissingKey for absent keys.
+fn main():
+  var values = Map()
+  try:
+    let value = values.remove("absent")
+    echo "unreached"
+  recover CollectionError.MissingKey:
+    echo "missing_key"

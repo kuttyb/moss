@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "nxt.push(head.remove(0)) | Accept | Collection API transfers element"
+type Item:
+  tag: String
+
+fn main():
+  var head = [Item(tag: "alpha"), Item(tag: "beta")]
+  var nxt = Vector[Item]()
+  nxt.push(head.remove(0))
+  echo nxt[0].tag
+  echo (head |> count)
+  echo head[0].tag

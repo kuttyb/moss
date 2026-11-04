@@ -1,0 +1,9 @@
+module app
+import provider
+
+fn main():
+  values = Map()
+  try:
+    echo provider.lookup(values)
+  recover CollectionError.MissingKey:
+    echo "imported_missing_key"

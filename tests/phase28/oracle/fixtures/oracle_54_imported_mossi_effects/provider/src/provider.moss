@@ -1,0 +1,3 @@
+module provider
+export fn lookup(values: Map[String, Int]) -> Int:
+  return values.get("absent")

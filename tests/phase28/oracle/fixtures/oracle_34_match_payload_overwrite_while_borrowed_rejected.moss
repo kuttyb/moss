@@ -1,0 +1,16 @@
+# Spec: Proposal §10 row "Overwrite matched state while its payload is still borrowed | Reject | Cannot destroy value with live borrower"
+type Buffer:
+  tag: String
+
+enum State:
+  Active(buf: Buffer)
+  Idle
+
+fn main():
+  var s = State.Active(buf: Buffer(tag = "old"))
+  match s:
+    case Active(buf):
+      s = State.Idle
+      echo buf.tag
+    case Idle:
+      pass

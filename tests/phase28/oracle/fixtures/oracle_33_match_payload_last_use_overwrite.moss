@@ -1,0 +1,21 @@
+# Spec: Proposal §10 row "match job.state then overwrite state after last pattern use in same arm | Accept if no other live borrow | Last-use/NLL semantics, not whole-arm borrow"
+type Buffer:
+  tag: String
+
+enum State:
+  Active(buf: Buffer)
+  Idle
+
+fn main():
+  var s = State.Active(buf: Buffer(tag = "old"))
+  match s:
+    case Active(buf):
+      echo buf.tag
+      s = State.Idle
+    case Idle:
+      pass
+  match s:
+    case Active(buf):
+      echo buf.tag
+    case Idle:
+      echo "now_idle"

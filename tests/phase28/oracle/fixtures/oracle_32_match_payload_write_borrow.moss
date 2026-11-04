@@ -1,0 +1,16 @@
+# Spec: Proposal §10 row "match job.state and mutate a payload | Accept if writable | Pattern WRITE borrow"
+type Buffer:
+  size: Int
+
+enum State:
+  Active(buf: Buffer)
+  Idle
+
+fn main():
+  var s = State.Active(buf: Buffer(size = 10))
+  match s:
+    case Active(buf):
+      buf.size = 20
+      echo buf.size
+    case Idle:
+      echo 0

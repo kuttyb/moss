@@ -1,0 +1,1338 @@
+{
+  "format": "moss-phase28-oracle-expectations",
+  "version": 1,
+  "approval_status": "CERTIFIED_FROZEN",
+  "fixtures": [
+    {
+      "fixture_id": "ORACLE-01-VEC-WRITE-THROUGH",
+      "defect_id": "DEFECT-ORACLE-01-VEC-WRITE-THROUGH",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = v[0]; b.cost = 9', §1.2 ('One owner, temporary borrows'), §5.3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "vector[0].cost after borrowed-field write",
+            "stdout_line": 2,
+            "expected": "9"
+          }
+        ]
+      },
+      "fixture_file": "oracle_01_write_through_vector.moss"
+    },
+    {
+      "fixture_id": "ORACLE-02-INDEXED-FIELD-READ-NO-CLONE",
+      "defect_id": "DEFECT-ORACLE-02-INDEXED-FIELD-READ-NO-CLONE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §1.2, §1.3 ('Layout cannot change ownership'), §10, §12 ('Zero hidden clones')",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_02_indexed_field_read_no_clone.moss"
+    },
+    {
+      "fixture_id": "ORACLE-03-COLL-ELEM-CONSUME-REJECT",
+      "defect_id": "DEFECT-ORACLE-03-COLL-ELEM-CONSUME-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'nxt.push(head[0])', §5.3, §12",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_03_collection_element_consume_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-04-MAP-WRITE-THROUGH",
+      "defect_id": "DEFECT-ORACLE-04-MAP-WRITE-THROUGH",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10, §5.3 ('Collection ownership APIs'), §12",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "9\n9"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "map[\"key\"].val after borrowed-field write",
+            "stdout_line": 2,
+            "expected": "9"
+          }
+        ]
+      },
+      "fixture_file": "oracle_04_write_through_map_entry.moss"
+    },
+    {
+      "fixture_id": "ORACLE-05-MAP-GET-BORROW",
+      "defect_id": "DEFECT-ORACLE-05-MAP-GET-BORROW",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 addendum: Map.get(k) borrows V; missing keys raise CollectionError.MissingKey.",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "active"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "active"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "active"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_05_map_get_borrowed.moss"
+    },
+    {
+      "fixture_id": "ORACLE-06-MATCH-CONSUME-OPT-NATIVE",
+      "defect_id": "DEFECT-ORACLE-06-MATCH-CONSUME-OPT-NATIVE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §6.2 ('match consume: transfer payloads from an owned enum'), §10, §12",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "target"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "target"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "target"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_06_match_consume_option_native.moss"
+    },
+    {
+      "fixture_id": "ORACLE-07-CATCHABLE-COLL-ERRORS",
+      "defect_id": "DEFECT-ORACLE-07-CATCHABLE-COLL-ERRORS",
+      "expectation": "ACCEPT",
+      "specification_basis": "L7-approved language addendum: positive and negative invalid remove/swap_remove, empty pops, missing Map operations raise typed CollectionError variants; insertion succeeds.",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "invalid_index\nnegative_invalid_index\ninvalid_index\nnegative_invalid_index\nempty_vector\nempty_queue\nmissing_key_read\nmissing_key_write_through\nmissing_key_remove\nmissing_key_get\n11"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "map[\"inserted\"] after indexed assignment to absent key",
+            "stdout_line": 11,
+            "expected": "11"
+          }
+        ]
+      },
+      "fixture_file": "oracle_07_catchable_collection_errors.moss"
+    },
+    {
+      "fixture_id": "ORACLE-08-USER-COPY-RESOLUTION",
+      "defect_id": "DEFECT-ORACLE-08-USER-COPY-RESOLUTION",
+      "expectation": "REJECT",
+      "specification_basis": "P28-R7-005 addendum: copy is reserved; user-defined fn copy is rejected.",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_08_user_defined_copy_resolution.moss"
+    },
+    {
+      "fixture_id": "ORACLE-09-USER-ENUM-SOME-NONE",
+      "defect_id": "DEFECT-ORACLE-09-USER-ENUM-SOME-NONE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §6 ('Applying Rule 4 to enums'), §10, §12",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_09_user_enum_some_none.moss"
+    },
+    {
+      "fixture_id": "ORACLE-10A-EXPLICIT-COPY-ONLY",
+      "defect_id": "DEFECT-ORACLE-10A-EXPLICIT-COPY-ONLY",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'copy(v[0]) for an eligible value', §11 Phase D",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "copy\noriginal"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "copy\noriginal"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "copy\noriginal"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 1,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "original Vector record remains unchanged after copied record mutation",
+            "stdout_line": 2,
+            "expected": "original"
+          }
+        ]
+      },
+      "fixture_file": "oracle_10a_explicit_copy_only.moss"
+    },
+    {
+      "fixture_id": "ORACLE-10B-CLONE-ALIAS-REJECTED",
+      "defect_id": "DEFECT-ORACLE-10B-CLONE-ALIAS-REJECTED",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'v[0].clone() as a source-language duplication alias', §11 Phase D",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_10b_clone_alias_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-11-ASSIGN-READ-BORROW",
+      "defect_id": "DEFECT-ORACLE-11-ASSIGN-READ-BORROW",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = a; echo b; echo a', §3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "10\n10"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "10\n10"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "10\n10"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_11_assignment_read_borrow.moss"
+    },
+    {
+      "fixture_id": "ORACLE-12-ASSIGN-WRITE-BORROW",
+      "defect_id": "DEFECT-ORACLE-12-ASSIGN-WRITE-BORROW",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = a; b.field = 1', §3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "1\n1"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "1\n1"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "1\n1"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_12_assignment_write_borrow.moss"
+    },
+    {
+      "fixture_id": "ORACLE-13-ASSIGN-CONSUME-RETURN",
+      "defect_id": "DEFECT-ORACLE-13-ASSIGN-CONSUME-RETURN",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = a; return b', §3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_13_assignment_consume_return.moss"
+    },
+    {
+      "fixture_id": "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT",
+      "defect_id": "DEFECT-ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'b = a; return b' (reject borrowed non-movable place), §3",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_14_assignment_consume_borrowed_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
+      "defect_id": "DEFECT-ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'b = state.frontier; archive(b)', §5.2",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_15_plain_field_access_consume_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-16-TAKE-FRONTIER-ARCHIVE",
+      "defect_id": "DEFECT-ORACLE-16-TAKE-FRONTIER-ARCHIVE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = take(state.frontier); archive(b)', §5.1, §5.2",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "3\n0"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "3\n0"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "3\n0"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_16_take_frontier_archive.moss"
+    },
+    {
+      "fixture_id": "ORACLE-17-TAKE-OPTION-FIELD",
+      "defect_id": "DEFECT-ORACLE-17-TAKE-OPTION-FIELD",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = take(job.pending)', §5.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "42\n999"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "42\n999"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "42\n999"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_17_take_option_field.moss"
+    },
+    {
+      "fixture_id": "ORACLE-18-TAKE-QUEUE-FIELD",
+      "defect_id": "DEFECT-ORACLE-18-TAKE-QUEUE-FIELD",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'take(state.queue)', §5.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "10\n100"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "10\n100"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "10\n100"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_18_take_queue_field.moss"
+    },
+    {
+      "fixture_id": "ORACLE-19-TAKE-NESTED-VEC-OPTION",
+      "defect_id": "DEFECT-ORACLE-19-TAKE-NESTED-VEC-OPTION",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'take(v[i].pending)', §5.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "task\n1\ncleared"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "task\n1\ncleared"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "task\n1\ncleared"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_19_take_nested_vector_option.moss"
+    },
+    {
+      "fixture_id": "ORACLE-20-TAKE-NESTED-MAP-VECTOR",
+      "defect_id": "DEFECT-ORACLE-20-TAKE-NESTED-MAP-VECTOR",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'take(m[k].items)', §5.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "2\nb1\n0"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "2\nb1\n0"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "2\nb1\n0"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_20_take_nested_map_vector.moss"
+    },
+    {
+      "fixture_id": "ORACLE-21-TAKE-LOCAL-REJECTED",
+      "defect_id": "DEFECT-ORACLE-21-TAKE-LOCAL-REJECTED",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'take(local)', §5.1",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_21_take_local_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT",
+      "defect_id": "DEFECT-ORACLE-22-TAKE-UNIFIED-FIELD-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'take(job.report)', §5.1, §9",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_22_take_unified_field_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-23-TAKE-VEC-ELEM-REJECTED",
+      "defect_id": "DEFECT-ORACLE-23-TAKE-VEC-ELEM-REJECTED",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'take(v[0])', §5.1",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_23_take_vector_element_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT",
+      "defect_id": "DEFECT-ORACLE-24-TAKE-CUSTOM-SLOT-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'take(my_array.slots[i])', §9",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_24_take_custom_slot_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-25-TAKE-BEFORE-RAISE-MUTATION",
+      "defect_id": "DEFECT-ORACLE-25-TAKE-BEFORE-RAISE-MUTATION",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = take(state.frontier); may_raise(); use(b)', §8, §9",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "0"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "0"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "0"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_25_take_before_raise_no_rollback.moss"
+    },
+    {
+      "fixture_id": "ORACLE-26-VEC-REMOVE-API",
+      "defect_id": "DEFECT-ORACLE-26-VEC-REMOVE-API",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'nxt.push(head.remove(0))', §5.3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "alpha\n1\nbeta"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "alpha\n1\nbeta"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "alpha\n1\nbeta"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "remaining Vector count after remove(0)",
+            "stdout_line": 2,
+            "expected": "1"
+          },
+          {
+            "observable": "new head[0] after remove(0)",
+            "stdout_line": 3,
+            "expected": "beta"
+          }
+        ]
+      },
+      "fixture_file": "oracle_26_vector_remove_api.moss"
+    },
+    {
+      "fixture_id": "ORACLE-27-REBIND-AFTER-BORROWS",
+      "defect_id": "DEFECT-ORACLE-27-REBIND-AFTER-BORROWS",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = a; b = new_value', §3.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_27_rebind_after_borrows_end.moss"
+    },
+    {
+      "fixture_id": "ORACLE-28-REBIND-WHILE-BORROWED-REJECT",
+      "defect_id": "DEFECT-ORACLE-28-REBIND-WHILE-BORROWED-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'c = b; b = make2(); echo c', §3.2",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_28_rebind_while_borrowed_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-29-LOOP-CARRIED-OWNERSHIP",
+      "defect_id": "DEFECT-ORACLE-29-LOOP-CARRIED-OWNERSHIP",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'frontier = expand(frontier) in a loop', §4.2, §7.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "3\n4"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "3\n4"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "3\n4"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_29_loop_carried_ownership_rebind.moss"
+    },
+    {
+      "fixture_id": "ORACLE-30-JOIN-BORROW-FRESH-REJECT",
+      "defect_id": "DEFECT-ORACLE-30-JOIN-BORROW-FRESH-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'if c: b = left[0] else: b = Fresh(); echo b', §4",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_30_join_borrowed_and_fresh_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-31-JOIN-PROMOTED-CONSUME",
+      "defect_id": "DEFECT-ORACLE-31-JOIN-PROMOTED-CONSUME",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'if c: b = left else: b = Fresh(); echo b', §4",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "42\n99"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "42\n99"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "42\n99"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_31_join_promoted_consume.moss"
+    },
+    {
+      "fixture_id": "ORACLE-32-MATCH-PAYLOAD-WRITE",
+      "defect_id": "DEFECT-ORACLE-32-MATCH-PAYLOAD-WRITE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'match job.state and mutate a payload', §6.1",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "20"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "20"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "20"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_32_match_payload_write_borrow.moss"
+    },
+    {
+      "fixture_id": "ORACLE-33-MATCH-LAST-USE-OVERWRITE",
+      "defect_id": "DEFECT-ORACLE-33-MATCH-LAST-USE-OVERWRITE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'match job.state then overwrite state after last pattern use', §6.1, §8",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "old\nnow_idle"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "old\nnow_idle"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "old\nnow_idle"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_33_match_payload_last_use_overwrite.moss"
+    },
+    {
+      "fixture_id": "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT",
+      "defect_id": "DEFECT-ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'Overwrite matched state while its payload is still borrowed', §6.1",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_34_match_payload_overwrite_while_borrowed_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT",
+      "defect_id": "DEFECT-ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'match job.state and transfer payload', §6.1",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_35_match_ordinary_consume_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-36-MATCH-CONSUME-QUEUE-POP",
+      "defect_id": "DEFECT-ORACLE-36-MATCH-CONSUME-QUEUE-POP",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'match consume queue.pop()', §6.2",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "hello"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_36_match_consume_queue_pop.moss"
+    },
+    {
+      "fixture_id": "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT",
+      "defect_id": "DEFECT-ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'match consume job.state', §6.2, §9",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_37_match_consume_unified_field_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-38-MAP-VALUES-BORROWED-VIEW",
+      "defect_id": "DEFECT-ORACLE-38-MAP-VALUES-BORROWED-VIEW",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'Map.values() bound temporarily then source mutated after last use', §5.3",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "2\n3"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "2\n3"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "2\n3"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_38_map_values_borrowed_view.moss"
+    },
+    {
+      "fixture_id": "ORACLE-39-VEC-FOR-READ",
+      "defect_id": "DEFECT-ORACLE-39-VEC-FOR-READ",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'for item in items: echo item for a Vector', §5.3, §12",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "1\n2"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_39_vector_for_read.moss"
+    },
+    {
+      "fixture_id": "ORACLE-40-VEC-FOR-WRITE",
+      "defect_id": "DEFECT-ORACLE-40-VEC-FOR-WRITE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'for item in items: item.bump() for writable Vector elements', §5.3, §12",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "11\n21"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "11\n21"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "11\n21"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "first Vector element after write iteration",
+            "stdout_line": 1,
+            "expected": "11"
+          },
+          {
+            "observable": "second Vector element after write iteration",
+            "stdout_line": 2,
+            "expected": "21"
+          }
+        ]
+      },
+      "fixture_file": "oracle_40_vector_for_write.moss"
+    },
+    {
+      "fixture_id": "ORACLE-41-VEC-FOR-CONSUME-REJECT",
+      "defect_id": "DEFECT-ORACLE-41-VEC-FOR-CONSUME-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'for item in items: consume(item)', §5.3, §12",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_41_vector_for_consume_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-42-CUSTOM-WRAPPER-REMOVE",
+      "defect_id": "DEFECT-ORACLE-42-CUSTOM-WRAPPER-REMOVE",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'User-defined wrapper fn remove_at(a, i): return a.elements.remove(i)', §9",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "y\n2\nz"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "y\n2\nz"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "y\n2\nz"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_42_custom_wrapper_remove.moss"
+    },
+    {
+      "fixture_id": "ORACLE-43-HANDLER-PRIMITIVE-REPLY",
+      "defect_id": "DEFECT-ORACLE-43-HANDLER-PRIMITIVE-REPLY",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'reply n where n: Int', §7.5",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "42"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_43_handler_primitive_reply.moss"
+    },
+    {
+      "fixture_id": "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT",
+      "defect_id": "DEFECT-ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'n = n + 1 where n: Int', §7.5",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_44_handler_primitive_mutate_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL",
+      "defect_id": "DEFECT-ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'result = n; result = result + 1; reply result', §7.5",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "11"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "11"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "11"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_45_handler_primitive_rebind_local.moss"
+    },
+    {
+      "fixture_id": "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT",
+      "defect_id": "DEFECT-ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT",
+      "expectation": "REJECT",
+      "specification_basis": "Proposal §10 row 'reply payload where payload: Report', §7.5",
+      "expected": {
+        "checker": "reject"
+      },
+      "fixture_file": "oracle_46_handler_nonprimitive_reply_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-47-VECTOR-INDEX-PANICS",
+      "defect_id": "DEFECT-ORACLE-47-VECTOR-INDEX-PANICS",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 addendum: Vector indexing out of range panics and does not enter recover.",
+      "fixture_file": "oracle_47_vector_index_panics.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "panic",
+          "stdout": "",
+          "panic_patterns": [
+            "vector index out of bounds"
+          ]
+        },
+        "native_debug": {
+          "status": "panic",
+          "stdout": "",
+          "panic_patterns": [
+            "index out of bounds"
+          ]
+        },
+        "native_optimized": {
+          "status": "panic",
+          "stdout": "",
+          "panic_patterns": [
+            "index out of bounds"
+          ]
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-48-ROOT-MISSING-COLLECTION-ERROR",
+      "defect_id": "DEFECT-ORACLE-48-ROOT-MISSING-COLLECTION-ERROR",
+      "expectation": "REJECT",
+      "specification_basis": "P28-R7-005 addendum: Root totality rejects an unhandled propagated CollectionError.",
+      "fixture_file": "oracle_48_root_missing_collection_error.moss",
+      "expected": {
+        "checker": "reject"
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-49-OWNERSHIP-AT-RECOVER",
+      "defect_id": "DEFECT-ORACLE-49-OWNERSHIP-AT-RECOVER",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005-09: successful destructive remove precedes typed raise; recover observes the already-mutated source Vector.",
+      "fixture_file": "oracle_49_recover_ownership_state.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "8\n7\n8"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "8\n7\n8"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "8\n7\n8"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "Vector element inside recover",
+            "stdout_line": 1,
+            "expected": "8"
+          },
+          {
+            "observable": "Vector element after recover",
+            "stdout_line": 3,
+            "expected": "8"
+          }
+        ]
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-50-EAGER-PIPELINE-CAPTURES",
+      "defect_id": "DEFECT-ORACLE-50-EAGER-PIPELINE-CAPTURES",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 coverage: pipeline captures are eager and retain checked ownership effects.",
+      "fixture_file": "oracle_50_eager_pipeline_capture.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "11\n12"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "11\n12"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "11\n12"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS",
+      "defect_id": "DEFECT-ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 coverage: joins of borrowed provenance sets preserve all possible sources.",
+      "fixture_file": "oracle_51_join_borrowed_provenance_sets.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "1\n9\n2\n2\n1\n9"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "1\n9\n2\n2\n1\n9"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "1\n9\n2\n2\n1\n9"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [
+          {
+            "observable": "left[0] after true-origin write",
+            "stdout_line": 2,
+            "expected": "9"
+          },
+          {
+            "observable": "right[0] unchanged after true-origin write",
+            "stdout_line": 3,
+            "expected": "2"
+          },
+          {
+            "observable": "left[0] unchanged after false-origin write",
+            "stdout_line": 5,
+            "expected": "1"
+          },
+          {
+            "observable": "right[0] after false-origin write",
+            "stdout_line": 6,
+            "expected": "9"
+          }
+        ]
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-52-MUTATE-DURING-ITERATION-REJECTED",
+      "defect_id": "DEFECT-ORACLE-52-MUTATE-DURING-ITERATION-REJECTED",
+      "expectation": "REJECT",
+      "specification_basis": "P28-R7-005 coverage: structural mutation conflicts with a live iteration borrow.",
+      "fixture_file": "oracle_52_mutate_collection_during_iteration_rejected.moss",
+      "expected": {
+        "checker": "reject"
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-53-MAP-REMOVE-MISSING",
+      "defect_id": "DEFECT-ORACLE-53-MAP-REMOVE-MISSING",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 addendum: Map.remove(k) missing key raises CollectionError.MissingKey.",
+      "fixture_file": "oracle_53_map_remove_missing.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "missing_key"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "missing_key"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "missing_key"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "diagnostic_key": null
+    },
+    {
+      "fixture_id": "ORACLE-54-IMPORTED-MOSSI-EFFECTS",
+      "defect_id": "DEFECT-ORACLE-54-IMPORTED-MOSSI-EFFECTS",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005 coverage: CollectionError raise summaries survive imported .mossi interfaces and can be recovered by the consumer.",
+      "fixture_file": "oracle_54_imported_mossi_effects",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "imported_missing_key"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "imported_missing_key"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "imported_missing_key"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": [],
+        "imported_mossi_effects": {
+          "raise_set": [
+            "enum:CollectionError:MissingKey"
+          ]
+        }
+      }
+    },
+    {
+      "fixture_id": "ORACLE-55-COLLECTION-ERROR-INFERRED-RAISE",
+      "defect_id": "DEFECT-ORACLE-55-COLLECTION-ERROR-INFERRED-RAISE",
+      "expectation": "ACCEPT",
+      "specification_basis": "P28-R7-005: CollectionError.MissingKey appears in the inferred raise set of a helper that performs strict Map indexing.",
+      "fixture_file": "oracle_55_collection_error_inferred_raise.moss",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "caught_missing_key"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "caught_missing_key"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "caught_missing_key"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "inferred_effects": {
+          "target": "read_missing",
+          "raise_set": [
+            "enum:CollectionError:MissingKey"
+          ]
+        },
+        "observable_mutations": []
+      }
+    }
+  ]
+}

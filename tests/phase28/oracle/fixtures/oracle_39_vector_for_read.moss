@@ -1,0 +1,8 @@
+# Spec: Proposal §10 row "for item in items: echo item for a Vector | Accept with READ | Borrowed element loop, no unnecessary mutable iteration"
+type Node:
+  id: Int
+
+fn main():
+  var v = [Node(id = 1), Node(id = 2)]
+  for item in v:
+    echo item.id

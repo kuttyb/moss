@@ -1,0 +1,11 @@
+# Spec: Proposal §6.2, §10, §12
+type Box:
+  name: String
+
+fn main():
+  var opt = Some(Box(name: "target"))
+  match consume opt:
+    case Some(b):
+      echo b.name
+    case None:
+      echo "empty"

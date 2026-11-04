@@ -1,3 +1,50 @@
+### P28-R7-005 — Independent Oracle Certification (2026-11-04)
+
+Certified the 56-row Phase 28 semantic oracle after L7 GO and independent Agent 2
+review. Candidate `d37ea08fa853c994b69c16bd90671ffcf34c72ea` received initial
+NO-GO for a fail-open path: missing clone provenance sidecar passed when the
+artifact had no `.clone()` calls and the Moss source had no `copy(...)` call.
+The harness now fails closed for every artifact without its v2 sidecar, with a
+regression test and explicit contract language. Independent Agent 2 returned GO
+on the repaired exact candidate; reviewer-controlled private holdout passed
+missing-sidecar, explicit-copy, digest-tamper, source-link, duplicate-row,
+unknown-origin, and missing-copy-row cases.
+
+Expectations and runtime callsite registry are `CERTIFIED_FROZEN` and digest
+pinned in `tests/phase28/oracle/certification.json`; harness validation accepts
+the approved state and rejects expectation/registry digest drift. Exact frozen
+SHA: `544506774211fbb5b9d4d3e8116525b389faa3dd`.
+
+Validation on certified state: oracle data validation PASS (56 rows), harness
+tests 16/16 PASS, agent-feedback validator PASS, `git diff --check` PASS. Full
+oracle run: 8 fixtures pass all applicable gates; 34 semantic failures and 19
+provenance blocks (overlapping); 298 `.clone()` occurrences are unverified. The
+compiler lacks v2 provenance output, and independent generated-Rust duplication
+audit remains open. Oracle certification does not establish compiler
+compliance. No compiler source changes or `main` merge.
+
+### Phase 28 Independent Semantic Oracle Suite (2026-11-04)
+
+Created independent Phase 28 Semantic Oracle Suite under L7 directive P28-R7-001 (Phase 28 CP2 reopened; W12 integration suspended).
+Base commit: `150ab36b41e45504aaa400aa717da241be7542fb` (`phase28-work`).
+Branch: `phase28-r7-oracle`.
+Specification Authority: `docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md` (§10 & §12).
+Report: `docs/phase28/PHASE_28_SEMANTIC_ORACLE_REPORT.md`.
+
+- Scope:
+  - 47 executable oracle fixtures in `tests/phase28/oracle/fixtures/` and comprehensive test harness `tests/phase28/oracle/oracle_harness.py`.
+  - Exact reproduction of all 10 concrete clean-room review findings against W12 commit `cfc9d739` and baseline `150ab36b`.
+  - Comprehensive coverage of remaining §10 rows and §12 adversarial matrix (assignment inference, rebinding, joins, take restrictions, pattern borrows, collection iteration, and handler immutability/replies).
+  - Multi-engine execution across Checker, Fast Debug, Native Debug, and Native Optimized.
+  - Clone budget enforcement: strictly 0 unauthorized hidden clones permitted.
+- Ledger & Metrics:
+  - Baseline `150ab36b`: 19 PASS, 28 FAIL, 11 hidden clones.
+  - W12 commit `cfc9d739`: 20 PASS, 27 FAIL, 21 hidden clones.
+- Invariants:
+  - Zero compiler source edits (`src/` completely untouched).
+  - Test expectations derived strictly from frozen specification, never weakened to match compiler defects.
+  - No merge to `main`. STOP after oracle handoff.
+
 ### Phase 28 Team B W13 Integration into phase28-work (2026-11-04)
 
 Integration of branch `phase28-r6-w13-independent` (`a65e3aba0931f66997a1aac2c6ca1ef52e17aa54`)
@@ -15318,3 +15365,32 @@ Branch `phase28-r4-slice-d`, based on exact requested baseline
 - Handoff recorded in `docs/phase28/ROUND_4_SLICE_D_HANDOFF.md`; branch pushed
   to `origin/phase28-r4-slice-d`. No merge to `phase28-work`/`main`; no
   consumer migration.
+
+### P28-R7-005 — Oracle Hardening final-corrections draft (L7 checkpoint)
+
+Continue on `phase28-r7-005` from requested HEAD
+`4eb5c0cfc3b3754534b749cca91b4a337c899a3b`, based on
+`4755ed2fcdf8b1654bb6b36d23bb44cd857838ff`. L7 language semantics remain
+approved; oracle freeze is blocked. Expectations remain
+`DRAFT_PENDING_L7_APPROVAL`. No compiler source or private holdout was changed.
+
+Corrected ORACLE-07 stdout mutation line 11 and ORACLE-49 recovery/post-recovery
+values to 8. Mandatory preflight validates every mutation assertion against its
+expected stdout in Fast Debug, Native Debug and Native Optimized. ORACLE-10A now
+mutates its copied record and checks the original remains unchanged. Moss copy
+source scanning reports every nested call (including `copy(copy(x))`) with a
+unique location identity. Runtime clone authorization now requires an exact
+match with an independently reviewed, digest-pinned callsite registry; the
+registry is empty in this draft. ORACLE-44/52 generic diagnostics require the
+specific approved error message and source line.
+
+Final-correction validation: 15/15 harness tests pass; all 56 expectation rows
+pass oracle-data validation; full draft suite completes with 8 full passes, 34
+semantic failures, 19 missing/invalid provenance blocks (categories overlap),
+and 298 unverified generated Rust `.clone()` occurrences. Per-fixture/per-engine
+results and ledger are in `tests/phase28/oracle/reports/`. Feedback validation and final diff checks pass after report/status updates. No compiler build
+or full repository suite was requested or run.
+
+Push the corrected draft, report its exact SHA, and stop for L7 approval. Do not
+self-approve, freeze or merge. The private holdout remains local-only and
+untouched.
