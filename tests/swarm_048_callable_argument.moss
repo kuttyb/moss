@@ -3,9 +3,11 @@ fn is_positive(x: Int) -> Bool:
 
 fn filter_ints(items: Vector[Int], pred) -> Vector[Int]:
   var out = Vector[Int]()
-  for x in items:
-    if pred(x):
-      out.push(x)
+  var i = 0
+  while i < (items |> count):
+    if pred(items[i]):
+      out.push(items[i])
+    i = i + 1
   return out
 
 fn invoke(is_positive, value: Int) -> Bool:

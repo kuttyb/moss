@@ -1,13 +1,13 @@
 enum Failure:
   Bad
 
-fn take(item: String) -> String:
+fn consume_item(item: String) -> String:
   return item
 
 domain Worker:
   fn Run(reinitialize: Bool) -> Int:
     var value = "old"
-    discarded = take(value)
+    discarded = consume_item(value)
     try:
       if reinitialize:
         value = "new"

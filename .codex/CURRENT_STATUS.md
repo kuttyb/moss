@@ -1,3 +1,21 @@
+### Phase 28 Team B W13 Independent Resolution (2026-11-04)
+
+Branch `phase28-r6-w13-independent`. Completed independent W13 regression resolution under L7 directive without waiting for Team A W12 handoff:
+
+- Resolved 15 of 16 baseline ledger failures across legacy `take` syntax, borrowed loop-element iterations, `accepts_rustc` allowlists, and `use_after_transfer` negative fixtures.
+- Work Item 1 (Legacy `take(local)`): 5/5 resolved (`check_phase21_addendum_a_c`, `check_phase21_on_fail_capture`, `check_phase21_recovery_semantics`, `check_phase21_recover_reinit`, `check_builtin_generic_typing`).
+- Work Item 2 (Borrowed loop elements): 3/3 resolved (`check_phase26_1_c1_corpus_cases`, `check_phase25_team_a_semantics`, `shard_swarm_cases`).
+- Work Item 3 (Pre-existing Phase 21/27): 1 resolved (`check_phase27_accepts_rustc` allowlist ratcheted from 6 to 3), 1 preserved known checker debt (`check_phase21_borrowed_view_write` requires checker authority outside Team B file lease).
+- Work Item 4 (Legacy `take` helpers): 2/2 resolved (`check_generic_specialization` via helper renaming in `queue_pop.moss`/`vector_pop.moss` to `pop_one`; `check_phase25_s1_checker_authority` via `consume_save`).
+- Work Item 5 (`use_after_transfer`): 4/4 resolved (`examples/use_after_transfer.moss` rewritten to genuinely consume `destination` with nonprimitive `consume_payload`, preserving `OWNERSHIP_USE_AFTER_CONSUME` diagnostic; `branch_join_consume`, `consume_read_alias`, `double_consume_alias` migrated; `tests/phase47_iteration.moss` loop-element consume migrated to indexed traversal; `tests/branch_confined_open_type.moss` loop-element consume migrated to `range(1, 2)` preserving `result.push(item)`; audited and confirmed performance baseline RSS threshold remains at 25000 KiB). `check_semantic_queries`, `shard_negative`, `shard_phase25_int_payloads`, `shard_phase5_tooling` all PASS.
+- Validation:
+  - Default suite: 167 selected, 166 PASS, 1 FAIL (`check_phase21_borrowed_view_write`), 0 SKIP (348.86s).
+  - EST-shadow suite: 167 selected, 165 PASS, 2 FAIL (`check_phase21_borrowed_view_write` and known shadow-only structural divergence in `shard_swarm_cases` for `put(take())`), 0 SKIP (357.01s).
+  - String debt: 42 raw Stmt name comparisons, 7 binding comparisons (meets <= 42/7 threshold).
+  - Zero hidden clones. Agent feedback validation PASS.
+- Report documented in `docs/phase28/TEAM_B_W13_INDEPENDENT_RESOLUTION.md`.
+- No merge to `phase28-work` or `main`. Results returned to L7.
+
 ### Phase 28 Team B W08–W11 Consumer Migration Integration (2026-11-04)
 
 Integration of branch `phase28-r5-team-b-consumers` (`62ff748a25baed6159bf2c3aabf318c7237d2685`)

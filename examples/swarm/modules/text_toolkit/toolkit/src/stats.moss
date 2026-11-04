@@ -5,16 +5,20 @@ export fn total(values: Vector[Int]) -> Int:
 
 export fn smallest(values: Vector[Int]) -> Int:
   var best = values[0]
-  for v in values:
-    if v < best:
-      best = v
+  var i = 0
+  while i < (values |> count):
+    if values[i] < best:
+      best = values[i]
+    i = i + 1
   return best
 
 export fn largest(values: Vector[Int]) -> Int:
   var best = values[0]
-  for v in values:
-    if v > best:
-      best = v
+  var i = 0
+  while i < (values |> count):
+    if values[i] > best:
+      best = values[i]
+    i = i + 1
   return best
 
 # Truncating integer mean; 0 for an empty vector.

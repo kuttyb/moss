@@ -199,7 +199,7 @@ enum Kind:
   save
   FileIO
 
-fn take(save: Int) -> Int:
+fn consume_save(save: Int) -> Int:
   return save + 1
 
 fn main():
@@ -208,7 +208,7 @@ fn main():
   let r = Rec(save: 4)
   echo r.save
   echo r.save_twice()
-  echo take(2)
+  echo consume_save(2)
   let k = Kind.save
   match k:
     case save:

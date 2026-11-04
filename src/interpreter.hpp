@@ -3743,8 +3743,14 @@ class FastInterpreter {
             if (!handled && recovery_matches(recovery, raised.identity)) {
               handled = true;
               for (const auto* fact : ex_facts) {
-                if (fact->raised_variant_identity.find(raised.identity.type) != std::string::npos ||
-                    fact->raised_variant_identity.find(raised.identity.canonical()) != std::string::npos) {
+                const bool variant_matches =
+                    raised.identity.kind == RaisedIdentityKind::EnumVariant
+                        ? (!raised.identity.variant.empty() &&
+                           fact->raised_variant_identity.find(raised.identity.variant) != std::string::npos &&
+                           fact->raised_variant_identity.find(raised.identity.type) != std::string::npos)
+                        : (fact->raised_variant_identity.find(raised.identity.type) != std::string::npos ||
+                           fact->raised_variant_identity.find(raised.identity.canonical()) != std::string::npos);
+                if (variant_matches) {
                   for (const auto& bs : fact->state_at_raise) {
                     if (bs.consumed) {
                       frame.locals.erase(bs.name);

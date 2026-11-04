@@ -1,8 +1,11 @@
 type Box:
   value: Int
 
+fn sink(b: Box) -> Box:
+  return b
+
 fn consume(value: Box):
-  let moved = value
+  let moved = sink(value)
   echo moved.value
 
 fn main():

@@ -459,7 +459,7 @@
   "vector_literal_consume_context": {
     "stdout": "1\n",
     "effects": {
-      "fn:take": [
+      "fn:consume_vec": [
         "CONSUME"
       ]
     }

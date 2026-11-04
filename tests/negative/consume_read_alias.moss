@@ -1,8 +1,11 @@
 type Box:
   value: Int
 
+fn sink(b: Box) -> Box:
+  return b
+
 fn conflict(taken: Box, observed: Box):
-  let moved = taken
+  let moved = sink(taken)
   echo moved.value, observed.value
 
 fn main():
