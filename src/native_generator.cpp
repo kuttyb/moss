@@ -6170,6 +6170,8 @@ class Generator {
           (req.specialization_context == context ||
            (!codegen_active_specialization_key_.empty() &&
             req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
         try {
           const auto* fact = p_.typed_semantics->find_loop_ownership_fact(req);
           if (!fact) {
@@ -6187,6 +6189,8 @@ class Generator {
           (fact.specialization_context == context ||
            (!codegen_active_specialization_key_.empty() &&
             fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
@@ -7467,7 +7471,8 @@ class Generator {
             } else {
               bool write_iteration = false;
               for (const auto* fact : loop_facts) {
-                if (fact->converged_access == Effect::Write) {
+                if ((fact->binding_identity == s.a || ends_with(fact->binding_identity, ":" + s.a)) &&
+                    fact->converged_access == Effect::Write) {
                   write_iteration = true;
                   break;
                 }
@@ -7722,7 +7727,7 @@ class Generator {
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
               const auto rhs_name = tree_identifier_name(s.b);
-              bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
+              bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
               if (ownership_fact->access == Effect::Read) {
                 if (rhs_is_borrow) {
@@ -7882,7 +7887,7 @@ class Generator {
                 assigned = emit_take_expression(*take_fact, s, d, locals, &types);
               } else if (ownership_fact) {
                 const auto rhs_name = tree_identifier_name(s.b);
-                bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
+                bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
                 if (ownership_fact->access == Effect::Read) {
                   if (!rhs_is_borrow) assigned = "&(" + assigned + ")";
                 } else if (ownership_fact->access == Effect::Write) {
@@ -8316,7 +8321,7 @@ class Generator {
                                         s, functional_context, 0));
               if (ownership_fact) {
                 const auto rhs_name = tree_identifier_name(s.b);
-                bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
+                bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
                 if (ownership_fact->access == Effect::Read) {
                   if (!rhs_is_borrow) rhs_val = "&(" + rhs_val + ")";
                 } else if (ownership_fact->access == Effect::Write) {

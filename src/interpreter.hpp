@@ -3585,6 +3585,8 @@ class FastInterpreter {
           (req.specialization_context == context ||
            (!frame.specialization_identity.empty() &&
             req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
         try {
           const auto* fact = program_.typed_semantics->find_loop_ownership_fact(req);
           if (!fact) {
@@ -3602,6 +3604,8 @@ class FastInterpreter {
           (fact.specialization_context == context ||
            (!frame.specialization_identity.empty() &&
             fact.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
+          continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
