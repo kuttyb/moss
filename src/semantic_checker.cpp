@@ -26625,7 +26625,7 @@ class Checker {
         if (consuming) {
           if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
             err(s.line, "consuming match cannot move an enum from an interior place; "
-                "use take(place) or collection removal to obtain an owned value",
+                "use take(place), replace(place, replacement), or collection removal to obtain an owned value",
                 "MATCH_CONSUME_INTERIOR_PLACE");
           if (tree_simple_identifier(s.a)) {
             require_available(s.line, s.a, env);
