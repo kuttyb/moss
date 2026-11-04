@@ -466,8 +466,66 @@ struct TypedSemanticModuleV1 {
     return result;
   }
 
+  void validate_loop_ownership_requirement_specialization(
+      const TypedLoopOwnershipRequirementV1& requirement) const {
+    const auto mapping = local_ownership_specialization_contexts.find(
+        requirement.specialization_context);
+    if (mapping == local_ownership_specialization_contexts.end()) {
+      if (!requirement.specialization_identity.empty())
+        throw std::invalid_argument(
+            "loop ownership specialization identity has no checker mapping");
+      return;
+    }
+    if (requirement.specialization_identity.empty() ||
+        local_ownership_specialization_identity(
+            requirement.specialization_context) !=
+            requirement.specialization_identity)
+      throw std::invalid_argument(
+          "loop ownership specialization identity mismatch");
+  }
+
+  static bool same_loop_ownership_requirement(
+      const TypedLoopOwnershipRequirementV1& left,
+      const TypedLoopOwnershipRequirementV1& right) {
+    return left.loop_statement_occurrence_id ==
+               right.loop_statement_occurrence_id &&
+        left.source_statement_occurrence_id ==
+               right.source_statement_occurrence_id &&
+        left.target_statement_occurrence_id ==
+               right.target_statement_occurrence_id &&
+        left.definition_statement_occurrence_id ==
+               right.definition_statement_occurrence_id &&
+        left.loop_est_arena_index == right.loop_est_arena_index &&
+        left.loop_expression_occurrence_id ==
+               right.loop_expression_occurrence_id &&
+        left.definition_est_arena_index == right.definition_est_arena_index &&
+        left.definition_expression_occurrence_id ==
+               right.definition_expression_occurrence_id &&
+        left.definition_identity == right.definition_identity &&
+        left.binding_identity == right.binding_identity &&
+        left.killed_definition_identities ==
+               right.killed_definition_identities &&
+        left.source_binding_identity == right.source_binding_identity &&
+        left.specialization_context == right.specialization_context &&
+        left.specialization_identity == right.specialization_identity &&
+        left.edge_kind == right.edge_kind &&
+        left.converged_access == right.converged_access &&
+        left.value_state == right.value_state &&
+        left.availability == right.availability;
+  }
+
   const TypedLoopOwnershipFactV1* find_loop_ownership_fact(
       const TypedLoopOwnershipRequirementV1& requirement) const {
+    const std::size_t matching_requirements = std::count_if(
+        required_loop_ownership_occurrences.begin(),
+        required_loop_ownership_occurrences.end(), [&](const auto& candidate) {
+          return same_loop_ownership_requirement(candidate, requirement);
+        });
+    if (matching_requirements != 1)
+      throw std::invalid_argument(
+          "required checker loop ownership requirement missing or duplicated");
+    validate_loop_ownership_requirement_specialization(requirement);
+
     const TypedLoopOwnershipFactV1* result = nullptr;
     for (const auto& fact : loop_ownership_facts) {
       if (fact.loop_statement_occurrence_id !=
