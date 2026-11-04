@@ -1,3 +1,31 @@
+### Phase 28 Round 4 — Slice C Integration (2026-11-03)
+
+Integration of branch `origin/phase28-r4-slice-c` (`10fb7361560418f36a321b15db4987835ac1fe53`)
+into target `phase28-work` (`ea7208964b29edb3363aa5cd58acf6d5321af833`).
+Reviewed implementation SHA `78d63cb2287d6a4b81def3ae35a73356bc0d3f3b` (Agent 2 GO) preserved exactly.
+Integration merge commit: `528c4e46882a967100cebe4a363f2e321d0de94f`.
+
+- Pre-integration SDK verification: `margo --root sdk/tables build --check` on baseline
+  `ea7208964` and Slice C `10fb7361` in isolated worktrees produced identical `TYPE_MISMATCH`
+  at `tables_test.moss:151:1` for binding `ignored`; confirmed pre-existing debt; 0 new failures.
+- Targeted gates: `moss-dev`, `moss-opt`, `check_phase28_local_ownership.py` (default & shadow),
+  `check_phase28_selector_argument_effects.py` (default & shadow),
+  `check_phase21_expression_ownership_edges.py` (default & shadow),
+  `check_enum_semantics.py` (30/30 default & shadow), `check_enum_source_free.py`,
+  `check_phase28_specialized_ownership_contract.py` (default & shadow),
+  `check_phase28_specialized_native_consumer.py` (default & shadow),
+  `check_phase28_take_consumer.py` (default & shadow, 22/22), `check_phase28_team_b_consumer.py`
+  (default & shadow), `verify_take_fixtures.py` (18/18 with zero clones, default & shadow),
+  `check_phase27_string_debt.py` (42/7), `verify_defects.py` (4 PASS, 4 KNOWN FAILURES),
+  `check_agent_feedback.py`, and `git diff --check` all PASS.
+- Full parallel suite:
+  - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match Round 3 ledger).
+  - Shadow EST mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match Round 3 ledger).
+  - Intermittent failure `check_make_incremental_dependencies` passed in both runs.
+  - Zero new regressions; zero unexpected failures; zero skips.
+- Report documented in `docs/phase28/ROUND_4_SLICE_C_INTEGRATION.md`.
+- No merge to `main`. No compiler source or test changes made during integration.
+
 ### Phase 28 Round 4 — Slice B Repair Integration (2026-11-03)
 
 Integration of branch `origin/phase28-r4-slice-b-fix` (`a4923c0735d2dfc3e0fccc1b5949822e66f79d4f`)
