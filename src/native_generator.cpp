@@ -1597,8 +1597,6 @@ class Generator {
           replacement = (objects_.count(domain->name) ? "self." : "state.") + name;
         if (!replacement && write_through_parameters_.count(name))
           replacement = "(*" + name + ")";
-        if (!replacement && borrowed_function_parameters_.count(name))
-          replacement = "(*" + rust_identifier(name) + ")";
         if (!replacement && rust_identifier(name) != name)
           replacement = rust_identifier(name);
         if (replacement)
@@ -7723,11 +7721,21 @@ class Generator {
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
+              const auto rhs_name = tree_identifier_name(s.b);
+              bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
               if (ownership_fact->access == Effect::Read) {
-                o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = &(" << rhs_val << ");\n";
+                if (rhs_is_borrow) {
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = " << rhs_val << ";\n";
+                } else {
+                  o << indent(level) << "let " << (mutable_decl ? "mut " : "") << rust_identifier(s.a) << " = &(" << rhs_val << ");\n";
+                }
               } else if (ownership_fact->access == Effect::Write) {
-                o << indent(level) << "let mut " << rust_identifier(s.a) << " = &mut (" << rhs_val << ");\n";
+                if (rhs_is_borrow) {
+                  o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
+                } else {
+                  o << indent(level) << "let mut " << rust_identifier(s.a) << " = &mut (" << rhs_val << ");\n";
+                }
               } else {
                 o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
               }
@@ -7873,10 +7881,12 @@ class Generator {
               if (take_fact) {
                 assigned = emit_take_expression(*take_fact, s, d, locals, &types);
               } else if (ownership_fact) {
+                const auto rhs_name = tree_identifier_name(s.b);
+                bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
                 if (ownership_fact->access == Effect::Read) {
-                  assigned = "&(" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&(" + assigned + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  assigned = "&mut (" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&mut (" + assigned + ")";
                 }
               }
               if (reuse_string_buffer)
@@ -7890,7 +7900,7 @@ class Generator {
                   o << indent(level) << "let " << (mutable_decl ? "mut " : "")
                     << rust_identifier(s.a) << " = " << assigned << ";\n";
                 } else {
-                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a)) ? rust_identifier(s.a) : lhs;
+                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) && !write_through_parameters_.count(s.a)) ? rust_identifier(s.a) : lhs;
                   o << indent(level) << target_lhs << " = " << assigned << ";\n";
                 }
               }
@@ -8305,10 +8315,12 @@ class Generator {
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
               if (ownership_fact) {
+                const auto rhs_name = tree_identifier_name(s.b);
+                bool rhs_is_borrow = rhs_name && (borrowed_function_parameters_.count(*rhs_name) || view_parameters_.count(*rhs_name));
                 if (ownership_fact->access == Effect::Read) {
-                  rhs_val = "&(" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&(" + rhs_val + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  rhs_val = "&mut (" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&mut (" + rhs_val + ")";
                 }
               }
               o << " = " << rhs_val;
