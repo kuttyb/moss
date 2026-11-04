@@ -223,6 +223,83 @@ class FastInterpreter {
       }
     }
 
+    auto find_target_loop_fact = [&](std::vector<TypedLoopOwnershipFactV1>& facts) -> TypedLoopOwnershipFactV1* {
+      for (auto& f : facts) {
+        if (!f.specialization_identity.empty()) {
+          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+            return &f;
+        }
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_loop_req = [&](std::vector<TypedLoopOwnershipRequirementV1>& reqs) -> TypedLoopOwnershipRequirementV1* {
+      for (auto& r : reqs) {
+        if (!r.specialization_identity.empty()) {
+          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+            return &r;
+        }
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOOP_FACT")) {
+      if (!semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(semantics->loop_ownership_facts)) {
+          fact->availability = TypedLoopOwnershipFactV1::Availability::MissingLoopOccurrence;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_FACT")) {
+      if (!semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(semantics->loop_ownership_facts)) {
+          fact->converged_access = (fact->converged_access == Effect::Read) ? Effect::Write : Effect::Read;
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")) {
+      if (!semantics->loop_ownership_facts.empty()) {
+        if (target_spec) {
+          for (auto it = semantics->loop_ownership_facts.begin();
+               it != semantics->loop_ownership_facts.end(); ++it) {
+            if (it->specialization_context.find(target_spec) != std::string::npos) {
+              semantics->loop_ownership_facts.erase(it);
+              break;
+            }
+          }
+        } else {
+          semantics->loop_ownership_facts.erase(
+              semantics->loop_ownership_facts.begin());
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_REQUIREMENT")) {
+      if (!semantics->required_loop_ownership_occurrences.empty()) {
+        semantics->required_loop_ownership_occurrences.erase(
+            semantics->required_loop_ownership_occurrences.begin());
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOOP_FACT")) {
+      if (!semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(semantics->loop_ownership_facts)) {
+          semantics->loop_ownership_facts.push_back(*fact);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOOP_REQUIREMENT")) {
+      if (!semantics->required_loop_ownership_occurrences.empty()) {
+        if (auto* req = find_target_loop_req(semantics->required_loop_ownership_occurrences)) {
+          semantics->required_loop_ownership_occurrences.push_back(*req);
+        }
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_SPECIALIZATION_ID")) {
+      if (!semantics->loop_ownership_facts.empty()) {
+        if (auto* fact = find_target_loop_fact(semantics->loop_ownership_facts)) {
+          fact->specialization_identity = "perturbed-loop-spec-id";
+        }
+      }
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -3414,6 +3491,65 @@ class FastInterpreter {
     return found_fact;
   }
 
+  std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
+      const Stmt& s, const Frame& frame, int line) const {
+    if (!program_.typed_semantics) return {};
+
+    const est::ExprSlot wanted = (s.kind == Stmt::Kind::For)
+        ? est::ExprSlot::Iterable : est::ExprSlot::Condition;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == wanted && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return {};
+
+    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+
+    std::vector<const TypedLoopOwnershipFactV1*> facts;
+    for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
+      if (req.loop_est_arena_index == matched_handle->arena_index &&
+          req.loop_expression_occurrence_id == matched_handle->expr &&
+          (req.specialization_context == context ||
+           (!frame.specialization_identity.empty() &&
+            req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        try {
+          const auto* fact = program_.typed_semantics->find_loop_ownership_fact(req);
+          if (!fact) {
+            throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT required loop ownership fact missing");
+          }
+          facts.push_back(fact);
+        } catch (const std::exception& e) {
+          throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+        }
+      }
+    }
+    for (const auto& fact : program_.typed_semantics->loop_ownership_facts) {
+      if (fact.loop_est_arena_index == matched_handle->arena_index &&
+          fact.loop_expression_occurrence_id == matched_handle->expr &&
+          (fact.specialization_context == context ||
+           (!frame.specialization_identity.empty() &&
+            fact.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        bool found_req = false;
+        for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
+          if (req.loop_est_arena_index == fact.loop_est_arena_index &&
+              req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
+              req.definition_identity == fact.definition_identity &&
+              req.edge_kind == fact.edge_kind) {
+            found_req = true;
+            break;
+          }
+        }
+        if (!found_req) {
+          throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT loop ownership requirement missing for fact");
+        }
+      }
+    }
+    return facts;
+  }
+
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
@@ -3665,6 +3801,7 @@ class FastInterpreter {
       }
       if (statement.kind == Stmt::Kind::Else) { ++index; continue; }
       if (statement.kind == Stmt::Kind::While) {
+        auto loop_facts = resolve_loop_ownership_facts(statement, frame, statement.line);
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
         // No interpreter-only iteration cap: a checked program must run the
@@ -3680,11 +3817,18 @@ class FastInterpreter {
             flow = execute_block(statements, frame, output, index + 1, body_end);
           }
           if (flow.returned) return flow;
+          for (const auto* fact : loop_facts) {
+            if (fact->edge_kind == TypedLoopOwnershipFactV1::EdgeKind::Backedge &&
+                fact->value_state == TypedLoopOwnershipFactV1::ValueState::Available) {
+              frame.consumed.erase(fact->binding_identity);
+            }
+          }
         }
         index = body_end;
         continue;
       }
       if (statement.kind == Stmt::Kind::For) {
+        auto loop_facts = resolve_loop_ownership_facts(statement, frame, statement.line);
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
         auto iterable_tree = expression_tree(statement.b, "for_iterable",
@@ -3715,6 +3859,12 @@ class FastInterpreter {
           int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
           EventScope loop_scope(*this, loop_id, false, false, true);
           flow = execute_block(statements, frame, output, index + 1, body_end);
+          for (const auto* fact : loop_facts) {
+            if (fact->edge_kind == TypedLoopOwnershipFactV1::EdgeKind::Backedge &&
+                fact->value_state == TypedLoopOwnershipFactV1::ValueState::Available) {
+              frame.consumed.erase(fact->binding_identity);
+            }
+          }
           return !flow.returned;
         };
 
