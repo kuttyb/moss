@@ -4266,7 +4266,10 @@ class Generator {
                   return candidate.name == projection_field;
                 });
             if (field != object->second->fields.end()) {
-              string base_rendered = expr(projection_base, d, locals, types);
+              string p_b, p_i;
+              string base_rendered = tree_parse_index(projection_base, p_b, p_i)
+                  ? read_call_place(projection_base, d, locals, types)
+                  : expr(projection_base, d, locals, types);
               return "(" + base_rendered + ")." + rust_identifier(projection_field);
             }
           }
@@ -6348,6 +6351,65 @@ class Generator {
     return found_fact;
   }
 
+  const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return nullptr;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == est::ExprSlot::Scrutinee && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const TypedMatchOwnershipRequirementV1* requirement = nullptr;
+    for (const auto& req : p_.typed_semantics->required_match_occurrences) {
+      if (req.est_arena_index == matched_handle->arena_index &&
+          req.scrutinee_occurrence_id == matched_handle->expr &&
+          (req.specialization_context == context ||
+           (!codegen_active_specialization_key_.empty() &&
+            req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        requirement = &req;
+        break;
+      }
+    }
+    if (!requirement) return nullptr;
+    try {
+      return p_.typed_semantics->find_match_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+  }
+
+  const TypedLocalOwnershipFactV1* resolve_vector_element_ownership_fact(
+      const Stmt& s, const string& functional_context) const {
+    if (!p_.typed_semantics) return nullptr;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == est::ExprSlot::Iterable && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+    const string context = functional_context.empty() ? "main" : functional_context;
+    for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
+      if (fact.source_kind == TypedLocalOwnershipFactV1::SourceKind::VectorElement &&
+          fact.est_arena_index == matched_handle->arena_index &&
+          fact.expression_occurrence_id == matched_handle->expr &&
+          (fact.specialization_context == context ||
+           (!codegen_active_specialization_key_.empty() &&
+            fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+        if (!fact.is_authoritative()) {
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT unauthoritative vector element fact");
+        }
+        return &fact;
+      }
+    }
+    return nullptr;
+  }
+
   struct SelectorNodeFacts {
     TypeRef type;
     std::string resolved_target;
@@ -7176,8 +7238,11 @@ class Generator {
         }
         case Stmt::Kind::Match: {
           auto scrutinee_type = generated_expr_type(s.a, &types);
-          bool is_option = scrutinee_type &&
-              starts_with(canonical_type_name(*scrutinee_type), "option[");
+          const auto* match_fact = resolve_match_ownership_fact(s, functional_context);
+          bool is_option = match_fact
+              ? (match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option)
+              : (scrutinee_type &&
+                 starts_with(canonical_type_name(*scrutinee_type), "option["));
           static const EnumType option_enum = [] {
             EnumType opt;
             opt.name = "option";
@@ -7283,20 +7348,30 @@ class Generator {
                 [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
             if (item == declaration.cases.end())
               throw std::runtime_error("unchecked enum case");
-            o << indent(level + 1) << declaration.name << "::"
-              << rust_identifier(pattern.case_name);
-            if (!item->fields.empty()) {
-              o << " { ";
-              for (size_t field_index = 0;
-                   field_index < pattern.payload_bindings.size(); ++field_index) {
-                if (field_index) o << ", ";
-                string field_name = rust_identifier(item->fields[field_index].name);
-                if (field_name == pattern.payload_bindings[field_index])
-                  o << field_name;
-                else
-                  o << field_name << ": " << pattern.payload_bindings[field_index];
+            if (is_option) {
+              if (pattern.case_name == "Some") {
+                o << indent(level + 1) << "Some("
+                  << (pattern.payload_bindings.empty() ? "_" : pattern.payload_bindings.front())
+                  << ")";
+              } else {
+                o << indent(level + 1) << "None";
               }
-              o << " }";
+            } else {
+              o << indent(level + 1) << declaration.name << "::"
+                << rust_identifier(pattern.case_name);
+              if (!item->fields.empty()) {
+                o << " { ";
+                for (size_t field_index = 0;
+                     field_index < pattern.payload_bindings.size(); ++field_index) {
+                  if (field_index) o << ", ";
+                  string field_name = rust_identifier(item->fields[field_index].name);
+                  if (field_name == pattern.payload_bindings[field_index])
+                    o << field_name;
+                  else
+                    o << field_name << ": " << pattern.payload_bindings[field_index];
+                }
+                o << " }";
+              }
             }
             o << " => {\n";
             auto branch_locals = locals;
@@ -7305,7 +7380,18 @@ class Generator {
             for (size_t field_index = 0;
                  field_index < pattern.payload_bindings.size(); ++field_index) {
               const string& name = pattern.payload_bindings[field_index];
-              const string& type = item->fields[field_index].type;
+              string type;
+              if (is_option) {
+                if (match_fact && !match_fact->arms.empty() &&
+                    !match_fact->arms.front().payload_types.empty() &&
+                    match_fact->arms.front().payload_types.front()) {
+                  type = match_fact->arms.front().payload_types.front()->to_canonical_string();
+                } else if (scrutinee_type && starts_with(canonical_type_name(*scrutinee_type), "option[")) {
+                  type = canonical_type_name(*scrutinee_type).substr(7, canonical_type_name(*scrutinee_type).size() - 8);
+                }
+              } else {
+                type = item->fields[field_index].type;
+              }
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
@@ -7511,17 +7597,23 @@ class Generator {
                 : trim(element_type.substr(4, element_type.size() - 5));
             string collection_expression = expr(source, d, locals, &types);
             string traversal = "(" + collection_expression + ").iter()";
+            bool write_iteration = false;
             // FileIO.chunks yields Agent B's MossChunks, already an
             // Iterator<Item = Range> borrowing the FileIO.
             if (canonical_type_name(element_type) == "seq[Range]") {
               traversal = collection_expression;
             } else {
-              bool write_iteration = false;
-              for (const auto* fact : loop_facts) {
-                if ((fact->binding_identity == s.a || ends_with(fact->binding_identity, ":" + s.a)) &&
-                    fact->converged_access == Effect::Write) {
-                  write_iteration = true;
-                  break;
+              const auto* vector_element_fact = resolve_vector_element_ownership_fact(s, functional_context);
+              if (vector_element_fact && vector_element_fact->access == Effect::Write) {
+                write_iteration = true;
+              }
+              if (!write_iteration) {
+                for (const auto* fact : loop_facts) {
+                  if ((fact->binding_identity == s.a || ends_with(fact->binding_identity, ":" + s.a)) &&
+                      fact->converged_access == Effect::Write) {
+                    write_iteration = true;
+                    break;
+                  }
                 }
               }
               if (write_iteration) {
@@ -7536,10 +7628,15 @@ class Generator {
             auto child_types = types;
             child_locals.insert(s.a);
             child_types[s.a] = element;
+            auto saved_write_through = write_through_parameters_;
+            if (write_iteration) {
+              write_through_parameters_.insert(s.a);
+            }
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function, join_assignments,
                       functional_context);
+            write_through_parameters_ = std::move(saved_write_through);
             o << indent(level) << "}\n";
             break;
           }
@@ -7770,9 +7867,15 @@ class Generator {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
               o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
             } else if (ownership_fact) {
-              string rhs_val = expr(s.b, d, locals, &types,
-                                    statement_functional_pipeline_id(
-                                        s, functional_context, 0));
+              string p_b, p_i;
+              bool is_index_source = tree_parse_index(s.b, p_b, p_i);
+              string rhs_val = (is_index_source && ownership_fact->access == Effect::Write)
+                  ? write_call_place(s.b, d, locals, &types)
+                  : (is_index_source && ownership_fact->access == Effect::Read)
+                      ? read_call_place(s.b, d, locals, &types)
+                      : expr(s.b, d, locals, &types,
+                             statement_functional_pipeline_id(
+                                 s, functional_context, 0));
               const auto rhs_name = tree_identifier_name(s.b);
               bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
@@ -7801,6 +7904,8 @@ class Generator {
                 << ";\n";
             }
             locals.insert(s.a);
+            if (ownership_fact && ownership_fact->access == Effect::Write)
+              write_through_parameters_.insert(s.a);
             types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
                 : !inferred_map_type.empty() ? inferred_map_type
                 : statement_type;
@@ -7935,10 +8040,13 @@ class Generator {
               } else if (ownership_fact) {
                 const auto rhs_name = tree_identifier_name(s.b);
                 bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
+                string p_b, p_i;
+                bool is_index_source = tree_parse_index(s.b, p_b, p_i);
                 if (ownership_fact->access == Effect::Read) {
-                  if (!rhs_is_borrow) assigned = "&(" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&(" + (is_index_source ? read_call_place(s.b, d, locals, &types) : assigned) + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  if (!rhs_is_borrow) assigned = "&mut (" + assigned + ")";
+                  if (!rhs_is_borrow) assigned = "&mut (" + (is_index_source ? write_call_place(s.b, d, locals, &types) : assigned) + ")";
+                  write_through_parameters_.insert(s.a);
                 }
               }
               if (reuse_string_buffer)
@@ -8369,10 +8477,13 @@ class Generator {
               if (ownership_fact) {
                 const auto rhs_name = tree_identifier_name(s.b);
                 bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
+                string p_b, p_i;
+                bool is_index_source = tree_parse_index(s.b, p_b, p_i);
                 if (ownership_fact->access == Effect::Read) {
-                  if (!rhs_is_borrow) rhs_val = "&(" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&(" + (is_index_source ? read_call_place(s.b, d, locals, &types) : rhs_val) + ")";
                 } else if (ownership_fact->access == Effect::Write) {
-                  if (!rhs_is_borrow) rhs_val = "&mut (" + rhs_val + ")";
+                  if (!rhs_is_borrow) rhs_val = "&mut (" + (is_index_source ? write_call_place(s.b, d, locals, &types) : rhs_val) + ")";
+                  write_through_parameters_.insert(s.a);
                 }
               }
               o << " = " << rhs_val;

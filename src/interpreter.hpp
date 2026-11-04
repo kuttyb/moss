@@ -3714,6 +3714,37 @@ class FastInterpreter {
     return facts;
   }
 
+  const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
+      const Stmt& s, const Frame& frame, int line) const {
+    if (!program_.typed_semantics) return nullptr;
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : s.expression_handles) {
+      if (handle.slot == est::ExprSlot::Scrutinee && handle.argument_index == 0) {
+        matched_handle = &handle;
+        break;
+      }
+    }
+    if (!matched_handle) return nullptr;
+    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+    const TypedMatchOwnershipRequirementV1* requirement = nullptr;
+    for (const auto& req : program_.typed_semantics->required_match_occurrences) {
+      if (req.est_arena_index == matched_handle->arena_index &&
+          req.scrutinee_occurrence_id == matched_handle->expr &&
+          (req.specialization_context == context ||
+           (!frame.specialization_identity.empty() &&
+            req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+        requirement = &req;
+        break;
+      }
+    }
+    if (!requirement) return nullptr;
+    try {
+      return program_.typed_semantics->find_match_ownership_fact(*requirement);
+    } catch (const std::exception& e) {
+      throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+  }
+
   static const std::unordered_map<std::string, std::string>&
   checked_joined_types(const Stmt& statement, const Frame& frame) {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
@@ -3888,8 +3919,12 @@ class FastInterpreter {
           opt.cases.push_back(none_c);
           return opt;
         }();
+        const auto* match_fact = resolve_match_ownership_fact(statement, frame, statement.line);
+        const bool is_option_match = match_fact
+            ? (match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option)
+            : (selected.object->type == "option" || selected.object->type.rfind("option[", 0) == 0);
         const EnumType* declaration = nullptr;
-        if (selected.object->type == "option" || selected.object->case_name == "Some" || selected.object->case_name == "None") {
+        if (is_option_match) {
           declaration = &option_enum;
         } else {
           for (const auto& candidate : program_.enums)
@@ -3935,7 +3970,7 @@ class FastInterpreter {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
               frame.aliases.erase(binding);
-              auto field = (declaration == &option_enum)
+              auto field = is_option_match
                   ? selected.object->fields.find("value")
                   : selected.object->fields.find(item->fields[field_index].name);
               if (field == selected.object->fields.end())

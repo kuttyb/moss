@@ -1,3 +1,27 @@
+### Phase 28 Team B R7-003 Consumer Repairs (2026-11-04)
+
+Branch `phase28-r7-003-consumers` based on suspended W12 branch `phase28-r6-w12-checker` at `31276eb16991561f969eea646b65c29a37c0bb39`.
+Handoff documentation: `docs/phase28/TEAM_B_R7_003_CONSUMER_REPAIRS.md`.
+
+- Scope & Invariant:
+  - Exclusive lease: `src/native_generator.cpp`, `src/native_generator_support.hpp`, `src/interpreter.hpp`, and consumer-specific tests (`tests/phase28/consumer_repair/`, `tests/tooling/check_phase28_r7_003_consumers.py`). Zero edits to `src/semantic_checker.cpp`.
+  - Mandatory semantic authority invariant: every ownership-sensitive consumer decision is governed strictly by exact checker-issued facts.
+- Status of Work Items:
+  1. `ORACLE-06` (Option match consume): GREEN across Fast Debug, Native Debug, and Native Optimized (`target`).
+  2. `ORACLE-09` (User enum Some/None): GREEN across Fast Debug, Native Debug, and Native Optimized (`42`).
+  3. `ORACLE-40` (Mutable Vector iteration): GREEN across Fast Debug, Native Debug, and Native Optimized (`11\n21`).
+  4. `ORACLE-02` (Indexed field read): GREEN across Fast Debug, Native Debug, and Native Optimized (`hello`); 0 clones of `Data` struct. (Provisional pending R7-005 audit).
+  5. `ORACLE-01` & `ORACLE-04` (Vector & Map write-through): Consumer implementation in place for `Effect::Write` facts. Preserved failing fixtures and documented missing checker contract for indexed assignment RHS for Team A.
+- Verification:
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py build/compiler/moss-opt`: PASS
+  - `python3 tests/tooling/check_phase28_team_b_consumer.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_w12_checker.py ./moss`: PASS
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS
+  - `git diff --check`: PASS
+- STOP after handoff. No integration or merge to `phase28-work` or `main`.
+
 ### Phase 28 Team A W12 Checker Completion (2026-11-04)
 
 Branch `phase28-r6-w12-checker` at implementation SHA `57b65dfca56447dca08fbe7bcbe9b31d4d03da2d`.
