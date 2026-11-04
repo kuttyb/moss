@@ -93,7 +93,7 @@ struct TypedMatchOwnershipRequirementV1 {
 - **`Vector.remove(index)`**: Removes element at `index`, shifts subsequent elements left, and returns the removed owned element.
 - **`Vector.swap_remove(index)`**: Swaps element at `index` with the last element, pops and returns the removed owned element in $O(1)$.
 - **`Map.remove(key)`**: Removes entry with `key` from map and returns the removed value.
-- **`Map.get(key)`**: 1-argument borrowed lookup returning `option[V]` without requiring a default fallback value. (2-argument `Map.get(key, default)` returns `V`).
+- **`Map.get(key)`**: 1-argument borrowed lookup returning `$value` (`V`) without requiring a default fallback value (integrated in P28-R7-008; the earlier handoff note claiming `option[V]` was corrected to match `src/moss.cpp:673` and `ORACLE-05`). (2-argument `Map.get(key, default)` also returns `V`).
 - **Iteration Element Protection:** For-loop elements over vectors (`for item in v:`) are borrowed views. Direct consumption of iteration elements is rejected with `OWNERSHIP_VECTOR_ELEMENT_CONSUME`.
 
 ---

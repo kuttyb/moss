@@ -153,6 +153,14 @@ fn main():
   let p2 = p.clone()
 """, "CLONE_ALIAS_UNSUPPORTED")
 
+    # Negative: User-defined copy function rejected as reserved keyword
+    check_reject(compiler, "user_copy_fn_rejected", """
+fn copy(x: Int) -> Int:
+  return x
+fn main():
+  echo copy(1)
+""", "RESERVED_KEYWORD")
+
     # Fail-closed hooks for copy facts
     copy_src = """
 type Box:

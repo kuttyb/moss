@@ -577,6 +577,10 @@ class Checker {
       p_.enums.push_back(std::move(declaration));
     }
     for (auto& f : p_.functions) {
+      if (!p_.file_check_scope && f.name == "copy")
+        err(f.source_file, f.line,
+            "keyword 'copy' is reserved for explicit duplication and cannot be declared",
+            "RESERVED_KEYWORD");
       if (!p_.file_check_scope && (f.name == "assert" || f.name == "assertEqual"))
         err(f.source_file, f.line, "function name '" + f.name +
                         "' is reserved by Moss test assertions");
@@ -586,10 +590,18 @@ class Checker {
         callable_id_to_function_[f.semantic_callable_id] = &f;
     }
     for (auto& d : p_.domains) {
+      if (!p_.file_check_scope && d.name == "copy")
+        err(d.source_file, d.line,
+            "keyword 'copy' is reserved for explicit duplication and cannot be declared",
+            "RESERVED_KEYWORD");
       if (!domains_.emplace(d.name, &d).second && !p_.file_check_scope)
         err(d.source_file, d.line, "duplicate domain: " + d.name);
     }
     for (auto& o : p_.objects) {
+      if (!p_.file_check_scope && o.name == "copy")
+        err(o.source_file, o.line,
+            "keyword 'copy' is reserved for explicit duplication and cannot be declared",
+            "RESERVED_KEYWORD");
       if (!objects_.emplace(o.name, &o).second && !p_.file_check_scope)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
       if (domains_.count(o.name) && !p_.file_check_scope)
@@ -598,6 +610,10 @@ class Checker {
             "DUPLICATE_SYMBOL");
     }
     for (auto& e : p_.enums) {
+      if (!p_.file_check_scope && e.name == "copy")
+        err(e.source_file, e.line,
+            "keyword 'copy' is reserved for explicit duplication and cannot be declared",
+            "RESERVED_KEYWORD");
       const bool clash = !enums_.emplace(e.name, &e).second ||
           objects_.count(e.name) || domains_.count(e.name);
       if (!clash || p_.file_check_scope) continue;
@@ -684,6 +700,10 @@ class Checker {
     }
     p_.assert_declaration_type_consistency();
     for (auto& t : p_.traits) {
+      if (!p_.file_check_scope && t.name == "copy")
+        err(t.source_file, t.line,
+            "keyword 'copy' is reserved for explicit duplication and cannot be declared",
+            "RESERVED_KEYWORD");
       if (!traits_.emplace(t.name, &t).second && !p_.file_check_scope)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
       if (p_.file_check_scope) continue;
@@ -12304,16 +12324,12 @@ class Checker {
         }
       }
     }
-    if (starts_with(original, "take(") && ends_with(original, ")")) {
-      string inner = trim(original.substr(5, original.size() - 6));
-      if (!inner.empty()) {
-        if (auto result = inferred_expr(inner, env)) return result;
-      }
-    }
-    if (starts_with(original, "copy(") && ends_with(original, ")")) {
-      string inner = trim(original.substr(5, original.size() - 6));
-      if (!inner.empty()) {
-        if (auto result = inferred_expr(inner, env)) return result;
+    if (auto view = checker_est_view(original);
+        view && view->arena && view->root < view->arena->size()) {
+      if (const auto* take = std::get_if<est::Take>(&view->arena->at(view->root));
+          take && take->arguments.size() == 1) {
+        if (auto place = view->source_text(take->arguments.front()))
+          if (auto result = inferred_expr(*place, env)) return result;
       }
     }
     if (tree_placeholder_expression(original) && current_body_types_ &&
@@ -12342,9 +12358,12 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
-          arguments.size() == 2)
-        return inferred_expr(arguments[0], env);
+      if (tree_parse_simple_call(original, callee, arguments)) {
+        if (callee == "replace" && arguments.size() == 2)
+          return inferred_expr(arguments[0], env);
+        if (callee == "copy" && arguments.size() == 1)
+          return inferred_expr(arguments[0], env);
+      }
     }
     {
       string enum_name, case_name;
@@ -23884,7 +23903,8 @@ class Checker {
     };
     auto has_owned_reaching_source = [&](const auto& definition) {
       if (definition.source_name.empty() ||
-          definition.statement_index == SIZE_MAX)
+          definition.statement_index == SIZE_MAX ||
+          definition.source_storage_path.find(".[]") != string::npos)
         return false;
       bool found_source = false;
       for (const auto source_id : in_defs[definition.statement_index]) {
@@ -25556,8 +25576,9 @@ class Checker {
   std::optional<EstExpressionCursor> ownership_take_cursor(
       const string& expression) {
     if (!ownership_current_stmt_) return std::nullopt;
-    string trimmed = trim(expression);
-    if (!starts_with(trimmed, "take(") || !ends_with(trimmed, ")"))
+    auto view = checker_est_view(expression);
+    if (!view || !view->arena || view->root >= view->arena->size() ||
+        !std::holds_alternative<est::Take>(view->arena->at(view->root)))
       return std::nullopt;
     for (const auto& handle : ownership_current_stmt_->expression_handles) {
       auto* arena = expression_arena(handle.arena_index);
@@ -26428,7 +26449,7 @@ class Checker {
           return;
         }
       }
-      check_ownership_expression(line, base, env, requested);
+      check_ownership_expression(line, base, env, Effect::Read);
       check_ownership_expression(line, index, env, Effect::Read);
       return;
     }
@@ -27323,8 +27344,7 @@ class Checker {
                   &unsupported);
             }
             if (is_indexed_source && inferred && *inferred == Effect::Consume) {
-              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
-                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+              inferred = Effect::Read;
             }
             if (is_indexed_source && inferred && *inferred == Effect::Write &&
                 env.immutable_locals.count(source_root)) {
@@ -27488,8 +27508,7 @@ class Checker {
                   &unsupported);
             }
             if (is_indexed_source && inferred && *inferred == Effect::Consume) {
-              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
-                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+              inferred = Effect::Read;
             }
             if (is_indexed_source && inferred && *inferred == Effect::Write &&
                 env.immutable_locals.count(source_root)) {

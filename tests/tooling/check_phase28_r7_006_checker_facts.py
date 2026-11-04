@@ -172,7 +172,7 @@ def main() -> int:
 
     oracle_14 = FIXTURES / "oracle_14_assignment_consume_borrowed_rejected.moss"
     print(f"Checking rejection on ORACLE-14: {oracle_14.name}...")
-    verify_rejected(compiler, oracle_14, "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    verify_rejected(compiler, oracle_14, "OWNERSHIP_ILLEGAL_CONSUME")
 
     # 4b. Indexed provenance: READ vs WRITE borrow and source storage (access 0=Read, 1=Write).
     read_fixture = FIXTURES / "indexed_read_borrow.moss"
