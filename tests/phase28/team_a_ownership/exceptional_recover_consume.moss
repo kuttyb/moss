@@ -1,0 +1,18 @@
+enum Failure:
+  Bad
+
+type Box:
+  value: Int
+
+fn consume_box(value: Box) -> Box:
+  return value
+
+fn main():
+  var owner = Box(value = 4)
+  var alias = Box(value = 0)
+  try:
+    alias = owner
+    raise Failure.Bad
+  recover Failure.Bad:
+    moved = consume_box(alias)
+    echo owner.value

@@ -217,6 +217,56 @@ struct TypedLoopOwnershipRequirementV1 {
   Availability availability{Availability::MissingEdge};
 };
 
+// Exact checker snapshot for a typed exceptional successor. State is sampled
+// by ownership checking at the operation that may raise; consumers must not
+// reconstruct it from pre-try state or assume rollback.
+struct TypedExceptionalOwnershipFactV1 {
+  enum class Availability { Present, MissingSource, MissingRecovery,
+                            MissingOccurrence, MissingSummary,
+                            ContradictoryAlternatives };
+  struct BindingState {
+    std::string name;
+    std::string binding_identity;
+    std::string reaching_definition_identity;
+    std::string type_identity;
+    bool consumed{false};
+    std::vector<std::string> borrow_source_binding_identities;
+    std::vector<std::string> borrow_storage_paths;
+  };
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_est_arena_index{UINT32_MAX};
+  est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
+  std::uint32_t source_est_argument_index{UINT32_MAX};
+  std::string raised_variant_identity;
+  std::vector<std::string> source_raise_alternatives;
+  std::vector<std::string> recovery_alternatives;
+  std::string summary_provenance;
+  std::string specialization_context;
+  std::string specialization_identity;
+  std::vector<BindingState> state_at_raise;
+  std::vector<std::string> consumed_binding_identities;
+  std::vector<std::string> mutated_storage_paths;
+  Availability availability{Availability::MissingOccurrence};
+};
+
+struct TypedExceptionalOwnershipRequirementV1 {
+  using Availability = TypedExceptionalOwnershipFactV1::Availability;
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_est_arena_index{UINT32_MAX};
+  est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
+  std::uint32_t source_est_argument_index{UINT32_MAX};
+  std::string raised_variant_identity;
+  std::vector<std::string> source_raise_alternatives;
+  std::vector<std::string> recovery_alternatives;
+  std::string specialization_context;
+  std::string specialization_identity;
+  Availability availability{Availability::MissingOccurrence};
+};
+
 enum class TypedTakeReplacementV1 { OptionNone, VectorEmpty, MapEmpty, QueueEmpty };
 enum class TypedTakeProjectionKindV1 {
   RecordField, VectorIndex, MapIndex, QueueIndex
@@ -403,6 +453,74 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedLoopOwnershipFactV1> loop_ownership_facts;
   std::vector<TypedLoopOwnershipRequirementV1>
       required_loop_ownership_occurrences;
+  std::vector<TypedExceptionalOwnershipFactV1> exceptional_ownership_facts;
+  std::vector<TypedExceptionalOwnershipRequirementV1>
+      required_exceptional_ownership_occurrences;
+
+  const TypedExceptionalOwnershipFactV1& find_exceptional_ownership_fact(
+      const TypedExceptionalOwnershipRequirementV1& requirement) const {
+    const TypedExceptionalOwnershipRequirementV1* required = nullptr;
+    for (const auto& candidate : required_exceptional_ownership_occurrences)
+      if (candidate.source_statement_occurrence_id ==
+              requirement.source_statement_occurrence_id &&
+          candidate.recovery_statement_occurrence_id ==
+              requirement.recovery_statement_occurrence_id &&
+          candidate.source_est_arena_index == requirement.source_est_arena_index &&
+          candidate.source_expression_occurrence_id ==
+              requirement.source_expression_occurrence_id &&
+          candidate.source_est_slot == requirement.source_est_slot &&
+          candidate.source_est_argument_index ==
+              requirement.source_est_argument_index &&
+          candidate.raised_variant_identity ==
+              requirement.raised_variant_identity &&
+          candidate.source_raise_alternatives ==
+              requirement.source_raise_alternatives &&
+          candidate.recovery_alternatives == requirement.recovery_alternatives &&
+          candidate.specialization_context == requirement.specialization_context &&
+          candidate.specialization_identity == requirement.specialization_identity) {
+        if (required) throw std::invalid_argument(
+            "duplicate or contradictory required exceptional ownership identity");
+        required = &candidate;
+      }
+    if (!required) throw std::invalid_argument(
+        "unknown required exceptional ownership identity");
+    const TypedExceptionalOwnershipFactV1* result = nullptr;
+    for (const auto& fact : exceptional_ownership_facts)
+      if (fact.source_statement_occurrence_id ==
+              requirement.source_statement_occurrence_id &&
+          fact.recovery_statement_occurrence_id ==
+              requirement.recovery_statement_occurrence_id &&
+          fact.source_est_arena_index == requirement.source_est_arena_index &&
+          fact.source_expression_occurrence_id ==
+              requirement.source_expression_occurrence_id &&
+          fact.source_est_slot == requirement.source_est_slot &&
+          fact.source_est_argument_index ==
+              requirement.source_est_argument_index &&
+          fact.raised_variant_identity == requirement.raised_variant_identity &&
+          fact.source_raise_alternatives == requirement.source_raise_alternatives &&
+          fact.recovery_alternatives == requirement.recovery_alternatives &&
+          fact.specialization_context == requirement.specialization_context &&
+          fact.specialization_identity == requirement.specialization_identity) {
+        if (result) throw std::invalid_argument(
+            "duplicate or contradictory exceptional ownership facts");
+        result = &fact;
+      }
+    if (!result || result->availability !=
+            TypedExceptionalOwnershipFactV1::Availability::Present ||
+        required->availability !=
+            TypedExceptionalOwnershipRequirementV1::Availability::Present ||
+        result->source_est_arena_index != requirement.source_est_arena_index ||
+        result->source_expression_occurrence_id !=
+            requirement.source_expression_occurrence_id ||
+        result->source_est_slot != requirement.source_est_slot ||
+        result->source_est_argument_index !=
+            requirement.source_est_argument_index ||
+        result->source_raise_alternatives != requirement.source_raise_alternatives ||
+        result->recovery_alternatives != requirement.recovery_alternatives)
+      throw std::invalid_argument(
+          "required checked exceptional ownership fact missing or contradictory");
+    return *result;
+  }
   // Checker-issued bridge from a consumer's existing function-context alias
   // to the stable key in `specializations`. Consumers must not decode either.
   std::map<std::string, std::string> local_ownership_specialization_contexts;

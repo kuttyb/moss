@@ -15198,3 +15198,27 @@ Branch `phase28-r4-slice-c`, based on exact baseline
   documentation/status only, and its `src/` and `tests/` diff from the reviewed
   SHA is empty. No merge to `phase28-work`/`main`; Slice D still requires L7
   authorization.
+
+### Phase 28 Round 4 Slice D — Exceptional Ownership and Provenance (complete)
+
+Branch `phase28-r4-slice-d`, based on exact requested baseline
+`6b0433c8af071dc972b2bd89109e6be0e498de9b`.
+- Reviewed implementation SHA: `0c722497f2c6639cf84c96b80a9748ead9308b0a`;
+  Agent 2 final verdict GO on this exact SHA. Review repaired exact LHS/RHS,
+  argument, nested-call, and functional-pipeline stage occurrence identity gaps.
+- Exceptional facts carry source/recovery occurrences, exact raising EST node,
+  statement slot/argument index, variant alternatives, checked summary and
+  specialization identities, and state-at-raise including consumption,
+  mutations, borrow source bindings, and storage paths. Exact required facts
+  fail closed on missing or contradictory authority.
+- Focused checks: build, local ownership default/shadow, imported source-free
+  WRITE recovery, selector effects default/shadow, specialized ownership
+  default/shadow, take/selector authority 22/22 in both modes, Team B consumer
+  default/shadow, take fixtures 18/18 with parity, string debt 42/7, feedback
+  validation, and diff check all pass.
+- Full default and EST-shadow regression runners each: 167 jobs, 151 PASS /
+  16 FAIL / 0 SKIP. Both failed-name sets exactly match the Round 3 16-job
+  ledger. No new failures; no skips.
+- Handoff recorded in `docs/phase28/ROUND_4_SLICE_D_HANDOFF.md`; branch pushed
+  to `origin/phase28-r4-slice-d`. No merge to `phase28-work`/`main`; no
+  consumer migration.
