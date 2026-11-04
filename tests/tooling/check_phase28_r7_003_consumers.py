@@ -104,6 +104,16 @@ def main() -> int:
     if ".clone()" in main_body:
         raise AssertionError("ORACLE-02: Emitted Rust main contains unexpected .clone() call!")
 
+    # 5. ORACLE-01: Vector element write-through
+    oracle_01 = FIXTURES / "oracle_01_write_through_vector.moss"
+    print(f"Checking ORACLE-01: {oracle_01.name}...")
+    verify_execution(compiler, oracle_01, "9\n9")
+
+    # 6. ORACLE-04: Map entry write-through
+    oracle_04 = FIXTURES / "oracle_04_write_through_map_entry.moss"
+    print(f"Checking ORACLE-04: {oracle_04.name}...")
+    verify_execution(compiler, oracle_04, "9\n9")
+
     print("ALL P28-R7-003 CONSUMER REPAIRS PASSED!")
     return 0
 

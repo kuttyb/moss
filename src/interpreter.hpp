@@ -4199,7 +4199,11 @@ class FastInterpreter {
             frame.aliases.erase(statement.a);
           }
           if (ownership_fact && (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
-            auto place = locate(statement.b, frame, statement.line, output);
+            auto rhs_tree = expression_tree(statement.b, "locate_init",
+                std::pair{est::ExprSlot::Initializer, 0u});
+            auto place = rhs_tree
+                ? locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output)
+                : locate(statement.b, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
             } else {
@@ -4239,7 +4243,11 @@ class FastInterpreter {
           }
           if (binding_identifier(statement.a) && ownership_fact &&
               (ownership_fact->access == Effect::Read || ownership_fact->access == Effect::Write)) {
-            auto place = locate(statement.b, frame, statement.line, output);
+            auto rhs_tree = expression_tree(statement.b, "locate_rhs",
+                std::pair{est::ExprSlot::RhsValue, 0u});
+            auto place = rhs_tree
+                ? locate_tree_node(*rhs_tree, rhs_tree->root, frame, statement.line, output)
+                : locate(statement.b, frame, statement.line, output);
             if (place.value) {
               frame.aliases[statement.a] = place;
               if (statement.a != "_")

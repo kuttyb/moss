@@ -1,3 +1,34 @@
+### Phase 28 Team B R7-006 Checker Fact Completion (2026-11-04)
+
+Branch `phase28-r7-006-checker-facts` based on `phase28-r7-003-consumers` at `480fa258265a0b6f05db1b4e353a84f6f82805f9`.
+Handoff documentation: `docs/phase28/TEAM_B_R7_006_CHECKER_FACT_COMPLETION.md`.
+
+- Scope & Invariant:
+  - Transferred responsibility from Team A to Team B under P28-R7-006 for indexed assignment ownership facts and loop fact synchronization.
+  - Temporary exclusive lease of `src/semantic_checker.cpp` and `src/typed_semantic_api.hpp` exercised and released at handoff.
+  - Mandatory semantic authority invariant preserved: all consumer decisions strictly governed by exact checker facts and requirements; zero string reconstruction or heuristics.
+- Status of Work Items:
+  1. `P28-R7-006-01` (Indexed assignment ownership): Flow analysis and main checker pass produce exact `TypedLocalOwnershipFactV1` for `b = v[0]` and `e = m["key"]` with exact occurrence/binding identity, `source_binding_identity`, and `access = *inferred` (Read or Write). Write borrowers from immutable containers rejected with `OWNERSHIP_MUTABLE_BORROW_IMMUTABLE`. Nonprimitive element moves rejected with `OWNERSHIP_COLLECTION_ELEMENT_CONSUME` / `OWNERSHIP_ILLEGAL_CONSUME`.
+  2. `P28-R7-006-02` (Loop fact synchronization): Synchronized `required_local_ownership_occurrences_` with `fact.access` when Vector iteration strengthens to `Effect::Write`. Fail-closed requirement-fact parity verified.
+  3. Consumer alignment: Fast Debug interpreter place resolution (`locate_tree_node`) enables direct in-place mutation of container storage.
+- Verification:
+  - `ORACLE-01`: Fast Debug, Native Debug, and Native Optimized output `9\n9`.
+  - `ORACLE-04`: Fast Debug, Native Debug, and Native Optimized output `9\n9`.
+  - `ORACLE-40`: Fast Debug, Native Debug, and Native Optimized output `11\n21`.
+  - `ORACLE-03`: Rejection with `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`.
+  - `ORACLE-14`: Rejection with `OWNERSHIP_ILLEGAL_CONSUME`.
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_r7_006_checker_facts.py build/compiler/moss-opt`: PASS
+  - `python3 tests/tooling/check_phase28_r7_003_consumers.py ./moss`: PASS
+  - `python3 tests/tooling/check_phase28_local_ownership.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_w12_checker.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_phase28_take_consumer.py build/compiler/moss-dev`: PASS (22/22)
+  - `python3 tests/tooling/check_phase28_team_b_consumer.py build/compiler/moss-dev`: PASS
+  - `python3 tests/tooling/check_agent_feedback.py`: PASS
+  - `git diff --check`: PASS
+- STOP after handoff. No integration or merge to `phase28-work` or `main`.
+
 ### Phase 28 Team B R7-003 Consumer Repairs (2026-11-04)
 
 Branch `phase28-r7-003-consumers` based on suspended W12 branch `phase28-r6-w12-checker` at `31276eb16991561f969eea646b65c29a37c0bb39`.

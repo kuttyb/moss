@@ -6394,20 +6394,20 @@ class Generator {
     }
     if (!matched_handle) return nullptr;
     const string context = functional_context.empty() ? "main" : functional_context;
-    for (const auto& fact : p_.typed_semantics->local_ownership_facts) {
-      if (fact.source_kind == TypedLocalOwnershipFactV1::SourceKind::VectorElement &&
-          fact.est_arena_index == matched_handle->arena_index &&
-          fact.expression_occurrence_id == matched_handle->expr &&
-          (fact.specialization_context == context ||
-           (!codegen_active_specialization_key_.empty() &&
-            fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
-        if (!fact.is_authoritative()) {
-          throw std::runtime_error("MOSS_INTERNAL_INVARIANT unauthoritative vector element fact");
-        }
-        return &fact;
+    try {
+      const auto* requirement = p_.typed_semantics->find_local_ownership_requirement(
+          matched_handle->arena_index, matched_handle->expr, context);
+      if (!requirement) return nullptr;
+      const auto& fact = p_.typed_semantics->find_local_ownership_fact(*requirement);
+      if (fact.source_kind != TypedLocalOwnershipFactV1::SourceKind::VectorElement)
+        return nullptr;
+      if (!fact.is_authoritative()) {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unauthoritative vector element fact");
       }
+      return &fact;
+    } catch (const std::exception& e) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
     }
-    return nullptr;
   }
 
   struct SelectorNodeFacts {

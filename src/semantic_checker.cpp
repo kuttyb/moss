@@ -22916,6 +22916,16 @@ class Checker {
           "'; " + enum_payload_transfer_guidance(borrowed->second, env) +
           " to transfer it",
           "BORROWED_ENUM_PAYLOAD_CONSUME");
+    auto paths_it = env.borrowed_local_storage_paths.find(name);
+    if (paths_it != env.borrowed_local_storage_paths.end()) {
+      for (const auto& path : paths_it->second) {
+        if (path.find(".[]") != string::npos) {
+          err(line, "cannot consume borrowed local '" + name + "'; collection elements and borrowed places cannot be moved",
+              "OWNERSHIP_ILLEGAL_CONSUME");
+          return;
+        }
+      }
+    }
     if (env.message_payloads.count(name)) {
       err(line, "cannot CONSUME incoming message payload '" + name +
           "'; message payloads may only be read or forwarded");
@@ -23517,16 +23527,22 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        string source_name;
+        if (local_source) {
+          source_name = *local_source;
+        } else if (auto loc = storage_location(s.b, flow_env_types)) {
+          source_name = loc->root;
+        }
+        if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
           def.is_borrow = true;
           def.is_owned = false;
-          def.source_name = *local_source;
-          def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_name = source_name;
+          def.source_binding_identity = current_binding_identities.at(source_name);
           def.source_storage_path = def.source_binding_identity;
           if (auto location = storage_location(s.b, flow_env_types))
             for (const auto& projection : location->path)
               def.source_storage_path += "." + projection;
-          if (immutable_sources.count(*local_source)) def.is_mutable = false;
+          if (immutable_sources.count(source_name)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
           def.is_owned = true;
@@ -23559,16 +23575,22 @@ class Checker {
         if (source_type) flow_env_types[s.a] = *source_type;
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
-        if (transfers && local_source && current_binding_identities.count(*local_source)) {
+        string source_name;
+        if (local_source) {
+          source_name = *local_source;
+        } else if (auto loc = storage_location(s.b, flow_env_types)) {
+          source_name = loc->root;
+        }
+        if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
           def.is_borrow = true;
           def.is_owned = false;
-          def.source_name = *local_source;
-          def.source_binding_identity = current_binding_identities.at(*local_source);
+          def.source_name = source_name;
+          def.source_binding_identity = current_binding_identities.at(source_name);
           def.source_storage_path = def.source_binding_identity;
           if (auto location = storage_location(s.b, flow_env_types))
             for (const auto& projection : location->path)
               def.source_storage_path += "." + projection;
-          if (immutable_sources.count(*local_source)) def.is_mutable = false;
+          if (immutable_sources.count(source_name)) def.is_mutable = false;
         } else {
           def.is_borrow = false;
           def.is_owned = true;
@@ -23763,14 +23785,19 @@ class Checker {
         // onto each earlier loop-carried definition.
         for (const auto generated : stmt_gen_defs[u]) {
           const auto& target = analysis.definitions[generated];
-          const auto source_name = direct_statement_identifier(
-              statements[u], statements[u].kind == Stmt::Kind::Let ||
-                      statements[u].kind == Stmt::Kind::Var
-                  ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue);
-          if (!source_name) continue;
+          string source_name;
+          if (const auto direct = direct_statement_identifier(
+                  statements[u], statements[u].kind == Stmt::Kind::Let ||
+                          statements[u].kind == Stmt::Kind::Var
+                      ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue)) {
+            source_name = *direct;
+          } else if (auto loc = storage_location(statements[u].b, env_types)) {
+            source_name = loc->root;
+          }
+          if (source_name.empty()) continue;
           for (const auto source_id : in_defs[u]) {
             auto& source = analysis.definitions[source_id];
-            if (source.name != *source_name) continue;
+            if (source.name != source_name) continue;
             const Effect joined = stronger_ownership_effect(
                 source.demand, target.demand);
             if (joined != source.demand) {
@@ -23792,7 +23819,8 @@ class Checker {
           definition.statement_index >= N ||
           !body_state.statement_occurrences[definition.statement_index].is_reachable ||
           definition.has_reachable_use || !definition.is_borrow ||
-          definition.source_name.empty())
+          definition.source_name.empty() ||
+          definition.source_storage_path.find(".[]") != string::npos)
         continue;
       const bool inside_loop = [&] {
         for (size_t loop = 0; loop < definition.statement_index; ++loop)
@@ -23838,6 +23866,7 @@ class Checker {
     // when a later use asks to consume them (the use must still be rejected).
     auto is_effective_borrow = [&](const auto& definition) {
       if (!definition.is_borrow) return false;
+      if (definition.source_storage_path.find(".[]") != string::npos) return true;
       if (definition.demand != Effect::Consume ||
           definition.source_name.empty() ||
           definition.statement_index == SIZE_MAX)
@@ -25163,12 +25192,30 @@ class Checker {
       fact.unsupported_reason =
           TypedLocalOwnershipFactV1::UnsupportedReason::ConsumingLoopElement;
       fact.availability = TypedLocalOwnershipFactV1::Availability::NotRequired;
+      if (tracked->second < required_local_ownership_occurrences_.size()) {
+        auto& req = required_local_ownership_occurrences_[tracked->second];
+        req.inference_status = fact.inference_status;
+        req.unsupported_reason = fact.unsupported_reason;
+        req.availability = fact.availability;
+      }
       err(line, "Vector iteration elements cannot be consumed; use an explicit "
           "owned collection operation for element transfer",
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
       return;
     }
     fact.access = stronger_ownership_effect(fact.access, requested);
+    if (tracked->second < required_local_ownership_occurrences_.size()) {
+      required_local_ownership_occurrences_[tracked->second].access = fact.access;
+    }
+    if (fact.est_arena_index != UINT32_MAX && fact.expression_occurrence_id != UINT32_MAX) {
+      if (auto* arena = expression_arena(fact.est_arena_index)) {
+        est::SemanticFacts semantic_fact;
+        semantic_fact.inferred_effect = fact.access;
+        const_cast<est::Arena*>(arena)->record_facts(
+            fact.expression_occurrence_id, fact.specialization_context,
+            std::move(semantic_fact));
+      }
+    }
   }
 
   bool vector_element_binding(const string& name,
@@ -26373,7 +26420,15 @@ class Checker {
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      check_ownership_expression(line, base, env, Effect::Read);
+      if (requested == Effect::Consume) {
+        auto elem_type = inferred_expr_type(value, env.types);
+        if (elem_type && effect_requires_borrow(*elem_type)) {
+          err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
+              "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+          return;
+        }
+      }
+      check_ownership_expression(line, base, env, requested);
       check_ownership_expression(line, index, env, Effect::Read);
       return;
     }
@@ -27230,9 +27285,16 @@ class Checker {
           Effect source_access = transfers ? Effect::Consume : Effect::Read;
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::Initializer);
-          auto source_binding = local_source
-              ? env.binding_identities.find(*local_source)
+          string source_root;
+          if (local_source) {
+            source_root = *local_source;
+          } else if (auto loc = storage_location(s.b, env.types)) {
+            source_root = loc->root;
+          }
+          auto source_binding = !source_root.empty()
+              ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const bool is_indexed_source = !source_root.empty() && !local_source;
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
               (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
@@ -27256,9 +27318,18 @@ class Checker {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  *local_source, source_binding->second, env.types,
+                  source_root, source_binding->second, env.types,
                   env.binding_identities,
                   &unsupported);
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Consume) {
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Write &&
+                env.immutable_locals.count(source_root)) {
+              err(s.line, "cannot borrow '" + source_root + "' as mutable because it is immutable",
+                  "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE");
             }
             if (inferred) {
               source_access = *inferred;
@@ -27379,9 +27450,16 @@ class Checker {
           Effect source_access = transfers ? Effect::Consume : Effect::Read;
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::RhsValue);
-          auto source_binding = local_source
-              ? env.binding_identities.find(*local_source)
+          string source_root;
+          if (local_source) {
+            source_root = *local_source;
+          } else if (auto loc = storage_location(s.b, env.types)) {
+            source_root = loc->root;
+          }
+          auto source_binding = !source_root.empty()
+              ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const bool is_indexed_source = !source_root.empty() && !local_source;
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
               !env.state_fields.count(s.a) &&
@@ -27405,9 +27483,18 @@ class Checker {
             if (!inferred && !current_ownership_flow_) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
-                  *local_source, source_binding->second, env.types,
+                  source_root, source_binding->second, env.types,
                   env.binding_identities,
                   &unsupported);
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Consume) {
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+            }
+            if (is_indexed_source && inferred && *inferred == Effect::Write &&
+                env.immutable_locals.count(source_root)) {
+              err(s.line, "cannot borrow '" + source_root + "' as mutable because it is immutable",
+                  "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE");
             }
             if (inferred) {
               source_access = *inferred;
