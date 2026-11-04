@@ -1,3 +1,26 @@
+### Phase 28 Team B W08–W11 Consumer Migration Integration (2026-11-04)
+
+Integration of branch `phase28-r5-team-b-consumers` (`62ff748a25baed6159bf2c3aabf318c7237d2685`)
+into target `phase28-work` (`887cb15d87a3be532381aa5357d10bab0c66c87f`).
+Reviewed implementation SHA `62ff748a25baed6159bf2c3aabf318c7237d2685` (Independent Agent 2 CP2 GO) preserved exactly.
+Integration merge commit: `06e1640798e16ea770c0ba13e9a4f4efb71f92e5`.
+
+- Scope: W08 normal-flow ownership, W09 loop-carried ownership, W10 exceptional-flow ownership,
+  and W11 optimizer/lowering parity migrated to authoritative checker facts. Zero hidden nonprimitive clones.
+- Targeted gates: `moss-dev`, `moss-opt`, `check_phase28_team_b_consumer.py` (PASS),
+  `check_phase28_local_ownership.py` (PASS), `check_phase28_selector_argument_effects.py` (PASS),
+  `check_phase28_specialized_ownership_contract.py` (PASS), `check_phase28_take_consumer.py` (22/22 PASS),
+  `verify_take_fixtures.py` (18/18 with zero clones PASS), `verify_defects.py` (4 PASS, 4 KNOWN FAILURES),
+  `check_phase27_string_debt.py` (42/7 PASS), `check_agent_feedback.py` (PASS), and `git diff --check` all PASS.
+- Full parallel suite:
+  - Default mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match baseline ledger, 342.10s).
+  - Shadow EST mode: 167 selected, 151 PASS, 16 FAIL, 0 SKIP (all 16 match baseline ledger, 349.52s).
+  - Intermittent failure `check_make_incremental_dependencies` passed in both runs.
+  - Zero new regressions; zero unexpected failures; zero skips.
+- Report documented in `docs/phase28/TEAM_B_W08_W11_INTEGRATION.md` and efficiency report in
+  `docs/phase28/agent-patterns/team-b-w08-w11.md`.
+- No merge to `main`. Results returned to L7.
+
 ### Phase 28 Round 4 — Slice D Integration (2026-11-03)
 
 Integration of branch `origin/phase28-r4-slice-d` (`9aef4d2df6c83846f9bc00694a9a62713f2432ee`)
