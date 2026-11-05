@@ -20,13 +20,18 @@ SOURCE.write_text(
     "  echo 3\n",
     encoding="utf-8",
 )
+ORACLE_42_SOURCE = (
+    ROOT / "tests/phase28/oracle_r7_005_1/fixtures/"
+    "oracle_42_custom_wrapper_remove.moss"
+)
 
 
-def check(extra_env: dict[str, str], *, expected_ok: bool) -> dict:
+def check(extra_env: dict[str, str], *, expected_ok: bool,
+          source: Path = SOURCE) -> dict:
     env = dict(os.environ)
     env.update(extra_env)
     proc = subprocess.run(
-        [str(COMPILER), "check", str(SOURCE), "--json"],
+        [str(COMPILER), "check", str(source), "--json"],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -70,6 +75,18 @@ def main() -> int:
            "MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT_CONTEXT": "1"},
           expected_ok=False)
     print("PASS wrong advertised EST context fails closed", flush=True)
+
+    # ORACLE-42 uses a field-projected receiver (`b.elements[1]`), not a
+    # root Vector local. The exact Echo-only borrow fact must cover this
+    # checked Index occurrence without granting a local ownership fact.
+    check(validate, expected_ok=True, source=ORACLE_42_SOURCE)
+    print("PASS ORACLE-42 nested-field Vector Echo borrow fact", flush=True)
+    for hook in ("MOSS_TEST_DROP_ECHO_ARGUMENT_FACT",
+                 "MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT",
+                 "MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT_CONTEXT"):
+        check({**validate, hook: "1"}, expected_ok=False,
+              source=ORACLE_42_SOURCE)
+        print(f"PASS ORACLE-42 {hook} fails closed", flush=True)
     return 0
 
 

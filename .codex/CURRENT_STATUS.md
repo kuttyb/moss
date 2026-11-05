@@ -16106,3 +16106,18 @@ untouched.
   corruption/drop cases). Corruptions fail closed in checker, interpreter,
   and native generation with no Rust artifact. Build and `git diff --check`
   pass. This change awaits exact-SHA Agent2 review; no push yet.
+
+## R7-010 ORACLE-42 Echo argument authority coverage (2026-11-05)
+
+- The existing `TypedEchoArgumentFactV1` is the authority for `echo
+  b.elements[1]`: exact Echo statement/argument and EST occurrence identity,
+  checked `Vector[String]` receiver and `String` element types, READ access,
+  display-only nonescaping lifetime, and no copy permission. It does not
+  require or imply a local-ownership transfer fact.
+- `MOSS_TEST_VALIDATE_ECHO_ARGUMENT_CONTRACT=1
+  MOSS_TEST_REQUIRE_BORROWED_ECHO_ARGUMENT_FACT=1 ./moss check
+  tests/phase28/oracle_r7_005_1/fixtures/oracle_42_custom_wrapper_remove.moss
+  --json` passes on the Team A checker. The Echo authority harness now covers
+  this field-projected receiver plus drop, access-perturbation, and declared
+  EST-context perturbation; all fail closed. This is a test-only follow-up,
+  pending exact-SHA Agent2 review; no checker or consumer code changed.
