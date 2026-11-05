@@ -16346,3 +16346,30 @@ untouched.
   still blocking. Exact paths/scanner output and a per-group reconciliation are
   pending from Team B. L7 requested an independent audit of the six runtime
   callsites; no registry exception is approved.
+
+## Team A ReturnValue context follow-up integration — staging `9a74ebd0`
+
+- Integrated exact, independently reviewed Team A checker change
+  `77fa306bec04838b38e3e3cc5e7856cf623638b9` as local staging commit
+  `9a74ebd012e3c219b200bca29c504e09dd40956c` (`-x` records source SHA).
+  Its scoped branch is pushed and Agent 2 GO covers the exact commit.
+- Team A candidate worktree passes `check_phase26_1_1_x1.py` when built on that
+  branch. The combined staging tree rebuilds successfully but X1 then fails in
+  Fast Debug while evaluating `x1_library__value`, with
+  `MOSS_INTERNAL_INVARIANT conditional Map write-through identity unavailable`
+  at `src/interpreter.hpp:4857`. This is a combined consumer issue, not caused
+  by the checker-only diff: the guard originates in Team B consumer commit
+  `d40941a5`; exact blame confirms the lines and Team B's earlier conditional
+  Map authority change.
+- Team B is taking this targeted X1 consumer regression as the next isolated
+  follow-up from staging `9a74ebd0`, before resuming clone provenance. The repair
+  must preserve fail-closed behavior for actual conditional Map paths.
+- Team B clone-corruption test-only SHA
+  `896dcdf284c4fbf43f9251892afbee8115247264` received independent Agent 2 GO.
+  Its builder gate exercises real sidecar drop/duplicate/stale-hash/forged-copy
+  and each of six runtime-row drop/relabel corruptions; its pinned ORACLE-10A
+  evidence run passes on canonical staging source. The six runtime rows remain
+  unapproved. This test checkpoint is pending its scoped push and is not yet
+  integrated into L7 staging.
+- Do not use the earlier `19/60`/`41` provenance result as final after new code;
+  rerun targeted gates and full oracle after the X1 correction and clone repair.
