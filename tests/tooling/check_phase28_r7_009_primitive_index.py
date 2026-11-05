@@ -85,6 +85,27 @@ fn main():
 fn main():
   pass
 ''',
+    "option_index_alias_reply_rejected": '''domain Store:
+  values: Vector[option[Int]]
+  fn Read() -> option[Int]:
+    value = values[0]
+    reply value
+
+fn main():
+  pass
+''',
+    "resource_index_alias_reply_rejected": '''type Resource:
+  tag: String
+
+domain Store:
+  values: Vector[Resource]
+  fn Read() -> Resource:
+    value = values[0]
+    reply value
+
+fn main():
+  pass
+''',
     "option_index_return_rejected": '''fn first(items: Vector[option[Int]]) -> option[Int]:
   return items[0]
 
@@ -164,6 +185,14 @@ def main() -> int:
           CASES["option_parenthesized_index_reply_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
     print("PASS option_parenthesized_index_reply_rejected", flush=True)
+    check("option_index_alias_reply_rejected",
+          CASES["option_index_alias_reply_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS option_index_alias_reply_rejected", flush=True)
+    check("resource_index_alias_reply_rejected",
+          CASES["resource_index_alias_reply_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS resource_index_alias_reply_rejected", flush=True)
     check("option_iteration_return_rejected",
           CASES["option_iteration_return_rejected"],
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME")

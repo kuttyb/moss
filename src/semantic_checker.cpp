@@ -11037,12 +11037,18 @@ class Checker {
     auto location = storage_location(source, env.types);
     if (!location) return;
     const auto source_identity = env.binding_identities.find(location->root);
-    if (source_identity == env.binding_identities.end()) return;
+    string origin_identity;
+    if (source_identity != env.binding_identities.end())
+      origin_identity = source_identity->second;
+    else if (env.state_fields.count(location->root))
+      origin_identity = "state:" + location->root;
+    else
+      return;
     auto origins = env.borrowed_local_sources.find(location->root);
     if (origins != env.borrowed_local_sources.end())
       env.borrowed_local_sources[target] = origins->second;
     else
-      env.borrowed_local_sources[target].insert(source_identity->second);
+      env.borrowed_local_sources[target].insert(origin_identity);
     auto paths = env.borrowed_local_storage_paths.find(location->root);
     if (paths != env.borrowed_local_storage_paths.end()) {
       for (const auto& prefix : paths->second) {
@@ -11052,7 +11058,7 @@ class Checker {
         env.borrowed_local_storage_paths[target].insert(std::move(path));
       }
     } else {
-      string path = source_identity->second;
+      string path = origin_identity;
       for (const auto& projection : location->path)
         path += "." + projection;
       env.borrowed_local_storage_paths[target].insert(std::move(path));
@@ -27476,7 +27482,8 @@ class Checker {
               current_semantic_context_, s.line) + ":" + s.a;
           update_borrowed_local_provenance(
               env, s.a, s.b,
-              transfers && source_access != Effect::Consume);
+              transfers &&
+                  (source_access != Effect::Consume || is_indexed_source));
           if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
           else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
@@ -27655,7 +27662,8 @@ class Checker {
                   ":" + s.a;
             update_borrowed_local_provenance(
                 env, s.a, s.b,
-                transfers && source_access != Effect::Consume);
+                transfers &&
+                    (source_access != Effect::Consume || is_indexed_source));
             // Assignment creates or reinitializes the target, including a
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);
@@ -27780,6 +27788,30 @@ class Checker {
             if (element_type && !unresolved_semantic_type(*element_type) &&
                 !phase28_copy_primitive_type(*element_type) &&
                 !string_reply_read)
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+          }
+          const string reply_name = tree_strip_expression_parens(
+              tree_normalize_pipeline(trim(s.a)));
+          if (tree_simple_identifier(reply_name)) {
+            auto borrowed_paths = env.borrowed_local_storage_paths.find(reply_name);
+            const bool indexed_borrow =
+                borrowed_paths != env.borrowed_local_storage_paths.end() &&
+                std::any_of(borrowed_paths->second.begin(),
+                            borrowed_paths->second.end(),
+                            [](const string& path) {
+                              return path.find(".[]") != string::npos;
+                            });
+            auto alias_type = inferred_expr_type(reply_name, env.types);
+            const string canonical_alias_type = alias_type
+                ? canonical_type_name(*alias_type) : string{};
+            const bool string_reply_alias =
+                canonical_alias_type == "String" ||
+                canonical_alias_type == "string";
+            if (indexed_borrow && alias_type &&
+                !unresolved_semantic_type(*alias_type) &&
+                !phase28_copy_primitive_type(*alias_type) &&
+                !string_reply_alias)
               err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
                   "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
           }
