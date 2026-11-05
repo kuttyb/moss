@@ -10958,6 +10958,9 @@ class Checker {
     // beside the ownership environment so invalid source is rejected before
     // native Rust happens to enforce the same representation detail.
     std::set<string> immutable_locals;
+    // Locals explicitly declared with `var` can support a checked WRITE
+    // borrow. Parameters and state roots need their own checked effect facts.
+    std::set<string> mutable_locals;
     // Incoming handler arguments are immutable message snapshots.  This is
     // an authoritative ownership capability consumed by the ordinary
     // READ/WRITE/CONSUME checker; it is not a parser-level convention.
@@ -10966,7 +10969,11 @@ class Checker {
     // a compile-time borrow marker used to reject structural mutation of the
     // traversed collection.
     std::set<string> active_read_traversals;
+    // Match READ borrows end immediately after the last checked payload use.
+    // The index is in the owning statement vector; nested blocks share it.
+    std::unordered_map<string,size_t> active_read_borrow_last_use;
     std::unordered_map<string,string> borrowed_enum_payloads;
+    std::set<string> writable_enum_payloads;
     std::unordered_map<string,std::set<string>> borrowed_local_sources;
     std::unordered_map<string,std::set<string>> borrowed_local_storage_paths;
     // Completed storage mutations are path state and survive typed raises.
@@ -24482,26 +24489,11 @@ class Checker {
             if (analysis.definitions[d].name == v) reaching_v.push_back(d);
           }
           if (reaching_v.size() > 1) {
-            bool has_borrow = false;
-            bool has_owned = false;
-            for (auto d : reaching_v) {
-              const auto& definition = analysis.definitions[d];
-              const bool borrowed = definition.is_borrow &&
-                  !(definition.demand != Effect::Read &&
-                    has_owned_reaching_source(definition));
-              if (borrowed)
-                has_borrow = true;
-              if (definition.is_owned || (definition.is_borrow && !borrowed))
-                has_owned = true;
-            }
-            if (has_borrow && has_owned) {
-              err(statements[J].line,
-                  "cannot merge owned and borrowed values for '" + v +
-                      "' at control flow join",
-                  "OWNERSHIP_INCOMPATIBLE_JOIN");
-            }
-
-            // Post-join demand
+            // Determine the post-join use before classifying mixed ownership.
+            // A consuming join may promote a direct alias only when its
+            // exact source is owned. An immutable `let` alias can also be
+            // promoted when it is the source's final use; mutable aliases
+            // remain borrows unless downstream demand explicitly consumes.
             Effect join_demand = Effect::Read;
             for (size_t k = J; k < N; ++k) {
               if (used_vars[k].count(v)) {
@@ -24513,6 +24505,59 @@ class Checker {
                 if (eff) join_demand = stronger_ownership_effect(join_demand, *eff);
               }
               if (defined_vars[k].count(v)) break;
+            }
+            bool unpromotable_borrow = false;
+            for (auto d : reaching_v) {
+              auto& definition = analysis.definitions[d];
+              if (!definition.is_borrow ||
+                  (definition.demand == Effect::Consume &&
+                   has_owned_reaching_source(definition)))
+                continue;
+              const bool initial_binding = definition.statement_index < N &&
+                  statements[definition.statement_index].kind == Stmt::Kind::Assign &&
+                  std::none_of(in_defs[definition.statement_index].begin(),
+                               in_defs[definition.statement_index].end(),
+                               [&](uint32_t source_id) {
+                    return analysis.definitions[source_id].name == v;
+                  });
+              const bool final_immutable_alias =
+                  definition.statement_index < N &&
+                  (statements[definition.statement_index].kind == Stmt::Kind::Let ||
+                   initial_binding) &&
+                  !definition.source_name.empty() &&
+                  !live_in[J].count(definition.source_name) &&
+                  has_owned_reaching_source(definition);
+              if (join_demand == Effect::Consume ||
+                  (join_demand != Effect::Write && final_immutable_alias)) {
+                if (has_owned_reaching_source(definition)) {
+                  definition.demand = Effect::Consume;
+                  for (const auto source_id : in_defs[definition.statement_index]) {
+                    auto& source = analysis.definitions[source_id];
+                    if (source.name == definition.source_name)
+                      source.demand = Effect::Consume;
+                  }
+                } else {
+                  unpromotable_borrow = true;
+                }
+              } else {
+                unpromotable_borrow = true;
+              }
+            }
+            bool has_borrow = false;
+            bool has_owned = false;
+            for (auto d : reaching_v) {
+              const auto& definition = analysis.definitions[d];
+              const bool borrowed = is_effective_borrow(definition);
+              has_borrow |= borrowed;
+              has_owned |= definition.is_owned ||
+                  (definition.is_borrow && !borrowed);
+            }
+            if (has_borrow && has_owned &&
+                (join_demand != Effect::Consume || unpromotable_borrow)) {
+              err(statements[J].line,
+                  "cannot merge owned and borrowed values for '" + v +
+                      "' at control flow join",
+                  "OWNERSHIP_INCOMPATIBLE_JOIN");
             }
 
             if (join_demand == Effect::Write) {
@@ -26459,8 +26504,10 @@ class Checker {
       auto location = storage_location(value, env.types);
       if (location) {
         auto borrowed = env.borrowed_enum_payloads.find(location->root);
-        if (borrowed != env.borrowed_enum_payloads.end())
-          err(line, "payload '" + location->root + "' is a READ view of '" +
+        const bool writable_payload = requested == Effect::Write &&
+            env.writable_enum_payloads.count(location->root);
+        if (borrowed != env.borrowed_enum_payloads.end() && !writable_payload)
+          err(line, "payload '" + location->root + "' is a borrowed READ view of '" +
               borrowed->second + "' and cannot be written or transferred",
               "BORROWED_ENUM_PAYLOAD_ACCESS");
       }
@@ -27160,6 +27207,15 @@ class Checker {
                              vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
     (void)current_domain;
     while (index < statements.size()) {
+      for (auto it = env.active_read_borrow_last_use.begin();
+           it != env.active_read_borrow_last_use.end();) {
+        if (index > it->second) {
+          env.active_read_traversals.erase(it->first);
+          it = env.active_read_borrow_last_use.erase(it);
+        } else {
+          ++it;
+        }
+      }
       const Stmt& s = statements[index];
       if (s.indent < level) return;
       if (s.kind == Stmt::Kind::Else) return;
@@ -27230,6 +27286,11 @@ class Checker {
           err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
         const EnumType& declaration = *declaration_ptr;
         bool consuming = s.b == "consume";
+        const auto match_source_location = storage_location(s.a, env.types);
+        const bool writable_match_source = !consuming && match_source_location &&
+            env.mutable_locals.count(match_source_location->root) &&
+            !env.message_payloads.count(match_source_location->root) &&
+            !env.state_fields.count(match_source_location->root);
         if (consuming) {
           if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
             err(s.line, "consuming match cannot move an enum from an interior place; "
@@ -27298,7 +27359,8 @@ class Checker {
                     moss::Type::parse_canonical(canonical_type_name(f.type)).value_or(moss::Type::primitive("unit")));
               }
             }
-            arm_fact.payload_access = consuming ? Effect::Consume : Effect::Read;
+            arm_fact.payload_access = consuming ? Effect::Consume
+                : writable_match_source ? Effect::Write : Effect::Read;
             arm_fact.transfers_ownership = consuming;
             fact.arms.push_back(std::move(arm_fact));
           }
@@ -27351,7 +27413,23 @@ class Checker {
           if (item == declaration.cases.end())
             err(arm.line, "unknown enum case '" + pattern.case_name + "'", "UNKNOWN_ENUM_CASE");
           OwnershipEnv branch = incoming;
-          if (read_place) branch.active_read_traversals.insert(s.a);
+          if (read_place) {
+            branch.active_read_traversals.insert(s.a);
+            if (!prior_read) {
+              size_t last_payload_use = index;
+              size_t scan = index + 1;
+              while (scan < statements.size() &&
+                     statements[scan].indent > arm.indent) {
+                const auto used = statement_used_identifiers(statements[scan]);
+                if (std::any_of(pattern.payload_bindings.begin(),
+                                pattern.payload_bindings.end(),
+                                [&](const string& name) { return used.count(name); }))
+                  last_payload_use = scan;
+                ++scan;
+              }
+              branch.active_read_borrow_last_use[s.a] = last_payload_use;
+            }
+          }
           for (size_t field_index = 0; field_index < pattern.payload_bindings.size(); ++field_index) {
             const string& name = pattern.payload_bindings[field_index];
             const string& field_type = item->fields[field_index].type;
@@ -27360,12 +27438,18 @@ class Checker {
                 statement_binding_identity(current_semantic_context_, arm.line) +
                 ":" + name;
             branch.moved.erase(name);
-            if (!consuming) branch.immutable_locals.insert(name);
-            else branch.immutable_locals.erase(name);
+            if (!consuming && !writable_match_source)
+              branch.immutable_locals.insert(name);
+            else
+              branch.immutable_locals.erase(name);
             branch.message_payloads.erase(name);
             branch.borrowed_enum_payloads.erase(name);
-            if (!consuming && transfer_type(field_type))
+            branch.writable_enum_payloads.erase(name);
+            if (!consuming && transfer_type(field_type)) {
               branch.borrowed_enum_payloads[name] = s.a;
+              if (writable_match_source)
+                branch.writable_enum_payloads.insert(name);
+            }
           }
           ++index;
           check_ownership_block(statements, index, level + 2, branch,
@@ -27383,8 +27467,13 @@ class Checker {
               branch.borrowed_enum_payloads[name] =
                   incoming.borrowed_enum_payloads.at(name);
             else branch.borrowed_enum_payloads.erase(name);
+            if (incoming.writable_enum_payloads.count(name))
+              branch.writable_enum_payloads.insert(name);
+            else branch.writable_enum_payloads.erase(name);
           }
           if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+          if (read_place && !prior_read)
+            branch.active_read_borrow_last_use.erase(s.a);
           if (branch.can_continue) {
             path_types.push_back(branch.types);
             continuing_paths.push_back(branch);
@@ -27961,8 +28050,13 @@ class Checker {
           update_borrowed_local_provenance(
               env, s.a, s.b,
               transfers && source_access != Effect::Consume);
-          if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
-          else env.immutable_locals.erase(s.a);
+          if (s.kind == Stmt::Kind::Let) {
+            env.immutable_locals.insert(s.a);
+            env.mutable_locals.erase(s.a);
+          } else {
+            env.immutable_locals.erase(s.a);
+            env.mutable_locals.insert(s.a);
+          }
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
           if (current_body_types_) {
             BodyTypeState::BindingFact fact;
