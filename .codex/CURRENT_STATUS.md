@@ -15689,3 +15689,17 @@ untouched.
 - Team C's reviewed branch was pushed normally by L7 after its exact SHA GO;
   `git ls-remote` confirms `refs/heads/phase28-r7-010-team-c-conformance` at
   `c8ad405e1e8b0f7c4e653b24ce0a9924f972ef37`. No merge was made.
+- Integration rerun of Team C's harness from the L7 checkout exposed a
+  path-dependent harness bug not triggered in Team C's worktree: `derive_copy_materializer_links`
+  iterates `(fact_id, (copy_id, _fact))` but the no-marker/template checks read
+  the stale outer `fact` variable. L7 sent this to Team C for a current-fact
+  fix and order-independence regression. The previously pushed/reviewed C SHA
+  remains preserved; it is not yet accepted into combined conformance.
+- Team A subsequently reproduced the read-projection regression on the exact
+  reviewed `a41dabc8` SHA and localized it to the broad R7-009 nonprimitive
+  consume rule. A narrow checker-only correction and regression fixture are
+  in progress; independent review is required for the new SHA.
+- Team B has proposed/implemented an uncommitted C++ manifest builder that
+  scans generated Rust and exact copy facts, maps helper clones, and leaves
+  other clones unclassified. L7 requested explicit handling of C's reviewed
+  no-helper template rule before wiring artifact output.
