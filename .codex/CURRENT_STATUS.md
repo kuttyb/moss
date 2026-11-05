@@ -52,8 +52,8 @@
   regressions, the Map.get/collection and ownership issues owned by teams, a
   complete independent clone/duplication audit, and acceptable reviewed
   provenance for runtime duplication. No runtime clone is authorized. The
-  `phase28-work` shadow baseline is being measured separately. No production
-  merge is authorized.
+  `phase28-work` default and shadow baselines are recorded separately above.
+  No production merge is authorized.
 
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 
