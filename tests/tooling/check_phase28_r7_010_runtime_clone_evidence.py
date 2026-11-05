@@ -28,17 +28,8 @@ def sha256(path: Path) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        compiler_env = os.environ.get("MOSS_PHASE28_QUERY_COMPILER")
-        if not compiler_env:
-            raise SystemExit("usage: check_phase28_r7_010_runtime_clone_evidence.py COMPILER [SOURCE]")
-        compiler_arg = compiler_env
-        source_arg = None
-    else:
-        compiler_arg = sys.argv[1]
-        source_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    if len(sys.argv) > 3:
-        raise SystemExit("usage: check_phase28_r7_010_runtime_clone_evidence.py COMPILER [SOURCE]")
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: check_phase28_r7_010_runtime_clone_evidence.py COMPILER CANONICAL_SOURCE")
 
     evidence = json.loads(EVIDENCE.read_text())
     artifact = evidence["artifact"]
@@ -53,9 +44,8 @@ def main() -> None:
     assert all(site["authorization"] == "unclassified" for site in sites)
     assert [site["rust_line"] for site in sites] == [2014, 2241, 2357, 2907, 2949, 3112]
 
-    compiler = Path(compiler_arg).resolve()
-    source_path = Path(source_arg).resolve() if source_arg else (
-        ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_10a_explicit_copy_only.moss")
+    compiler = Path(sys.argv[1]).resolve()
+    source_path = Path(sys.argv[2]).resolve()
     assert compiler.is_file() and os.access(compiler, os.X_OK), compiler
     assert sha256(source_path) == artifact["source_sha256"]
 

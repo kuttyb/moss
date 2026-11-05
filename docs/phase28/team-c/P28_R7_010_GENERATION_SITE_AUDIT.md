@@ -223,4 +223,7 @@ all seven raw clone spans and six runtime expression mappings, verifies the
 sidecar result (`1` checked copy, `6` unauthorized/unclassified runtime clones),
 and asserts the evidence rows remain unclassified. From the repository root,
 run `python3 tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py
-./moss`.
+<L7-compiler> <canonical-ORACLE-10A-source>`. Both paths are required because
+the checker fact identity in the pinned artifact is bound to its producer
+source path; an older Team C compiler or a different source path is not a
+comparable producer input.
