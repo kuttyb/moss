@@ -57,5 +57,62 @@ int main(int argc, char** argv) {
       manifest.occurrences[2].origin_kind != "unclassified" ||
       manifest.source_copy_occurrences[0].rust_clone_spans.size() != 2)
     return 3;
+
+  // The builder must derive authorization from the exact fact/helper/call
+  // relation. Each corrupted input below must fail before a manifest is
+  // returned; a caller cannot make a self-asserted sidecar authoritative.
+  const auto rejects = [&](const std::string& bad_rust,
+                           const std::vector<NativeCloneSourceCopyV3>& rows,
+                           const std::vector<NativeCloneCheckedCopyFactV3>& groups) {
+    try {
+      (void)build_native_clone_provenance_v3("debug", bad_rust, source, rows, groups);
+    } catch (const std::exception&) {
+      return true;
+    }
+    return false;
+  };
+  if (!rejects(rust, {source_row}, {})) return 4; // missing facts
+  if (!rejects(rust, {}, {facts})) return 5; // missing lexical occurrence
+  if (!rejects(rust, {source_row, source_row}, {facts, facts})) return 16;
+  if (!rejects(rust, {source_row}, {facts, facts})) return 6; // duplicate group
+
+  auto duplicate_fact = facts;
+  duplicate_fact.facts.push_back(duplicate_fact.facts.front());
+  if (!rejects(rust, {source_row}, {duplicate_fact})) return 7;
+
+  auto missing_marker = rust;
+  const auto marker = "/* Moss copy fact call: " + first_id + " */ ";
+  const auto marker_at = missing_marker.find(marker);
+  if (marker_at == std::string::npos) return 8;
+  missing_marker.erase(marker_at, marker.size());
+  if (!rejects(missing_marker, {source_row}, {facts})) return 9;
+
+  auto forged_marker = rust;
+  const auto id_at = forged_marker.find(first_id);
+  if (id_at == std::string::npos) return 10;
+  forged_marker.replace(id_at, first_id.size(),
+      "typed-copy-fact-v1:" + std::string(64, '0'));
+  if (!rejects(forged_marker, {source_row}, {facts})) return 11;
+
+  auto duplicate_marker = rust;
+  duplicate_marker.insert(marker_at, marker);
+  if (!rejects(duplicate_marker, {source_row}, {facts})) return 12;
+
+  auto extra_caller = rust;
+  extra_caller += "\nfn extra() { " + first_helper + "(&v); }\n";
+  if (!rejects(extra_caller, {source_row}, {facts})) return 13;
+
+  auto corrupt_fact_group = facts;
+  corrupt_fact_group.facts.front().required_source_access = "CONSUME";
+  if (!rejects(rust, {source_row}, {corrupt_fact_group})) return 14;
+
+  auto mismatched_source = facts;
+  mismatched_source.facts.front().source_bytes += "\n";
+  if (!rejects(rust, {source_row}, {mismatched_source})) return 15;
+
+  auto corrupt_fact_type = facts;
+  corrupt_fact_type.facts.front().result_type_key = "record:Forged";
+  if (!rejects(rust, {source_row}, {corrupt_fact_type})) return 17;
+
   write_native_clone_provenance_v3(std::cout, rust, source, manifest);
 }
