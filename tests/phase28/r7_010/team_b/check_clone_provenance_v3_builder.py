@@ -22,8 +22,10 @@ result = subprocess.run([exe, source_path], cwd=ROOT, text=True,
 manifest = json.loads(result.stdout)
 assert set(manifest) == {
     "format", "version", "mode", "rust_sha256", "source_sha256",
-    "source_copy_occurrences", "checked_copy_facts", "occurrences",
+    "source_copy_occurrences", "checked_copy_facts",
+    "root_ingress_domain_captures", "occurrences",
 }
+assert manifest["root_ingress_domain_captures"] == []
 assert manifest["format"] == "moss-clone-provenance" and manifest["version"] == 3
 assert len(manifest["source_copy_occurrences"]) == 1
 assert len(manifest["checked_copy_facts"]) == 1

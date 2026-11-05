@@ -80,10 +80,23 @@ struct NativeCloneCheckedCopyFactV3 {
   std::vector<NativeCheckedCopyFactV1> facts;
 };
 
+struct NativeRootIngressCaptureInputV1 {
+  TypedRootIngressDomainCaptureFactV1 checked_fact;
+  std::string source_bytes;
+};
+
+struct NativeRootIngressCaptureV1 {
+  std::string capture_id;
+  TypedRootIngressDomainCaptureFactV1 checked_fact;
+  std::string source_sha256;
+  NativeCloneSpanV2 rust_span;
+};
+
 struct NativeCloneProvenanceV3 {
   std::string mode{"debug"};
   std::vector<NativeCloneSourceCopyV3> source_copy_occurrences;
   std::vector<NativeCloneCheckedCopyFactV3> checked_copy_facts;
+  std::vector<NativeRootIngressCaptureV1> root_ingress_domain_captures;
   std::vector<NativeCloneOccurrenceV2> occurrences;
 };
 
@@ -109,6 +122,70 @@ inline std::string native_clone_json_string(std::string_view value) {
   }
   out += '"';
   return out;
+}
+
+inline std::string native_root_ingress_capture_fact_json(
+    const TypedRootIngressDomainCaptureFactV1& fact) {
+  const auto availability = [&] {
+    switch (fact.availability) {
+      case TypedRootIngressDomainCaptureFactV1::Availability::Present:
+        return std::string("Present");
+      case TypedRootIngressDomainCaptureFactV1::Availability::MissingOccurrence:
+        return std::string("MissingOccurrence");
+      case TypedRootIngressDomainCaptureFactV1::Availability::Contradictory:
+        return std::string("Contradictory");
+    }
+    return std::string("Unknown");
+  }();
+  // std::map gives the stable lexical key order used by the canonical ID.
+  const std::map<std::string, std::string> fields{
+      {"availability", native_clone_json_string(availability)},
+      {"compiler_generated_capture_only", fact.compiler_generated_capture_only ? "true" : "false"},
+      {"concrete_graph_identity", native_clone_json_string(fact.concrete_graph_identity)},
+      {"domain_instance_identity", native_clone_json_string(fact.domain_instance_identity)},
+      {"domain_type_identity", native_clone_json_string(fact.domain_type_identity)},
+      {"est_arena_index", std::to_string(fact.est_arena_index)},
+      {"est_fact_context", native_clone_json_string(fact.est_fact_context)},
+      {"message_expression_occurrence_id", std::to_string(fact.message_expression_occurrence_id)},
+      {"origin_id", std::to_string(fact.origin_id)},
+      {"permits_moss_value_copy", fact.permits_moss_value_copy ? "true" : "false"},
+      {"receiver_binding", native_clone_json_string(fact.receiver_binding)},
+      {"receiver_definition_identity", native_clone_json_string(fact.receiver_definition_identity)},
+      {"receiver_expression_occurrence_id", std::to_string(fact.receiver_expression_occurrence_id)},
+      {"route_capability_identity", native_clone_json_string(fact.route_capability_identity)},
+      {"selected_call_edge_est_arena_index", std::to_string(fact.selected_call_edge_est_arena_index)},
+      {"selected_call_edge_identity", native_clone_json_string(fact.selected_call_edge_identity)},
+      {"selected_call_edge_invocation_kind", native_clone_json_string(fact.selected_call_edge_invocation_kind)},
+      {"selected_call_edge_line", std::to_string(fact.selected_call_edge_line)},
+      {"selected_call_edge_message_expression_occurrence_id", std::to_string(fact.selected_call_edge_message_expression_occurrence_id)},
+      {"selected_call_edge_occurrence", std::to_string(fact.selected_call_edge_occurrence)},
+      {"selected_call_edge_receiver", native_clone_json_string(fact.selected_call_edge_receiver)},
+      {"selected_call_edge_receiver_expression_occurrence_id", std::to_string(fact.selected_call_edge_receiver_expression_occurrence_id)},
+      {"selected_call_edge_source", native_clone_json_string(fact.selected_call_edge_source)},
+      {"selected_call_edge_source_file", native_clone_json_string(fact.selected_call_edge_source_file)},
+      {"selected_call_edge_source_fingerprint", std::to_string(fact.selected_call_edge_source_fingerprint)},
+      {"selected_call_edge_target", native_clone_json_string(fact.selected_call_edge_target)},
+      {"selected_handler_identity", native_clone_json_string(fact.selected_handler_identity)},
+      {"source_file", native_clone_json_string(fact.source_file)},
+      {"source_fingerprint", std::to_string(fact.source_fingerprint)},
+      {"source_line", std::to_string(fact.source_line)},
+      {"specialization_context", native_clone_json_string(fact.specialization_context)},
+      {"statement_occurrence_id", std::to_string(fact.statement_occurrence_id)},
+      {"synchronous_root_ingress", fact.synchronous_root_ingress ? "true" : "false"}};
+  std::string json = "{";
+  bool first = true;
+  for (const auto& field : fields) {
+    if (!first) json += ',';
+    first = false;
+    json += native_clone_json_string(field.first) + ":" + field.second;
+  }
+  return json + "}";
+}
+
+inline std::string native_root_ingress_capture_identity(
+    const TypedRootIngressDomainCaptureFactV1& fact) {
+  return "root-ingress-domain-capture-fact-v1:" +
+      source_free_contract_sha256(native_root_ingress_capture_fact_json(fact));
 }
 
 inline std::string native_clone_fact_span_json(const NativeCloneSpanV2& span) {
@@ -308,7 +385,8 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
     std::string mode, std::string_view rust_bytes,
     std::string_view source_bytes,
     std::vector<NativeCloneSourceCopyV3> lexical_copies,
-    std::vector<NativeCloneCheckedCopyFactV3> exact_fact_groups) {
+    std::vector<NativeCloneCheckedCopyFactV3> exact_fact_groups,
+    std::vector<NativeRootIngressCaptureInputV1> root_capture_inputs = {}) {
   NativeCloneProvenanceV3 manifest;
   manifest.mode = std::move(mode);
   manifest.source_copy_occurrences = std::move(lexical_copies);
@@ -331,6 +409,79 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
         return left_order->second < right_order->second;
       });
   const auto code = native_clone_mask_rust_non_code(rust_bytes);
+  std::map<std::string, const NativeRootIngressCaptureInputV1*> root_facts;
+  for (const auto& input : root_capture_inputs) {
+    if (!input.checked_fact.is_authoritative() ||
+        input.checked_fact.permits_moss_value_copy ||
+        input.source_bytes != source_bytes)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT invalid or source-mismatched Root-ingress capture fact");
+    const auto id = native_root_ingress_capture_identity(input.checked_fact);
+    if (!root_facts.emplace(id, &input).second)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT duplicate Root-ingress capture fact identity");
+  }
+  std::map<std::uint64_t, std::string> root_capture_by_clone;
+  std::set<std::string> marked_root_captures;
+  const std::string root_capture_marker =
+      "/* Moss root ingress capture fact: ";
+  std::size_t root_marker_at = 0;
+  while ((root_marker_at = rust_bytes.find(root_capture_marker,
+                                            root_marker_at)) !=
+         std::string_view::npos) {
+    const auto id_begin = root_marker_at + root_capture_marker.size();
+    const auto marker_end = rust_bytes.find(" */", id_begin);
+    if (marker_end == std::string_view::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unterminated Root-ingress capture marker");
+    const std::string id(rust_bytes.substr(id_begin, marker_end - id_begin));
+    const auto fact = root_facts.find(id);
+    if (fact == root_facts.end() || !marked_root_captures.insert(id).second)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unknown or duplicate Root-ingress capture marker");
+    std::size_t clone_begin = marker_end + 3;
+    while (clone_begin < code.size() &&
+           std::isspace(static_cast<unsigned char>(code[clone_begin])))
+      ++clone_begin;
+    if (clone_begin + 8 > code.size() ||
+        code.substr(clone_begin, 8) != ".clone()")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture marker does not precede its direct clone");
+    std::size_t receiver_end = root_marker_at;
+    while (receiver_end > 0 &&
+           std::isspace(static_cast<unsigned char>(code[receiver_end - 1])))
+      --receiver_end;
+    std::size_t receiver_begin = receiver_end;
+    while (receiver_begin > 0 &&
+           native_clone_identifier_char(code[receiver_begin - 1]))
+      --receiver_begin;
+    if (receiver_begin == receiver_end ||
+        code.substr(receiver_begin, receiver_end - receiver_begin) !=
+            fact->second->checked_fact.receiver_binding)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress marker is not bound to its checked receiver");
+    auto [position, inserted] = root_capture_by_clone.emplace(clone_begin, id);
+    (void)position;
+    if (!inserted)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT duplicate Root-ingress clone marker span");
+    NativeRootIngressCaptureV1 capture;
+    capture.capture_id = id;
+    capture.checked_fact = fact->second->checked_fact;
+    capture.source_sha256 = source_free_contract_sha256(source_bytes);
+    capture.rust_span = native_checked_copy_source_span(
+        rust_bytes, clone_begin, clone_begin + 8);
+    manifest.root_ingress_domain_captures.push_back(std::move(capture));
+    root_marker_at = marker_end + 3;
+  }
+  if (marked_root_captures.size() != root_facts.size())
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked Root-ingress capture fact lacks exactly one Rust marker");
+  std::sort(manifest.root_ingress_domain_captures.begin(),
+      manifest.root_ingress_domain_captures.end(), [](const auto& left,
+                                                      const auto& right) {
+        return left.rust_span.source_begin < right.rust_span.source_begin;
+      });
   struct FactBinding {
     std::string copy_id, helper, identity;
     const NativeCheckedCopyFactV1* fact{};
@@ -476,7 +627,24 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
     }
     NativeCloneOccurrenceV2 occurrence;
     occurrence.rust_span = span;
-    if (owner) {
+    const auto root_capture = root_capture_by_clone.find(at);
+    if (root_capture != root_capture_by_clone.end()) {
+      const auto capture = std::find_if(
+          manifest.root_ingress_domain_captures.begin(),
+          manifest.root_ingress_domain_captures.end(),
+          [&](const auto& row) { return row.capture_id == root_capture->second; });
+      if (capture == manifest.root_ingress_domain_captures.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT Root-ingress marker lost its checked row");
+      if (owner)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT Root-ingress capture clone overlaps explicit-copy helper");
+      occurrence.origin_kind = "root_ingress_domain_capture";
+      occurrence.semantic_type = capture->checked_fact.domain_type_identity;
+      occurrence.ownership_fact =
+          "compiler_generated_capture_only;permits_moss_value_copy=false";
+      occurrence.semantic_identity = capture->capture_id;
+    } else if (owner) {
       occurrence.origin_kind = "explicit_copy";
       occurrence.source_copy_id = owner->copy_id;
       occurrence.semantic_identity = owner->identity;
@@ -764,6 +932,51 @@ inline void write_native_clone_provenance_v3(
         [](const auto& left, const auto& right) {
           return left.first < right.first;
         });
+  std::map<std::string, const NativeRootIngressCaptureV1*> root_capture_by_id;
+  std::map<std::uint64_t, std::string> root_capture_by_span;
+  for (const auto& capture : manifest.root_ingress_domain_captures) {
+    if (!capture.checked_fact.is_authoritative() ||
+        capture.checked_fact.permits_moss_value_copy ||
+        capture.capture_id != native_root_ingress_capture_identity(
+                                  capture.checked_fact) ||
+        capture.source_sha256 != source_free_contract_sha256(source_bytes) ||
+        capture.rust_span.source_begin >= capture.rust_span.source_end ||
+        capture.rust_span.source_end > rust_bytes.size() ||
+        rust_bytes.substr(capture.rust_span.source_begin,
+                          capture.rust_span.source_end -
+                              capture.rust_span.source_begin) != ".clone()" ||
+        !root_capture_by_id.emplace(capture.capture_id, &capture).second ||
+        !root_capture_by_span.emplace(capture.rust_span.source_begin,
+                                      capture.capture_id).second)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT invalid or duplicate Root-ingress capture row");
+  }
+  std::map<std::string, std::size_t> root_occurrence_counts;
+  for (const auto& occurrence : manifest.occurrences) {
+    if (occurrence.origin_kind != "root_ingress_domain_capture") continue;
+    const auto capture = root_capture_by_id.find(occurrence.semantic_identity);
+    const auto span = root_capture_by_span.find(
+        occurrence.rust_span.source_begin);
+    if (capture == root_capture_by_id.end() ||
+        span == root_capture_by_span.end() ||
+        span->second != occurrence.semantic_identity ||
+        occurrence.rust_span.source_end !=
+            capture->second->rust_span.source_end ||
+        occurrence.semantic_type !=
+            capture->second->checked_fact.domain_type_identity ||
+        occurrence.ownership_fact !=
+            "compiler_generated_capture_only;permits_moss_value_copy=false")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress occurrence does not match exact capture row");
+    ++root_occurrence_counts[occurrence.semantic_identity];
+  }
+  if (root_occurrence_counts.size() != root_capture_by_id.size())
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT Root-ingress capture row lacks clone occurrence");
+  for (const auto& capture : root_capture_by_id)
+    if (root_occurrence_counts[capture.first] != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture is not one-to-one");
   out << "{\"format\":\"moss-clone-provenance\",\"version\":3,\"mode\":"
       << native_clone_json_string(manifest.mode)
       << ",\"rust_sha256\":"
@@ -798,6 +1011,24 @@ inline void write_native_clone_provenance_v3(
       out << native_checked_copy_fact_json(*facts[j].second);
     }
     out << "]}";
+  }
+  out << "],\"root_ingress_domain_captures\":[";
+  for (std::size_t i = 0;
+       i < manifest.root_ingress_domain_captures.size(); ++i) {
+    if (i) out << ',';
+    const auto& capture = manifest.root_ingress_domain_captures[i];
+    if (capture.rust_span.source_end > rust_bytes.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress Rust span is out of bounds");
+    out << "{\"capture_id\":"
+        << native_clone_json_string(capture.capture_id)
+        << ",\"checked_fact\":"
+        << native_root_ingress_capture_fact_json(capture.checked_fact)
+        << ",\"source_sha256\":"
+        << native_clone_json_string("sha256:" + capture.source_sha256)
+        << ",\"rust_span\":";
+    emit_rust_span(capture.rust_span);
+    out << '}';
   }
   out << "],\"occurrences\":[";
   std::set<std::string> used_fact_identities;

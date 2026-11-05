@@ -1041,6 +1041,13 @@ class Generator {
   mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
+  struct RootIngressMessageOccurrence {
+    std::uint32_t arena_index{UINT32_MAX};
+    est::ExprId message_expression{UINT32_MAX};
+    est::ExprId receiver_expression{UINT32_MAX};
+    std::uint64_t source_fingerprint{0};
+    std::uint64_t origin_id{0};
+  };
   mutable size_t fileio_chunk_temp_ = 0;
   bool phase21_result_context_ = false;
   std::optional<bool> phase21_return_result_context_;
@@ -1639,6 +1646,161 @@ class Generator {
            (fact->view_binding_identity.empty() ||
             fact->view_definition_identity.empty())))
         throw std::invalid_argument("collection-view fact is not authoritative");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  std::optional<RootIngressMessageOccurrence>
+  root_ingress_message_occurrence(const Stmt& statement, est::ExprSlot slot,
+                                 std::uint32_t argument_index) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index) continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate active Root-ingress message handle");
+      selected = &handle;
+    }
+    if (!selected || selected->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[selected->arena_index])
+      return std::nullopt;
+    const auto& arena = *p_.expression_arenas[selected->arena_index];
+    if (selected->expr >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT active Root-ingress expression handle is invalid");
+    const auto message_id = est::unparenthesized(arena, selected->expr);
+    const auto* message = message_id < arena.size()
+        ? std::get_if<est::Message>(&arena.at(message_id)) : nullptr;
+    if (!message) return std::nullopt;
+    return RootIngressMessageOccurrence{
+        selected->arena_index, message_id, message->target,
+        selected->source_fingerprint, selected->origin_id};
+  }
+
+  const TypedRootIngressDomainCaptureFactV1&
+  resolve_root_ingress_domain_capture(
+      const string& receiver, const string& handler,
+      const RootIngressMessageOccurrence& occurrence) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!checked_program.typed_semantics || !statement ||
+        statement->checked_statement_occurrence_id == UINT32_MAX ||
+        occurrence.arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[occurrence.arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture query identity unavailable");
+    const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
+    if (occurrence.message_expression >= arena.size() ||
+        occurrence.receiver_expression >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress active EST occurrence is invalid");
+    const auto* message = std::get_if<est::Message>(
+        &arena.at(occurrence.message_expression));
+    const auto* target = message
+        ? std::get_if<est::Identifier>(&arena.at(message->target)) : nullptr;
+    if (!message || !target || message->target != occurrence.receiver_expression ||
+        message->handler != handler || target->name != receiver)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT active Root-ingress message does not match its exact EST handle");
+
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const TypedRootIngressDomainCaptureRequirementV1* requirement = nullptr;
+    std::size_t requirement_count = 0;
+    std::size_t fact_count = 0;
+    for (const auto& candidate : checked_program.typed_semantics
+             ->required_root_ingress_domain_capture_occurrences) {
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.receiver_expression_occurrence_id ==
+              occurrence.receiver_expression &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.origin_id == occurrence.origin_id &&
+          candidate.specialization_context == context &&
+          candidate.receiver_binding == receiver) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    }
+    for (const auto& candidate : checked_program.typed_semantics
+             ->root_ingress_domain_capture_facts)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.receiver_expression_occurrence_id ==
+              occurrence.receiver_expression &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.origin_id == occurrence.origin_id &&
+          candidate.specialization_context == context &&
+          candidate.receiver_binding == receiver)
+        ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_CAPTURE_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_CAPTURE_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_CAPTURE_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_CAPTURE_FACT"))
+      ++fact_count;
+#endif
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_CAPTURE_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.permits_moss_value_copy = true;
+        (void)checked_program.typed_semantics
+            ->find_root_ingress_domain_capture_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed Root-ingress capture fact unexpectedly passed");
+      }
+#endif
+      const auto& fact = checked_program.typed_semantics
+          ->find_root_ingress_domain_capture_fact(*requirement);
+      std::size_t edge_matches = 0;
+      for (const auto& edge : checked_program.semantic_call_edges)
+        if (edge.source == fact.selected_call_edge_source &&
+            edge.target == fact.selected_call_edge_target &&
+            edge.invocation_kind == fact.selected_call_edge_invocation_kind &&
+            edge.receiver == fact.selected_call_edge_receiver &&
+            edge.source_file == fact.selected_call_edge_source_file &&
+            edge.line == fact.selected_call_edge_line &&
+            edge.occurrence == fact.selected_call_edge_occurrence &&
+            edge.message_est_arena_index ==
+                fact.selected_call_edge_est_arena_index &&
+            edge.message_expression_occurrence_id ==
+                fact.selected_call_edge_message_expression_occurrence_id &&
+            edge.receiver_expression_occurrence_id ==
+                fact.selected_call_edge_receiver_expression_occurrence_id &&
+            edge.message_source_fingerprint ==
+                fact.selected_call_edge_source_fingerprint)
+          ++edge_matches;
+      if (edge_matches != 1 ||
+          fact.selected_call_edge_identity !=
+              fact.selected_call_edge_source + "|" +
+              fact.selected_call_edge_target + "|" +
+              fact.selected_call_edge_source_file + ":" +
+              std::to_string(fact.selected_call_edge_line) + ":" +
+              std::to_string(fact.selected_call_edge_occurrence) +
+              "|receiver=" + fact.selected_call_edge_receiver + "|est=" +
+              std::to_string(fact.selected_call_edge_est_arena_index) + ":" +
+              std::to_string(fact.selected_call_edge_message_expression_occurrence_id) +
+              ":" + std::to_string(
+                  fact.selected_call_edge_receiver_expression_occurrence_id) ||
+          !fact.is_authoritative() || fact.permits_moss_value_copy)
+        throw std::invalid_argument(
+            "Root-ingress capture does not bind one exact checked message call edge");
       return fact;
     } catch (const std::exception& error) {
       throw std::runtime_error(
@@ -5369,7 +5531,9 @@ class Generator {
   string expr(string e, const Domain* d, const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
-              const vector<size_t>* message_argument_plans = nullptr) const {
+              const vector<size_t>* message_argument_plans = nullptr,
+              std::optional<RootIngressMessageOccurrence>
+                  root_ingress_occurrence = std::nullopt) const {
     // Moss parentheses are grouping syntax, not an observable expression node.
     // Remove only complete balanced outer groups before lowering. Nested groups
     // still protect precedence until their recursive expr() call reaches them.
@@ -5408,10 +5572,18 @@ class Generator {
       const Handler* target_handler = find_handler(target_domain, handler);
       if (!target_handler)
         throw std::runtime_error("internal error: unresolved message expression handler");
-      if (root_ingress_statement_)
+      if (root_ingress_statement_) {
+        if (!root_ingress_occurrence)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT active Root-ingress message ExprId unavailable");
+        const auto& capture_fact = resolve_root_ingress_domain_capture(
+            receiver, handler, *root_ingress_occurrence);
+        const auto capture_id = native_root_ingress_capture_identity(
+            capture_fact);
         return root_ingress_message(receiver, handler, arguments, target_domain,
                                     *target_handler, d, locals, types,
-                                    message_argument_plans);
+                                    message_argument_plans, capture_id);
+      }
       const bool raises = !target_handler->observable_effects.raise_set.empty();
       if (raises && !phase21_result_context_)
         throw std::runtime_error(
@@ -9739,7 +9911,11 @@ class Generator {
                   : expr(
                       s.args[argument], d, locals, &types,
                       statement_functional_pipeline_id(s, functional_context,
-                                                       argument));
+                                                       argument),
+                      nullptr,
+                      root_ingress_message_occurrence(
+                          s, est::ExprSlot::Argument,
+                          static_cast<std::uint32_t>(argument)));
               auto type = generated_expr_type(s.args[argument], &types);
               auto resolved = [](const std::optional<string>& t) {
                 if (!t) return false;
@@ -9805,7 +9981,9 @@ class Generator {
             o << indent(level) << "let _ = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
-                          s, functional_context, 0))
+                          s, functional_context, 0), nullptr,
+                      root_ingress_message_occurrence(
+                          s, est::ExprSlot::RhsValue, 0))
               << ";\n";
             ++i;
             break;
@@ -9814,7 +9992,9 @@ class Generator {
             o << indent(level) << "__moss_recovery_slot_" << s.a
               << " = Some(" << expr(s.b, d, locals, &types,
                      statement_functional_pipeline_id(
-                         s, functional_context, 0)) << ");\n";
+                         s, functional_context, 0), nullptr,
+                     root_ingress_message_occurrence(
+                         s, est::ExprSlot::RhsValue, 0)) << ");\n";
             ++i;
             break;
           }
@@ -9940,7 +10120,9 @@ class Generator {
                               ownership_fact->access == Effect::Write;
                           string rendered = expr(s.b, d, locals, &types,
                               statement_functional_pipeline_id(
-                                  s, functional_context, 0));
+                                  s, functional_context, 0), nullptr,
+                              root_ingress_message_occurrence(
+                                  s, est::ExprSlot::RhsValue, 0));
                           checked_map_get_write_through_ = prior;
                           return rendered;
                         }();
@@ -9968,7 +10150,9 @@ class Generator {
               o << " = "
                 << expr(s.b, d, locals, &types,
                         statement_functional_pipeline_id(
-                            s, functional_context, 0))
+                            s, functional_context, 0), nullptr,
+                        root_ingress_message_occurrence(
+                            s, est::ExprSlot::RhsValue, 0))
                 << ";\n";
             }
             locals.insert(s.a);
@@ -10009,7 +10193,9 @@ class Generator {
                   !string_key)
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0));
+                  statement_functional_pipeline_id(s, functional_context, 0),
+                  nullptr, root_ingress_message_occurrence(
+                      s, est::ExprSlot::RhsValue, 0));
               const auto source_binding = tree_identifier_name(s.b);
               if (source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
@@ -10029,7 +10215,10 @@ class Generator {
               }
             }
             else if (is_object_view(s.a, d, locals, &types) && (!tree_plain_identifier(s.a) || !locals.count(s.a))) {
-              string assigned = expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0));
+              string assigned = expr(s.b, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0),
+                  nullptr, root_ingress_message_occurrence(
+                      s, est::ExprSlot::RhsValue, 0));
               o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
             }
@@ -10100,7 +10289,9 @@ class Generator {
                 checked_map_get_write_through_ =
                     ownership_fact && ownership_fact->access == Effect::Write;
                 assigned = expr(s.b, d, locals, &types,
-                    statement_functional_pipeline_id(s, functional_context, 0));
+                    statement_functional_pipeline_id(s, functional_context, 0),
+                    nullptr, root_ingress_message_occurrence(
+                        s, est::ExprSlot::RhsValue, 0));
                 checked_map_get_write_through_ = prior;
               }
               const auto source_binding = tree_identifier_name(s.b);
@@ -10550,7 +10741,9 @@ class Generator {
                 o << ": " << rust_type(statement_type);
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
-                                        s, functional_context, 0));
+                                        s, functional_context, 0), nullptr,
+                                    root_ingress_message_occurrence(
+                                        s, est::ExprSlot::RhsValue, 0));
               if (ownership_fact) {
                 const auto rhs_name = tree_identifier_name(s.b);
                 bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
@@ -10620,7 +10813,9 @@ class Generator {
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans)
+          o << expr(call, d, locals, &types, 0, &argument_plans,
+                    root_ingress_message_occurrence(
+                        s, est::ExprSlot::Receiver, 0))
             << (state_view ? ")" : "") << ";\n";
           if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));

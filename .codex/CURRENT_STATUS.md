@@ -16469,3 +16469,34 @@ untouched.
 - The two-line native CollectionOutcome warning fix remains in staging commit `8886b458`. The standalone statement-call-role helper compiles now but its runtime assertion fails identically on `phase28-work` baseline `150ab36b`; it is inherited and remains unregistered.
 - Team B is resuming the separate domain-capture clone consumer work from this updated staging base. The four domain-handle clones and six runtime clone sites remain unapproved. Fresh 60-fixture oracle, default/shadow full suites, and final clone provenance audit remain pending.
 - Staging HEAD before the pending L7 docs/runner commit is `7e6c438caa9d96dc73f86ea8b0554be275d10b84`. No merge to `phase28-work` or `main` is authorized.
+
+### Team B Root-ingress domain capture consumer checkpoint (2026-11-05)
+
+- Fresh isolated worktree/branch `phase28-r7-010-team-b-domain-capture-v2` at
+  staging base `e35f75c967a792f79c00afe16af5e804c5733cd2`.
+- Native generator now binds the active exact Root-ingress message occurrence
+  through `ExprSlot::Argument[index]` for Echo, `ExprSlot::RhsValue[0]` for
+  assignment, and `ExprSlot::Receiver[0]` for direct Message statements. It
+  unwraps only parenthesized wrappers and carries exact arena/message/receiver
+  ExprIds plus source fingerprint/origin into the fact resolver. The resolver
+  validates the unique required fact, all exact fields, the full selected
+  synchronous `SemanticCallEdge` occurrence, and `permits_moss_value_copy=false`
+  before emitting a canonical full-fact-ID marker adjacent to the generated
+  receiver `.clone()`.
+- `NativeCloneProvenanceV3` builder now accepts
+  `NativeRootIngressCaptureInputV1 { checked_fact, source_bytes }`, derives
+  `root-ingress-domain-capture-fact-v1:<sha256(canonical fact JSON)>`, scans raw
+  Rust for one marker/target clone, and serializes full checked fact, source
+  SHA-256 and exact Rust span as `root_ingress_domain_captures`. These records
+  identify checker-authorized compiler capture only and explicitly retain
+  `permits_moss_value_copy=false`.
+- Passing tests: isolated compiler build; checker Root-ingress authority
+  harness (38 scenarios); direct C++ provenance-v3 builder unit (including
+  missing, forged, duplicate, wrong-receiver, copy-permission and source
+  corruption cases); manifest JSON parse/key check; `git diff --check`.
+- Real artifact end-to-end is blocked pending L7 `src/moss.cpp` writer wiring:
+  the current old 5-argument writer rejects the emitted Root-ingress marker as
+  unknown because it supplies no `root_capture_inputs`. The exact builder
+  signature and schema were sent to L7. No sidecar or clone authorization is
+  accepted until the writer and independent validator are integrated and run.
+  Independent Agent 2 review is pending; no push.

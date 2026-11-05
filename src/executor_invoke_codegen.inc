@@ -188,10 +188,17 @@ string root_ingress_message(const string& receiver, const string& handler,
                             const Domain& target_domain, const Handler& target_handler,
                             const Domain* d, const std::set<string>& locals,
                             const std::unordered_map<string,string>* types,
-                            const vector<size_t>* message_argument_plans) const {
+                            const vector<size_t>* message_argument_plans,
+                            const string& capture_identity) const {
+  if (capture_identity.rfind(
+          "root-ingress-domain-capture-fact-v1:", 0) != 0)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT Root-ingress capture identity is missing");
   std::ostringstream rendered;
   string domain_temp = "__moss_root_domain_" + std::to_string(executor_invoke_temp_++);
-  rendered << "{ let " << domain_temp << " = " << expr(receiver, d, locals, types) << ".clone(); ";
+  rendered << "{ let " << domain_temp << " = " << expr(receiver, d, locals, types)
+           << "/* Moss root ingress capture fact: " << capture_identity
+           << " */.clone(); ";
   vector<string> argument_locals;
   for (size_t index = 0; index < arguments.size(); ++index) {
     string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
