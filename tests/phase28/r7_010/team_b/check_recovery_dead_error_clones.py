@@ -49,16 +49,20 @@ for mode, moss_flags, rust_flags in (
 capture_source = OUT / "capture_nested_reraise_int.moss"
 capture_text = CAPTURE_RERAISE.read_text()
 capture_text = capture_text.replace("fn Run() -> String:", "fn Run() -> Int:")
+capture_text = capture_text.replace('let item = "kept"', "let item = 7")
 capture_text = capture_text.replace('reply "ok"', "reply 1")
-capture_text = capture_text.replace("reply item", "reply 2")
 capture_source.write_text(capture_text)
+assert "reply item" in capture_text, "captured payload reply was lost"
 capture_fast = run([MOSS, "run", "--interp", capture_source])[0]
+assert capture_fast == "4\n7", capture_fast
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"captured-reraise-{mode}.rs"
     binary = OUT / f"captured-reraise-{mode}"
     run([MOSS, *moss_flags, capture_source, "-o", rust])
     generated = rust.read_text()
+    assert re.search(r"Err\(__moss_selected_carrier\)", generated), (
+        "captured bare raise did not forward the carrier", mode)
     run(["rustc", *rust_flags, rust, "-o", binary])
     assert run([binary])[0] == capture_fast
 
