@@ -15865,3 +15865,25 @@ untouched.
   not consume b5294b52; consumer implementation waits for a corrected exact
   SHA and independent GO. Previously reviewed Team A checker SHA and pushed
   branch remain unchanged.
+
+## Post-review integration checkpoint (2026-11-05)
+
+- Team A Echo authority correction `644d2c71c773bfcf41604189593d3e852f8797e7`
+  received independent Agent 2 GO and is pushed to
+  `origin/phase28-r7-010-team-a-echo-authority`; exact remote SHA verified.
+  The rejected `b5294b52` remains local history only and was not pushed. The
+  corrected producer aligns `est_fact_context` with `echo_context`, reads back
+  the exact arena fact and type, and rejects wrong context.
+- Team C reviewed audit commits `cf9a4da9` and `2b23276e` are integrated into
+  L7 as `8744ba86` and `00377bcb`. Post-integration oracle-harness and clone
+  inventory unit tests pass **45/45** with the live checker query; feedback
+  validator and `git diff --check 04564464..HEAD` pass.
+- Team B recovery-pruning checkpoint `83a9eed6012e3ae5120fd64aa0c073db3b30fe9f`
+  removes nine dead selected-error clones in ORACLE-07 arms without bare
+  re-raise while retaining the bare re-raise path. Build, recovery fixture,
+  vector gate and diff check passed on Team B's isolated follow-up branch.
+  Independent focused review is pending; it is not yet integrated or accepted.
+- Team B consumer integration remains in progress against approved checker
+  SHA `644d2c71`; full native sidecar/provenance still fails closed on six
+  runtime clones and the other audit sites. No 60-fixture combined run or final
+  default/shadow suites have been started.
