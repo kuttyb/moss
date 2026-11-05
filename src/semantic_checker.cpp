@@ -3539,6 +3539,14 @@ class Checker {
   }
   std::unordered_map<const vector<Stmt>*, std::shared_ptr<BodyTypeState>>
       checked_body_states_;
+  // Specialized body checks intentionally do not replace the generic checked
+  // BodyTypeState. Preserve just the exact source-statement IDs needed by
+  // specialized consumer facts, keyed by the same function body and exact
+  // specialization identity.
+  std::unordered_map<const vector<Stmt>*,
+      std::unordered_map<string,
+          std::unordered_map<const Stmt*, std::uint32_t>>>
+      specialized_statement_occurrences_;
 
   struct BodyTypeScope {
     BodyTypeState*& slot;
@@ -29350,6 +29358,20 @@ class Checker {
               if (occurrence != current_body_types_->statement_occurrence_ids.end())
                 fact.statement_occurrence_id = occurrence->second;
             }
+            if (fact.statement_occurrence_id == UINT32_MAX &&
+                checking_specialization_ && current_check_result_function_) {
+              auto body = specialized_statement_occurrences_.find(
+                  &current_check_result_function_->body);
+              if (body != specialized_statement_occurrences_.end()) {
+                auto specialization = body->second.find(
+                    local_ownership_specialization_identity());
+                if (specialization != body->second.end()) {
+                  auto occurrence = specialization->second.find(&s);
+                  if (occurrence != specialization->second.end())
+                    fact.statement_occurrence_id = occurrence->second;
+                }
+              }
+            }
             for (const auto& handle : s.expression_handles) {
               if (handle.slot != est::ExprSlot::ReturnValue ||
                   handle.argument_index != 0) continue;
@@ -29369,8 +29391,7 @@ class Checker {
             // its source EST occurrence with the generic function body. Point
             // the fact at that real arena context; the closed specialized
             // expression_type remains the checker-issued type authority.
-            fact.est_fact_context = checking_specialization_
-                ? current_semantic_context_ : expression_fact_context();
+            fact.est_fact_context = expression_fact_context();
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
             fact.provenance.line = s.line;
@@ -29386,6 +29407,31 @@ class Checker {
             }
             fact.provenance.defining_module_id =
                 program_module_identity(p_, defining_module);
+            if (checking_specialization_ &&
+                fact.expression_occurrence_id != UINT32_MAX) {
+              auto* arena = expression_arena(fact.est_arena_index);
+              const string source_context = "source:" +
+                  fact.provenance.source_file + ":" +
+                  std::to_string(fact.provenance.line);
+#ifdef MOSS_TEST_BUILD
+              if (arena &&
+                  std::getenv("MOSS_TEST_DROP_RETURN_VALUE_SOURCE_EST_FACT"))
+                arena->test_drop_occurrence_fact(
+                    fact.expression_occurrence_id, source_context);
+#endif
+              const std::array<string, 2> candidate_contexts{
+                  current_semantic_context_, source_context};
+              fact.est_fact_context.clear();
+              for (const auto& context : candidate_contexts) {
+                const auto* source_occurrence = arena
+                    ? arena->facts(fact.expression_occurrence_id, context)
+                    : nullptr;
+                if (source_occurrence) {
+                  fact.est_fact_context = context;
+                  break;
+                }
+              }
+            }
             if (!fact.expression_type ||
                 fact.statement_occurrence_id == UINT32_MAX ||
                 fact.expression_occurrence_id == UINT32_MAX) {
@@ -29398,9 +29444,9 @@ class Checker {
                   ? arena->facts(fact.expression_occurrence_id,
                                  fact.est_fact_context)
                   : nullptr;
-              if (!source_occurrence || !source_occurrence->type)
+              if (!source_occurrence)
                 err(s.line,
-                    "specialized return fact does not reference its generic EST occurrence",
+                    "specialized return fact does not reference its checked EST occurrence",
                     "MOSS_INTERNAL_INVARIANT");
             }
             const string canonical_return_type =
@@ -30103,6 +30149,17 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
+    // The specialized ReturnValue fact must pair the exact AST statement with
+    // its checked body and specialization. Keep that function identity in
+    // scope while the specialized body is checked so the retained statement
+    // occurrence map is looked up against the correct body.
+    struct ResultExpressionScope {
+      const Function*& slot;
+      const Function* prior;
+      ResultExpressionScope(const Function*& target, const Function& current)
+          : slot(target), prior(target) { slot = &current; }
+      ~ResultExpressionScope() { slot = prior; }
+    } result_expression_scope(current_check_result_function_, function);
     SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,
                                            "fn:" + function.name);
@@ -30131,13 +30188,6 @@ class Checker {
                                    *function.result_expression, final_ownership, Effect::Consume);
     }
     if (function.result_expression) {
-      struct ResultExpressionScope {
-        const Function*& slot;
-        const Function* prior;
-        ResultExpressionScope(const Function*& target, const Function& current)
-            : slot(target), prior(target) { slot = &current; }
-        ~ResultExpressionScope() { slot = prior; }
-      } result_scope(current_check_result_function_, function);
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
     }
@@ -37800,7 +37850,11 @@ class Checker {
                   << expression.resolved_binding_id << "|typed="
                   << static_cast<bool>(expression.checked_type) << "\n";
     }
-    if (!checking_specialization_)
+    if (checking_specialization_)
+      specialized_statement_occurrences_[&statements][
+          local_ownership_specialization_identity()] =
+          std::move(checked_types.statement_occurrence_ids);
+    else
       checked_body_states_[&statements] =
           std::make_shared<BodyTypeState>(std::move(checked_types));
     return checked_env;
