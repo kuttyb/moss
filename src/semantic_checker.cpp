@@ -29324,12 +29324,11 @@ class Checker {
               auto owner = functions_.find(current_semantic_context_.substr(3));
               if (owner != functions_.end()) return_owner = owner->second;
             }
-            const bool defer_open_generic_return_fact = return_owner &&
+            const bool defer_unresolved_return_fact = return_owner &&
                 !checking_specialization_ &&
-                (return_owner->generic || return_owner->static_dispatch) &&
-                inferred_return_type &&
-                contains_internal_placeholder(*inferred_return_type);
-            if (!defer_open_generic_return_fact) {
+                (!inferred_return_type ||
+                 contains_internal_placeholder(*inferred_return_type));
+            if (!defer_unresolved_return_fact) {
             TypedReturnValueFactV1 fact;
             fact.availability = TypedReturnValueFactV1::Availability::Present;
             if (current_body_types_) {
@@ -29370,9 +29369,10 @@ class Checker {
                 program_module_identity(p_, defining_module);
             if (!fact.expression_type ||
                 fact.statement_occurrence_id == UINT32_MAX ||
-                fact.expression_occurrence_id == UINT32_MAX)
+                fact.expression_occurrence_id == UINT32_MAX) {
               err(s.line, "checker could not retain exact return-value authority",
                   "MOSS_INTERNAL_INVARIANT");
+            }
             const string canonical_return_type =
                 canonical_type_name(*return_type);
             if (phase28_copy_primitive_type(canonical_return_type)) {

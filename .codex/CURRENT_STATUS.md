@@ -16090,3 +16090,19 @@ untouched.
   subsequent one-line null guard now checks Map key/value TypeRefs before
   dereference; build and all 23 authority scenarios were rerun and pass. The
   null-guard delivery has a new SHA and is pending delta review; no push yet.
+
+## R7-009 rejected return fact regression (2026-11-05)
+
+- L7 integration reproduced R7-009 `nonprimitive_index_return_rejected`: an
+  uninstantiated bare-Vector return had no concrete inferred result TypeRef,
+  and ReturnValue fact construction raised `MOSS_INTERNAL_INVARIANT` before
+  the later specialized ownership check. ReturnValue fact collection now
+  defers only unresolved template returns when no concrete specialization is
+  active. Concrete specializations still require exact ReturnValue facts; the
+  expected `OWNERSHIP_COLLECTION_ELEMENT_CONSUME` diagnostic is preserved.
+- Added that exact program as a negative authority-gate regression.
+  `check_phase28_r7_009_primitive_index.py ./moss` passes 17/17; authority
+  gate passes 24 scenarios (six baseline, one diagnostic negative, 17
+  corruption/drop cases). Corruptions fail closed in checker, interpreter,
+  and native generation with no Rust artifact. Build and `git diff --check`
+  pass. This change awaits exact-SHA Agent2 review; no push yet.
