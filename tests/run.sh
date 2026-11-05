@@ -98,6 +98,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s2_char_string.py 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s1_checker_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s3_key_protocol.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adversarial.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_b4_consumer_fails_closed.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sc_safe_arithmetic.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sa_numeric_literals.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sb_check_display.py "$compiler"
