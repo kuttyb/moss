@@ -16121,3 +16121,22 @@ untouched.
   this field-projected receiver plus drop, access-perturbation, and declared
   EST-context perturbation; all fail closed. This is a test-only follow-up,
   pending exact-SHA Agent2 review; no checker or consumer code changed.
+
+## R7-010 specialized ReturnValue EST-context correction (2026-11-05)
+
+- During `checking_specialization_`, ReturnValue facts previously advertised
+  `specialization:<hash>` as `est_fact_context`, but the arena retains the
+  source occurrence under the generic callable context (`fn:inspect`). The
+  exact specialized ReturnValue fact already carries the closed First/Second
+  TypeRef, specialization identity/context, action/access, and binding/source
+  definition. The checker now points `est_fact_context` to the actual generic
+  EST occurrence context, validates readback there, and keeps specialization
+  identity separate.
+- The authority harness asserts two unique specialization facts share the
+  exact generic return ExprId/context while their closed First/Second types,
+  Consume actions/effects, and specialization identities remain distinct.
+  A return EST-context perturbation fails closed in check/interpreter/native
+  generation. The authority suite passes 28 scenarios, R7-009 passes 17/17,
+  Echo argument authority passes 8 cases, feedback validation and diff check
+  pass. Native/interpreter consumers still need to consume this corrected
+  context contract; no oracle expectations changed.
