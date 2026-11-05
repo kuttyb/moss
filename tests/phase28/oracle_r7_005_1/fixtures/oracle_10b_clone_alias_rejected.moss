@@ -2,7 +2,9 @@
 type Record:
   tag: String
 
+fn observe(record: Record):
+  echo record.tag
+
 fn main():
   var v = [Record(tag: "init")]
-  r = v[0].clone()
-  echo r.tag
+  observe(v[0].clone())

@@ -17,11 +17,10 @@
       "primary": "CLONE_ALIAS_UNSUPPORTED",
       "semantic_category": "unsupported_member",
       "severity": "error",
-      "message_regex": "clone|member|unknown|unbound open result type",
+      "message_regex": "clone|member|unknown",
       "source_line_regex": "clone",
       "codes": [
-        "CLONE_ALIAS_UNSUPPORTED",
-        "TYPE_AMBIGUOUS_OPEN_RESULT"
+        "CLONE_ALIAS_UNSUPPORTED"
       ]
     },
     "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT": {

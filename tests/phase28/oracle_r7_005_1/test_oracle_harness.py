@@ -57,6 +57,16 @@ class RejectionAndPanicTests(unittest.TestCase):
             wrong_line["error"]["line"] = 2
             self.assertFalse(harness.validate_rejection_diagnostic(wrong_line, contract, source)[0])
 
+    def test_unbound_open_result_does_not_authorize_clone_alias_rejection(self):
+        expectation = next(x for x in harness._expectation_doc["fixtures"]
+                           if x["fixture_id"] == "ORACLE-10B-CLONE-ALIAS-REJECTED")
+        source = harness.FIXTURES_DIR / expectation["fixture_file"]
+        payload = {"ok": False, "error": {"code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "severity": "error", "message": "unbound open result type for variable 'r'",
+            "source_file": str(source.resolve()), "line": 10, "column": 3}}
+        mapping = harness._diagnostic_doc["mappings"][expectation["fixture_id"]]
+        self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+
     def test_generic_compile_error_does_not_authorize_reserved_copy_rejection(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as temp:
             source = Path(temp) / "reserved.moss"

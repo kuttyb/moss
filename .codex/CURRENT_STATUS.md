@@ -15412,3 +15412,16 @@ untouched.
   new fixture expectations, then reviewer-controlled holdouts, implementation
   comparison, recertification, final adversarial review, and push. Do not treat
   the current draft or validation as compiler compliance evidence.
+
+## 2026-11-04 Phase 28 R7-005.1 normative review correction
+
+- Independent normative review of `53efceae9ebdf8fd38cef8264af963c17e0c0d0`
+  returned NO-GO only for ORACLE-10B's generic
+  `TYPE_AMBIGUOUS_OPEN_RESULT` alternative. The reviewer approved the other
+  five mapping candidates and all four new fixtures.
+- Removed the generic alternative. ORACLE-10B now calls a concrete
+  `observe(record: Record)` consumer with `v[0].clone()`, and a harness unit test
+  rejects the old generic type diagnostic. Re-review is pending.
+- Successor validation after correction: 60-row data validation passes;
+  harness self-tests pass 17/17; feedback validation and `git diff --check` pass.
+  No comparison against the compiler has run.

@@ -27,7 +27,7 @@ The successor preserves each parent expected semantic verdict and diagnostic pri
 | ORACLE-35 | Accept `BORROWED_ENUM_PAYLOAD_ACCESS` alongside `OWNERSHIP_ILLEGAL_CONSUME`. | The certified ledger reports the borrowed-payload rejection; proposal §6.1 requires ordinary match to borrow and forbids extracting an owned payload. |
 | ORACLE-10B | Add the certified baseline `TYPE_AMBIGUOUS_OPEN_RESULT` as a narrow alternative only when its message is `unbound open result type` and its reported source line is the `.clone()` call. Keep `CLONE_ALIAS_UNSUPPORTED` as primary. | The frozen fixture at `oracle_10b_clone_alias_rejected.moss:7` applies the unsupported `.clone()` spelling to a concrete indexed `Record`. The certified failure ledger records the type-ambiguity rejection at that source location, while the expected semantic rule is that `.clone()` is not a source duplication alias. Because this code/message is generic, the reviewer must decide whether the exact message+line anchor attributes it sufficiently or whether ORACLE-10B should instead receive a context-strengthened fixture. R7-008 §6B reports it later passes; §6D does not include it among remaining mismatches.
 
-The five R7-008 §6D candidates and ORACLE-10B form the six candidate mapping repairs requested. The 10B change is especially review-sensitive because the accepted alternative is a generic type diagnostic; do not retain it without explicit normative approval.
+The five R7-008 §6D candidates and ORACLE-10B form the six candidate mapping repairs requested. The 10B change was revised after independent NO-GO: the generic alternative was removed and the source probe now constrains the clone result through a concrete consumer.
 
 ## Added fixture expectations (candidate)
 
@@ -38,4 +38,13 @@ The five R7-008 §6D candidates and ORACLE-10B form the six candidate mapping re
 
 ## Review required before implementation comparison
 
-Please approve/reject the five mapping candidates and each added fixture's normative verdict/output. Resolve the ORACLE-10B question explicitly. The original v1 oracle and its digest pins must remain unchanged. Reviewer-controlled holdouts should be selected only after this normative package is approved; no compiler outcome may be used to revise expected behavior.
+Please re-review the revised ORACLE-10B fixture/mapping along with the five accepted mapping candidates and four fixture verdicts/outputs. The original v1 oracle and its digest pins must remain unchanged. Reviewer-controlled holdouts should be selected only after this normative package is approved; no compiler outcome may be used to revise expected behavior.
+
+## Review history
+
+- Initial normative review of `53efceae9ebdf8fd38cef8264af963c17e0c0d0` returned
+  **NO-GO** only on the ORACLE-10B generic type-diagnostic alternative. The
+  reviewer approved ORACLE-03/28/30/34/35 and fixtures 56–59. The generic
+  alternative was removed and the fixture was changed to provide a concrete
+  `Record` consumer. No implementation comparison was run. Re-review is
+  pending on the corrected successor SHA.
