@@ -1,0 +1,86 @@
+# P28-R7-010 — L7 Review Status
+
+**Branch:** `phase28-r7-010-wip-checkpoint`  
+**Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  
+**State:** isolated staging; no merge to `phase28-work` or `main`. The HEAD is
+the committed integration checkpoint. The compiler repairs below are currently
+uncommitted and have not received independent review or been pushed.
+
+## Integrated reviewed deliveries
+
+- Base `phase28-r7-008-integration` at `dedcb1ed6e7178abc1a4419415af09c976f0d6a1`.
+- Team A R7-009: `27454cc6ac47b3749ff8fc45161fead661e887ca` (implementation
+  `6abe746ae7d641c8abbc7970ec1ee2ec5b97bc56`), independent Agent 2 GO;
+  integration merge `9cfff9731105353a4fa6bd9a7af317ed8c178f63`.
+- Team C B4: `c1c677e7c57d13d7cb8bfd7a1b1de34b2f5ba804` (implementation and
+  gate registration `81350ff6046cff120da61a1c35f4af8c91049804`), independent
+  Agent 2 GO; integration merge `e34afb6c77eaa329a2a42365832893ad091fd50b`.
+- Team B v2 oracle package imported from `66447bf8d923436b430b85b59aa3a323750988a1`
+  after normative, holdout, and final artifact approvals. Only the v2 package
+  and review/report documents were imported; the original v1 oracle remains
+  byte-for-byte preserved.
+- V2 expectation SHA-256:
+  `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`;
+  runtime allowlist SHA-256:
+  `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`.
+
+## L7 local changelist (uncommitted)
+
+The working diff touches:
+
+- `src/semantic_checker.cpp`, `src/interpreter.hpp`, `src/native_generator.cpp`,
+  and `src/moss.cpp`: checker-authorized one-argument `Map.get` write-through
+  projection and consumer use of checked access facts; initial typed
+  `CollectionError` integration and fail-closed runtime/native handling.
+- `tests/tooling/check_phase28_r7_006_checker_facts.py`: Map.get regression,
+  corruption, and focused CollectionError cases.
+- `docs/MOSS_COMPILER_CONTRACT.md` and
+  `docs/phase28/P28_R7_010_RECONCILIATION_REPORT.md`: implementation notes and
+  updated reconciliation status.
+- `agent-feedback/phase28/team-l7-r7-010/` and
+  `docs/phase28/P28_R7_010_POST-COLLECTION-ERROR-FIX_FAILURE_LEDGER.md`:
+  feedback and the current fresh failure ledger. The older
+  `P28_R7_010_POST_MAP_GET_FAILURE_LEDGER.md` is superseded.
+
+The latest focused repair scopes Vector/Queue CollectionError facts to
+`try`-body operations, avoiding blanket typed effects that rejected established
+valid Vector/Queue use. Canonical type matching uses the compiler's lowercase
+collection names. Temporary debug logging was removed.
+
+## Validation evidence
+
+- `make --jobs="$(nproc)" moss`: PASS after the current source edits (two
+  existing missing-field-initializer warnings).
+- `python3 tests/tooling/check_phase28_r7_006_checker_facts.py ./moss`: PASS,
+  including Map.get write-through and focused recoverable Vector errors.
+- Fresh 60-fixture v2 oracle, result JSON at
+  `tmp/phase28-r7-010/oracle-after-fix/results.json` and durable ledger at
+  `P28_R7_010_POST-COLLECTION-ERROR-FIX_FAILURE_LEDGER.md`: 13/60 pass all applicable
+  gates; 15 semantic failures; 2 native/Rustc versus Fast Debug discrepancies;
+  35 provenance-blocked fixtures; 524 generated `.clone()` occurrences
+  unverified; 0 infrastructure failures. This is the latest result, not the
+  earlier post-Map.get ledger.
+- `git diff --check`: PASS. No full default or EST-shadow suite has been run.
+- Earlier combined integration gates recorded in
+  `P28_R7_010_RECONCILIATION_REPORT.md`: Team A 9/9 equivalence; Team C parity
+  and corruption harness PASS (21 corruption cases); targeted ownership,
+  checker facts, copy, match, take, specialized, and EST authority gates PASS.
+  Those results predate the current uncommitted edits and should be rerun at
+  the final checkpoint.
+
+## Remaining blockers and next sequence
+
+1. Repair the remaining semantic failures: CollectionError inference/totality
+   (ORACLE-07/48/53/54/55), ownership joins and match lifetimes (including
+   ORACLE-15/28/30/31/32/33/35/46/49), and associated diagnostics.
+2. Resolve native discrepancies ORACLE-27 and ORACLE-51.
+3. Implement clone provenance tied to checked copy authority; no occurrence
+   missing provenance may be marked authorized.
+4. Rerun targeted authority/corruption gates, then the full default and
+   EST-shadow suites once each; compare both against `phase28-work` baselines.
+5. Rerun the frozen 60-fixture oracle, obtain independent Agent 2 GO for the
+   exact frozen implementation SHA, then commit/push the reviewed staging
+   deliverable as authorized. No production merge is authorized.
+
+No final SHA is frozen, no final independent review exists, and no push has
+been made for the L7 repair changelist.

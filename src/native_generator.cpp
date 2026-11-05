@@ -843,6 +843,10 @@ class Generator {
   }
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
+  // Set only while lowering a local initializer/RHS with the checker's
+  // authoritative WRITE ownership fact. One-argument Map.get otherwise stays
+  // an ordinary immutable lookup.
+  bool checked_map_get_write_through_ = false;
   std::set<string> borrowed_function_parameters_;
   string construction_binding_;
   bool view_domain_ = false;
@@ -1005,6 +1009,33 @@ class Generator {
     return "break '" + phase21_try_label_ + " Err(" +
         (phase21_capture_handler_ ? phase21_capture_carrier(error) : error) +
         ")";
+  }
+
+  string phase21_collection_error_exit(const string& variant) const {
+    const auto identity = RaisedIdentity::enum_variant(
+        "std__CollectionError", variant);
+    if (!phase21_capture_alternatives_ ||
+        !phase21_capture_alternatives_->count(identity))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing checked CollectionError variant fact: " +
+          identity.canonical());
+    const string raised = "__MossRaised::" + phase21_rust_variant(identity) +
+        "(std__CollectionError::" + variant + ")";
+    return phase21_error_exit(raised);
+  }
+
+  bool phase21_collection_error_checked(const string& variant) const {
+    const auto identity = RaisedIdentity::enum_variant(
+        "std__CollectionError", variant);
+    const bool consumer_has = phase21_capture_alternatives_ &&
+        phase21_capture_alternatives_->count(identity);
+    const bool checker_declared = phase21_codegen_statement_ &&
+        phase21_codegen_statement_->exceptional_alternatives.count(identity);
+    if (checker_declared && !consumer_has)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked CollectionError fact was dropped or perturbed: " +
+          identity.canonical());
+    return consumer_has;
   }
 
   static string phase21_rust_variant(const RaisedIdentity& identity) {
@@ -4271,6 +4302,16 @@ class Generator {
         else if (!key_binding || !borrowed_function_parameters_.count(*key_binding))
           ir = "&(" + ir + ")";
       }
+      if (map_index && phase21_result_context_ &&
+          phase21_collection_error_checked("MissingKey")) {
+        string value = "*__moss_entry";
+        if (auto map_types = map_key_value_types(*base_type);
+            map_types && !copy_type(map_types->second))
+          value = "__moss_entry.clone()";
+        return "match (" + expr(ib, d, locals, types) + ").get(" + ir +
+            ") { Some(__moss_entry) => " + value + ", None => " +
+            phase21_collection_error_exit("MissingKey") + " }";
+      }
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
@@ -4698,6 +4739,44 @@ class Generator {
               fallback = "(" + fallback + ").clone()";
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
+          if (member_name == "get" && member_arguments.size() == 1) {
+            string key = expr(member_arguments.front(), d, locals, types);
+            const string lookup = map_types->first == "string"
+                ? "(" + key + ").as_str()" : "&( " + key + " )";
+            const string method = checked_map_get_write_through_
+                ? "get_mut" : "get";
+            if (phase21_result_context_ &&
+                phase21_collection_error_checked("MissingKey")) {
+              const string lookup_result = "(" + receiver_expression + ")." +
+                  method + "(" + lookup + ")";
+              string value = "__moss_entry";
+              if (!checked_map_get_write_through_ &&
+                  copy_type(map_types->second))
+                value = "*__moss_entry";
+              return "match " + lookup_result + " { Some(__moss_entry) => " +
+                  value + ", None => " +
+                  phase21_collection_error_exit("MissingKey") + " }";
+            }
+            string result = "(" + receiver_expression + ")." + method +
+                "(" + lookup + ").unwrap_or_else(|| std::process::abort())";
+            if (!checked_map_get_write_through_ &&
+                copy_type(map_types->second))
+              result = "* (" + result + ")";
+            return result;
+          }
+          if (member_name == "remove" && member_arguments.size() == 1) {
+            string key = expr(member_arguments.front(), d, locals, types);
+            const string lookup = map_types->first == "string"
+                ? "(" + key + ").as_str()" : "&( " + key + " )";
+            const string remove = "(" + receiver_expression + ").remove(" +
+                lookup + ")";
+            if (phase21_result_context_ &&
+                phase21_collection_error_checked("MissingKey"))
+              return "match " + remove + " { Some(__moss_removed) => " +
+                  "__moss_removed, None => " +
+                  phase21_collection_error_exit("MissingKey") + " }";
+            return remove + ".unwrap_or_else(|| std::process::abort())";
+          }
           if (member_name == "keys" && member_arguments.empty()) {
             if (shared_key)
               return "(" + receiver_expression + ").keys()";
@@ -4844,28 +4923,37 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
             (member_name == "pop" || member_name == "pop_front") &&
-            member_arguments.empty())
-          return receiver_expression + "." +
+            member_arguments.empty()) {
+          const string pop = receiver_expression + "." +
               viewed_method_name(member_receiver, member_name, member_arguments,
-                                 d, locals, types) +
-              "().unwrap_or_else(|| std::process::abort())";
+                                 d, locals, types) + "()";
+          if (phase21_result_context_ &&
+              phase21_collection_error_checked("Empty"))
+            return "match " + pop + " { Some(__moss_item) => __moss_item, "
+                "None => " + phase21_collection_error_exit("Empty") + " }";
+          return pop + ".unwrap_or_else(|| std::process::abort())";
+        }
         if (collection_named(parsed_type(concrete), {"vector"}) &&
             (member_name == "remove" || member_name == "swap_remove") &&
             member_arguments.size() == 1) {
-          return receiver_expression + "." + member_name + "((" +
-              expr(member_arguments.front(), d, locals, types) + ") as usize)";
+          const string index = expr(member_arguments.front(), d, locals, types);
+          const string place = write_call_place(member_receiver, d, locals, types);
+          if (phase21_result_context_ &&
+              phase21_collection_error_checked("InvalidIndex"))
+            return "{ let __moss_collection_index = (" + index +
+                ") as usize; let __moss_collection = &mut (" + place +
+                "); if __moss_collection_index < __moss_collection.len() { "
+                "__moss_collection." + member_name +
+                "(__moss_collection_index) } else { " +
+                phase21_collection_error_exit("InvalidIndex") + " } }";
+          return receiver_expression + "." + member_name + "((" + index +
+              ") as usize)";
         }
         if (collection_named(parsed_type(concrete), {"map"}) &&
             member_name == "remove" && member_arguments.size() == 1) {
           return receiver_expression + ".remove(&(" +
               expr(member_arguments.front(), d, locals, types) + "))" +
               ".unwrap_or_else(|| std::process::abort())";
-        }
-        if (collection_named(parsed_type(concrete), {"map"}) &&
-            member_name == "get" && member_arguments.size() == 1) {
-          return receiver_expression + ".get(&(" +
-              expr(member_arguments.front(), d, locals, types) + "))" +
-              ".cloned().unwrap_or_else(|| std::process::abort())";
         }
       }
       // Trait/duck-typed calls are already statically specialized by the
@@ -6860,8 +6948,30 @@ class Generator {
                                  const RaiseSet& current)
             : slot(target), prior(target) { slot = &current; }
         ~CaptureAlternativesScope() { slot = prior; }
-      } capture_alternatives_scope(phase21_capture_alternatives_,
-                                   s.exceptional_alternatives);
+      };
+      RaiseSet checked_exceptional_alternatives = s.exceptional_alternatives;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_ERROR_FACT"))
+        for (auto it = checked_exceptional_alternatives.begin();
+             it != checked_exceptional_alternatives.end();) {
+          if (it->kind == RaisedIdentityKind::EnumVariant &&
+              it->type == "std__CollectionError")
+            it = checked_exceptional_alternatives.erase(it);
+          else
+            ++it;
+        }
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_ERROR_FACT"))
+      {
+        RaiseSet perturbed;
+        for (const auto& checked : checked_exceptional_alternatives)
+          perturbed.insert(
+              checked.kind == RaisedIdentityKind::EnumVariant &&
+                      checked.type == "std__CollectionError"
+                  ? RaisedIdentity::enum_variant(checked.type, "perturbed")
+                  : checked);
+        checked_exceptional_alternatives = std::move(perturbed);
+      }
+      CaptureAlternativesScope capture_alternatives_scope(
+          phase21_capture_alternatives_, checked_exceptional_alternatives);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
           s, functional_context, 0);
@@ -7935,9 +8045,16 @@ class Generator {
                   ? write_call_place(s.b, d, locals, &types)
                   : (is_index_source && ownership_fact->access == Effect::Read)
                       ? read_call_place(s.b, d, locals, &types)
-                      : expr(s.b, d, locals, &types,
-                             statement_functional_pipeline_id(
-                                 s, functional_context, 0));
+                      : [&] {
+                          const bool prior = checked_map_get_write_through_;
+                          checked_map_get_write_through_ =
+                              ownership_fact->access == Effect::Write;
+                          string rendered = expr(s.b, d, locals, &types,
+                              statement_functional_pipeline_id(
+                                  s, functional_context, 0));
+                          checked_map_get_write_through_ = prior;
+                          return rendered;
+                        }();
               const auto rhs_name = tree_identifier_name(s.b);
               bool rhs_is_borrow = rhs_name && borrowed_function_parameters_.count(*rhs_name) && !write_through_parameters_.count(*rhs_name);
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (ownership_fact->access != Effect::Read);
@@ -8028,6 +8145,8 @@ class Generator {
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
             }
             else {
+              const auto* take_fact = resolve_take_fact(s, functional_context);
+              const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
               string assigned;
               vector<string> concat_operands;
               std::function<void(string)> collect_concat = [&](string source) {
@@ -8088,15 +8207,17 @@ class Generator {
                 reused << "}";
                 assigned = reused.str();
               } else {
+                const bool prior = checked_map_get_write_through_;
+                checked_map_get_write_through_ =
+                    ownership_fact && ownership_fact->access == Effect::Write;
                 assigned = expr(s.b, d, locals, &types,
                     statement_functional_pipeline_id(s, functional_context, 0));
+                checked_map_get_write_through_ = prior;
               }
               const auto source_binding = tree_identifier_name(s.b);
               if (map_assignment && source_binding &&
                   borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
-              const auto* take_fact = resolve_take_fact(s, functional_context);
-              const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
               if (take_fact) {
                 assigned = emit_take_expression(*take_fact, s, d, locals, &types);
               } else if (ownership_fact) {

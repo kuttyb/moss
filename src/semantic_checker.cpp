@@ -548,7 +548,8 @@ class Checker {
         {"FileError", {"NotFound", "PermissionDenied", "NotRegularFile",
                        "InUse", "Full", "IO"}},
         {"ParseError", {"Invalid", "Overflow"}},
-        {"ConversionError", {"NonFinite", "Overflow"}}};
+        {"ConversionError", {"NonFinite", "Overflow"}},
+        {"CollectionError", {"Empty", "InvalidIndex", "MissingKey"}}};
     // A legacy source declaration of a standard error (`enum ParseError:`)
     // is rewritten to the std spelling at parse time. It is the compiler's
     // own standard error, so it keeps the std declaration identity.
@@ -16531,6 +16532,21 @@ class Checker {
       location->path.push_back(member_name);
       return location;
     }
+    string call_receiver, call_member;
+    vector<string> call_arguments;
+    if (tree_parse_member_call(value, call_receiver, call_member,
+                               call_arguments) && call_member == "get" &&
+        call_arguments.size() == 1) {
+      auto receiver_type = inferred_expr_type(call_receiver, env);
+      const string canonical = receiver_type
+          ? canonical_type_name(*receiver_type) : string();
+      if (canonical == "map" || starts_with(canonical, "map[")) {
+        auto location = storage_location(call_receiver, env, require_known_root);
+        if (!location) return std::nullopt;
+        location->path.push_back("[]");
+        return location;
+      }
+    }
     return std::nullopt;
   }
 
@@ -20493,7 +20509,10 @@ class Checker {
                                    int level, TypeEnv env,
                                    const RaiseSet& selected = {},
                                    string selected_binding = {},
-                                   bool inside_recovery_arm = false) {
+                                   bool inside_recovery_arm = false,
+                                   std::set<std::pair<string, string>>
+                                       proven_map_indices = {},
+                                   bool inside_try_body = false) {
     RaiseSet result;
     while (index < body.size()) {
       const Stmt& statement = body[index];
@@ -20503,10 +20522,13 @@ class Checker {
           statement.kind == Stmt::Kind::Case)
         return result;
       if (statement.kind == Stmt::Kind::Try) {
+        // Facts learned on a single exceptional path are not promoted past
+        // the try/recover join.
+        proven_map_indices.clear();
         ++index;
         RaiseSet attempted = phase21_raise_set_block(
             body, index, level + 1, env, selected, selected_binding,
-            inside_recovery_arm);
+            inside_recovery_arm, proven_map_indices, true);
         const_cast<Stmt&>(statement).exceptional_alternatives = attempted;
         RaiseSet remaining = attempted;
         RaiseSet recovered_raises;
@@ -20585,7 +20607,7 @@ class Checker {
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), reachable_matched,
               pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding
-                  ? pattern.binding : string(), true);
+                  ? pattern.binding : string(), true, proven_map_indices);
           if (!reachable_matched.empty())
             recovered_raises = raise_set_union(
                 std::move(recovered_raises), arm_raises);
@@ -20619,7 +20641,7 @@ class Checker {
               alternatives = selected;
           }
           auto expression = observable_expression_effects(
-              statement.a, env, {}, nullptr, {}, nullptr,
+              statement.a, env, {}, nullptr, {}, &proven_map_indices,
               statement.message_root_ingress);
           alternatives = raise_set_union(
               std::move(alternatives), expression.raise_set);
@@ -20636,12 +20658,15 @@ class Checker {
         const string expression = statement.kind == Stmt::Kind::For
             ? statement.b : statement.a;
         const RaiseSet direct = observable_expression_effects(
-            expression, env, {}, nullptr, {}, nullptr,
+            expression, env, {}, nullptr, {}, &proven_map_indices,
             statement.message_root_ingress).raise_set;
         const_cast<Stmt&>(statement).exceptional_alternatives = direct;
         result = raise_set_union(
             std::move(result), direct);
         const auto parent_kind = statement.kind;
+        // Branch writes/removals may invalidate any container-key proof;
+        // each arm receives a snapshot and no arm-specific fact escapes.
+        proven_map_indices.clear();
         ++index;
         if (parent_kind == Stmt::Kind::Match) {
           while (index < body.size() && body[index].indent == level + 1 &&
@@ -20650,13 +20675,15 @@ class Checker {
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
                     body, index, level + 2, env, selected,
-                    selected_binding, inside_recovery_arm));
+                    selected_binding, inside_recovery_arm,
+                    proven_map_indices, inside_try_body));
           }
         } else {
           result = raise_set_union(
               std::move(result), phase21_raise_set_block(
                   body, index, level + 1, env, selected,
-                  selected_binding, inside_recovery_arm));
+                  selected_binding, inside_recovery_arm,
+                  proven_map_indices, inside_try_body));
           if (parent_kind == Stmt::Kind::If && index < body.size() &&
               body[index].indent == level &&
               body[index].kind == Stmt::Kind::Else) {
@@ -20664,7 +20691,8 @@ class Checker {
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
                     body, index, level + 1, env, selected,
-                    selected_binding, inside_recovery_arm));
+                    selected_binding, inside_recovery_arm,
+                    proven_map_indices, inside_try_body));
           }
         }
         continue;
@@ -20685,12 +20713,61 @@ class Checker {
                   std::move(direct), target->observable_effects.raise_set);
           }
       }
-      for (const auto& expression : statement_expressions(statement))
+      string assignment_map_base, assignment_map_key;
+      const bool inserts_map_entry = statement.kind == Stmt::Kind::Assign &&
+          tree_parse_index(statement.a, assignment_map_base,
+                           assignment_map_key);
+      for (const auto& expression : statement_expressions(statement)) {
+        if (inserts_map_entry && expression == statement.a) continue;
         direct = raise_set_union(
             std::move(direct),
             observable_expression_effects(
-                expression, env, {}, nullptr, {}, nullptr,
+                expression, env, {}, nullptr, {}, &proven_map_indices,
                 statement.message_root_ingress).raise_set);
+        if (inside_try_body) {
+          string receiver, method;
+          vector<string> arguments;
+          if (tree_parse_member_call(expression, receiver, method, arguments)) {
+            if (auto receiver_type = inferred_expr_type(receiver, env)) {
+              const string type = canonical_type_name(*receiver_type);
+              string variant;
+              if ((type == "vector" || starts_with(type, "vector[")) &&
+                  (method == "remove" || method == "swap_remove"))
+                variant = "InvalidIndex";
+              else if (((type == "vector" || starts_with(type, "vector[")) ||
+                        type == "queue" || starts_with(type, "queue[")) &&
+                       (method == "pop" || method == "pop_front"))
+                variant = "Empty";
+              if (!variant.empty())
+                direct.insert(RaisedIdentity::enum_variant(
+                    "std__CollectionError", variant));
+            }
+          }
+        }
+      }
+      if (inside_try_body && (statement.kind == Stmt::Kind::Let ||
+                              statement.kind == Stmt::Kind::Var)) {
+        string receiver, method;
+        vector<string> arguments;
+        const bool parsed_collection_call = tree_parse_member_call(
+            statement.b, receiver, method, arguments);
+        if (parsed_collection_call) {
+          if (auto receiver_type = inferred_expr_type(receiver, env)) {
+            const string type = canonical_type_name(*receiver_type);
+            string variant;
+            if ((type == "vector" || starts_with(type, "vector[")) &&
+                (method == "remove" || method == "swap_remove"))
+              variant = "InvalidIndex";
+            else if (((type == "vector" || starts_with(type, "vector[")) ||
+                      type == "queue" || starts_with(type, "queue[")) &&
+                     (method == "pop" || method == "pop_front"))
+              variant = "Empty";
+            if (!variant.empty())
+              direct.insert(RaisedIdentity::enum_variant(
+                  "std__CollectionError", variant));
+          }
+        }
+      }
       const_cast<Stmt&>(statement).exceptional_alternatives = direct;
       result = raise_set_union(std::move(result), direct);
       if (statement.kind == Stmt::Kind::Assign ||
@@ -20700,6 +20777,24 @@ class Checker {
         if (auto type = inferred_expr_type(statement.b, env))
           env[statement.a] = *type;
       }
+      if (statement.kind == Stmt::Kind::Assign) {
+        string map_base, map_key;
+        if (tree_parse_index(statement.a, map_base, map_key)) {
+          auto map_type = inferred_expr_type(map_base, env);
+          const string map_type_name = map_type
+              ? canonical_type_name(*map_type) : string();
+          if (map_type && (map_type_name == "map" ||
+                           starts_with(map_type_name, "map[")) &&
+              tree_literal_class(map_key) != moss::est::LiteralClass::None)
+            proven_map_indices.insert({trim(map_base), trim(map_key)});
+        }
+      }
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match ||
+          statement.kind == Stmt::Kind::Call)
+        proven_map_indices.clear();
       ++index;
     }
     return result;
@@ -21343,6 +21438,14 @@ class Checker {
     if (tree_parse_index(value, index_base, index_expression)) {
       effects.may_panic =
           !proven_index_access(proven_indices, index_base, index_expression);
+      if (!proven_index_access(proven_indices, index_base, index_expression))
+        if (auto base_type = inferred_expr_type(index_base, env);
+            base_type) {
+          const string canonical = canonical_type_name(*base_type);
+          if (canonical == "map" || starts_with(canonical, "map["))
+            effects.raise_set.insert(RaisedIdentity::enum_variant(
+                "std__CollectionError", "MissingKey"));
+        }
       effects.merge(observable_expression_effects(
           index_base, env, domain_fields, implicit_object, parameters,
           proven_indices, root_ingress));
@@ -21436,6 +21539,21 @@ class Checker {
         if (const auto* builtin = builtin_operation(*receiver_type, method, arguments.size());
             builtin && builtin->argument_effects.size() == arguments.size()) {
           effects.may_panic = effects.may_panic || builtin->may_panic;
+          string collection_error;
+          switch (builtin->receiver) {
+            case BuiltinReceiverFamily::Map:
+              if ((method == "get" && arguments.size() == 1) ||
+                  (method == "remove" && arguments.size() == 1))
+                if (!proven_index_access(proven_indices, receiver,
+                                         arguments.front()))
+                  collection_error = "MissingKey";
+              break;
+            default:
+              break;
+          }
+          if (!collection_error.empty())
+            effects.raise_set.insert(RaisedIdentity::enum_variant(
+                "std__CollectionError", collection_error));
           auto mark_write = [&](const string& expression) {
             auto location = storage_location(expression, env);
             if (location && domain_fields.count(location->root)) effects.domain_write = true;
@@ -27361,10 +27479,23 @@ class Checker {
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::Initializer);
           string source_root;
+          bool is_projected_borrow_source = false;
           if (local_source) {
             source_root = *local_source;
           } else if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
             source_root = loc->root;
+            is_projected_borrow_source = true;
+          } else if (auto loc = storage_location(s.b, env.types);
+                     loc && !loc->path.empty() &&
+                     loc->path.back() == "[]") {
+            string source_receiver, source_method;
+            vector<string> source_arguments;
+            if (tree_parse_member_call(s.b, source_receiver, source_method,
+                                       source_arguments) &&
+                source_method == "get" && source_arguments.size() == 1) {
+              source_root = loc->root;
+              is_projected_borrow_source = true;
+            }
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
@@ -27397,10 +27528,10 @@ class Checker {
                   env.binding_identities,
                   &unsupported);
             }
-            if (is_indexed_source && inferred && *inferred == Effect::Consume) {
+            if ((is_indexed_source || is_projected_borrow_source) && inferred && *inferred == Effect::Consume) {
               inferred = Effect::Read;
             }
-            if (is_indexed_source && inferred && *inferred == Effect::Write &&
+            if ((is_indexed_source || is_projected_borrow_source) && inferred && *inferred == Effect::Write &&
                 env.immutable_locals.count(source_root)) {
               err(s.line, "cannot borrow '" + source_root + "' as mutable because it is immutable",
                   "OWNERSHIP_MUTABLE_BORROW_IMMUTABLE");
@@ -27532,6 +27663,15 @@ class Checker {
                      !env.state_fields.count(s.a)) {
             if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
               source_root = loc->root;
+            } else if (auto loc = storage_location(s.b, env.types);
+                       loc && !loc->path.empty() &&
+                       loc->path.back() == "[]") {
+              string source_receiver, source_method;
+              vector<string> source_arguments;
+              if (tree_parse_member_call(s.b, source_receiver, source_method,
+                                         source_arguments) &&
+                  source_method == "get" && source_arguments.size() == 1)
+                source_root = loc->root;
             }
           }
           auto source_binding = !source_root.empty()

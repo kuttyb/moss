@@ -407,7 +407,7 @@ std::optional<string> nominal_field_type(const string& type, const string& field
 
 static bool standard_error_short_name(const string& name) {
   return name == "FileError" || name == "ParseError" ||
-         name == "ConversionError";
+         name == "ConversionError" || name == "CollectionError";
 }
 
 string standard_error_identity(const string& name) {
@@ -420,6 +420,8 @@ vector<string> standard_error_variants(const string& identity) {
             "Full", "IO"};
   if (identity == "std__ParseError") return {"Invalid", "Overflow"};
   if (identity == "std__ConversionError") return {"NonFinite", "Overflow"};
+  if (identity == "std__CollectionError")
+    return {"Empty", "InvalidIndex", "MissingKey"};
   return {};
 }
 

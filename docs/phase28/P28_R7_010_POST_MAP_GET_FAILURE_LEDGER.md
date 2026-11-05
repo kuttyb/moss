@@ -1,0 +1,73 @@
+# P28-R7-010 Combined Oracle Failure Ledger — post Map.get repair
+
+Fresh 60-fixture v2 oracle run against the combined implementation after the Map.get checker/lowering repair. No oracle expectations changed.
+
+## Summary
+
+- All applicable gates pass: **13/60**
+- Semantic failures, excluding native compile discrepancies: **14**
+- Native/Fast Debug disagreements: **2**
+- Clone provenance blocks: **33 fixtures**; 494 generated `.clone()` occurrences remain unclassified across native debug and optimized artifacts. Unauthorized counts are not certified where provenance is missing.
+- Infrastructure failures: **0** (none observed).
+
+## Semantic failures
+
+- `ORACLE-07-CATCHABLE-COLL-ERRORS` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-15-PLAIN-FIELD-CONSUME-REJECT` — checker `UNEXPECTED_ACCEPT`, Fast Debug `None`
+- `ORACLE-28-REBIND-WHILE-BORROWED-REJECT` — checker `WRONG_DIAGNOSTIC`, Fast Debug `None`
+- `ORACLE-30-JOIN-BORROW-FRESH-REJECT` — checker `WRONG_DIAGNOSTIC`, Fast Debug `None`
+- `ORACLE-31-JOIN-PROMOTED-CONSUME` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-32-MATCH-PAYLOAD-WRITE` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-33-MATCH-LAST-USE-OVERWRITE` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT` — checker `WRONG_DIAGNOSTIC`, Fast Debug `None`
+- `ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT` — checker `UNEXPECTED_ACCEPT`, Fast Debug `None`
+- `ORACLE-48-ROOT-MISSING-COLLECTION-ERROR` — checker `UNEXPECTED_ACCEPT`, Fast Debug `None`
+- `ORACLE-49-OWNERSHIP-AT-RECOVER` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-53-MAP-REMOVE-MISSING` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+- `ORACLE-54-IMPORTED-MOSSI-EFFECTS` — checker `UNEXPECTED_REJECT`, Fast Debug `None`
+- `ORACLE-55-COLLECTION-ERROR-INFERRED-RAISE` — checker `UNEXPECTED_REJECT`, Fast Debug `CRASH`
+
+## Native/Fast Debug disagreements
+
+- `ORACLE-27-REBIND-AFTER-BORROWS` — native debug `RUSTC_FAIL`, optimized `RUSTC_FAIL`
+- `ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS` — native debug `RUSTC_FAIL`, optimized `RUSTC_FAIL`
+
+## Clone provenance blocks
+
+- `ORACLE-01-VEC-WRITE-THROUGH`
+- `ORACLE-02-INDEXED-FIELD-READ-NO-CLONE`
+- `ORACLE-04-MAP-WRITE-THROUGH`
+- `ORACLE-05-MAP-GET-BORROW`
+- `ORACLE-06-MATCH-CONSUME-OPT-NATIVE`
+- `ORACLE-09-USER-ENUM-SOME-NONE`
+- `ORACLE-10A-EXPLICIT-COPY-ONLY`
+- `ORACLE-11-ASSIGN-READ-BORROW`
+- `ORACLE-12-ASSIGN-WRITE-BORROW`
+- `ORACLE-13-ASSIGN-CONSUME-RETURN`
+- `ORACLE-16-TAKE-FRONTIER-ARCHIVE`
+- `ORACLE-17-TAKE-OPTION-FIELD`
+- `ORACLE-18-TAKE-QUEUE-FIELD`
+- `ORACLE-19-TAKE-NESTED-VEC-OPTION`
+- `ORACLE-20-TAKE-NESTED-MAP-VECTOR`
+- `ORACLE-25-TAKE-BEFORE-RAISE-MUTATION`
+- `ORACLE-26-VEC-REMOVE-API`
+- `ORACLE-27-REBIND-AFTER-BORROWS`
+- `ORACLE-29-LOOP-CARRIED-OWNERSHIP`
+- `ORACLE-36-MATCH-CONSUME-QUEUE-POP`
+- `ORACLE-38-MAP-VALUES-BORROWED-VIEW`
+- `ORACLE-39-VEC-FOR-READ`
+- `ORACLE-40-VEC-FOR-WRITE`
+- `ORACLE-42-CUSTOM-WRAPPER-REMOVE`
+- `ORACLE-43-HANDLER-PRIMITIVE-REPLY`
+- `ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL`
+- `ORACLE-47-VECTOR-INDEX-PANICS`
+- `ORACLE-50-EAGER-PIPELINE-CAPTURES`
+- `ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS`
+- `ORACLE-56-PRIMITIVE-VECTOR-ELEMENT-READ`
+- `ORACLE-57-MAP-GET-WRITE-THROUGH`
+- `ORACLE-58-SPECIALIZATION-IDENTITY-COLLISION`
+- `ORACLE-59-SHADOWED-BINDING-IDENTITY`
+
+## Infrastructure issues
+
+- None observed; all fixture commands completed.

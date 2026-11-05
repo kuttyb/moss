@@ -1,7 +1,7 @@
 # P28-R7-010 — Consolidation and Conformance Reconciliation
 
 **Status:** Isolated staging branch; no merge to `phase28-work` or `main`.
-**Branch:** `phase28-r7-010-reconciliation`.
+**Branch:** `phase28-r7-010-wip-checkpoint`.
 
 ## Source ancestry
 
@@ -43,6 +43,40 @@
 
 ## Combined validation
 
-Not yet run. The next checkpoint rebuilds the merged compiler, runs the 60-row
-v2 oracle and both team harnesses against the combined implementation, then
-records the combined results separately from the frozen R7-008 comparison.
+The merged compiler was rebuilt. This is a fresh combined run; it does not reuse
+the frozen R7-008 13/60 result.
+
+- Initial combined baseline: 13/60 all applicable gates passed; 17 semantic
+  failures and 33 clone-provenance blocks.
+- After the focused Map.get repair below: 13/60 all applicable gates passed;
+  14 semantic failures, two native/Rustc versus Fast Debug discrepancies, and
+  33 clone-provenance blocks. The full categorized ledger is
+  `P28_R7_010_POST_MAP_GET_FAILURE_LEDGER.md`. The 494 generated `.clone()`
+  occurrences remain unclassified; no unauthorized count is claimed where the
+  required provenance is missing. No infrastructure failures were observed.
+- After the CollectionError focused repair: fresh 60-fixture run reports
+  13/60 all applicable gates passed; 15 semantic failures, two native/Rustc
+  versus Fast Debug discrepancies, 35 clone-provenance blocks, and 524
+  unverified generated `.clone()` occurrences. See
+  `P28_R7_010_POST-COLLECTION-ERROR-FIX_FAILURE_LEDGER.md`. The semantic,
+  native, and provenance categories overlap; 524 is a count of observations,
+  not confirmed illegal Moss value copies. This fresh count supersedes the
+  post-Map.get count above.
+- Team A equivalence harness: 9/9 PASS.
+- Team C consumer parity and corruption harness: PASS, including 21
+  fail-closed corruption cases.
+- Ownership authority, checker fact completion (including dropped borrow-tree
+  corruption), local ownership, and targeted copy/match/take/specialized/EST
+  authority gates passed on the combined worktree. The targeted R7-006 gate
+  now also includes ORACLE-57's missing-expression-tree corruption case.
+- ORACLE-57 now passes checker, Fast Debug, native debug, and native optimized
+  behavior (`9\n9`). The checker recognizes one-argument `Map.get` as a
+  projected storage place, publishes the inferred local ownership access, and
+  native lowering uses `get_mut` only when that checked access is `WRITE`.
+  Read-only ORACLE-05 was also verified on Fast Debug and native.
+
+Conformance work remains incomplete. The semantic failures, two Rustc/Fast
+Debug disagreements, and clone-provenance blocks remain acceptance blockers.
+Full default/shadow suites, final baseline comparison, final oracle run,
+independent Agent 2 final review, and push have not been performed. The staging
+branch remains unmerged from production branches.

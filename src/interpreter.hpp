@@ -858,6 +858,7 @@ class FastInterpreter {
 
   const Program& program_;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
+  const RaiseSet* active_checked_exceptional_alternatives_ = nullptr;
   Options options_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
@@ -1188,6 +1189,26 @@ class FastInterpreter {
       if (place.domain) place.path += "." + member->name;
       return place;
     }
+    // One-argument Map.get is a checked borrowed place. This path is used
+    // only when a checker ownership fact asks the consumer to preserve the
+    // borrow; ordinary value evaluation remains independent.
+    if (const auto* call = std::get_if<est::Call>(&value)) {
+      const auto* method = std::get_if<est::Member>(&tree.arena->at(call->callee));
+      if (method && method->name == "get" && call->arguments.size() == 1) {
+        Place receiver = locate_tree_node(tree, method->base, frame, line, output);
+        if (!receiver.value || receiver.value->kind != Value::Kind::Map ||
+            !receiver.value->map)
+          return {};
+        Value key = evaluate_tree_node(tree, call->arguments.front(), frame,
+                                       line, output);
+        if (auto position = map_position(*receiver.value, key, frame, line,
+                                         output)) {
+          receiver.value = &receiver.value->map->at(*position).second;
+          if (receiver.domain) receiver.path += ".get";
+          return receiver;
+        }
+      }
+    }
     if (const auto* index = std::get_if<est::Index>(&value)) {
       Place place = locate_tree_node(tree, index->base, frame, line, output);
       if (!place.value) return {};
@@ -1199,7 +1220,7 @@ class FastInterpreter {
             return place;
           }
         }
-        throw RuntimeError(line, "missing map key");
+        raise_collection_error(frame, line, "MissingKey");
       }
       auto values = place.value->vector ? place.value->vector : place.value->queue;
       if (!values || key.kind != Value::Kind::Int || key.integer < 0 ||
@@ -2349,7 +2370,7 @@ class FastInterpreter {
         if (base.kind == Value::Kind::Map && base.map) {
           if (auto position = map_position(base, index, frame, line, output))
             return base.map->at(*position).second;
-          throw RuntimeError(line, "missing map key");
+          raise_collection_error(frame, line, "MissingKey");
         }
         auto values = base.kind == Value::Kind::Vector ? base.vector :
             base.kind == Value::Kind::Queue ? base.queue : nullptr;
@@ -2907,7 +2928,8 @@ class FastInterpreter {
               return Value::unit();
             }
             if (method_name == "pop" && method_args.empty()) {
-              if (values->empty()) throw RuntimeError(line, "pop from empty collection");
+              if (values->empty())
+                raise_collection_error(frame, line, "Empty");
               Value result = receiver.kind == Value::Kind::Queue ? values->front() : values->back();
               if (receiver.kind == Value::Kind::Queue) values->erase(values->begin());
               else values->pop_back();
@@ -2918,7 +2940,7 @@ class FastInterpreter {
               if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "remove expects integer index");
               int64_t idx = idx_val.integer;
               if (idx < 0 || static_cast<size_t>(idx) >= values->size())
-                throw RuntimeError(line, "index out of range");
+                raise_collection_error(frame, line, "InvalidIndex");
               Value result = (*values)[idx];
               values->erase(values->begin() + idx);
               return result;
@@ -2928,7 +2950,7 @@ class FastInterpreter {
               if (idx_val.kind != Value::Kind::Int) throw RuntimeError(line, "swap_remove expects integer index");
               int64_t idx = idx_val.integer;
               if (idx < 0 || static_cast<size_t>(idx) >= values->size())
-                throw RuntimeError(line, "index out of range");
+                raise_collection_error(frame, line, "InvalidIndex");
               Value result = (*values)[idx];
               if (static_cast<size_t>(idx) + 1 < values->size()) {
                 (*values)[idx] = values->back();
@@ -2965,13 +2987,13 @@ class FastInterpreter {
                 }
                 return removed;
               }
-              throw RuntimeError(line, "key not found in map");
+              raise_collection_error(frame, line, "MissingKey");
             }
             if (method_name == "get" && method_args.size() == 1) {
               Value key = evaluate_method_argument(0);
               if (auto position = map_position(receiver, key, frame, line, output))
                 return independent(receiver.map->at(*position).second);
-              throw RuntimeError(line, "key not found in map");
+              raise_collection_error(frame, line, "MissingKey");
             }
             if (method_name == "get" && method_args.size() == 2) {
               Value key = evaluate_method_argument(0);
@@ -3171,6 +3193,23 @@ class FastInterpreter {
     if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float)
       return moss_isequal(left, right);
     return equal(left, right);
+  }
+
+  [[noreturn]] void raise_collection_error(Frame& frame, int line,
+                                            const std::string& variant) {
+    const std::string error_type = "std__CollectionError";
+    const auto identity = RaisedIdentity::enum_variant(error_type, variant);
+    if (!active_checked_exceptional_alternatives_ ||
+        !active_checked_exceptional_alternatives_->count(identity))
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked CollectionError variant fact: " +
+          identity.canonical());
+    Value raised = Value::struct_value(error_type);
+    raised.object->case_name = variant;
+    emit("raise", frame, line,
+         "variant:" + error_type + "." + variant);
+    throw RaisedSignal{identity,
+                       std::move(raised), line, frame.source_file, {}};
   }
 
   std::optional<size_t> map_position(const Value& receiver, const Value& key,
@@ -3809,6 +3848,39 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      RaiseSet checked_exceptional_alternatives =
+          statement.exceptional_alternatives;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_ERROR_FACT"))
+        for (auto it = checked_exceptional_alternatives.begin();
+             it != checked_exceptional_alternatives.end();) {
+          if (it->kind == RaisedIdentityKind::EnumVariant &&
+              it->type == "std__CollectionError")
+            it = checked_exceptional_alternatives.erase(it);
+          else
+            ++it;
+        }
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_ERROR_FACT"))
+      {
+        RaiseSet perturbed;
+        for (const auto& checked : checked_exceptional_alternatives)
+          perturbed.insert(
+              checked.kind == RaisedIdentityKind::EnumVariant &&
+                      checked.type == "std__CollectionError"
+                  ? RaisedIdentity::enum_variant(checked.type, "perturbed")
+                  : checked);
+        checked_exceptional_alternatives = std::move(perturbed);
+      }
+#endif
+      struct ExceptionalAlternativesScope {
+        const RaiseSet*& slot;
+        const RaiseSet* prior;
+        ExceptionalAlternativesScope(const RaiseSet*& target,
+                                     const RaiseSet& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ExceptionalAlternativesScope() { slot = prior; }
+      } exceptional_scope(active_checked_exceptional_alternatives_,
+                          checked_exceptional_alternatives);
       ExpressionHandlesScope expression_handles_scope(
           active_expression_handles_, &statement.expression_handles);
       if (statement.kind == Stmt::Kind::Try) {

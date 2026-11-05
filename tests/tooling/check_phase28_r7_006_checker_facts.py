@@ -15,6 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests/phase28/consumer_repair/fixtures"
+ORACLE_FIXTURES = ROOT / "tests/phase28/oracle_r7_005_1/fixtures"
 TMP = ROOT / "tmp/phase28_r7_006"
 TMP.mkdir(parents=True, exist_ok=True)
 
@@ -160,6 +161,46 @@ def main() -> int:
     print(f"Checking ORACLE-04: {oracle_04.name}...")
     verify_execution(compiler, oracle_04, "9\n9")
 
+    oracle_57 = ORACLE_FIXTURES / "oracle_57_map_get_write_through.moss"
+    print(f"Checking ORACLE-57: {oracle_57.name}...")
+    verify_execution(compiler, oracle_57, "9\n9")
+
+    direct_scalar_get = TMP / "map_get_direct_scalar_read.moss"
+    direct_scalar_get.write_text(
+        'fn main():\n  var values = Map()\n  values["one"] = 9\n'
+        '  echo values.get("one")\n', encoding="utf-8")
+    print("Checking direct primitive Map.get read...")
+    verify_execution(compiler, direct_scalar_get, "9")
+
+    oracle_55 = ORACLE_FIXTURES / "oracle_55_collection_error_inferred_raise.moss"
+    print(f"Checking typed Map-index failure/recovery on {oracle_55.name}...")
+    verify_execution(compiler, oracle_55, "caught_missing_key")
+    for hook in ("MOSS_TEST_CONSUMER_DROP_COLLECTION_ERROR_FACT",
+                 "MOSS_TEST_CONSUMER_PERTURB_COLLECTION_ERROR_FACT"):
+        verify_fail_closed(compiler, oracle_55, hook)
+        verify_fast_debug_fail_closed(compiler, oracle_55, hook)
+    oracle_48 = ORACLE_FIXTURES / "oracle_48_root_missing_collection_error.moss"
+    print(f"Checking unhandled CollectionError rejection on {oracle_48.name}...")
+    verify_rejected(compiler, oracle_48, "MOSS_COMPILE_ERROR")
+
+    vector_remove_error = TMP / "collection_error_invalid_remove.moss"
+    vector_remove_error.write_text(
+        'fn main():\n  var values = [1]\n  try:\n'
+        '    let removed = values.remove(9)\n    echo removed\n'
+        '  recover CollectionError.InvalidIndex:\n    echo "invalid_index"\n',
+        encoding="utf-8")
+    print("Checking recoverable Vector.remove invalid index...")
+    verify_execution(compiler, vector_remove_error, "invalid_index")
+
+    queue_pop_error = TMP / "collection_error_empty_pop.moss"
+    queue_pop_error.write_text(
+        'fn main():\n  var values = Vector[Int]()\n  try:\n'
+        '    let item = values.pop()\n    echo item\n'
+        '  recover CollectionError.Empty:\n    echo "empty"\n',
+        encoding="utf-8")
+    print("Checking recoverable Vector.pop empty case...")
+    verify_execution(compiler, queue_pop_error, "empty")
+
     # 3. ORACLE-40: Mutable Vector iteration
     oracle_40 = FIXTURES / "oracle_40_vector_for_write.moss"
     print(f"Checking ORACLE-40: {oracle_40.name}...")
@@ -197,7 +238,7 @@ def main() -> int:
         verify_fast_debug_fail_closed(compiler, oracle_01, "MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")
 
         print("Checking missing-expression-tree corruption (Fast Debug)...")
-        for fixture in (oracle_01, oracle_04):
+        for fixture in (oracle_01, oracle_04, oracle_57):
             verify_fast_debug_fail_closed(compiler, fixture, "MOSS_TEST_CONSUMER_DROP_BORROW_EXPR_TREE")
 
         print("Checking fail-closed hooks on ORACLE-40...")

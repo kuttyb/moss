@@ -253,6 +253,11 @@ When working with Moss:
   conformance repair; the user authorized scoped commits and normal pushes
   after independent Agent 2 GO. Do not merge into `phase28-work` or `main`
   without separate L7 authorization.
+  For the Phase 28 R7-010 WIP checkpoint on
+  `phase28-r7-010-wip-checkpoint`, the user authorized a clearly marked
+  checkpoint commit and normal push before team work begins. This checkpoint
+  is not an accepted implementation; do not merge it into `phase28-work` or
+  `main`. Subsequent team delivery pushes remain subject to independent review.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

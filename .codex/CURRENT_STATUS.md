@@ -15608,3 +15608,24 @@ untouched.
 - Remaining: freeze the implementation commit, obtain independent adversarial
   review on that exact SHA, address any review findings, then commit the review
   result and push the scoped branch. Do not merge to `phase28-work` or `main`.
+
+
+# Phase 28 R7-010 — L7 reconciliation status (2026-11-04)
+
+- Staging branch `phase28-r7-010-wip-checkpoint`, committed integration HEAD
+  `06a266385ab25ef35917d0c8bf3e7821c057d91c`. Team A and Team C reviewed
+  deliveries are integrated; Team B's certified v2 oracle package and review
+  documents are selectively imported. V1 oracle remains byte-identical.
+- L7's Map.get write-through repair is in an uncommitted working diff. Latest
+  build and `check_phase28_r7_006_checker_facts.py ./moss` pass. The fresh
+  60-fixture oracle at `tmp/phase28-r7-010/oracle-after-fix/` reports 13/60
+  applicable PASS, 15 semantic failures, 2 native compile discrepancies, 35
+  provenance blocks, 524 unverified `.clone()` occurrences, and no
+  infrastructure failures. No full default/EST-shadow suite has run.
+- The latest oracle ledger is durably recorded at
+  `docs/phase28/P28_R7_010_POST-COLLECTION-ERROR-FIX_FAILURE_LEDGER.md`; the
+  review summary is `docs/phase28/P28_R7_010_L7_REVIEW_STATUS.md`.
+- Next: resolve remaining CollectionError and ownership/match failures,
+  native discrepancies, then clone provenance; final suites, oracle rerun,
+  and independent review remain outstanding. No final SHA, commit, or push for
+  this L7 changelist; no production merge.
