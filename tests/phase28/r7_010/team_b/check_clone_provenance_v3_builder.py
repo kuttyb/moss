@@ -68,7 +68,7 @@ real_audit = oracle.audit_clone_provenance(
     rust_path, fixture, "debug", 1, authority, root_authority)
 assert (real_audit.get("status"), real_audit.get("authorized"),
         real_audit.get("unauthorized"), real_audit.get("unclassified")) == (
-            "UNAUTHORIZED", 1, 6, 6), real_audit
+            "UNAUTHORIZED", 1, 4, 4), real_audit
 sidecar = Path(str(rust_path) + ".mossclone.json")
 original = sidecar.read_text()
 original_manifest = json.loads(original)
@@ -96,7 +96,7 @@ try:
         value["checked_copy_facts"][0]))
     runtime_indices = [index for index, row in enumerate(original_manifest["occurrences"])
                        if row["origin_kind"] == "unclassified"]
-    assert len(runtime_indices) == 6, runtime_indices
+    assert len(runtime_indices) == 4, runtime_indices
     for runtime_index in runtime_indices:
         rejects_mutation(lambda value, i=runtime_index:
                          value["occurrences"].pop(i))

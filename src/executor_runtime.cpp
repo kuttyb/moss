@@ -638,9 +638,9 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
 ///
 /// A5 / R5 leaf-lock invariant: no runtime lock is EVER held while acquiring
 /// another lock. Lock acquisition is strictly non-nested.
-fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
+fn worker_loop(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
     let _abort_guard = MossAbortOnUnwind;
-    let _worker = MossWorkerContextGuard::enter(worker_id, std::sync::Arc::clone(&gx));
+    let _worker = MossWorkerContextGuard::enter(worker_id, std::sync::Arc::clone(gx));
 
     loop {
         // Phase 1: exit decision or Root work, under gx.inner only.
@@ -725,11 +725,13 @@ fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
     let handle = std::thread::Builder::new()
         .name(format!("moss-worker-{}", wid))
         .spawn(move || {
-            let _slot = MossWorkerThreadGuard(std::sync::Arc::clone(&gx2));
+            // The slot guard owns the worker's Arc for its entire lifetime;
+            // worker_loop and affinity setup borrow it while the guard is live.
+            let _slot = MossWorkerThreadGuard(gx2);
             #[cfg(any(test, moss_perf))]
             moss_rt_ev(MossRtEvent::WorkerSpawned, 0, 0, wid);
-            apply_affinity_and_priority(gx2.config.affinity.as_ref(), priority);
-            worker_loop(gx2, wid);
+            apply_affinity_and_priority(_slot.0.config.affinity.as_ref(), priority);
+            worker_loop(&_slot.0, wid);
         })
         .expect("failed to spawn worker thread");
     // Reap exited (excess compensation) workers so handles stay bounded.
