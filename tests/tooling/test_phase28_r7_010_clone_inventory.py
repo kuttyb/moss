@@ -123,6 +123,40 @@ fn explicit_copy(value: &Record) -> Record {
         masked = inventory.mask_non_code(source)
         self.assertEqual(len(inventory.operator_spans(masked, "dot_clone")), 1)
 
-
+    def test_frozen_vector_echo_six_artifact_scope_has_30_clone_capabilities(self):
+        oracle39 = {
+            "oracle39-vector-for-read-debug.rs",
+            "oracle39-vector-for-read-optimized.rs",
+            "ORACLE-39-VEC-FOR-READ.rs",
+            "ORACLE-39-VEC-FOR-READ_opt.rs",
+        }
+        oracle42 = {
+            "oracle42-custom-wrapper-remove-debug.rs",
+            "oracle42-custom-wrapper-remove-optimized.rs",
+        }
+        expected_names = oracle39 | oracle42
+        error_enums = ("std__FileError", "std__ParseError",
+                       "std__ConversionError", "std__CollectionError")
+        with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as tmp:
+            root = Path(tmp)
+            for filename in sorted(expected_names):
+                app_type = "Node" if filename in oracle39 else "Bag"
+                rows = []
+                for name in error_enums:
+                    rows.extend([f"// Moss tooling begin|enum|enum:{name}@0|{name}|",
+                                 "#[derive(Clone, Debug)]", f"enum {name} {{ Empty }}",
+                                 f"// Moss tooling end|enum:{name}@0"])
+                rows.extend([f"// Moss tooling begin|type|type:{app_type}@2|{app_type}|",
+                             "#[derive(Clone, Debug)]", f"struct {app_type} {{ field: i64 }}",
+                             f"// Moss tooling end|type:{app_type}@2"])
+                (root / filename).write_text("\n".join(rows) + "\n")
+            actual_names = {p.name for p in root.glob("*.rs")}
+            result = inventory.inventory(root)
+        self.assertEqual(actual_names, expected_names)
+        self.assertEqual(result["artifact_count"], 6)
+        self.assertEqual(result["moss_clone_derive_capability_count"], 30)
+        self.assertEqual(result["candidate_occurrences"], 0)
+        self.assertEqual(sum(x["rust_type"] == "Node" for x in result["moss_clone_derives"]), 4)
+        self.assertEqual(sum(x["rust_type"] == "Bag" for x in result["moss_clone_derives"]), 2)
 if __name__ == "__main__":
     unittest.main()
