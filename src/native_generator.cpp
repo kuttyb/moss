@@ -6567,7 +6567,9 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
       query_specialization_context.clear();
     }
-    if (!p_.typed_semantics)
+    const auto* typed_semantics =
+        semantic_program_ ? semantic_program_->typed_semantics.get() : nullptr;
+    if (!typed_semantics)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT typed Echo argument facts are unavailable");
     const est::Handle* matched_handle = nullptr;
@@ -6587,7 +6589,7 @@ class Generator {
     try {
 #ifdef MOSS_TEST_BUILD
       auto& required =
-          p_.typed_semantics->required_echo_argument_occurrences;
+          semantic_program_->typed_semantics->required_echo_argument_occurrences;
       const auto same_requirement_key =
           [&](const TypedEchoArgumentRequirementV1& item) {
             return item.est_arena_index == matched_handle->arena_index &&
@@ -6609,7 +6611,7 @@ class Generator {
         required.push_back(duplicate);
       }
 
-      auto& facts = p_.typed_semantics->echo_argument_facts;
+      auto& facts = semantic_program_->typed_semantics->echo_argument_facts;
       const auto same_fact_key = [&](const TypedEchoArgumentFactV1& item) {
         return item.est_arena_index == matched_handle->arena_index &&
             item.argument_expression_occurrence_id == matched_handle->expr &&
@@ -6637,7 +6639,7 @@ class Generator {
         query_context += ":wrong-context";
 #endif
       const auto& requirement =
-          p_.typed_semantics->find_echo_argument_requirement(
+          typed_semantics->find_echo_argument_requirement(
               matched_handle->arena_index, matched_handle->expr,
               static_cast<std::uint32_t>(argument_index), query_context);
       auto exact_requirement = requirement;
@@ -6649,7 +6651,7 @@ class Generator {
         exact_requirement.est_fact_context += ":consumer-perturbed";
 #endif
       const auto& fact =
-          p_.typed_semantics->find_echo_argument_fact(exact_requirement);
+          typed_semantics->find_echo_argument_fact(exact_requirement);
       if (!fact.is_authoritative() ||
           fact.required_access != Effect::Read ||
           !fact.display_result_non_escaping || fact.permits_copy)
@@ -6659,7 +6661,7 @@ class Generator {
     } catch (const std::exception& error) {
       std::string candidates;
       for (const auto& candidate :
-           p_.typed_semantics->required_echo_argument_occurrences) {
+           typed_semantics->required_echo_argument_occurrences) {
         if (candidate.est_arena_index != matched_handle->arena_index ||
             candidate.argument_expression_occurrence_id != matched_handle->expr ||
             candidate.argument_index != argument_index)
