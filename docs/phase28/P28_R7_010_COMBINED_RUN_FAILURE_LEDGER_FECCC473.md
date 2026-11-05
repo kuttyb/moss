@@ -1,8 +1,8 @@
 # P28 R7-010 Combined Oracle Ledger — `feccc473`
 
-**Implementation SHA:** `feccc47323b4b081edb64bb4e9a618fb7ad4e9b9`  
-**Branch:** `phase28-r7-010-l7-copy-authority`  
-**Oracle:** certified v2, 60 fixtures; frozen expectation and mapping digests validated by the harness  
+**Implementation SHA:** `feccc47323b4b081edb64bb4e9a618fb7ad4e9b9`
+**Branch:** `phase28-r7-010-l7-copy-authority`
+**Oracle:** certified v2, 60 fixtures; frozen expectation and mapping digests validated by the harness
 **Fresh outputs:** `tmp/phase28-r7-010-combined-feccc473.json` and `.md`
 
 ## Result

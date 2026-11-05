@@ -1,9 +1,9 @@
 # P28 R7-010 Combined Oracle Failure Ledger — `8b9ad2c5`
 
-**Implementation SHA:** `8b9ad2c578e2beb60bfcaf5a7ee7f4a8f2b72f72`  
-**Staging branch:** `phase28-r7-010-l7-copy-authority`  
-**Oracle:** certified v2, 60 fixtures; expectations and mappings unchanged  
-**Fresh outputs:** `tmp/phase28-r7-010-combined-8b9ad2c5.json` and `.md`  
+**Implementation SHA:** `8b9ad2c578e2beb60bfcaf5a7ee7f4a8f2b72f72`
+**Staging branch:** `phase28-r7-010-l7-copy-authority`
+**Oracle:** certified v2, 60 fixtures; expectations and mappings unchanged
+**Fresh outputs:** `tmp/phase28-r7-010-combined-8b9ad2c5.json` and `.md`
 **Fresh artifacts:** `tmp/l7-oracle-artifacts-8b9ad2c5/`
 
 ## Summary
