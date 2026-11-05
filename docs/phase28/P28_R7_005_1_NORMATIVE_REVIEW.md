@@ -57,8 +57,9 @@ The independent reviewer approved the revised ORACLE-10B fixture/mapping, the fi
   contextual ORACLE-10B probe reports generic `TYPE_MISMATCH`; a focused check
   of the exact certified v1 source reports `CLONE_ALIAS_UNSUPPORTED` at the
   clone assignment. The successor now restores the v1 source fixture without
-  changing its expectation or narrow mapping. This source-only revision needs
-  normative re-review before another implementation comparison.
+  changing its expectation or narrow mapping. At that checkpoint, the source
+  restoration still needed normative re-review before implementation comparison;
+  the subsequent GO and completed comparison are recorded in the next entry.
 - After the oracle-spec GO on `f74210891202926055ccaa3ce8c077e61ec144cc`,
   ORACLE-10B's mapping was tightened further: it now requires the exact
   clone-specific diagnostic message and the executable clone assignment line.
