@@ -1,0 +1,26 @@
+# One source copy occurrence is checked and emitted under two specializations.
+type Record:
+  label: String
+
+type Bundle:
+  values: Vector[Int]
+
+trait Supplies:
+  fn make() -> Record
+
+type First:
+  fn make() -> Record:
+    return Record(label: "first")
+
+type Second:
+  fn make() -> Record:
+    return Record(label: "second")
+
+fn duplicate(item: Supplies) -> Record:
+  return copy(item.make())
+
+fn main():
+  left = duplicate(First())
+  right = duplicate(Second())
+  echo left.label
+  echo right.label
