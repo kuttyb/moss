@@ -15394,3 +15394,21 @@ or full repository suite was requested or run.
 Push the corrected draft, report its exact SHA, and stop for L7 approval. Do not
 self-approve, freeze or merge. The private holdout remains local-only and
 untouched.
+
+## 2026-11-04 Phase 28 R7-005.1 oracle successor checkpoint
+
+- Team B worktree branch: `phase28-r7-005-1-oracle`, based on certified
+  handoff `46619968f64ec618f4cc2576f601b86569399f3c`.
+- Frozen normative review package at `aeb824849b0692a0b3c2ce5d11ef4e5a887017c6`:
+  versioned 60-row draft, six candidate diagnostic mapping corrections, and
+  four requested fixtures. The original certified oracle is unchanged; its
+  expectations SHA-256 is `223a15436046767175de9c1f30637bb80c76505cb402f5dadb700c64520f4431`
+  and runtime allowlist SHA-256 is
+  `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`.
+- Validation so far: successor `--validate-only` passes for 60 fixtures;
+  successor harness unit tests pass 16/16; `git diff --check` passes;
+  `check_agent_feedback.py` passes. No comparison against compiler has run.
+- Pending independent normative approval of mapping candidates and all four
+  new fixture expectations, then reviewer-controlled holdouts, implementation
+  comparison, recertification, final adversarial review, and push. Do not treat
+  the current draft or validation as compiler compliance evidence.
