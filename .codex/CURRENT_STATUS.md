@@ -15899,3 +15899,24 @@ untouched.
   missing case and narrowing pruning to truly unused selected-error clones.
   ORACLE-07 no-bare-raise and the uncaptured bare-re-raise test pass; captured
   re-raise remains a known regression until a reviewed follow-up lands.
+
+## Checker Echo fact integration checkpoint (2026-11-05)
+
+- L7 imported Team A's reviewed Echo producer through original source SHA
+  `644d2c71c773bfcf41604189593d3e852f8797e7` (the prior `b5294b52` parent
+  was a rejected intermediate; the final context/readback fix is applied).
+  Conflict resolution preserved L7 `TypedCollectionOutcome` API and mutable
+  binding tracking. L7 build and exact Echo contract gate pass; wrong-context,
+  drop, and perturb hooks fail closed. The 14-case R7-009 harness also passes.
+- L7 registered the checker Echo authority gate and reviewed B/C targeted gates
+  in `tests/run.sh`; added the live-query oracle harness + clone-inventory unit
+  tests. Direct validation on this tree: v3 builder, explicit-copy source-borrow,
+  Map.get write-through, Match WRITE, CollectionOutcome, native join slot,
+  nested-copy materializer, Echo authority, R7-009 and combined C harness /
+  inventory pass (45/45 unit cases). The Vector Echo consumer gate is not yet
+  in this L7 tree because its consumer implementation is still in Team B's
+  follow-up branch.
+- The root-ingress String reply test still checker-passes but native generation
+  fails closed at the nonprimitive owned-reply boundary. Keep the phase contract
+  blocker recorded; do not relax copy authority or change frozen oracle
+  expectations. No full oracle, `make check`, or `make check-shadow` run yet.
