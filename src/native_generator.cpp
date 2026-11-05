@@ -5888,7 +5888,7 @@ class Generator {
         string concrete = canonical_type_name(*receiver_type);
         if (collection_named(parsed_type(concrete), {"queue"}) &&
             member_name == "pop" && member_arguments.empty()) {
-          if (const auto* outcome = resolve_collection_outcome_fact(
+          if (resolve_collection_outcome_fact(
                   TypedCollectionOutcomeFactV1::Operation::QueuePop)) {
             if (!phase21_result_context_ ||
                 !phase21_collection_error_checked("Empty"))
@@ -5899,7 +5899,7 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"map"}) &&
             member_name == "remove" && member_arguments.size() == 1) {
-          if (const auto* outcome = resolve_collection_outcome_fact(
+          if (resolve_collection_outcome_fact(
                   TypedCollectionOutcomeFactV1::Operation::MapRemove)) {
             if (!phase21_result_context_ ||
                 !phase21_collection_error_checked("MissingKey"))
