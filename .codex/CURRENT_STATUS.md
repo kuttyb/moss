@@ -16163,3 +16163,10 @@ untouched.
 - Fresh 60-fixture oracle, full default suite, EST-shadow suite, final clone
   provenance audit, and final Agent 2 review remain pending. No production
   branch merge has occurred.
+
+## R7-010 Team B checked-consumer integration update (2026-11-05)
+
+- Team A producer-shape harness follow-up `868866ebe78e67d4663a1fe3f9c619ea382cfaf5` received independent Agent 2 GO. It adds only authority test and report coverage: ORACLE-20/minimal direct Map Index→Member produce one fact; explicit-copy has no projected-read fact; unsupported alias is rejected. No checker logic changed.
+- Team B consumer checkpoint `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e` is pushed and remote-verified. Independent Agent 2 gave focused consumer GO after rebuilding and rerunning the Map error/write-through, CollectionView, projected-read and ReturnValue gates. Native Debug/Optimized/Fast Debug parity and corruption/no-artifact checks pass; feedback and diff checks pass.
+- L7 is integrating that exact reviewed SHA on `phase28-r7-010-l7-copy-authority`; the Team B `.codex/CURRENT_STATUS.md` change is being reconciled with this file's existing L7 ledger. L7 owns registering Team B's four new gates in `tests/run.sh` with isolated test-build output paths.
+- Overall Team B remains NO-GO for clone provenance: generated runtime clone groups remain unapproved. The focused consumer GO does not authorize a runtime clone. Full 60-fixture oracle, default/shadow suites, final clone audit and final independent implementation review remain pending. No production branch merge has occurred.

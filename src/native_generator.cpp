@@ -1176,6 +1176,801 @@ class Generator {
     return consumer_has;
   }
 
+  const TypedConditionalCollectionErrorFactV1*
+  resolve_conditional_collection_error_fact(
+      const TypedConditionalCollectionErrorRequirementV1& requirement) const {
+    if (!p_.typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT conditional CollectionError authority unavailable");
+    size_t requirement_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->required_conditional_collection_error_occurrences) {
+      if (candidate.operation == requirement.operation &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.operation_expression_occurrence_id ==
+              requirement.operation_expression_occurrence_id &&
+          candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
+          candidate.specialization_identity == requirement.specialization_identity &&
+          candidate.specialization_context == requirement.specialization_context) {
+        ++requirement_count;
+      }
+    }
+    size_t fact_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->conditional_collection_error_facts) {
+      if (candidate.operation == requirement.operation &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.operation_expression_occurrence_id ==
+              requirement.operation_expression_occurrence_id &&
+          candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
+          candidate.specialization_identity == requirement.specialization_identity &&
+          candidate.specialization_context == requirement.specialization_context) {
+        ++fact_count;
+      }
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CONDITIONAL_COLLECTION_ERROR_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CONDITIONAL_COLLECTION_ERROR_FACT"))
+      ++fact_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CONDITIONAL_COLLECTION_ERROR_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CONDITIONAL_COLLECTION_ERROR_REQUIREMENT"))
+      ++requirement_count;
+#endif
+    if (requirement_count != 1 || fact_count != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT conditional CollectionError requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CONDITIONAL_COLLECTION_ERROR_FACT")) {
+        auto corrupted = requirement;
+        corrupted.error_variant_identity = "forged";
+        (void)p_.typed_semantics->find_conditional_collection_error_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed conditional CollectionError authority unexpectedly passed");
+      }
+#endif
+      const auto* fact = p_.typed_semantics->find_conditional_collection_error_fact(
+          requirement);
+      if (!fact || !fact->is_authoritative())
+        throw std::invalid_argument(
+            "conditional CollectionError fact is not authoritative");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  const TypedReturnValueFactV1* resolve_return_value_fact(
+      const Stmt& statement, const string& functional_context) const {
+    if (!p_.typed_semantics || statement.kind != Stmt::Kind::Return ||
+        statement.a.empty() || statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked return-value identity unavailable");
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::ReturnValue ||
+          candidate.argument_index != 0) continue;
+      if (handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate checked return-value handle");
+      handle = &candidate;
+    }
+    if (!handle || handle->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[handle->arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked return-value EST handle missing");
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const string specialization = codegen_active_specialization_key_;
+    const TypedReturnValueRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    size_t fact_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->required_return_value_occurrences) {
+      if (candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.est_arena_index == handle->arena_index &&
+          candidate.expression_occurrence_id == handle->expr &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    }
+    for (const auto& candidate : p_.typed_semantics->return_value_facts) {
+      if (candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.est_arena_index == handle->arena_index &&
+          candidate.expression_occurrence_id == handle->expr &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization)
+        ++fact_count;
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT")) fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT")) ++fact_count;
+#endif
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT return-value requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.required_access = corrupted.required_access == Effect::Consume
+            ? Effect::Read : Effect::Consume;
+        (void)p_.typed_semantics->find_return_value_fact(corrupted);
+        throw std::runtime_error("perturbed return-value fact unexpectedly passed");
+      }
+#endif
+      const auto* fact = p_.typed_semantics->find_return_value_fact(*requirement);
+      if (!fact || !fact->is_authoritative())
+        throw std::invalid_argument("return-value fact is not authoritative");
+      const auto& arena = *p_.expression_arenas[handle->arena_index];
+      const auto* expression_facts = arena.facts(handle->expr, context);
+      if (!expression_facts || !expression_facts->type || !fact->expression_type ||
+          !expression_facts->type->structurally_equal(*fact->expression_type))
+        throw std::invalid_argument(
+            "return-value fact type does not match its exact EST occurrence");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  const TypedCollectionViewFactV1* resolve_collection_view_fact(
+      TypedCollectionViewOperationV1 operation,
+      const string& receiver_expression) const {
+    if (!p_.typed_semantics || !phase21_codegen_statement_) return nullptr;
+    const Stmt& statement = *phase21_codegen_statement_;
+    if (statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked collection-view statement identity unavailable");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const string specialization = codegen_active_specialization_key_;
+    const string method_name = operation == TypedCollectionViewOperationV1::MapKeys
+        ? "keys" : "values";
+    const auto source_for_handle = [&](const est::Handle& handle)
+        -> std::optional<string> {
+      switch (handle.slot) {
+        case est::ExprSlot::Initializer:
+        case est::ExprSlot::RhsValue:
+        case est::ExprSlot::Iterable:
+          return statement.b;
+        case est::ExprSlot::ReturnValue:
+        case est::ExprSlot::Condition:
+        case est::ExprSlot::Scrutinee:
+        case est::ExprSlot::RaisedValue:
+          return statement.a;
+        case est::ExprSlot::Argument:
+          if (handle.argument_index < statement.args.size())
+            return statement.args[handle.argument_index];
+          return std::nullopt;
+        case est::ExprSlot::Expression:
+          return statement.text;
+        default:
+          return std::nullopt;
+      }
+    };
+    const auto matches_receiver = [&](const TypedCollectionViewFactV1& candidate) {
+      if (candidate.operation != operation ||
+          candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.specialization_context != context ||
+          candidate.specialization_identity != specialization ||
+          candidate.est_arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[candidate.est_arena_index])
+        return false;
+      const auto& arena = *p_.expression_arenas[candidate.est_arena_index];
+      if (candidate.operation_expression_occurrence_id >= arena.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT collection-view operation ExprId is invalid");
+      const auto* call = std::get_if<est::Call>(
+          &arena.at(candidate.operation_expression_occurrence_id));
+      const auto* member = call && call->arguments.empty()
+          ? std::get_if<est::Member>(&arena.at(call->callee)) : nullptr;
+      if (!member || member->name != method_name) return false;
+      const auto receiver_span = arena.span(member->base);
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.arena_index != candidate.est_arena_index) continue;
+        auto source = source_for_handle(handle);
+        if (!source || receiver_span.source_end > source->size() ||
+            receiver_span.source_begin > receiver_span.source_end) continue;
+        std::vector<est::ExprId> pending{handle.expr};
+        std::set<est::ExprId> reachable;
+        while (!pending.empty()) {
+          const auto current = pending.back();
+          pending.pop_back();
+          if (current >= arena.size() || !reachable.insert(current).second)
+            continue;
+          const auto& node = arena.at(current);
+          std::visit([&](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, est::Call>) {
+              pending.push_back(value.callee);
+              pending.insert(pending.end(), value.arguments.begin(), value.arguments.end());
+            } else if constexpr (std::is_same_v<T, est::Member>) pending.push_back(value.base);
+            else if constexpr (std::is_same_v<T, est::Index>) {
+              pending.push_back(value.base); pending.push_back(value.index);
+            } else if constexpr (std::is_same_v<T, est::Parenthesized>) pending.push_back(value.inner);
+            else if constexpr (std::is_same_v<T, est::Unary>) pending.push_back(value.operand);
+            else if constexpr (std::is_same_v<T, est::Binary>) {
+              pending.push_back(value.left); pending.push_back(value.right);
+            } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+              pending.push_back(value.input);
+              pending.insert(pending.end(), value.stages.begin(), value.stages.end());
+            }
+          }, node);
+        }
+        if (!reachable.count(candidate.operation_expression_occurrence_id))
+          continue;
+        const string exact_receiver = trim(source->substr(
+            receiver_span.source_begin,
+            receiver_span.source_end - receiver_span.source_begin));
+        if (exact_receiver == trim(receiver_expression)) return true;
+      }
+      return false;
+    };
+    const TypedCollectionViewRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    size_t fact_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->required_collection_view_occurrences) {
+      if (matches_receiver(candidate)) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    }
+    for (const auto& candidate : p_.typed_semantics->collection_view_facts)
+      if (matches_receiver(candidate))
+        ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_VIEW_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_VIEW_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_VIEW_FACT")) fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_VIEW_FACT")) ++fact_count;
+#endif
+    if (requirement_count == 0 && fact_count == 0) return nullptr;
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT collection-view requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_VIEW_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.required_access = Effect::Consume;
+        (void)p_.typed_semantics->find_collection_view_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed collection-view authority unexpectedly passed");
+      }
+#endif
+      const auto* fact =
+          p_.typed_semantics->find_collection_view_fact(*requirement);
+      if (!fact || !fact->is_authoritative() ||
+          fact->receiver_binding_identity.empty() ||
+          fact->receiver_definition_identity.empty() ||
+          (fact->direct_temporary &&
+           fact->last_use_statement_occurrence_id !=
+               fact->statement_occurrence_id) ||
+          (!fact->direct_temporary &&
+           (fact->view_binding_identity.empty() ||
+            fact->view_definition_identity.empty())))
+        throw std::invalid_argument("collection-view fact is not authoritative");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  const TypedProjectedCollectionReadFactV1*
+  resolve_projected_collection_read_fact(
+      const string& projection_expression) const {
+    if (!p_.typed_semantics || !phase21_codegen_statement_)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected collection-read authority unavailable");
+    const Stmt& statement = *phase21_codegen_statement_;
+    if (statement.kind != Stmt::Kind::Echo ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected collection-read query identity unavailable");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const string specialization = codegen_active_specialization_key_;
+    const TypedProjectedCollectionReadRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->required_projected_collection_read_occurrences) {
+      if (candidate.projection_statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.query_statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.specialization_context != context ||
+          candidate.specialization_identity != specialization ||
+          candidate.est_arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[candidate.est_arena_index])
+        continue;
+      const auto& arena = *p_.expression_arenas[candidate.est_arena_index];
+      if (candidate.query_source_expression_occurrence_id >= arena.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT projected collection-read ExprId invalid");
+      bool exact_source = false;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.arena_index != candidate.est_arena_index ||
+            handle.slot != est::ExprSlot::Argument ||
+            handle.argument_index >= statement.args.size()) continue;
+        std::vector<est::ExprId> pending{handle.expr};
+        std::set<est::ExprId> reachable;
+        while (!pending.empty()) {
+          const auto current = pending.back();
+          pending.pop_back();
+          if (current >= arena.size() || !reachable.insert(current).second)
+            continue;
+          const auto& node = arena.at(current);
+          std::visit([&](const auto& value) {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, est::Call>) {
+              pending.push_back(value.callee);
+              pending.insert(pending.end(), value.arguments.begin(), value.arguments.end());
+            } else if constexpr (std::is_same_v<T, est::Member>) pending.push_back(value.base);
+            else if constexpr (std::is_same_v<T, est::Index>) {
+              pending.push_back(value.base); pending.push_back(value.index);
+            } else if constexpr (std::is_same_v<T, est::Parenthesized>) pending.push_back(value.inner);
+            else if constexpr (std::is_same_v<T, est::Pipeline>) {
+              pending.push_back(value.input);
+              pending.insert(pending.end(), value.stages.begin(), value.stages.end());
+            }
+          }, node);
+        }
+        if (!reachable.count(candidate.query_source_expression_occurrence_id))
+          continue;
+        const auto span = arena.span(
+            candidate.query_source_expression_occurrence_id);
+        const auto& source = statement.args[handle.argument_index];
+        if (span.source_begin <= span.source_end &&
+            span.source_end <= source.size() &&
+            trim(source.substr(span.source_begin,
+                span.source_end - span.source_begin)) ==
+                trim(projection_expression)) {
+          exact_source = true;
+          break;
+        }
+      }
+      if (!exact_source) continue;
+      requirement = &candidate;
+      ++requirement_count;
+    }
+    size_t fact_count = 0;
+    if (requirement)
+      for (const auto& candidate :
+           p_.typed_semantics->projected_collection_read_facts)
+        if (candidate.est_arena_index == requirement->est_arena_index &&
+            candidate.map_index_expression_occurrence_id ==
+                requirement->map_index_expression_occurrence_id &&
+            candidate.member_projection_expression_occurrence_id ==
+                requirement->member_projection_expression_occurrence_id &&
+            candidate.query_source_expression_occurrence_id ==
+                requirement->query_source_expression_occurrence_id &&
+            candidate.query_statement_occurrence_id ==
+                requirement->query_statement_occurrence_id &&
+            candidate.specialization_context == requirement->specialization_context &&
+            candidate.specialization_identity == requirement->specialization_identity)
+          ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_COLLECTION_READ_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_PROJECTED_COLLECTION_READ_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_COLLECTION_READ_FACT")) fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_PROJECTED_COLLECTION_READ_FACT")) ++fact_count;
+#endif
+    if (requirement_count == 0 && fact_count == 0)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected collection-read requirement missing");
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected collection-read requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PROJECTED_COLLECTION_READ_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.required_access = Effect::Consume;
+        if (corrupted.is_authoritative())
+          throw std::runtime_error(
+              "perturbed projected collection-read requirement remains authoritative");
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT perturbed projected collection-read authority rejected");
+      }
+#endif
+      p_.typed_semantics->require_all_phase28_authority_facts();
+      const auto* result = p_.typed_semantics->projected_collection_read_facts.empty()
+          ? nullptr : &p_.typed_semantics->projected_collection_read_facts.front();
+      size_t exact_matches = 0;
+      for (const auto& candidate :
+           p_.typed_semantics->projected_collection_read_facts)
+        if (candidate.est_arena_index == requirement->est_arena_index &&
+            candidate.map_index_expression_occurrence_id ==
+                requirement->map_index_expression_occurrence_id &&
+            candidate.member_projection_expression_occurrence_id ==
+                requirement->member_projection_expression_occurrence_id &&
+            candidate.query_source_expression_occurrence_id ==
+                requirement->query_source_expression_occurrence_id &&
+            candidate.projection_statement_occurrence_id ==
+                requirement->projection_statement_occurrence_id &&
+            candidate.query_statement_occurrence_id ==
+                requirement->query_statement_occurrence_id &&
+            candidate.specialization_context == requirement->specialization_context &&
+            candidate.specialization_identity == requirement->specialization_identity) {
+          result = &candidate;
+          ++exact_matches;
+        }
+      if (exact_matches != 1 || !result || !result->is_authoritative())
+        throw std::invalid_argument(
+            "projected collection-read fact is missing, duplicate, or unauthoritative");
+      return result;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  struct CheckedMapWriteThrough {
+    const TypedConditionalCollectionErrorFactV1* fact = nullptr;
+    const est::Arena* arena = nullptr;
+    est::ExprId index_expression = UINT32_MAX;
+    est::ExprId lhs_expression = UINT32_MAX;
+    std::uint32_t arena_index = UINT32_MAX;
+  };
+
+  std::optional<CheckedMapWriteThrough> resolve_map_write_through(
+      const Stmt& statement, const string& functional_context) const {
+    if (!p_.typed_semantics ||
+        statement.kind != Stmt::Kind::Assign ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      return std::nullopt;
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot == est::ExprSlot::LhsPlace &&
+          candidate.argument_index == 0) {
+        if (handle)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT duplicate checked assignment-place handle");
+        handle = &candidate;
+      }
+    }
+    if (!handle || handle->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[handle->arena_index])
+      return std::nullopt;
+    const est::Arena& arena = *p_.expression_arenas[handle->arena_index];
+    if (handle->expr >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT assignment-place EST occurrence is invalid");
+    const string context = functional_context.empty() ? "main" : functional_context;
+    std::vector<const TypedConditionalCollectionErrorRequirementV1*> candidates;
+    for (const auto& requirement :
+         p_.typed_semantics->required_conditional_collection_error_occurrences) {
+      if (requirement.operation ==
+              TypedConditionalCollectionErrorFactV1::Operation::MapIndexWriteThrough &&
+          requirement.est_arena_index == handle->arena_index &&
+          requirement.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          requirement.specialization_context == context &&
+          requirement.specialization_identity ==
+              codegen_active_specialization_key_)
+        candidates.push_back(&requirement);
+    }
+    std::vector<const TypedConditionalCollectionErrorFactV1*> orphan_facts;
+    for (const auto& fact : p_.typed_semantics->conditional_collection_error_facts) {
+      if (fact.operation ==
+              TypedConditionalCollectionErrorFactV1::Operation::MapIndexWriteThrough &&
+          fact.est_arena_index == handle->arena_index &&
+          fact.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          fact.specialization_context == context &&
+          fact.specialization_identity == codegen_active_specialization_key_)
+        orphan_facts.push_back(&fact);
+    }
+    if (candidates.empty()) {
+      if (!orphan_facts.empty())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT conditional Map write-through fact lacks a requirement");
+      if (statement.exceptional_alternatives.count(RaisedIdentity::enum_variant(
+              "std__CollectionError", "MissingKey"))) {
+        bool member_projection = false;
+        std::vector<est::ExprId> pending{handle->expr};
+        while (!pending.empty()) {
+          const auto current = pending.back();
+          pending.pop_back();
+          if (current >= arena.size()) continue;
+          const auto& node = arena.at(current);
+          if (const auto* member = std::get_if<est::Member>(&node)) {
+            member_projection = true;
+            pending.push_back(member->base);
+          } else if (const auto* index = std::get_if<est::Index>(&node)) {
+            const auto* semantic = arena.facts(index->base, context);
+            if (member_projection && semantic && semantic->type &&
+                semantic->type->kind == TypeKind::Builtin &&
+                semantic->type->name == "map")
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT conditional Map write-through requirement missing");
+            pending.push_back(index->base);
+          } else if (const auto* grouped = std::get_if<est::Parenthesized>(&node)) {
+            pending.push_back(grouped->inner);
+          }
+        }
+      }
+      return std::nullopt;
+    }
+    if (candidates.size() != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT conditional Map write-through requirement is ambiguous");
+    const auto& requirement = *candidates.front();
+    const est::ExprId index_id = requirement.operation_expression_occurrence_id;
+    if (index_id >= arena.size() || !std::get_if<est::Index>(&arena.at(index_id)))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through occurrence is not an index");
+    std::vector<est::ExprId> pending{handle->expr};
+    bool reachable = false;
+    while (!pending.empty()) {
+      const est::ExprId current = pending.back();
+      pending.pop_back();
+      if (current == index_id) {
+        reachable = true;
+        continue;
+      }
+      if (current >= arena.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT assignment-place EST child is invalid");
+      const auto& node = arena.at(current);
+      if (const auto* member = std::get_if<est::Member>(&node))
+        pending.push_back(member->base);
+      else if (const auto* index = std::get_if<est::Index>(&node)) {
+        pending.push_back(index->base);
+        pending.push_back(index->index);
+      } else if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+        pending.push_back(grouped->inner);
+      else if (const auto* identifier = std::get_if<est::Identifier>(&node))
+        (void)identifier;
+      else if (const auto* literal = std::get_if<est::Literal>(&node))
+        (void)literal;
+      else if (current != index_id)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT unsupported checked Map write-through place shape");
+    }
+    if (!reachable)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through is outside assignment place");
+    const auto* fact = resolve_conditional_collection_error_fact(requirement);
+    if (fact->key_expression_occurrence_id !=
+        std::get<est::Index>(arena.at(index_id)).index)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through key occurrence mismatch");
+    return CheckedMapWriteThrough{fact, &arena, index_id, handle->expr,
+                                  handle->arena_index};
+  }
+
+  const TypedConditionalCollectionErrorFactV1*
+  resolve_direct_map_read_error_fact() const {
+    if (!p_.typed_semantics || !phase21_codegen_statement_) return nullptr;
+    const Stmt& statement = *phase21_codegen_statement_;
+    if (statement.checked_statement_occurrence_id == UINT32_MAX) return nullptr;
+    const est::ExprSlot slot =
+        statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var
+            ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != slot || candidate.argument_index != 0) continue;
+      if (handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous Map read expression handle");
+      handle = &candidate;
+    }
+    if (!handle || handle->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[handle->arena_index]) return nullptr;
+    const auto& arena = *p_.expression_arenas[handle->arena_index];
+    est::ExprId operation = handle->expr;
+    while (operation < arena.size()) {
+      const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(operation));
+      if (!grouped) break;
+      operation = grouped->inner;
+    }
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const auto wanted =
+        TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead;
+    auto same_statement_read = [&](const auto& candidate) {
+      return candidate.operation == wanted &&
+          candidate.est_arena_index == handle->arena_index &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == codegen_active_specialization_key_;
+    };
+    const auto has_unsupported_nested_read = [&](const auto& rows) {
+      return std::any_of(rows.begin(), rows.end(), [&](const auto& candidate) {
+        return same_statement_read(candidate) &&
+            candidate.operation_expression_occurrence_id != operation;
+      });
+    };
+    if (has_unsupported_nested_read(
+            p_.typed_semantics->required_conditional_collection_error_occurrences) ||
+        has_unsupported_nested_read(
+            p_.typed_semantics->conditional_collection_error_facts))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unsupported nested conditional CollectionError Map read lowering");
+    if (operation >= arena.size() ||
+        !std::get_if<est::Index>(&arena.at(operation))) {
+      const bool has_read = std::any_of(
+          p_.typed_semantics->required_conditional_collection_error_occurrences.begin(),
+          p_.typed_semantics->required_conditional_collection_error_occurrences.end(),
+          same_statement_read) || std::any_of(
+          p_.typed_semantics->conditional_collection_error_facts.begin(),
+          p_.typed_semantics->conditional_collection_error_facts.end(),
+          same_statement_read);
+      if (has_read)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT unsupported nested conditional CollectionError Map read lowering");
+      return nullptr;
+    }
+    const TypedConditionalCollectionErrorRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    size_t fact_count = 0;
+    for (const auto& candidate :
+         p_.typed_semantics->required_conditional_collection_error_occurrences) {
+      if (candidate.operation == wanted &&
+          candidate.est_arena_index == handle->arena_index &&
+          candidate.operation_expression_occurrence_id == operation &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == codegen_active_specialization_key_) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    }
+    for (const auto& candidate :
+         p_.typed_semantics->conditional_collection_error_facts) {
+      if (candidate.operation == wanted &&
+          candidate.est_arena_index == handle->arena_index &&
+          candidate.operation_expression_occurrence_id == operation &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == codegen_active_specialization_key_)
+        ++fact_count;
+    }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CONDITIONAL_COLLECTION_ERROR_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CONDITIONAL_COLLECTION_ERROR_FACT"))
+      ++fact_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CONDITIONAL_COLLECTION_ERROR_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CONDITIONAL_COLLECTION_ERROR_REQUIREMENT"))
+      ++requirement_count;
+#endif
+    if (requirement_count == 0 && fact_count == 0) {
+      const auto* checked_receiver =
+          arena.facts(std::get<est::Index>(arena.at(operation)).base, context);
+      if (statement.exceptional_alternatives.count(RaisedIdentity::enum_variant(
+              "std__CollectionError", "MissingKey")) && checked_receiver &&
+          checked_receiver->type &&
+          checked_receiver->type->kind == TypeKind::Builtin &&
+          checked_receiver->type->name == "map")
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT conditional Map read requirement missing");
+      return nullptr;
+    }
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT conditional Map read requirement/fact missing or ambiguous");
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CONDITIONAL_COLLECTION_ERROR_FACT")) {
+      auto corrupted = *requirement;
+      corrupted.error_variant_identity = "forged";
+      try {
+        (void)p_.typed_semantics->find_conditional_collection_error_fact(corrupted);
+      } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+      }
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT perturbed conditional CollectionError authority unexpectedly passed");
+    }
+#endif
+    const auto* fact = resolve_conditional_collection_error_fact(*requirement);
+    const auto* index = std::get_if<est::Index>(&arena.at(operation));
+    if (!fact || !index ||
+        fact->receiver_expression_occurrence_id != index->base ||
+        fact->key_expression_occurrence_id != index->index)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT conditional CollectionError Map read operands mismatch");
+    return fact;
+  }
+
+  string checked_map_write_place(
+      const CheckedMapWriteThrough& access, est::ExprId expression,
+      est::ExprId index_expression, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string, string>* types) const {
+    if (expression == index_expression) return "__moss_checked_entry";
+    if (expression >= access.arena->size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through place child missing");
+    const auto& node = access.arena->at(expression);
+    if (const auto* grouped = std::get_if<est::Parenthesized>(&node))
+      return "(" + checked_map_write_place(access, grouped->inner,
+          index_expression, domain, locals, types) + ")";
+    if (const auto* member = std::get_if<est::Member>(&node))
+      return "(" + checked_map_write_place(access, member->base,
+          index_expression, domain, locals, types) + ")." +
+          rust_identifier(member->name);
+    if (const auto* identifier = std::get_if<est::Identifier>(&node))
+      return place_expr(identifier->name, domain, locals, types);
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked Map write-through lowering does not support this projection");
+  }
+
+  string emit_checked_map_write_through(
+      const CheckedMapWriteThrough& access, const Stmt& statement,
+      const Domain* domain, const std::set<string>& locals,
+      const std::unordered_map<string, string>* types,
+      size_t functional_pipeline_id) const {
+    const auto& index = std::get<est::Index>(
+        access.arena->at(access.index_expression));
+    const auto source = est::view(*access.arena, access.lhs_expression,
+                                  statement.a).source_text(access.index_expression);
+    const auto receiver_source = est::view(*access.arena, access.lhs_expression,
+                                           statement.a).source_text(index.base);
+    const auto key_source = est::view(*access.arena, access.lhs_expression,
+                                      statement.a).source_text(index.index);
+    if (!source || !receiver_source || !key_source ||
+        source->empty() || receiver_source->empty() || key_source->empty())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through source projection unavailable");
+    const string storage = write_call_place(*receiver_source, domain, locals, types);
+    const string key = expr(*key_source, domain, locals, types);
+    string lookup;
+    const string checked_key_type = canonical_type_name(access.fact->key_type);
+    if (shared_protocol_map_key_from_type(checked_key_type)) {
+      const string key_type = *shared_protocol_map_key_from_type(checked_key_type);
+      lookup = "get_mut_with(" + shared_map_hash(key_type, "__moss_checked_key") +
+          ", &__moss_checked_key, |a, b| " +
+          shared_map_equal(key_type, "a", "b") + ")";
+    } else if (checked_key_type == "string") {
+      lookup = "get_mut(__moss_checked_key.as_str())";
+    } else {
+      lookup = "get_mut(&__moss_checked_key)";
+    }
+    const string place = checked_map_write_place(
+        access, access.lhs_expression, access.index_expression,
+        domain, locals, types);
+    const string rhs = expr(statement.b, domain, locals, types,
+                             functional_pipeline_id);
+    if (!statement.exceptional_alternatives.count(RaisedIdentity::enum_variant(
+            "std__CollectionError", "MissingKey")))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Map write-through lacks MissingKey edge");
+    const string exit = phase21_collection_error_exit("MissingKey");
+    if (shared_protocol_map_key_from_type(checked_key_type))
+      return "{ let __moss_checked_key = " + key + "; match (" + storage +
+          ")." + lookup + " { Some(__moss_checked_entry) => { " + place +
+          " = " + rhs + "; }, None => " + exit + " } }";
+    return "{ let __moss_checked_key = " + key + "; match (" + storage +
+        ")." + lookup + " { Some(__moss_checked_entry) => { " + place +
+        " = " + rhs + "; }, None => " + exit + " } }";
+  }
+
   const TypedCollectionOutcomeFactV1* resolve_collection_outcome_fact(
       TypedCollectionOutcomeFactV1::Operation operation) const {
     if (!p_.typed_semantics || !phase21_codegen_statement_) return nullptr;
@@ -2504,6 +3299,25 @@ class Generator {
     string storage = read_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
+    if (const auto* conditional = resolve_direct_map_read_error_fact()) {
+      const string key_type = canonical_type_name(conditional->key_type);
+      string lookup;
+      if (shared_protocol_map_key_from_type(key_type)) {
+        const string shared_key = *shared_protocol_map_key_from_type(key_type);
+        lookup = "get_with(" + shared_map_hash(shared_key, "__moss_checked_key") +
+            ", &__moss_checked_key, |a, b| " +
+            shared_map_equal(shared_key, "a", "b") + ")";
+      } else if (key_type == "string") {
+        lookup = "get(__moss_checked_key.as_str())";
+      } else {
+        lookup = "get(&__moss_checked_key)";
+      }
+      const string exit = phase21_collection_error_exit(
+          conditional->error_variant_identity);
+      return "*({ let __moss_checked_key = " + key + "; match (" + storage +
+          ")." + lookup + " { Some(__moss_entry) => __moss_entry, None => " +
+          exit + " } })";
+    }
     if (type && shared_protocol_map_key_from_type(*type)) {
       const string key_type = *shared_protocol_map_key_from_type(*type);
       return "*({ let __moss_key = " + key + "; (" + storage +
@@ -4593,16 +5407,47 @@ class Generator {
       }
       if (map_index && phase21_result_context_ &&
           phase21_collection_error_checked("MissingKey")) {
+        const auto* conditional_read = resolve_direct_map_read_error_fact();
+        if (!conditional_read)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT conditional CollectionError Map read fact missing");
+        if (auto checked_map_types = map_key_value_types(*base_type);
+            checked_map_types &&
+            canonical_type_name(conditional_read->key_type) !=
+                canonical_type_name(checked_map_types->first))
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT conditional CollectionError Map read key type mismatch");
         string value = "*__moss_entry";
         if (auto map_types = map_key_value_types(*base_type);
-            map_types && !copy_type(map_types->second))
-          value = "__moss_entry.clone()";
+            map_types && !copy_type(map_types->second)) {
+          const auto* ownership = phase21_codegen_statement_
+              ? resolve_local_ownership_fact(*phase21_codegen_statement_,
+                    codegen_body_context_)
+              : nullptr;
+          if (!ownership || ownership->access != Effect::Read)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT nonprimitive Map index read requires exact checked READ ownership authority");
+          // Keep the exact entry as a place; the caller's checked READ lowering
+          // borrows it. The conditional-error fact only authorizes the miss edge.
+          value = "*__moss_entry";
+        }
         return "match (" + expr(ib, d, locals, types) + ").get(" + ir +
             ") { Some(__moss_entry) => " + value + ", None => " +
             phase21_collection_error_exit("MissingKey") + " }";
       }
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
-      return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
+      const auto indexed_type = generated_expr_type(e, types);
+      if (indexed_type && !copy_type(*indexed_type)) {
+        const auto* ownership = phase21_codegen_statement_
+            ? resolve_local_ownership_fact(*phase21_codegen_statement_,
+                  codegen_body_context_)
+            : nullptr;
+        if (ownership && ownership->access == Effect::Read)
+          return indexed;
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked READ, Copy, or projected-borrow authority");
+      }
+      return indexed;
     }
 
     string projection_base, projection_field;
@@ -4623,8 +5468,17 @@ class Generator {
                   ? read_call_place(projection_base, d, locals, types)
                   : expr(projection_base, d, locals, types);
               string projected = "(" + base_rendered + ")." + rust_identifier(projection_field);
-              if (indexed_base && !copy_type(field->type))
-                return "(" + projected + ").clone()";
+              if (indexed_base && !copy_type(field->type)) {
+                const auto* authority =
+                    resolve_projected_collection_read_fact(e);
+                if (!authority ||
+                    canonical_type_name(authority->projected_collection_type
+                        ? authority->projected_collection_type->to_canonical_string()
+                        : "") != canonical_type_name(field->type))
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT projected Map collection-read fact type mismatch");
+                return "&(" + projected + ")";
+              }
               return projected;
             }
           }
@@ -5103,16 +5957,31 @@ class Generator {
             return remove + ".unwrap_or_else(|| std::process::abort())";
           }
           if (member_name == "keys" && member_arguments.empty()) {
+            if (resolve_collection_view_fact(
+                    TypedCollectionViewOperationV1::MapKeys,
+                    member_receiver))
+              return "(" + receiver_expression + ").keys().collect::<std::vec::Vec<_>>()";
+            if (!copy_type(map_types->first))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT nonprimitive Map.keys requires checked nonescaping CollectionView authority");
             if (shared_key)
               return "(" + receiver_expression + ").keys()";
             if (map_types->first == "float")
               return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
             return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
           }
-          if (member_name == "values" && member_arguments.empty())
+          if (member_name == "values" && member_arguments.empty()) {
+            if (resolve_collection_view_fact(
+                    TypedCollectionViewOperationV1::MapValues,
+                    member_receiver))
+              return "(" + receiver_expression + ").values().collect::<std::vec::Vec<_>>()";
+            if (!copy_type(map_types->second))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT nonprimitive Map.values requires checked nonescaping CollectionView authority");
             return shared_key
                 ? "(" + receiver_expression + ").values()"
                 : "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
+          }
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
@@ -8590,6 +9459,14 @@ class Generator {
             ++i;
             break;
           }
+          if (auto map_write = resolve_map_write_through(s, functional_context)) {
+            o << indent(level) << emit_checked_map_write_through(
+                *map_write, s, d, locals, &types,
+                statement_functional_pipeline_id(s, functional_context, 0))
+              << ";\n";
+            ++i;
+            break;
+          }
           string lhs;
           string lhs_base, lhs_index;
           string index_temporary;
@@ -9405,6 +10282,8 @@ class Generator {
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
             const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* return_fact = resolve_return_value_fact(
+                s, functional_context);
             string rendered;
             if (take_fact) {
               rendered = emit_take_expression(*take_fact, s, d, locals, &types);
@@ -9413,12 +10292,23 @@ class Generator {
                         statement_functional_pipeline_id(
                             s, functional_context, 0));
               const auto returned_binding = tree_identifier_name(s.a);
-              if (returned_binding && view_parameters_.count(*returned_binding)) {
-                rendered = *returned_binding + "." +
-                    access_value_method(types.at(*returned_binding)) + "()";
-              } else if (returned_binding && types.count(*returned_binding) &&
-                         view_object_type(types.at(*returned_binding))) {
-                rendered = "(" + rendered + ").clone()";
+              if (return_fact->action ==
+                  TypedReturnValueActionV1::ReadCopyPrimitive) {
+                if (returned_binding && types.count(*returned_binding) &&
+                    view_object_type(types.at(*returned_binding)))
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT primitive return-copy fact conflicts with view type");
+              } else if (return_fact->action ==
+                         TypedReturnValueActionV1::TransferOwnedValue) {
+                if (returned_binding && view_parameters_.count(*returned_binding))
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT checked return transfer cannot move from a borrowed view");
+                // A checker-selected transfer is a Rust move. Returning a
+                // MossAccess projection by cloning it here would invent a
+                // semantic copy at the backend boundary.
+              } else {
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT unsupported checked return action");
               }
             }
             o << indent(level) << "return ";

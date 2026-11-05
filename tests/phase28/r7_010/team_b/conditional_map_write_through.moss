@@ -1,0 +1,11 @@
+type Payload:
+  value: Int
+
+fn main():
+  var m = Map()
+  m["present"] = Payload(value: 1)
+  try:
+    m["missing"].value = 2
+    echo "unreachable"
+  recover CollectionError.MissingKey:
+    echo "missing_key_write_through"

@@ -1,0 +1,11 @@
+type Payload:
+  label: String
+
+fn main():
+  var m = Map()
+  m["a"] = Payload(label = "first")
+  m["b"] = Payload(label = "second")
+  vals = m.values()
+  echo (vals |> count)
+  m["c"] = Payload(label = "third")
+  echo (m.keys() |> count)
