@@ -558,11 +558,51 @@ def check_match_join_regressions(compiler: str) -> None:
                 f"{fixture}: expected a borrowed-payload diagnostic, got {result!r}")
 
 
+def check_match_arm_corruption(compiler: str) -> None:
+    fixture = ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_32_match_payload_write_borrow.moss"
+    output = ROOT / "tmp/team-a/match-arm-corruption"
+    output.mkdir(parents=True, exist_ok=True)
+    fields = (
+        "case_name", "payload_binding_name", "payload_binding_identity",
+        "payload_type", "payload_access", "transfers_ownership",
+    )
+    modes = {
+        "check": [compiler, "check", str(fixture), "--json"],
+        "fast": [compiler, "run", "--interp", str(fixture)],
+    }
+    native_rust = output / "corrupted.rs"
+    modes["native"] = [compiler, str(fixture), "-o", str(native_rust)]
+    for field in fields:
+        for mode, command in modes.items():
+            env = os.environ.copy()
+            env["MOSS_TEST_PERTURB_MATCH_ARM_FIELD"] = field
+            env["MOSS_TEST_VALIDATE_MATCH_CONTRACT"] = "1"
+            proc = subprocess.run(
+                command, cwd=ROOT, text=True, capture_output=True,
+                env=env, check=False)
+            combined = proc.stdout + "\n" + proc.stderr
+            if proc.returncode == 0 or not (
+                    "MOSS_INTERNAL_OR_IO_ERROR" in combined or
+                    "required checked match arm fact contradicts requirement" in combined):
+                raise AssertionError(
+                    f"{mode} accepted perturbed match arm {field}; "
+                    f"exit={proc.returncode}\n{combined}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
     compiler = sys.argv[1]
     check_match_join_regressions(compiler)
+    check_match_arm_corruption(compiler)
+    borrowed_state_snapshot = subprocess.run(
+        [compiler, "check", str(ROOT / "tests/phase106d1_borrowed_reads.moss"),
+         "--json"], cwd=ROOT, text=True, capture_output=True, check=False)
+    borrowed_state_result = json.loads(borrowed_state_snapshot.stdout)
+    if not borrowed_state_result.get("ok"):
+        raise AssertionError(
+            "explicit copied domain-state reply should pass checker: "
+            f"{borrowed_state_result!r}")
     check(compiler, "internal_never_not_source_type.moss",
           expected_error="UNKNOWN_SYMBOL_OR_TYPE")
     check_collection_outcome_contract(compiler)

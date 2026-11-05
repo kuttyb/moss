@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <cstdint>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -551,12 +552,37 @@ struct TypedMatchOwnershipFactV1 {
   Availability availability{Availability::MissingMatchOccurrence};
 
   bool is_authoritative() const noexcept {
-    return availability == Availability::Present &&
-        statement_occurrence_id != UINT32_MAX &&
-        est_arena_index != UINT32_MAX &&
-        scrutinee_occurrence_id != UINT32_MAX &&
-        !specialization_context.empty() &&
-        scrutinee_type && !arms.empty();
+    if (availability != Availability::Present ||
+        statement_occurrence_id == UINT32_MAX ||
+        est_arena_index == UINT32_MAX ||
+        scrutinee_occurrence_id == UINT32_MAX ||
+        specialization_context.empty() ||
+        !scrutinee_type || !scrutinee_type->is_closed() || arms.empty())
+      return false;
+    std::set<std::string> cases;
+    for (const auto& arm : arms) {
+      if (arm.case_name.empty() || !cases.insert(arm.case_name).second ||
+          arm.payload_binding_names.size() != arm.payload_binding_identities.size() ||
+          arm.payload_binding_names.size() != arm.payload_types.size())
+        return false;
+      std::set<std::string> bindings;
+      for (std::size_t i = 0; i < arm.payload_binding_names.size(); ++i) {
+        if (arm.payload_binding_names[i].empty() ||
+            !bindings.insert(arm.payload_binding_names[i]).second ||
+            arm.payload_binding_identities[i].empty() ||
+            !arm.payload_types[i] || !arm.payload_types[i]->is_closed())
+          return false;
+      }
+      if (is_consuming) {
+        if (arm.payload_access != Effect::Consume || !arm.transfers_ownership)
+          return false;
+      } else if ((arm.payload_access != Effect::Read &&
+                  arm.payload_access != Effect::Write) ||
+                 arm.transfers_ownership) {
+        return false;
+      }
+    }
+    return true;
   }
 };
 
@@ -1355,6 +1381,20 @@ struct TypedSemanticModuleV1 {
     auto same_type = [](const TypeRef& left, const TypeRef& right) {
       return (left == right) || (left && right && left->structurally_equal(*right));
     };
+    auto same_arm = [&](const TypedMatchArmFactV1& left,
+                        const TypedMatchArmFactV1& right) {
+      if (left.case_name != right.case_name ||
+          left.payload_binding_names != right.payload_binding_names ||
+          left.payload_binding_identities != right.payload_binding_identities ||
+          left.payload_access != right.payload_access ||
+          left.transfers_ownership != right.transfers_ownership ||
+          left.payload_types.size() != right.payload_types.size())
+        return false;
+      for (std::size_t i = 0; i < left.payload_types.size(); ++i)
+        if (!same_type(left.payload_types[i], right.payload_types[i]))
+          return false;
+      return true;
+    };
     const TypedMatchOwnershipRequirementV1* required = nullptr;
     std::size_t matching_requirements = 0;
     for (const auto& candidate : required_match_occurrences) {
@@ -1396,6 +1436,10 @@ struct TypedSemanticModuleV1 {
         !same_type(result->scrutinee_type, requirement.scrutinee_type) ||
         result->arms.size() != requirement.arms.size())
       throw std::invalid_argument("required checked match fact contradicts requirement");
+    for (std::size_t i = 0; i < result->arms.size(); ++i)
+      if (!same_arm(result->arms[i], requirement.arms[i]))
+        throw std::invalid_argument(
+            "required checked match arm fact contradicts requirement");
     if (!result->is_authoritative())
       throw std::invalid_argument("required checked match fact unavailable");
     return result;
