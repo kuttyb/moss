@@ -2843,6 +2843,22 @@ class Generator {
     return syntax && est::project_member_access(*syntax, base, member);
   }
 
+  bool has_nested_index_member_projection(const string& expression) const {
+    string current = expression;
+    string base, member;
+    bool outer_member = true;
+    while (tree_parse_member_access(current, base, member)) {
+      if (!outer_member) {
+        string index_base, index_expression;
+        if (tree_parse_index(base, index_base, index_expression))
+          return true;
+      }
+      outer_member = false;
+      current = std::move(base);
+    }
+    return false;
+  }
+
   bool tree_parse_unary(const string& expression, string& operation,
                         string& operand) const {
     auto syntax = expression_view_from_est(expression);
@@ -5442,10 +5458,11 @@ class Generator {
             ? resolve_local_ownership_fact(*phase21_codegen_statement_,
                   codegen_body_context_)
             : nullptr;
-        if (ownership && ownership->access == Effect::Read)
+        if (ownership && (ownership->access == Effect::Read ||
+                          ownership->access == Effect::Write))
           return indexed;
         throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked READ, Copy, or projected-borrow authority");
+            "MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked READ/WRITE, Copy, or projected-borrow authority");
       }
       return indexed;
     }
@@ -5469,15 +5486,25 @@ class Generator {
                   : expr(projection_base, d, locals, types);
               string projected = "(" + base_rendered + ")." + rust_identifier(projection_field);
               if (indexed_base && !copy_type(field->type)) {
-                const auto* authority =
-                    resolve_projected_collection_read_fact(e);
-                if (!authority ||
-                    canonical_type_name(authority->projected_collection_type
-                        ? authority->projected_collection_type->to_canonical_string()
-                        : "") != canonical_type_name(field->type))
-                  throw std::runtime_error(
-                      "MOSS_INTERNAL_INVARIANT projected Map collection-read fact type mismatch");
-                return "&(" + projected + ")";
+                string indexed_collection, indexed_key;
+                const bool direct_index = tree_parse_index(
+                    projection_base, indexed_collection, indexed_key);
+                const auto indexed_collection_type = direct_index
+                    ? generated_expr_type(indexed_collection, types)
+                    : std::nullopt;
+                const bool map_projection = indexed_collection_type &&
+                    map_key_value_types(*indexed_collection_type).has_value();
+                if (map_projection) {
+                  const auto* authority =
+                      resolve_projected_collection_read_fact(e);
+                  if (!authority ||
+                      canonical_type_name(authority->projected_collection_type
+                          ? authority->projected_collection_type->to_canonical_string()
+                          : "") != canonical_type_name(field->type))
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT projected Map collection-read fact type mismatch");
+                  return "&(" + projected + ")";
+                }
               }
               return projected;
             }
@@ -8868,6 +8895,10 @@ class Generator {
           if (!match_fact || !match_fact->scrutinee_type)
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked match fact lacks its scrutinee type");
+          if (!match_fact->is_consuming &&
+              has_nested_index_member_projection(s.a))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked READ match scrutinee has unsupported nested indexed projection");
           const bool is_option =
               match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option;
           if (is_option &&

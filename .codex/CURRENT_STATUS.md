@@ -16130,3 +16130,25 @@ untouched.
   not run. The consumer candidate is now frozen locally for independent review;
   broader runtime clone groups remain unapproved and overall Team B status
   remains NO-GO.
+
+## Team B post-integration consumer regression follow-up (2026-11-05)
+
+- Follow-up is a new commit on the scoped Team B consumer branch; reviewed
+  `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e` remains unchanged as its parent.
+- Restrict projected collection-read fact lookup to a direct indexed member
+  whose exact checked collection type is Map. Direct Vector-index match reads
+  continue to use the exact match fact without querying the Map-only fact.
+  Unsupported nested indexed member paths fail closed at the checked match
+  consumer, before artifact emission; the guard uses the exact match fact's
+  `is_consuming` field rather than the legacy source spelling.
+- Native generic nonprimitive indexed lowering now accepts only exact checked
+  `Read` or `Write` ownership effects. ORACLE-51's branch RHS facts are exact
+  `Write` effects because the borrowed element is mutated later; it does not
+  rely on inferred READ or fallback behavior.
+- Targeted gates pass: Phase 28 authority facts; conditional Map (20/20
+  corruption combinations); Map views (5/5); ReturnValue (5/5); ORACLE-20
+  projected Map read; ORACLE-19 direct indexed match and nested projection
+  fail-closed regression; ORACLE-51 Native Debug/Optimized and Fast Debug
+  parity plus explicit-copy corruption checks; feedback validator and diff
+  check. Full suites remain unrun. Broad runtime clone authorization and
+  provenance audit remain NO-GO.
