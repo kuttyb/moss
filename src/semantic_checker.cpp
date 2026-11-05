@@ -2001,6 +2001,16 @@ class Checker {
             return_specialization_identities.insert(fact.specialization_identity);
             return_specialization_types.insert(
                 fact.expression_type->to_canonical_string());
+            std::cerr << "PHASE28_RETURN_FACT type="
+                      << fact.expression_type->to_canonical_string()
+                      << " specialization=" << fact.specialization_identity
+                      << " context=" << fact.specialization_context
+                      << " est_context=" << fact.est_fact_context
+                      << " arena=" << fact.est_arena_index
+                      << " expr=" << fact.expression_occurrence_id
+                      << " statement=" << fact.statement_occurrence_id
+                      << " access=" << static_cast<int>(fact.required_access)
+                      << " action=" << static_cast<int>(fact.action) << '\n';
           }
         std::cerr << "PHASE28_AUTHORITY_FACTS conditional="
                   << p_.typed_semantics->conditional_collection_error_facts.size()
@@ -2043,6 +2053,10 @@ class Checker {
           !p_.typed_semantics->return_value_facts.empty())
         p_.typed_semantics->return_value_facts.front().action =
             TypedReturnValueActionV1::ReadCopyPrimitive;
+      if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_EST_FACT_CONTEXT") &&
+          !p_.typed_semantics->return_value_facts.empty())
+        p_.typed_semantics->return_value_facts.front().est_fact_context +=
+            ":wrong-context";
       if (std::getenv("MOSS_TEST_DROP_CONDITIONAL_COLLECTION_ERROR_FACT") &&
           !p_.typed_semantics->conditional_collection_error_facts.empty())
         p_.typed_semantics->conditional_collection_error_facts.pop_back();
@@ -29351,7 +29365,12 @@ class Checker {
                   canonical_type_name(*return_type)).value_or(nullptr);
             fact.specialization_context = local_ownership_consumer_context();
             fact.specialization_identity = local_ownership_specialization_identity();
-            fact.est_fact_context = expression_fact_context();
+            // A specialization has a distinct consumer identity but shares
+            // its source EST occurrence with the generic function body. Point
+            // the fact at that real arena context; the closed specialized
+            // expression_type remains the checker-issued type authority.
+            fact.est_fact_context = checking_specialization_
+                ? current_semantic_context_ : expression_fact_context();
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
             fact.provenance.line = s.line;
@@ -29372,6 +29391,17 @@ class Checker {
                 fact.expression_occurrence_id == UINT32_MAX) {
               err(s.line, "checker could not retain exact return-value authority",
                   "MOSS_INTERNAL_INVARIANT");
+            }
+            if (checking_specialization_) {
+              const auto* arena = expression_arena(fact.est_arena_index);
+              const auto* source_occurrence = arena
+                  ? arena->facts(fact.expression_occurrence_id,
+                                 fact.est_fact_context)
+                  : nullptr;
+              if (!source_occurrence || !source_occurrence->type)
+                err(s.line,
+                    "specialized return fact does not reference its generic EST occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
             }
             const string canonical_return_type =
                 canonical_type_name(*return_type);

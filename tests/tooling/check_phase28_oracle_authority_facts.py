@@ -118,7 +118,7 @@ def expect_diagnostic(source: Path, expected_code: str) -> None:
 
 
 def expect_specialized_returns(source: Path) -> None:
-    response, stderr = run(source)
+    response, stderr = run(source, {"MOSS_EST_FACTS_DUMP": "1"})
     if not response.get("ok"):
         raise AssertionError(f"specialized return authority rejected {source}: {response.get('error')}\n{stderr}")
     match = re.search(r"PHASE28_AUTHORITY_FACTS ([^\n]+)", stderr)
@@ -135,6 +135,38 @@ def expect_specialized_returns(source: Path) -> None:
     if specialized != {"First": "2", "Second": "2"}:
         raise AssertionError(
             f"expected exact Consume(2) effect for both concrete return specializations, got {specialized}"
+        )
+    return_fact_rows = [
+        dict(re.findall(r'(\w+)=([^ ]+)', row))
+        for row in re.findall(r"PHASE28_RETURN_FACT ([^\n]+)", stderr)
+    ]
+    if len(return_fact_rows) != 2:
+        raise AssertionError(
+            f"expected two exact specialized ReturnValue facts, got {return_fact_rows}"
+        )
+    by_type = {row.get("type"): row for row in return_fact_rows}
+    if set(by_type) != {"First", "Second"}:
+        raise AssertionError(f"wrong specialized return types: {by_type}")
+    if len({row.get("specialization") for row in return_fact_rows}) != 2:
+        raise AssertionError(f"specialized return identities collided: {return_fact_rows}")
+    if any(row.get("est_context") != "fn:inspect" or
+           row.get("context") != f"fn:inspect<{row.get('type')}>" or
+           row.get("access") != "2" or row.get("action") != "0"
+           for row in return_fact_rows):
+        raise AssertionError(
+            f"specialized ReturnValue fact has incorrect context/access: {return_fact_rows}"
+        )
+    if len({(row.get("arena"), row.get("expr"), row.get("statement"))
+            for row in return_fact_rows}) != 1:
+        raise AssertionError(
+            f"First/Second facts do not refer to the same checked return occurrence: {return_fact_rows}"
+        )
+    generic_expr_ids = set(re.findall(
+        r'MOSS_EST_FACT expr=(\d+) context="fn:inspect" type="[^\"]+"', stderr
+    ))
+    if by_type["First"].get("expr") not in generic_expr_ids:
+        raise AssertionError(
+            f"specialized return ExprId lacks generic EST readback: {generic_expr_ids}, {by_type}"
         )
     print(f"PASS specialized return identities/types: {source.name} ({counts['return_types']})")
 
@@ -172,6 +204,7 @@ def main() -> int:
         (CASES["return"], "MOSS_TEST_DROP_RETURN_VALUE_FACT"),
         (CASES["return"], "MOSS_TEST_PERTURB_RETURN_VALUE_FACT"),
         (CASES["return"], "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT"),
+        (CASES["return_specialization"], "MOSS_TEST_PERTURB_RETURN_VALUE_EST_FACT_CONTEXT"),
         (CASES["view"], "MOSS_TEST_DROP_COLLECTION_VIEW_FACT"),
         (CASES["view"], "MOSS_TEST_PERTURB_COLLECTION_VIEW_FACT"),
         (CASES["view"], "MOSS_TEST_DUPLICATE_COLLECTION_VIEW_FACT"),
