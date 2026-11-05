@@ -15666,3 +15666,17 @@ untouched.
   additional `.to_string()`, `mem::replace`, and `Arc::clone` candidates remain
   unclassified. L7's real sidecar/Team C validation and independent Agent 2
   review are pending. No push.
+
+
+# Phase 28 R7-010 — Team B Echo consumer follow-up (2026-11-04)
+
+- Consumer worktree `tmp/phase28-r7-010-team-b/tmp/phase28-r7-010-team-b-echo-consumer` remains at the frozen Team B base `44513837bea00ed5071342053f2f724d17ae617e`; the separate frozen candidate branch is unchanged.
+- Team A's first Echo authority candidate `b5294b52` received independent Agent 2 NO-GO because `est_fact_context` did not match the context used to publish EST semantic facts. Its temporary import was removed. Wait for Team A's corrected, reviewed exact SHA before implementing consumer use.
+- Native build after restoring the frozen base passes. No Echo consumer changes or consumer corruption tests are present yet.
+- Fresh ORACLE-10A generated artifact audit: one exact checked-copy helper clone; six runtime `.clone()` calls with concrete runtime-only types (`Option<Arc<MossGlobalExec>>`, affinity `Option<Vec<usize>>`, `MossBranchScope`/Arc, and test-only `MossExecutorConfig`). Nine `Arc::clone` calls reference scheduler/lock/thread/reply handles; three `mem::replace` calls swap bool flags or transfer a raw pointer. These are type-classified as runtime handles/fields, but remain unapproved under the empty runtime registry. The two string-slice `.to_string()` calls are in the unconditional slice helper, with no ORACLE-10A callsite; conditional helper emission is a safe deletion candidate only when the artifact call graph proves the helper unreachable.
+- Nine ORACLE-07 recovery `.clone()` sites copy `std__CollectionError` payloads into unused selected-error locals; none of those arms contains bare `raise`, so those specific initializations can be omitted. Bare re-raise uses a selected-error clone in `phase21_recovery_native`; a move-at-raise lowering needs further ownership analysis. The captured-carrier `__moss_value.clone()` branch remains unclassified and unobserved in these artifacts.
+- Root-ingress nonprimitive READ remains fail-closed because `runtime_invoke` requires `Send + 'static`; it cannot borrow a caller-local safely under the current runtime ABI.
+- Clone audit artifacts are temporary under `tmp/team-b/clone-audit/`. No source change, independent Team B review, or push for this follow-up.
+- Bounded repair implemented in `src/native_generator.cpp`: recovery arms now emit a selected-error clone only when a bare `raise` needs it and no captured carrier supplies the re-raise. The 9 unused ORACLE-07 `CollectionError` clones are gone; bare re-raise remains generated in `phase21_recovery_native`.
+- Validation on this follow-up diff: `make --jobs="$(nproc)" moss` PASS; `python3 tests/phase28/r7_010/team_b/check_recovery_dead_error_clones.py ./moss` PASS (ORACLE-07 clone count 9→0, six unrelated runtime `.clone()` calls remain; Debug/Optimized rustc compile; re-raise count retains one selected-error clone and Native Debug/Optimized output matches Fast Debug); `python3 tests/phase28/r7_010/team_b/check_vector_echo_borrow.py ./moss` PASS (ORACLE-39/42 existing behavior); `git diff --check` PASS. Full suite not run.
+- Echo consumer still waits for Team A's corrected, independently reviewed fact SHA. No final freeze, Agent 2 Team B review, or push yet.

@@ -7691,6 +7691,13 @@ class Generator {
             while (body_end < ss.size() && ss[body_end].indent > level)
               ++body_end;
 
+            const bool arm_has_bare_raise = std::any_of(
+                ss.begin() + static_cast<std::ptrdiff_t>(body_begin),
+                ss.begin() + static_cast<std::ptrdiff_t>(body_end),
+                [](const Stmt& nested) {
+                  return nested.kind == Stmt::Kind::Raise && nested.a.empty();
+                });
+
             for (const auto& identity : arm.exceptional_alternatives) {
               handled.insert(identity);
               const string variant = phase21_rust_variant(identity);
@@ -7741,9 +7748,12 @@ class Generator {
                 o << ") => {\n";
               }
               const string selected = "__moss_selected_error";
-              o << indent(level + 2) << "let " << selected
-                << " = __MossRaised::" << variant << "(" << inner
-                << ".clone());\n";
+              const bool preserve_selected_error =
+                  arm_has_bare_raise && !captured_try;
+              if (preserve_selected_error)
+                o << indent(level + 2) << "let " << selected
+                  << " = __MossRaised::" << variant << "(" << inner
+                  << ".clone());\n";
 
               auto arm_locals = locals;
               auto arm_types = types;
@@ -7786,7 +7796,8 @@ class Generator {
                                           joined_bindings.end());
               const string saved_selected_error = phase21_selected_error_;
               const string saved_selected_carrier = phase21_selected_carrier_;
-              phase21_selected_error_ = selected;
+              phase21_selected_error_ = preserve_selected_error
+                  ? selected : string();
               phase21_selected_carrier_ = captured_try
                   ? "__moss_selected_carrier" : string();
               size_t rendered_end = body_begin;
