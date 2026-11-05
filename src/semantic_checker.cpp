@@ -27768,7 +27768,9 @@ class Checker {
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");
           string reply_base, reply_index;
-          if (tree_parse_index(s.a, reply_base, reply_index)) {
+          const string reply_expression = tree_strip_expression_parens(
+              tree_normalize_pipeline(trim(s.a)));
+          if (tree_parse_index(reply_expression, reply_base, reply_index)) {
             auto element_type = inferred_expr_type(s.a, env.types);
             const string canonical_element_type = element_type
                 ? canonical_type_name(*element_type) : string{};
