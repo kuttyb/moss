@@ -530,10 +530,39 @@ def check_collection_outcome_contract(compiler: str) -> None:
                     f"got {rejected_result!r}")
 
 
+def check_match_join_regressions(compiler: str) -> None:
+    fixtures = ROOT / "tests/phase28/oracle_r7_005_1/fixtures"
+    expected = {
+        "oracle_31_join_promoted_consume.moss": None,
+        "oracle_32_match_payload_write_borrow.moss": None,
+        "oracle_33_match_payload_last_use_overwrite.moss": None,
+        "oracle_34_match_payload_overwrite_while_borrowed_rejected.moss":
+            "MATCH_READ_BORROW_ACTIVE",
+        "oracle_35_match_ordinary_consume_rejected.moss":
+            "BORROWED_ENUM_PAYLOAD_ACCESS",
+    }
+    for fixture, expected_error in expected.items():
+        proc = subprocess.run(
+            [compiler, "check", str(fixtures / fixture), "--json"],
+            cwd=ROOT, text=True, capture_output=True, check=False)
+        result = json.loads(proc.stdout)
+        error = result.get("error", {}).get("code")
+        if expected_error is None and not result.get("ok"):
+            raise AssertionError(f"{fixture}: expected acceptance, got {result!r}")
+        if expected_error and (result.get("ok") or error != expected_error):
+            raise AssertionError(
+                f"{fixture}: expected {expected_error}, got {result!r}")
+        if fixture.startswith("oracle_35") and "borrow" not in \
+                result.get("error", {}).get("message", "").lower():
+            raise AssertionError(
+                f"{fixture}: expected a borrowed-payload diagnostic, got {result!r}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
     compiler = sys.argv[1]
+    check_match_join_regressions(compiler)
     check(compiler, "internal_never_not_source_type.moss",
           expected_error="UNKNOWN_SYMBOL_OR_TYPE")
     check_collection_outcome_contract(compiler)
@@ -610,7 +639,7 @@ def main() -> int:
     check(compiler, "mixed_join_rejected.moss",
           expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
     check(compiler, "branch_write_unsatisfied.moss",
-          expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
+          expected_error="OWNERSHIP_JOIN_WRITE_UNSATISFIED")
     check(compiler, "branch_consume_unsatisfied.moss",
           expected_error="OWNERSHIP_INCOMPATIBLE_JOIN")
     check(compiler, "enum_payload_escape_rejected.moss",
