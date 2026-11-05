@@ -8100,6 +8100,139 @@ class Generator {
     return found_fact;
   }
 
+  const TypedLocalTransferFactV1* resolve_local_transfer_fact(
+      const Stmt& statement, const string& functional_context) const {
+    if (statement.kind != Stmt::Kind::Assign ||
+        !tree_plain_identifier(statement.a) ||
+        !tree_plain_identifier(statement.b))
+      return nullptr;
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics) return nullptr;
+    if (statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer statement identity unavailable");
+
+    const est::Handle* rhs_handle = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::RhsValue || handle.argument_index != 0)
+        continue;
+      if (rhs_handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate local transfer RHS handle");
+      rhs_handle = &handle;
+    }
+    if (!rhs_handle)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer RHS handle unavailable");
+    if (rhs_handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[rhs_handle->arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer EST arena unavailable");
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const string specialization = codegen_active_specialization_key_;
+    auto& required = checked_program.typed_semantics->required_local_transfer_occurrences;
+    auto& facts = checked_program.typed_semantics->local_transfer_facts;
+    auto same_query = [&](const TypedLocalTransferFactV1& candidate) {
+      return candidate.est_arena_index == rhs_handle->arena_index &&
+          candidate.rhs_expression_occurrence_id == rhs_handle->expr &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization;
+    };
+#ifdef MOSS_TEST_BUILD
+    const bool require_fact =
+        std::getenv("MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT") != nullptr;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_REQUIREMENT")) {
+      auto found = std::find_if(required.begin(), required.end(), same_query);
+      if (found != required.end()) required.erase(found);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOCAL_TRANSFER_REQUIREMENT")) {
+      auto found = std::find_if(required.begin(), required.end(), same_query);
+      if (found != required.end()) {
+        const auto duplicate = *found;
+        required.push_back(duplicate);
+      }
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_FACT")) {
+      auto found = std::find_if(facts.begin(), facts.end(), same_query);
+      if (found != facts.end())
+        found->availability = TypedLocalTransferFactV1::Availability::Contradictory;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOCAL_TRANSFER_FACT")) {
+      auto found = std::find_if(facts.begin(), facts.end(), same_query);
+      if (found != facts.end()) found->source_dead_after_assignment = false;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_LOCAL_TRANSFER_FACT")) {
+      auto found = std::find_if(facts.begin(), facts.end(), same_query);
+      if (found != facts.end()) {
+        const auto duplicate = *found;
+        facts.push_back(duplicate);
+      }
+    }
+#else
+    constexpr bool require_fact = false;
+#endif
+    const auto requirement_count = static_cast<size_t>(std::count_if(
+        required.begin(), required.end(), same_query));
+    if (!requirement_count) {
+      if (require_fact)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT required local transfer fact missing");
+      return nullptr;
+    }
+    if (requirement_count != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT duplicate local transfer requirement");
+
+    const TypedLocalTransferFactV1* fact = nullptr;
+    try {
+      fact = checked_program.typed_semantics->find_local_transfer_fact(
+          rhs_handle->arena_index, rhs_handle->expr,
+          statement.checked_statement_occurrence_id, context, specialization);
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer fact " +
+          std::string(error.what()));
+    }
+    if (!fact || !fact->is_authoritative() ||
+        fact->action != TypedLocalTransferFactV1::Action::TransferOwnedValue ||
+        fact->est_arena_index != rhs_handle->arena_index ||
+        fact->rhs_expression_occurrence_id != rhs_handle->expr ||
+        fact->statement_occurrence_id !=
+            statement.checked_statement_occurrence_id ||
+        fact->specialization_context != context ||
+        fact->specialization_identity != specialization)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer fact missing or contradictory");
+
+    const auto& arena = *checked_program.expression_arenas[rhs_handle->arena_index];
+    const auto span = arena.span(rhs_handle->expr);
+    if (span.line != fact->rhs_occurrence_span.line ||
+        span.column != fact->rhs_occurrence_span.column ||
+        span.origin_id != fact->rhs_occurrence_span.origin_id ||
+        span.source_begin != fact->rhs_occurrence_span.source_begin ||
+        span.source_end != fact->rhs_occurrence_span.source_end)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer RHS span mismatch");
+    const auto* expression_facts =
+        arena.facts(rhs_handle->expr, fact->est_fact_context);
+    if (!expression_facts || !expression_facts->type ||
+        !fact->source_type->structurally_equal(*expression_facts->type) ||
+        !fact->target_type->structurally_equal(*expression_facts->type))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer type contradicts exact EST facts");
+    const auto* ownership = resolve_local_ownership_fact(statement, context);
+    if (ownership &&
+        (ownership->source_binding_identity != fact->source_binding_identity ||
+         ownership->definition_identity != fact->target_definition_identity ||
+         ownership->binding_identity != fact->target_binding_identity))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT local transfer disagrees with local ownership fact");
+    return fact;
+  }
+
   const TypedCopyFactV1& resolve_copy_fact(
       std::string_view expression) const {
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
@@ -10269,8 +10402,12 @@ class Generator {
                 << "(" << lhs << ").__moss_replace(__moss_assigned); }\n";
             }
             else {
-              const auto* take_fact = resolve_take_fact(s, functional_context);
-              const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+              const auto* transfer_fact =
+                  resolve_local_transfer_fact(s, functional_context);
+              const auto* take_fact = transfer_fact
+                  ? nullptr : resolve_take_fact(s, functional_context);
+              const auto* ownership_fact = (take_fact || transfer_fact)
+                  ? nullptr : resolve_local_ownership_fact(s, functional_context);
               string assigned;
               vector<string> concat_operands;
               std::function<void(string)> collect_concat = [&](string source) {
