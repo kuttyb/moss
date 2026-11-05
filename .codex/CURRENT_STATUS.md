@@ -15663,3 +15663,11 @@ untouched.
   R7-006 checker facts, R7-009 primitive-index (9/9), specialized ownership,
   and B4 consumer fail-closed gates; all passed. These validate the current
   checker/consumer base but do not include pending Team B emitter changes.
+- Team C reports its tokenized parser accepts Team B's local-block helper form
+  only when the fact marker is immediately followed by the exact helper call;
+  synthetic Rust cases were updated and the full gates are rerunning after the
+  prior NO-GO.
+- Team B has a strict-rustc-clean borrowed-read materializer using the exact
+  checked MossAccess field facts. Its existing `check_borrowed_reads.py` still
+  asserts the pre-Team-A `__moss_value()` form; L7 assigned Team B to update
+  this gate to require the exact fact helper and forbid cloning the view.
