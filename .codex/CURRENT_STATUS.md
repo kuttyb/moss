@@ -17044,3 +17044,17 @@ untouched.
   `origin/phase28-r7-010-l7-copy-authority`. It is explicitly WIP. The working
   tree was clean immediately after push. No AGENTS.md no-push rule was present
   in this branch, so no AGENTS.md edit was required before the authorized push.
+- Team A's two-parent checker successor `2063a3d0` received fresh independent
+  Agent 2 GO and is pushed to `phase28-r7-010-team-a-copy-index-facts`. L7
+  merged it at `595b8e47`, preserving its parent ancestry. L7 registered the
+  23-scenario local-transfer gate in Makefile and tests/run.sh and adapted its
+  source anchors to the explicit-copy Regex package already in staging.
+  Staging validation passes: build; 23 transfer cases; 8 indexed-copy cases;
+  Match authority 9/9 in default and shadow; Match payload Debug/Optimized/Fast
+  Debug; feedback and diff checks. `595b8e47` is pushed and the tree is clean.
+- Team B is rebuilding its native consumer branch over the reviewed combined
+  checker dependency. Its standalone native Match WRITE dereference-format
+  fix `88803726` has independent scoped GO, but Regex package acceptance remains
+  NO-GO until the two owned Vec transfers consume the exact checker fact and
+  the generated package compiles. Full oracle and full default/shadow suites
+  remain outstanding.
