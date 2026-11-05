@@ -15710,3 +15710,18 @@ untouched.
   and 42/43 plus one intentional skip without it; scanner tests are included.
   Feedback validation and `git diff --check 04564464..HEAD` pass. Fresh
   independent review of 8a is pending, so the candidate is not accepted/pushed.
+- Team C's order-independent harness follow-up received renewed Agent 2 GO at
+  `8a8129446d20e2d7cbc6654713bb1a82fd0d896a` and was pushed normally;
+  `git ls-remote` confirms the same SHA at
+  `refs/heads/phase28-r7-010-team-c-conformance`. L7 imported the commit and
+  its local query-enabled harness runs pass 43/43.
+- Team A candidate `66b2bce60452fe8b8c12ebb2a18dcdb3baa6cab7` received
+  independent NO-GO: its handler Reply exception also accepts a
+  `Vector[option[Int]]` indexed payload, violating the existing Option
+  rejection. Team A has been asked to narrow the checker change and add the
+  Option handler-reply negative; no push was made.
+- Team B reports ORACLE-27 passes Fast Debug, Native Debug and Native
+  Optimized on its current branch; WIP 045 had an E0308 backend failure. The
+  exact fixing hunk is not yet isolated. Team B v3 raw-Rust builder checkpoint
+  `ed85390c` is imported provisionally into L7; its standalone builder tests
+  have not yet been run in L7.
