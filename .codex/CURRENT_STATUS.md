@@ -15771,3 +15771,10 @@ untouched.
   received another independent NO-GO: Option/Resource indexed aliases can be
   replied after assignment (`value = values[0]; reply value`). Team A is
   fixing origin tracking/checking and adding alias negatives; no push.
+- Team C's independent broad duplication scanner on the exact generated
+  ORACLE-10A Rust artifact found 28 candidate operations across 28 distinct
+  sites: 7 `.clone()` (one checked helper + six runtime), 9 qualified
+  `Arc::clone`, 9 `.to_string()`, and 3 `mem::replace`. These are candidate
+  operations, not 28 confirmed illegal copies; all remain unclassified until
+  their semantics are audited. Machine report is in
+  `tmp/oracle10a-inventory.{json,md}` in the L7 worktree.
