@@ -18734,11 +18734,9 @@ static void project_imported_return_value_artifact_facts(Program& program) {
         fact.expression_occurrence_id = handle->expr;
         fact.expression_occurrence_span =
             program.expression_arenas[handle->arena_index]->span(handle->expr);
-        fact.expression_occurrence_span.line = artifact.expression_span_line;
-        fact.expression_occurrence_span.column = artifact.expression_span_column;
-        fact.expression_occurrence_span.source_begin =
-            artifact.expression_source_begin;
-        fact.expression_occurrence_span.source_end = artifact.expression_source_end;
+        // The wire record retains the original source span. The imported
+        // in-memory fact instead binds to the exact rebuilt EST span, which
+        // can use a different column convention after Section 2 reconstruction.
         fact.specialization_identity = artifact.specialization_identity;
         fact.specialization_context = artifact.specialization_context;
         fact.est_fact_context = artifact.est_fact_context;
