@@ -12,6 +12,8 @@ The original certified oracle remains under `tests/phase28/oracle/` and is not e
 
 The successor is `tests/phase28/oracle_r7_005_1/`, has 60 expectation rows, and stays `DRAFT_PENDING_L7_APPROVAL` until its review and recertification gates complete.
 
+Normative source pins used for this review are the approved P28-R7-005 language addendum at `46619968f64ec618f4cc2576f601b86569399f3c:docs/phase28/P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md`, and the consolidated Phase 28 LOL proposal at `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc:docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md`. The latter is design authority for proposed ownership rules; this successor treats runtime/output expectations as proposals awaiting review rather than implementation claims. The R7-008 integration evidence is pinned at `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc:docs/phase28/P28_R7_008_INTEGRATION_REPORT.md`.
+
 ## Mapping candidates for independent approval
 
 The successor preserves each parent expected semantic verdict and diagnostic primary while adding only candidate corrections grounded in the R7-008 integration findings:
