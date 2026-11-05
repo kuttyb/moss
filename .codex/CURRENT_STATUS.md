@@ -1,47 +1,59 @@
 ### Phase 28 R7-010 current L7 checkpoint (2026-11-05)
 
-- Worktree/branch: `tmp/phase28-r7-010-l7-query`,
-  `phase28-r7-010-l7-copy-authority`; branch HEAD before current uncommitted
-  locator-gate work is `a8abbe32b98971e6d0470a167369123d39b77598`.
-- The implementation at `3711f2ab8ac45357b6dd6c993dc6e45be9d21884` remains
-  independently reviewed GO for the executor TLS borrow and move-only
-  `MossExecutor::start` changes. Current source-only locator comments are in
-  `src/executor_runtime.cpp` (SHA-256
-  `c84a1391e7fb4355d48f204578e1192e68dc69deb50bf829fe3b2497cc1ecda1`).
-- Updated `check_phase28_r7_010_runtime_clone_evidence.py` validates the older
-  artifact against its recorded producer commit and audits 11 current runtime
-  clone markers (3 `.clone()`, 8 `Arc::clone`) with exact generated-expression
-  binding and corruption checks. Independent Agent 2: GO for this gate only as
-  a non-authoritative locator; **no clone site is authorized**. Marker-stripped
-  current ORACLE-10A output matches the pre-marker SHA-256
-  `801517768d0e9493b90c66e2aff18f760fdbcbf37b82874fedf5b220c0a60bca`.
-- Isolated compiler rebuild passes. Runtime evidence gate passes; oracle and
-  inventory unit tests pass 46/46. A fresh full 60-fixture v2 run against the
-  marker build reports 19/60 all-gates PASS, 60/60 semantic PASS, 0
-  cross-engine disagreements, 41 fixtures blocked by unauthorized clone
-  provenance, and 252 direct runtime `.clone()` occurrences. This is a new
-  run, not the frozen R7-008 result. Artifacts:
-  `tmp/r7-010-oracle-marker-final/results.json` and
-  `tmp/r7-010-oracle-marker-final/failure-ledger.md`.
-- Durable independent review record is imported unchanged from reviewer commit
-  `e2a7da7ca8597a61ab382e272d3fc299756805f0` at
-  `docs/phase28/agent2-reviews/R7-010-executor-runtime-3711.md`.
-- Independent inventory for the same 84 generated Rust artifacts finds 1,960
-  lexical duplication candidates across 37 groups: 258 `.clone()`, 672
-  `Arc::clone()`, 756 `.to_string()`, 252 `mem::replace`, 14 `mem::take`, 6
-  `.copied()`, and 2 `String`/`Vec::from`. These are candidates, not proven
-  Moss-value copies, and remain unclassified except the six checked explicit
-  copy materializers.
-- Frozen v2 expectations, runtime registry and certification are unchanged
-  (SHA-256 respectively `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`,
-  `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`, and
-  `00e9d648286a90de7266622f18dad6f2b53693c5b3645cb37cb2b30bb4c4ccc9`).
-- Remaining work: do not authorize markers or edit v2. Create and independently
-  review a separately versioned runtime provenance successor with fail-closed
-  exact source/operator/type/context binding for the three direct clone sites
-  and eight qualified Arc sites; independently audit other duplicate
-  mechanisms. Full default/EST-shadow acceptance suites and final architect GO
-  remain outstanding. No merge to `phase28-work` or `main`.
+- Isolated worktree/branch: `tmp/phase28-r7-010-l7-query`,
+  `phase28-r7-010-l7-copy-authority`. Final current commit:
+  `570ad802f0f887311f141dd4b9e5b7e83ae369b2` (pushed). The reviewed
+  implementation change is `94f6d1fe460fe0581ae75af414a0086dc7012484`;
+  `f388ee2a` and `570ad802` correct only test registration/environment.
+  Nothing was merged to `phase28-work` or `main`.
+- Independent Agent 2 reviewed the exact implementation and returned GO with no
+  source fixups. It independently built the compiler and passed ReturnValue,
+  collection-view, local ownership, string-debt, and primitive Reply probes.
+  It then returned GO on final commit `570ad802`, confirming that the default
+  gate clears inherited `MOSS_EST` and the shadow gate runs separately.
+- Repair: checker now retains exact ReturnValue authority for handler `Reply`;
+  native lowering and Fast Debug validate that fact and transfer the owned
+  local without cloning. Generic specialization return types use a closed
+  checker TypeRef. Map-view assignment detection uses exact RHS EST handles.
+  The ReturnValue gate passes Default and EST-shadow, including Native Debug,
+  Native Optimized, Fast Debug and all 6 Reply corruption hooks; ORACLE-13 and
+  ORACLE-58 transfer/collision cases also pass.
+- Isolated `moss-dev` and `moss-opt` builds pass. Focused source-free ABI,
+  agent skills, Phase 27 `.mossi`, local ownership Default/Shadow, Team B
+  consumer, take authority, string-debt, and ReturnValue gates pass. The take
+  gate remains 17/18 because `take_map_field` fails in Fast Debug with the
+  inherited nonescaping CollectionView invariant; `phase28-work` baseline
+  reproduces that failure.
+- Full parallel suite on candidate compiler: Default **87/167 PASS, 79 FAIL,
+  1 SKIP**; EST-shadow **87/167 PASS, 79 FAIL, 1 SKIP**. These broad failures
+  include Phase 21/24/25/26/27 semantic/runtime gates and remain a release
+  blocker. `check_phase25_4_performance_baseline` also finds two fixture SHA
+  mismatches (`phase106d1_borrowed_reads`, `phase106d1_read_projection`);
+  `shard_phase5_tooling` is skipped after a dependency failure. Logs are in
+  `tmp/r7-010-f388ee2a-default.log` and
+  `tmp/r7-010-570ad802-shadow.log` (the intervening commit changes only
+  Makefile test environment registration, not compiler source). `phase28-work`
+  baseline `150ab36b41e45504aaa400aa717da241be7542fb`: Default 166/167 PASS,
+  1 FAIL (`check_phase21_borrowed_view_write`); EST-shadow 165/167 PASS,
+  2 FAIL (`check_phase21_borrowed_view_write`, `shard_swarm_cases`, the latter
+  the existing `put(take())` shadow divergence). Baseline shadow log:
+  `../phase28-r7-010-phase28-work-baseline/tmp/r7-010-baseline-shadow.log`;
+  baseline default log: `../phase28-r7-010-phase28-work-baseline/tmp/r7-010-baseline-default.log`.
+- Fresh frozen v2 oracle run at the candidate compiler: **19/60 pass all
+  applicable gates; 60/60 semantic PASS; zero Fast Debug/Native Debug/Native
+  Optimized disagreements; 41/60 fail only provenance**. The sidecars classify
+  252 repeated runtime `.clone()` rows as unauthorized under the unchanged v2
+  registry. This does not prove 252 Moss-level semantic copies. Frozen digests
+  remain expectations `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`,
+  runtime registry `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`,
+  and certification `00e9d648286a90de7266622f18dad6f2b53693c5b3645cb37cb2b30bb4c4ccc9`.
+  Artifacts: `tmp/r7-010-570ad802-oracle/`.
+- Current disposition: **NO-GO**. Required work remains the broad suite
+  regressions, the Map.get/collection and ownership issues owned by teams, a
+  complete independent clone/duplication audit, and acceptable reviewed
+  provenance for runtime duplication. No runtime clone is authorized. The
+  `phase28-work` shadow baseline is being measured separately. No production
+  merge is authorized.
 
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 

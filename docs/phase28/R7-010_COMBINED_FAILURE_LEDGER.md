@@ -1,5 +1,48 @@
 # Phase 28 R7-010 Combined Oracle Failure Ledger
 
+# Final L7 candidate run (2026-11-05)
+
+- Candidate branch `phase28-r7-010-l7-copy-authority` at
+  `570ad802f0f887311f141dd4b9e5b7e83ae369b2`. Implementation reviewed GO at
+  `94f6d1fe460fe0581ae75af414a0086dc7012484`; final Agent 2 registration
+  review GO at `570ad802`. No merge to `phase28-work` or `main`.
+- **Frozen v2 oracle:** 19/60 pass all applicable gates; 60/60 semantic PASS;
+  0 cross-engine disagreements; 41/60 fail only clone provenance. Exact
+  `results.json` and generated ledger are in
+  `tmp/r7-010-570ad802-oracle/`. All 252 repeated direct runtime `.clone()`
+  rows are reported UNAUTHORIZED against the unchanged v2 registry. This is an
+  authorization result, not proof of 252 distinct semantic copies. Broader
+  inventory remains 1,960 lexical candidates across 37 sites/groups; qualified
+  `Arc::clone` and other duplication operations still need independent
+  source/type/authority analysis.
+- **Regression suites:** candidate Default and EST-shadow each report 87/167
+  PASS, 79 FAIL, 1 SKIP. Logs are
+  `tmp/r7-010-f388ee2a-default.log` and
+  `tmp/r7-010-570ad802-shadow.log`; the only intervening source-neutral change
+  sets explicit default/shadow environment for the Makefile gate. At baseline
+  `phase28-work` SHA `150ab36b41e45504aaa400aa717da241be7542fb`, Default was
+  166/167 PASS with one `check_phase21_borrowed_view_write` failure; Shadow
+  was 165/167 PASS with that same failure plus the known `shard_swarm_cases`
+  `put(take())` structural divergence. Baseline logs are under
+  `../phase28-r7-010-phase28-work-baseline/tmp/`. Candidate failures show
+  widespread earlier-phase regressions versus both baselines. The Phase 25.4
+  performance baseline also fails two pinned fixture SHA checks. The new
+  ReturnValue gate passes separately in both modes on the test compiler,
+  including all 6 Reply corruption hooks and Native Debug/Optimized/Fast Debug
+  parity. It is registered in Makefile focused test-build gates, not the
+  production-style parallel shards whose isolated compiler disables hooks.
+- `make check` stops at the known `take_map_field` failure (17/18 take cases);
+  the same Fast Debug nonescaping CollectionView invariant reproduces on the
+  `phase28-work` baseline compiler. This is not a full-suite result.
+- Frozen v2 digests are unchanged: expectations
+  `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`, runtime
+  registry `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`,
+  certification `00e9d648286a90de7266622f18dad6f2b53693c5b3645cb37cb2b30bb4c4ccc9`.
+- **NO-GO:** semantic oracle and engine parity are clean, but runtime clone
+  authority is unresolved and the full suites have 79 failures each. Baseline
+  default/shadow comparisons and the broad independent final architecture GO
+  remain required. No clone marker or runtime site is authorized by this run.
+
 # Fresh marker-build oracle run (2026-11-05)
 
 - **Implementation base:** `a8abbe32b98971e6d0470a167369123d39b77598`
