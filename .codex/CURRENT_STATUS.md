@@ -16038,3 +16038,43 @@ untouched.
   aggregate fixed percentage is claimed until the same corpus is re-audited
   after the bare-raise consumer repair. Combined oracle and final default/shadow
   suites remain pending focused repairs.
+
+## Combined Team B bare-raise delivery and fresh oracle run (2026-11-05)
+
+- L7 imported Team B's focused bare-raise consumer at reviewed source delivery
+  `384fb7a407c3adebc47c74610d97b89e51143ab5` as commits `858f5195`, `af6a3318`,
+  and `422d08a4`. This replaced the old nonprimitive `WorkError::Missing.clone()`
+  with exact checker-authorized carrier transfer. The final Team B test coverage
+  includes six dropped/perturbed/duplicate/wrong-edge fact or requirement cases,
+  all failing closed across Fast Debug, Native Debug and Native Optimized.
+- L7 rebuilt `moss` and `moss-opt`. Focused gates pass: bare-raise consumer,
+  ORACLE-07 recovery-clone gate (9 selected-error clones to 0), checker bare
+  raise and Echo authority, R7-009 (17 cases), pinned ORACLE-10A evidence, C
+  harness/inventory (45 unit cases), Phase 21 recovery semantics/native/peer,
+  feedback validation and `git diff --check`.
+- Fresh full v2 oracle run was generated against implementation SHA
+  `422d08a4bf3e5d2a34b3bbf34ef3487b9af0131b`; result JSON is
+  `tmp/phase28-r7-010-combined-results.json` and the harness ledger is
+  `tmp/phase28-r7-010-combined-ledger.md`. Result: 13/60 all-gate PASS; seven
+  semantic-status failures (ORACLE-07, -15, -28, -30, -35, -46, -48); 40 fixtures
+  fail submitted clone provenance; ORACLE-54 is additionally blocked by four
+  missing sidecars. The categories overlap at ORACLE-07. No infrastructure
+  failures were recorded.
+- Team C's independently reviewed ledger is integrated at
+  `docs/phase28/team-c/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER.md`; report SHA
+  `1a5562ac2487e12d0fdc985f1df438806f421ce0` received Agent 2 GO, then only
+  docs-only Team closeout commits were added. Team C's final branch
+  `4552be603fb386766306dafba70ffff6133c1835` is pushed and remote-verified.
+  It records 538 observed clone rows: 2 checked explicit-copy rows, 512
+  submitted unauthorized rows, and 24 missing-sidecar rows; 536 remain
+  unverified. This is a fresh 60-fixture result, distinct from earlier 524/500
+  artifact scopes.
+- Team A is repairing checker defects and adding exact MissingKey, ReturnValue,
+  collection-view, and projected-collection READ facts. Team B's reviewed
+  ORACLE-19 match-borrow checkpoint `4c1093127c068c720661da26271ab572aa04477f`
+  has Agent 2 focused GO but awaits a durable negative regression for unsupported
+  nested projection lowering. Team B overall remains NO-GO; Map view/ReturnValue
+  consumers and the broad clone corpus remain unresolved. No runtime clone has
+  been authorized by this status update.
+- Full default and EST-shadow suite runs have not yet been performed; rerun the
+  60-fixture oracle after focused repairs settle.
