@@ -35,9 +35,16 @@
   | 11 | `executor_runtime.cpp:1106` | `Arc<MossGlobalExec>` | Keep executor alive after dropping ingress lock and before admission. |
 
   The source and type mapping accounts for the 3 direct rows and 8 qualified
-  Arc sites. It documents likely runtime lifetime/reference-count operations;
-  it does not prove all surrounding safety invariants and it authorizes no
-  clone. Agent 2's independent source audit is pending.
+  Arc sites. Independent Agent 2 audited these at checkout
+  `7fb7122c860628e3ec89f38da38045f418c73214` (runtime source SHA-256
+  `c84a1391e7fb4355d48f204578e1192e68dc69deb50bf829fe3b2497cc1ecda1`): all
+  11 are Rust runtime scaffolding sharing handles/config across lifetimes; for
+  site 10 only the `Arc` to the reply cell is shared, not payload `R`. The
+  reviewer explicitly authorizes none under frozen v2. Two issues remain
+  unresolved: no generated caller was located for the site 03 clone API, and
+  site 07's TLS Arc duplicates the worker-slot Arc with necessity unproven.
+  The source/type mapping does not by itself prove every surrounding safety
+  invariant. A durable independent record is requested; no clone is authorized.
 - **Regression suites:** candidate Default and EST-shadow each report 87/167
   PASS, 79 FAIL, 1 SKIP. Logs are
   `tmp/r7-010-f388ee2a-default.log` and
