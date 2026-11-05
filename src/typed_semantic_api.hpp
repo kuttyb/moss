@@ -810,7 +810,9 @@ struct TypedProjectedCollectionReadFactV1 {
         !receiver_binding_identity.empty() && !receiver_definition_identity.empty() &&
         receiver_type && receiver_type->is_closed() &&
         receiver_type->kind == TypeKind::Builtin && receiver_type->name == "map" &&
-        receiver_type->type_args.size() == 2 && key_type && key_type->is_closed() &&
+        receiver_type->type_args.size() == 2 &&
+        receiver_type->type_args.front() && receiver_type->type_args.back() &&
+        key_type && key_type->is_closed() &&
         receiver_type->type_args.front()->structurally_equal(*key_type) &&
         indexed_value_type && indexed_value_type->is_closed() &&
         receiver_type->type_args.back()->structurally_equal(*indexed_value_type) &&

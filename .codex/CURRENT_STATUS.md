@@ -16084,3 +16084,9 @@ untouched.
   authority suite passes with 23 unique cases, including all prior drop,
   perturb, duplicate hooks. No new full oracle run has been done after this
   follow-up yet. The prior native ORACLE-07 consumer blocker remains.
+- Agent2 returned GO on exact `9f36c0d220a1c45c5aa1feab275bc79f097d31cc`,
+  confirming the projected type linkage, full fact/requirement readback, five
+  corruption hooks, closeout whitespace, and 23-scenario authority gate. A
+  subsequent one-line null guard now checks Map key/value TypeRefs before
+  dereference; build and all 23 authority scenarios were rerun and pass. The
+  null-guard delivery has a new SHA and is pending delta review; no push yet.
