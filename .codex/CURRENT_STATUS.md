@@ -16661,3 +16661,32 @@ untouched.
   scanner counts do not assert semantic duplication; the qualified Arc calls
   remain absent from the sidecar occurrence inventory and block provenance
   completeness. Durable summary: `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`.
+
+## Scoped Solo TLS borrow and move-only Executor start — `3711f2ab` (2026-11-05)
+
+- Pushed implementation `3711f2ab8ac45357b6dd6c993dc6e45be9d21884` to
+  `phase28-r7-010-l7-copy-authority`. Independent Agent 2 returned GO on that
+  exact SHA. `with_current_worker_exec` borrows the executor Arc from TLS only
+  for synchronous Solo enter/leave callbacks; it does not retain the borrow
+  through the subsequent blocking wait. `MossExecutor::start` now consumes
+  fields through private `into_config`, moving the affinity Vec instead of
+  calling the documented public `config(&self)` snapshot method. Public API
+  remains unchanged.
+- Executor gate passes 55/55. Tests 53 (nested/off-worker TLS borrowing and
+  Solo compensation) and 34 (config/start propagation) each passed ten
+  consecutive repetitions. The provenance-v3 builder/corruption gate,
+  clone-inventory unit suite 7/7, feedback validator and diff check pass.
+- Fresh 60-fixture oracle at exact SHA: 19 all-gate PASS, 41 provenance-only
+  failures; 0 semantic failures, engine disagreements, infrastructure errors,
+  or missing/invalid sidecars. The frozen v2 scan finds 252 unauthorized
+  direct clone rows. Refreshed static inventory: 84 artifacts, 1,960
+  duplication candidates, 37 site groups, including 672 qualified
+  `Arc::clone` calls at eight sites. Results are recorded in the combined
+  failure ledger; raw inventory/results remain under `tmp/`.
+- Agent 2 classifies three remaining direct sites and eight qualified Arc
+  sites as eligible for a separately reviewed runtime registry in principle;
+  the frozen v2 registry is still empty, so no site is authorized. The
+  host-only config snapshot is eligible in principle after Moss startup moved
+  to `into_config`. Qualified Arc sites remain omitted from v2 occurrence
+  provenance. Full default and EST-shadow suites remain pending. Overall
+  disposition: NO-GO.

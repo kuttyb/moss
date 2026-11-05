@@ -199,3 +199,38 @@ source/artifact evidence, not authorization.
   provenance-completeness blocker until the independent audit and successor
   evidence path are complete. Other APIs and `Copy` behavior remain subject to
   the scanner's documented limits.
+
+## Fresh combined 60-fixture oracle — implementation `3711f2ab8ac45357b6dd6c993dc6e45be9d21884`
+
+- Run used the rebuilt compiler from exact staging SHA
+  `3711f2ab8ac45357b6dd6c993dc6e45be9d21884`; the certified v2 expectation
+  table and all digest pins are unchanged. Results and artifacts are in
+  `tmp/r7-010-oracle-3711f2ab/`.
+- **19/60 fixtures pass all applicable gates; 41/60 fail only clone
+  provenance.** All 60 semantic statuses and applicable execution expectations
+  pass. Semantic failures, engine disagreements, infrastructure errors, and
+  missing/invalid sidecars: zero.
+- The v2 scanner reports **252 unverified/unauthorized direct `.clone()` rows**
+  (three per artifact). The current static inventory covers 84 Rust artifacts
+  and reports 1,960 candidate operations in 37 site groups: 258 direct
+  `.clone()` calls, 672 qualified `Arc::clone` calls across eight runtime
+  sites, 756 `.to_string()`, 252 `mem::replace`, 14 `mem::take`, six
+  `.copied()`, and two String/Vec constructors. The 408 Clone derives are
+  capabilities, not invocation evidence. Exact scan output is under the
+  disposable oracle directory.
+- Independent Agent 2 returned **GO** for the source repairs at exact SHA
+  `3711f2ab8ac45357b6dd6c993dc6e45be9d21884` (executor source SHA-256
+  `1682c206d93efa3b26b697a71283b634e16c04210cafaceb27a03792a006a984`). The
+  TLS borrow does not escape its synchronous callback; `Executor.start` moves
+  its config through `into_config`, preserving public `config(&self)`. The
+  55/55 executor gate and repeated targeted probes pass.
+- The reviewer finds the three direct runtime sites (active executor Arc,
+  public host config snapshot, and BranchScope handle) and eight qualified Arc
+  sites are potentially classifiable only through a reviewed successor
+  registry. The config snapshot is runtime-support eligible in principle now
+  that Moss startup does not call it; the frozen v2 registry remains empty, so
+  **none is currently authorized**. Qualified Arc calls are still omitted
+  from the v2 occurrence sidecar scan. A durable reviewer report is pending.
+- Disposition remains **NO-GO**. The 252 v2 sidecar rows and eight qualified
+  clone sites are not covered by the frozen provenance contract. Full default
+  and EST-shadow suites have not run at this SHA.
