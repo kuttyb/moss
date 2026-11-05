@@ -16215,3 +16215,30 @@ untouched.
 
 - Team A exact SHA `b4af885d879abd8da0afab475facb8b71dd37e0b` is pushed and remote-verified with independent Agent 2 GO. It sets ReturnValue `est_fact_context` to the actual generic arena context while preserving per-specialization contexts, IDs, closed types, and actions; it adds exact generic EST readback and a context-perturb corruption hook. The 28-scenario authority harness, R7-009 17/17, Echo authority 8 cases, feedback, and diff checks pass.
 - The exact reviewed checker change is now being integrated into L7 staging and must be included as ancestry in Team B's consumer follow-up before final review.
+
+## L7 ORACLE-54 ReturnValue artifact transport WIP (2026-11-05)
+
+- L7 cherry-picked Team A's header-only `TypedReturnValueArtifactFactV1` schema
+  (`46e548a41113e8ce7cef2f2fa0b9bbb903f680f6`, now in staging ancestry as
+  `5b7f6014`). No oracle expectation or digest changed.
+- L7's current uncommitted `src/moss.cpp` / `src/ast.hpp` work writes Section 2
+  v2 ReturnValue rows bound to canonical statement-body hashes, stable callable
+  identity, preorder statement ordinal, ReturnValue slot, source span and EST
+  fingerprint. Import validates the hash, callable/module/source provenance,
+  statement shape and rebuilt handle fingerprint, assigns fresh imported
+  statement IDs, and projects only the transported checked TypeRef/action/access
+  into typed requirements/facts.
+- `make --jobs="$(nproc)" moss` passes on this WIP. Manual imported-artifact
+  drop and action-perturb hooks both fail before execution with
+  `SOURCE_FREE_EXECUTION_BODY_INVALID`; the positive Fast Debug run currently
+  reaches the imported fact and still blocks in the not-yet-integrated Team B
+  consumer change because the reconstructed EST has no type row. Confirmed
+  checker `int` versus EST `<missing>`; Team B is implementing the exact external
+  owner exception while preserving fail-closed behavior for present mismatches.
+- Team B reports its WIP provider native build and ORACLE-13/58 focused parity
+  gates green; it has not frozen or received independent review. Team A is
+  investigating a separate `check_phase27_est_mossi.py` failure at a generic
+  ReturnValue (`checker could not retain exact return-value authority`).
+- Fresh 60-fixture oracle, final default/shadow suites, clone provenance audit,
+  and final independent review remain pending. This transport is WIP and is not
+  an accepted Phase 28 implementation.

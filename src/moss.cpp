@@ -15019,6 +15019,7 @@ static string interface_module_identity(const string& text, const string& module
 
 struct ExecutionBodySectionView {
   bool present = false;
+  unsigned version = 0;
   size_t section_begin = 0;
   string payload;
   string package_fingerprint;
@@ -15127,6 +15128,89 @@ static bool execution_body_read_statement(const string& record,
         "trailing data in ABI-v9 execution-body statement",
         "SOURCE_FREE_EXECUTION_BODY_INVALID");
   return true;
+}
+
+static void write_execution_body_statement(std::ostream& out,
+                                           const Stmt& statement);
+
+static string execution_body_statements_hash(
+    const std::vector<Stmt>& statements) {
+  std::ostringstream records;
+  for (const auto& statement : statements)
+    write_execution_body_statement(records, statement);
+  return source_free_contract_sha256(records.str());
+}
+
+static string encode_return_value_artifact_record(
+    const TypedReturnValueArtifactFactV1& fact) {
+  std::ostringstream record;
+  record << "return_value_fact_v1 " << fact.version << " "
+      << std::quoted(fact.callable_identity) << " "
+      << std::quoted(fact.execution_body_hash) << " "
+      << fact.statement_preorder_ordinal << " "
+      << static_cast<unsigned>(fact.value_slot) << " "
+      << fact.value_argument_index << " " << fact.source_line << " "
+      << fact.expression_span_line << " " << fact.expression_span_column << " "
+      << fact.expression_source_begin << " " << fact.expression_source_end << " "
+      << fact.expression_source_fingerprint << " "
+      << std::quoted(fact.specialization_identity) << " "
+      << std::quoted(fact.specialization_context) << " "
+      << std::quoted(fact.est_fact_context) << " "
+      << std::quoted(fact.expression_type
+              ? fact.expression_type->to_canonical_string() : string()) << " "
+      << std::quoted(fact.source_binding_identity) << " "
+      << std::quoted(fact.source_definition_identity) << " "
+      << ownership_effect_name(fact.required_access) << " "
+      << static_cast<unsigned>(fact.action) << " "
+      << (fact.checker_proved_owned_rvalue ? 1 : 0) << " "
+      << std::quoted(fact.provenance.source_file) << " "
+      << fact.provenance.line << " "
+      << std::quoted(fact.provenance.defining_module_id) << " "
+      << std::quoted(fact.provenance.enclosing_callable_id);
+  return record.str();
+}
+
+static TypedReturnValueArtifactFactV1 decode_return_value_artifact_record(
+    const string& encoded) {
+  TypedReturnValueArtifactFactV1 fact;
+  unsigned slot = 0, action = 0;
+  int owned_rvalue = 0;
+  string type, access;
+  std::istringstream record(encoded);
+  if (!(record >> fact.version >> std::quoted(fact.callable_identity) >>
+        std::quoted(fact.execution_body_hash) >>
+        fact.statement_preorder_ordinal >> slot >> fact.value_argument_index >>
+        fact.source_line >> fact.expression_span_line >>
+        fact.expression_span_column >> fact.expression_source_begin >>
+        fact.expression_source_end >> fact.expression_source_fingerprint >>
+        std::quoted(fact.specialization_identity) >>
+        std::quoted(fact.specialization_context) >>
+        std::quoted(fact.est_fact_context) >> std::quoted(type) >>
+        std::quoted(fact.source_binding_identity) >>
+        std::quoted(fact.source_definition_identity) >> access >> action >>
+        owned_rvalue >> std::quoted(fact.provenance.source_file) >>
+        fact.provenance.line >>
+        std::quoted(fact.provenance.defining_module_id) >>
+        std::quoted(fact.provenance.enclosing_callable_id)))
+    throw std::invalid_argument("malformed ReturnValue artifact record");
+  string trailing;
+  if (record >> trailing || slot != static_cast<unsigned>(
+          TypedReturnValueArtifactFactV1::ValueSlot::ReturnValue) ||
+      action > static_cast<unsigned>(TypedReturnValueActionV1::ReadCopyPrimitive) ||
+      (owned_rvalue != 0 && owned_rvalue != 1))
+    throw std::invalid_argument("invalid ReturnValue artifact record fields");
+  const auto parsed_effect = interface_effect(access);
+  const auto parsed_type = Type::parse_canonical(type);
+  if (!parsed_effect || !parsed_type)
+    throw std::invalid_argument("invalid ReturnValue artifact type or access");
+  fact.value_slot = TypedReturnValueArtifactFactV1::ValueSlot::ReturnValue;
+  fact.action = static_cast<TypedReturnValueActionV1>(action);
+  fact.required_access = *parsed_effect;
+  fact.checker_proved_owned_rvalue = owned_rvalue != 0;
+  fact.expression_type = *parsed_type;
+  if (!fact.is_well_formed())
+    throw std::invalid_argument("ReturnValue artifact record is not authoritative");
+  return fact;
 }
 
 static string execution_body_short_name(const string& qualified) {
@@ -15400,7 +15484,17 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         function->execution_result_expression = std::move(result_expression);
       }
       vector<Stmt> execution_statements;
+      vector<string> return_value_artifact_records;
       while (std::getline(input, line) && line != "function_end") {
+        if (starts_with(line, "return_value_fact_v1 ")) {
+          if (section.version < 2)
+            throw CompileError(std::max(declaration_line, 0),
+                "ReturnValue authority record requires execution-body section v2",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          return_value_artifact_records.push_back(line.substr(
+              string("return_value_fact_v1 ").size()));
+          continue;
+        }
         Stmt statement;
         std::istringstream statement_input(line);
         string tag;
@@ -15417,7 +15511,67 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "unterminated function body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      const string body_hash =
+          execution_body_statements_hash(execution_statements);
+      std::set<std::uint32_t> artifact_ordinals;
+      vector<string> normalized_artifacts;
+      for (const auto& encoded : return_value_artifact_records) {
+        try {
+          auto artifact = decode_return_value_artifact_record(encoded);
+          const string source_callable = function->name.find("__") == string::npos
+              ? provider.module_name + "__" + function->name : function->name;
+          if (artifact.callable_identity != "fn:" + source_callable ||
+              artifact.execution_body_hash != body_hash ||
+              artifact.statement_preorder_ordinal >= execution_statements.size() ||
+              !artifact_ordinals.insert(
+                  artifact.statement_preorder_ordinal).second)
+            throw std::invalid_argument(
+                "ReturnValue artifact callable, body, or ordinal mismatch");
+          const auto ordinal = artifact.statement_preorder_ordinal;
+          const auto& statement = execution_statements[ordinal];
+          if (statement.kind != Stmt::Kind::Return || statement.a.empty() ||
+              statement.line != artifact.source_line)
+            throw std::invalid_argument(
+                "ReturnValue artifact does not identify a valued Return statement");
+          const string resolved_provenance = execution_body_resolve_source_path(
+              file, artifact.provenance.source_file);
+          if (std::filesystem::path(resolved_provenance).lexically_normal() !=
+              std::filesystem::path(function->execution_source_file).lexically_normal())
+            throw std::invalid_argument(
+                "ReturnValue artifact source provenance disagrees with callable source");
+          artifact.provenance.source_file = resolved_provenance;
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_ARTIFACT_FACT")) {
+            artifact.required_access = artifact.required_access == Effect::Consume
+                ? Effect::Read : Effect::Consume;
+          }
+          if (std::getenv("MOSS_TEST_DROP_RETURN_VALUE_ARTIFACT_FACT"))
+            continue;
+#endif
+          const string normalized = encode_return_value_artifact_record(artifact);
+          normalized_artifacts.push_back(normalized.substr(
+              string("return_value_fact_v1 ").size()));
+        } catch (const std::exception& error) {
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid source-free ReturnValue authority: " + string(error.what()),
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        }
+      }
+      if (section.version >= 2) {
+        size_t valued_return_count = 0;
+        for (size_t ordinal = 0; ordinal < execution_statements.size(); ++ordinal)
+          if (execution_statements[ordinal].kind == Stmt::Kind::Return &&
+              !execution_statements[ordinal].a.empty()) ++valued_return_count;
+        if (normalized_artifacts.size() != valued_return_count)
+          throw CompileError(std::max(declaration_line, 0),
+              "source-free execution body has missing or duplicate ReturnValue authority",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
       function->execution_body = std::move(execution_statements);
+      function->execution_return_value_artifact_records =
+          std::move(normalized_artifacts);
+      function->execution_return_value_body_hash = body_hash;
+      function->execution_body_section_version = section.version;
       continue;
     }
     if (starts_with(line, "method ")) {
@@ -15677,6 +15831,59 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
 }
 
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
+
+static void bind_imported_return_value_artifact_handles(Program& provider) {
+  for (auto& function : provider.functions) {
+    if (function.execution_body_section_version < 2 ||
+        function.execution_return_value_artifact_records.empty()) continue;
+    if (!function.execution_body)
+      throw CompileError(std::max(function.line, 0),
+          "ReturnValue artifact has no imported execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    for (size_t ordinal = 0; ordinal < function.execution_body->size(); ++ordinal) {
+      if (ordinal >= 0x7ffffffeu)
+        throw CompileError(std::max(function.line, 0),
+            "imported execution body has too many statements",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto& statement = (*function.execution_body)[ordinal];
+      if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+        statement.checked_statement_occurrence_id =
+            0x80000000u + static_cast<std::uint32_t>(ordinal);
+    }
+    std::set<std::uint32_t> seen;
+    for (const auto& encoded : function.execution_return_value_artifact_records) {
+      try {
+        const auto artifact = decode_return_value_artifact_record(encoded);
+        if (artifact.statement_preorder_ordinal >= function.execution_body->size() ||
+            !seen.insert(artifact.statement_preorder_ordinal).second)
+          throw std::invalid_argument("duplicate or out-of-range ReturnValue ordinal");
+        const auto& statement =
+            (*function.execution_body)[artifact.statement_preorder_ordinal];
+        if (statement.checked_statement_occurrence_id == UINT32_MAX ||
+            statement.line != artifact.source_line)
+          throw std::invalid_argument("ReturnValue ordinal does not identify a valued Return");
+        const est::Handle* handle = nullptr;
+        for (const auto& candidate : statement.expression_handles) {
+          if (candidate.slot != est::ExprSlot::ReturnValue ||
+              candidate.argument_index != 0) continue;
+          if (handle)
+            throw std::invalid_argument("duplicate ReturnValue EST handles");
+          handle = &candidate;
+        }
+        if (!handle || handle->source_fingerprint !=
+                artifact.expression_source_fingerprint ||
+            handle->arena_index >= provider.expression_arenas.size() ||
+            !provider.expression_arenas[handle->arena_index])
+          throw std::invalid_argument(
+              "ReturnValue artifact fingerprint or imported EST handle mismatch");
+      } catch (const std::exception& error) {
+        throw CompileError(std::max(function.line, 0),
+            "invalid imported ReturnValue EST mapping: " + string(error.what()),
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+    }
+  }
+}
 
 static ResolvedTypeAbi resolve_phase21_owned_type(
     const Program& provider, const string& spelling,
@@ -16008,9 +16215,22 @@ static ExecutionBodySectionView parse_execution_body_section(
   result.section_begin = marker_at + 1;
   std::istringstream section(text.substr(result.section_begin));
   string line;
-  if (!std::getline(section, line) || line != "execution_body_version 1")
+  if (!std::getline(section, line) ||
+      (!starts_with(line, "execution_body_version ")))
     throw CompileError(0, "unsupported ABI-v9 execution-body section version",
                        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  try {
+    const string version_text = line.substr(
+        string("execution_body_version ").size());
+    size_t consumed = 0;
+    const auto version = std::stoul(version_text, &consumed);
+    if (consumed != version_text.size() || (version != 1 && version != 2))
+      throw std::out_of_range("execution body version");
+    result.version = static_cast<unsigned>(version);
+  } catch (const std::exception&) {
+    throw CompileError(0, "unsupported ABI-v9 execution-body section version",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
   if (!std::getline(section, line) || !starts_with(line, "execution_body_length "))
     throw CompileError(0, "ABI-v9 execution-body section length is missing",
                        "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -17734,6 +17954,7 @@ static ParsedModuleUnit load_module_interface(
             build_loaded_body(arm.body, "failure:" + domain.name + "::" +
                               handler.name + ":" + std::to_string(arm.line));
       }
+    bind_imported_return_value_artifact_handles(provider);
   }
   for (auto& function : provider.functions) {
     function.source_file = file.string();
@@ -18448,6 +18669,113 @@ static std::set<string> legacy_standard_error_aliases(const Program& program) {
   return aliases;
 }
 
+static void project_imported_return_value_artifact_facts(Program& program) {
+  bool has_artifacts = false;
+  for (const auto& function : program.functions)
+    has_artifacts |= !function.execution_return_value_artifact_records.empty();
+  if (!has_artifacts) return;
+  if (!program.typed_semantics)
+    throw CompileError(0,
+        "imported ReturnValue authority cannot attach without checked semantics",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  for (auto& function : program.functions) {
+    if (function.execution_return_value_artifact_records.empty()) continue;
+    if (!function.execution_body || function.execution_body_section_version < 2)
+      throw CompileError(std::max(function.line, 0),
+          "imported ReturnValue authority is detached from its execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    const string callable_identity = "fn:" + function.name;
+    const string module = module_name_from_symbol(function.name);
+    const auto module_identity = program.module_identities.find(module);
+    if (!program.external_modules.count(module) ||
+        module_identity == program.module_identities.end())
+      throw CompileError(std::max(function.line, 0),
+          "ReturnValue artifact does not belong to a unique external module",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    std::set<std::uint32_t> seen_ordinals;
+    for (const auto& encoded : function.execution_return_value_artifact_records) {
+      try {
+        const auto artifact = decode_return_value_artifact_record(encoded);
+        if (artifact.callable_identity != callable_identity ||
+            artifact.execution_body_hash !=
+                function.execution_return_value_body_hash ||
+            artifact.provenance.defining_module_id != module_identity->second ||
+            !seen_ordinals.insert(
+                artifact.statement_preorder_ordinal).second ||
+            artifact.statement_preorder_ordinal >= function.execution_body->size())
+          throw std::invalid_argument(
+              "ReturnValue artifact callable, module, body, or ordinal mismatch");
+        auto& statement =
+            (*function.execution_body)[artifact.statement_preorder_ordinal];
+        if (statement.kind != Stmt::Kind::Return || statement.a.empty() ||
+            statement.line != artifact.source_line ||
+            statement.checked_statement_occurrence_id == UINT32_MAX)
+          throw std::invalid_argument(
+              "ReturnValue artifact no longer identifies its imported statement");
+        const est::Handle* handle = nullptr;
+        for (const auto& candidate : statement.expression_handles) {
+          if (candidate.slot != est::ExprSlot::ReturnValue ||
+              candidate.argument_index != 0) continue;
+          if (handle)
+            throw std::invalid_argument("duplicate imported ReturnValue EST handle");
+          handle = &candidate;
+        }
+        if (!handle || handle->source_fingerprint !=
+                artifact.expression_source_fingerprint ||
+            handle->arena_index >= program.expression_arenas.size() ||
+            !program.expression_arenas[handle->arena_index])
+          throw std::invalid_argument(
+              "ReturnValue artifact does not match its imported EST handle");
+
+        TypedReturnValueFactV1 fact;
+        fact.availability = TypedReturnValueFactV1::Availability::Present;
+        fact.statement_occurrence_id = statement.checked_statement_occurrence_id;
+        fact.est_arena_index = handle->arena_index;
+        fact.expression_occurrence_id = handle->expr;
+        fact.expression_occurrence_span =
+            program.expression_arenas[handle->arena_index]->span(handle->expr);
+        fact.expression_occurrence_span.line = artifact.expression_span_line;
+        fact.expression_occurrence_span.column = artifact.expression_span_column;
+        fact.expression_occurrence_span.source_begin =
+            artifact.expression_source_begin;
+        fact.expression_occurrence_span.source_end = artifact.expression_source_end;
+        fact.specialization_identity = artifact.specialization_identity;
+        fact.specialization_context = artifact.specialization_context;
+        fact.est_fact_context = artifact.est_fact_context;
+        fact.provenance = artifact.provenance;
+        fact.expression_type = artifact.expression_type;
+        fact.source_binding_identity = artifact.source_binding_identity;
+        fact.source_definition_identity = artifact.source_definition_identity;
+        fact.required_access = artifact.required_access;
+        fact.action = artifact.action;
+        fact.checker_proved_owned_rvalue =
+            artifact.checker_proved_owned_rvalue;
+        if (!fact.is_authoritative())
+          throw std::invalid_argument("remapped ReturnValue fact is not authoritative");
+        TypedReturnValueRequirementV1 requirement;
+        static_cast<TypedReturnValueFactV1&>(requirement) = fact;
+        program.typed_semantics->return_value_facts.push_back(fact);
+        program.typed_semantics->required_return_value_occurrences.push_back(
+            std::move(requirement));
+        (void)program.typed_semantics->find_return_value_fact(
+            program.typed_semantics->required_return_value_occurrences.back());
+      } catch (const std::exception& error) {
+        throw CompileError(std::max(function.line, 0),
+            "cannot attach imported ReturnValue authority: " + string(error.what()),
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+    }
+    size_t valued_returns = 0;
+    for (const auto& statement : *function.execution_body)
+      if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+        ++valued_returns;
+    if (seen_ordinals.size() != valued_returns)
+      throw CompileError(std::max(function.line, 0),
+          "imported execution body has incomplete ReturnValue authority coverage",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+}
+
 static CheckedProjectUnit check_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -18679,6 +19007,7 @@ static CheckedProjectUnit check_project_sources(
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
     checker.run();
+    project_imported_return_value_artifact_facts(program);
     prepare_and_validate_module_exports(program, true);
     vector<Warning> warnings = checker.warnings();
     if (!declaration_filter.empty() || declaration_ids) {
@@ -21729,6 +22058,104 @@ static void write_execution_body_statement(std::ostream& out,
   out << "\n";
 }
 
+static vector<string> execution_return_value_artifact_records(
+    const ProjectManifest& manifest, const Program& program,
+    const Function& function) {
+  vector<string> records;
+  const string callable_identity = "fn:" + function.name;
+  const string body_hash = execution_body_statements_hash(function.body);
+  for (size_t ordinal = 0; ordinal < function.body.size(); ++ordinal) {
+    const auto& statement = function.body[ordinal];
+    if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+    if (!program.typed_semantics ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw CompileError(statement.line,
+          "source-free body cannot export missing checked ReturnValue authority",
+          "MOSS_INTERNAL_INVARIANT");
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::ReturnValue ||
+          candidate.argument_index != 0) continue;
+      if (handle)
+        throw CompileError(statement.line,
+            "source-free body has duplicate checked ReturnValue handles",
+            "MOSS_INTERNAL_INVARIANT");
+      handle = &candidate;
+    }
+    if (!handle || handle->arena_index >= program.expression_arenas.size() ||
+        !program.expression_arenas[handle->arena_index])
+      throw CompileError(statement.line,
+          "source-free body has no exact checked ReturnValue handle",
+          "MOSS_INTERNAL_INVARIANT");
+    const TypedReturnValueFactV1* fact = nullptr;
+    const TypedReturnValueRequirementV1* requirement = nullptr;
+    size_t fact_count = 0, requirement_count = 0;
+    for (const auto& candidate : program.typed_semantics->return_value_facts) {
+      if (candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.est_arena_index != handle->arena_index ||
+          candidate.expression_occurrence_id != handle->expr ||
+          candidate.provenance.enclosing_callable_id != callable_identity)
+        continue;
+      fact = &candidate;
+      ++fact_count;
+    }
+    for (const auto& candidate :
+         program.typed_semantics->required_return_value_occurrences) {
+      if (candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.est_arena_index != handle->arena_index ||
+          candidate.expression_occurrence_id != handle->expr ||
+          candidate.provenance.enclosing_callable_id != callable_identity)
+        continue;
+      requirement = &candidate;
+      ++requirement_count;
+    }
+    if (fact_count != 1 || requirement_count != 1 || !fact || !requirement ||
+        fact->provenance.line != statement.line ||
+        !fact->is_authoritative() ||
+        program.typed_semantics->find_return_value_fact(*requirement) != fact)
+      throw CompileError(statement.line,
+          "source-free body has missing or ambiguous checked ReturnValue fact",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto& span = fact->expression_occurrence_span;
+    TypedReturnValueArtifactFactV1 artifact;
+    artifact.callable_identity = callable_identity;
+    artifact.execution_body_hash = body_hash;
+    artifact.statement_preorder_ordinal = static_cast<std::uint32_t>(ordinal);
+    artifact.value_slot = TypedReturnValueArtifactFactV1::ValueSlot::ReturnValue;
+    artifact.value_argument_index = 0;
+    artifact.source_line = fact->provenance.line;
+    artifact.expression_span_line = span.line;
+    artifact.expression_span_column = span.column;
+    artifact.expression_source_begin = span.source_begin;
+    artifact.expression_source_end = span.source_end;
+    artifact.expression_source_fingerprint = handle->source_fingerprint;
+    artifact.specialization_identity = fact->specialization_identity;
+    artifact.specialization_context = fact->specialization_context;
+    artifact.est_fact_context = fact->est_fact_context;
+    artifact.expression_type = fact->expression_type;
+    artifact.source_binding_identity = fact->source_binding_identity;
+    artifact.source_definition_identity = fact->source_definition_identity;
+    artifact.required_access = fact->required_access;
+    artifact.action = fact->action;
+    artifact.checker_proved_owned_rvalue = fact->checker_proved_owned_rvalue;
+    artifact.provenance = fact->provenance;
+    artifact.provenance.source_file = project_relative_path(
+        manifest, fact->provenance.source_file);
+    if (!artifact.is_well_formed())
+      throw CompileError(statement.line,
+          "source-free body ReturnValue authority cannot be transported",
+          "MOSS_INTERNAL_INVARIANT");
+    string encoded = encode_return_value_artifact_record(artifact);
+    const string prefix = "return_value_fact_v1 ";
+    if (!starts_with(encoded, prefix))
+      throw std::logic_error("ReturnValue artifact encoder omitted its record tag");
+    records.push_back(encoded.substr(prefix.size()));
+  }
+  return records;
+}
+
 static string execution_body_package_fingerprint(
     const string& package_source_hash, const BackendToolchainIdentity& backend) {
   const char* supplied = std::getenv("MARGO_PACKAGE_FINGERPRINT");
@@ -22056,8 +22483,12 @@ static string encode_execution_body_payload(
               << std::quoted(function->params[index].type) << " "
               << ownership_effect_name(effect) << "\n";
     }
+    const auto return_value_records = execution_return_value_artifact_records(
+        manifest, program, *function);
     for (const auto& statement : function->body)
       write_execution_body_statement(payload, statement);
+    for (const auto& record : return_value_records)
+      payload << "return_value_fact_v1 " << record << "\n";
     payload << "function_end\n";
   }
 
@@ -22164,7 +22595,7 @@ static string append_execution_body_section(
   const string payload = encode_execution_body_payload(
       manifest, program, module, package_fingerprint, interface_digest);
   std::ostringstream section;
-  section << "execution_body_version 1\n"
+  section << "execution_body_version 2\n"
           << "execution_body_length " << payload.size() << "\n"
           << "execution_body_hash sha256:"
           << source_free_contract_sha256(payload) << "\n"
