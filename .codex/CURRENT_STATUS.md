@@ -16111,3 +16111,28 @@ untouched.
   status update.
 - Full default and EST-shadow suite runs have not yet been performed; rerun the
   60-fixture oracle after focused repairs settle.
+### Team B refreshed clone authorization audit (2026-11-05)
+
+- Audit branch: `phase28-r7-010-team-b-runtime-clone-evidence`, based at
+  `e9c514e8cd899b2fc889acd4e8d3622adcd95094`. No compiler or oracle files were
+  changed. The audit report is
+  `docs/phase28/P28_R7_010_TEAM_B_CLONE_AUDIT_REFRESH.md`.
+- L7 source audited: `ae57a3e3eccd2fbbc4a85f94228fe86102d4929b`; compiler binary
+  SHA-256 `2dd0774d660184ef1b00c51d6a3f3e850a4e27edfea54e0abb78db4f9e22839a`.
+  The source was unchanged through L7's documentation-only descendant `89edabf0`.
+- Fresh frozen-v2 oracle artifact generation: 60/60 semantic pass, 19/60
+  all-applicable pass, 41/60 provenance fail; zero semantic disagreements.
+  The raw scan covers 84 Rust artifacts and 84 sidecars, manifest SHA-256
+  `1024d49f9f505fe5e60f2bf9f4e2b791de890a82bdd967eb1cb99f896f5cf9ed`.
+- Inventory: 258 direct `.clone()` occurrences; 252 are unclassified at three
+  repeated runtime template sites; two are exact `TypedCopyFactV1` rows; four
+  are exact Root-ingress capture rows with `permits_moss_value_copy=false`.
+  `Arc::clone` has 588 candidates over seven runtime sites, all unapproved.
+  Other candidate counts and source evidence are in the report. No runtime
+  code repair is ready without additional source-level ownership evidence.
+- Passing targeted gates on the pinned L7 compiler: runtime evidence gate and
+  Root-ingress provenance gate (42 checks). Full default/shadow suites were not
+  run. `python3 tests/phase28/r7_010/team_b/check_clone_provenance_v3_builder.py`
+  passes with order-independent fact-to-occurrence validation plus forged-link
+  and duplicate-fact rejection. `git diff --check` passes. Independent review
+  of the frozen report/test update is pending.
