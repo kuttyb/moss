@@ -16038,3 +16038,24 @@ untouched.
   aggregate fixed percentage is claimed until the same corpus is re-audited
   after the bare-raise consumer repair. Combined oracle and final default/shadow
   suites remain pending focused repairs.
+
+## Team A checker/API oracle follow-up (2026-11-05)
+
+- Checker work is frozen for review on the scoped Team A oracle follow-up branch.
+  It adds exact conditional CollectionError authority for Map index read,
+  nested write-through, `get`, and non-AlwaysRaises `remove`; exact ReturnValue
+  action facts; bounded Map keys/values view facts; and direct Map Index→Member
+  projected READ facts. These authorities do not grant copy/borrow/ownership
+  permissions beyond their stated action.
+- The focused `tests/tooling/check_phase28_oracle_authority_facts.py` passes all
+  six baseline scenarios plus twelve drop/perturb/duplicate scenarios across
+  checker, interpreter, and native generation. Failed native generation leaves
+  no Rust output artifact. ORACLE-58 has exactly two closed return facts with
+  distinct `First`/`Second` specialization identities and `Consume` effects.
+- The nine targeted oracle fixtures report checker PASS; ORACLE-13 and ORACLE-58
+  also pass Fast Debug and native debug/optimized. In the full 60-fixture oracle
+  run, ORACLE-07 still passes checker and Fast Debug but native debug/optimized
+  panic on a missing map key. This remains a consumer integration dependency;
+  no consumer or oracle expectation/mapping file was changed in this branch.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass.
+  Independent Agent 2 review is pending for the exact frozen commit.
