@@ -41,6 +41,40 @@ NONPRIMITIVE_INDEX_RETURN_SOURCE.write_text(
     encoding="utf-8",
 )
 
+PROJECTED_READ_MINIMAL_SOURCE = TMP / "projected_read_minimal.moss"
+PROJECTED_READ_MINIMAL_SOURCE.write_text(
+    "type Bucket:\n"
+    "  items: Vector[Int]\n\n"
+    "fn main():\n"
+    "  var m = Map()\n"
+    "  m[\"first\"] = Bucket(items = [1, 2])\n"
+    "  echo (m[\"first\"].items |> count)\n",
+    encoding="utf-8",
+)
+
+PROJECTED_READ_EXPLICIT_COPY_SOURCE = TMP / "projected_read_explicit_copy.moss"
+PROJECTED_READ_EXPLICIT_COPY_SOURCE.write_text(
+    "type Bucket:\n"
+    "  items: Vector[Int]\n\n"
+    "fn main():\n"
+    "  var m = Map()\n"
+    "  m[\"first\"] = Bucket(items = [1, 2])\n"
+    "  echo (copy(m[\"first\"].items) |> count)\n",
+    encoding="utf-8",
+)
+
+PROJECTED_READ_ALIAS_REJECTED_SOURCE = TMP / "projected_read_alias_rejected.moss"
+PROJECTED_READ_ALIAS_REJECTED_SOURCE.write_text(
+    "type Bucket:\n"
+    "  items: Vector[Int]\n\n"
+    "fn main():\n"
+    "  var m = Map()\n"
+    "  m[\"first\"] = Bucket(items = [1, 2])\n"
+    "  items = m[\"first\"].items\n"
+    "  echo (items |> count)\n",
+    encoding="utf-8",
+)
+
 CASES = {
     "conditional": ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_07_catchable_collection_errors.moss",
     "return": RETURN_SOURCE,
@@ -117,6 +151,24 @@ def expect_diagnostic(source: Path, expected_code: str) -> None:
     print(f"PASS rejected return diagnostic: {source.name} ({expected_code})")
 
 
+def expect_projected_read_absent(source: Path, native_success: bool) -> None:
+    response, stderr = run(source)
+    if not response.get("ok"):
+        raise AssertionError(f"unsupported projected-read baseline rejected {source}: {response.get('error')}\n{stderr}")
+    match = re.search(r"PHASE28_AUTHORITY_FACTS ([^\n]+)", stderr)
+    counts = dict(item.split("=", 1) for item in match.group(1).split()) if match else {}
+    if counts.get("projected_read") != "0":
+        raise AssertionError(f"unsupported shape unexpectedly received projected-read authority: {counts}")
+    if native_success:
+        output, native_stderr = run(source, mode="native")
+        if not output.get("ok"):
+            raise AssertionError(f"explicit-copy unsupported shape failed native generation: {output}\n{native_stderr}")
+        hook_key = hashlib.sha256(json.dumps({}, sort_keys=True).encode()).hexdigest()[:12]
+        native_artifact = TMP / f"{source.stem}-{hook_key}.rs"
+        native_artifact.unlink(missing_ok=True)
+    print(f"PASS projected-read authority absent: {source.name}")
+
+
 def expect_specialized_returns(source: Path) -> None:
     response, stderr = run(source)
     if not response.get("ok"):
@@ -160,9 +212,15 @@ def main() -> int:
     expect_specialized_returns(CASES["return_specialization"])
     expect_count(CASES["view"], "view", 2)
     expect_count(CASES["projected_read"], "projected_read")
+    expect_count(PROJECTED_READ_MINIMAL_SOURCE, "projected_read")
+    expect_projected_read_absent(PROJECTED_READ_EXPLICIT_COPY_SOURCE, native_success=False)
     expect_diagnostic(
         NONPRIMITIVE_INDEX_RETURN_SOURCE,
         "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+    )
+    expect_diagnostic(
+        PROJECTED_READ_ALIAS_REJECTED_SOURCE,
+        "OWNERSHIP_ILLEGAL_CONSUME",
     )
 
     for source, hook in (
