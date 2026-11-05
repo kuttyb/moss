@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "purpose": "artifact-pinned evidence only; no clone authorization",
+  "artifact": {
+    "fixture_id": "ORACLE-10A-EXPLICIT-COPY-ONLY",
+    "producer_commit": "14c4ad4c663c00f7eb7e756ad13c7c4dd7b7e059",
+    "rust_sha256": "b51fd33939f319e1eaf1fc6b1e08f3b64be3ee06a93db598eaacd976913013bd",
+    "source_sha256": "90e2f18939e3db4be156b9725599c24286a1d617f539aa43c139ef5b56765f22",
+    "sidecar_runtime_clone_status": "unclassified",
+    "sidecar_runtime_clone_count": 6
+  },
+  "source_files": {
+    "src/executor_runtime.cpp": "9b6b11e0bae5a3b1231caa076eaf046d8d7658e56968bde27d563fce1e00867b",
+    "src/char_string_ordering_runtime.cpp": "8b68c96fd117294d4146ceb3a2fd020edf34b7a21d7e2a5daa45c4c3467e0c0a"
+  },
+  "runtime_clone_sites": [
+    {
+      "rust_line": 2014,
+      "rust_expression": "self.lock_inner().active_executor.clone()",
+      "source": "src/executor_runtime.cpp:497",
+      "rust_type": "Option<Arc<MossGlobalExec>>",
+      "observed_operation": "Arc handle/reference-count clone",
+      "application_value_flow": "No Moss value field is cloned; the runtime handle points to an executor that may own runtime work state.",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 2241,
+      "rust_expression": "gx.config.affinity.clone()",
+      "source": "src/executor_runtime.cpp:724",
+      "rust_type": "Option<Vec<usize>>",
+      "observed_operation": "runtime CPU-affinity configuration clone",
+      "application_value_flow": "The cloned field contains numeric CPU indices, not a Moss value.",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 2357,
+      "rust_expression": "self.affinity.clone()",
+      "source": "src/executor_runtime.cpp:840",
+      "rust_type": "Option<Vec<usize>>",
+      "observed_operation": "runtime CPU-affinity configuration clone",
+      "application_value_flow": "The cloned field contains numeric CPU indices, not a Moss value.",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 2907,
+      "rust_expression": "s.clone().into_raw_owned()",
+      "source": "src/executor_runtime.cpp:1390",
+      "rust_type": "MossBranchScope { state: Arc<MossBranchScopeState> }",
+      "observed_operation": "Arc handle/reference-count clone",
+      "application_value_flow": "The Arc may keep runtime state containing queued MossWork closures alive; this clone does not duplicate that state or closure payload.",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 2949,
+      "rust_expression": "c.borrow().clone()",
+      "source": "src/executor_runtime.cpp:1432",
+      "rust_type": "Option<Arc<MossGlobalExec>>",
+      "observed_operation": "Arc handle/reference-count clone from runtime TLS",
+      "application_value_flow": "No Moss value field is cloned; the handle points to runtime executor state.",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 3112,
+      "rust_expression": "gx.config.clone()",
+      "source": "src/executor_runtime.cpp:1595",
+      "rust_type": "MossExecutorConfig { usize counts, Option<Vec<usize>> affinity, Option<i32> priority }",
+      "observed_operation": "runtime executor configuration clone",
+      "application_value_flow": "Fields are runtime numeric scheduler settings; no Moss value field is cloned.",
+      "authorization": "unclassified"
+    }
+  ],
+  "string_slice_materializations": [
+    {
+      "rust_line": 1393,
+      "rust_expression": "s[start as usize..end as usize].to_string()",
+      "source": "src/char_string_ordering_runtime.cpp:115",
+      "result": "new owned MossStr containing the selected ASCII substring",
+      "authorization": "unclassified"
+    },
+    {
+      "rust_line": 1406,
+      "rust_expression": "s[from..to].to_string()",
+      "source": "src/char_string_ordering_runtime.cpp:128",
+      "result": "new owned MossStr containing the selected Unicode substring",
+      "authorization": "unclassified"
+    }
+  ],
+  "raised_error_clone_invocations": {
+    "observed_in_artifact": 0,
+    "artifact_clone_scan_total": 7,
+    "note": "The seven raw .clone() calls are the six unclassified runtime sites above plus the checker-linked explicit Record copy. Clone derives elsewhere are capability declarations, not invocations."
+  },
+  "limitations": [
+    "Concrete Rust types and source callsites were inspected, but the sidecar does not classify these runtime calls.",
+    "Runtime-only type evidence is not semantic authorization and does not create a runtime exception.",
+    "This observation is scoped to the pinned ORACLE-10A artifact; it does not establish safety for all artifact contexts or future generated output."
+  ]
+}

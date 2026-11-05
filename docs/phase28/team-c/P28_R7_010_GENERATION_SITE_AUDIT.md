@@ -183,3 +183,39 @@ function identity. Thus a clean scan would not establish absence of
 duplication. **Gate result: NO-GO** while any occurrence lacks an independent
 semantic classification and complete provenance. Raw JSON/Markdown inventory
 is reproducible but stored under disposable `tmp/`.
+
+## ORACLE-10A runtime-site evidence appendix
+
+An independent follow-up mapped all six runtime `.clone()` observations in the
+ORACLE-10A artifact to exact source callsites and concrete Rust fields. The
+artifact is pinned by Rust SHA-256
+`b51fd33939f319e1eaf1fc6b1e08f3b64be3ee06a93db598eaacd976913013bd`, source
+SHA-256
+`90e2f18939e3db4be156b9725599c24286a1d617f539aa43c139ef5b56765f22`, and
+producer commit `14c4ad4c663c00f7eb7e756ad13c7c4dd7b7e059`. The matching
+structured evidence, including source-file digests and concrete types, is
+[`P28_R7_010_ORACLE10A_RUNTIME_CLONE_EVIDENCE.json`](P28_R7_010_ORACLE10A_RUNTIME_CLONE_EVIDENCE.json).
+
+| Rust artifact line | Source generator/runtime site | Concrete Rust value | Evidence observed | Authorization |
+|---:|---|---|---|---|
+| 2014 | `src/executor_runtime.cpp:497` | `Option<Arc<MossGlobalExec>>` | Arc handle/reference-count clone; it does not deep-clone the executor | **Unclassified** |
+| 2241 | `src/executor_runtime.cpp:724` | `Option<Vec<usize>>` | Runtime CPU-affinity indices | **Unclassified** |
+| 2357 | `src/executor_runtime.cpp:840` | `Option<Vec<usize>>` | Runtime CPU-affinity indices | **Unclassified** |
+| 2907 | `src/executor_runtime.cpp:1390` | `MossBranchScope { state: Arc<MossBranchScopeState> }` | Arc handle clone; state may retain queued Moss work, which this call does not deep-copy | **Unclassified** |
+| 2949 | `src/executor_runtime.cpp:1432` | `Option<Arc<MossGlobalExec>>` | Arc handle/reference-count clone from runtime TLS | **Unclassified** |
+| 3112 | `src/executor_runtime.cpp:1595` | `MossExecutorConfig` of numeric runtime settings | Configuration clone; fields are thread counts, affinity indices, and priority | **Unclassified** |
+
+The artifact also includes two runtime `String::to_string()` substring
+materializations: ASCII slicing at Rust line 1393 maps to
+`src/char_string_ordering_runtime.cpp:115`, and Unicode slicing at Rust line
+1406 maps to `:128`. They produce owned substring values and remain
+unclassified. The artifact contains no raised-error `.clone()` invocation:
+its seven `.clone()` calls are these six runtime sites and the one
+checker-linked explicit `Record` copy. Clone derives are capabilities, not
+invocations.
+
+These mappings document concrete types and callsites only. They do not grant a
+runtime-mechanical exception or semantic authorization; all six runtime sites
+remain unclassified pending L7-approved provenance. The bounded regression
+`tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py` pins the artifact
+and source hashes and asserts the evidence rows remain unclassified.
