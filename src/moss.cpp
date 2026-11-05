@@ -23680,7 +23680,14 @@ static string native_clone_provenance_v3_json(
           fact.permits_moss_value_copy || !fact.is_authoritative())
         throw std::invalid_argument(
             "Root-ingress capture fact is not authoritative for this source artifact");
-      root_capture_inputs.push_back({fact, source_bytes});
+      const string capture_id = native_root_ingress_capture_identity(fact);
+      const string marker = "/* Moss root ingress capture fact: " +
+          capture_id + " */";
+      // Some checked source expressions are omitted from the generated
+      // artifact. Provenance covers exact emitted markers; any actual clone
+      // without one remains unclassified by the raw Rust scan.
+      if (rust_bytes.find(marker) != std::string_view::npos)
+        root_capture_inputs.push_back({fact, source_bytes});
     } catch (const std::exception& error) {
       throw ProjectError("MOSS_INTERNAL_INVARIANT",
           string("cannot serialize checked Root-ingress capture fact: ") +

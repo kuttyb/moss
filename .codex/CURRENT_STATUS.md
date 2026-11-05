@@ -16525,18 +16525,22 @@ untouched.
   builder/real ORACLE-10A sidecar corruption gate PASS; direct ORACLE-43/45
   audits each bind one Root-ingress row and leave six unrelated clone
   occurrences unclassified; Python compile, feedback validation, and
-  `git diff --check` PASS. Regression probes also exposed incomplete native
-  consumption for Root-ingress facts in try/recover assignments: the
-  Phase 27.5.1 `join_try.moss` emission fails the builder's exact-marker
-  coverage, and X1 package build fails closed because an active message ExprId
-  is unavailable. These are real combined regressions, not passes.
-- Team B has a focused follow-up to preserve exact active-message identities
-  through those try/recover/package lowering paths. L7 will rerun both
-  regressions before treating the writer integration as complete. The stricter
-  builder currently prevents artifacts with missing Root-ingress markers from
-  receiving a misleading sidecar.
+  `git diff --check` PASS. `join_try.moss` has two checker facts but emits one
+  Root-ingress message because its `Failure.Bad` recovery arm is unreachable;
+  the writer now serializes only facts represented by exact artifact markers,
+  while every actual clone without a marker remains unclassified. Direct
+  `join_try.moss` emission/audit passes this mapping check (six unrelated
+  runtime clones remain unclassified).
+- Team B is fixing an active-message ExprId availability regression in
+  imported/package lowering. `check_phase27_5_1_facts_and_fast_debug.py`
+  currently fails at its imported-pattern package build with
+  `MOSS_INTERNAL_INVARIANT active Root-ingress message ExprId unavailable`;
+  the X1 optimized second-generation path reports the same issue. These gates
+  remain red pending Team B's reviewed fix; no full integration acceptance is
+  claimed.
 - Full 60-fixture oracle, default/shadow suites, refreshed full clone census,
   runtime clone provenance, and final integration review remain pending. The
-  six runtime-template clone sites are still unapproved. The local staging
-  branch has not yet pushed the L7 integration commit; no production merge is
+  six runtime-template clone sites are still unapproved. L7 WIP integration
+  and test commits are pushed on `phase28-r7-010-l7-copy-authority` at
+  `20106a24ba97cdd47a28b06ed541341a61819459`. No production merge is
   authorized.

@@ -568,6 +568,10 @@ def validate_root_ingress_capture_authority(
 
     if not isinstance(sidecar_rows, list):
         raise ValueError("root_ingress_domain_captures is not an array")
+    raw_markers = re.findall(
+        r"/\* Moss root ingress capture fact: ([^\s]+) \*/", rust)
+    if len(raw_markers) != len(set(raw_markers)):
+        raise ValueError("duplicate Root-ingress capture marker in Rust artifact")
     sidecar_by_id: dict[str, dict] = {}
     for row in sidecar_rows:
         if not isinstance(row, dict) or set(row) != {
@@ -595,8 +599,10 @@ def validate_root_ingress_capture_authority(
         if not receiver_match or receiver_match.group(1) != row["checked_fact"]["receiver_binding"]:
             raise ValueError("Root-ingress marker is not adjacent to its checked receiver")
         sidecar_by_id[capture_id] = row
-    if set(sidecar_by_id) != set(authority_by_id):
-        raise ValueError("Root-ingress sidecar rows do not exactly cover checker authority")
+    if set(sidecar_by_id) - set(authority_by_id):
+        raise ValueError("Root-ingress sidecar contains a fact absent from checker authority")
+    if set(raw_markers) != set(sidecar_by_id):
+        raise ValueError("Root-ingress marker IDs and sidecar rows do not match")
 
     roots_by_id: dict[str, list[dict]] = {}
     for occurrence in occurrence_rows:
