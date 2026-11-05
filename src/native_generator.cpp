@@ -985,6 +985,11 @@ class Generator {
   // an ordinary immutable lookup.
   bool checked_map_get_write_through_ = false;
   std::set<string> borrowed_function_parameters_;
+  // Primitive match payloads borrowed mutably for a checked WRITE arm still
+  // need value reads to lower as Rust copies. Keep this separate from the
+  // general borrowed-parameter set so non-primitive Moss values are never
+  // materialized by this path.
+  std::set<string> mutable_match_primitive_values_;
   string construction_binding_;
   bool view_domain_ = false;
   bool view_domain_access_ = false;
@@ -5381,6 +5386,8 @@ class Generator {
            phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
+    if (root_name && mutable_match_primitive_values_.count(*root_name))
+      return "(*" + rust_identifier(*root_name) + ")";
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
@@ -9413,6 +9420,7 @@ class Generator {
             auto branch_locals = locals;
             auto branch_types = types;
             auto saved_borrowed = borrowed_function_parameters_;
+            auto saved_match_primitive_values = mutable_match_primitive_values_;
             for (size_t field_index = 0;
                  field_index < pattern.payload_bindings.size(); ++field_index) {
               const string& name = pattern.payload_bindings[field_index];
@@ -9427,6 +9435,8 @@ class Generator {
               if (s.b != "consume") {
                 if (checked_arm->payload_access == Effect::Write) {
                   borrowed_function_parameters_.insert(name);
+                  if (copy_type_name(type))
+                    mutable_match_primitive_values_.insert(name);
                 } else if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
@@ -9439,6 +9449,8 @@ class Generator {
                       branch_locals, branch_types, base, in_handler, in_function,
                       branch_join, functional_context);
             borrowed_function_parameters_ = std::move(saved_borrowed);
+            mutable_match_primitive_values_ =
+                std::move(saved_match_primitive_values);
             o << indent(level + 1) << "},\n";
           }
           o << indent(level) << "}\n";
