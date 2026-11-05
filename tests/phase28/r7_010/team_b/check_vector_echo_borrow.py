@@ -5,11 +5,11 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-OUT = ROOT / "tmp/team-b/vector-echo-borrow"
+OUT = ROOT / "tmp/team-b/vector-read-and-echo"
 OUT.mkdir(parents=True, exist_ok=True)
 MOSS = Path(sys.argv[1]).resolve()
-SOURCE = ROOT / "tests/phase28/oracle/fixtures/oracle_42_custom_wrapper_remove.moss"
-EXPECTED = "y\n2\nz"
+ORACLE39 = ROOT / "tests/phase28/oracle/fixtures/oracle_39_vector_for_read.moss"
+ORACLE42 = ROOT / "tests/phase28/oracle/fixtures/oracle_42_custom_wrapper_remove.moss"
 
 
 def run(args):
@@ -20,20 +20,35 @@ def run(args):
     return proc.stdout.strip()
 
 
-assert run([MOSS, "check", "--json", SOURCE])
-assert run([MOSS, "run", "--interp", SOURCE]) == EXPECTED
+assert run([MOSS, "check", "--json", ORACLE39])
+assert run([MOSS, "run", "--interp", ORACLE39]) == "1\n2"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
-    rust = OUT / f"oracle42-{mode}.rs"
-    binary = OUT / f"oracle42-{mode}"
-    run([MOSS, *moss_flags, SOURCE, "-o", rust])
+    rust = OUT / f"oracle39-vector-for-read-{mode}.rs"
+    binary = OUT / f"oracle39-vector-for-read-{mode}"
+    run([MOSS, *moss_flags, ORACLE39, "-o", rust])
+    generated = rust.read_text()
+    body = generated.split("// Moss line 7: for item in v:", 1)[1]
+    body = body.split("// Moss tooling end|", 1)[0]
+    assert ".clone()" not in body, "ORACLE-39 Vector READ loop cloned an element"
+    run(["rustc", *rust_flags, rust, "-o", binary])
+    assert run([binary]) == "1\n2"
+
+assert run([MOSS, "check", "--json", ORACLE42])
+assert run([MOSS, "run", "--interp", ORACLE42]) == "y\n2\nz"
+for mode, moss_flags, rust_flags in (
+        ("debug", [], []), ("optimized", ["-O"], ["-O"])):
+    rust = OUT / f"oracle42-custom-wrapper-remove-{mode}.rs"
+    binary = OUT / f"oracle42-custom-wrapper-remove-{mode}"
+    run([MOSS, *moss_flags, ORACLE42, "-o", rust])
     generated = rust.read_text()
     match = re.search(
         r"// Moss line 13: echo b\.elements\[1\]\n([^\n]*)", generated)
     assert match and ".clone()" not in match.group(1), (
-        "indexed Vector echo materialized an element clone", match.group(1) if match else None)
+        "ORACLE-42 indexed Vector echo materialized an element clone",
+        match.group(1) if match else None)
     run(["rustc", *rust_flags, rust, "-o", binary])
-    assert run([binary]) == EXPECTED
+    assert run([binary]) == "y\n2\nz"
 
 lifetime_source = OUT / "read_then_write.moss"
 lifetime_source.write_text(
@@ -57,4 +72,4 @@ for mode, moss_flags, rust_flags in (
     run(["rustc", *rust_flags, rust, "-o", binary])
     assert run([binary]) == "before\nafter"
 
-print("ORACLE-42 indexed Vector echo: borrowed element, no generated clone, parity PASS")
+print("ORACLE-39 Vector-for-read and ORACLE-42 custom-wrapper indexed Vector echo: parity PASS")
