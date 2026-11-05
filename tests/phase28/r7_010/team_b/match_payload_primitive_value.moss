@@ -2,11 +2,21 @@ enum MatchResult:
   Matched(start: Int, end: Int)
   NoMatch
 
+type Interval:
+  start: Int
+  end: Int
+
+fn identity(value: Int) -> Int:
+  return value
+
 fn main():
   let result = MatchResult.Matched(start: 3, end: 8)
   match result:
     case Matched(start, end):
       start = 4
-      echo end - start
+      let copied_start = identity(start)
+      let interval = Interval(start: start, end: end)
+      echo end - copied_start
+      echo interval.start + interval.end
     case NoMatch:
       echo 0

@@ -5578,7 +5578,7 @@ class Generator {
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
     if (root_name && mutable_match_primitive_values_.count(*root_name))
-      return "(*" + rust_identifier(*root_name) + ")";
+      return "*" + rust_identifier(*root_name);
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
