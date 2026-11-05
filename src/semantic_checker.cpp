@@ -11385,11 +11385,13 @@ class Checker {
   }
 
   bool transfer_type(const string& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    const string canonical = canonical_type_name(type);
+    return !phase28_copy_primitive_type(canonical) && !domains_.count(canonical);
   }
 
   bool transfer_type(const moss::TypeRef& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    const string canonical = canonical_type_name(type);
+    return !phase28_copy_primitive_type(canonical) && !domains_.count(canonical);
   }
 
   const EnumType* resolve_enum_or_option(const string& type_name) {
@@ -16459,7 +16461,8 @@ class Checker {
 
   bool effect_requires_borrow(const string& type) const {
     string t = canonical_type_name(type);
-    if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
+    if (t.empty() || contains_internal_placeholder(t) ||
+        phase28_copy_primitive_type(t) || domains_.count(t)) return false;
     return true;
   }
 

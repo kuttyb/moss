@@ -74,6 +74,22 @@ fn main():
 fn main():
   pass
 ''',
+    "option_index_alias_return_rejected": '''fn first(items: Vector[option[Int]]) -> option[Int]:
+  value = items[0]
+  return value
+
+fn main():
+  pass
+''',
+    "option_iteration_alias_return_rejected": '''fn first(items: Vector[option[Int]]) -> option[Int]:
+  for item in items:
+    value = item
+    return value
+  return None
+
+fn main():
+  pass
+''',
 }
 
 
@@ -116,6 +132,14 @@ def main() -> int:
           CASES["option_iteration_return_rejected"],
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME")
     print("PASS option_iteration_return_rejected", flush=True)
+    check("option_index_alias_return_rejected",
+          CASES["option_index_alias_return_rejected"],
+          "OWNERSHIP_ILLEGAL_CONSUME")
+    print("PASS option_index_alias_return_rejected", flush=True)
+    check("option_iteration_alias_return_rejected",
+          CASES["option_iteration_alias_return_rejected"],
+          "OWNERSHIP_VECTOR_ELEMENT_CONSUME")
+    print("PASS option_iteration_alias_return_rejected", flush=True)
     return 0
 
 

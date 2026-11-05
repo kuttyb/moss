@@ -15562,3 +15562,19 @@ untouched.
   verdict changes and only the unrelated domain/take discrepancy versus a0.
 - Next: commit the minimal predicate/test repair, request independent review of
   the new exact SHA, then push only after GO. Full suites remain unrun per scope.
+
+### R7-009 Option alias-flow re-review repair (uncommitted)
+
+- Re-review returned NO-GO on `e5fb2264fdad2f955d19950e6ef4ec72911d1271`:
+  direct Option transfers rejected, but `value = items[0]; return value`
+  passed for `Vector[option[Int]]`. The old `effect_requires_borrow` and
+  `transfer_type` still delegated to recursive `copy_type` and lost Option
+  ownership before the indexed alias fact was formed.
+- Both Phase 28 classifiers now use `phase28_copy_primitive_type`. Added
+  indexed and Vector-iteration alias-return negatives for Option, preserving
+  primitive Int acceptance and Resource rejection.
+- The registered R7-009 harness now passes 9/9. Rebuilt dev/opt; local
+  ownership, W12 checker dev/opt, R7-006 facts, feedback validation, and diff
+  check pass. The refreshed 238-source verdict matrix is unchanged.
+- Next: commit and obtain another independent review on the exact new SHA.
+  Hold the push until GO; do not merge.
