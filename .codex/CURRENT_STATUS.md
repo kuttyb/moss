@@ -21,8 +21,8 @@
   artifact with `./moss <fixture> -o <artifact>` and count
   `rg -o '\\.clone\\(\\)' <artifact> | wc -l`.
 - Tests pass: dev and optimized compiler builds; Team B bare-raise consumer gate
-  (Debug/Optimized/Fast Debug parity and drop/perturb/duplicate/wrong-edge
-  fail-closed cases); ORACLE-07 recovery clone gate (9 dead selected-error clones
+  (Debug/Optimized/Fast Debug parity plus six fail-closed cases: fact drop,
+  perturb, duplicate, wrong edge, and requirement drop/duplicate); ORACLE-07 recovery clone gate (9 dead selected-error clones
   remain removed; 6 runtime clones); Team A bare-raise checker gate; Phase 21
   recovery semantics/native/peer recovery; Phase 27 EST focused checks; feedback
   validator; `git diff --check`. Full suites not run.
