@@ -1,0 +1,4 @@
+# Spec: Proposal §10 row "take(v[0]) | Reject | Collection element requires remove/pop"
+fn main():
+  var v = [[1, 2], [3, 4]]
+  let elem = take(v[0])

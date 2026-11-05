@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "result = n; result = result + 1; reply result for primitive input n | Accept | Rebinding an independent primitive local does not rebind the incoming parameter", §7.5
+domain Worker:
+  fn Increment(n: Int) -> Int:
+    result = n
+    result = result + 1
+    reply result
+
+fn main():
+  w = Worker()
+  echo (message w.Increment(10))

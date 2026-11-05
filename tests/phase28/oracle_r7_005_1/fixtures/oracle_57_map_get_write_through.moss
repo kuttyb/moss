@@ -1,0 +1,11 @@
+# P28-R7-005: one-argument Map.get returns a writable borrow of the stored value.
+type Entry:
+  count: Int
+
+fn main():
+  var entries = Map()
+  entries["one"] = Entry(count = 1)
+  entry = entries.get("one")
+  entry.count = 9
+  echo entry.count
+  echo entries.get("one").count

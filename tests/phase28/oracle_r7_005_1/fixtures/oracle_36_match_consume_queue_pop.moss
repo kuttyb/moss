@@ -1,0 +1,16 @@
+# Spec: Proposal §10 row "match consume queue.pop() | Accept | Freshly owned enum dismantled explicitly"
+type Item:
+  name: String
+
+enum Entry:
+  Valid(it: Item)
+  Empty
+
+fn main():
+  var q = Queue()
+  q.push(Entry.Valid(it: Item(name = "hello")))
+  match consume q.pop():
+    case Valid(it):
+      echo it.name
+    case Empty:
+      echo "empty"

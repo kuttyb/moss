@@ -1,0 +1,4 @@
+# Spec: Proposal §10 row "take(local) | Reject | take is for surviving eligible fields; local moves are inferred"
+fn main():
+  var v = [1, 2, 3]
+  let moved = take(v)

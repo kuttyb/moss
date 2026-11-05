@@ -1,0 +1,10 @@
+type Cell:
+  label: String
+
+fn main():
+  var entries = Map()
+  entries["alpha"] = Cell(label = "old")
+  alias = entries.get("alpha")
+  alias.label = "new"
+  echo alias.label
+  echo entries["alpha"].label

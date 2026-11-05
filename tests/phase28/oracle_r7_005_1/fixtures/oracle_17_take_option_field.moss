@@ -1,0 +1,17 @@
+# Spec: Proposal §10 row "b = take(job.pending) | Accept if field writable | Whole option[T] moves, field becomes None"
+type Job:
+  pending: option[Int]
+
+fn main():
+  var j = Job(pending = Some(42))
+  b = take(j.pending)
+  match b:
+    case Some(x):
+      echo x
+    case None:
+      echo 0
+  match j.pending:
+    case Some(y):
+      echo y
+    case None:
+      echo 999

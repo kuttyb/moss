@@ -1,0 +1,18 @@
+# Spec: Proposal §10 row "match job.state and transfer payload | Reject | Ordinary match cannot consume"
+type Buffer:
+  tag: String
+
+enum State:
+  Active(buf: Buffer)
+  Idle
+
+fn take_buffer(b: Buffer) -> Buffer:
+  return b
+
+fn main():
+  var s = State.Active(buf: Buffer(tag = "old"))
+  match s:
+    case Active(buf):
+      let transferred = take_buffer(buf)
+    case Idle:
+      pass

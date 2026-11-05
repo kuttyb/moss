@@ -1,0 +1,14 @@
+fn pass_int(value: Int) -> Int:
+  return value
+
+fn main():
+  values = [7, 8, 9]
+  first = pass_int(values[1])
+  repeated = values[1]
+  var copied = Vector[Int]()
+  for value in values:
+    copied.push(value)
+  echo first
+  echo repeated
+  echo copied[1]
+  echo values[2]

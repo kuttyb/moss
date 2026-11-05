@@ -1,0 +1,60 @@
+{
+  "compiler_sha": "e9d3f844bae715809f6b78f4d0d0f8ba908db6bc",
+  "compiler_worktree_head": "e9d3f844bae715809f6b78f4d0d0f8ba908db6bc",
+  "build": "clean make --jobs=\"$(nproc)\"; bootstrap language_version moss-0.1",
+  "expectations_recorded_before_execution": true,
+  "source_sha256": {
+    "01_primitive_owner.moss": "c7d5ac194aacb0ba275fabb59f7a56dd05023a4abc3510086282061d9860a520",
+    "01b_nonprimitive_control.moss": "0af8fdd196a48e934ab94f304b03d95bb429c05f709f586133c680ce59faf5ea",
+    "01c_primitive_index_only.moss": "f4df9e0a9ba2a1769d290d176b870df27e787abb31b5d067899c3f5c498ac878",
+    "02_map_get_write_through.moss": "c71f5d3f112e67108f12701e58e5678645cc556338e866b7735c4015bb51e843",
+    "03_specialization_collision.moss": "dd1e2a58452b2da935ce57c118e737aa5e0747cb0634d488b9570fc0ec059a46",
+    "04_shadowed_function_name.moss": "4f52f5c55810e02e617dcae27b0b6ff2ba43cc6a5a47952ec85c9726c849df24"
+  },
+  "holdouts": [
+    {
+      "name": "primitive Vector loop element owner preservation",
+      "source": "01_primitive_owner.moss",
+      "expected": "ACCEPT; stdout 8\\n8\\n8\\n9 in Fast Debug/native debug/native -O",
+      "actual": "FAIL at checker: OWNERSHIP_VECTOR_ELEMENT_CONSUME at the loop body push; runtime engines not run because checker rejects",
+      "verdict": "FAIL"
+    },
+    {
+      "name": "nonprimitive collection-element control",
+      "source": "01b_nonprimitive_control.moss",
+      "expected": "REJECT OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+      "actual": "REJECT OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+      "verdict": "PASS"
+    },
+    {
+      "name": "primitive indexed element/repeated owner use supplementary probe",
+      "source": "01c_primitive_index_only.moss",
+      "expected": "ACCEPT; stdout 8\\n8\\n9 in Fast Debug/native debug/native -O",
+      "actual": "CHECK, Fast Debug, native debug, native -O all PASS with stdout 8\\n8\\n9",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Map.get write-through",
+      "source": "02_map_get_write_through.moss",
+      "expected": "ACCEPT; stdout new\\nnew in Fast Debug/native debug/native -O",
+      "actual": "Checker accepts, but Fast Debug/native debug/native -O each print new\\nold",
+      "verdict": "FAIL"
+    },
+    {
+      "name": "same generic callable at distinct specializations",
+      "source": "03_specialization_collision.moss",
+      "expected": "ACCEPT; stdout 41\\nready in all execution modes",
+      "actual": "CHECK, Fast Debug, native debug, native -O all PASS with stdout 41\\nready",
+      "verdict": "PASS"
+    },
+    {
+      "name": "function-name shadowing and restored outer function",
+      "source": "04_shadowed_function_name.moss",
+      "expected": "ACCEPT; stdout 99\\n7\\n7\\n7 in all execution modes",
+      "actual": "CHECK, Fast Debug, native debug, native -O all PASS with stdout 99\\n7\\n7\\n7",
+      "verdict": "PASS"
+    }
+  ],
+  "overall": "NO-GO: two approved-contract holdouts fail on frozen R7-008",
+  "compiler_comparison_sha": "e9d3f844bae715809f6b78f4d0d0f8ba908db6bc"
+}

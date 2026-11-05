@@ -1,0 +1,11 @@
+# Draft: pipeline callbacks capture values eagerly at the pipeline expression.
+fn add(value: Int, offset: Int) -> Int:
+  return value + offset
+
+fn main():
+  var offset = 10
+  values = [1, 2]
+  shifted = values |> map(add(_, offset))
+  offset = 100
+  echo shifted[0]
+  echo shifted[1]

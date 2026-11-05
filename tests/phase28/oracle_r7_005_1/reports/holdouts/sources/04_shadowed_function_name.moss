@@ -1,0 +1,14 @@
+fn offset(value: Int) -> Int:
+  return value + 4
+
+fn call_after_shadow(flag: Bool, value: Int) -> Int:
+  if flag:
+    let offset = 200
+  return offset(value)
+
+fn main():
+  for offset in [99]:
+    echo offset
+  echo offset(3)
+  echo call_after_shadow(true, 3)
+  echo call_after_shadow(false, 3)

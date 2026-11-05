@@ -1,0 +1,19 @@
+# Draft: joins of borrows retain every possible source for later writes.
+type Payload:
+  value: Int
+
+fn update(flag: Bool):
+  var left = [Payload(value: 1)]
+  var right = [Payload(value: 2)]
+  if flag:
+    borrowed = left[0]
+  else:
+    borrowed = right[0]
+  echo borrowed.value
+  borrowed.value = 9
+  echo left[0].value
+  echo right[0].value
+
+fn main():
+  update(true)
+  update(false)

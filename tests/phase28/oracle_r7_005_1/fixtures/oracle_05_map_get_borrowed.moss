@@ -1,0 +1,9 @@
+# Draft: P28-R7-005 §Collection and error semantics. Map.get returns borrowed V.
+type Payload:
+  tag: String
+
+fn main():
+  var m = Map()
+  m["live"] = Payload(tag: "active")
+  p = m.get("live")
+  echo p.tag

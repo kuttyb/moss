@@ -1,0 +1,23 @@
+# Spec: Proposal §10 row "b = take(state.frontier); may_raise(); use(b) | Accept ownership-wise, while recording partial-state-on-raise consequences | Explicit destructive operation; no rollback"
+type Container:
+  frontier: Vector[Int]
+
+enum AppError:
+  Failed
+
+fn may_raise():
+  raise AppError.Failed
+
+fn run(c: Container) -> Int:
+  var count_val = 0
+  try:
+    b = take(c.frontier)
+    may_raise()
+    count_val = b |> count
+  recover AppError.Failed:
+    count_val = c.frontier |> count
+  return count_val
+
+fn main():
+  var c = Container(frontier = [10, 20, 30])
+  echo run(c)

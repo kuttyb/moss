@@ -1,0 +1,12 @@
+# Spec: Proposal §10 row "b = take(state.frontier); archive(b) | Accept subject to exclusivity | Explicit whole-field move, field becomes empty"
+type State:
+  frontier: Vector[Int]
+
+fn archive(items: Vector[Int]) -> Int:
+  return (items |> count)
+
+fn main():
+  var s = State(frontier = [1, 2, 3])
+  b = take(s.frontier)
+  echo archive(b)
+  echo (s.frontier |> count)

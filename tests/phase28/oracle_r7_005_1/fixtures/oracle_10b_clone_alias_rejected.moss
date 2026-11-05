@@ -1,0 +1,8 @@
+# Spec: Proposal §10 row "v[0].clone() as a source-language duplication alias | Reject | copy(x) is the only explicit copy spelling", §11 Phase D
+type Record:
+  tag: String
+
+fn main():
+  var v = [Record(tag: "init")]
+  r = v[0].clone()
+  echo r.tag
