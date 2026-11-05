@@ -60,6 +60,15 @@ fn main():
   value = first(items)
   echo value.tag
 ''',
+    "nonprimitive_index_reply_read": '''domain Store:
+  strings: Vector[String]
+  fn Read() -> String:
+    reply strings[0]
+
+fn main():
+  store = Store(strings = ["indexed"])
+  echo message store.Read()
+''',
     "option_index_return_rejected": '''fn first(items: Vector[option[Int]]) -> option[Int]:
   return items[0]
 
@@ -124,6 +133,9 @@ def main() -> int:
           CASES["nonprimitive_index_return_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
     print("PASS nonprimitive_index_return_rejected", flush=True)
+    check("nonprimitive_index_reply_read",
+          CASES["nonprimitive_index_reply_read"], None)
+    print("PASS nonprimitive_index_reply_read", flush=True)
     check("option_index_return_rejected",
           CASES["option_index_return_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")

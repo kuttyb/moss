@@ -26949,7 +26949,12 @@ class Checker {
              ownership_current_stmt_->kind == Stmt::Kind::Assign) &&
             tree_strip_expression_parens(
                 tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
-        if (!direct_assignment_rhs) {
+        // A handler reply is a read of domain-owned collection storage. The
+        // reply boundary materializes the value; it does not transfer the
+        // indexed element out of the collection.
+        const bool handler_reply = ownership_current_stmt_ &&
+            ownership_current_stmt_->kind == Stmt::Kind::Reply;
+        if (!direct_assignment_rhs && !handler_reply) {
           auto elem_type = inferred_expr_type(value, env.types);
           const bool concrete_noncopy_element = elem_type &&
               !unresolved_semantic_type(*elem_type) &&
