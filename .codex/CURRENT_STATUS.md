@@ -15778,3 +15778,47 @@ untouched.
   operations, not 28 confirmed illegal copies; all remain unclassified until
   their semantics are audited. Machine report is in
   `tmp/oracle10a-inventory.{json,md}` in the L7 worktree.
+
+## R7-010 live coordination checkpoint (2026-11-05)
+
+- Team A checker delivery `82a34b299bf4596ab7f63a278869e10ceae26ee5` received
+  independent Agent 2 GO and is pushed to
+  `origin/phase28-r7-010-team-a-checker`. It closes direct, parenthesized,
+  one-hop and two-hop Option/Resource indexed-reply alias bypasses while
+  retaining the direct indexed String checker case. L7 integrated the four
+  reviewed A commits into its isolated branch, resolving two overlaps while
+  retaining L7 mutable-binding tracking; integrated SHA is
+  `45e7d9b34ecf09da4d5a2827f770a265daa29f23`.
+- On the integrated L7 tree, `make --jobs="$(nproc)" moss`, the 14-case R7-009
+  harness, local ownership gate and specialized ownership gate pass. The
+  borrowed-read composite gate still fails at
+  `phase106d1_read_projection.moss:44`: native lowering refuses a nonprimitive
+  root reply without checked copy/consume authority. Runtime `runtime_invoke`
+  requires `Send + 'static`, so a local read borrow cannot safely cross this
+  boundary. Keep fail-closed; this remains a semantic-contract blocker against
+  the legacy fixture and is separate from the Echo authority work.
+- L7 regenerated ORACLE-10A from this integrated tree and independently queried
+  its checked copy fact. The sidecar exactly maps one source `copy(...)` to one
+  Rust clone; audit status is `UNAUTHORIZED`: 1 authorized, 6 unclassified /
+  unauthorized runtime clones, 7 total. No runtime exception is approved.
+- Team B exact delivery tip `44513837bea00ed5071342053f2f724d17ae617e`
+  received independent NO-GO. ORACLE-39 and ORACLE-42 mappings and output parity
+  are correct, and the extra `copy(v[0])` clone is fixed. Blockers: Echo borrow
+  lowering inferred Vector type to choose borrow vs value; no checker fact or
+  perturb/drop authority gate; 6 runtime clones unclassified; generated
+  `Clone` derives need capability/use auditing. Team B has a separate follow-up
+  branch waiting for Team A's exact Echo argument fact. L7 owns make-check
+  registration.
+- Team C independently validated the ORACLE-39/42 outputs and corruption
+  behavior. Its derive-capability scanner commit
+  `cf9a4da9a5541689da7bb76412ac446c7870545c` finds 344 derive declarations in
+  the 71-artifact checkpoint (26 unique Moss type/enum names), and distinguishes
+  declarations from clone calls; six inventory tests and 38 harness tests pass.
+  Independent Agent 2 review is pending. The audit still has reachability limits
+  for clone implementations and runtime call sites.
+- Team A and B agreed on a checker-owned `TypedEchoArgumentFactV1` direction.
+  Team A is implementing the producer and drop/perturb hooks; B will consume
+  only that fact. A separate message-argument authority was considered but
+  root-ingress borrowing is impossible under the current runtime ABI. No
+  expectations changed. Full 60-fixture combined oracle and final default/
+  shadow suites have not been rerun.
