@@ -905,10 +905,12 @@ T.append(RustTest("29-solo-bridge-worker-identity", "Solo bridge is a no-op off-
 fn main() {
     assert!(!solo_enter_current("host"));
     assert!(!solo_leave_current("host"));
+    assert!(with_current_worker_exec(|_, _| ()).is_none());
     executor_solo_enter_from_fileio("host-read");
     executor_solo_leave_from_fileio("host-read");
     // INLINE Roots run on the caller thread: not a worker, no compensation.
     assert!(!runtime_invoke(|| solo_enter_current("inline-root")));
+    assert!(runtime_invoke(|| with_current_worker_exec(|_, _| ())).is_none());
     let exec = MossExecutor::new().threads(1).max_threads(3).start();
     let (entered, workers, left) = runtime_invoke(|| {
         let e = solo_enter_current("fileio-fsync");
@@ -1592,6 +1594,32 @@ fn main() {
     exec.join();
     assert_eq!(val, 50);
     assert!(rejected.load(Ordering::SeqCst), "Recursive runtime_invoke was not rejected");
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("53-scoped-worker-exec-borrow", "Scoped TLS borrows allow nested lookup and preserve Solo enter/leave compensation", r"""
+fn main() {
+    use std::sync::Arc;
+    assert!(with_current_worker_exec(|_, _| ()).is_none());
+    let exec = MossExecutor::new().threads(1).max_threads(2).start();
+    let nested = runtime_invoke(|| {
+        with_current_worker_exec(|outer_id, outer| {
+            with_current_worker_exec(|inner_id, inner| {
+                outer_id == inner_id && Arc::ptr_eq(outer, inner)
+            })
+        })
+    });
+    assert_eq!(nested, Some(Some(true)));
+    let (entered, workers, left) = runtime_invoke(|| {
+        let entered = solo_enter_current("scoped-borrow");
+        let workers = moss_executor_worker_count();
+        let left = solo_leave_current("scoped-borrow");
+        (entered, workers, left)
+    });
+    exec.join();
+    assert!(entered && left);
+    assert_eq!(workers, 2);
     println!("ok");
 }
 """))

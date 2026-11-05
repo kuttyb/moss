@@ -809,6 +809,12 @@ pub struct MossExecutor {
 }
 
 impl MossExecutor {
+    fn into_config(self) -> MossExecutorConfig {
+        MossExecutorConfig::resolved(self.threads, self.max_threads,
+                                     self.queue_capacity, self.affinity,
+                                     self.priority)
+    }
+
     pub fn new() -> Self {
         Self { threads: None, max_threads: None, queue_capacity: None, affinity: None, priority: None }
     }
@@ -843,7 +849,7 @@ impl MossExecutor {
 
     /// INLINE → ACTIVE transition (§5.2 / §5.3 / E6 / R15).
     pub fn start(self) -> MossExecutorHandle {
-        moss_root_start_with_config(self.config())
+        moss_root_start_with_config(self.into_config())
     }
 }
 
@@ -1428,10 +1434,14 @@ pub extern "C" fn __moss_current_root_id(out_id: *mut u64) -> bool {
 }
 
 // ─── Solo compensation (§15 / R1 / R2 / E7 / E8) ─────────────────────────
-fn current_worker_exec() -> std::option::Option<(usize, std::sync::Arc<MossGlobalExec>)> {
+fn with_current_worker_exec<R>(
+    f: impl FnOnce(usize, &std::sync::Arc<MossGlobalExec>) -> R,
+) -> std::option::Option<R> {
     let worker_id = current_worker_id()?;
-    let gx = MOSS_CURRENT_WORKER_EXEC.with(|c| c.borrow().clone())?;
-    Some((worker_id, gx))
+    MOSS_CURRENT_WORKER_EXEC.with(|c| {
+        let current = c.borrow();
+        current.as_ref().map(|gx| f(worker_id, gx))
+    })
 }
 
 /// A worker enters a known Solo kernel wait.  May activate one compensation
@@ -1484,18 +1494,14 @@ fn solo_leave_worker(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
 /// Enter a Solo wait on behalf of the current thread.  Returns false (and does
 /// nothing) on a thread that is not an Executor worker.
 pub fn solo_enter_current(_reason: &str) -> bool {
-    match current_worker_exec() {
-        Some((wid, gx)) => { solo_enter_worker(&gx, wid); true }
-        None => false,
-    }
+    with_current_worker_exec(|wid, gx| { solo_enter_worker(gx, wid); true })
+        .unwrap_or(false)
 }
 
 /// Leave a Solo wait on behalf of the current thread.
 pub fn solo_leave_current(_reason: &str) -> bool {
-    match current_worker_exec() {
-        Some((wid, gx)) => { solo_leave_worker(&gx, wid); true }
-        None => false,
-    }
+    with_current_worker_exec(|wid, gx| { solo_leave_worker(gx, wid); true })
+        .unwrap_or(false)
 }
 
 /// FileIO hook-table callback (registered through the FileIO root runtime's
