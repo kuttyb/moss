@@ -17173,6 +17173,15 @@ untouched.
   template sites. It predates only the test/comment follow-up `401982e9`; no
   source semantics changed. Its exact results and categorized ledger are in
   `tmp/phase28-r7-010-l7-oracle-d40cd85/`.
+- Expanded the read-only duplication scan across 96 generated Rust artifacts:
+  258 direct `.clone()` occurrences (252 unverified at three repeated sites,
+  six separately classified explicit/root-ingress rows) and **588 qualified
+  `Arc::clone` occurrences** across seven executor-runtime markers. All Arc
+  sites remain unclassified; the v2 sidecar clone rows do not authorize them.
+  `.cloned()`, `.to_owned()`, `.to_vec()`, `.clone_from()`, `Rc::clone`, and
+  `Vec::from` occur zero times; six `.copied()` calls are over `i64` loop values.
+  The runtime marker evidence test passes but grants no authorization. Full
+  alternative-duplication audit is still open.
 - Team B's independent Match READ render follow-up is frozen at
   `dd76a6f2f36ad48dcd43009b3bdb7c27070b9118`, with Agent 2 GO. L7 integrated it
   as `401982e9`; the expanded checked READ/WRITE Match gate passes Fast Debug,
