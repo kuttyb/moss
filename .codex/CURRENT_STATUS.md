@@ -17061,8 +17061,10 @@ untouched.
 
 ### L7 Fast Debug local-transfer consumer repair (2026-11-05)
 
-- Staging branch `phase28-r7-010-l7-copy-authority` is at implementation
-  commit `16d1766e68f72bf0968807fc2df94a5f90f5707f` (pending Agent 2 review).
+- Staging branch `phase28-r7-010-l7-copy-authority` is at
+  `e5f628fcfccb2e6008c8b916a1e31944f75f68a2` (pushed). The implementation
+  commit is `16d1766e68f72bf0968807fc2df94a5f90f5707f`; the strict
+  requirement-loss test fixup is `e5f628fc`.
   It consumes Team A's exact `TypedLocalTransferFactV1` for the nested-scope
   owned Vector assignment, validates the checked RHS/source and target
   definitions against runtime bindings, stores the owned value in the target,
@@ -17076,13 +17078,16 @@ untouched.
   fact, and removed requirement under a strict test hook). Also passed
   `make moss-dev`, local-transfer authority (23 scenarios), Match-arm
   authority (9 scenarios), feedback validation, and `git diff --check`.
-- Agent 2 review found a remaining checker-contract gap: production lookup
+- Agent 2 returned GO on `e5f628fc` for the test-only requirement-loss fixup
+  and approved provisional integration. Review found a remaining
+  checker-contract gap: production lookup
   cannot distinguish a missing requirement for an eligible transfer from an
   ordinary local assignment. Team A is defining a checker-owned decision-slot
   contract; the strict consumer hook tests requirement loss but does not
   replace this production contract. Reviewer verdict is pending that fixup.
-- Team B froze native consumer commit `2eb2039c7b76c49d0174d9eba47a9d01ad4ffd88`
-  on `phase28-r7-010-team-b-regex-final`. Its focused native Debug/Optimized
+- Team B froze and pushed native consumer commit
+  `2eb2039c7b76c49d0174d9eba47a9d01ad4ffd88` on
+  `phase28-r7-010-team-b-regex-final`, with Agent 2 GO. Its focused native Debug/Optimized
   transfer and seven corruption cases pass, and an Agent 2 review is pending.
   It remains a separate worktree; full Regex package build and Fast Debug
   parity were not part of that PASS.
