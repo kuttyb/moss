@@ -1,7 +1,8 @@
 ### P28-R7-008 — Phase 28 Controlled Staging Integration (2026-11-04)
 
-Branch: `phase28-r7-008-integration` (branched from `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`).
+Branch: `phase28-r7-008-integration` (branched from `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`; implementation commit `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`).
 Report: `docs/phase28/P28_R7_008_INTEGRATION_REPORT.md`.
+Handover Document: `docs/phase28/P28_R7_008_HANDOVER.md`.
 
 - **Inputs Integrated:**
   - Certified oracle (`544506774211fbb5b9d4d3e8116525b389faa3dd`) & oracle handoff (`46619968f64ec618f4cc2576f601b86569399f3c`): preserved bit-for-bit unchanged (`0` diff against `46619968` across `tests/phase28/oracle`, `P28_R7_005_ORACLE_CERTIFICATION.md`, and `P28_R7_005_LANGUAGE_ADDENDUM.md`; SHA-256 pins verified; `test_oracle_harness.py` 16/16 PASS).
