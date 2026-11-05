@@ -20695,6 +20695,16 @@ class Checker {
       if (edge != p_.semantic_call_edges.end())
         p_.semantic_call_edges.erase(edge);
     }
+    if (std::getenv("MOSS_TEST_DUPLICATE_ROOT_INGRESS_MESSAGE_EDGE")) {
+      const auto edge = std::find_if(
+          p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+          [](const SemanticCallEdge& candidate) {
+            return candidate.source == "main" &&
+                candidate.invocation_kind == "synchronous_message";
+          });
+      if (edge != p_.semantic_call_edges.end())
+        p_.semantic_call_edges.push_back(*edge);
+    }
     if (std::getenv("MOSS_TEST_PERTURB_ROOT_INGRESS_MESSAGE_EDGE")) {
       auto edge = std::find_if(
           p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
