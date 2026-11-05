@@ -60,13 +60,40 @@ fn main():
   value = first(items)
   echo value.tag
 ''',
-    "nonprimitive_index_reply_read": '''domain Store:
+    "nonprimitive_index_reply_rejected": '''domain Store:
   strings: Vector[String]
   fn Read() -> String:
     reply strings[0]
 
 fn main():
   store = Store(strings = ["indexed"])
+  echo message store.Read()
+''',
+    "nonprimitive_index_reply_copy": '''domain Store:
+  strings: Vector[String]
+  fn Read() -> String:
+    reply copy(strings[0])
+
+fn main():
+  store = Store(strings = ["indexed"])
+  echo message store.Read()
+''',
+    "nonprimitive_index_alias_reply_rejected": '''domain Store:
+  strings: Vector[String]
+  fn Read() -> String:
+    value = strings[0]
+    reply value
+
+fn main():
+  pass
+''',
+    "primitive_index_reply_read": '''domain Store:
+  values: Vector[Int]
+  fn Read() -> Int:
+    reply values[0]
+
+fn main():
+  store = Store(values = [7])
   echo message store.Read()
 ''',
     "option_index_reply_rejected": '''domain Store:
@@ -170,9 +197,20 @@ def main() -> int:
           CASES["nonprimitive_index_return_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
     print("PASS nonprimitive_index_return_rejected", flush=True)
-    check("nonprimitive_index_reply_read",
-          CASES["nonprimitive_index_reply_read"], None)
-    print("PASS nonprimitive_index_reply_read", flush=True)
+    check("nonprimitive_index_reply_rejected",
+          CASES["nonprimitive_index_reply_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS nonprimitive_index_reply_rejected", flush=True)
+    check("nonprimitive_index_reply_copy",
+          CASES["nonprimitive_index_reply_copy"], None)
+    print("PASS nonprimitive_index_reply_copy", flush=True)
+    check("nonprimitive_index_alias_reply_rejected",
+          CASES["nonprimitive_index_alias_reply_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS nonprimitive_index_alias_reply_rejected", flush=True)
+    check("primitive_index_reply_read",
+          CASES["primitive_index_reply_read"], None)
+    print("PASS primitive_index_reply_read", flush=True)
     check("option_index_return_rejected",
           CASES["option_index_return_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")

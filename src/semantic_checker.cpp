@@ -16874,7 +16874,6 @@ class Checker {
     if (!loc || loc->path.empty() || loc->path.back() != "[]") return std::nullopt;
     auto elem_type = inferred_expr_type(value, env);
     if (!elem_type || !effect_requires_borrow(*elem_type) ||
-        canonical_type_name(*elem_type) == "string" ||
         fileio_scoped_type(*elem_type))
       return std::nullopt;
     return loc;
@@ -27000,18 +26999,11 @@ class Checker {
             tree_strip_expression_parens(
                 tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
         auto elem_type = inferred_expr_type(value, env.types);
-        const string canonical_element_type = elem_type
-            ? canonical_type_name(*elem_type) : string{};
-        const bool string_reply_read = ownership_current_stmt_ &&
-            ownership_current_stmt_->kind == Stmt::Kind::Reply &&
-            (canonical_element_type == "String" ||
-             canonical_element_type == "string");
         const bool concrete_noncopy_element = elem_type &&
             !unresolved_semantic_type(*elem_type) &&
             !phase28_copy_primitive_type(*elem_type);
         const bool rejected_consume = requested == Effect::Consume &&
-            !direct_assignment_rhs && concrete_noncopy_element &&
-            !string_reply_read;
+            !direct_assignment_rhs && concrete_noncopy_element;
         if (rejected_consume) {
           err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
               "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
@@ -28461,14 +28453,8 @@ class Checker {
               tree_normalize_pipeline(trim(s.a)));
           if (tree_parse_index(reply_expression, reply_base, reply_index)) {
             auto element_type = inferred_expr_type(s.a, env.types);
-            const string canonical_element_type = element_type
-                ? canonical_type_name(*element_type) : string{};
-            const bool string_reply_read =
-                canonical_element_type == "String" ||
-                canonical_element_type == "string";
             if (element_type && !unresolved_semantic_type(*element_type) &&
-                !phase28_copy_primitive_type(*element_type) &&
-                !string_reply_read)
+                !phase28_copy_primitive_type(*element_type))
               err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
                   "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
           }
@@ -28484,15 +28470,9 @@ class Checker {
                               return path.find(".[]") != string::npos;
                             });
             auto alias_type = inferred_expr_type(reply_name, env.types);
-            const string canonical_alias_type = alias_type
-                ? canonical_type_name(*alias_type) : string{};
-            const bool string_reply_alias =
-                canonical_alias_type == "String" ||
-                canonical_alias_type == "string";
             if (indexed_borrow && alias_type &&
                 !unresolved_semantic_type(*alias_type) &&
-                !phase28_copy_primitive_type(*alias_type) &&
-                !string_reply_alias)
+                !phase28_copy_primitive_type(*alias_type))
               err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
                   "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
           }
