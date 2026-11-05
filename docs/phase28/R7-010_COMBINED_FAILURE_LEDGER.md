@@ -383,3 +383,9 @@ source/artifact evidence, not authorization.
 - Cherry-picked Team A implementation `dee17faf7ee8acc0eca2579c15f461cbbb4715c7` onto the isolated L7 branch as `583fc919`. Team A's exact implementation has independent Agent 2 GO; its status-only follow-up is `c6b5429c71f3899fe4dfbfd0c9d6caaf3a7d231b`. The checker now walks the complete flattened Match-owned subtree while collecting only immediate Case arms. The added fact gate checks nested arm bodies, both MatchResult arms, exact payload identities/types/access/transfer, and drop/duplicate/field corruption.
 - L7 registered `check_phase28_match_arm_authority.py` in Makefile `check-parallel` and `tests/run.sh`, each in default and EST-shadow modes. Rebuilt dev and optimized compilers pass. The registered gate passes **9/9 scenarios in each mode**; W12 team validation passed dev/opt on Team A's exact delivery. `check_phase26_0_1_c3_parse_cache.py` passes after the provisional regex package's explicit indexed-String copies. Feedback validation and diff checks pass.
 - Provisional package source edits are still uncommitted. `moss check packages/regex/src/main.moss --json` passes, but package `margo build --json` fails closed with `MOSS_INTERNAL_INVARIANT explicit copy lacks checked EST context`. Team B is tracing that consumer/context failure on an isolated worktree. No consumer requirement was weakened and no oracle data changed. Native package tests, full suites and fresh oracle remain pending after this repair settles.
+- After integration at L7 `583fc919` and test registration at `684b0c7d`, the
+  existing Team B consumer gates still pass: ORACLE-19 checked match READ
+  borrow and ORACLE-32 checked payload WRITE each pass checker, Fast Debug,
+  Native Debug and Native Optimized. B4 consumer boundary passes all 21
+  fail-closed corruption cases. The remaining regex package failure is the
+  separate canonical copy-fact context path described above.

@@ -16852,3 +16852,8 @@ untouched.
   EST context`. Team B is tracing this on its isolated worktree. Package edits
   remain uncommitted; no clone or oracle expectation was authorized/changed.
   Full suites and fresh oracle have not been rerun on the integrated checker.
+- Post-integration consumer regression evidence: ORACLE-19 match READ borrow
+  and ORACLE-32 payload WRITE pass checker/Fast Debug/Native Debug/Native
+  Optimized; B4 consumer boundary passes 21 corruption cases. The package
+  build's remaining explicit-copy context issue has been assigned to Team B
+  on an isolated worktree based on Team A's frozen checker fix.
