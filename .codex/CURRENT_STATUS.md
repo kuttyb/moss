@@ -15671,3 +15671,18 @@ untouched.
   checked MossAccess field facts. Its existing `check_borrowed_reads.py` still
   asserts the pre-Team-A `__moss_value()` form; L7 assigned Team B to update
   this gate to require the exact fact helper and forbid cloning the view.
+- Team C follow-up received renewed independent GO at
+  `c8ad405e1e8b0f7c4e653b24ce0a9924f972ef37`: 42/42 targeted validator and
+  scanner tests pass, including multiple lexical copies within one
+  specialization and live checker-query checks. No certified expectations or
+  digests changed; scoped push verification is pending.
+- L7 imported Team B's stable header-only v3 serializer API commit
+  `5208b819` as `9bc3b521`. Header smoke compilation, grouped-fact JSON
+  serialization, and v3 version/fact-count assertions pass in L7's worktree.
+  Artifact writing remains blocked on Team B's raw-Rust manifest builder API.
+- Integration exposed a confirmed Team A checker regression:
+  `phase106d1_read_projection.moss` passes on WIP `04564464` but fails on
+  Team A's candidate at line 44 with `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`
+  (`handler:Store.IndexReply@43`). This occurs before lowering. Team A has
+  been assigned a minimal checker-only follow-up and focused regression test;
+  Team B is continuing without checker edits.
