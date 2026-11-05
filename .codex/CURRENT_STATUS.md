@@ -16554,16 +16554,24 @@ untouched.
   while every actual clone without a marker remains unclassified. Direct
   `join_try.moss` emission/audit passes this mapping check (six unrelated
   runtime clones remain unclassified).
-- Team B is fixing an active-message ExprId availability regression in
-  imported/package lowering. `check_phase27_5_1_facts_and_fast_debug.py`
-  currently fails at its imported-pattern package build with
-  `MOSS_INTERNAL_INVARIANT active Root-ingress message ExprId unavailable`;
-  the X1 optimized second-generation path reports the same issue. These gates
-  remain red pending Team B's reviewed fix; no full integration acceptance is
-  claimed.
+- Team B's follow-up `f886eb02fd9b0fc3e47cad00e90030a6bf5c1477` (branch HEAD
+  `e288c87bf10c7117baae13267b5946c4fac3d64b`, Agent 2 GO, pushed) fixes the
+  active-message ExprId availability regression by resolving the exact handle
+  in the canonical checked Program's expression arena during optimized
+  regeneration. L7 integrated its code as `81a61d5b`.
+- Fresh L7 staging validation after integration: compiler build PASS; Phase
+  27.5.1 PASS; X1 PASS (`ok:true`, including Native Debug/Optimized and 40
+  Fast Debug trace events); Root-ingress checker authority 38/38 PASS;
+  Root-ingress provenance 42 checks PASS; v3 builder/ORACLE-10A sidecar
+  corruption gate PASS. The independent Agent 2 also verified the combined
+  worktree `665c51be` with Phase 27.5.1, X1, and the same 42 provenance checks.
+- Full 60-fixture oracle, full default and EST-shadow suites, refreshed full
+  clone census, runtime clone provenance, and final integration review remain
+  pending. Six runtime-template clone sites remain unapproved; no overall clone
+  acceptance is claimed.
 - Full 60-fixture oracle, default/shadow suites, refreshed full clone census,
   runtime clone provenance, and final integration review remain pending. The
   six runtime-template clone sites are still unapproved. L7 WIP integration
-  and test commits are pushed on `phase28-r7-010-l7-copy-authority` at
-  `20106a24ba97cdd47a28b06ed541341a61819459`. No production merge is
-  authorized.
+  and test commits through `b18fcddfc8028cadb172e100c37474347879afd1` are
+  pushed; the reviewed arena-lookup fix `81a61d5b` is currently local and must
+  be pushed after this status update. No production merge is authorized.
