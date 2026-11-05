@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 using namespace moss;
@@ -113,6 +114,102 @@ int main(int argc, char** argv) {
   auto corrupt_fact_type = facts;
   corrupt_fact_type.facts.front().result_type_key = "record:Forged";
   if (!rejects(rust, {source_row}, {corrupt_fact_type})) return 17;
+
+  TypedRootIngressDomainCaptureFactV1 root_fact;
+  root_fact.statement_occurrence_id = 42;
+  root_fact.est_arena_index = 3;
+  root_fact.message_expression_occurrence_id = 7;
+  root_fact.receiver_expression_occurrence_id = 8;
+  root_fact.source_fingerprint = 901;
+  root_fact.origin_id = 902;
+  root_fact.specialization_context = "main";
+  root_fact.est_fact_context = "main";
+  root_fact.receiver_binding = "w";
+  root_fact.receiver_definition_identity = "domain-instance:main::w";
+  root_fact.domain_instance_identity = "main::w";
+  root_fact.domain_type_identity = "Worker";
+  root_fact.concrete_graph_identity = "concrete-domain-graph|I:main::w=Worker";
+  root_fact.route_capability_identity = "main::w";
+  root_fact.selected_call_edge_source = "main";
+  root_fact.selected_call_edge_target = "handler:Worker.Process";
+  root_fact.selected_call_edge_invocation_kind = "synchronous_message";
+  root_fact.selected_call_edge_receiver = "w";
+  root_fact.selected_call_edge_source_file = source_path;
+  root_fact.selected_call_edge_line = 2;
+  root_fact.selected_call_edge_occurrence = 0;
+  root_fact.selected_call_edge_est_arena_index = 3;
+  root_fact.selected_call_edge_message_expression_occurrence_id = 7;
+  root_fact.selected_call_edge_receiver_expression_occurrence_id = 8;
+  root_fact.selected_call_edge_source_fingerprint = 901;
+  root_fact.selected_call_edge_identity =
+      "main|handler:Worker.Process|" + source_path +
+      ":2:0|receiver=w|est=3:7:8";
+  root_fact.selected_handler_identity = "handler:Worker.Process";
+  root_fact.source_file = source_path;
+  root_fact.source_line = 2;
+  root_fact.synchronous_root_ingress = true;
+  root_fact.compiler_generated_capture_only = true;
+  root_fact.permits_moss_value_copy = false;
+  root_fact.availability =
+      TypedRootIngressDomainCaptureFactV1::Availability::Present;
+  if (!root_fact.is_authoritative()) return 18;
+  const auto root_id = native_root_ingress_capture_identity(root_fact);
+  const std::string root_rust =
+      "fn main(){ let __d = w/* Moss root ingress capture fact: " +
+      root_id + " */.clone(); }\n";
+  NativeRootIngressCaptureInputV1 root_input{root_fact, source};
+  auto root_manifest = build_native_clone_provenance_v3(
+      "debug", root_rust, source, {}, {}, {root_input});
+  if (root_manifest.root_ingress_domain_captures.size() != 1 ||
+      root_manifest.occurrences.size() != 1 ||
+      root_manifest.occurrences.front().origin_kind !=
+          "root_ingress_domain_capture" ||
+      root_manifest.occurrences.front().semantic_identity != root_id ||
+      root_manifest.occurrences.front().ownership_fact.find(
+          "permits_moss_value_copy=false") == std::string::npos)
+    return 19;
+  std::ostringstream root_json;
+  write_native_clone_provenance_v3(root_json, root_rust, source, root_manifest);
+  if (root_json.str().find("\"root_ingress_domain_captures\":[{\"capture_id\":") ==
+          std::string::npos ||
+      root_json.str().find("\"permits_moss_value_copy\":false") ==
+          std::string::npos)
+    return 20;
+
+  const auto root_rejects = [&](const std::string& bad_rust,
+                                const std::vector<NativeRootIngressCaptureInputV1>& inputs) {
+    try {
+      (void)build_native_clone_provenance_v3(
+          "debug", bad_rust, source, {}, {}, inputs);
+    } catch (const std::exception&) {
+      return true;
+    }
+    return false;
+  };
+  auto missing_root_marker = root_rust;
+  auto root_marker_at = missing_root_marker.find(
+      "/* Moss root ingress capture fact: ");
+  const auto root_marker_end = missing_root_marker.find(" */", root_marker_at) + 3;
+  missing_root_marker.erase(root_marker_at, root_marker_end - root_marker_at);
+  if (!root_rejects(missing_root_marker, {root_input})) return 21;
+  auto forged_root_marker = root_rust;
+  const auto root_id_at = forged_root_marker.find(root_id);
+  forged_root_marker.replace(root_id_at, root_id.size(),
+      "root-ingress-domain-capture-fact-v1:" + std::string(64, '0'));
+  if (!root_rejects(forged_root_marker, {root_input})) return 22;
+  auto duplicate_root_marker = root_rust;
+  duplicate_root_marker.insert(root_marker_at,
+      "/* Moss root ingress capture fact: " + root_id + " */");
+  if (!root_rejects(duplicate_root_marker, {root_input})) return 23;
+  auto wrong_root_receiver = root_rust;
+  const auto receiver_at = wrong_root_receiver.find("w/* Moss root");
+  wrong_root_receiver.replace(receiver_at, 1, "x");
+  if (!root_rejects(wrong_root_receiver, {root_input})) return 24;
+  if (!root_rejects(root_rust, {root_input, root_input})) return 25;
+  auto copied_fact = root_fact;
+  copied_fact.permits_moss_value_copy = true;
+  if (!root_rejects(root_rust, {{copied_fact, source}})) return 26;
+  if (!root_rejects(root_rust, {{root_fact, source + "\n"}})) return 27;
 
   write_native_clone_provenance_v3(std::cout, rust, source, manifest);
 }
