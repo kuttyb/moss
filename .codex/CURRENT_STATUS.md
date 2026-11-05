@@ -16909,3 +16909,10 @@ untouched.
 - Focused validation: compiler build; Team A local transfer authority 23 scenarios default/shadow; Team B local transfer consumer native Debug/Optimized compilation and output plus seven corruption cases; Team B Match payload WRITE and Match projection READ gates. All pass.
 - Fast Debug on the minimal accepted transfer fixture segfaults (return -11/139), while a vector create/push/count control prints 1. This is a separate interpreter blocker routed to L7; it is not counted as parity.
 - Full Regex package generation remains blocked by the L7-owned v3 builder `per-fact helper definition missing or duplicated`; no builder change was made. The prior simulated post-Match Rust artifact left only four Vec assignments, whose exact facts are READ. The transfer consumer still needs end-to-end Regex package validation after builder integration.
+
+## Team B Regex Match READ render follow-up (2026-11-05)
+
+- Isolated branch `phase28-r7-010-team-b-regex-read-render` starts at pushed Team B transfer candidate `22a9e924edb1a1a0b2f784c915ee47741caea81e`. Only `src/native_generator.cpp` formatting guard/comment and Team B Match gate/fixture are changed; checker authority is unchanged.
+- The exact Match payload path keeps the primitive dereference bare in `expr()` so enclosing arithmetic supplies the one required precedence wrapper. The new `match_payload_primitive_read.moss` asserts checked arm access `Read`, exercises arithmetic, a call, and assignment, and verifies Fast Debug plus native Debug/Optimized behavior.
+- Validation: `make --jobs="$(nproc)" moss`; `python3 tests/phase28/r7_010/team_b/check_match_payload_write.py ./moss`; `git diff --check`; `python3 tests/tooling/check_agent_feedback.py` all pass. The fixture and copied Regex Debug/Release Rust artifacts compile under `rustc -D warnings`.
+- Full copied Regex Margo build remains blocked after Rust emission by the existing provenance builder error `per-fact helper definition missing or duplicated`; direct Rust compilation of both generated artifacts succeeds with warnings denied. No builder, package, checker, or shared runner files were changed.

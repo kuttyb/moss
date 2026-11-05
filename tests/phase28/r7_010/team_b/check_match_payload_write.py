@@ -8,6 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = ROOT / "tests/phase28/oracle/fixtures/oracle_32_match_payload_write_borrow.moss"
 SCALAR_FIXTURE = ROOT / "tests/phase28/r7_010/team_b/match_payload_primitive_value.moss"
+READ_FIXTURE = ROOT / "tests/phase28/r7_010/team_b/match_payload_primitive_read.moss"
 OUT = ROOT / "tmp/team-b/match-payload-write"
 OUT.mkdir(parents=True, exist_ok=True)
 MOSS = Path(sys.argv[1]).resolve()
@@ -25,6 +26,13 @@ assert run([MOSS, "check", "--json", FIXTURE])[0]
 assert run([MOSS, "run", "--interp", FIXTURE])[0] == "20"
 assert run([MOSS, "check", "--json", SCALAR_FIXTURE])[0]
 assert run([MOSS, "run", "--interp", SCALAR_FIXTURE])[0] == "4\n12"
+assert run([MOSS, "check", "--json", READ_FIXTURE])[0]
+assert run([MOSS, "run", "--interp", READ_FIXTURE])[0] == "16"
+dump_env = dict(os.environ)
+dump_env["MOSS_TEST_DUMP_MATCH_AUTHORITY_FACTS"] = "1"
+_, match_dump = run([MOSS, "check", "--json", READ_FIXTURE], env=dump_env)
+assert "context=fn:read_length" in match_dump and "access=0 transfer=0" in match_dump, \
+    "read fixture no longer exercises checker-authorized READ payload access"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"oracle32-{mode}.rs"
@@ -52,6 +60,20 @@ for mode, moss_flags, rust_flags in (
     assert "unnecessary parentheses" not in rust_stderr, rust_stderr
     assert run([binary])[0] == "4\n12"
 
+for mode, moss_flags, rust_flags in (
+        ("debug", [], []), ("optimized", ["-O"], ["-O"])):
+    rust = OUT / f"match-read-{mode}.rs"
+    binary = OUT / f"match-read-{mode}"
+    run([MOSS, *moss_flags, READ_FIXTURE, "-o", rust])
+    generated = rust.read_text()
+    assert "match &result" in generated, "READ Match fact did not borrow the scrutinee"
+    assert "let start = *start;" in generated and "let end = *end;" in generated, \
+        "primitive READ payloads were not copied from their checked borrow"
+    assert "pos = end;" in generated, "READ payload assignment gained borrow parentheses"
+    _, rust_stderr = run(["rustc", *rust_flags, "-D", "warnings", rust, "-o", binary])
+    assert "unnecessary parentheses" not in rust_stderr, rust_stderr
+    assert run([binary])[0] == "16"
+
 for hook in ("MOSS_TEST_CONSUMER_DROP_MATCH_FACT",
              "MOSS_TEST_CONSUMER_PERTURB_MATCH_ARM_ACCESS"):
     env = dict(os.environ)
@@ -59,8 +81,10 @@ for hook in ("MOSS_TEST_CONSUMER_DROP_MATCH_FACT",
     for command in ([MOSS, "run", "--interp", FIXTURE],
                     [MOSS, FIXTURE, "-o", OUT / f"corrupt-{hook}.rs"],
                     [MOSS, "run", "--interp", SCALAR_FIXTURE],
-                    [MOSS, SCALAR_FIXTURE, "-o", OUT / f"corrupt-scalar-{hook}.rs"]):
+                    [MOSS, SCALAR_FIXTURE, "-o", OUT / f"corrupt-scalar-{hook}.rs"],
+                    [MOSS, "run", "--interp", READ_FIXTURE],
+                    [MOSS, READ_FIXTURE, "-o", OUT / f"corrupt-read-{hook}.rs"]):
         stdout, stderr = run(command, env=env, expect=1)
         assert "MOSS_INTERNAL_INVARIANT" in stdout + stderr, (hook, stdout, stderr)
 
-print("ORACLE-32 checked payload WRITE: checker, Fast Debug, native Debug/Optimized PASS")
+print("Checked Match payload WRITE and READ: Fast Debug, native Debug/Optimized and warning-free Rust PASS")

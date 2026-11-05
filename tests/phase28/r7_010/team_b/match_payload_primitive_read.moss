@@ -1,0 +1,21 @@
+enum MatchResult:
+  Matched(start: Int, end: Int)
+  NoMatch
+
+fn identity(value: Int) -> Int:
+  return value
+
+fn read_length(result: MatchResult) -> Int:
+  var pos = 0
+  match result:
+    case Matched(start, end):
+      let length = end - start
+      let checked_start = identity(start)
+      pos = end
+      return length + checked_start + pos
+    case NoMatch:
+      return 0
+
+fn main():
+  let result = MatchResult.Matched(start: 3, end: 8)
+  echo read_length(result)

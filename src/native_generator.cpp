@@ -5577,8 +5577,13 @@ class Generator {
            phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
-    if (root_name && mutable_match_primitive_values_.count(*root_name))
-      return "*" + rust_identifier(*root_name);
+    // Keep this dereference bare; enclosing expression lowering supplies
+    // precedence parentheses where needed. Parenthesizing here duplicates
+    // those wrappers and triggers rustc's unused_parens warning.
+    if (root_name && mutable_match_primitive_values_.count(*root_name)) {
+      const string rendered_payload = "*" + rust_identifier(*root_name);
+      return rendered_payload;
+    }
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
