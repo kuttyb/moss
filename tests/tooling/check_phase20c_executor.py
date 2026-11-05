@@ -1018,7 +1018,7 @@ fn main() {
     };
     let exec = moss_root_start_with_config(cfg.clone());
     assert_eq!(exec.config(), &cfg);
-    assert_eq!(moss_executor_active_config(), Some(cfg.clone()));
+    assert!(moss_executor_active_config_matches(&cfg));
     wait_until("target workers started", || evlog::live() == 3);
     assert_eq!(moss_executor_worker_count(), 3);
     assert_eq!(moss_executor_max_threads(), 7);
@@ -1028,8 +1028,11 @@ fn main() {
     moss_root_join(exec);
     assert_eq!(n.load(Ordering::SeqCst), 10);
     // Builder and seam resolve identically; omitted fields get defaults.
-    let built = MossExecutor::new().threads(3).max_threads(7).queue_capacity(5).affinity(vec![0]).priority(0).config();
+    let reusable = MossExecutor::new().threads(3).max_threads(7).queue_capacity(5).affinity(vec![0]).priority(0);
+    let built = reusable.config();
     assert_eq!(built, cfg);
+    let reused = reusable.start();
+    moss_root_join(reused);
     let resolved = MossExecutorConfig::resolved(Some(64), None, None, None, None);
     assert!(resolved.max_threads >= 64, "default T_max below threads");
     assert_eq!(resolved.queue_capacity, MossExecutorConfig::DEFAULT_QUEUE_CAPACITY);

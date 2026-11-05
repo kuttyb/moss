@@ -1590,8 +1590,14 @@ pub fn moss_executor_max_threads() -> usize {
 }
 
 #[cfg(any(test, moss_perf))]
-pub fn moss_executor_active_config() -> std::option::Option<MossExecutorConfig> {
-    moss_test_exec(|gx| gx.config.clone())
+pub fn moss_executor_active_config_matches(expected: &MossExecutorConfig) -> bool {
+    moss_test_exec(|gx| {
+        gx.config.threads == expected.threads &&
+        gx.config.max_threads == expected.max_threads &&
+        gx.config.queue_capacity == expected.queue_capacity &&
+        gx.config.affinity.as_deref() == expected.affinity.as_deref() &&
+        gx.config.priority == expected.priority
+    }).unwrap_or(false)
 }
 
 #[cfg(any(test, moss_perf))]

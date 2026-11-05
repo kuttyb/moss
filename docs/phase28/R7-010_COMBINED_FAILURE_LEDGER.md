@@ -108,3 +108,42 @@ Agent 2's refreshed verdict is NO-GO to allowlist any of the five. The four
 handle sites have no approved runtime exception; the config snapshot also
 copies owned vector data. All five lack checker `copy(x)` facts. This table is
 source/artifact evidence, not authorization.
+
+## Fresh combined 60-fixture oracle — implementation `cd2310ef`
+
+- Run used the isolated `moss-dev` rebuilt from exact implementation commit
+  `cd2310ef` on `phase28-r7-010-l7-copy-authority`. Oracle expectations and
+  certification files/digests remain unchanged. Raw results and fixture ledger
+  are in disposable `tmp/r7-010-oracle-cd2310ef/`.
+- **19/60 fixtures pass all applicable gates; 41/60 fail only provenance.** All
+  checker decisions pass; all applicable Fast Debug and Native Debug/Optimized
+  semantic outputs match the frozen expectations. Semantic failures: 0.
+  Native/Fast Debug or Debug/Optimized disagreements: 0. Infrastructure
+  failures: 0. Missing or invalid sidecars: 0.
+- Across audited artifacts, 426 `.clone()` occurrences are observed: 2 linked
+  to exact checked Moss `copy(...)` facts and 4 linked to checker-issued
+  Root-ingress capture-only facts (`permits_moss_value_copy=false`). The
+  remaining **420 occurrences are unclassified/unauthorized**, five repeated
+  runtime sites per artifact. This comprises 400 rows in direct fixture
+  artifacts and 20 rows in ORACLE-54's four provider/consumer artifacts.
+- The affinity vector site removed in this implementation is absent. The
+  remaining five sites are independently reviewed but not authorized, as
+  recorded above. Disposition remains **NO-GO**; no oracle expectations were
+  modified to obtain this result.
+
+## Local executor test-config follow-up (after `cd2310ef`, not a full run)
+
+- Independent Agent 2 reviewed the test-only `moss_executor_active_config_matches`
+  borrowed comparison as GO. It removes the cfg(test/moss_perf) config snapshot
+  clone while preserving the documented `MossExecutor::config(&self)` API.
+  The Phase 20 executor gate passes 54/54, including a new check that config
+  inspection can be followed by builder reuse and `start()`.
+- Targeted ORACLE-10A and ORACLE-54 audits now show four unauthorized direct
+  `.clone()` rows in each generated artifact. The remaining source sites are
+  lines 497, 839, 1389 and 1431 of `executor_runtime.cpp`; line 839 remains to
+  preserve the documented owned snapshot API. A minimal generated artifact
+  also contains nine qualified `Arc::clone(...)` calls, which are outside the
+  current v2 `.clone()` occurrence sidecar schema and remain unaudited here.
+- The full 60-fixture result recorded above is bound to `cd2310ef` before this
+  local change; no complete oracle rerun or new corpus total is claimed for the
+  current working tree.
