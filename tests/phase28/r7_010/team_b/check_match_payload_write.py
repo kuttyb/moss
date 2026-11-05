@@ -24,7 +24,7 @@ def run(args, env=None, expect=0):
 assert run([MOSS, "check", "--json", FIXTURE])[0]
 assert run([MOSS, "run", "--interp", FIXTURE])[0] == "20"
 assert run([MOSS, "check", "--json", SCALAR_FIXTURE])[0]
-assert run([MOSS, "run", "--interp", SCALAR_FIXTURE])[0] == "4"
+assert run([MOSS, "run", "--interp", SCALAR_FIXTURE])[0] == "4\n12"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"oracle32-{mode}.rs"
@@ -43,10 +43,14 @@ for mode, moss_flags, rust_flags in (
     run([MOSS, *moss_flags, SCALAR_FIXTURE, "-o", rust])
     generated = rust.read_text()
     assert "match &mut result" in generated, "checked WRITE payload lost its mutable borrow"
-    assert "wrapping_sub((*start))" in generated, "primitive payload value read was not dereferenced"
-    assert "(*start) = 4_i64;" in generated, "primitive payload assignment did not write through"
-    run(["rustc", *rust_flags, rust, "-o", binary])
-    assert run([binary])[0] == "4"
+    assert "wrapping_sub(copied_start)" in generated, "primitive payload arithmetic path changed"
+    assert "(*end).wrapping_sub" in generated, "primitive payload receiver value was not dereferenced"
+    assert "identity(*start)" in generated, "primitive payload function argument was not dereferenced"
+    assert "start: *start, end: *end" in generated, "primitive payload struct fields were not dereferenced"
+    assert "*start = 4_i64;" in generated, "primitive payload assignment did not write through"
+    _, rust_stderr = run(["rustc", *rust_flags, rust, "-o", binary])
+    assert "unnecessary parentheses" not in rust_stderr, rust_stderr
+    assert run([binary])[0] == "4\n12"
 
 for hook in ("MOSS_TEST_CONSUMER_DROP_MATCH_FACT",
              "MOSS_TEST_CONSUMER_PERTURB_MATCH_ARM_ACCESS"):
