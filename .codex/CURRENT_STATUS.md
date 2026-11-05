@@ -1,3 +1,29 @@
+### Team B checked match projection borrow (2026-11-05)
+
+- Branch `phase28-r7-010-team-b-clone-sites` is based on L7 integration SHA
+  `422d08a4bf3e5d2a34b3bbf34ef3487b9af0131b`.
+- Reviewed implementation commit `4c1093127c068c720661da26271ab572aa04477f`
+  uses exact `TypedMatchOwnershipFactV1::is_consuming` for Native match lowering.
+  For checked READ scrutinees it lowers the place through `read_call_place` and
+  fails closed if the resulting Rust would materialize `clone`, `cloned`, or
+  `to_owned`. Agent 2 gave focused GO on this exact implementation.
+- Test-only commit `7c15378d6717afb22de2ecb78000b930e372496f` adds a nested
+  projection that Fast Debug executes but native lowering rejects with
+  `MOSS_INTERNAL_INVARIANT` and no output artifact. Agent 2 gave focused GO on
+  this exact commit; it does not change implementation code.
+- Passing targeted gates: `make --jobs="$(nproc)"`,
+  `tests/phase28/r7_010/team_b/check_match_projection_read_borrow.py`,
+  `check_match_payload_write.py`, `check_phase28_b4_consumer_fails_closed.py`
+  (21 corruption cases), and `git diff --check`.
+- Focused scope removes one ORACLE-19 nested Option[String] match materialization
+  site. Overall Team B remains NO-GO: ORACLE-13/58 return transfer, ORACLE-20
+  projected READ, Map keys/values views, and runtime clone provenance remain
+  unresolved. No full suites run.
+- Current docs-only developer-experience feedback is captured at
+  `agent-feedback/phase28/team-b-r7-010-native-clone/match-projection-borrow/`.
+  Source/test diff from reviewed `7c15378` is empty; the following commit is
+  documentation/status only.
+
 ### Team B exact bare-raise carrier transfer consumer (2026-11-04)
 
 - Imported Team A's independently approved bare-raise authority commit
@@ -16039,147 +16065,180 @@ untouched.
   after the bare-raise consumer repair. Combined oracle and final default/shadow
   suites remain pending focused repairs.
 
-## Team A checker/API oracle follow-up (2026-11-05)
+## Combined Team B bare-raise delivery and fresh oracle run (2026-11-05)
 
-- Checker work is frozen for review on the scoped Team A oracle follow-up branch.
-  It adds exact conditional CollectionError authority for Map index read,
-  nested write-through, `get`, and non-AlwaysRaises `remove`; exact ReturnValue
-  action facts; bounded Map keys/values view facts; and direct Map Index→Member
-  projected READ facts. These authorities do not grant copy/borrow/ownership
-  permissions beyond their stated action.
-- The focused `tests/tooling/check_phase28_oracle_authority_facts.py` passes all
-  six baseline scenarios plus twelve drop/perturb/duplicate scenarios across
-  checker, interpreter, and native generation. Failed native generation leaves
-  no Rust output artifact. ORACLE-58 has exactly two closed return facts with
-  distinct `First`/`Second` specialization identities and `Consume` effects.
-- The nine targeted oracle fixtures report checker PASS; ORACLE-13 and ORACLE-58
-  also pass Fast Debug and native debug/optimized. In the full 60-fixture oracle
-  run, ORACLE-07 still passes checker and Fast Debug but native debug/optimized
-  panic on a missing map key. This remains a consumer integration dependency;
-  no consumer or oracle expectation/mapping file was changed in this branch.
-- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass.
-  Independent Agent 2 review is pending for the exact frozen commit.
+- L7 imported Team B's focused bare-raise consumer at reviewed source delivery
+  `384fb7a407c3adebc47c74610d97b89e51143ab5` as commits `858f5195`, `af6a3318`,
+  and `422d08a4`. This replaced the old nonprimitive `WorkError::Missing.clone()`
+  with exact checker-authorized carrier transfer. The final Team B test coverage
+  includes six dropped/perturbed/duplicate/wrong-edge fact or requirement cases,
+  all failing closed across Fast Debug, Native Debug and Native Optimized.
+- L7 rebuilt `moss` and `moss-opt`. Focused gates pass: bare-raise consumer,
+  ORACLE-07 recovery-clone gate (9 selected-error clones to 0), checker bare
+  raise and Echo authority, R7-009 (17 cases), pinned ORACLE-10A evidence, C
+  harness/inventory (45 unit cases), Phase 21 recovery semantics/native/peer,
+  feedback validation and `git diff --check`.
+- Fresh full v2 oracle run was generated against implementation SHA
+  `422d08a4bf3e5d2a34b3bbf34ef3487b9af0131b`; result JSON is
+  `tmp/phase28-r7-010-combined-results.json` and the harness ledger is
+  `tmp/phase28-r7-010-combined-ledger.md`. Result: 13/60 all-gate PASS; seven
+  semantic-status failures (ORACLE-07, -15, -28, -30, -35, -46, -48); 40 fixtures
+  fail submitted clone provenance; ORACLE-54 is additionally blocked by four
+  missing sidecars. The categories overlap at ORACLE-07. No infrastructure
+  failures were recorded.
+- Team C's independently reviewed ledger is integrated at
+  `docs/phase28/team-c/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER.md`; report SHA
+  `1a5562ac2487e12d0fdc985f1df438806f421ce0` received Agent 2 GO. Team C's
+  final delivery SHA `2227c2aa29828a1eec9b8ee51dd27dce357245c3` is pushed and
+  remote-verified; commits after the reviewed report SHA are docs-only closeout
+  changes (including an exact final-SHA pin).
+  It records 538 observed clone rows: 2 checked explicit-copy rows, 512
+  submitted unauthorized rows, and 24 missing-sidecar rows; 536 remain
+  unverified. This is a fresh 60-fixture result, distinct from earlier 524/500
+  artifact scopes.
+- Team A is repairing checker defects and adding exact MissingKey, ReturnValue,
+  collection-view, and projected-collection READ facts. Team B's reviewed
+  ORACLE-19 match-borrow checkpoint `4c1093127c068c720661da26271ab572aa04477f`
+  plus test-only negative follow-up `7c15378d6717afb22de2ecb78000b930e372496f`
+  have Agent 2 focused GO; the negative test proves unsupported nested
+  projections fail closed. Team B's scoped branch is pushed at
+  `004bec9a6d7b0923b83a466a56cf5a062df0d8a6`; its only post-review changes are
+  docs/feedback. L7 imported the code as `ea772f48` and test as `9cea1bc0`,
+  rebuilt `moss`, and validated the projection gate, Match WRITE gate and B4
+  21-case corruption harness. L7 owns registering the new gate in `tests/run.sh`.
+  Team B overall remains NO-GO: Map view/ReturnValue consumers and the broad
+  clone corpus remain unresolved. No runtime clone has been authorized by this
+  status update.
+- Full default and EST-shadow suite runs have not yet been performed; rerun the
+  60-fixture oracle after focused repairs settle.
 
-## Projected collection-read authority re-review (2026-11-05)
+## Team A checker/API oracle follow-up — reviewed GO (2026-11-05)
 
-- Independent Agent 2 returned NO-GO on checker commit
-  `ae80f9e5545b53778533cdf38d10a8875db958c4`. Findings: projected collection
-  type lacked an exact check against the indexed Map value/base types; the
-  phase authority gate compared only an occurrence subset and omitted the Map
-  index ID, projection span/statement, specialization identity, EST context,
-  and provenance; projection corruption tests did not cover these fields; the
-  Team A closeout file had a trailing blank line.
-- Follow-up adds `indexed_value_type` and `projection_base_type` to prove the
-  Map Index result is the member projection base. The projected member type
-  remains distinct (ORACLE-20 is `Map[String, Bucket]` projected to
-  `Bucket.items: Vector[Int]`) and is constrained to a closed supported
-  collection shape with closed type arguments.
-- Exact authority readback now matches both Map Index/member ExprIds, spans,
-  statement IDs, receiver identities/types, key/indexed/projection types,
-  specialization identity/context, EST context, and provenance.
-- Five additional projection corruptions (unrelated index occurrence,
-  specialization identity, invented projection type, missing provenance,
-  mismatched provenance) pass fail-closed check/interpreter/native-generation
-  tests; failed native generation leaves no Rust artifact. Full focused
-  authority suite passes with 23 unique cases, including all prior drop,
-  perturb, duplicate hooks. No new full oracle run has been done after this
-  follow-up yet. The prior native ORACLE-07 consumer blocker remains.
-- Agent2 returned GO on exact `9f36c0d220a1c45c5aa1feab275bc79f097d31cc`,
-  confirming the projected type linkage, full fact/requirement readback, five
-  corruption hooks, closeout whitespace, and 23-scenario authority gate. A
-  subsequent one-line null guard now checks Map key/value TypeRefs before
-  dereference; build and all 23 authority scenarios were rerun and pass. The
-  null-guard delivery has a new SHA and is pending delta review; no push yet.
+- Team A final reviewed SHA `21d150212e367e9d20d2a07627f49bba66d415f4`
+  is pushed to `origin/phase28-r7-010-team-a-oracle-followup`; exact remote ref
+  verified. Agent 2 GO applies to this SHA.
+- The delivery adds exact conditional MissingKey authority for Map index read,
+  nested write-through, `get`, and conditional `remove`; exact ReturnValue
+  transfer/primitive-read actions; bounded Map keys/values views; and direct
+  Map Index→Member projected READ facts.
+- Projected-read authority binds Map index value type to the Map value argument,
+  projection base to the checked index result, and projected type to the exact
+  member occurrence. Requirement readback checks all occurrence IDs/spans,
+  statement IDs, types, specialization identity/context, EST context, and
+  provenance. Five corruption cases cover wrong index, specialization,
+  invented result type, missing provenance, and mismatched provenance.
+- An L7 R7-009 integration regression showed unresolved generic return type
+  handling preempted the expected ownership diagnostic. The fix defers only
+  unresolved non-specialized return facts; concrete specialization facts remain
+  required. The exact negative case now returns
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`.
+- Final Team A focused gates: R7-009 17/17; authority harness 24 scenarios;
+  specialized ownership contract, feedback validation, build, and diff checks
+  pass. The Agent 2 reviewer also tested ORACLE-58 return fact drop/perturb/
+  duplicate hooks across checker, interpreter, and native generation; all nine
+  fail closed without Rust artifacts.
+- The native ORACLE-07 missing-key panic remains a Team B consumer integration
+  dependency; Team A changed no consumer or oracle expectation/mapping files.
 
-## R7-009 rejected return fact regression (2026-11-05)
+## L7 Team A integration checkpoint (2026-11-05)
 
-- L7 integration reproduced R7-009 `nonprimitive_index_return_rejected`: an
-  uninstantiated bare-Vector return had no concrete inferred result TypeRef,
-  and ReturnValue fact construction raised `MOSS_INTERNAL_INVARIANT` before
-  the later specialized ownership check. ReturnValue fact collection now
-  defers only unresolved template returns when no concrete specialization is
-  active. Concrete specializations still require exact ReturnValue facts; the
-  expected `OWNERSHIP_COLLECTION_ELEMENT_CONSUME` diagnostic is preserved.
-- Added that exact program as a negative authority-gate regression.
-  `check_phase28_r7_009_primitive_index.py ./moss` passes 17/17; authority
-  gate passes 24 scenarios (six baseline, one diagnostic negative, 17
-  corruption/drop cases). Corruptions fail closed in checker, interpreter,
-  and native generation with no Rust artifact. Build and `git diff --check`
-  pass. This change awaits exact-SHA Agent2 review; no push yet.
+- L7 staging branch `phase28-r7-010-l7-copy-authority` integrates the Team A
+  reviewed ancestry through `21d150212e367e9d20d2a07627f49bba66d415f4`; current
+  L7 HEAD is `7997bf35a61cc186f90bab85a10b4e4bdb09ea30`. The shared status merge
+  retained both the prior L7 oracle ledger and the reviewed Team A handoff.
+- Registered `check_phase28_oracle_authority_facts.py` in `tests/run.sh`.
+  Rebuilt `moss`; on this exact L7 SHA, R7-009 passes 17/17, the authority
+  harness passes 24 scenarios, and the specialized ownership contract passes.
+- Before the final ReturnValue deferral commit was integrated, L7 also passed
+  focused bare-raise transfer, Echo authority, B4 21-case corruption, Map.get
+  write-through, ORACLE-19 match borrow, ORACLE-32 payload WRITE, collection
+  outcomes, nested explicit copy, ORACLE-51 join slot, explicit-copy source
+  borrow, and pinned ORACLE-10A evidence gates. Rerun these after Team B's
+  consumer delivery before treating them as final combined evidence.
+- Team B is implementing checker-authorized conditional Map index read and
+  write-through lowering in isolated `interpreter.hpp` and
+  `native_generator.cpp` changes, with a dedicated ORACLE-07 gate. Its current
+  worktree is not integrated or independently reviewed. Update it to consume
+  Team A's latest `21d15021` base before freezing.
+- Fresh 60-fixture oracle, full default suite, EST-shadow suite, final clone
+  provenance audit, and final Agent 2 review remain pending. No production
+  branch merge has occurred.
 
-## Team B checked consumer follow-up (2026-11-05)
+## R7-010 Team B checked-consumer integration update (2026-11-05)
 
-- Active worktree: `phase28-r7-010-team-b-typed-consumer-followup`, based on
-  reviewed Team A chain through `21d150212e367e9d20d2a07627f49bba66d415f4`.
-  This worktree is separate from the frozen runtime-clone evidence branch.
-- Reconciled projected-read producer/consumer evidence on this exact source and
-  binary: `MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS=1 ./moss check
-  tests/phase28/oracle/fixtures/oracle_20_take_nested_map_vector.moss --json`
-  reports `projected_read=1`. The earlier negative gate used a different
-  minimal fixture that had no producer fact; it was replaced by an ORACLE-20
-  positive parity/corruption gate.
-- `check_projected_collection_read_fail_closed.py ./moss
-  tmp/team-b-consumer/oracle20-projected` passes Native Debug, Native
-  Optimized, and Fast Debug (`2\nb1\n0\n`); emitted line-12 pipeline borrows
-  the projected collection and has no collection clone. All five projected
-  authority drop/duplicate/perturb hooks fail closed in Native and Fast Debug,
-  and failed Native generation leaves no artifact.
-- Re-ran the conditional Map gate (20/20 corruption combinations), Map view
-  gate (5/5), and ReturnValue transfer gate (5/5); all pass. Build was current,
-  feedback validation passes, and `git diff --check` passes. Full suites were
-  not run. The consumer candidate is now frozen locally for independent review;
-  broader runtime clone groups remain unapproved and overall Team B status
-  remains NO-GO.
+- Team A producer-shape harness follow-up `868866ebe78e67d4663a1fe3f9c619ea382cfaf5` received independent Agent 2 GO. It adds only authority test and report coverage: ORACLE-20/minimal direct Map Index→Member produce one fact; explicit-copy has no projected-read fact; unsupported alias is rejected. No checker logic changed.
+- Team B consumer checkpoint `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e` is pushed and remote-verified. Independent Agent 2 gave focused consumer GO after rebuilding and rerunning the Map error/write-through, CollectionView, projected-read and ReturnValue gates. Native Debug/Optimized/Fast Debug parity and corruption/no-artifact checks pass; feedback and diff checks pass.
+- L7 is integrating that exact reviewed SHA on `phase28-r7-010-l7-copy-authority`; the Team B `.codex/CURRENT_STATUS.md` change is being reconciled with this file's existing L7 ledger. L7 owns registering Team B's four new gates in `tests/run.sh` with isolated test-build output paths.
+- Overall Team B remains NO-GO for clone provenance: generated runtime clone groups remain unapproved. The focused consumer GO does not authorize a runtime clone. Full 60-fixture oracle, default/shadow suites, final clone audit and final independent implementation review remain pending. No production branch merge has occurred.
 
-## Team B post-integration consumer regression follow-up (2026-11-05)
+## L7 combined consumer checkpoint `e7d7fb557cc5f7227d75eabd49e4670a6573ed60` (2026-11-05)
 
-- Follow-up is a new commit on the scoped Team B consumer branch; reviewed
-  `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e` remains unchanged as its parent.
-- Restrict projected collection-read fact lookup to a direct indexed member
-  whose exact checked collection type is Map. Direct Vector-index match reads
-  continue to use the exact match fact without querying the Map-only fact.
-  Unsupported nested indexed member paths fail closed at the checked match
-  consumer, before artifact emission; the guard uses the exact match fact's
-  `is_consuming` field rather than the legacy source spelling.
-- Native generic nonprimitive indexed lowering now accepts only exact checked
-  `Read` or `Write` ownership effects. ORACLE-51's branch RHS facts are exact
-  `Write` effects because the borrowed element is mutated later; it does not
-  rely on inferred READ or fallback behavior.
-- Targeted gates pass: Phase 28 authority facts; conditional Map (20/20
-  corruption combinations); Map views (5/5); ReturnValue (5/5); ORACLE-20
-  projected Map read; ORACLE-19 direct indexed match and nested projection
-  fail-closed regression; ORACLE-51 Native Debug/Optimized and Fast Debug
-  parity plus explicit-copy corruption checks; feedback validator and diff
-  check. Full suites remain unrun. Broad runtime clone authorization and
-  provenance audit remain NO-GO.
-- The existing `TypedEchoArgumentFactV1` is the authority for `echo
-  b.elements[1]`: exact Echo statement/argument and EST occurrence identity,
-  checked `Vector[String]` receiver and `String` element types, READ access,
-  display-only nonescaping lifetime, and no copy permission. It does not
-  require or imply a local-ownership transfer fact.
-- `MOSS_TEST_VALIDATE_ECHO_ARGUMENT_CONTRACT=1
-  MOSS_TEST_REQUIRE_BORROWED_ECHO_ARGUMENT_FACT=1 ./moss check
-  tests/phase28/oracle_r7_005_1/fixtures/oracle_42_custom_wrapper_remove.moss
-  --json` passes on the Team A checker. The Echo authority harness now covers
-  this field-projected receiver plus drop, access-perturbation, and declared
-  EST-context perturbation; all fail closed. This is a test-only follow-up,
-  pending exact-SHA Agent2 review; no checker or consumer code changed.
+- Isolated staging branch `phase28-r7-010-l7-copy-authority` now contains reviewed Team A test follow-up `868866ebe78e67d4663a1fe3f9c619ea382cfaf5` and exact reviewed Team B consumer SHA `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e` (parent `21d150212e367e9d20d2a07627f49bba66d415f4`). The combined integration commit is `e7d7fb557cc5f7227d75eabd49e4670a6573ed60`.
+- Team A follow-up received independent GO for the three producer-shape cases. Team B received independent focused-consumer GO: exact typed authority consumers, Native Debug/Optimized/Fast Debug parity, and fail-closed drop/duplicate/perturb coverage passed. This is not a clone-provenance GO.
+- L7 resolved `.codex/CURRENT_STATUS.md` by preserving the existing L7 ledger and adding this integration record. Registered the four Team B gates in `tests/run.sh` using isolated output directories under the provided test-build path.
+- On the integrated tree, `make --jobs="$(nproc)" moss`, authority facts (27 scenarios), R7-009 equivalence (17/17), conditional Map (20/20 corruption combinations), Map CollectionView (5/5 hooks), projected read (5/5 hooks), ReturnValue (5/5 hooks), and `git diff --check` pass. Team A's producer proof says no checker logic change was required; ORACLE-20 emits one authoritative projected-read fact.
+- Remaining: rerun the prior match/take/copy/EST gates after Team B integration, classify and close the clone audit, run a fresh full 60-fixture oracle, then the established default and EST-shadow baseline/candidate suite comparisons and final independent review. The last full oracle result remains the earlier 13/60 at `422d08a4`; it is not a result for this combined SHA. Clone provenance remains NO-GO and no runtime clone is authorized.
 
-## R7-010 specialized ReturnValue EST-context correction (2026-11-05)
+## R7-010 indexed-consumer integration follow-up `4fbff1d1` (2026-11-05)
 
-- During `checking_specialization_`, ReturnValue facts previously advertised
-  `specialization:<hash>` as `est_fact_context`, but the arena retains the
-  source occurrence under the generic callable context (`fn:inspect`). The
-  exact specialized ReturnValue fact already carries the closed First/Second
-  TypeRef, specialization identity/context, action/access, and binding/source
-  definition. The checker now points `est_fact_context` to the actual generic
-  EST occurrence context, validates readback there, and keeps specialization
-  identity separate.
-- The authority harness asserts two unique specialization facts share the
-  exact generic return ExprId/context while their closed First/Second types,
-  Consume actions/effects, and specialization identities remain distinct.
-  A return EST-context perturbation fails closed in check/interpreter/native
-  generation. The authority suite passes 28 scenarios, R7-009 passes 17/17,
-  Echo argument authority passes 8 cases, feedback validation and diff check
-  pass. Native/interpreter consumers still need to consume this corrected
-  context contract; no oracle expectations changed.
+- Team B follow-up `4fbff1d1f5cc1b8969281faeecd4d0da5b48ab51`, parent `d40941a531f9e47a14bd51cc7b2e65130a6a9f8e`, received independent Agent 2 GO and is pushed to `origin/phase28-r7-010-team-b-typed-consumer-followup` with exact SHA verified.
+- Follow-up limits projected-read authority resolution to direct indexed Map member expressions. Nonprimitive indexed places now accept only exact checker READ or WRITE facts, not CONSUME. The nested match guard uses `match_fact->is_consuming`, preserving checker semantic authority. This restored the ORACLE-19 nested projection fail-closed diagnostic and ORACLE-51 branch-slot native parity without changing checker facts or oracle expectations.
+- Agent 2 independently rebuilt and passed the authority, conditional Map (20 corruption combinations), CollectionView (5 hooks), ReturnValue (5 hooks), projected Map read (5 hooks), ORACLE-19 direct+nested/no-artifact, ORACLE-51 branch-slot/parity/copy-corruption, feedback, and diff gates. Overall clone provenance remains NO-GO.
+- L7 is integrating the exact reviewed delta. Remaining: complete legacy gate rerun, classify the clone inventory and provenance, fresh 60-fixture oracle, full default/EST-shadow comparisons, and final independent review. No runtime clone is authorized.
+
+## R7-010 legacy-gate restoration on `0fd269d2` (2026-11-05)
+
+- Combined staging SHA `0fd269d2aba5c7758a9dcf57f38978ed7bf0afc8` integrates the exact reviewed Team B fix `4fbff1d1f5cc1b8969281faeecd4d0da5b48ab51` after focused Agent 2 GO.
+- Rebuilt `moss`. On this combined tree, Team B Map error/write-through, CollectionView, ReturnValue, projected-read, ORACLE-19 direct and nested fail-closed, ORACLE-51 branch-slot, and 27-scenario authority gates pass; R7-009 is 17/17. Existing bare-raise transfer, explicit-copy source borrow, Map.get, match payload WRITE, nested-copy helper, collection outcomes, B4 21-case corruption, Echo authority, feedback validation, and diff check also pass.
+- The earlier ORACLE-19 diagnostic mismatch and ORACLE-51 indexed-place emission failure are fixed without checker/oracle changes. ORACLE-51 consumes its existing exact `Write` authority; the nested match path consults `match_fact->is_consuming` rather than source spelling.
+- Team B is independently auditing a pinned 67-artifact corpus, reporting 1,933 candidate operator hits over 84 generation-site groups and 259 Clone-derive declarations. This scope differs from the 60-fixture clone ledger; group-level authorization and deduplication are not complete yet. No runtime site is approved.
+- Fresh 60-fixture oracle and full default/EST-shadow suites remain pending; the previously recorded 13/60 is not representative of this SHA. No production branch merge has occurred.
+
+## Fresh v2 oracle result on combined implementation `8b9ad2c5` (2026-11-05)
+
+- Ran all 60 certified v2 fixtures on implementation SHA `8b9ad2c578e2beb60bfcaf5a7ee7f4a8f2b72f72` with isolated artifacts and fresh output files `tmp/phase28-r7-010-combined-8b9ad2c5.json` and `.md`. Result: 19/60 all applicable gates pass, 41 fail one or more gates.
+- Four semantic/execution failures: ORACLE-42 native Debug/Optimized emission, ORACLE-54 imported provider `.mossi` build, ORACLE-55 native Debug/Optimized emission, ORACLE-58 Fast Debug plus native Debug/Optimized. Exact failure details are in `docs/phase28/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER_8B9AD2C5.md`.
+- Thirty-seven additional fixtures fail clone provenance with 448 unauthorized emitted clone rows; no missing-sidecar blocks or harness infrastructure failures in this run. Rows are occurrences, not distinct causes. Team B is reconciling its separate pinned 67-artifact / 84-site audit; no runtime clones are authorized.
+- This fresh result supersedes neither the earlier ledger nor changes any expectations; it is bound to exact SHA `8b9ad2c5`. Targeted consumer fixes integrated later in `0fd269d2` have been revalidated on the current staging source; rerun the full oracle after the four semantic failures are repaired. Final default/shadow suites remain pending.
+
+## Team A ORACLE-42 Echo authority shape follow-up (2026-11-05)
+
+- Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a` is pushed and remote-verified; Agent 2 GO applies to the exact SHA. It adds ORACLE-42's nested `b.elements[1]` Echo borrow to the existing `TypedEchoArgumentFactV1` contract harness, with drop/access/context perturbation checks. No checker or consumer semantics changed.
+- The gate passes all eight baseline/corruption cases. Its fact authorizes only an exact display-only Echo READ borrow with nonescape and `permits_copy=false`. L7 is integrating the reviewed test follow-up; Team B is implementing the native consumer of this existing fact.
+
+## L7 integrated Team A ORACLE-42 authority test checkpoint (2026-11-05)
+
+- Staging merge commit `9dc745fe06ffd1660b8a2a3d30552fe9d93d3c01` integrates exact reviewed Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a`.
+- `python3 tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes all eight cases on this source: existing exact nested EchoArgument fact plus drop, access-perturb, and EST-context-perturb fail-closed checks. Team B still needs to consume this authority for ORACLE-42 native lowering.
+
+## Team A ORACLE-58 ReturnValue context follow-up (2026-11-05)
+
+- Team A exact SHA `b4af885d879abd8da0afab475facb8b71dd37e0b` is pushed and remote-verified with independent Agent 2 GO. It sets ReturnValue `est_fact_context` to the actual generic arena context while preserving per-specialization contexts, IDs, closed types, and actions; it adds exact generic EST readback and a context-perturb corruption hook. The 28-scenario authority harness, R7-009 17/17, Echo authority 8 cases, feedback, and diff checks pass.
+- The exact reviewed checker change is now being integrated into L7 staging and must be included as ancestry in Team B's consumer follow-up before final review.
+
+## L7 ORACLE-54 ReturnValue artifact transport WIP (2026-11-05)
+
+- L7 cherry-picked Team A's header-only `TypedReturnValueArtifactFactV1` schema
+  (`46e548a41113e8ce7cef2f2fa0b9bbb903f680f6`, now in staging ancestry as
+  `5b7f6014`). No oracle expectation or digest changed.
+- L7's current uncommitted `src/moss.cpp` / `src/ast.hpp` work writes Section 2
+  v2 ReturnValue rows bound to canonical statement-body hashes, stable callable
+  identity, preorder statement ordinal, ReturnValue slot, source span and EST
+  fingerprint. Import validates the hash, callable/module/source provenance,
+  statement shape and rebuilt handle fingerprint, assigns fresh imported
+  statement IDs, and projects only the transported checked TypeRef/action/access
+  into typed requirements/facts.
+- `make --jobs="$(nproc)" moss` passes on this WIP. Manual imported-artifact
+  drop and action-perturb hooks both fail before execution with
+  `SOURCE_FREE_EXECUTION_BODY_INVALID`; the positive Fast Debug run currently
+  reaches the imported fact and still blocks in the not-yet-integrated Team B
+  consumer change because the reconstructed EST has no type row. Confirmed
+  checker `int` versus EST `<missing>`; Team B is implementing the exact external
+  owner exception while preserving fail-closed behavior for present mismatches.
+- Team B reports its WIP provider native build and ORACLE-13/58 focused parity
+  gates green; it has not frozen or received independent review. Team A is
+  investigating a separate `check_phase27_est_mossi.py` failure at a generic
+  ReturnValue (`checker could not retain exact return-value authority`).
+- Fresh 60-fixture oracle, final default/shadow suites, clone provenance audit,
+  and final independent review remain pending. This transport is WIP and is not
+  an accepted Phase 28 implementation.

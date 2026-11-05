@@ -658,6 +658,12 @@ struct Function {
   vector<Stmt> body;
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
+  // Versioned checker-authority records transported beside the source-free
+  // execution body. Kept as wire rows until the checker has rebuilt imported
+  // EST handles; moss.cpp then validates and projects them into typed facts.
+  vector<string> execution_return_value_artifact_records;
+  string execution_return_value_body_hash;
+  unsigned execution_body_section_version{0};
   std::optional<string> execution_result_expression;
   string execution_source_file;
   // Bound at module name resolution, before checking. Source-free functions
