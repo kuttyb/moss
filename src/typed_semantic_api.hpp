@@ -606,6 +606,240 @@ struct TypedCollectionOutcomeFactV1 {
 
 struct TypedCollectionOutcomeRequirementV1 : TypedCollectionOutcomeFactV1 {};
 
+// A conditional Map miss is an exceptional edge attached to an exact checked
+// operation. It authorizes neither ownership transfer nor materialization.
+struct TypedConditionalCollectionErrorFactV1 {
+  enum class Operation { MapIndexRead, MapIndexWriteThrough, MapGet, MapRemove };
+  enum class Availability { Present, MissingOperation, MissingStatement,
+                            MissingReceiver, MissingKey, MissingType,
+                            MissingExceptionalEdge, Contradictory };
+  Operation operation{Operation::MapIndexRead};
+  Availability availability{Availability::MissingOperation};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId operation_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan operation_occurrence_span;
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_expression_occurrence_id{UINT32_MAX};
+  est::ExprId key_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan receiver_occurrence_span;
+  est::SourceSpan key_occurrence_span;
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  TypeRef receiver_type;
+  TypeRef key_type;
+  TypeRef result_type;
+  TypeRef write_value_type;
+  std::string error_type_identity{"std__CollectionError"};
+  std::string error_variant_identity{"MissingKey"};
+  bool exceptional_edge_authorized{false};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_authoritative() const noexcept {
+    if (availability != Availability::Present ||
+        est_arena_index == UINT32_MAX ||
+        operation_expression_occurrence_id == UINT32_MAX ||
+        statement_occurrence_id == UINT32_MAX ||
+        receiver_expression_occurrence_id == UINT32_MAX ||
+        key_expression_occurrence_id == UINT32_MAX ||
+        receiver_binding_identity.empty() || receiver_definition_identity.empty() ||
+        !receiver_type || !receiver_type->is_closed() ||
+        !key_type || !key_type->is_closed() || !result_type ||
+        !result_type->is_closed() || error_type_identity != "std__CollectionError" ||
+        error_variant_identity != "MissingKey" || !exceptional_edge_authorized ||
+        specialization_context.empty() || est_fact_context.empty() ||
+        provenance.source_file.empty() || provenance.line <= 0 ||
+        provenance.defining_module_id.empty() ||
+        provenance.enclosing_callable_id.empty() ||
+        receiver_type->kind != TypeKind::Builtin || receiver_type->name != "map" ||
+        receiver_type->type_args.size() != 2 ||
+        !receiver_type->type_args.front() ||
+        !receiver_type->type_args.front()->structurally_equal(*key_type))
+      return false;
+    if (operation == Operation::MapIndexWriteThrough)
+      return write_value_type && write_value_type->is_closed();
+    return !write_value_type;
+  }
+};
+struct TypedConditionalCollectionErrorRequirementV1
+    : TypedConditionalCollectionErrorFactV1 {};
+
+enum class TypedReturnValueActionV1 {
+  TransferOwnedValue, ReadCopyPrimitive
+};
+struct TypedReturnValueFactV1 {
+  enum class Availability { Present, MissingReturnOccurrence,
+                            MissingExpression, MissingType, MissingBinding,
+                            Contradictory };
+  Availability availability{Availability::MissingReturnOccurrence};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan expression_occurrence_span;
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+  TypeRef expression_type;
+  std::string source_binding_identity;
+  std::string source_definition_identity;
+  Effect required_access{Effect::Consume};
+  TypedReturnValueActionV1 action{TypedReturnValueActionV1::TransferOwnedValue};
+  bool checker_proved_owned_rvalue{false};
+
+  bool is_authoritative() const noexcept {
+    if (availability != Availability::Present ||
+        statement_occurrence_id == UINT32_MAX ||
+        est_arena_index == UINT32_MAX || expression_occurrence_id == UINT32_MAX ||
+        expression_occurrence_span.source_end <=
+            expression_occurrence_span.source_begin ||
+        specialization_context.empty() || est_fact_context.empty() ||
+        provenance.source_file.empty() || provenance.line <= 0 ||
+        provenance.defining_module_id.empty() ||
+        provenance.enclosing_callable_id.empty() || !expression_type ||
+        !expression_type->is_closed()) return false;
+    if (action == TypedReturnValueActionV1::ReadCopyPrimitive)
+      return required_access == Effect::Read && source_binding_identity.empty() &&
+          source_definition_identity.empty() && !checker_proved_owned_rvalue &&
+          expression_type->kind == TypeKind::Primitive &&
+          (expression_type->name == "int" || expression_type->name == "float" ||
+           expression_type->name == "bool" || expression_type->name == "char");
+    if (action != TypedReturnValueActionV1::TransferOwnedValue ||
+        required_access != Effect::Consume) return false;
+    const bool binding = !source_binding_identity.empty() &&
+        !source_definition_identity.empty();
+    return binding != checker_proved_owned_rvalue;
+  }
+};
+struct TypedReturnValueRequirementV1 : TypedReturnValueFactV1 {};
+
+enum class TypedCollectionViewOperationV1 { MapKeys, MapValues };
+struct TypedCollectionViewFactV1 {
+  enum class Availability { Present, MissingOperation, MissingStatement,
+                            MissingSourceBinding, MissingLastUse, Escapes,
+                            Contradictory };
+  Availability availability{Availability::MissingOperation};
+  TypedCollectionViewOperationV1 operation{TypedCollectionViewOperationV1::MapKeys};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId operation_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan operation_occurrence_span;
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  std::string view_binding_identity;
+  std::string view_definition_identity;
+  std::uint32_t last_use_statement_occurrence_id{UINT32_MAX};
+  std::vector<std::uint32_t> bounded_read_use_statement_occurrences;
+  bool direct_temporary{false};
+  TypeRef receiver_type;
+  TypeRef result_type;
+  Effect required_access{Effect::Read};
+  bool bounded_non_escaping_lifetime{false};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_authoritative() const noexcept {
+    if (availability != Availability::Present ||
+        est_arena_index == UINT32_MAX ||
+        operation_expression_occurrence_id == UINT32_MAX ||
+        statement_occurrence_id == UINT32_MAX ||
+        receiver_binding_identity.empty() || receiver_definition_identity.empty() ||
+        last_use_statement_occurrence_id == UINT32_MAX ||
+        !receiver_type || !receiver_type->is_closed() ||
+        receiver_type->kind != TypeKind::Builtin || receiver_type->name != "map" ||
+        receiver_type->type_args.size() != 2 || !result_type ||
+        !result_type->is_closed() || result_type->kind != TypeKind::Builtin ||
+        result_type->name != "vector" || result_type->type_args.size() != 1 ||
+        required_access != Effect::Read || !bounded_non_escaping_lifetime ||
+        specialization_context.empty() || est_fact_context.empty() ||
+        provenance.source_file.empty() || provenance.line <= 0 ||
+        provenance.defining_module_id.empty() ||
+        provenance.enclosing_callable_id.empty()) return false;
+    const auto& element = operation == TypedCollectionViewOperationV1::MapKeys
+        ? receiver_type->type_args.front() : receiver_type->type_args.back();
+    return element && result_type->type_args.front() &&
+        element->structurally_equal(*result_type->type_args.front()) &&
+        (direct_temporary
+             ? view_binding_identity.empty() && view_definition_identity.empty() &&
+                   last_use_statement_occurrence_id == statement_occurrence_id &&
+                   bounded_read_use_statement_occurrences.size() == 1 &&
+                   bounded_read_use_statement_occurrences.front() == statement_occurrence_id
+             : !view_binding_identity.empty() && !view_definition_identity.empty() &&
+                   !bounded_read_use_statement_occurrences.empty());
+  }
+};
+struct TypedCollectionViewRequirementV1 : TypedCollectionViewFactV1 {};
+
+struct TypedProjectedCollectionReadFactV1 {
+  enum class Availability { Present, MissingProjection, MissingQueryUse,
+                            MissingBinding, Escapes, Contradictory };
+  Availability availability{Availability::MissingProjection};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId map_index_expression_occurrence_id{UINT32_MAX};
+  est::ExprId member_projection_expression_occurrence_id{UINT32_MAX};
+  est::ExprId query_source_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan projection_occurrence_span;
+  std::uint32_t projection_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t query_statement_occurrence_id{UINT32_MAX};
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  TypeRef receiver_type;
+  TypeRef key_type;
+  TypeRef indexed_value_type;
+  TypeRef projection_base_type;
+  TypeRef projected_collection_type;
+  Effect required_access{Effect::Read};
+  bool temporary_non_escaping_query_borrow{false};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        est_arena_index != UINT32_MAX &&
+        map_index_expression_occurrence_id != UINT32_MAX &&
+        member_projection_expression_occurrence_id != UINT32_MAX &&
+        query_source_expression_occurrence_id != UINT32_MAX &&
+        projection_statement_occurrence_id != UINT32_MAX &&
+        query_statement_occurrence_id != UINT32_MAX &&
+        !receiver_binding_identity.empty() && !receiver_definition_identity.empty() &&
+        receiver_type && receiver_type->is_closed() &&
+        receiver_type->kind == TypeKind::Builtin && receiver_type->name == "map" &&
+        receiver_type->type_args.size() == 2 &&
+        receiver_type->type_args.front() && receiver_type->type_args.back() &&
+        key_type && key_type->is_closed() &&
+        receiver_type->type_args.front()->structurally_equal(*key_type) &&
+        indexed_value_type && indexed_value_type->is_closed() &&
+        receiver_type->type_args.back()->structurally_equal(*indexed_value_type) &&
+        projection_base_type && projection_base_type->is_closed() &&
+        indexed_value_type->structurally_equal(*projection_base_type) &&
+        projected_collection_type && projected_collection_type->is_closed() &&
+        projected_collection_type->kind == TypeKind::Builtin &&
+        (projected_collection_type->name == "vector" ||
+         projected_collection_type->name == "map" ||
+         projected_collection_type->name == "queue") &&
+        projected_collection_type->type_args.size() ==
+            (projected_collection_type->name == "map" ? 2u : 1u) &&
+        std::all_of(projected_collection_type->type_args.begin(),
+                    projected_collection_type->type_args.end(),
+                    [](const TypeRef& argument) {
+                      return argument && argument->is_closed();
+                    }) &&
+        required_access == Effect::Read && temporary_non_escaping_query_borrow &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty() &&
+        !provenance.enclosing_callable_id.empty();
+  }
+};
+struct TypedProjectedCollectionReadRequirementV1
+    : TypedProjectedCollectionReadFactV1 {};
+
 enum class TypedEchoArgumentModeV1 {
   ExpressionValue, BorrowedVectorElement
 };
@@ -1079,6 +1313,20 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedCollectionOutcomeFactV1> collection_outcome_facts;
   std::vector<TypedCollectionOutcomeRequirementV1>
       required_collection_outcome_occurrences;
+  std::vector<TypedConditionalCollectionErrorFactV1>
+      conditional_collection_error_facts;
+  std::vector<TypedConditionalCollectionErrorRequirementV1>
+      required_conditional_collection_error_occurrences;
+  std::vector<TypedReturnValueFactV1> return_value_facts;
+  std::vector<TypedReturnValueRequirementV1>
+      required_return_value_occurrences;
+  std::vector<TypedCollectionViewFactV1> collection_view_facts;
+  std::vector<TypedCollectionViewRequirementV1>
+      required_collection_view_occurrences;
+  std::vector<TypedProjectedCollectionReadFactV1>
+      projected_collection_read_facts;
+  std::vector<TypedProjectedCollectionReadRequirementV1>
+      required_projected_collection_read_occurrences;
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
@@ -1791,6 +2039,239 @@ struct TypedSemanticModuleV1 {
     for (const auto& requirement : required_collection_outcome_occurrences)
       result.push_back(find_collection_outcome_fact(requirement));
     return result;
+  }
+
+  const TypedConditionalCollectionErrorFactV1*
+  find_conditional_collection_error_fact(
+      const TypedConditionalCollectionErrorRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& a, const TypeRef& b) {
+      return a == b || (a && b && a->structurally_equal(*b));
+    };
+    auto same_span = [](const est::SourceSpan& a, const est::SourceSpan& b) {
+      return a.line == b.line && a.column == b.column &&
+          a.origin_id == b.origin_id && a.source_begin == b.source_begin &&
+          a.source_end == b.source_end;
+    };
+    auto same_fields = [&](const TypedConditionalCollectionErrorFactV1& a,
+                           const TypedConditionalCollectionErrorFactV1& b) {
+      return a.operation == b.operation && a.availability == b.availability &&
+          a.est_arena_index == b.est_arena_index &&
+          a.operation_expression_occurrence_id == b.operation_expression_occurrence_id &&
+          same_span(a.operation_occurrence_span, b.operation_occurrence_span) &&
+          a.statement_occurrence_id == b.statement_occurrence_id &&
+          a.receiver_expression_occurrence_id == b.receiver_expression_occurrence_id &&
+          a.key_expression_occurrence_id == b.key_expression_occurrence_id &&
+          same_span(a.receiver_occurrence_span, b.receiver_occurrence_span) &&
+          same_span(a.key_occurrence_span, b.key_occurrence_span) &&
+          a.receiver_binding_identity == b.receiver_binding_identity &&
+          a.receiver_definition_identity == b.receiver_definition_identity &&
+          same_type(a.receiver_type, b.receiver_type) &&
+          same_type(a.key_type, b.key_type) && same_type(a.result_type, b.result_type) &&
+          same_type(a.write_value_type, b.write_value_type) &&
+          a.error_type_identity == b.error_type_identity &&
+          a.error_variant_identity == b.error_variant_identity &&
+          a.exceptional_edge_authorized == b.exceptional_edge_authorized &&
+          a.specialization_identity == b.specialization_identity &&
+          a.specialization_context == b.specialization_context &&
+          a.est_fact_context == b.est_fact_context &&
+          a.provenance.source_file == b.provenance.source_file &&
+          a.provenance.line == b.provenance.line &&
+          a.provenance.defining_module_id == b.provenance.defining_module_id &&
+          a.provenance.enclosing_callable_id == b.provenance.enclosing_callable_id;
+    };
+    std::size_t required_matches = 0;
+    for (const auto& candidate : required_conditional_collection_error_occurrences)
+      if (candidate.operation == requirement.operation &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.operation_expression_occurrence_id ==
+              requirement.operation_expression_occurrence_id &&
+          candidate.specialization_context == requirement.specialization_context)
+        ++required_matches;
+    if (required_matches != 1)
+      throw std::invalid_argument("missing or duplicate conditional CollectionError requirement");
+    const TypedConditionalCollectionErrorFactV1* found = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : conditional_collection_error_facts)
+      if (candidate.operation == requirement.operation &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.operation_expression_occurrence_id ==
+              requirement.operation_expression_occurrence_id &&
+          candidate.specialization_context == requirement.specialization_context) {
+        found = &candidate;
+        ++fact_matches;
+      }
+    if (fact_matches != 1 || !found ||
+        !same_fields(*found, requirement) || !found->is_authoritative())
+      throw std::invalid_argument("conditional CollectionError fact is missing, duplicate, or contradictory");
+    return found;
+  }
+
+  const TypedReturnValueFactV1* find_return_value_fact(
+      const TypedReturnValueRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& a, const TypeRef& b) {
+      return a == b || (a && b && a->structurally_equal(*b));
+    };
+    const auto key = [&](const TypedReturnValueFactV1& a) {
+      return a.statement_occurrence_id == requirement.statement_occurrence_id &&
+          a.est_arena_index == requirement.est_arena_index &&
+          a.expression_occurrence_id == requirement.expression_occurrence_id &&
+          a.specialization_context == requirement.specialization_context &&
+          a.specialization_identity == requirement.specialization_identity;
+    };
+    std::size_t req_count = 0;
+    for (const auto& item : required_return_value_occurrences) req_count += key(item);
+    const TypedReturnValueFactV1* found = nullptr;
+    std::size_t fact_count = 0;
+    for (const auto& item : return_value_facts) if (key(item)) {
+      found = &item;
+      ++fact_count;
+    }
+    const auto same_span = [](const est::SourceSpan& a, const est::SourceSpan& b) {
+      return a.line == b.line && a.column == b.column &&
+          a.origin_id == b.origin_id && a.source_begin == b.source_begin &&
+          a.source_end == b.source_end;
+    };
+    const bool same = found && same_type(found->expression_type, requirement.expression_type) &&
+        found->availability == requirement.availability &&
+        same_span(found->expression_occurrence_span, requirement.expression_occurrence_span) &&
+        found->specialization_identity == requirement.specialization_identity &&
+        found->est_fact_context == requirement.est_fact_context &&
+        found->provenance.source_file == requirement.provenance.source_file &&
+        found->provenance.line == requirement.provenance.line &&
+        found->provenance.defining_module_id == requirement.provenance.defining_module_id &&
+        found->provenance.enclosing_callable_id == requirement.provenance.enclosing_callable_id &&
+        found->source_binding_identity == requirement.source_binding_identity &&
+        found->source_definition_identity == requirement.source_definition_identity &&
+        found->required_access == requirement.required_access &&
+        found->action == requirement.action &&
+        found->checker_proved_owned_rvalue == requirement.checker_proved_owned_rvalue;
+    if (req_count != 1 || fact_count != 1 || !same || !found->is_authoritative()) {
+      throw std::invalid_argument("return-value checker fact is missing, duplicate, or contradictory");
+    }
+    return found;
+  }
+
+  const TypedCollectionViewFactV1* find_collection_view_fact(
+      const TypedCollectionViewRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& a, const TypeRef& b) {
+      return a == b || (a && b && a->structurally_equal(*b));
+    };
+    const auto key = [&](const TypedCollectionViewFactV1& a) {
+      return a.operation == requirement.operation &&
+          a.est_arena_index == requirement.est_arena_index &&
+          a.operation_expression_occurrence_id ==
+              requirement.operation_expression_occurrence_id &&
+          a.statement_occurrence_id == requirement.statement_occurrence_id &&
+          a.specialization_context == requirement.specialization_context;
+    };
+    std::size_t req_count = 0;
+    for (const auto& item : required_collection_view_occurrences) req_count += key(item);
+    const TypedCollectionViewFactV1* found = nullptr;
+    std::size_t fact_count = 0;
+    for (const auto& item : collection_view_facts) if (key(item)) {
+      found = &item;
+      ++fact_count;
+    }
+    const bool same = found && found->availability == requirement.availability &&
+        found->receiver_binding_identity == requirement.receiver_binding_identity &&
+        found->receiver_definition_identity == requirement.receiver_definition_identity &&
+        found->view_binding_identity == requirement.view_binding_identity &&
+        found->view_definition_identity == requirement.view_definition_identity &&
+        found->last_use_statement_occurrence_id == requirement.last_use_statement_occurrence_id &&
+        found->direct_temporary == requirement.direct_temporary &&
+        found->bounded_read_use_statement_occurrences ==
+            requirement.bounded_read_use_statement_occurrences &&
+        same_type(found->receiver_type, requirement.receiver_type) &&
+        same_type(found->result_type, requirement.result_type) &&
+        found->required_access == requirement.required_access &&
+        found->bounded_non_escaping_lifetime == requirement.bounded_non_escaping_lifetime &&
+        found->specialization_identity == requirement.specialization_identity &&
+        found->est_fact_context == requirement.est_fact_context &&
+        found->provenance.source_file == requirement.provenance.source_file &&
+        found->provenance.line == requirement.provenance.line &&
+        found->provenance.defining_module_id == requirement.provenance.defining_module_id &&
+        found->provenance.enclosing_callable_id == requirement.provenance.enclosing_callable_id;
+    if (req_count != 1 || fact_count != 1 || !same || !found->is_authoritative())
+      throw std::invalid_argument("collection view checker fact is missing, duplicate, or contradictory");
+    return found;
+  }
+
+  void require_all_phase28_authority_facts() const {
+    if (conditional_collection_error_facts.size() !=
+            required_conditional_collection_error_occurrences.size() ||
+        return_value_facts.size() != required_return_value_occurrences.size() ||
+        collection_view_facts.size() != required_collection_view_occurrences.size())
+      throw std::invalid_argument("Phase 28 checker authority fact/requirement set is incomplete");
+    for (const auto& requirement : required_conditional_collection_error_occurrences)
+      (void)find_conditional_collection_error_fact(requirement);
+    for (const auto& requirement : required_return_value_occurrences)
+      (void)find_return_value_fact(requirement);
+    for (const auto& requirement : required_collection_view_occurrences)
+      (void)find_collection_view_fact(requirement);
+    if (projected_collection_read_facts.size() !=
+        required_projected_collection_read_occurrences.size())
+      throw std::invalid_argument("projected collection-read fact/requirement set is incomplete");
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left == right ||
+          (left && right && left->structurally_equal(*right));
+    };
+    const auto same_span = [](const est::SourceSpan& left,
+                              const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    const auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                                    const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file &&
+          left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    const auto same_fields = [&](const TypedProjectedCollectionReadFactV1& left,
+                                 const TypedProjectedCollectionReadFactV1& right) {
+      return left.availability == right.availability &&
+          left.est_arena_index == right.est_arena_index &&
+          left.map_index_expression_occurrence_id ==
+              right.map_index_expression_occurrence_id &&
+          left.member_projection_expression_occurrence_id ==
+              right.member_projection_expression_occurrence_id &&
+          left.query_source_expression_occurrence_id ==
+              right.query_source_expression_occurrence_id &&
+          same_span(left.projection_occurrence_span,
+                    right.projection_occurrence_span) &&
+          left.projection_statement_occurrence_id ==
+              right.projection_statement_occurrence_id &&
+          left.query_statement_occurrence_id == right.query_statement_occurrence_id &&
+          left.receiver_binding_identity == right.receiver_binding_identity &&
+          left.receiver_definition_identity == right.receiver_definition_identity &&
+          same_type(left.receiver_type, right.receiver_type) &&
+          same_type(left.key_type, right.key_type) &&
+          same_type(left.indexed_value_type, right.indexed_value_type) &&
+          same_type(left.projection_base_type, right.projection_base_type) &&
+          same_type(left.projected_collection_type,
+                    right.projected_collection_type) &&
+          left.required_access == right.required_access &&
+          left.temporary_non_escaping_query_borrow ==
+              right.temporary_non_escaping_query_borrow &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_provenance(left.provenance, right.provenance);
+    };
+    for (const auto& requirement : required_projected_collection_read_occurrences) {
+      std::size_t matching_requirements = 0;
+      for (const auto& candidate : required_projected_collection_read_occurrences)
+        matching_requirements += same_fields(candidate, requirement);
+      std::size_t matching_facts = 0;
+      for (const auto& candidate : projected_collection_read_facts)
+        matching_facts += same_fields(candidate, requirement) &&
+            candidate.is_authoritative();
+      if (matching_requirements != 1 || matching_facts != 1 ||
+          !requirement.is_authoritative())
+        throw std::invalid_argument("projected collection-read fact is missing, duplicate, or contradictory");
+    }
   }
 
   const TypedMatchOwnershipFactV1* find_match_ownership_fact(

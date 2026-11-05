@@ -16111,3 +16111,25 @@ untouched.
   status update.
 - Full default and EST-shadow suite runs have not yet been performed; rerun the
   60-fixture oracle after focused repairs settle.
+
+## Team A checker/API oracle follow-up — reviewed GO (2026-11-05)
+
+- Team A frozen SHA `73ee9a387a53acc27eb8ab14deee44d4bcd73d34` is pushed to
+  `origin/phase28-r7-010-team-a-oracle-followup` and independently reviewed GO.
+  The reviewer reran the compiler build, 23-scenario authority harness,
+  specialized ownership contract, feedback validator, and exact diff check.
+- Adds exact conditional MissingKey authority for Map index read, nested
+  write-through, `get`, and conditional `remove`; exact ReturnValue transfer or
+  primitive-read actions; bounded Map keys/values view facts; and direct
+  Map Index→Member projected READ facts.
+- Projected-read authority binds Map index value type to the Map value argument,
+  projection base type to the indexed result, and projected collection type to
+  the exact checked member occurrence. Requirement matching compares all
+  occurrence IDs/spans/statements, type refs, specialization identity/context,
+  EST context, and provenance. Five corruption cases cover wrong index,
+  specialization, invented result type, missing provenance, and mismatched
+  provenance; all fail closed across checker/interpreter/native and emit no Rust.
+- ORACLE-58 returns exactly two closed `First`/`Second` specialization facts
+  with `Consume` effects. Nine targeted checker outcomes pass. The full-oracle
+  native ORACLE-07 missing-key panic remains for Team B consumer integration;
+  no oracle expectation/mapping or consumer file changed in this delivery.
