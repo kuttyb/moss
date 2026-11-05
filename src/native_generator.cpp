@@ -510,6 +510,30 @@ class Generator {
       }
     }
 
+    if (p_.typed_semantics) {
+      auto& bare_facts = p_.typed_semantics->bare_raise_transfer_facts;
+      auto& bare_requirements =
+          p_.typed_semantics->required_bare_raise_transfer_occurrences;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_BARE_RAISE_TRANSFER_FACT") &&
+          !bare_facts.empty())
+        bare_facts.erase(bare_facts.begin());
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_BARE_RAISE_TRANSFER_FACT") &&
+          !bare_facts.empty())
+        bare_facts.push_back(bare_facts.front());
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_BARE_RAISE_TRANSFER_FACT") &&
+          !bare_facts.empty())
+        bare_facts.front().transfers_original_carrier = false;
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_BARE_RAISE_TRANSFER_EDGE") &&
+          !bare_facts.empty())
+        ++bare_facts.front().recovery_statement_occurrence_id;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_BARE_RAISE_TRANSFER_REQUIREMENT") &&
+          !bare_requirements.empty())
+        bare_requirements.erase(bare_requirements.begin());
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_BARE_RAISE_TRANSFER_REQUIREMENT") &&
+          !bare_requirements.empty())
+        bare_requirements.push_back(bare_requirements.front());
+    }
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -6867,6 +6891,35 @@ class Generator {
     return facts;
   }
 
+  void require_bare_raise_transfer(
+      const Stmt& raise, const Stmt& recovery,
+      const TypedExceptionalOwnershipFactV1& source_edge,
+      const RaisedIdentity& identity,
+      const string& functional_context) const {
+    if (!p_.typed_semantics ||
+        raise.checked_statement_occurrence_id == UINT32_MAX ||
+        recovery.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT bare raise transfer identity unavailable");
+    const string context = functional_context.empty() ? "main" : functional_context;
+    try {
+      const auto& requirement =
+          p_.typed_semantics->find_bare_raise_transfer_requirement(
+              raise.checked_statement_occurrence_id,
+              recovery.checked_statement_occurrence_id, source_edge,
+              identity.type);
+      if (requirement.specialization_context != context ||
+          requirement.specialization_identity !=
+              codegen_active_specialization_key_ ||
+          requirement.raised_variant_identity != identity.canonical())
+        throw std::invalid_argument(
+            "bare raise transfer edge/context mismatch");
+      (void)p_.typed_semantics->find_bare_raise_transfer_fact(requirement);
+    } catch (const std::exception& e) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+  }
+
   const TypedTakeFactV1* resolve_take_fact(
       const Stmt& s, const string& functional_context,
       std::uint32_t* out_arena_index = nullptr,
@@ -7691,6 +7744,39 @@ class Generator {
             while (body_end < ss.size() && ss[body_end].indent > level)
               ++body_end;
 
+            const bool arm_has_bare_raise = std::any_of(
+                ss.begin() + static_cast<std::ptrdiff_t>(body_begin),
+                ss.begin() + static_cast<std::ptrdiff_t>(body_end),
+                [](const Stmt& nested) {
+                  return nested.kind == Stmt::Kind::Raise && nested.a.empty();
+                });
+
+            if (arm_has_bare_raise) {
+              for (size_t nested_index = body_begin;
+                   nested_index < body_end; ++nested_index) {
+                const auto& nested = ss[nested_index];
+                if (nested.kind != Stmt::Kind::Raise || !nested.a.empty())
+                  continue;
+                if (arm.exceptional_alternatives.empty())
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT bare raise has no checked selected variant");
+                for (const auto& identity : arm.exceptional_alternatives) {
+                  std::size_t edge_count = 0;
+                  for (const auto* edge : ex_facts) {
+                    if (edge->recovery_statement_occurrence_id !=
+                            arm.checked_statement_occurrence_id ||
+                        edge->raised_variant_identity != identity.canonical())
+                      continue;
+                    ++edge_count;
+                    require_bare_raise_transfer(
+                        nested, arm, *edge, identity, functional_context);
+                  }
+                  if (!edge_count)
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT bare raise transfer source edge missing");
+                }
+              }
+            }
             for (const auto& identity : arm.exceptional_alternatives) {
               handled.insert(identity);
               const string variant = phase21_rust_variant(identity);
@@ -7740,10 +7826,15 @@ class Generator {
               } else {
                 o << ") => {\n";
               }
-              const string selected = "__moss_selected_error";
-              o << indent(level + 2) << "let " << selected
-                << " = __MossRaised::" << variant << "(" << inner
-                << ".clone());\n";
+              string selected_error_expression;
+              if (arm.est_pattern && arm.est_pattern->kind ==
+                      est::PatternNode::Kind::RecoveryBinding &&
+                  !arm.est_pattern->binding.empty())
+                selected_error_expression = "__MossRaised::" + variant +
+                    "(" + rust_identifier(arm.est_pattern->binding) + ")";
+              else
+                selected_error_expression = "__MossRaised::" + variant +
+                    "(" + inner + ")";
 
               auto arm_locals = locals;
               auto arm_types = types;
@@ -7786,7 +7877,8 @@ class Generator {
                                           joined_bindings.end());
               const string saved_selected_error = phase21_selected_error_;
               const string saved_selected_carrier = phase21_selected_carrier_;
-              phase21_selected_error_ = selected;
+              phase21_selected_error_ = arm_has_bare_raise
+                  ? selected_error_expression : string();
               phase21_selected_carrier_ = captured_try
                   ? "__moss_selected_carrier" : string();
               size_t rendered_end = body_begin;

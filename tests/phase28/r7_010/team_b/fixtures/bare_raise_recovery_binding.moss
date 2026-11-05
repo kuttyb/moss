@@ -1,0 +1,14 @@
+enum BoundError:
+  Missing
+
+fn relay() -> Int:
+  try:
+    raise BoundError.Missing
+  recover selected:
+    raise
+
+fn main():
+  try:
+    echo relay()
+  recover BoundError.Missing:
+    echo "handled"
