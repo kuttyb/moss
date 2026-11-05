@@ -67,6 +67,21 @@ class RejectionAndPanicTests(unittest.TestCase):
         mapping = harness._diagnostic_doc["mappings"][expectation["fixture_id"]]
         self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
 
+    def test_clone_alias_mapping_requires_specific_diagnostic_and_statement(self):
+        expectation = next(x for x in harness._expectation_doc["fixtures"]
+                           if x["fixture_id"] == "ORACLE-10B-CLONE-ALIAS-REJECTED")
+        source = harness.FIXTURES_DIR / expectation["fixture_file"]
+        mapping = harness._diagnostic_doc["mappings"][expectation["fixture_id"]]
+        payload = {"ok": False, "error": {"code": "CLONE_ALIAS_UNSUPPORTED",
+            "severity": "error", "message": "source-level .clone() is unsupported; use copy(...) ",
+            "source_file": str(source.resolve()), "line": 7, "column": 1}}
+        self.assertTrue(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+        payload["error"]["message"] = "unknown result type"
+        self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+        payload["error"]["message"] = "source-level .clone() is unsupported; use copy(...)"
+        payload["error"]["line"] = 1
+        self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
+
     def test_generic_compile_error_does_not_authorize_reserved_copy_rejection(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as temp:
             source = Path(temp) / "reserved.moss"

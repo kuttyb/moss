@@ -3,8 +3,8 @@
 ## Overview
 
 This suite provides an independent semantic oracle for Moss Phase 28 ownership semantics.
-Its 60-row successor expectation table and language addendum are certified frozen under
-P28-R7-005. `certification.json` records the approved candidate, independent
+Its 60-row successor expectation table is version 2; certification records the
+independent normative review, reviewer-controlled holdouts, implementation comparison, and digest pins. `certification.json` records the approved candidate, independent
 review verdict, reviewer-controlled holdout result, and digest pins.
 
 The oracle is decoupled from Team A and Team B implementations and asserts expected values, mutations, rejection diagnostics, no unclassified clone occurrences, and multi-engine parity across:
@@ -43,7 +43,7 @@ The suite currently contains 60 successor fixtures covering:
 
 ## Invocation
 
-Current status: expectations are frozen after independent GO. The emitter does
+Current status: draft pending final R7-005.1 certification. The v1 oracle remains independently certified and unchanged. The emitter does
 not yet provide the specified v2 clone provenance sidecar. A generated-Rust
 duplication audit beyond `.clone()` scanning also remains open. Oracle
 certification does not establish compiler compliance.
@@ -59,4 +59,4 @@ python3 tests/phase28/oracle_r7_005_1/oracle_harness.py --compiler build/compile
 ```
 
 
-This is the separately versioned P28-R7-005.1 successor. The certified v1 oracle remains unchanged at `tests/phase28/oracle/`; its expectations and runtime allowlist digests are recorded as parent pins in this successor. The successor remains `DRAFT_PENDING_L7_APPROVAL` until normative review, reviewer-controlled holdouts, implementation comparison, and recertification are complete.
+This is the separately versioned P28-R7-005.1 successor. The certified v1 oracle remains unchanged at `tests/phase28/oracle/`; its expectations and runtime allowlist digests are recorded as parent pins in this successor. The successor remains `DRAFT_PENDING_L7_APPROVAL` until final artifact review and certification are complete. Compiler failures against expected ownership semantics are recorded as implementation findings; oracle certification does not assert compiler conformance.

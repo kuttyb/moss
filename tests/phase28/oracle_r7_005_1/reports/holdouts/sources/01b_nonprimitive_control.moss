@@ -1,0 +1,10 @@
+type Payload:
+  name: String
+
+fn accept(value: Payload) -> Payload:
+  return value
+
+fn main():
+  items = [Payload(name = "keep")]
+  transferred = accept(items[0])
+  echo transferred.name

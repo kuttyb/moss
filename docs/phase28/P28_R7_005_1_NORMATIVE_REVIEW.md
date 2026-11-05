@@ -25,9 +25,9 @@ The successor preserves each parent expected semantic verdict and diagnostic pri
 | ORACLE-30 | Accept `OWNERSHIP_INCOMPATIBLE_JOIN` alongside `OWNERSHIP_MIXED_JOIN`. | R7-008 §6D reports the implementation's incompatible-join diagnostic for the forbidden borrowed/owned live join; proposal §4 rejects an impossible promotion. The frozen baseline result itself was unexpected acceptance, so this mapping must not be treated as proof that behavior is repaired. |
 | ORACLE-34 | Accept `MATCH_READ_BORROW_ACTIVE` alongside `OWNERSHIP_CONFLICTING_ACCESS`. | The certified ledger reports the match-borrow-specific rejection; proposal §6.1 prohibits overwriting the scrutinee while its payload is live. |
 | ORACLE-35 | Accept `BORROWED_ENUM_PAYLOAD_ACCESS` alongside `OWNERSHIP_ILLEGAL_CONSUME`. | The certified ledger reports the borrowed-payload rejection; proposal §6.1 requires ordinary match to borrow and forbids extracting an owned payload. |
-| ORACLE-10B | Keep only `CLONE_ALIAS_UNSUPPORTED`; retain the direct assignment probe from certified v1 (`r = v[0].clone(); echo r.tag`). | This is the original frozen source case; the approved addendum reserves explicit duplication for `copy(x)`. R7-008 report §6B lists ORACLE-10B as passing, and a focused check of the exact v1 source at R7-008 SHA `e9d3f844` emits `CLONE_ALIAS_UNSUPPORTED` at the clone assignment. The temporary contextual-call variant caused a generic call-argument mismatch and has been discarded without changing expectation or mapping. |
+| ORACLE-10B | Keep only `CLONE_ALIAS_UNSUPPORTED`; require the clone-specific message and executable source line `r = v[0].clone()`. Retain the direct assignment probe from certified v1. | The approved addendum reserves explicit duplication for `copy(x)`. R7-008 report §6B lists ORACLE-10B as passing, and a focused check of the exact v1 source at R7-008 SHA `e9d3f844` emits `CLONE_ALIAS_UNSUPPORTED` with `source-level .clone() is unsupported; use copy(...)` at the clone assignment. Generic type/open-result errors and comment-only matches therefore do not satisfy this mapping. |
 
-The five R7-008 §6D candidates plus the ORACLE-10B source anchor form the six requested diagnostic-mapping corrections. The 10B mapping stays narrow; the fixture retains the frozen v1 source expression and diagnostic contract.
+The five R7-008 §6D candidates plus the tightened ORACLE-10B message/source anchor form the six requested diagnostic-mapping corrections. The 10B fixture retains the frozen v1 source expression.
 
 ## Added fixture expectations (candidate)
 
@@ -59,3 +59,9 @@ Please re-review the revised ORACLE-10B fixture/mapping along with the five acce
   clone assignment. The successor now restores the v1 source fixture without
   changing its expectation or narrow mapping. This source-only revision needs
   normative re-review before another implementation comparison.
+- After the oracle-spec GO on `f74210891202926055ccaa3ce8c077e61ec144cc`,
+  ORACLE-10B's mapping was tightened further: it now requires the exact
+  clone-specific diagnostic message and the executable clone assignment line.
+  Its fixture and expected verdict remain byte-identical to certified v1. This
+  completes the sixth mapping correction requested; independent review of this
+  tighter mapping is pending before a new implementation comparison.

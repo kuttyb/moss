@@ -17,8 +17,8 @@
       "primary": "CLONE_ALIAS_UNSUPPORTED",
       "semantic_category": "unsupported_member",
       "severity": "error",
-      "message_regex": "clone|member|unknown",
-      "source_line_regex": "clone",
+      "message_regex": "source-level \\.clone\\(\\) is unsupported; use copy",
+      "source_line_regex": "^\\s*r\\s*=\\s*v\\[0\\]\\.clone\\(\\)\\s*$",
       "codes": [
         "CLONE_ALIAS_UNSUPPORTED"
       ]
@@ -199,5 +199,6 @@
         "MOSS_COMPILE_ERROR"
       ]
     }
-  }
+  },
+  "approval_status": "DRAFT_PENDING_L7_APPROVAL"
 }

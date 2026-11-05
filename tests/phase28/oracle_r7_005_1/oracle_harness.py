@@ -131,14 +131,19 @@ def validate_mutation_assertions(fixture: dict) -> None:
 
 
 def validate_oracle_data() -> None:
-    if len(_expectation_doc.get("fixtures", [])) != 60:
-        raise ValueError("approval package must contain exactly 60 successor fixtures")
+    oracle_version = _expectation_doc.get("version")
+    if oracle_version != 2 or len(_expectation_doc.get("fixtures", [])) != 60:
+        raise ValueError("R7-005.1 package must be version 2 with exactly 60 fixtures")
+    if _diagnostic_doc.get("version") != oracle_version:
+        raise ValueError("diagnostic mapping version must match the expectation version")
     expectation_status = _expectation_doc.get("approval_status")
+    mapping_status = _diagnostic_doc.get("approval_status")
     runtime_status = _runtime_callsite_doc.get("approval_status")
     if expectation_status == "CERTIFIED_FROZEN":
         if not isinstance(_certification_doc, dict):
             raise ValueError("certified expectation table requires digest-pinned certification.json")
-        if _certification_doc.get("format") != "moss-phase28-oracle-certification" or _certification_doc.get("version") != 1:
+        if (_certification_doc.get("format") != "moss-phase28-oracle-certification" or
+                _certification_doc.get("version") != oracle_version):
             raise ValueError("unsupported oracle certification record")
         if _certification_doc.get("reviewer_verdict") != "GO" or not _certification_doc.get("approval_candidate_sha"):
             raise ValueError("certification record lacks approved candidate SHA or independent GO")
@@ -156,8 +161,10 @@ def validate_oracle_data() -> None:
             raise ValueError("certification record lacks exact frozen SHA")
         if runtime_status != "CERTIFIED_FROZEN":
             raise ValueError("certified expectations require a certified-frozen runtime registry")
-    elif expectation_status != "DRAFT_PENDING_L7_APPROVAL":
-        raise ValueError("expectation table has an unsupported approval state")
+        if mapping_status != "CERTIFIED_FROZEN":
+            raise ValueError("certified expectations require a certified-frozen diagnostic mapping")
+    elif expectation_status != "DRAFT_PENDING_L7_APPROVAL" or mapping_status != "DRAFT_PENDING_L7_APPROVAL":
+        raise ValueError("expectation table and diagnostic mapping must share a supported approval state")
     if (_runtime_callsite_doc.get("format") != "moss-runtime-clone-callsites" or
             _runtime_callsite_doc.get("version") != 1 or
             runtime_status not in {"DRAFT_PENDING_INDEPENDENT_REVIEW", "CERTIFIED_FROZEN"} or

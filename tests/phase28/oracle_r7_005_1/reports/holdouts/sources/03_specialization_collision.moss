@@ -1,0 +1,15 @@
+type LeftCell:
+  key: Int
+
+type RightCell:
+  label: String
+
+fn relay(value):
+  local = value
+  return local
+
+fn main():
+  left = relay(LeftCell(key = 41))
+  right = relay(RightCell(label = "ready"))
+  echo left.key
+  echo right.label

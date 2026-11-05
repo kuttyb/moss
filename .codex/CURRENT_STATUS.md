@@ -15452,3 +15452,26 @@ untouched.
   assignment. Since this source edit followed the full comparison, the e9
   60-row result is stale for the current draft and must be rerun only after
   independent normative re-review. No oracle expectations were changed.
+
+## 2026-11-04 Phase 28 R7-005.1 holdout and mapping checkpoint
+
+- Independent reviewer-controlled holdouts were recorded before execution and
+  completed on exact R7-008 compiler SHA `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`.
+  Oracle-spec verdict: GO / holdout-integrity PASS. Two implementation findings
+  remain: primitive Vector loop element use is rejected with
+  `OWNERSHIP_VECTOR_ELEMENT_CONSUME`; Map.get write-through prints `new\nold`
+  instead of `new\nnew` in Fast Debug/native/-O. Nonprimitive control,
+  primitive indexed-only, specialization collision, and shadowed-name controls
+  pass. Holdout sources, pre-run plan, hashes and reports are being preserved
+  under the successor reports directory.
+- The latest 60-fixture R7-008 result on approved source SHA
+  `f74210891202926055ccaa3ce8c077e61ec144cc` is 13 full applicable passes,
+  47 failures, 18 semantic failures, 32 missing-provenance blocks, and 476
+  unverified generated `.clone()` occurrences. Four added fixture findings are
+  ORACLE-56/57 semantic failures (primitive loop use, Map.get write-through),
+  ORACLE-58/59 runtime parity PASS with provenance-only blocks.
+- The sixth mapping correction tightens ORACLE-10B to require the exact
+  clone-specific diagnostic message and executable source line, retaining the
+  byte-identical v1 fixture and expectation. Its validator unit tests pass
+  18/18 and data validation passes 60/60. Independent review is required before
+  rerunning the implementation comparison with this mapping revision.
