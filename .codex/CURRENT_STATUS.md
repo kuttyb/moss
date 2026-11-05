@@ -15973,3 +15973,21 @@ untouched.
   SHA and exact spans, and keep all six runtime sites unclassified.
 - L7 has not run the combined 60-fixture oracle or final default/EST-shadow
   suites after these moving repairs; those remain final-stage gates.
+
+## Bare re-raise transfer authority integration (2026-11-05)
+
+- Team A checker authority `28da73762a97a74618e2d50d0801bb64981aaaca` received
+  independent Agent 2 GO and is pushed to
+  `origin/phase28-r7-010-team-a-reraise-transfer`. L7 imported it as
+  `f5c3e197`; the new exact transfer checker gate is registered in `tests/run.sh`.
+  It requires one exact bare Raise, Recover, paired Present exceptional edge,
+  variant, carrier type, EST occurrence and specialization/context; the only
+  action is moving the original carrier (`permits_copy=false`).
+- Rebuilt L7. The bare-raise fact gate passes baseline/drop/perturb; R7-009
+  17/17, Echo authority, borrowed-read/provider, feedback, and diff checks pass.
+  Team B has not yet consumed this fact, so the old WorkError clone remains in
+  L7 until the reviewed consumer patch arrives.
+- Team C's first artifact-pinned runtime evidence commit `7eaa9616` remains
+  NO-GO pending a regression that reads or generates the exact artifact and
+  checks the claimed clone spans/types/slice locations against its bytes. C is
+  preparing that correction; the six runtime sites remain unclassified.
