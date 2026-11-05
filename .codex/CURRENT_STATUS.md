@@ -17087,10 +17087,25 @@ untouched.
   replace this production contract. Reviewer verdict is pending that fixup.
 - Team B froze and pushed native consumer commit
   `2eb2039c7b76c49d0174d9eba47a9d01ad4ffd88` on
-  `phase28-r7-010-team-b-regex-final`, with Agent 2 GO. Its focused native Debug/Optimized
-  transfer and seven corruption cases pass, and an Agent 2 review is pending.
-  It remains a separate worktree; full Regex package build and Fast Debug
-  parity were not part of that PASS.
+  `phase28-r7-010-team-b-regex-final`, with Agent 2 GO. Its focused native
+  Debug/Optimized transfer and seven corruption cases pass. Team B's own Fast
+  Debug repro and full Regex package build remained blocked on that frozen
+  worktree; the combined staging tests and package build below are separate.
+- L7 provisionally integrated the reviewed Team B native change as
+  `07aaacc6` (cherry-pick of `2eb2039c`) in the isolated staging worktree.
+  Combined `moss-dev` and `moss-opt` builds passed. Native transfer Debug and
+  Optimized output plus seven corruptions, Fast Debug default/shadow plus five
+  corruptions, checker transfer authority (23 scenarios), Match WRITE, and
+  Match READ gates all pass. The initial build exposed an unused-variable
+  warning; Team B's warning-only fix `22a9e924` has independent GO and is
+  pushed, but has not yet been integrated.
+- Fresh Regex package copy at
+  `tmp/phase28-r7-010-l7-regex-combined-07aa/regex` now generates Rust and
+  provenance, then Cargo fails on 12 `unused_parens` warnings for primitive
+  MatchResult READ payload expressions (`(*start)` / `(*end)`) under warnings as
+  errors. No Vec/`&Vec` transfer type errors were reported in this build. Team B
+  is investigating this separate READ formatting path. The checker-owned
+  decision-slot contract for missing transfer requirements is also pending.
 - Remaining acceptance blockers are the fresh Regex package build, complete
   clone authorization/provenance audit, frozen 60-fixture oracle, and full
   default/EST-shadow regression suites. Team C has no new frozen conformance
