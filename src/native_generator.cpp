@@ -6218,9 +6218,8 @@ class Generator {
     for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
       if (req.loop_est_arena_index == matched_handle->arena_index &&
           req.loop_expression_occurrence_id == matched_handle->expr &&
-          (req.specialization_context == context ||
-           (!codegen_active_specialization_key_.empty() &&
-            req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+          req.specialization_context == context &&
+          req.specialization_identity == codegen_active_specialization_key_) {
         if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -6237,15 +6236,16 @@ class Generator {
     for (const auto& fact : p_.typed_semantics->loop_ownership_facts) {
       if (fact.loop_est_arena_index == matched_handle->arena_index &&
           fact.loop_expression_occurrence_id == matched_handle->expr &&
-          (fact.specialization_context == context ||
-           (!codegen_active_specialization_key_.empty() &&
-            fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+          fact.specialization_context == context &&
+          fact.specialization_identity == codegen_active_specialization_key_) {
         if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
               req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
+              req.specialization_context == fact.specialization_context &&
+              req.specialization_identity == fact.specialization_identity &&
               req.definition_identity == fact.definition_identity &&
               req.edge_kind == fact.edge_kind) {
             found_req = true;
@@ -6268,9 +6268,8 @@ class Generator {
 
     std::vector<const TypedExceptionalOwnershipFactV1*> facts;
     for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
-      if (req.specialization_context == context ||
-          (!codegen_active_specialization_key_.empty() &&
-           req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+      if (req.specialization_context == context &&
+          req.specialization_identity == codegen_active_specialization_key_) {
         if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -6282,14 +6281,15 @@ class Generator {
       }
     }
     for (const auto& fact : p_.typed_semantics->exceptional_ownership_facts) {
-      if (fact.specialization_context == context ||
-          (!codegen_active_specialization_key_.empty() &&
-           fact.specialization_context.find(codegen_active_specialization_key_) != std::string::npos)) {
+      if (fact.specialization_context == context &&
+          fact.specialization_identity == codegen_active_specialization_key_) {
         if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
+              req.specialization_context == fact.specialization_context &&
+              req.specialization_identity == fact.specialization_identity &&
               req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
               req.raised_variant_identity == fact.raised_variant_identity) {
             found_req = true;
@@ -6378,7 +6378,9 @@ class Generator {
 
   const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
       const Stmt& s, const string& functional_context) const {
-    if (!p_.typed_semantics) return nullptr;
+    if (!p_.typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT typed match semantics are unavailable");
     const est::Handle* matched_handle = nullptr;
     for (const auto& handle : s.expression_handles) {
       if (handle.slot == est::ExprSlot::Scrutinee && handle.argument_index == 0) {
@@ -6386,20 +6388,36 @@ class Generator {
         break;
       }
     }
-    if (!matched_handle) return nullptr;
+    if (!matched_handle)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked match scrutinee occurrence is missing");
     const string context = functional_context.empty() ? "main" : functional_context;
+    string active_specialization_identity = codegen_active_specialization_key_;
     const TypedMatchOwnershipRequirementV1* requirement = nullptr;
+#ifdef MOSS_TEST_BUILD
+    const bool drop_match_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_REQUIREMENT") != nullptr;
+    if (std::getenv("MOSS_TEST_CONSUMER_COLLIDE_MATCH_SPECIALIZATION_IDENTITY")) {
+      const auto delimiter = context.find('<');
+      active_specialization_identity = context.substr(0, delimiter);
+    }
+#else
+    constexpr bool drop_match_requirement = false;
+#endif
+    size_t requirement_count = 0;
     for (const auto& req : p_.typed_semantics->required_match_occurrences) {
-      if (req.est_arena_index == matched_handle->arena_index &&
+      if (!drop_match_requirement &&
+          req.est_arena_index == matched_handle->arena_index &&
           req.scrutinee_occurrence_id == matched_handle->expr &&
-          (req.specialization_context == context ||
-           (!codegen_active_specialization_key_.empty() &&
-            req.specialization_context.find(codegen_active_specialization_key_) != std::string::npos))) {
+          req.specialization_context == context &&
+          req.specialization_identity == active_specialization_identity) {
         requirement = &req;
-        break;
+        ++requirement_count;
       }
     }
-    if (!requirement) return nullptr;
+    if (requirement_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required checked match requirement missing or ambiguous");
     try {
       return p_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
@@ -7262,12 +7280,19 @@ class Generator {
           break;
         }
         case Stmt::Kind::Match: {
-          auto scrutinee_type = generated_expr_type(s.a, &types);
           const auto* match_fact = resolve_match_ownership_fact(s, functional_context);
-          bool is_option = match_fact
-              ? (match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option)
-              : (scrutinee_type &&
-                 starts_with(canonical_type_name(*scrutinee_type), "option["));
+          if (!match_fact || !match_fact->scrutinee_type)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked match fact lacks its scrutinee type");
+          const bool is_option =
+              match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option;
+          if (is_option &&
+              (match_fact->scrutinee_type->kind != TypeKind::Builtin ||
+               match_fact->scrutinee_type->name != "option"))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Option match fact has a non-Option type");
+          const string checked_match_type =
+              match_fact->scrutinee_type->to_canonical_string();
           static const EnumType option_enum = [] {
             EnumType opt;
             opt.name = "option";
@@ -7284,8 +7309,8 @@ class Generator {
           }();
           const EnumType* declaration_ptr = is_option
               ? &option_enum
-              : (scrutinee_type && enums_.count(canonical_type_name(*scrutinee_type)))
-                  ? enums_.at(canonical_type_name(*scrutinee_type)) : nullptr;
+              : enums_.count(checked_match_type)
+                  ? enums_.at(checked_match_type) : nullptr;
           if (!declaration_ptr)
             throw std::runtime_error("unchecked enum match");
           const EnumType& declaration = *declaration_ptr;
@@ -7373,6 +7398,17 @@ class Generator {
                 [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
             if (item == declaration.cases.end())
               throw std::runtime_error("unchecked enum case");
+            const auto checked_arm = std::find_if(
+                match_fact->arms.begin(), match_fact->arms.end(),
+                [&](const TypedMatchArmFactV1& candidate) {
+                  return candidate.case_name == pattern.case_name;
+                });
+            if (!pattern.payload_bindings.empty() &&
+                (checked_arm == match_fact->arms.end() ||
+                 checked_arm->payload_binding_names != pattern.payload_bindings ||
+                 checked_arm->payload_types.size() != pattern.payload_bindings.size()))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked match arm fact is missing or contradictory");
             if (is_option) {
               if (pattern.case_name == "Some") {
                 o << indent(level + 1) << "Some("
@@ -7406,17 +7442,11 @@ class Generator {
                  field_index < pattern.payload_bindings.size(); ++field_index) {
               const string& name = pattern.payload_bindings[field_index];
               string type;
-              if (is_option) {
-                if (match_fact && !match_fact->arms.empty() &&
-                    !match_fact->arms.front().payload_types.empty() &&
-                    match_fact->arms.front().payload_types.front()) {
-                  type = match_fact->arms.front().payload_types.front()->to_canonical_string();
-                } else if (scrutinee_type && starts_with(canonical_type_name(*scrutinee_type), "option[")) {
-                  type = canonical_type_name(*scrutinee_type).substr(7, canonical_type_name(*scrutinee_type).size() - 8);
-                }
-              } else {
-                type = item->fields[field_index].type;
-              }
+              if (field_index >= checked_arm->payload_types.size() ||
+                  !checked_arm->payload_types[field_index])
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked match payload type is missing");
+              type = checked_arm->payload_types[field_index]->to_canonical_string();
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
