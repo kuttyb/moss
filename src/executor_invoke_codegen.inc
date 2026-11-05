@@ -172,14 +172,16 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
 // synchronous ingress, which uses inline admission before start() and after
 // join(), and executor admission while ACTIVE:
 //
-//   { let __d = target.clone(); let __a0 = <owned snapshot>; ...
+//   { let __d = target.clone(); let __a0 = <checked owned value>; ...
 //     runtime_invoke(move || __d.Handler_shared(<lend __a0>)[.unwrap reply]) }
 //
 // The target and every argument are evaluated exactly once at the message
-// statement, snapshotted by value with the ordinary message-boundary
-// lowering, and moved into a `Send + 'static` thunk; the caller waits for
-// that Root and receives its reply. Nested messages (inside handlers,
-// functions, methods) keep the direct synchronous lowering.
+// statement. Non-primitive arguments must already be independently owned by
+// checked `copy(x)` authority or an exact consume; this lowering never grants
+// a message-boundary copy. The checked owned values move into a `Send +
+// 'static` thunk; the caller waits for that Root and receives its reply.
+// Nested messages (inside handlers, functions, methods) keep the direct
+// synchronous lowering.
 //
 string root_ingress_message(const string& receiver, const string& handler,
                             const vector<string>& arguments,
