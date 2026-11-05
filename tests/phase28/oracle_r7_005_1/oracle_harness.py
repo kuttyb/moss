@@ -742,13 +742,14 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
             raise ValueError("raw Rust copy marker names no exact checker fact")
         markers_by_fact.setdefault(fact_id, []).append((start, end))
 
-    specialization_facts: dict[str, str] = {}
+    specialization_facts: dict[tuple[str, str], set[str]] = {}
     for fact_id, (_copy_id, fact) in facts.items():
         if fact["specialization_identity"]:
             context = re.sub(r"@\d+(?:#.*)?$", "", fact["specialization_context"])
-            if context in specialization_facts and specialization_facts[context] != fact_id:
-                raise ValueError("multiple checker facts share one specialization callable context")
-            specialization_facts[context] = fact_id
+            # A callable may contain multiple lexical copy expressions. Keep
+            # the source occurrence in the key so equal specialization
+            # contexts at different source spans do not collide.
+            specialization_facts.setdefault((_copy_id, context), set()).add(fact_id)
 
     rust_by_key = {_span_key(span): span for span in rust_occurrences}
     derived: dict[tuple[int, int, int, int], tuple[str, str]] = {}
@@ -772,8 +773,8 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
                                 if identity.startswith(normalized_base + "<")}
             if sibling_contexts:
                 for sibling in sibling_contexts:
-                    sibling_fact = specialization_facts.get(sibling)
-                    if sibling_fact is None or sibling_fact not in markers_by_fact:
+                    sibling_facts = specialization_facts.get((copy_id, sibling), set())
+                    if not sibling_facts or not sibling_facts.issubset(markers_by_fact):
                         raise ValueError("template exemption has a generated specialization without a fact helper")
             elif fact["provenance"]["line"] in emitted_source_lines:
                 raise ValueError("copy source line is emitted but no callable/helper mapping proves its status")

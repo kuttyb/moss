@@ -27,10 +27,11 @@ validator adversarial review. This report does not authorize compiler behavior.
 - Oracle harness unit tests with the live L7 checker query prototype:
   `MOSS_PHASE28_QUERY_COMPILER=/home/owner/daji/code/moss/tmp/phase28-r7-010-l7-query/moss
   PYTHONDONTWRITEBYTECODE=1 python3
-  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **36 passed**.
+  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **37 passed**.
   Coverage includes exact checker-fact forgery, missing/perturbed/duplicated
   authority, multiple specializations at one source span, live query retries,
-  UTF-8 byte columns and CRLF.
+  UTF-8 byte columns, CRLF, and two lexical copies sharing each emitted
+  specialization context.
 - Independent scanner unit tests:
   `PYTHONDONTWRITEBYTECODE=1 python3
   tests/tooling/test_phase28_r7_010_clone_inventory.py -q` — **5 passed**,
@@ -141,11 +142,13 @@ Initial candidate `ac89db6c7221e86747dcd611e7bafbee3a99b5da` received
 independent Agent 2 **NO-GO**. The review found that the one-fact-per-lexical-
 span join rejected valid specialization collisions, source-to-Rust links were
 self-asserted by sidecar, and the clone scanner missed whitespace-separated
-tokens. This follow-up adds a multi-specialization fixture and v3 fact groups,
+tokens. This follow-up adds multi-specialization fixtures with both one and
+multiple lexical copy sites per specialization, plus v3 fact groups,
 raw Rust helper derivation, callable inventory checks, shared token scanning,
 same-location query retries, live compiler query coverage, strict occurrence
-schemas, and whitespace cleanup. The v3 serializer changes are not yet frozen
-by Team B, and the follow-up has not received fresh independent review.
+schemas keyed by source occurrence, and whitespace cleanup. The v3 serializer
+changes are not yet frozen by Team B, and the follow-up has not received fresh
+independent review.
 
 ## Remaining Team C work
 

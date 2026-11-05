@@ -1,0 +1,25 @@
+# Two lexical copy sites occur in each emitted specialization of duplicate.
+type Record:
+  label: String
+
+trait Supplies:
+  fn make() -> Record
+
+type First:
+  fn make() -> Record:
+    return Record(label: "first")
+
+type Second:
+  fn make() -> Record:
+    return Record(label: "second")
+
+fn duplicate(item: Supplies) -> Record:
+  var first = copy(item.make())
+  echo first.label
+  return copy(item.make())
+
+fn main():
+  left = duplicate(First())
+  right = duplicate(Second())
+  echo left.label
+  echo right.label
