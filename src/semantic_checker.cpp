@@ -2016,6 +2016,7 @@ class Checker {
 #endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT")) {
+        (void)p_.typed_semantics->require_all_local_ownership_facts();
         for (const auto& requirement :
              p_.typed_semantics->required_local_ownership_occurrences) {
           const auto* retained =
@@ -10146,8 +10147,16 @@ class Checker {
       OwnershipEnv ownership;
       ownership.types = env;
       for (const auto& f : d.state) ownership.state_fields.insert(f.name);
-      for (const auto& parameter : h.params)
+      for (std::size_t parameter_index = 0;
+           parameter_index < h.params.size(); ++parameter_index) {
+        const auto& parameter = h.params[parameter_index];
         ownership.message_payloads.insert(parameter.name);
+        const string parameter_identity = "handler:" + d.name + "." + h.name +
+            ":parameter:" + std::to_string(parameter_index);
+        ownership.binding_identities[parameter.name] = parameter_identity;
+        ownership.definition_identities[parameter.name] =
+            parameter_identity + ":definition";
+      }
       vector<ExceptionalOwnershipExit> escaping_exits;
       check_ownership(h.body, std::move(ownership), &d, &h,
                       &escaping_exits);
@@ -24913,7 +24922,9 @@ class Checker {
 
   std::optional<Effect> retain_local_ownership_fact(
       const Stmt& statement, const string& definition_identity,
-      const string& source_binding_identity, Effect access,
+      const string& source_binding_identity,
+      const string& source_definition_identity, Effect access,
+      TypedLocalOwnershipFactV1::Disposition disposition,
       const string& binding_identity = {},
       const string& killed_definition_identity = {},
       const string& join_definition_identity = {}) {
@@ -24923,9 +24934,11 @@ class Checker {
     fact.killed_definition_identity = killed_definition_identity;
     fact.join_definition_identity = join_definition_identity;
     fact.source_binding_identity = source_binding_identity;
+    fact.source_definition_identity = source_definition_identity;
     fact.specialization_context = local_ownership_consumer_context();
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.access = access;
+    fact.disposition = disposition;
     fact.provenance = {statement.source_file.empty() ? current_source_file_
                                                      : statement.source_file,
                        statement.line, {}, current_semantic_context_};
@@ -25042,8 +25055,11 @@ class Checker {
     if (std::getenv("MOSS_EST_FACTS_DUMP"))
       std::cerr << "MOSS_EST_OWNERSHIP_FACT definition="
                 << std::quoted(fact.definition_identity) << " source="
-                << std::quoted(fact.source_binding_identity) << " binding="
-                << std::quoted(fact.binding_identity) << " killed="
+                << std::quoted(fact.source_binding_identity)
+                << " source_definition="
+                << std::quoted(fact.source_definition_identity) << " binding="
+                << std::quoted(fact.binding_identity) << " disposition="
+                << static_cast<int>(fact.disposition) << " killed="
                 << std::quoted(fact.killed_definition_identity) << " expr="
                 << fact.expression_occurrence_id << " context="
                 << std::quoted(fact.specialization_context) << " access="
@@ -25060,13 +25076,49 @@ class Checker {
     req.killed_definition_identity = fact.killed_definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
+    req.source_definition_identity = fact.source_definition_identity;
     req.access = fact.access;
+    req.disposition = fact.disposition;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
     req.unsupported_reason = fact.unsupported_reason;
     req.availability = fact.availability;
-    required_local_ownership_occurrences_.push_back(std::move(req));
+    const bool local_transfer =
+        fact.source_kind == TypedLocalOwnershipFactV1::SourceKind::LocalBinding &&
+        fact.disposition != TypedLocalOwnershipFactV1::Disposition::NotApplicable;
+#ifdef MOSS_TEST_BUILD
+    if (local_transfer &&
+        std::getenv("MOSS_TEST_PERTURB_LOCAL_TRANSFER_REQUIREMENT_DISPOSITION"))
+      req.disposition = req.disposition ==
+              TypedLocalOwnershipFactV1::Disposition::Borrowed
+          ? TypedLocalOwnershipFactV1::Disposition::Transferred
+          : TypedLocalOwnershipFactV1::Disposition::Borrowed;
+    const bool drop_transfer_requirement = local_transfer &&
+        std::getenv("MOSS_TEST_DROP_LOCAL_TRANSFER_REQUIREMENT");
+    if (!drop_transfer_requirement)
+#endif
+      required_local_ownership_occurrences_.push_back(req);
+#ifdef MOSS_TEST_BUILD
+    if (local_transfer &&
+        std::getenv("MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_REQUIREMENT"))
+      required_local_ownership_occurrences_.push_back(req);
+    const bool drop_transfer_fact = local_transfer &&
+        std::getenv("MOSS_TEST_DROP_LOCAL_TRANSFER_FACT");
+    if (!drop_transfer_fact) {
+      if (local_transfer &&
+          std::getenv("MOSS_TEST_PERTURB_LOCAL_TRANSFER_DISPOSITION"))
+        fact.disposition = fact.disposition ==
+                TypedLocalOwnershipFactV1::Disposition::Borrowed
+            ? TypedLocalOwnershipFactV1::Disposition::Transferred
+            : TypedLocalOwnershipFactV1::Disposition::Borrowed;
+      local_ownership_facts_.push_back(fact);
+      if (local_transfer &&
+          std::getenv("MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT"))
+        local_ownership_facts_.push_back(fact);
+    }
+#else
     local_ownership_facts_.push_back(std::move(fact));
+#endif
     return checked_access;
   }
 
@@ -25151,10 +25203,12 @@ class Checker {
   void retain_unsupported_local_fact(const Stmt& statement,
                                      const string& definition_identity,
                                      const string& source_binding_identity,
+                                     const string& source_definition_identity,
                                      TypedLocalOwnershipFactV1::UnsupportedReason reason) {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = definition_identity;
     fact.source_binding_identity = source_binding_identity;
+    fact.source_definition_identity = source_definition_identity;
     fact.specialization_context = local_ownership_consumer_context();
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.inference_status =
@@ -25224,6 +25278,7 @@ class Checker {
     req.definition_identity = fact.definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
+    req.source_definition_identity = fact.source_definition_identity;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -27427,15 +27482,19 @@ class Checker {
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
           const bool is_indexed_source = !source_root.empty() && !local_source;
+          const bool protected_borrow_source = local_source &&
+              env.message_payloads.count(*local_source);
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
-              (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
-                                 !env.message_payloads.count(*local_source)))) {
+              (!local_source ||
+               !env.borrowed_enum_payloads.count(*local_source))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             std::optional<Effect> inferred;
             string join_id;
-            if (current_ownership_flow_) {
+            if (protected_borrow_source) {
+              inferred = Effect::Read;
+            } else if (current_ownership_flow_) {
               auto dec = current_ownership_flow_->decisions_by_statement_index.find(index);
               if (dec != current_ownership_flow_->decisions_by_statement_index.end()) {
                 if (dec->second.is_unsupported) {
@@ -27464,19 +27523,31 @@ class Checker {
             }
             if (inferred) {
               source_access = *inferred;
+              const string source_definition_identity =
+                  env.definition_identities.count(source_root)
+                      ? env.definition_identities.at(source_root)
+                      : source_binding->second;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_access,
+                  source_binding->second, source_definition_identity,
+                  source_access,
+                  source_access == Effect::Consume
+                      ? TypedLocalOwnershipFactV1::Disposition::Transferred
+                      : TypedLocalOwnershipFactV1::Disposition::Borrowed,
                   statement_binding_identity(current_semantic_context_, s.line),
                   {}, join_id);
               if (!retained_access || *retained_access != source_access)
                 err(s.line, "checker could not retain the required EST ownership fact",
                     "MOSS_INTERNAL_INVARIANT");
             } else {
+              const string source_definition_identity =
+                  env.definition_identities.count(source_root)
+                      ? env.definition_identities.at(source_root)
+                      : source_binding->second;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_binding->second, unsupported);
+                  source_binding->second, source_definition_identity, unsupported);
             }
           }
           if (source_access == Effect::Consume) {
@@ -27596,16 +27667,20 @@ class Checker {
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
           const bool is_indexed_source = !source_root.empty() && !local_source;
+          const bool protected_borrow_source = local_source &&
+              env.message_payloads.count(*local_source);
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
-              !env.state_fields.count(s.a) && !targets_object_field &&
-              (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
-                                 !env.message_payloads.count(*local_source)))) {
+              (!local_source ||
+               !env.borrowed_enum_payloads.count(*local_source)) &&
+              !env.state_fields.count(s.a) && !targets_object_field) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
                 TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse;
             std::optional<Effect> inferred;
             string join_id;
-            if (current_ownership_flow_) {
+            if (protected_borrow_source) {
+              inferred = Effect::Read;
+            } else if (current_ownership_flow_) {
               auto dec = current_ownership_flow_->decisions_by_statement_index.find(index);
               if (dec != current_ownership_flow_->decisions_by_statement_index.end()) {
                 if (dec->second.is_unsupported) {
@@ -27633,19 +27708,31 @@ class Checker {
             }
             if (inferred) {
               source_access = *inferred;
+              const string source_definition_identity =
+                  env.definition_identities.count(source_root)
+                      ? env.definition_identities.at(source_root)
+                      : source_binding->second;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_access,
+                  source_binding->second, source_definition_identity,
+                  source_access,
+                  source_access == Effect::Consume
+                      ? TypedLocalOwnershipFactV1::Disposition::Transferred
+                      : TypedLocalOwnershipFactV1::Disposition::Borrowed,
                   target_binding_identity, killed_definition_identity, join_id);
               if (!retained_access || *retained_access != source_access)
                 err(s.line, "checker could not retain the required EST ownership fact",
                     "MOSS_INTERNAL_INVARIANT");
             } else {
+              const string source_definition_identity =
+                  env.definition_identities.count(source_root)
+                      ? env.definition_identities.at(source_root)
+                      : source_binding->second;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, unsupported);
+                  source_binding->second, source_definition_identity, unsupported);
             }
           }
           if (source_access == Effect::Consume) {
