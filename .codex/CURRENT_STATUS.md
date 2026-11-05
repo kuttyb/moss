@@ -16,10 +16,16 @@
   still stops at `join_try.moss` because an unreachable recovery arm has a
   checker fact but no emitted Rust clone. L7 owns the writer/auditor boundary
   and has now pushed its fix at `b18fcddfc8028cadb172e100c37474347879afd1`;
-  validate this candidate atop that descendant before final freeze.
+  the candidate was cherry-picked into a separate validation worktree at
+  `b18fcdd` as `665c51be`. There, the Phase 27.5.1 gate passes; the X1 gate
+  passes with `ok: true`; and
+  `python3 tests/tooling/check_phase28_root_ingress_provenance.py <moss-dev>`
+  passes all 42 checks. The combined result confirms the generator fix with
+  L7's emitted-fact writer boundary.
 - No checker facts are filtered or inferred by this change. Temporary trace
-  hooks were removed. Focused review and push are pending. Broad runtime/domain
-  clone authorization remains unapproved and outside this repair.
+  hooks were removed. Frozen Team B code SHA is `f886eb02`; Agent 2 review is
+  pending. Broad runtime/domain clone authorization remains unapproved and
+  outside this repair.
 
 ### Team B native generator g++ warning follow-up (2026-11-05)
 
