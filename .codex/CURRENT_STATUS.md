@@ -15659,3 +15659,7 @@ untouched.
   isolated gates; run combined oracle and targeted parity/provenance checks;
   then sequentially repair residual semantic/native failures. Full suites and
   final architect GO remain outstanding. Keep all work on isolated branches.
+- L7 rebuilt `moss` successfully at `5f613ef5`. Re-ran local ownership,
+  R7-006 checker facts, R7-009 primitive-index (9/9), specialized ownership,
+  and B4 consumer fail-closed gates; all passed. These validate the current
+  checker/consumer base but do not include pending Team B emitter changes.
