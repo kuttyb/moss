@@ -16242,3 +16242,8 @@ untouched.
 - Fresh 60-fixture oracle, final default/shadow suites, clone provenance audit,
   and final independent review remain pending. This transport is WIP and is not
   an accepted Phase 28 implementation.
+- The Section 2 mutation helper now preserves v1/v2 framing when rebinding
+  synthetic artifacts. A targeted `check_phase26_1_1_x1.py` run currently stops
+  earlier on the same generic ReturnValue checker failure (`x1_library.identity`);
+  no Section 2 compatibility verdict is claimed until Team A repairs that
+  checker defect and the gate reruns.
