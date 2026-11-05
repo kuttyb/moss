@@ -16288,3 +16288,42 @@ untouched.
   fact to the rebuilt span. The consumer retains exact span matching.
 - Current consumer changes are uncommitted and awaiting Team B freeze/review.
   Broader clone provenance remains NO-GO; no runtime clone authority is added.
+
+## Phase 28 R7-010 continuation — checkpoint `feccc473` (2026-11-05)
+
+- Current L7 staging worktree is `tmp/phase28-r7-010-l7-query`, branch
+  `phase28-r7-010-l7-copy-authority`, exact HEAD
+  `feccc47323b4b081edb64bb4e9a618fb7ad4e9b9`. Parent repo remains on `main`;
+  all Phase 28 work is isolated. Staging branch is one commit ahead of origin
+  as of this checkpoint; no production branch was changed.
+- Team A's exact checker commit `9d9a5ae459d56b1473ed3e92c9405ee7fa12580d`
+  is integrated as `feccc473` and has independent Agent 2 GO. Team B frozen
+  consumer commit `5fbfc24a20a5d9c057f25ebc285c17ac56ac52ea` is integrated and
+  its three gates are registered in `tests/run.sh`; exact combined Agent 2
+  review after registration is pending.
+- Targeted combined gates pass: compiler build, EST `.mossi` hash/import checks,
+  phase28 authority-fact matrix, R7-009 primitive/index 17/17, Echo authority
+  8/8, Team B ReturnValue ORACLE-13/58 parity and corruption, ORACLE-54 imported
+  artifact/consumer corruption, projected Echo and Vector Echo parity. Agent
+  feedback validator passes.
+- Fresh v2 60-fixture oracle ran at exact SHA `feccc473`: 19/60 all-gate PASS,
+  41 provenance failures, zero semantic/execution failures, zero harness or
+  infrastructure failures. The provenance gate saw 508 unverified clone rows:
+  484 unauthorized rows from outputs with provenance and 24 missing-sidecar
+  rows for ORACLE-54 consumer/provider in native Debug/Optimized. Durable
+  details: `docs/phase28/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER_FECCC473.md`;
+  raw run outputs are in the matching disposable `tmp/` paths.
+- `check_phase26_1_1_x1.py ./moss` fails at X1 provider build with
+  `MOSS_INTERNAL_INVARIANT return-value EST type fact missing outside exact
+  imported owner`. Team A has been assigned an isolated checker-only follow-up.
+  After it lands, rerun X1 plus `check_phase27_est_mossi.py` and all affected
+  authority tests.
+- Clone provenance remains the main acceptance blocker. Team C's pinned audit
+  has 1,933 candidate operations / 84 lexical output groups on its 67-artifact
+  set; these are not proven emitter identities. The Team B clone follow-up is
+  tasked to reconcile and repair provenance on an isolated branch. No runtime
+  clone exception has been approved.
+- Remaining: exact integrated Team B independent GO; resolve X1; provenance and
+  corruption audit; rerun current targeted gates; then full default and
+  EST-shadow suites against established baselines, final 60-fixture oracle,
+  freeze SHA, and independent final Agent 2 GO. No production merge authorized.
