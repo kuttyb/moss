@@ -16335,3 +16335,14 @@ untouched.
 - Agent 2 also found trailing Markdown whitespace in two staging oracle ledger
   files. L7 removed that whitespace; this is documentation-only and does not
   alter the oracle data or measured result.
+- Team B's first inventory against the exact `feccc473` base reports 84 generated
+  Rust artifacts, 510 literal `.clone()` invocations in 41 lexical source/site
+  groups: two explicit `copy(v[0])` occurrences joined to exact checked-copy
+  facts; four generated `w.clone()` domain-handle occurrences; and 504 runtime
+  template occurrences from six repeated sites. This differs from Team C's older
+  67-artifact / 1,933-operation broader operator scan and is not arithmetically
+  combined with it. All four domain-handle occurrences and all runtime sites
+  remain unapproved; the 508 oracle occurrences without accepted authority are
+  still blocking. Exact paths/scanner output and a per-group reconciliation are
+  pending from Team B. L7 requested an independent audit of the six runtime
+  callsites; no registry exception is approved.
