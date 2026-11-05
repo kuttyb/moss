@@ -1320,24 +1320,78 @@ class Generator {
         [&](const TypedReturnValueFactV1& candidate) {
       string callable = callable_context;
       if (starts_with(callable, "fn:")) callable.erase(0, 3);
-      const Function* owner = nullptr;
-      size_t owner_count = 0;
-      for (const auto& function : checked_program.functions)
-        if (function.name == callable) {
-          owner = &function;
-          ++owner_count;
+      if (starts_with(callable_context, "fn:")) {
+        const Function* owner = nullptr;
+        size_t owner_count = 0;
+        for (const auto& function : checked_program.functions)
+          if (function.name == callable) {
+            owner = &function;
+            ++owner_count;
+          }
+        if (owner_count != 1 || !owner) return false;
+        const string module = module_name_from_symbol(owner->name);
+        if (module.empty() || !checked_program.external_modules.count(module))
+          return false;
+        const auto module_identity = checked_program.module_identities.find(module);
+        return module_identity != checked_program.module_identities.end() &&
+            !module_identity->second.empty() &&
+            candidate.provenance.defining_module_id == module_identity->second &&
+            candidate.provenance.enclosing_callable_id == callable_context &&
+            !statement.source_file.empty() &&
+            candidate.provenance.source_file == statement.source_file;
+      }
+
+      const string method_prefix = "method:";
+      if (!starts_with(callable_context, method_prefix)) return false;
+      const string method_identity = callable_context.substr(method_prefix.size());
+      const auto separator = method_identity.rfind('.');
+      if (separator == string::npos || separator == 0 ||
+          separator + 1 >= method_identity.size()) return false;
+      string object_identity = method_identity.substr(0, separator);
+      const string method_name = method_identity.substr(separator + 1);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_OWNER"))
+        object_identity += ":wrong-owner";
+#endif
+      const ObjectType* owner_object = nullptr;
+      size_t object_count = 0;
+      for (const auto& object : checked_program.objects)
+        if (object.name == object_identity) {
+          owner_object = &object;
+          ++object_count;
         }
-      if (owner_count != 1 || !owner) return false;
-      const string module = module_name_from_symbol(owner->name);
+      if (object_count != 1 || !owner_object) return false;
+      const Method* owner_method = nullptr;
+      size_t method_count = 0;
+      for (const auto& method : owner_object->methods)
+        if (method.name == method_name && method.owner == owner_object->name) {
+          owner_method = &method;
+          ++method_count;
+        }
+      if (method_count != 1 || !owner_method) return false;
+      const string module = module_name_from_symbol(owner_object->name);
       if (module.empty() || !checked_program.external_modules.count(module))
         return false;
       const auto module_identity = checked_program.module_identities.find(module);
-      return module_identity != checked_program.module_identities.end() &&
-          !module_identity->second.empty() &&
-          candidate.provenance.defining_module_id == module_identity->second &&
+      if (module_identity == checked_program.module_identities.end() ||
+          module_identity->second.empty() ||
+          candidate.provenance.defining_module_id != module_identity->second)
+        return false;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_MODULE"))
+        return false;
+      string source_file = statement.source_file;
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_SOURCE"))
+        source_file += ":wrong-source";
+#else
+      const string& source_file = statement.source_file;
+#endif
+      return !source_file.empty() &&
           candidate.provenance.enclosing_callable_id == callable_context &&
-          !statement.source_file.empty() &&
-          candidate.provenance.source_file == statement.source_file;
+          candidate.provenance.source_file == source_file &&
+          (!owner_method->execution_source_file.empty()
+              ? owner_method->execution_source_file == source_file
+              : true);
     };
     const auto occurrence_span =
         checked_program.expression_arenas[handle->arena_index]->span(handle->expr);

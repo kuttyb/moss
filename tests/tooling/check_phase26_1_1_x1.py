@@ -172,19 +172,23 @@ def main() -> int:
         "MOSS_TEST_DROP_RETURN_VALUE_METHOD_ARTIFACT_FACT":
             "source-free method body has missing or duplicate ReturnValue authority",
         "MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_ARTIFACT_FACT":
-            "ReturnValue artifact callable identity mismatch",
+            "ReturnValue artifact record is not authoritative",
     }
+    check_only_dir = library / "build" / "check-debug"
     for hook, expected in method_artifact_corruptions.items():
         corruption_env = env.copy()
+        corruption_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+        corruption_env["MOSS_MODULE_PATH"] = str(check_only_dir)
         corruption_env[hook] = "1"
         corrupted_method = subprocess.run(
-            [str(MARGO), "build", "--check", "--json"], cwd=app,
+            [str(MOSS), "run", "--interp", str(app / "src" / "main.moss")],
+            cwd=app,
             env=corruption_env, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         output = corrupted_method.stdout + corrupted_method.stderr
         if corrupted_method.returncode == 0 or expected not in output:
             raise AssertionError(
-                f"method ReturnValue corruption {hook} did not fail closed:\n"
+                f"method ReturnValue artifact corruption {hook} did not fail closed:\n"
                 f"{output}")
 
     native = subprocess.run([str(MARGO), "build", "--json"], cwd=app,
@@ -205,7 +209,6 @@ def main() -> int:
                   if line.startswith("{")]
         return result, events
 
-    check_only_dir = library / "build" / "check-debug"
     check_only_rlibs = list(check_only_dir.rglob("*.rlib"))
     if check_only_rlibs:
         raise AssertionError(
@@ -232,6 +235,30 @@ def main() -> int:
 
     if normalized_trace(trace) != normalized_trace(native_trace):
         raise AssertionError("check-only and native dependency traces differ")
+
+    method_consumer_corruptions = (
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_OWNER",
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_MODULE",
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_SOURCE",
+        "MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT",
+        "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID",
+    )
+    for hook in method_consumer_corruptions:
+        corruption_env = env.copy()
+        corruption_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+        corruption_env["MOSS_MODULE_PATH"] = str(check_only_dir)
+        corruption_env[hook] = "1"
+        corrupted_method = subprocess.run(
+            [str(MOSS), "run", "--interp", str(app / "src" / "main.moss")],
+            cwd=app, env=corruption_env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = corrupted_method.stdout + corrupted_method.stderr
+        if corrupted_method.returncode == 0 or \
+                "MOSS_INTERNAL_INVARIANT" not in output or \
+                "return-value" not in output.lower():
+            raise AssertionError(
+                f"method ReturnValue consumer corruption {hook} did not fail closed:\n"
+                f"{output}")
     # Section 2 is not semantic input or part of the interface fingerprint.
     # A damaged execution payload must leave `moss check`'s verdict alone but
     # must fail closed when the Fast Debug interpreter requests it.
