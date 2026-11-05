@@ -17097,15 +17097,24 @@ untouched.
   Optimized output plus seven corruptions, Fast Debug default/shadow plus five
   corruptions, checker transfer authority (23 scenarios), Match WRITE, and
   Match READ gates all pass. The initial build exposed an unused-variable
-  warning; Team B's warning-only fix `22a9e924` has independent GO and is
-  pushed, but has not yet been integrated.
+  warning; Team B's warning-only fix `22a9e924` has independent GO and is now
+  integrated at L7 commit `b2dddb80`. Rebuilt `moss-dev` and `moss-opt` and
+  reran native transfer, Fast Debug default/shadow, Match WRITE, Match READ,
+  feedback, and diff checks successfully; the new native warning is gone
+  (existing `type_ir` initializer warnings remain).
 - Fresh Regex package copy at
   `tmp/phase28-r7-010-l7-regex-combined-07aa/regex` now generates Rust and
   provenance, then Cargo fails on 12 `unused_parens` warnings for primitive
   MatchResult READ payload expressions (`(*start)` / `(*end)`) under warnings as
   errors. No Vec/`&Vec` transfer type errors were reported in this build. Team B
-  is investigating this separate READ formatting path. The checker-owned
-  decision-slot contract for missing transfer requirements is also pending.
+  is investigating this separate READ formatting path on a follow-up branch.
+- Team A confirmed the checker contract gap: the producer currently emits
+  local-transfer rows only for positive transfer cases; absence cannot
+  distinguish an ordinary READ borrow from an omitted answer. Team A is
+  implementing the proposed explicit Borrowed/Transferred decision disposition
+  and a required exact row for every applicable whole-local assignment, with
+  unsupported outcomes explicit. L7/native production fail-closed status stays
+  open until this reviewed contract is integrated.
 - Remaining acceptance blockers are the fresh Regex package build, complete
   clone authorization/provenance audit, frozen 60-fixture oracle, and full
   default/EST-shadow regression suites. Team C has no new frozen conformance
