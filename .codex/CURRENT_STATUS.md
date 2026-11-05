@@ -16062,9 +16062,10 @@ untouched.
   failures were recorded.
 - Team C's independently reviewed ledger is integrated at
   `docs/phase28/team-c/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER.md`; report SHA
-  `1a5562ac2487e12d0fdc985f1df438806f421ce0` received Agent 2 GO, then only
-  docs-only Team closeout commits were added. Team C's final branch
-  `4552be603fb386766306dafba70ffff6133c1835` is pushed and remote-verified.
+  `1a5562ac2487e12d0fdc985f1df438806f421ce0` received Agent 2 GO. Team C's
+  final delivery SHA `2227c2aa29828a1eec9b8ee51dd27dce357245c3` is pushed and
+  remote-verified; commits after the reviewed report SHA are docs-only closeout
+  changes (including an exact final-SHA pin).
   It records 538 observed clone rows: 2 checked explicit-copy rows, 512
   submitted unauthorized rows, and 24 missing-sidecar rows; 536 remain
   unverified. This is a fresh 60-fixture result, distinct from earlier 524/500
@@ -16072,9 +16073,11 @@ untouched.
 - Team A is repairing checker defects and adding exact MissingKey, ReturnValue,
   collection-view, and projected-collection READ facts. Team B's reviewed
   ORACLE-19 match-borrow checkpoint `4c1093127c068c720661da26271ab572aa04477f`
-  has Agent 2 focused GO but awaits a durable negative regression for unsupported
-  nested projection lowering. Team B overall remains NO-GO; Map view/ReturnValue
-  consumers and the broad clone corpus remain unresolved. No runtime clone has
-  been authorized by this status update.
+  plus test-only negative follow-up `7c15378d6717afb22de2ecb78000b930e372496f`
+  have Agent 2 focused GO; the negative test proves unsupported nested
+  projections fail closed. Team B's scoped branch is still awaiting push/feedback
+  closeout. Team B overall remains NO-GO: Map view/ReturnValue consumers and the
+  broad clone corpus remain unresolved. No runtime clone has been authorized by
+  this status update.
 - Full default and EST-shadow suite runs have not yet been performed; rerun the
   60-fixture oracle after focused repairs settle.
