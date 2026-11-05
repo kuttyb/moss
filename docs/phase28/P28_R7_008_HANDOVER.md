@@ -32,10 +32,8 @@ All implementation, reconciliation, oracle evaluation, and full `make check` reg
 
 ## 2. Immediate Next Steps for the Receiving Agent Team
 
-### Step 1: Complete Independent Agent 2 Review on `phase28-r7-008-integration`
-The staging implementation is frozen at `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc` (only this handover doc commit sits on top of it).
-- Run Independent Agent 2 review over `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc` (or `HEAD` of `phase28-r7-008-integration`) to certify **GO** on P28-R7-008 Step 4.
-- Record the Agent 2 GO verdict in `docs/phase28/P28_R7_008_INTEGRATION_REPORT.md` and `.codex/CURRENT_STATUS.md`, commit, and push to `origin/phase28-r7-008-integration`.
+### Step 1: Independent Agent 2 Review Status — COMPLETE (**GO**)
+Independent Agent 2 (`d3d1cc9f-7ea8-4ded-9fd2-7ffb508bb020`) audited frozen implementation SHA `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc` (`2b11d84ab0db95d1c838c0021310765245468cb2`) and returned a formal **GO** verdict across all P28-R7-008 gates (branch/input provenance, zero diff against certified oracle `46619968` + 16/16 harness tests, reconciliation of all 4 flagged W12 defect classes + 22 inherited `make check` regressions, and spot-check verification gates).
 - **Hard Boundary Reminder:** Do **NOT** merge `phase28-r7-008-integration` into `phase28-work` or `main` without separate L7 authorization.
 
 ### Step 2: Follow-Up Workstreams to Close Remaining Phase 28 Oracle Gaps (Once L7 Authorizes)
