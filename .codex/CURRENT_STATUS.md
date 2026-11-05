@@ -61,6 +61,50 @@
   `phase28-work` default and shadow baselines are recorded separately above.
   No production merge is authorized.
 
+### Team B canonical checked Program consumer follow-up (2026-11-05)
+
+- Branch `phase28-r7-010-team-b-copy-est-context` is based on Team A's frozen
+  checker commit `dee17faf7ee8acc0eca2579c15f461cbbb4715c7`. The tracked regex
+  package source is unchanged. The L7 provisional regex copy edits were applied
+  only to a temporary package copy to reproduce the native/Margo failure.
+- Root cause: the package artifact's projected `p_` had no `typed_semantics`,
+  while `semantic_program_` retained the checker facts and the active statement
+  retained the exact handles. For `copy(raw_chars[r_idx])` at statement 147,
+  line 276, the canonical active handle is arena 0 / ExprId 1062, fingerprint
+  `1695494155644128695`, span `[0,22)`. This matches the copy expression. The
+  consumer now resolves Copy, LocalOwnership, and Match facts against the same
+  canonical Program as their EST arenas, preserving exact requirement, context,
+  span, authority, and EST effect checks. Test-only fact corruption hooks
+  mutate that same canonical module.
+- Targeted passing evidence:
+  `make --jobs="$(nproc)" COMPILER_DIR=tmp/team-b-copy-est-context/build/compiler moss-dev`;
+  `check_canonical_copy_context.py` (temporary package source; canonical fact
+  drop and perturb both fail closed);
+  `check_nested_copy_helper.py` (Fast Debug/native Debug/Optimized plus five
+  corruption cases);
+  `check_native_join_slot.py` (ORACLE-51 parity plus five copy corruption
+  cases);
+  `check_match_projection_read_borrow.py` (ORACLE-19);
+  `check_match_payload_write.py` (ORACLE-32); and
+  `check_phase27_5_1_facts_and_fast_debug.py` all pass.
+- Normal temporary-package `margo build --json` now gets past the explicit-copy
+  context failure and writes Rust, then fails in the production provenance
+  builder at `native_clone_provenance.hpp:543` (`per-fact helper definition
+  missing or duplicated`). For the temporary source SHA-256
+  `20bdb819ad54b8d950748be812d2a23b7e8b288b336c193535d23d6ee8c29c8e`, Rust
+  artifact SHA-256 is
+  `6196cf2a7bf86248714438a7cbf92b71b85e88f4eec47b41933ed1ee9456adb60`; it
+  contains 20 helper definitions / 16 unique names. Four fact identities are
+  each defined and called twice across `regex__run_nfa_search_from` and
+  `__moss_view_regex__run_nfa_search_from`:
+  `c2d8f1b98b321122`, `8126c0362fc26de4`, `6da60120846fe42e`, and
+  `df6f364d09e84cea`. L7 owns this separate builder/schema issue; no validator
+  relaxation was made.
+- Consumer candidate is uncommitted and awaits independent review. No checker,
+  oracle expectation, `moss.cpp`, or tracked package source edits are included.
+  The provenance-builder limitation must remain explicit in review and
+  integration results.
+
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 
 - Worktree branch `phase28-r7-010-team-b-root-capture-nested` is based on
