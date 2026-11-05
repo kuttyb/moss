@@ -69,6 +69,14 @@ fn main():
   store = Store(strings = ["indexed"])
   echo message store.Read()
 ''',
+    "option_index_reply_rejected": '''domain Store:
+  values: Vector[option[Int]]
+  fn Read() -> option[Int]:
+    reply values[0]
+
+fn main():
+  pass
+''',
     "option_index_return_rejected": '''fn first(items: Vector[option[Int]]) -> option[Int]:
   return items[0]
 
@@ -140,6 +148,10 @@ def main() -> int:
           CASES["option_index_return_rejected"],
           "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
     print("PASS option_index_return_rejected", flush=True)
+    check("option_index_reply_rejected",
+          CASES["option_index_reply_rejected"],
+          "OWNERSHIP_COLLECTION_ELEMENT_CONSUME")
+    print("PASS option_index_reply_rejected", flush=True)
     check("option_iteration_return_rejected",
           CASES["option_iteration_return_rejected"],
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME")
