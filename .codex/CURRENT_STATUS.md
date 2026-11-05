@@ -16193,3 +16193,10 @@ untouched.
 - The earlier ORACLE-19 diagnostic mismatch and ORACLE-51 indexed-place emission failure are fixed without checker/oracle changes. ORACLE-51 consumes its existing exact `Write` authority; the nested match path consults `match_fact->is_consuming` rather than source spelling.
 - Team B is independently auditing a pinned 67-artifact corpus, reporting 1,933 candidate operator hits over 84 generation-site groups and 259 Clone-derive declarations. This scope differs from the 60-fixture clone ledger; group-level authorization and deduplication are not complete yet. No runtime site is approved.
 - Fresh 60-fixture oracle and full default/EST-shadow suites remain pending; the previously recorded 13/60 is not representative of this SHA. No production branch merge has occurred.
+
+## Fresh v2 oracle result on combined implementation `8b9ad2c5` (2026-11-05)
+
+- Ran all 60 certified v2 fixtures on implementation SHA `8b9ad2c578e2beb60bfcaf5a7ee7f4a8f2b72f72` with isolated artifacts and fresh output files `tmp/phase28-r7-010-combined-8b9ad2c5.json` and `.md`. Result: 19/60 all applicable gates pass, 41 fail one or more gates.
+- Four semantic/execution failures: ORACLE-42 native Debug/Optimized emission, ORACLE-54 imported provider `.mossi` build, ORACLE-55 native Debug/Optimized emission, ORACLE-58 Fast Debug plus native Debug/Optimized. Exact failure details are in `docs/phase28/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER_8B9AD2C5.md`.
+- Thirty-seven additional fixtures fail clone provenance with 448 unauthorized emitted clone rows; no missing-sidecar blocks or harness infrastructure failures in this run. Rows are occurrences, not distinct causes. Team B is reconciling its separate pinned 67-artifact / 84-site audit; no runtime clones are authorized.
+- This fresh result supersedes neither the earlier ledger nor changes any expectations; it is bound to exact SHA `8b9ad2c5`. Targeted consumer fixes integrated later in `0fd269d2` have been revalidated on the current staging source; rerun the full oracle after the four semantic failures are repaired. Final default/shadow suites remain pending.
