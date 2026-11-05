@@ -49,6 +49,49 @@ remain unverified. The scanner also found `.cloned()` 4, `.copied()` 6,
 `mem::replace` 213, `mem::take` 14 and `String::from`/`Vec::from` 2. Their
 semantics vary; these are not counts of Moss value copies.
 
+## Clone trait capabilities and 524/494 reconciliation
+
+The scanner now reports `#[derive(Clone)]` declarations on generated Moss
+`type`/`enum` regions separately from invoked clone operations. A derive
+declaration creates a Rust duplication capability; it is not itself a value
+copy and does not grant semantic authority. The inventory also associates
+clone calls inside typed `__moss_copy_value_*` helper bodies with the helper's
+raw fact-marker locator, while explicitly leaving that locator unauthenticated
+until the checked-fact validator verifies it.
+
+On the WIP checkpoint's 71-artifact set, the operator scan remains **2,047
+candidate operations in 86 groups**, including **530 `.clone()` occurrences**:
+524 direct fixture observations plus 6 provider observations. The separate
+capability scan finds **344 Moss-region Clone derive declarations**, repeated
+across artifacts, representing **26 unique Moss type/enum names**. The
+single-file current ORACLE-10A artifact has five such declarations (four
+standard error enums and Moss `Record` at Rust line 3402); its `Record` clone
+at line 3448 is the one call inside the fact-specific helper, with a marker
+whose 16-character helper prefix matches the full fact ID. The full Team C
+validator independently checked that occurrence against the exact checker
+query. The other six `.clone()` occurrences in that artifact are runtime
+occurrences and remain unclassified.
+
+The later post-Map.get comparison set at
+`tmp/phase28-r7-010/tmp/phase28-r7-010/oracle-post-mapget-v2` contains 67 Rust
+artifacts. Re-running this scanner gives **1,933 candidates in 84 groups** and
+**500 `.clone()` calls**: 494 direct fixture observations plus 6 provider
+observations, matching the later failure ledger's 494 direct-artifact count.
+That set has 259 repeated Clone derive declarations. Its older generated
+artifacts do not use fact-specific helper symbols, so the new helper-use
+association finds none there; this is a scanner-format limit, not evidence
+that the older `.clone()` sites are unauthorized or absent.
+
+The Team B 44513837 vector-read-and-echo debug/optimized artifacts comprise
+six Rust files and produce 162 candidate observations in 27 groups, with 36
+`.clone()` calls (six runtime sites repeated six times). There are 28 Clone
+derive declarations across those files: four standard error enums repeated in
+each artifact plus `Node` and `Bag` in their corresponding debug/optimized
+files. The application loops contain no detected clone operation. Their
+`Node`/`Bag` derives expose a capability but do not prove an invoked duplicate;
+the inventory cannot rule out unscanned or future call paths from the derive
+alone.
+
 ## Moss-marked operations observed
 
 The 21 groups (44 occurrences) point to these generated source expressions:
@@ -122,7 +165,10 @@ and character literals before recognizing known spellings. It detects direct
 
 It does not expand macros or inspect Rust AST/MIR, trait resolution, `Copy`
 loads, compiler intrinsics, arbitrary conversion/constructor APIs, or
-user-defined helpers that duplicate values without these spellings. Its
+user-defined helpers that duplicate values without these spellings. Clone
+derive detection reports Moss-type capabilities but does not prove all
+possible invocation reachability; only typed per-fact helper bodies receive a
+separate lexical association, and their marker is not itself authority. Its
 “generation-site” key is lexical output context, not a proven native emitter
 function identity. Thus a clean scan would not establish absence of
 duplication. **Gate result: NO-GO** while any occurrence lacks an independent

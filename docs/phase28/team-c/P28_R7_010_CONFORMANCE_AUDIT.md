@@ -161,6 +161,42 @@ throughout and tests both canonical sort orders using different source paths.
 The full live-query and no-live-query test runs both pass; a fresh Agent 2
 review of this repair remains pending.
 
+## Frozen Team B vector-read artifact audit
+
+The certified v2 IDs are ORACLE-39 Vector-for-read and ORACLE-42 custom-wrapper
+remove. Team B's test-only correction at `44513837` now names and exercises
+those fixture IDs correctly. Both Team B legacy fixture files have the same
+SHA-256 bytes as the corresponding frozen v2 fixture files
+(`oracle_39_vector_for_read.moss`: `338635a7...572cf64`;
+`oracle_42_custom_wrapper_remove.moss`: `3104b223...e2c595`). The shared
+expectations digest remains `7ca0d550...657f23a2`.
+
+On Team B frozen candidate `44513837bea00ed5071342053f2f724d17ae617e`, the
+independent v2 fixture evaluator observed checker, Fast Debug, Native Debug and
+Native Optimized all match expected output for both fixtures. The complete
+evaluation is nevertheless **FAIL** for both because isolated native outputs
+have no `.mossclone.json`: each debug/optimized artifact has six unclassified
+runtime `.clone()` calls, so strict clone audit returns `PROVENANCE_MISSING`.
+This sidecar requirement is an L7 integration dependency for the isolated B
+artifacts, not proof of a loop-element clone.
+
+The corrected Team B gate script passes for both fixtures and a borrowed-read
+then write lifetime probe. Generated ORACLE-39 code uses `(v).iter()` and
+prints `(item).id`; ORACLE-42's final indexed echo prints the indexed place
+directly. Raw application bodies show no clone call. Loop-fact drop, perturb
+and duplicate hooks on ORACLE-39 fail Fast Debug and both native emitters with
+`MOSS_INTERNAL_INVARIANT`; the ordinary checker remains successful because
+these hooks perturb consumers, not checker output.
+
+The expanded inventory separately reports generated Moss `Clone` derive
+capabilities. Across the 71-file checkpoint set it found 344 declarations
+(26 unique Moss type/enum names); on Team B's six focused artifacts it found
+28 declarations, including `Node` and `Bag`. These are capabilities, not clone
+occurrences. The ORACLE-10A `Record` derive at Rust line 3402 has one observed
+fact-specific helper use at line 3448; the independent provenance validator
+matches that call to its checker fact. No other derived-type call reachability
+is established by the scanner, which remains an explicit audit limit.
+
 ## Remaining Team C work
 
 - Audit Team B's frozen v3 helper artifacts against raw Rust derivation, then
