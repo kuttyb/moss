@@ -998,11 +998,9 @@
     o << ((d.exported || p_.explicit_module) ? "pub " : "") << "trait " << d.name << "Messages {\n";
     for (const auto& h : d.handlers) {
       for (const string& prefix : {string(""), string("__moss_message_")}) {
-        bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
         for (const auto& p : h.params)
-          o << ", " << (shared ? shared_message_parameter(p)
-                                 : p.name + ": " + rust_type(p.type));
+          o << ", " << shared_message_parameter(p);
         o << ") -> " << (prefix.empty() ? handler_internal_return_type(h)
                                          : handler_message_return_type(h))
           << ";\n";
@@ -1146,8 +1144,7 @@
         bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
         for (const auto& p : h.params) {
-          string parameter = shared ? shared_message_parameter(p)
-                                    : p.name + ": " + rust_type(p.type);
+          string parameter = shared_message_parameter(p);
           if (external_module && !standard_error_variants(
                   canonical_type_name(p.type)).empty()) {
             const string local = canonical_type_name(p.type);

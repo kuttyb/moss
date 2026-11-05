@@ -215,8 +215,14 @@ string root_ingress_message(const string& receiver, const string& handler,
     invocation << ")";
   } else if (target_domain.exported && !exported_domain_bridge_body_) {
     invocation << domain_temp << ".__moss_message_" << handler << "(";
-    for (size_t index = 0; index < argument_locals.size(); ++index)
-      invocation << (index ? ", " : "") << argument_locals[index];
+    for (size_t index = 0; index < argument_locals.size(); ++index) {
+      if (index) invocation << ", ";
+      const auto& parameter = target_handler.params.at(index);
+      if (borrowed_message_type(parameter.type))
+        invocation << "&(" << argument_locals[index] << ")";
+      else
+        invocation << argument_locals[index];
+    }
     invocation << ")";
   } else {
     invocation << domain_temp << "." << handler << "_shared(";
