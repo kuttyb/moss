@@ -15629,3 +15629,33 @@ untouched.
   native discrepancies, then clone provenance; final suites, oracle rerun,
   and independent review remain outstanding. No final SHA, commit, or push for
   this L7 changelist; no production merge.
+
+# Phase 28 R7-010 — L7 continuation checkpoint (2026-11-04)
+
+- L7 worktree branch `phase28-r7-010-l7-copy-authority` is at
+  `d44010c7bacd3aad684696cc78a9b47a97c2ef46`. The new commit documents the
+  v3 clone-provenance schema (lexical copy rows and specialization fact groups)
+  and updates `AGENTS.md` to record scoped commit/push authorization while
+  retaining the no-production-merge boundary. No push or merge has occurred.
+- Team A exact implementation `a41dabc8d1baaa84f5aad9a269310d0ebfb92189`
+  has independent GO. The remaining native borrowed-view lowering issue is
+  assigned to Team B.
+- Team B is actively implementing on `phase28-r7-010-team-b-native-clone`;
+  current reported HEAD `690fd6ae` includes the sequential approved Team A
+  dependency commits. Native build and targeted ownership/specialization gates
+  pass. Borrowed-copy materialization, match WRITE consumption, and real v3
+  sidecar emission remain in progress; independent review is pending.
+- Team C candidate `349f6ecbc7a89ece2f19becde395c28361eb0c53` received
+  independent NO-GO: its validator rejects two lexical copy sites sharing one
+  specialization context. Team C has been asked to map contexts to fact sets,
+  add that regression fixture, and request a fresh review. Other reported C
+  gates passed; oracle expectations/digests were unchanged.
+- L7 ran `./moss agent bootstrap --json` in the isolated worktree and verified
+  `language_version=moss-0.1`. L7's live copy-authority query has passed the
+  oracle 10A, CRLF, same-line UTF-8, and three-specialization-row validator
+  probes. The current v3 serializer is not yet wired to native artifact output.
+- Next: receive Team B frozen API checkpoint and Team C re-reviewable fix;
+  implement artifact sidecar wiring in L7-owned `src/moss.cpp`; register the
+  isolated gates; run combined oracle and targeted parity/provenance checks;
+  then sequentially repair residual semantic/native failures. Full suites and
+  final architect GO remain outstanding. Keep all work on isolated branches.
