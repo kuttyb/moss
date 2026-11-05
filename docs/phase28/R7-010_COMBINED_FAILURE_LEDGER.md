@@ -18,6 +18,26 @@
   sites removed or authorized); the exact-expression locator gate passes but
   authorizes none. Eight qualified `Arc::clone` sites and other duplication
   operations still need independent source/type/authority analysis.
+- **Runtime source-site root cause (L7 source walk; authorization remains NONE):**
+
+  | Site | Source | Rust value whose ownership count/value is duplicated | Purpose |
+  |---|---|---|---|
+  | 01 | `executor_runtime.cpp:497` | `Arc<MossGlobalExec>` | Return active executor ownership after releasing process-runtime mutex. |
+  | 02 | `executor_runtime.cpp:847` | `Option<Vec<usize>>` | Return an owned `MossExecutorConfig` snapshot from `config(&self)`. |
+  | 03 | `executor_runtime.cpp:1397` | `Arc<MossBranchScopeState>` through `MossBranchScope` | Produce a new owned FFI reference from a borrowed raw scope handle. |
+  | 04 | `executor_runtime.cpp:58` | `Arc<MossFairNode>` | Retain the node for the lock queue's raw tail pointer. |
+  | 05 | `executor_runtime.cpp:152` | `Arc<MossFairWaiter>` | Keep a queue-owned waiter while the waiting thread retains its handle. |
+  | 06 | `executor_runtime.cpp:438` | `Arc<MossBranchScopeState>` | Keep a ready-queue entry alive across asynchronous Branch work. |
+  | 07 | `executor_runtime.cpp:643` | `Arc<MossGlobalExec>` | Keep executor state alive in the worker context guard. |
+  | 08 | `executor_runtime.cpp:723` | `Arc<MossGlobalExec>` | Transfer executor ownership into the worker thread closure. |
+  | 09 | `executor_runtime.cpp:909` | `Arc<MossGlobalExec>` | Retain active executor ownership in process runtime state. |
+  | 10 | `executor_runtime.cpp:1079` | `Arc<(Mutex<Option<R>>, Condvar)>` | Share root result storage between caller and queued worker closure. |
+  | 11 | `executor_runtime.cpp:1106` | `Arc<MossGlobalExec>` | Keep executor alive after dropping ingress lock and before admission. |
+
+  The source and type mapping accounts for the 3 direct rows and 8 qualified
+  Arc sites. It documents likely runtime lifetime/reference-count operations;
+  it does not prove all surrounding safety invariants and it authorizes no
+  clone. Agent 2's independent source audit is pending.
 - **Regression suites:** candidate Default and EST-shadow each report 87/167
   PASS, 79 FAIL, 1 SKIP. Logs are
   `tmp/r7-010-f388ee2a-default.log` and
