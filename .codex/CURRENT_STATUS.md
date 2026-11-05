@@ -15547,7 +15547,7 @@ untouched.
   correction below is uncommitted and requires fresh review. No merge to
   `phase28-work` or `main`.
 
-### R7-009 adversarial-review repair (uncommitted)
+### R7-009 adversarial-review repair (completed)
 
 - Reviewer NO-GO on `8d760085ffab49101dad1baf39a6bf4b7b3eeb9c` confirmed that
   the legacy shared Copy predicate recurses through `option[T]`, contrary to
@@ -15560,10 +15560,10 @@ untouched.
   W12 checker on dev/opt, R7-006 checker facts, feedback validator, and diff
   check. The refreshed 238-source result is unchanged: five intended baseline
   verdict changes and only the unrelated domain/take discrepancy versus a0.
-- Next: commit the minimal predicate/test repair, request independent review of
-  the new exact SHA, then push only after GO. Full suites remain unrun per scope.
+- Full suites remain unrun per scope; targeted validation and independent review
+  are recorded below.
 
-### R7-009 Option alias-flow re-review repair (uncommitted)
+### R7-009 Option alias-flow re-review repair (completed)
 
 - Re-review returned NO-GO on `e5fb2264fdad2f955d19950e6ef4ec72911d1271`:
   direct Option transfers rejected, but `value = items[0]; return value`
@@ -15576,5 +15576,7 @@ untouched.
 - The registered R7-009 harness now passes 9/9. Rebuilt dev/opt; local
   ownership, W12 checker dev/opt, R7-006 facts, feedback validation, and diff
   check pass. The refreshed 238-source verdict matrix is unchanged.
-- Next: commit and obtain another independent review on the exact new SHA.
-  Hold the push until GO; do not merge.
+- Final implementation SHA `6abe746ae7d641c8abbc7970ec1ee2ec5b97bc56` received
+  independent Agent 2 GO. The scoped branch was pushed and
+  `git ls-remote origin refs/heads/phase28-r7-009-equivalence` verified the
+  same SHA. No merge to `phase28-work` or `main`.
