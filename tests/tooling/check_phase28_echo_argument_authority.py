@@ -44,8 +44,8 @@ def check(extra_env: dict[str, str], *, expected_ok: bool) -> dict:
             raise AssertionError(f"expected checker success, got {result}")
     else:
         error = result.get("error") or {}
-        if proc.returncode == 0 or result.get("ok") or error.get("code") != \
-                "MOSS_INTERNAL_OR_IO_ERROR":
+        if proc.returncode == 0 or result.get("ok") or error.get("code") not in {
+                "MOSS_INTERNAL_OR_IO_ERROR", "MOSS_INTERNAL_INVARIANT"}:
             raise AssertionError(f"expected missing/contradictory Echo fact, got {result}")
     return result
 
@@ -65,6 +65,11 @@ def main() -> int:
     check({**validate, "MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT": "1"},
           expected_ok=False)
     print("PASS perturbed Echo argument fact fails closed", flush=True)
+
+    check({**validate,
+           "MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT_CONTEXT": "1"},
+          expected_ok=False)
+    print("PASS wrong advertised EST context fails closed", flush=True)
     return 0
 
 

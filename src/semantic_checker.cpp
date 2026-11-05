@@ -34470,7 +34470,9 @@ class Checker {
         const std::uint32_t echo_statement_occurrence_id = current_body_types_
             ? current_body_types_->statement_occurrence_id(statement)
             : UINT32_MAX;
-        const string echo_fact_context = expression_fact_context();
+        // Expression facts for Echo arguments are recorded above under
+        // echo_context. Publish and validate that exact arena context.
+        const string echo_fact_context = echo_context;
         for (size_t index = 0; index < statement.args.size(); ++index) {
           TypedEchoArgumentFactV1 fact;
           fact.echo_statement_occurrence_id = echo_statement_occurrence_id;
@@ -34544,18 +34546,46 @@ class Checker {
                 }
               }
             }
+#ifdef MOSS_TEST_BUILD
+            if (fact.mode ==
+                    TypedEchoArgumentModeV1::BorrowedVectorElement &&
+                std::getenv("MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT_CONTEXT"))
+              fact.est_fact_context += ":missing";
+#endif
+            if (fact.mode ==
+                TypedEchoArgumentModeV1::BorrowedVectorElement) {
+              const auto* retained = arena
+                  ? arena->facts(argument_handle->expr, fact.est_fact_context)
+                  : nullptr;
+              if (!retained)
+                fact.availability = TypedEchoArgumentFactV1::Availability::
+                    MissingEstFactContext;
+              else if (!retained->type || !fact.argument_type ||
+                       !retained->type->structurally_equal(
+                           *fact.argument_type))
+                fact.availability =
+                    TypedEchoArgumentFactV1::Availability::Contradictory;
+              else
+                fact.availability =
+                    TypedEchoArgumentFactV1::Availability::Present;
+            } else {
+              fact.availability =
+                  TypedEchoArgumentFactV1::Availability::Present;
+            }
             if (!current_body_types_ ||
                 echo_statement_occurrence_id == UINT32_MAX)
               fact.availability = TypedEchoArgumentFactV1::Availability::
                   MissingStatementOccurrence;
-            else if (fact.est_fact_context.empty())
-              fact.availability = TypedEchoArgumentFactV1::Availability::
-                  MissingEstFactContext;
             else if (fact.mode ==
                          TypedEchoArgumentModeV1::BorrowedVectorElement &&
                      (!fact.receiver_type || !fact.element_type))
               fact.availability = TypedEchoArgumentFactV1::Availability::
                   MissingReceiverType;
+            else if (fact.availability !=
+                     TypedEchoArgumentFactV1::Availability::Present)
+              err(statement.line,
+                  "Echo argument lacks a checked EST fact in its declared context",
+                  "MOSS_INTERNAL_INVARIANT");
             else
               fact.availability =
                   TypedEchoArgumentFactV1::Availability::Present;

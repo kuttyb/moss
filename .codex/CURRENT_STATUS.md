@@ -15693,13 +15693,20 @@ untouched.
   `MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT`.
 - Checker gate: `python3
   tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes exact
-  requirement resolution and proves drop/perturb fail closed. Dev build and
-  local ownership, W12, R7-006, feedback validator, and diff check pass; opt
-  build and baseline checker probe pass. L7 owns `tests/run.sh` registration;
-  Team B consumer integration is pending import of this checker API.
+  requirement resolution and proves drop/perturb fail closed. Agent 2 rejected
+  the first freeze because the published EST context differed from the one
+  used to record expression facts. The producer now uses the Echo recording
+  context (empty for nonspecialized bodies, functional context for specialized
+  bodies) and reads back the exact expression facts there, checking TypeRef
+  equality before publishing BorrowedVectorElement authority. A new
+  `MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT_CONTEXT` case proves a wrong advertised
+  context fails closed. Dev and opt builds pass; Echo corruption harness,
+  local ownership, W12 dev/opt, R7-006, feedback validator, and diff check pass;
+  opt baseline checker probe passes. L7 owns `tests/run.sh` registration;
+  Team B consumer integration is pending import of the reviewed checker API.
 - A separate Team B root-ingress issue was assessed: no exact message argument
   fact currently exists, and a READ borrow cannot cross `runtime_invoke`'s
   `Send + 'static` thunk. L7 is tracking the conflict with the existing
   borrowed-read fixture separately; no root-ingress authority was added here.
-- Next: freeze the checker API for independent review, then hand the exact
-  reviewed SHA to Team B. No push or merge yet.
+- Next: freeze the corrected checker API for a fresh independent review, then
+  hand the exact reviewed SHA to Team B. No push or merge yet.
