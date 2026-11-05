@@ -16804,3 +16804,51 @@ untouched.
   provenance-only FAIL, with 252 unauthorized direct `.clone()` rows and no
   semantic failures or engine disagreements. Final disposition is **NO-GO**;
   focused TLS Agent 2 GO is not combined architect acceptance.
+
+### Follow-up: regex package indexed String ownership / checked match authority
+
+- Current L7 branch HEAD remains `563275155d961ae9d44ef1bf4a247cc8bf0b4e56`;
+  worktree changes are provisional and uncommitted in
+  `packages/regex/src/main.moss`. The checker correctly rejected indexed
+  `String` elements passed into consuming helpers. Added explicit `copy(...)`
+  at eight such transfers, plus copy-to-local bindings for the two matcher
+  state-string reads, to preserve owned transfer authority.
+- Validated: `moss check packages/regex/src/main.moss --json` passes;
+  `check_phase26_0_1_c3_parse_cache.py` passes; Phase 27 EST functional-tree
+  checks pass in default/shadow; agent-feedback validator and `git diff --check`
+  pass.
+- Still blocked: native package generation / `margo test` fails closed with
+  `MOSS_INTERNAL_INVARIANT checked match arm fact is missing or contradictory`.
+  Do not treat the package repair as complete. Team B is investigating the
+  consumer on an isolated branch; Team A is checking whether match-arm typed
+  authority is missing. No consumer invariant was weakened. Full regression
+  suites have not been rerun after this package change.
+- Feedback record: `agent-feedback/phase28/team-l7-r7-010/regex-ownership/`.
+- Root cause from Team B trace: exact `regex_is_match` statement occurrence 1
+  at line 893 has authoritative scrutinee `res` fact but only the `NoMatch` arm;
+  it omits the actual `Matched(start, end)` arm. Native consumer identity
+  resolution is correct and remains fail-closed. Team A owns this checker fact
+  producer repair and its drop/perturb coverage.
+- Team A independently confirmed the checker producer bug: its match-arm scan
+  stops at the first nested Case body statement, so it records NoMatch and
+  omits later immediate Case arms. Team A is implementing a subtree-aware
+  immediate-arm walk with payload/binding/access and drop/perturb tests on an
+  isolated branch. Team B's clean worktree made no consumer edits.
+
+### Integrated nested match-arm authority repair — L7 `583fc919`
+
+- Integrated Team A's independently reviewed implementation `dee17faf` as
+  L7 commit `583fc919`; checker source walks the full flattened Match subtree
+  while collecting immediate Case arms only. Exact MatchResult arm facts now
+  retain both NoMatch and Matched(start,end), with payload identities, Int
+  types, access and transfer fields. Agent 2 returned GO on Team A's exact
+  source SHA; the status-only team commit is `c6b5429c`.
+- Registered `check_phase28_match_arm_authority.py` in Makefile check-parallel
+  and `tests/run.sh`, in default and EST-shadow modes. Rebuilt dev/opt pass;
+  integrated authority gate passes 9/9 scenarios in both modes. C3 negative
+  parse-cache gate and package semantic check pass.
+- Still blocked: provisional explicit-copy edits in `packages/regex/src/main.moss`
+  pass checking but native `margo build` fails with `explicit copy lacks checked
+  EST context`. Team B is tracing this on its isolated worktree. Package edits
+  remain uncommitted; no clone or oracle expectation was authorized/changed.
+  Full suites and fresh oracle have not been rerun on the integrated checker.
