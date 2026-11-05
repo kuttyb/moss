@@ -64,12 +64,13 @@ def refresh_v9_execution_section(text: str) -> str:
     prefix = text[:section2 + 1]
     section = text[section2 + 1:]
     framing = re.match(
-        r"execution_body_version 1\nexecution_body_length [0-9]+\n"
+        r"execution_body_version ([12])\nexecution_body_length [0-9]+\n"
         r"execution_body_hash sha256:[0-9a-f]{64}\n"
         r"execution_body_payload\n", section)
     if not framing or not section.endswith("execution_body_end\n"):
         raise AssertionError("malformed execution-body fixture framing")
     payload_begin = framing.end()
+    version = framing.group(1)
     payload_end = len(section) - len("execution_body_end\n")
     payload = section[payload_begin:payload_end]
     payload, count = re.subn(
@@ -122,7 +123,7 @@ def refresh_v9_execution_section(text: str) -> str:
     rebuilt.append(payload[cursor:])
     payload = "".join(rebuilt)
     header = (
-        "execution_body_version 1\n"
+        f"execution_body_version {version}\n"
         f"execution_body_length {len(payload.encode('utf-8'))}\n"
         "execution_body_hash sha256:" + hashlib.sha256(
             payload.encode("utf-8")).hexdigest() +
