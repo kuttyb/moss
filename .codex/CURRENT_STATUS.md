@@ -15633,3 +15633,23 @@ untouched.
 - Dev/opt builds and R7-009 17-case harness pass. The full borrowed-read gate,
   Echo authority contract, local ownership, W12 dev/opt, R7-006 facts, feedback
   validator, and diff check pass. Awaiting independent review; no push or merge.
+
+### R7-010 bare re-raise carrier transfer authority (local, review pending)
+
+- Exact `TypedExceptionalOwnershipFactV1` only describes the originating
+  exceptional edge and state-at-raise; it did not authorize transferring the
+  selected caught carrier through a bare `raise`.
+- Added checker-owned `TypedBareRaiseTransferFactV1` and matching requirement,
+  keyed by bare Raise and Recover statement occurrence, exact present source
+  exceptional edge and selected variant/type, plus specialization context.
+  The only mode transfers the original carrier and explicitly forbids copy.
+  Checker-populated `Stmt::checked_statement_occurrence_id` survives module
+  projection for consumer lookup.
+- `python3 tests/tooling/check_phase28_bare_raise_transfer.py ./moss` passes
+  exact resolution and proves drop/perturb fail closed. Direct
+  `MOSS_TEST_VALIDATE_BARE_RAISE_TRANSFER_CONTRACT=1` plus
+  `MOSS_TEST_REQUIRE_BARE_RAISE_TRANSFER_FACT=1` check on
+  `tests/tooling/fixtures/phase21_recovery_native.moss` passes; existing local
+  ownership contract gate passes. Dev build and diff check pass. L7 owns
+  `tests/run.sh` registration; Team B consumer import and native identity test
+  are pending. Await fresh Agent2 review; no push or merge.

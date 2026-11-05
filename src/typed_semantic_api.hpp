@@ -267,6 +267,90 @@ struct TypedExceptionalOwnershipRequirementV1 {
   Availability availability{Availability::MissingOccurrence};
 };
 
+// Exact permission to transfer the selected owned error carrier through a
+// bare `raise` in one recovery arm. This authorizes moving that carrier once;
+// it never authorizes duplicating it.
+enum class TypedBareRaiseTransferModeV1 : std::uint8_t {
+  TransferSelectedCarrier
+};
+
+struct TypedBareRaiseTransferFactV1 {
+  enum class Availability {
+    Present, MissingRaiseOccurrence, MissingRecoveryOccurrence,
+    MissingSourceEdge, MissingCarrierType, Contradictory
+  };
+  std::uint32_t bare_raise_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_est_arena_index{UINT32_MAX};
+  est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
+  std::uint32_t source_est_argument_index{UINT32_MAX};
+  std::string raised_variant_identity;
+  std::vector<std::string> source_raise_alternatives;
+  std::vector<std::string> recovery_alternatives;
+  std::string selected_carrier_type_identity;
+  std::string specialization_context;
+  std::string specialization_identity;
+  TypedBareRaiseTransferModeV1 mode{
+      TypedBareRaiseTransferModeV1::TransferSelectedCarrier};
+  bool transfers_original_carrier{false};
+  bool permits_copy{false};
+  Availability availability{Availability::MissingRaiseOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        bare_raise_statement_occurrence_id != UINT32_MAX &&
+        recovery_statement_occurrence_id != UINT32_MAX &&
+        source_statement_occurrence_id != UINT32_MAX &&
+        source_est_arena_index != UINT32_MAX &&
+        source_expression_occurrence_id != UINT32_MAX &&
+        source_est_slot != UINT8_MAX &&
+        source_est_argument_index != UINT32_MAX &&
+        !raised_variant_identity.empty() &&
+        !selected_carrier_type_identity.empty() &&
+        mode == TypedBareRaiseTransferModeV1::TransferSelectedCarrier &&
+        transfers_original_carrier && !permits_copy;
+  }
+};
+
+struct TypedBareRaiseTransferRequirementV1 {
+  using Availability = TypedBareRaiseTransferFactV1::Availability;
+  std::uint32_t bare_raise_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t source_est_arena_index{UINT32_MAX};
+  est::ExprId source_expression_occurrence_id{UINT32_MAX};
+  std::uint8_t source_est_slot{UINT8_MAX};
+  std::uint32_t source_est_argument_index{UINT32_MAX};
+  std::string raised_variant_identity;
+  std::vector<std::string> source_raise_alternatives;
+  std::vector<std::string> recovery_alternatives;
+  std::string selected_carrier_type_identity;
+  std::string specialization_context;
+  std::string specialization_identity;
+  TypedBareRaiseTransferModeV1 mode{
+      TypedBareRaiseTransferModeV1::TransferSelectedCarrier};
+  bool transfers_original_carrier{false};
+  bool permits_copy{false};
+  Availability availability{Availability::MissingRaiseOccurrence};
+
+  bool is_complete() const noexcept {
+    return bare_raise_statement_occurrence_id != UINT32_MAX &&
+        recovery_statement_occurrence_id != UINT32_MAX &&
+        source_statement_occurrence_id != UINT32_MAX &&
+        source_est_arena_index != UINT32_MAX &&
+        source_expression_occurrence_id != UINT32_MAX &&
+        source_est_slot != UINT8_MAX &&
+        source_est_argument_index != UINT32_MAX &&
+        !raised_variant_identity.empty() &&
+        !selected_carrier_type_identity.empty() &&
+        mode == TypedBareRaiseTransferModeV1::TransferSelectedCarrier &&
+        transfers_original_carrier && !permits_copy &&
+        availability == Availability::Present;
+  }
+};
+
 enum class TypedTakeReplacementV1 { OptionNone, VectorEmpty, MapEmpty, QueueEmpty };
 enum class TypedTakeProjectionKindV1 {
   RecordField, VectorIndex, MapIndex, QueueIndex
@@ -659,6 +743,9 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedExceptionalOwnershipFactV1> exceptional_ownership_facts;
   std::vector<TypedExceptionalOwnershipRequirementV1>
       required_exceptional_ownership_occurrences;
+  std::vector<TypedBareRaiseTransferFactV1> bare_raise_transfer_facts;
+  std::vector<TypedBareRaiseTransferRequirementV1>
+      required_bare_raise_transfer_occurrences;
 
   const TypedExceptionalOwnershipFactV1& find_exceptional_ownership_fact(
       const TypedExceptionalOwnershipRequirementV1& requirement) const {
@@ -722,6 +809,139 @@ struct TypedSemanticModuleV1 {
         result->recovery_alternatives != requirement.recovery_alternatives)
       throw std::invalid_argument(
           "required checked exceptional ownership fact missing or contradictory");
+    return *result;
+  }
+
+  const TypedBareRaiseTransferRequirementV1&
+  find_bare_raise_transfer_requirement(
+      std::uint32_t bare_raise_statement_occurrence_id,
+      std::uint32_t recovery_statement_occurrence_id,
+      const TypedExceptionalOwnershipFactV1& source_edge,
+      const std::string& selected_carrier_type_identity) const {
+    const TypedBareRaiseTransferRequirementV1* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& requirement :
+         required_bare_raise_transfer_occurrences) {
+      if (requirement.bare_raise_statement_occurrence_id !=
+              bare_raise_statement_occurrence_id ||
+          requirement.recovery_statement_occurrence_id !=
+              recovery_statement_occurrence_id ||
+          requirement.source_statement_occurrence_id !=
+              source_edge.source_statement_occurrence_id ||
+          requirement.source_est_arena_index !=
+              source_edge.source_est_arena_index ||
+          requirement.source_expression_occurrence_id !=
+              source_edge.source_expression_occurrence_id ||
+          requirement.source_est_slot != source_edge.source_est_slot ||
+          requirement.source_est_argument_index !=
+              source_edge.source_est_argument_index ||
+          requirement.raised_variant_identity !=
+              source_edge.raised_variant_identity ||
+          requirement.source_raise_alternatives !=
+              source_edge.source_raise_alternatives ||
+          requirement.recovery_alternatives !=
+              source_edge.recovery_alternatives ||
+          requirement.selected_carrier_type_identity !=
+              selected_carrier_type_identity ||
+          requirement.specialization_context !=
+              source_edge.specialization_context ||
+          requirement.specialization_identity !=
+              source_edge.specialization_identity)
+        continue;
+      ++matches;
+      result = &requirement;
+    }
+    if (matches != 1 || !result)
+      throw std::invalid_argument(matches
+          ? "duplicate or contradictory bare raise transfer requirement"
+          : "bare raise transfer requirement missing");
+    if (!result->is_complete())
+      throw std::invalid_argument("bare raise transfer requirement incomplete");
+    return *result;
+  }
+
+  const TypedBareRaiseTransferFactV1& find_bare_raise_transfer_fact(
+      const TypedBareRaiseTransferRequirementV1& requirement) const {
+    const auto& retained = find_bare_raise_transfer_requirement(
+        requirement.bare_raise_statement_occurrence_id,
+        requirement.recovery_statement_occurrence_id,
+        [&]() -> const TypedExceptionalOwnershipFactV1& {
+          TypedExceptionalOwnershipRequirementV1 exceptional_requirement;
+          exceptional_requirement.source_statement_occurrence_id =
+              requirement.source_statement_occurrence_id;
+          exceptional_requirement.recovery_statement_occurrence_id =
+              requirement.recovery_statement_occurrence_id;
+          exceptional_requirement.source_est_arena_index =
+              requirement.source_est_arena_index;
+          exceptional_requirement.source_expression_occurrence_id =
+              requirement.source_expression_occurrence_id;
+          exceptional_requirement.source_est_slot =
+              requirement.source_est_slot;
+          exceptional_requirement.source_est_argument_index =
+              requirement.source_est_argument_index;
+          exceptional_requirement.raised_variant_identity =
+              requirement.raised_variant_identity;
+          exceptional_requirement.source_raise_alternatives =
+              requirement.source_raise_alternatives;
+          exceptional_requirement.recovery_alternatives =
+              requirement.recovery_alternatives;
+          exceptional_requirement.specialization_context =
+              requirement.specialization_context;
+          exceptional_requirement.specialization_identity =
+              requirement.specialization_identity;
+          exceptional_requirement.availability =
+              TypedExceptionalOwnershipFactV1::Availability::Present;
+          return find_exceptional_ownership_fact(exceptional_requirement);
+        }(), requirement.selected_carrier_type_identity);
+    (void)retained;
+
+    auto same_identity = [&](const auto& item) {
+      return item.bare_raise_statement_occurrence_id ==
+              requirement.bare_raise_statement_occurrence_id &&
+          item.recovery_statement_occurrence_id ==
+              requirement.recovery_statement_occurrence_id &&
+          item.source_statement_occurrence_id ==
+              requirement.source_statement_occurrence_id &&
+          item.source_est_arena_index == requirement.source_est_arena_index &&
+          item.source_expression_occurrence_id ==
+              requirement.source_expression_occurrence_id &&
+          item.source_est_slot == requirement.source_est_slot &&
+          item.source_est_argument_index ==
+              requirement.source_est_argument_index &&
+          item.raised_variant_identity == requirement.raised_variant_identity &&
+          item.source_raise_alternatives ==
+              requirement.source_raise_alternatives &&
+          item.recovery_alternatives == requirement.recovery_alternatives &&
+          item.selected_carrier_type_identity ==
+              requirement.selected_carrier_type_identity &&
+          item.specialization_context == requirement.specialization_context &&
+          item.specialization_identity == requirement.specialization_identity;
+    };
+    std::size_t required_matches = 0;
+    for (const auto& candidate : required_bare_raise_transfer_occurrences)
+      if (same_identity(candidate)) ++required_matches;
+    if (required_matches != 1 || !retained.is_complete())
+      throw std::invalid_argument(
+          "unknown or contradictory required bare raise transfer");
+    const TypedBareRaiseTransferFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& fact : bare_raise_transfer_facts) {
+      if (!same_identity(fact)) continue;
+      ++fact_matches;
+      result = &fact;
+    }
+    if (fact_matches != 1 || !result)
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory bare raise transfer facts"
+          : "required bare raise transfer fact missing");
+    if (!result->is_authoritative() ||
+        result->mode != requirement.mode ||
+        result->transfers_original_carrier !=
+            requirement.transfers_original_carrier ||
+        result->permits_copy != requirement.permits_copy ||
+        result->availability != requirement.availability)
+      throw std::invalid_argument(
+          "required bare raise transfer fact missing or contradictory");
     return *result;
   }
   // Checker-issued bridge from a consumer's existing function-context alias

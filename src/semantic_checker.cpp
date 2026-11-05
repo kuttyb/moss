@@ -1938,6 +1938,10 @@ class Checker {
           exceptional_ownership_facts_;
       p_.typed_semantics->required_exceptional_ownership_occurrences =
           required_exceptional_ownership_occurrences_;
+      p_.typed_semantics->bare_raise_transfer_facts =
+          bare_raise_transfer_facts_;
+      p_.typed_semantics->required_bare_raise_transfer_occurrences =
+          required_bare_raise_transfer_occurrences_;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DROP_EXCEPTIONAL_OWNERSHIP_FACT") &&
           !p_.typed_semantics->exceptional_ownership_facts.empty())
@@ -1947,6 +1951,14 @@ class Checker {
           !p_.typed_semantics->exceptional_ownership_facts.empty())
         p_.typed_semantics->exceptional_ownership_facts.front()
             .raised_variant_identity += ":perturbed";
+      if (std::getenv("MOSS_TEST_DROP_BARE_RAISE_TRANSFER_FACT") &&
+          !p_.typed_semantics->bare_raise_transfer_facts.empty())
+        p_.typed_semantics->bare_raise_transfer_facts.erase(
+            p_.typed_semantics->bare_raise_transfer_facts.begin());
+      if (std::getenv("MOSS_TEST_PERTURB_BARE_RAISE_TRANSFER_FACT") &&
+          !p_.typed_semantics->bare_raise_transfer_facts.empty())
+        p_.typed_semantics->bare_raise_transfer_facts.front()
+            .selected_carrier_type_identity += ":perturbed";
 #endif
       p_.typed_semantics->local_ownership_specialization_contexts =
           local_ownership_specialization_contexts_;
@@ -2041,6 +2053,18 @@ class Checker {
         for (const auto& requirement :
              p_.typed_semantics->required_exceptional_ownership_occurrences)
           (void)p_.typed_semantics->find_exceptional_ownership_fact(requirement);
+      }
+      if (std::getenv("MOSS_TEST_VALIDATE_BARE_RAISE_TRANSFER_CONTRACT")) {
+        bool found_transfer = false;
+        for (const auto& requirement :
+             p_.typed_semantics->required_bare_raise_transfer_occurrences) {
+          (void)p_.typed_semantics->find_bare_raise_transfer_fact(requirement);
+          found_transfer = true;
+        }
+        if (std::getenv("MOSS_TEST_REQUIRE_BARE_RAISE_TRANSFER_FACT") &&
+            !found_transfer)
+          throw std::invalid_argument(
+              "checker did not retain the expected bare-raise carrier transfer fact");
       }
 #endif
       if (std::getenv("MOSS_EST_FACTS_DUMP")) {
@@ -2523,6 +2547,9 @@ class Checker {
   vector<TypedExceptionalOwnershipFactV1> exceptional_ownership_facts_;
   vector<TypedExceptionalOwnershipRequirementV1>
       required_exceptional_ownership_occurrences_;
+  vector<TypedBareRaiseTransferFactV1> bare_raise_transfer_facts_;
+  vector<TypedBareRaiseTransferRequirementV1>
+      required_bare_raise_transfer_occurrences_;
   std::map<string, string> local_ownership_specialization_contexts_;
   struct BodyOwnershipFlowAnalysis;
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
@@ -11018,6 +11045,11 @@ class Checker {
     std::uint32_t source_est_argument_index = UINT32_MAX;
   };
 
+  struct BareRaiseTransferContext {
+    const Stmt* recovery = nullptr;
+    std::vector<const ExceptionalOwnershipExit*> source_edges;
+  };
+
   const est::Handle* exceptional_source_handle(
       const Stmt& source, std::uint32_t argument_index = UINT32_MAX) const {
     std::optional<est::ExprSlot> slot;
@@ -11117,6 +11149,8 @@ class Checker {
   vector<ExceptionalOwnershipExit>* ownership_exceptional_sink_ = nullptr;
   const Stmt* ownership_exceptional_source_ = nullptr;
   std::uint32_t ownership_exceptional_argument_index_ = UINT32_MAX;
+  const BareRaiseTransferContext* active_bare_raise_transfer_context_ =
+      nullptr;
   OwnershipExpressionFrame* ownership_expression_frame_ = nullptr;
   vector<std::optional<EstExpressionCursor>> ownership_est_expression_cursors_;
 
@@ -26725,6 +26759,136 @@ class Checker {
     return alternatives;
   }
 
+  void retain_bare_raise_transfer_facts(const Stmt& statement) {
+    if (!statement.a.empty() || !active_bare_raise_transfer_context_ ||
+        !active_bare_raise_transfer_context_->recovery ||
+        !current_body_types_)
+      return;
+    const Stmt& recovery =
+        *active_bare_raise_transfer_context_->recovery;
+    const auto raise_occurrence = current_body_types_->statement_occurrence_ids.find(
+        &statement);
+    const auto recovery_occurrence =
+        current_body_types_->statement_occurrence_ids.find(&recovery);
+    if (raise_occurrence == current_body_types_->statement_occurrence_ids.end() ||
+        recovery_occurrence ==
+            current_body_types_->statement_occurrence_ids.end()) {
+      err(statement.line,
+          "bare re-raise lacks exact checked statement occurrences",
+          "MOSS_INTERNAL_INVARIANT");
+    }
+    for (const auto* source_edge :
+         active_bare_raise_transfer_context_->source_edges) {
+      if (!source_edge || !source_edge->source) continue;
+      const auto source_occurrence =
+          current_body_types_->statement_occurrence_ids.find(
+              source_edge->source);
+      if (source_occurrence ==
+          current_body_types_->statement_occurrence_ids.end())
+        err(statement.line,
+            "bare re-raise lacks its exact originating raise occurrence",
+            "MOSS_INTERNAL_INVARIANT");
+      for (const auto& identity : source_edge->alternatives) {
+        if (!recovery.exceptional_alternatives.count(identity)) continue;
+        const string variant_identity = identity.canonical();
+        vector<string> source_raise_alternatives;
+        for (const auto& alternative : source_edge->alternatives)
+          source_raise_alternatives.push_back(alternative.canonical());
+        vector<string> recovery_alternatives;
+        for (const auto& alternative : recovery.exceptional_alternatives)
+          recovery_alternatives.push_back(alternative.canonical());
+        const auto matching_exceptional_fact = std::find_if(
+            exceptional_ownership_facts_.begin(),
+            exceptional_ownership_facts_.end(),
+            [&](const TypedExceptionalOwnershipFactV1& candidate) {
+              return candidate.source_statement_occurrence_id ==
+                      source_occurrence->second &&
+                  candidate.recovery_statement_occurrence_id ==
+                      recovery_occurrence->second &&
+                  candidate.source_est_arena_index ==
+                      source_edge->source_est_arena_index &&
+                  candidate.source_expression_occurrence_id ==
+                      source_edge->source_expression_occurrence_id &&
+                  candidate.source_est_slot == source_edge->source_est_slot &&
+                  candidate.source_est_argument_index ==
+                      source_edge->source_est_argument_index &&
+                  candidate.raised_variant_identity == variant_identity &&
+                  candidate.source_raise_alternatives ==
+                      source_raise_alternatives &&
+                  candidate.recovery_alternatives == recovery_alternatives &&
+                  candidate.specialization_context ==
+                      current_semantic_context_ &&
+                  candidate.specialization_identity ==
+                      local_ownership_specialization_identity();
+            });
+        if (matching_exceptional_fact == exceptional_ownership_facts_.end() ||
+            matching_exceptional_fact->availability !=
+                TypedExceptionalOwnershipFactV1::Availability::Present)
+          err(statement.line,
+              "bare re-raise lacks a checked exceptional ownership edge",
+              "MOSS_INTERNAL_INVARIANT");
+
+        TypedBareRaiseTransferFactV1 fact;
+        fact.bare_raise_statement_occurrence_id = raise_occurrence->second;
+        fact.recovery_statement_occurrence_id = recovery_occurrence->second;
+        fact.source_statement_occurrence_id = source_occurrence->second;
+        fact.source_est_arena_index = source_edge->source_est_arena_index;
+        fact.source_expression_occurrence_id =
+            source_edge->source_expression_occurrence_id;
+        fact.source_est_slot = source_edge->source_est_slot;
+        fact.source_est_argument_index =
+            source_edge->source_est_argument_index;
+        fact.raised_variant_identity = variant_identity;
+        fact.source_raise_alternatives = std::move(source_raise_alternatives);
+        fact.recovery_alternatives = std::move(recovery_alternatives);
+        fact.selected_carrier_type_identity = identity.type;
+        fact.specialization_context = current_semantic_context_;
+        fact.specialization_identity =
+            local_ownership_specialization_identity();
+        fact.mode =
+            TypedBareRaiseTransferModeV1::TransferSelectedCarrier;
+        fact.transfers_original_carrier = true;
+        fact.permits_copy = false;
+        fact.availability =
+            TypedBareRaiseTransferFactV1::Availability::Present;
+
+        TypedBareRaiseTransferRequirementV1 requirement;
+        requirement.bare_raise_statement_occurrence_id =
+            fact.bare_raise_statement_occurrence_id;
+        requirement.recovery_statement_occurrence_id =
+            fact.recovery_statement_occurrence_id;
+        requirement.source_statement_occurrence_id =
+            fact.source_statement_occurrence_id;
+        requirement.source_est_arena_index = fact.source_est_arena_index;
+        requirement.source_expression_occurrence_id =
+            fact.source_expression_occurrence_id;
+        requirement.source_est_slot = fact.source_est_slot;
+        requirement.source_est_argument_index =
+            fact.source_est_argument_index;
+        requirement.raised_variant_identity = fact.raised_variant_identity;
+        requirement.source_raise_alternatives =
+            fact.source_raise_alternatives;
+        requirement.recovery_alternatives = fact.recovery_alternatives;
+        requirement.selected_carrier_type_identity =
+            fact.selected_carrier_type_identity;
+        requirement.specialization_context = fact.specialization_context;
+        requirement.specialization_identity = fact.specialization_identity;
+        requirement.mode = fact.mode;
+        requirement.transfers_original_carrier =
+            fact.transfers_original_carrier;
+        requirement.permits_copy = fact.permits_copy;
+        requirement.availability = fact.availability;
+        if (!fact.is_authoritative() || !requirement.is_complete())
+          err(statement.line,
+              "checker could not authorize exact selected-carrier transfer",
+              "MOSS_INTERNAL_INVARIANT");
+        bare_raise_transfer_facts_.push_back(std::move(fact));
+        required_bare_raise_transfer_occurrences_.push_back(
+            std::move(requirement));
+      }
+    }
+  }
+
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
                              const Handler* current_handler,
@@ -27238,6 +27402,26 @@ class Checker {
                 recovered.moved.erase(binding.first);
               }
           }
+          BareRaiseTransferContext bare_raise_context;
+          bare_raise_context.recovery = &arm;
+          for (const auto& raised : attempted_exits) {
+            const bool reaches_arm = std::any_of(
+                arm.exceptional_alternatives.begin(),
+                arm.exceptional_alternatives.end(),
+                [&](const RaisedIdentity& identity) {
+                  return raised.alternatives.count(identity) != 0;
+                });
+            if (reaches_arm) bare_raise_context.source_edges.push_back(&raised);
+          }
+          struct BareRaiseTransferScope {
+            const BareRaiseTransferContext*& slot;
+            const BareRaiseTransferContext* prior;
+            BareRaiseTransferScope(const BareRaiseTransferContext*& target,
+                                   const BareRaiseTransferContext* current)
+                : slot(target), prior(target) { slot = current; }
+            ~BareRaiseTransferScope() { slot = prior; }
+          } bare_raise_transfer_scope(
+              active_bare_raise_transfer_context_, &bare_raise_context);
           vector<ExceptionalOwnershipExit> arm_recovery_exits;
           check_ownership_block(statements, index, level + 1, recovered,
                                 current_domain, current_handler,
@@ -27867,6 +28051,8 @@ class Checker {
         case Stmt::Kind::Raise:
           if (!s.a.empty())
             check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          else
+            retain_bare_raise_transfer_facts(s);
           record_direct_raise();
           ++index;
           env.can_continue = false;
@@ -34192,11 +34378,13 @@ class Checker {
       remap(node.control_parent_id);
     }
     for (auto& [statement, id] : checked_types.statement_occurrence_ids) {
-      (void)statement;
       if (id >= statement_id_remap.size() || statement_id_remap[id] == UINT32_MAX)
         mark_ledger_incomplete(__LINE__);
-      else
+      else {
         id = statement_id_remap[id];
+        if (statement)
+          const_cast<Stmt*>(statement)->checked_statement_occurrence_id = id;
+      }
     }
     for (auto& expression : checked_types.expression_occurrences) {
       if (expression.statement_id >= statement_id_remap.size() ||
