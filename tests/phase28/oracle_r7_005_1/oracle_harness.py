@@ -756,16 +756,17 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
     expected_clone_spans: dict[str, list[tuple[int, int, int, int]]] = {
         copy_id: [] for copy_id in source_by_id}
     token_values = [token[0] for token in tokens]
-    for fact_id, (copy_id, _fact) in facts.items():
+    for fact_id, (copy_id, checked_fact) in facts.items():
         symbol = "__moss_copy_value_" + fact_id.removeprefix("typed-copy-fact-v1:")[:16]
         positions = [i for i, token in enumerate(tokens) if token[0] == symbol]
         fact_markers = markers_by_fact.get(fact_id, [])
         if not fact_markers:
             if positions:
                 raise ValueError("per-fact helper exists without its raw Rust call marker")
-            if fact["specialization_identity"]:
+            if checked_fact["specialization_identity"]:
                 raise ValueError("emitted specialization fact has no helper marker/call path")
-            base_context = fact["specialization_context"] or fact["provenance"]["enclosing_callable_id"]
+            base_context = checked_fact["specialization_context"] or \
+                checked_fact["provenance"]["enclosing_callable_id"]
             normalized_base = re.sub(r"@\d+(?:#.*)?$", "", base_context)
             if normalized_base in emitted_callable_ids:
                 raise ValueError("base callable is emitted but its copy fact has no helper marker")
@@ -776,7 +777,7 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
                     sibling_facts = specialization_facts.get((copy_id, sibling), set())
                     if not sibling_facts or not sibling_facts.issubset(markers_by_fact):
                         raise ValueError("template exemption has a generated specialization without a fact helper")
-            elif fact["provenance"]["line"] in emitted_source_lines:
+            elif checked_fact["provenance"]["line"] in emitted_source_lines:
                 raise ValueError("copy source line is emitted but no callable/helper mapping proves its status")
             # A base/template fact is non-emitted only when the raw callable
             # inventory shows no base callable and either its specialized

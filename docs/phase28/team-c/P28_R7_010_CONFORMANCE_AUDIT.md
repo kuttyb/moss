@@ -27,15 +27,20 @@ validator adversarial review. This report does not authorize compiler behavior.
 - Oracle harness unit tests with the live L7 checker query prototype:
   `MOSS_PHASE28_QUERY_COMPILER=/home/owner/daji/code/moss/tmp/phase28-r7-010-l7-query/moss
   PYTHONDONTWRITEBYTECODE=1 python3
-  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **37 passed**.
+  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **38 passed**.
   Coverage includes exact checker-fact forgery, missing/perturbed/duplicated
   authority, multiple specializations at one source span, live query retries,
-  UTF-8 byte columns, CRLF, and two lexical copies sharing each emitted
-  specialization context.
+  UTF-8 byte columns, CRLF, two lexical copies sharing each emitted
+  specialization context, and template fact sorting before/after concrete
+  facts.
 - Independent scanner unit tests:
   `PYTHONDONTWRITEBYTECODE=1 python3
   tests/tooling/test_phase28_r7_010_clone_inventory.py -q` — **5 passed**,
   including whitespace-separated `. clone ( )` token detection.
+- With live query compiler configured: **38 passed**; without it: **38 passed,
+  1 live integration test skipped**. The template sort-order regression uses
+  source paths that deterministically put its fact before and after concrete
+  facts, preventing absolute checkout paths from hiding order dependence.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass.
 
 ## Independent generated-Rust inventory
@@ -149,6 +154,12 @@ same-location query retries, live compiler query coverage, strict occurrence
 schemas keyed by source occurrence, and whitespace cleanup. The v3 serializer
 changes are not yet frozen by Team B, and the follow-up has not received fresh
 independent review.
+
+The L7 integration rerun found a path-dependent stale-variable reference in
+the template-fact loop. The current follow-up uses the current checked fact
+throughout and tests both canonical sort orders using different source paths.
+The full live-query and no-live-query test runs both pass; a fresh Agent 2
+review of this repair remains pending.
 
 ## Remaining Team C work
 
