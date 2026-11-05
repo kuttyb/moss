@@ -1,0 +1,9 @@
+[project]
+name = "phase28_oracle_imported_consumer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+phase28_oracle_imported_provider = { path = "../provider" }

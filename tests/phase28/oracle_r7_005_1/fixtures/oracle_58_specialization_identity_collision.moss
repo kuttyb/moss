@@ -1,0 +1,16 @@
+# The same generic callable has distinct type-specific specializations and ownership facts.
+type First:
+  value: Int
+
+type Second:
+  value: Int
+
+fn inspect(source):
+  alias = source
+  return alias
+
+fn main():
+  first = inspect(First(value = 1))
+  second = inspect(Second(value = 2))
+  echo first.value
+  echo second.value

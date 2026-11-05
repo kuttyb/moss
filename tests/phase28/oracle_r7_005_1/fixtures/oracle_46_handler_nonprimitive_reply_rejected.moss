@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "reply payload where payload: Report is an incoming handler parameter | Reject | Non-primitive input cannot supply owned reply without explicit copy", §7.5
+type Report:
+  summary: String
+
+domain Aggregator:
+  fn Send(payload: Report) -> Report:
+    reply payload
+
+fn main():
+  pass

@@ -1,0 +1,14 @@
+# R7-009: primitive Vector elements are scalar values; reading one does not consume its owner.
+fn as_int(value: Int) -> Int:
+  return value
+
+fn main():
+  values = [1, 2, 3]
+  first = as_int(values[0])
+  again = values[0]
+  var collected = Vector[Int]()
+  for value in values:
+    collected.push(value)
+  echo first
+  echo again
+  echo collected[2]

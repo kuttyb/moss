@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "b = state.frontier; archive(b) | Reject if archive consumes | Plain field access cannot implicitly empty field"
+type State:
+  frontier: Vector[Int]
+
+fn archive(items: Vector[Int]):
+  pass
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  b = s.frontier
+  archive(b)

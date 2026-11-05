@@ -1,0 +1,13 @@
+# Spec: Proposal §10 row "for item in items: item.bump() for writable Vector elements | Accept with WRITE | Mutates the original element through the loop borrow; emitter must use checked mutable iteration"
+type Node:
+  count: Int
+
+fn bump(n: Node):
+  n.count = n.count + 1
+
+fn main():
+  var v = [Node(count = 10), Node(count = 20)]
+  for item in v:
+    bump(item)
+  echo v[0].count
+  echo v[1].count

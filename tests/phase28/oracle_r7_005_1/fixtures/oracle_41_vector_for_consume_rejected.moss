@@ -1,0 +1,11 @@
+# Spec: Proposal §10 row "for item in items: consume(item) | Reject if consume requires ownership | Vector iteration never extracts an element; use remove/pop outside conflicting iteration"
+type Resource:
+  tag: String
+
+fn consume(r: Resource) -> Resource:
+  return r
+
+fn main():
+  var v = [Resource(tag = "a"), Resource(tag = "b")]
+  for item in v:
+    let out = consume(item)

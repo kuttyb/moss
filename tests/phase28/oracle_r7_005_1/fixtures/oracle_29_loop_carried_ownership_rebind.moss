@@ -1,0 +1,15 @@
+# Spec: Proposal §10 row "frontier = expand(frontier) in a loop | Accept if effects and exceptional states are sound | Loop-carried ownership handled by fixed point"
+fn expand(frontier: Vector[Int]) -> Vector[Int]:
+  var next_v = Vector[Int]()
+  for x in frontier:
+    next_v.push(x + 1)
+  return next_v
+
+fn main():
+  var frontier = [1, 2]
+  var step = 0
+  while step < 2:
+    frontier = expand(frontier)
+    step = step + 1
+  echo frontier[0]
+  echo frontier[1]

@@ -1,0 +1,15 @@
+# A block-local binding may shadow a sibling function without replacing its binding.
+fn double_val(value: Int) -> Int:
+  return value * 2
+
+fn one_branch(cond: Bool, value: Int) -> Int:
+  if cond:
+    let double_val = 99
+  return double_val(value)
+
+fn main():
+  for double_val in [101]:
+    echo double_val
+  echo double_val(5)
+  echo one_branch(true, 5)
+  echo one_branch(false, 5)

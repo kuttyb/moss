@@ -1,0 +1,11 @@
+# Draft: CollectionError participates in the function's inferred raise set.
+fn read_missing() -> Int:
+  var values = Map()
+  values["present"] = 1
+  return values["absent"]
+
+fn main():
+  try:
+    echo read_missing()
+  recover CollectionError.MissingKey:
+    echo "caught_missing_key"

@@ -1,0 +1,10 @@
+# Spec: Proposal §10 row "take(job.report) | Reject | Unified field cannot be extracted"
+type Report:
+  summary: String
+
+type Job:
+  report: Report
+
+fn main():
+  var j = Job(report = Report(summary = "done"))
+  let r = take(j.report)

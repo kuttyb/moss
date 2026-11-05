@@ -1,0 +1,6 @@
+# Draft: `copy` is reserved for the language operation and cannot be declared.
+type Data:
+  value: Int
+
+fn copy(d: Data) -> Data:
+  return d

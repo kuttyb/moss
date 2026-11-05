@@ -1,0 +1,9 @@
+# Spec: Proposal §10 row "reply n where n: Int is an incoming handler parameter | Accept | Primitive Copy input reply is permitted", §7.5
+domain Worker:
+  fn Process(n: Int) -> Int:
+    reply n
+
+fn main():
+  w = Worker()
+  res = message w.Process(42)
+  echo res

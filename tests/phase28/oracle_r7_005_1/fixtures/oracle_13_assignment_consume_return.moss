@@ -1,0 +1,12 @@
+# Spec: Proposal §10 row "b = a; return b | Accept for owned movable a; reject borrowed non-movable place | CONSUME demand at definition"
+type Packet:
+  payload: String
+
+fn transfer(p: Packet) -> Packet:
+  b = p
+  return b
+
+fn main():
+  p = Packet(payload = "hello")
+  res = transfer(p)
+  echo res.payload

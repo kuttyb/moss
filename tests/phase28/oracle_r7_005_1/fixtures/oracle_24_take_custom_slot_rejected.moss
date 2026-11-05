@@ -1,0 +1,7 @@
+# Spec: Proposal §10 row "take(my_array.slots[i]) for a unified custom element | Reject | Custom slots are not added to the builtin take/remove capability list"
+type CustomArray:
+  slots: Vector[Int]
+
+fn main():
+  var a = CustomArray(slots = [1, 2, 3])
+  let s = take(a.slots[0])

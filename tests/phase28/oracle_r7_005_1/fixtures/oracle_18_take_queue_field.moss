@@ -1,0 +1,13 @@
+# Spec: Proposal §10 row "take(state.queue) | Accept if Queue field writable | Moves whole Queue, leaves empty Queue"
+type Worklist:
+  queue: Queue[Int]
+
+fn main():
+  var q = Queue()
+  q.push(10)
+  q.push(20)
+  var w = Worklist(queue = q)
+  first = take(w.queue)
+  echo first.pop()
+  w.queue.push(100)
+  echo w.queue.pop()

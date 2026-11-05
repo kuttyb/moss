@@ -1,0 +1,12 @@
+# Spec: Proposal §10 row "take(m[k].items) | Accept if projection exclusively writable | Takes eligible terminal Vector field; entry m[k] stays in place"
+type Bucket:
+  tag: String
+  items: Vector[Int]
+
+fn main():
+  var m = Map()
+  m["first"] = Bucket(tag: "b1", items: [100, 200])
+  it = take(m["first"].items)
+  echo (it |> count)
+  echo m["first"].tag
+  echo (m["first"].items |> count)

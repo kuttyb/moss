@@ -1,0 +1,10 @@
+# Draft: Root totality rejects an unhandled propagated CollectionError.
+domain Root:
+  fn ReadMissing() -> Int:
+    var values = Map()
+    values["present"] = 1
+    reply values["absent"]
+
+fn main():
+  root = Root()
+  echo message root.ReadMissing()

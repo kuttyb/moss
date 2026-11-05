@@ -1,0 +1,15 @@
+# Spec: Proposal §6, §10, §12
+enum Status:
+  Some(code: Int)
+  None
+  Pending
+
+fn main():
+  s = Status.Some(code: 42)
+  match s:
+    case Some(code):
+      echo code
+    case None:
+      echo 0
+    case Pending:
+      echo -1
