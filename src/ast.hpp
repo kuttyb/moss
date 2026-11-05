@@ -342,6 +342,9 @@ struct Stmt {
   RaiseSet exceptional_alternatives;
   std::uint32_t exceptional_node = 0;
   std::uint32_t exceptional_scope = 0;
+  // Exact checker body occurrence identity. This survives module projection
+  // so consumers can resolve occurrence-scoped facts without source parsing.
+  mutable std::uint32_t checked_statement_occurrence_id{UINT32_MAX};
   // Exact whole owned bindings consumed while checking this statement.
   // Native recovery lowering uses these facts across variant-specific edges.
   mutable std::set<string> ownership_consumed_bindings;
