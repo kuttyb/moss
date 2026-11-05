@@ -17190,3 +17190,39 @@ untouched.
   both received GitHub `fatal error in commit_refs`; remote refs were not
   advanced, and no force push was attempted. Retry normal pushes when the
   remote accepts updates.
+
+### L7 continuation — projected indexed-read authority — 2026-11-05
+
+- Reconfirmed the isolated staging branch is clean and pushed at
+  `phase28-r7-010-l7-copy-authority`, SHA
+  `013b73a9e1897324ef71fc5e7bb6ce432917b38e`.
+- Team A's frozen local-transfer disposition commit `c43851bd` received
+  independent Agent 2 GO, including local ownership default/shadow,
+  specialized ownership, R7-006, and R7-009 (14/14) targeted gates. Its
+  branch diverges from the newer integrated checker ancestry; a trial
+  cherry-pick produced conflicts in checker/API/tests and was aborted without
+  changing staging. Team A is using a fresh follow-up based on this L7 SHA.
+- Team B's indexed-read investigation reproduced the current Regex package
+  failure: semantic `moss test --check` passes, while native test generation
+  fails closed at `packages/regex/tests/regex_test.moss:67` for
+  `spans[0].text`. Exact EST handles exist for Vector base, index and member,
+  but checker projected-read count is zero in the test call-argument context.
+  The existing projected collection read producer does not cover this direct
+  Vector-index-to-Member call argument. Team B made no consumer fallback or
+  source edit and is waiting for Team A's checker-owned contract.
+- Reproduced the package failure with the L7 worktree's `./margo test` on the
+  current staging compiler; it exits 1 with
+  `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
+  READ/WRITE, Copy, or projected-borrow authority`. This is the current
+  package-test baseline for the checker/native follow-up.
+- Team C's latest frozen conformance branch remains
+  `phase28-r7-010-team-c-conformance` at `d620e35c`; no current-staging oracle
+  delivery is available. The latest full 60-fixture oracle is still the
+  pre-follow-up `d40cd85` run (19/60 all-gates, 60/60 semantic, 41 provenance
+  only); clone authorization and full default/shadow suites remain open.
+- R7 remains NO-GO. Required next steps: publish/review the exact checker
+  projected-read fact and perturb/drop tests; consume it in native lowering;
+  pass the Regex package tests; rerun the 60-fixture oracle and Team C's
+  independent ledger on the exact combined SHA; finish the duplication
+  provenance audit; then run full default and EST-shadow suites and obtain
+  independent final review.
