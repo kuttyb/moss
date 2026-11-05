@@ -15629,3 +15629,40 @@ untouched.
   native discrepancies, then clone provenance; final suites, oracle rerun,
   and independent review remain outstanding. No final SHA, commit, or push for
   this L7 changelist; no production merge.
+
+
+# Phase 28 R7-010 — Team B native clone checkpoint (2026-11-04)
+
+- Worktree `tmp/phase28-r7-010-team-b`, branch
+  `phase28-r7-010-team-b-native-clone`, candidate HEAD
+  `495471454c376a8d4c187c52d72348f7757cf833`; clean tree. Base is WIP
+  checkpoint `0456446451e0df8dd11794eb2f37e438781dc926`, with approved Team A
+  checker ancestry through `a41dabc8d1baaa84f5aad9a269310d0ebfb92189`.
+- Added V3 checked-copy serializer and raw-Rust builder. It verifies exact
+  fact-marker/helper/call links, emits complete 8-byte `.clone()` spans, and
+  leaves all clones outside explicit checked-copy helpers unclassified.
+  Explicit `copy(v[0])` now borrows its source into one per-fact helper; its
+  generated `.clone()` is only inside that exact helper. Direct Vector-index
+  `echo` borrows the read place. Exact checked Map.get Write and match payload
+  Write consumers lower to write-through/mutable borrows; collection outcome
+  consumers require exact facts.
+- Latest targeted gates pass: compiler build; Team B provenance V3 builder;
+  explicit-copy source-borrow; Vector echo/read-then-write; Map.get Write;
+  ORACLE-32 match Write; nested explicit-copy helper; CollectionOutcome
+  consumer parity/corruption; local and specialized ownership contracts;
+  ORACLE-27 and ORACLE-51 native Debug/Optimized/Fast Debug parity; feedback
+  validation and `git diff --check`.
+- `tests/tooling/check_borrowed_reads.py` now validates the checked helper and
+  strict generated-Rust build. It passes that section, then currently fails on
+  a separate Team A-introduced rejection of
+  `tests/phase106d1_read_projection.moss:44`
+  (`OWNERSHIP_COLLECTION_ELEMENT_CONSUME`); the exact WIP-base compiler
+  accepts it. This checker-only regression has been escalated to L7/Team A.
+- Clone acceptance remains NO-GO: all remaining runtime/alternate duplicate
+  sites are unclassified, runtime allowlist is empty, root-ingress nonprimitive
+  READ remains fail-closed, and Team C's wider clone inventory still has
+  unverified occurrences. ORACLE-10A's current generated artifact has one
+  exact fact-authorized helper clone plus six runtime `.clone()` candidates;
+  additional `.to_string()`, `mem::replace`, and `Arc::clone` candidates remain
+  unclassified. L7's real sidecar/Team C validation and independent Agent 2
+  review are pending. No push.
