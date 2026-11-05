@@ -26,6 +26,12 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "tests" / "tooling"))
+from rust_duplication_scanner import OPERATORS as RUST_DUPLICATION_OPERATORS
+from rust_duplication_scanner import mask_non_code as mask_rust_non_code
+from rust_duplication_scanner import operator_spans as rust_operator_spans
+from rust_duplication_scanner import code_tokens as rust_code_tokens
+
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 DEFAULT_TMP = ROOT / "tmp/phase28_oracle_r7_005_1"
 MARGO = ROOT / "margo"
@@ -437,74 +443,44 @@ def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
         return None
     first = copies[0]["start"]
     target = f"at:{first['line']}:{first['column']}"
-    code, stdout, stderr, _ = run_process(
-        [str(compiler), "ownership", target, "--source", str(source_path), "--json"])
-    if code != 0:
-        return {"status": "unavailable", "reason": (stderr or stdout).strip()}
-    try:
-        payload = json.loads(stdout)
-        result = payload.get("result")
-        authority = result.get("copy_authority") if isinstance(result, dict) else None
-    except (json.JSONDecodeError, AttributeError):
-        authority = None
-    if not isinstance(authority, dict):
-        return {"status": "unavailable", "reason": "ownership query omitted copy_authority"}
-    return authority
+    successful_authorities = []
+    failures = []
+    # Keep the exact source location fixed. Kinds only resolve ambiguity at
+    # that location; they never fall back to a different expression/binding.
+    for kind in (None, "binding", "call", "statement", "function", "method", "handler"):
+        args = [str(compiler), "ownership", target, "--source", str(source_path)]
+        if kind is not None:
+            args.extend(["--kind", kind])
+        args.append("--json")
+        code, stdout, stderr, _ = run_process(args)
+        if code != 0:
+            failures.append((stderr or stdout).strip())
+            continue
+        try:
+            payload = json.loads(stdout)
+            result = payload.get("result")
+            authority = result.get("copy_authority") if isinstance(result, dict) else None
+        except (json.JSONDecodeError, AttributeError):
+            failures.append("ownership query returned malformed JSON")
+            continue
+        if isinstance(authority, dict) and authority.get("status") == "available":
+            successful_authorities.append(authority)
+    if not successful_authorities:
+        reason = next((failure for failure in failures if failure), "ownership queries omitted copy_authority")
+        return {"status": "unavailable", "reason": reason}
+    canonical = [json.dumps(item, ensure_ascii=False, sort_keys=True,
+                            separators=(",", ":"), allow_nan=False)
+                for item in successful_authorities]
+    if any(item != canonical[0] for item in canonical[1:]):
+        return {"status": "conflicting", "reason":
+                "ownership query retries returned different source-complete copy_authority"}
+    return successful_authorities[0]
 
 
 def clone_occurrences(rust: str) -> list[dict]:
-    occurrences = []
-    i = 0
-    while i < len(rust):
-        if rust.startswith("//", i):
-            newline = rust.find("\n", i)
-            i = len(rust) if newline < 0 else newline + 1
-            continue
-        if rust.startswith("/*", i):
-            depth = 1
-            i += 2
-            while i < len(rust) and depth:
-                if rust.startswith("/*", i):
-                    depth += 1
-                    i += 2
-                elif rust.startswith("*/", i):
-                    depth -= 1
-                    i += 2
-                else:
-                    i += 1
-            continue
-        raw = re.match(r"r(#+)?\"", rust[i:])
-        if raw:
-            hashes = raw.group(1) or ""
-            terminator = '"' + hashes
-            start = i + raw.end()
-            end = rust.find(terminator, start)
-            i = len(rust) if end < 0 else end + len(terminator)
-            continue
-        if rust[i] == '"':
-            i += 1
-            while i < len(rust):
-                if rust[i] == "\\":
-                    i += 2
-                elif rust[i] == '"':
-                    i += 1
-                    break
-                else:
-                    i += 1
-            continue
-        if rust[i] == "'":
-            char_literal = re.match(r"'(?:\\.|[^'\\])'", rust[i:])
-            if char_literal:
-                i += char_literal.end()
-                continue
-        match = re.match(r"\.clone\s*\(\s*\)", rust[i:])
-        if match:
-            end = i + match.end()
-            occurrences.append({"start": _position(rust, i), "end": _position(rust, end)})
-            i = end
-        else:
-            i += 1
-    return occurrences
+    masked = mask_rust_non_code(rust)
+    return [{"start": _position(rust, start), "end": _position(rust, end)}
+            for start, end in rust_operator_spans(masked, "dot_clone")]
 
 
 COPY_AUTHORITY_FACT_KEYS = {
@@ -564,12 +540,15 @@ def _nested_span_key(span: dict) -> tuple[int, int, int, int]:
 
 def validate_checked_copy_authority(source: str, source_path: Path,
                                     source_copies: list[dict], source_rows: list[dict],
+                                    sidecar_fact_groups: list[dict] | None,
                                     authority: dict | None) -> dict[str, dict]:
     """Match sidecar copy rows to exact live checker TypedCopyFactV1 query rows."""
     if not source_copies:
-        if source_rows:
+        if source_rows or sidecar_fact_groups:
             raise ValueError("sidecar includes copy rows for source with no copy(...) calls")
         return {}
+    if isinstance(authority, dict) and authority.get("status") == "conflicting":
+        raise ValueError(authority.get("reason", "copy authority queries conflict"))
     if not isinstance(authority, dict) or authority.get("status") != "available":
         raise LookupError("checked TypedCopyFactV1 authority is unavailable")
     if set(authority) != {"status", "facts"}:
@@ -577,13 +556,11 @@ def validate_checked_copy_authority(source: str, source_path: Path,
     facts = authority.get("facts")
     if not isinstance(facts, list):
         raise ValueError("copy_authority facts is not an array")
-    if len(facts) != len(source_copies):
-        raise ValueError("copy_authority does not exactly cover source copy occurrences")
-
     source_digest = "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
     expected_path = str(source_path.resolve())
     copies_by_key = {_nested_span_key(span): span for span in source_copies}
-    facts_by_copy_key: dict[tuple[int, int, int, int], dict] = {}
+    facts_by_copy_key: dict[tuple[int, int, int, int], list[dict]] = {}
+    identities: set[str] = set()
     for fact in facts:
         if not isinstance(fact, dict) or set(fact) != COPY_AUTHORITY_FACT_KEYS:
             raise ValueError("checked TypedCopyFactV1 row has missing or unknown fields")
@@ -626,38 +603,250 @@ def validate_checked_copy_authority(source: str, source_path: Path,
             raise ValueError("checked source-expression span is outside its copy occurrence")
         if provenance["line"] != fact["copy_occurrence_span"]["start_line"]:
             raise ValueError("checked copy fact source line conflicts with its occurrence span")
-        if copy_span_key in facts_by_copy_key:
-            raise ValueError("duplicate checked TypedCopyFactV1 for source occurrence")
-        facts_by_copy_key[copy_span_key] = fact
+        fact_id = typed_copy_fact_identity(fact)
+        if fact_id in identities:
+            raise ValueError("duplicate checked TypedCopyFactV1")
+        identities.add(fact_id)
+        facts_by_copy_key.setdefault(copy_span_key, []).append(fact)
 
     if set(facts_by_copy_key) != set(copies_by_key):
-        raise ValueError("checked copy facts do not exactly cover scanned copy occurrences")
+        raise ValueError("checked copy facts do not cover every scanned copy occurrence")
+    if not isinstance(sidecar_fact_groups, list):
+        raise ValueError("v3 checked_copy_facts is not an array")
+    fact_groups_by_id = {}
+    for group in sidecar_fact_groups:
+        if not isinstance(group, dict) or set(group) != {"copy_id", "facts"}:
+            raise ValueError("checked_copy_facts group has missing or unknown fields")
+        copy_id = group["copy_id"]
+        if not isinstance(copy_id, str) or copy_id in fact_groups_by_id:
+            raise ValueError("duplicate or malformed checked_copy_facts lexical ID")
+        if not isinstance(group["facts"], list) or any(not isinstance(x, dict) for x in group["facts"]):
+            raise ValueError("checked_copy_facts group facts is not an array of objects")
+        fact_groups_by_id[copy_id] = group["facts"]
+        fact_ids = [typed_copy_fact_identity(fact) for fact in group["facts"]]
+        if fact_ids != sorted(fact_ids):
+            raise ValueError("checked_copy_facts are not sorted by canonical fact identity")
+    source_order = [span["copy_id"] for span in source_copies]
+    if [group["copy_id"] for group in sidecar_fact_groups] != source_order:
+        raise ValueError("checked_copy_facts groups are not in lexical source order")
     sidecar_by_copy_key: dict[tuple[int, int, int, int], dict] = {}
+    source_row_order = []
     for row in source_rows:
         if not isinstance(row, dict):
             raise ValueError("source copy occurrence is not an object")
+        if set(row) != {"copy_id", "source_span", "semantic_status", "rust_clone_spans"}:
+            raise ValueError("source-copy v3 row has missing or unknown fields")
         span = row.get("source_span")
+        if not isinstance(span, dict) or set(span) != {"start", "end", "copy_id"} or any(
+                not isinstance(span.get(point), dict) or set(span[point]) != {"line", "column"}
+                for point in ("start", "end")):
+            raise ValueError("source span has missing or unknown v2 fields")
         key = _nested_span_key(span)
         if key in sidecar_by_copy_key:
             raise ValueError("duplicate sidecar source-copy occurrence")
-        fact = facts_by_copy_key.get(key)
-        if fact is None:
+        facts_for_copy = facts_by_copy_key.get(key)
+        if not facts_for_copy:
             raise ValueError("sidecar source copy has no matching checked copy fact")
-        if row.get("checked_copy_fact") != fact:
-            raise ValueError("sidecar TypedCopyFactV1 differs from independent checker query")
+        copy_id = row["copy_id"]
+        expected_copy_id = f"copy@{key[0]}:{key[1]}"
+        if copy_id != expected_copy_id or span.get("copy_id") != expected_copy_id:
+            raise ValueError("sidecar copy ID is not the frozen lexical occurrence locator")
+        sidecar_facts = fact_groups_by_id.get(copy_id)
+        if sidecar_facts is None:
+            raise ValueError("source copy lacks its checked_copy_facts group")
+        expected_facts = sorted(facts_for_copy, key=typed_copy_fact_identity)
+        actual_facts = sorted(sidecar_facts, key=typed_copy_fact_identity)
+        if actual_facts != expected_facts:
+            raise ValueError("sidecar TypedCopyFactV1 list differs from independent checker query")
         if row.get("semantic_status") != "implemented":
             raise ValueError("source copy semantics are not attested as implemented")
-        expected_copy_id = f"copy@{key[0]}:{key[1]}"
-        if row.get("copy_id") != expected_copy_id or span.get("copy_id") != expected_copy_id:
-            raise ValueError("sidecar copy ID is not the frozen lexical occurrence locator")
+        clone_spans = row.get("rust_clone_spans")
+        if not isinstance(clone_spans, list) or any(
+                not isinstance(clone_span, dict) or set(clone_span) != {"start", "end"} or any(
+                    not isinstance(clone_span.get(point), dict) or
+                    set(clone_span[point]) != {"line", "column"}
+                    for point in ("start", "end")) for clone_span in clone_spans):
+            raise ValueError("source-copy Rust span has missing or unknown fields")
         sidecar_span = row.get("source_span", {})
-        fact_span = fact["copy_occurrence_span"]
+        fact_span = facts_for_copy[0]["copy_occurrence_span"]
         if _nested_span_key(sidecar_span) != _flat_fact_span_key(fact_span):
             raise ValueError("sidecar copy source span differs from checked fact")
-        sidecar_by_copy_key[key] = row
+        validated_row = dict(row)
+        validated_row["checked_copy_facts"] = expected_facts
+        sidecar_by_copy_key[key] = validated_row
+        source_row_order.append(key)
     if set(sidecar_by_copy_key) != set(copies_by_key):
         raise ValueError("sidecar copy rows do not exactly cover checked copy facts")
+    if set(fact_groups_by_id) != {row["copy_id"] for row in sidecar_by_copy_key.values()}:
+        raise ValueError("checked_copy_facts groups do not exactly cover lexical source-copy rows")
+    if source_row_order != sorted(source_row_order):
+        raise ValueError("source_copy_occurrences are not in lexical source order")
     return {row["copy_id"]: row for row in sidecar_by_copy_key.values()}
+
+
+def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
+                                   rust_occurrences: list[dict]) -> dict[tuple[int, int, int, int], tuple[str, str]]:
+    """Derive explicit-copy clone links from raw Rust markers and per-fact helpers."""
+    comments: list[dict] = []
+    masked = mask_rust_non_code(rust, comments)
+    tokens = rust_code_tokens(masked)
+    tooling_begin = re.compile(r"Moss tooling begin\|function\|([^|]+)\|")
+    emitted_callable_ids = set()
+    raw_emitted_callable_ids = []
+    emitted_source_lines = set()
+    for comment in comments:
+        identity_match = tooling_begin.search(comment["text"])
+        if identity_match:
+            raw_id = identity_match.group(1)
+            raw_emitted_callable_ids.append(raw_id)
+            emitted_callable_ids.add(re.sub(r"@\d+(?:#.*)?$", "", raw_id))
+        line_match = re.search(r"Moss line (\d+):", comment["text"])
+        if line_match:
+            emitted_source_lines.add(int(line_match.group(1)))
+    normalized_marker_ids: dict[str, set[str]] = {}
+    for raw_id in raw_emitted_callable_ids:
+        normalized = re.sub(r"@\d+(?:#.*)?$", "", raw_id)
+        normalized_marker_ids.setdefault(normalized, set()).add(raw_id)
+    if any(len(raw_ids) > 1 for raw_ids in normalized_marker_ids.values()):
+        raise ValueError("emitted callable marker normalization is ambiguous")
+    for index, (token, _start, _end) in enumerate(tokens[:-1]):
+        if token == "fn":
+            emitted_callable_ids.add(tokens[index + 1][0])
+    facts: dict[str, tuple[str, dict]] = {}
+    helper_symbols: dict[str, str] = {}
+    for copy_id, source_row in source_by_id.items():
+        for fact in source_row["checked_copy_facts"]:
+            fact_id = typed_copy_fact_identity(fact)
+            if fact_id in facts:
+                raise ValueError("same checker fact is linked to multiple lexical copy occurrences")
+            digest = fact_id.removeprefix("typed-copy-fact-v1:")
+            symbol = "__moss_copy_value_" + digest[:16]
+            collision = helper_symbols.get(symbol)
+            if collision is not None and collision != fact_id:
+                raise ValueError("per-fact Rust helper symbol prefix collision")
+            facts[fact_id] = (copy_id, fact)
+            helper_symbols[symbol] = fact_id
+
+    marker_pattern = re.compile(r"\s*Moss copy fact call: (typed-copy-fact-v1:[0-9a-f]{64})\s*")
+    markers: list[tuple[str, int, int]] = []
+    for comment in comments:
+        if "Moss copy fact call:" not in comment["text"]:
+            continue
+        match = marker_pattern.fullmatch(comment["text"])
+        if not match or comment["kind"] != "block":
+            raise ValueError("malformed copy-fact marker comment")
+        markers.append((match.group(1), comment["start"], comment["end"]))
+    markers_by_fact: dict[str, list[tuple[int, int]]] = {}
+    for fact_id, start, end in markers:
+        if fact_id not in facts:
+            raise ValueError("raw Rust copy marker names no exact checker fact")
+        markers_by_fact.setdefault(fact_id, []).append((start, end))
+
+    specialization_facts: dict[str, str] = {}
+    for fact_id, (_copy_id, fact) in facts.items():
+        if fact["specialization_identity"]:
+            context = re.sub(r"@\d+(?:#.*)?$", "", fact["specialization_context"])
+            if context in specialization_facts and specialization_facts[context] != fact_id:
+                raise ValueError("multiple checker facts share one specialization callable context")
+            specialization_facts[context] = fact_id
+
+    rust_by_key = {_span_key(span): span for span in rust_occurrences}
+    derived: dict[tuple[int, int, int, int], tuple[str, str]] = {}
+    expected_clone_spans: dict[str, list[tuple[int, int, int, int]]] = {
+        copy_id: [] for copy_id in source_by_id}
+    token_values = [token[0] for token in tokens]
+    for fact_id, (copy_id, _fact) in facts.items():
+        symbol = "__moss_copy_value_" + fact_id.removeprefix("typed-copy-fact-v1:")[:16]
+        positions = [i for i, token in enumerate(tokens) if token[0] == symbol]
+        fact_markers = markers_by_fact.get(fact_id, [])
+        if not fact_markers:
+            if positions:
+                raise ValueError("per-fact helper exists without its raw Rust call marker")
+            if fact["specialization_identity"]:
+                raise ValueError("emitted specialization fact has no helper marker/call path")
+            base_context = fact["specialization_context"] or fact["provenance"]["enclosing_callable_id"]
+            normalized_base = re.sub(r"@\d+(?:#.*)?$", "", base_context)
+            if normalized_base in emitted_callable_ids:
+                raise ValueError("base callable is emitted but its copy fact has no helper marker")
+            sibling_contexts = {identity for identity in emitted_callable_ids
+                                if identity.startswith(normalized_base + "<")}
+            if sibling_contexts:
+                for sibling in sibling_contexts:
+                    sibling_fact = specialization_facts.get(sibling)
+                    if sibling_fact is None or sibling_fact not in markers_by_fact:
+                        raise ValueError("template exemption has a generated specialization without a fact helper")
+            elif fact["provenance"]["line"] in emitted_source_lines:
+                raise ValueError("copy source line is emitted but no callable/helper mapping proves its status")
+            # A base/template fact is non-emitted only when the raw callable
+            # inventory shows no base callable and either its specialized
+            # descendants are all fact-linked or its source line is absent.
+            continue
+        if len(fact_markers) != 1:
+            raise ValueError("fact helper must have exactly one raw Rust call marker")
+        definitions = [i for i in positions if i > 0 and tokens[i - 1][0] == "fn"]
+        calls = [i for i in positions if i not in definitions and i + 1 < len(tokens)
+                 and tokens[i + 1][0] == "("]
+        if len(definitions) != 1 or len(calls) != 1 or len(positions) != 2:
+            raise ValueError("fact helper must have one definition, one direct call, and no aliases")
+        marker_start, marker_end = fact_markers[0]
+        call_index = calls[0]
+        if tokens[call_index][1] < marker_end or \
+                rust[marker_end:tokens[call_index][1]].strip() or \
+                tokens[call_index + 1][0] != "(":
+            raise ValueError("copy fact marker is not immediately adjacent to its direct helper call")
+        # Parse the helper signature and balanced body using token boundaries.
+        open_paren = definitions[0] + 1
+        if tokens[open_paren][0] != "(":
+            raise ValueError("copy helper definition has malformed parameter list")
+        depth = 0
+        close_paren = None
+        for i in range(open_paren, len(tokens)):
+            if tokens[i][0] == "(":
+                depth += 1
+            elif tokens[i][0] == ")":
+                depth -= 1
+                if depth == 0:
+                    close_paren = i
+                    break
+        if close_paren is None:
+            raise ValueError("copy helper parameter list is unterminated")
+        body_open = next((i for i in range(close_paren + 1, len(tokens))
+                          if tokens[i][0] == "{"), None)
+        if body_open is None:
+            raise ValueError("copy helper has no body")
+        brace_depth = 0
+        body_close = None
+        for i in range(body_open, len(tokens)):
+            if tokens[i][0] == "{":
+                brace_depth += 1
+            elif tokens[i][0] == "}":
+                brace_depth -= 1
+                if brace_depth == 0:
+                    body_close = i
+                    break
+        if body_close is None:
+            raise ValueError("copy helper body is unterminated")
+        body_start, body_end = tokens[body_open][1], tokens[body_close][2]
+        if any(token.startswith("__moss_value") for token in token_values[body_open:body_close + 1]):
+            raise ValueError("per-fact helper depends on shared __moss_value materialization")
+        masked_body = masked[body_start:body_end]
+        for operator in RUST_DUPLICATION_OPERATORS:
+            if operator == "dot_clone":
+                continue
+            if rust_operator_spans(masked_body, operator):
+                raise ValueError(f"per-fact helper contains unclassified duplication candidate: {operator}")
+        helper_clones = []
+        for clone_key, span in rust_by_key.items():
+            clone_start, clone_end = _span_offsets(rust, span)
+            if body_start <= clone_start and clone_end <= body_end:
+                helper_clones.append(clone_key)
+        for clone_key in helper_clones:
+            if clone_key in derived:
+                raise ValueError("one Rust clone is attributed to multiple checker facts")
+            derived[clone_key] = (copy_id, fact_id)
+            expected_clone_spans[copy_id].append(clone_key)
+
+    return derived
 
 
 def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
@@ -688,8 +877,11 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 "source_copy_spans": source_copies, "occurrences": rust_occurrences}
     try:
         manifest = json.loads(sidecar.read_text())
-        if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 2:
+        if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 3:
             raise ValueError("unsupported clone provenance format")
+        if set(manifest) != {"format", "version", "mode", "rust_sha256", "source_sha256",
+                             "source_copy_occurrences", "checked_copy_facts", "occurrences"}:
+            raise ValueError("clone provenance v3 manifest has missing or unknown fields")
         if manifest.get("mode") != mode:
             raise ValueError(f"mode mismatch: expected {mode}")
         if manifest.get("rust_sha256") != hashlib.sha256(rust_bytes).hexdigest():
@@ -701,7 +893,14 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
             raise ValueError("occurrences is not an array")
         indexed = {}
         for row in rows:
+            if not isinstance(row, dict) or set(row) != {
+                    "rust_span", "origin_kind", "source_copy_id", "evidence"}:
+                raise ValueError("clone occurrence row has missing or unknown v2 fields")
             span = row.get("rust_span", {})
+            if not isinstance(span, dict) or set(span) != {"start", "end"} or any(
+                    not isinstance(span.get(point), dict) or set(span[point]) != {"line", "column"}
+                    for point in ("start", "end")):
+                raise ValueError("Rust clone span has missing or unknown fields")
             key = _span_key(span)
             if key in indexed:
                 raise ValueError(f"duplicate Rust occurrence mapping at {key}")
@@ -713,9 +912,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         source_rows = manifest.get("source_copy_occurrences")
         if not isinstance(source_rows, list):
             raise ValueError("source_copy_occurrences is not an array")
-        validate_checked_copy_authority(source, source_path, source_copies,
-                                        source_rows, checked_copy_authority)
-        for source_row in source_rows:
+        validated_source_rows = validate_checked_copy_authority(source, source_path, source_copies,
+            source_rows, manifest.get("checked_copy_facts"), checked_copy_authority)
+        for source_row in validated_source_rows.values():
             copy_id = source_row["copy_id"]
             if not isinstance(source_row.get("rust_clone_spans"), list):
                 raise ValueError(f"source copy lacks emitted clone list: {copy_id}")
@@ -724,7 +923,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         manifest_source_keys = {_span_key(x["source_span"]) for x in source_rows}
         if manifest_source_keys != source_keys or len(source_rows) != len(source_copies):
             raise ValueError("source-copy manifest does not exactly cover Moss copy(...) occurrences")
+        derived_copy_links = derive_copy_materializer_links(rust, source_by_id, rust_occurrences)
         explicit_by_id: dict[str, list[tuple[int, int, int, int]]] = {key: [] for key in source_by_id}
+        explicit_keys: set[tuple[int, int, int, int]] = set()
         unauthorized = 0
         unclassified = 0
         rust_by_key = {_span_key(x): x for x in rust_occurrences}
@@ -747,16 +948,35 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                        for k in ("semantic_type", "ownership_fact", "semantic_identity")):
                 raise ValueError("clone evidence lacks type, ownership, or semantic identity")
             if origin == "explicit_copy":
+                if set(evidence) != {"rust_context_span", "rust_context_sha256",
+                                     "semantic_type", "ownership_fact", "semantic_identity"}:
+                    raise ValueError("explicit-copy evidence has missing or unknown v2 fields")
+                rust_key = _span_key(row["rust_span"])
                 copy_id = row.get("source_copy_id")
                 if copy_id not in source_by_id:
                     raise ValueError("explicit clone points to unknown Moss copy occurrence")
-                fact = source_by_id[copy_id]["checked_copy_fact"]
+                fact_id = evidence["semantic_identity"]
+                matching_facts = [fact for fact in source_by_id[copy_id]["checked_copy_facts"]
+                                  if typed_copy_fact_identity(fact) == fact_id]
+                if len(matching_facts) != 1:
+                    raise ValueError("explicit clone semantic identity does not select one checked fact")
+                fact = matching_facts[0]
                 if (evidence["semantic_type"] != fact["result_type_key"] or
                         evidence["ownership_fact"] != fact["required_source_access"] or
                         evidence["semantic_identity"] != typed_copy_fact_identity(fact)):
                     raise ValueError("explicit-copy evidence disagrees with independently queried TypedCopyFactV1")
-                explicit_by_id[copy_id].append(_span_key(row["rust_span"]))
+                if derived_copy_links.get(rust_key) != (copy_id, fact_id):
+                    raise ValueError("explicit-copy sidecar link disagrees with raw Rust helper derivation")
+                explicit_by_id[copy_id].append(rust_key)
+                explicit_keys.add(rust_key)
             elif origin in {"compiler_runtime_handle", "runtime_support"}:
+                if set(evidence) != {"rust_context_span", "rust_context_sha256",
+                        "semantic_type", "ownership_fact", "semantic_identity",
+                        "runtime_callsite_id", "repository_evidence_path",
+                        "repository_evidence_sha256", "repository_evidence_span"}:
+                    raise ValueError("runtime evidence has missing or unknown v2 fields")
+                if _span_key(row["rust_span"]) in derived_copy_links:
+                    raise ValueError("fact-derived clone is mislabeled as runtime support")
                 callsite_id = evidence.get("runtime_callsite_id")
                 callsite = _runtime_callsites.get(callsite_id)
                 if callsite is None:
@@ -767,11 +987,15 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                     if actual != callsite.get(key):
                         raise ValueError(f"runtime clone evidence disagrees with reviewed callsite field: {key}")
             else:
+                if _span_key(row["rust_span"]) in derived_copy_links:
+                    raise ValueError("fact-derived clone is mislabeled as unclassified")
                 unauthorized += 1
                 unclassified += 1
+        if explicit_keys != set(derived_copy_links):
+            raise ValueError("explicit-copy sidecar rows do not exactly cover raw Rust helper clones")
         for copy_id, source_row in source_by_id.items():
             declared = [_span_key(x) for x in source_row["rust_clone_spans"]]
-            if declared != explicit_by_id[copy_id]:
+            if sorted(declared) != sorted(explicit_by_id[copy_id]):
                 raise ValueError(f"source-to-Rust copy lowering links mismatch: {copy_id}")
         return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(source_by_id),
                 "unauthorized": unauthorized, "unclassified": unclassified, "occurrences": rows}

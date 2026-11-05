@@ -24,9 +24,9 @@ fn f() {
 }
 '''
         masked = inventory.mask_non_code(source)
-        self.assertEqual(len(inventory.OPERATORS["dot_clone"].findall(masked)), 1)
-        self.assertEqual(len(inventory.OPERATORS["dot_cloned"].findall(masked)), 0)
-        self.assertEqual(len(inventory.OPERATORS["dot_copied"].findall(masked)), 0)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_clone")), 1)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_cloned")), 0)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_copied")), 0)
 
     def test_raw_strings_and_char_literals_are_not_code(self):
         source = r'''fn f() {
@@ -35,8 +35,8 @@ fn f() {
 }
 '''
         masked = inventory.mask_non_code(source)
-        self.assertEqual(len(inventory.OPERATORS["dot_clone"].findall(masked)), 1)
-        self.assertEqual(len(inventory.OPERATORS["dot_to_vec"].findall(masked)), 0)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_clone")), 1)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_to_vec")), 0)
 
     def test_char_literal_is_not_code(self):
         source = r'''fn f() {
@@ -45,7 +45,7 @@ fn f() {
 }
 '''
         masked = inventory.mask_non_code(source)
-        self.assertEqual(len(inventory.OPERATORS["dot_clone"].findall(masked)), 1)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_clone")), 1)
 
     def test_alternate_duplication_and_move_candidates_are_detected(self):
         source = '''
@@ -66,8 +66,8 @@ fn f() {
 }
 '''
         masked = inventory.mask_non_code(source)
-        counts = {key: len(pattern.findall(masked))
-                  for key, pattern in inventory.OPERATORS.items()}
+        counts = {key: len(inventory.operator_spans(masked, key))
+                  for key in inventory.OPERATORS}
         self.assertEqual(counts, {
             "dot_clone": 0,
             "dot_clone_from": 1,
@@ -82,6 +82,12 @@ fn f() {
             "ptr_read": 1,
             "string_or_vec_from": 2,
         })
+
+    def test_whitespace_separated_clone_tokens_are_detected(self):
+        source = "value . clone ( )\nvalue/* comment */.\nclone(/* x */)\n"
+        masked = inventory.mask_non_code(source)
+        spans = inventory.operator_spans(masked, "dot_clone")
+        self.assertEqual(len(spans), 2)
 
 
 if __name__ == "__main__":

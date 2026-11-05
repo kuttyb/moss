@@ -1,7 +1,7 @@
 # P28-R7-010 Team C — Generated Rust Generation-Site Audit
 
-**Artifact base:** WIP checkpoint `0456446451e0df8dd11794eb2f37e438781dc926`  
-**Artifact set:** 71 Rust files captured by the reproducible oracle run  
+**Artifact base:** WIP checkpoint `0456446451e0df8dd11794eb2f37e438781dc926`
+**Artifact set:** 71 Rust files captured by the reproducible oracle run
 **Purpose:** independently group duplicate-operation candidates and cross-check
 Team B's emitter inventory. This report does not authorize any clone.
 

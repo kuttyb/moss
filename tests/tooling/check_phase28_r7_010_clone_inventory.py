@@ -13,102 +13,12 @@ import bisect
 import hashlib
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-
-OPERATORS = {
-    "dot_clone": re.compile(r"\.\s*clone\s*\(\s*\)"),
-    "dot_clone_from": re.compile(r"\.\s*clone_from\s*\("),
-    "dot_cloned": re.compile(r"\.\s*cloned\s*\(\s*\)"),
-    "dot_copied": re.compile(r"\.\s*copied\s*\(\s*\)"),
-    "dot_to_owned": re.compile(r"\.\s*to_owned\s*\(\s*\)"),
-    "dot_to_string": re.compile(r"\.\s*to_string\s*\(\s*\)"),
-    "dot_to_vec": re.compile(r"\.\s*to_vec\s*\(\s*\)"),
-    "qualified_clone": re.compile(r"\b(?:Clone|Arc|Rc)::clone\s*\("),
-    "mem_replace": re.compile(r"\b(?:std::)?mem::replace\s*\("),
-    "mem_take": re.compile(r"\b(?:std::)?mem::take\s*\("),
-    "ptr_read": re.compile(r"\b(?:std::)?ptr::read\s*\("),
-    "string_or_vec_from": re.compile(r"\b(?:String|Vec)::from\s*\("),
-}
-
-RAW_STRING_START = re.compile(r"(?:br|cr|r)(#+)?\"")
-CHAR_LITERAL = re.compile(r"'(?:\\.|[^'\\])'")
-
-
-def mask_non_code(source: str) -> str:
-    """Blank comments and literals while preserving offsets and line breaks."""
-    chars = list(source)
-    i = 0
-    n = len(source)
-    while i < n:
-        if source.startswith("//", i):
-            end = source.find("\n", i)
-            end = n if end < 0 else end
-            for pos in range(i, end):
-                chars[pos] = " "
-            i = end
-            continue
-        if source.startswith("/*", i):
-            start = i
-            i += 2
-            depth = 1
-            while i < n and depth:
-                if source.startswith("/*", i):
-                    depth += 1
-                    i += 2
-                elif source.startswith("*/", i):
-                    depth -= 1
-                    i += 2
-                else:
-                    i += 1
-            for pos in range(start, i):
-                if chars[pos] != "\n":
-                    chars[pos] = " "
-            continue
-
-        raw_start = RAW_STRING_START.match(source, i)
-        if raw_start:
-            hashes = raw_start.group(1) or ""
-            terminator = '"' + hashes
-            # `Match.end()` is an absolute offset when match() receives `pos`.
-            end = source.find(terminator, raw_start.end())
-            end = n if end < 0 else end + len(terminator)
-            for pos in range(i, end):
-                if chars[pos] != "\n":
-                    chars[pos] = " "
-            i = end
-            continue
-
-        # Byte and C ordinary strings are literals too.
-        quote = i
-        if source.startswith(("b\"", "c\""), i):
-            quote = i + 1
-        if source[quote] == '"':
-            start = i
-            i = quote + 1
-            while i < n:
-                if source[i] == "\\":
-                    i += 2
-                elif source[i] == '"':
-                    i += 1
-                    break
-                else:
-                    i += 1
-            for pos in range(start, i):
-                if chars[pos] != "\n":
-                    chars[pos] = " "
-            continue
-
-        if source[i] == "'":
-            char = CHAR_LITERAL.match(source, i)
-            if char:
-                for pos in range(i, char.end()):
-                    chars[pos] = " "
-                i = char.end()
-                continue
-        i += 1
-    return "".join(chars)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_duplication_scanner import OPERATORS, mask_non_code, operator_spans
 
 
 def line_metadata(source: str, masked: str) -> tuple[list[int], list[tuple[str, str] | None], list[str | None], list[str]]:
@@ -153,11 +63,11 @@ def inspect_rust(path: Path, root: Path) -> list[dict]:
     line_starts, regions, moss_sources, functions = line_metadata(source, masked)
     source_lines = source.splitlines()
     rows = []
-    for operator, pattern in OPERATORS.items():
-        for match in pattern.finditer(masked):
-            line_index = bisect.bisect_right(line_starts, match.start()) - 1
+    for operator in OPERATORS:
+        for operator_start, operator_end in operator_spans(masked, operator):
+            line_index = bisect.bisect_right(line_starts, operator_start) - 1
             line = line_index + 1
-            col = match.start() - line_starts[line_index] + 1
+            col = operator_start - line_starts[line_index] + 1
             region = regions[line_index]
             moss_source = moss_sources[line_index]
             function = functions[line_index]

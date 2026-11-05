@@ -1,7 +1,7 @@
 # P28-R7-010 Team C — Checkpoint Conformance Audit
 
-**Base SHA:** `0456446451e0df8dd11794eb2f37e438781dc926`  
-**Branch:** `phase28-r7-010-team-c-conformance`  
+**Base SHA:** `0456446451e0df8dd11794eb2f37e438781dc926`
+**Branch:** `phase28-r7-010-team-c-conformance`
 **Scope:** independent oracle reproduction, clone-site inventory, and provenance
 validator adversarial review. This report does not authorize compiler behavior.
 
@@ -24,12 +24,18 @@ validator adversarial review. This report does not authorize compiler behavior.
   the direct fixture artifacts contain **524** unverified `.clone()` calls.
   Categories overlap. No clone count is treated as a count of illegal Moss
   copies.
-- Oracle harness unit tests: `PYTHONDONTWRITEBYTECODE=1 python3
-  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **26 passed** after
-  adding exact checker-fact forgery, missing-authority, perturbation,
-  duplicate-fact, and UTF-8 byte-column cases.
-- Independent scanner unit tests: `python3 tests/tooling/test_phase28_r7_010_clone_inventory.py -v`
-  — **4 passed**.
+- Oracle harness unit tests with the live L7 checker query prototype:
+  `MOSS_PHASE28_QUERY_COMPILER=/home/owner/daji/code/moss/tmp/phase28-r7-010-l7-query/moss
+  PYTHONDONTWRITEBYTECODE=1 python3
+  tests/phase28/oracle_r7_005_1/test_oracle_harness.py -q` — **36 passed**.
+  Coverage includes exact checker-fact forgery, missing/perturbed/duplicated
+  authority, multiple specializations at one source span, live query retries,
+  UTF-8 byte columns and CRLF.
+- Independent scanner unit tests:
+  `PYTHONDONTWRITEBYTECODE=1 python3
+  tests/tooling/test_phase28_r7_010_clone_inventory.py -q` — **5 passed**,
+  including whitespace-separated `. clone ( )` token detection.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass.
 
 ## Independent generated-Rust inventory
 
@@ -93,30 +99,62 @@ The public `moss inspect <source>:line --json` and `moss ownership
 sidecar's nonempty evidence strings cannot independently establish that a
 checked `TypedCopyFactV1` authorized that exact source occurrence.
 
-L7 approved a checker-owned `copy_authority.facts` query result and exact
-sidecar join. The harness now validates the agreed `TypedCopyFactV1` schema,
+L7 approved a checker-owned `copy_authority.facts` query result and v3
+provenance schema. The harness validates each exact `TypedCopyFactV1` row:
 source digest, byte and coordinate spans, copy/source ExprIds, EST arena,
 statement occurrence, specialization identity/context and fact context, types,
-READ access, availability, provenance and independent-owner flag. Sidecar facts
-must equal the query row exactly; the frozen lexical `copy@line:column`
-locator remains the occurrence key, while the canonical fact digest binds
-`semantic_identity`. Type and access evidence are derived from that row.
-Missing checker authority is classified `PROVENANCE_MISSING`; arbitrary
-nonempty strings no longer authorize a clone. Unit coverage is green, but the
-the harness runner now requests `moss ownership at:<line>:<column> --source
-<file> --json` at the first copy occurrence and passes `result.copy_authority`
-into both debug and optimized provenance audits. The checkpoint compiler does
-not yet return `copy_authority`, so it correctly stays blocked. Team B's final
-sidecar helper API is not frozen yet. No compiler clone provenance has been
-independently verified by this change alone.
+READ access, availability, provenance and independent-owner flag. The frozen
+lexical `copy@line:column` locator remains the source occurrence key; the
+canonical complete fact hash binds per-clone `semantic_identity`.
+
+The v3 manifest has exactly `format`, `version`, `mode`, Rust/source digests,
+`source_copy_occurrences`, top-level `checked_copy_facts`, and `occurrences`.
+There is one lexical source-copy row and one fact-group wrapper per lexical
+copy; each group carries every checker row for that occurrence, including
+uninstantiated template contexts. Fact groups follow source order, and rows
+sort by canonical fact ID. V1/v2 oracle expectation and certification files
+remain untouched.
+
+For each emitted fact-specific helper, the harness parses raw Rust call markers
+and requires one exact-fact marker, one helper definition, one direct invocation
+and no aliases or extra callers. It derives helper body clone spans and checks
+them against sidecar occurrences and the source row's clone-span union. Shared
+`__moss_value` materializers remain unclassified and blocking. An empty-ID
+template fact may lack a helper only when raw Rust callable markers show its
+exact base callable is absent; nonempty specialization facts without helpers
+block. Callable normalization collisions and emitted source lines without a
+mapping fail closed.
+
+The runner retries the same exact ownership source location using documented
+kind filters, accepting only identical source-complete authority rows across
+successful retries. Live tests with the L7 query prototype passed for
+ORACLE-10A, a same-line UTF-8 copy call, CRLF source, and the
+multi-specialization fixture.
+That fixture returns three facts at one lexical span: a base template and two
+concrete specializations. The checkpoint compiler lacks `copy_authority`, so
+it remains blocked; compiler clone provenance is not verified until Team B's
+frozen v3 artifacts are independently audited.
+
+## Independent review and current status
+
+Initial candidate `ac89db6c7221e86747dcd611e7bafbee3a99b5da` received
+independent Agent 2 **NO-GO**. The review found that the one-fact-per-lexical-
+span join rejected valid specialization collisions, source-to-Rust links were
+self-asserted by sidecar, and the clone scanner missed whitespace-separated
+tokens. This follow-up adds a multi-specialization fixture and v3 fact groups,
+raw Rust helper derivation, callable inventory checks, shared token scanning,
+same-location query retries, live compiler query coverage, strict occurrence
+schemas, and whitespace cleanup. The v3 serializer changes are not yet frozen
+by Team B, and the follow-up has not received fresh independent review.
 
 ## Remaining Team C work
 
-- Validate the live query against Team A's frozen fact API and Team B's frozen
-  sidecar helper, then audit their frozen delivery SHAs.
-- Independently audit the frozen Team A/B delivery SHAs, including all debug
-  and optimized artifacts and ORACLE-54 provider output.
+- Audit Team B's frozen v3 helper artifacts against raw Rust derivation, then
+  audit all frozen Team A/B delivery SHAs, including debug/optimized artifacts
+  and ORACLE-54 provider output.
 - Continue reporting alternate operator and macro/MIR coverage limits; no
   unverified occurrence may be marked authorized.
-- Team C has not frozen a delivery SHA, received independent review, or pushed
-  its branch yet.
+- Live Team A/B artifact validation remains pending until they freeze deliverables.
+- This harness-only follow-up is being frozen as a local review candidate;
+  there is no fresh independent verdict yet. Do not push until it receives
+  independent GO.
