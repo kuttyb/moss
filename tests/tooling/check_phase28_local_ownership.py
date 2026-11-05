@@ -91,7 +91,8 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
     if expected_rebinding:
         definitions = re.findall(
             r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="[^"]+" '
-            r'binding="([^"]+)" killed="([^"]*)" expr=(\d+) '
+            r'source_definition="[^"]+" '
+            r'binding="([^"]+)" disposition=\d+ killed="([^"]*)" expr=(\d+) '
             r'context="[^"]+" access=(\d+)',
             proc.stderr)
         if len(definitions) != 2 or definitions[0][0] == definitions[1][0]:
@@ -587,6 +588,52 @@ def check_match_arm_corruption(compiler: str) -> None:
                 raise AssertionError(
                     f"{mode} accepted perturbed match arm {field}; "
                     f"exit={proc.returncode}\n{combined}")
+def check_local_transfer_disposition(compiler: str, fixture: str,
+                                    access: int, disposition: int) -> None:
+    env = os.environ.copy()
+    env["MOSS_EST_FACTS_DUMP"] = "1"
+    env["MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT"] = "1"
+    proc = subprocess.run(
+        [compiler, "check", str(FIXTURES / fixture), "--json"],
+        cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+    result = json.loads(proc.stdout)
+    if not result.get("ok"):
+        raise AssertionError(
+            f"{fixture}: expected checked local disposition, got {result!r}")
+    rows = re.findall(
+        r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="([^"]+)" '
+        r'source_definition="([^"]+)" binding="([^"]+)" disposition=(\d+) '
+        r'killed="[^"]*" expr=(\d+) context="([^"]+)" access=(\d+) '
+        r'availability=(\d+)', proc.stderr)
+    if not any(row[0] and row[1] and row[2] and row[3] and
+               int(row[4]) == disposition and int(row[5]) >= 0 and row[6] and
+               int(row[7]) == access and int(row[8]) == 1 for row in rows):
+        raise AssertionError(
+            f"{fixture}: expected exact access={access} disposition={disposition}, "
+            f"found {rows!r}; stderr: {proc.stderr}")
+
+
+def check_local_transfer_fail_closed(compiler: str, fixture: str) -> None:
+    for hook in (
+        "MOSS_TEST_DROP_LOCAL_TRANSFER_FACT",
+        "MOSS_TEST_DROP_LOCAL_TRANSFER_REQUIREMENT",
+        "MOSS_TEST_PERTURB_LOCAL_TRANSFER_DISPOSITION",
+        "MOSS_TEST_PERTURB_LOCAL_TRANSFER_REQUIREMENT_DISPOSITION",
+        "MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT",
+        "MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_REQUIREMENT",
+    ):
+        env = os.environ.copy()
+        env["MOSS_TEST_VALIDATE_LOCAL_OWNERSHIP_CONTRACT"] = "1"
+        env[hook] = "1"
+        proc = subprocess.run(
+            [compiler, "check", str(FIXTURES / fixture), "--json"],
+            cwd=ROOT, text=True, capture_output=True, env=env, check=False)
+        result = json.loads(proc.stdout)
+        if result.get("ok") or result.get("error", {}).get("code") != \
+                "MOSS_INTERNAL_OR_IO_ERROR":
+            raise AssertionError(
+                f"{fixture} {hook}: expected fail-closed transfer authority, "
+                f"got {result!r}")
 
 
 def main() -> int:
@@ -606,6 +653,12 @@ def main() -> int:
     check(compiler, "internal_never_not_source_type.moss",
           expected_error="UNKNOWN_SYMBOL_OR_TYPE")
     check_collection_outcome_contract(compiler)
+    check_local_transfer_disposition(compiler, "read_alias.moss", 0, 1)
+    check_local_transfer_disposition(compiler, "write_alias.moss", 1, 1)
+    check_local_transfer_disposition(compiler, "consume_transfer.moss", 2, 2)
+    check_local_transfer_disposition(
+        compiler, "message_payload_alias_borrowed.moss", 0, 1)
+    check_local_transfer_fail_closed(compiler, "read_alias.moss")
     check(compiler, "read_alias.moss", expected_effect=0)
     check(compiler, "write_alias.moss", expected_effect=1)
     check(compiler, "consume_transfer.moss", expected_effect=2)

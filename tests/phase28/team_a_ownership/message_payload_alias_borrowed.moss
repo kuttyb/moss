@@ -1,0 +1,11 @@
+type Box:
+  value: Int
+
+domain Reader:
+  fn Read(payload: Box) -> Int:
+    alias = payload
+    reply alias.value
+
+fn main():
+  reader = Reader()
+  echo message reader.Read(Box(value = 7))
