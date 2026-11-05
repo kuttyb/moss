@@ -26949,20 +26949,22 @@ class Checker {
              ownership_current_stmt_->kind == Stmt::Kind::Assign) &&
             tree_strip_expression_parens(
                 tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
-        // A handler reply is a read of domain-owned collection storage. The
-        // reply boundary materializes the value; it does not transfer the
-        // indexed element out of the collection.
-        const bool handler_reply = ownership_current_stmt_ &&
-            ownership_current_stmt_->kind == Stmt::Kind::Reply;
-        if (!direct_assignment_rhs && !handler_reply) {
-          auto elem_type = inferred_expr_type(value, env.types);
-          const bool concrete_noncopy_element = elem_type &&
-              !unresolved_semantic_type(*elem_type) &&
-              !phase28_copy_primitive_type(*elem_type);
-          if (concrete_noncopy_element) {
-            err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
-                "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
-          }
+        auto elem_type = inferred_expr_type(value, env.types);
+        const string canonical_element_type = elem_type
+            ? canonical_type_name(*elem_type) : string{};
+        const bool string_reply_read = ownership_current_stmt_ &&
+            ownership_current_stmt_->kind == Stmt::Kind::Reply &&
+            (canonical_element_type == "String" ||
+             canonical_element_type == "string");
+        const bool concrete_noncopy_element = elem_type &&
+            !unresolved_semantic_type(*elem_type) &&
+            !phase28_copy_primitive_type(*elem_type);
+        const bool rejected_consume = requested == Effect::Consume &&
+            !direct_assignment_rhs && concrete_noncopy_element &&
+            !string_reply_read;
+        if (rejected_consume) {
+          err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
+              "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
         }
         // Indexed access borrows its collection owner. Consuming a Copy
         // element consumes only the scalar value; it never consumes the
@@ -28402,7 +28404,21 @@ class Checker {
           if (type && fileio_scoped_type(*type))
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");
-          check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          string reply_base, reply_index;
+          if (tree_parse_index(s.a, reply_base, reply_index)) {
+            auto element_type = inferred_expr_type(s.a, env.types);
+            const string canonical_element_type = element_type
+                ? canonical_type_name(*element_type) : string{};
+            const bool string_reply_read =
+                canonical_element_type == "String" ||
+                canonical_element_type == "string";
+            if (element_type && !unresolved_semantic_type(*element_type) &&
+                !phase28_copy_primitive_type(*element_type) &&
+                !string_reply_read)
+              err(s.line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                  "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+          }
+          check_ownership_expression(s.line, s.a, env, Effect::Read);
           record_direct_raise();
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
