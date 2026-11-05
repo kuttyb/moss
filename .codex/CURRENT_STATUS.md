@@ -16901,3 +16901,11 @@ untouched.
   Optimized; B4 consumer boundary passes 21 corruption cases. The package
   build's remaining explicit-copy context issue has been assigned to Team B
   on an isolated worktree based on Team A's frozen checker fix.
+
+## Team B Regex local transfer consumer follow-up (2026-11-05)
+
+- Isolated branch `phase28-r7-010-team-b-regex-final` is based on Team A's exact reviewed merge `2063a3d0142f6ecabcab4d2c99face3346ff0cb2`, which joins transfer-fact `0a3c4c0b` and Regex match authority `dee17faf`. Team B Match payload fixes are cherry-picked above that exact dependency; no checker code was edited.
+- Native assignment lowering queries the active whole-local RHS handle, statement occurrence and specialization/context, resolves the exact `TypedLocalTransferFactV1`, validates its EST span/type and matching local ownership identities, and emits a move only for authoritative `TransferOwnedValue`. READ local facts still use the existing borrow path. Added missing/drop/perturb/duplicate fact and requirement gates.
+- Focused validation: compiler build; Team A local transfer authority 23 scenarios default/shadow; Team B local transfer consumer native Debug/Optimized compilation and output plus seven corruption cases; Team B Match payload WRITE and Match projection READ gates. All pass.
+- Fast Debug on the minimal accepted transfer fixture segfaults (return -11/139), while a vector create/push/count control prints 1. This is a separate interpreter blocker routed to L7; it is not counted as parity.
+- Full Regex package generation remains blocked by the L7-owned v3 builder `per-fact helper definition missing or duplicated`; no builder change was made. The prior simulated post-Match Rust artifact left only four Vec assignments, whose exact facts are READ. The transfer consumer still needs end-to-end Regex package validation after builder integration.
