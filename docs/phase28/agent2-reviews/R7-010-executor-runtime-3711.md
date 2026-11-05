@@ -53,3 +53,11 @@ All eight qualified `Arc::clone` occurrences need scanner and sidecar coverage b
 - Real explicit-copy provenance probe: `UNAUTHORIZED`, 1 authorized, 3 unauthorized, 3 unclassified; this is the expected blocking result for the three direct runtime `.clone()` sites.
 - Nested TLS borrow, off-worker/inline context, builder reuse, and Solo compensation regressions are included in the targeted executor tests.
 - Full oracle and default/shadow suites were not part of this focused review.
+
+## Marker locator gate follow-up
+
+- Reviewed candidate: L7 worktree `phase28-r7-010-l7-copy-authority`, commit `a8abbe32b98971e6d0470a167369123d39b77598`, with the reviewed uncommitted locator-gate changes.
+- Marked `src/executor_runtime.cpp` SHA-256: `c84a1391e7fb4355d48f204578e1192e68dc69deb50bf829fe3b2497cc1ecda1`.
+- Generated ORACLE-10A marked Rust SHA-256: `99d75d0cb54650e75803a023c92dc10a99f94d6de3f1a8a25abe70fef298dcc6`; marker-stripped SHA-256: `801517768d0e9493b90c66e2aff18f760fdbcbf37b82874fedf5b220c0a60bca`.
+- Gate command passed: `python3 tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py tmp/review-markers/build/compiler/moss-dev tests/phase28/oracle_r7_005_1/fixtures/oracle_10a_explicit_copy_only.moss`. It checks all eleven per-ID expression/operator anchors, marker-before-operator ordering, uniqueness, expected counts, missing/duplicate/string-decoy cases, same-family ID swaps, after-operator relocation, and the marker-stripped artifact hash.
+- The frozen v2 `runtime_callsite_allowlist.json`, certification, and expectations have no diff. Locator gate verdict: **GO only as non-authoritative locators**. The frozen registry remains empty; this review authorizes no runtime clone. The provenance audit still reports three direct runtime clones unauthorized, while eight qualified `Arc::clone` occurrences remain outside the current sidecar operator map.

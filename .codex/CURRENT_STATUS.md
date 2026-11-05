@@ -1,3 +1,42 @@
+### Phase 28 R7-010 current L7 checkpoint (2026-11-05)
+
+- Worktree/branch: `tmp/phase28-r7-010-l7-query`,
+  `phase28-r7-010-l7-copy-authority`; branch HEAD before current uncommitted
+  locator-gate work is `a8abbe32b98971e6d0470a167369123d39b77598`.
+- The implementation at `3711f2ab8ac45357b6dd6c993dc6e45be9d21884` remains
+  independently reviewed GO for the executor TLS borrow and move-only
+  `MossExecutor::start` changes. Current source-only locator comments are in
+  `src/executor_runtime.cpp` (SHA-256
+  `c84a1391e7fb4355d48f204578e1192e68dc69deb50bf829fe3b2497cc1ecda1`).
+- Updated `check_phase28_r7_010_runtime_clone_evidence.py` validates the older
+  artifact against its recorded producer commit and audits 11 current runtime
+  clone markers (3 `.clone()`, 8 `Arc::clone`) with exact generated-expression
+  binding and corruption checks. Independent Agent 2: GO for this gate only as
+  a non-authoritative locator; **no clone site is authorized**. Marker-stripped
+  current ORACLE-10A output matches the pre-marker SHA-256
+  `801517768d0e9493b90c66e2aff18f760fdbcbf37b82874fedf5b220c0a60bca`.
+- Isolated compiler rebuild passes. Runtime evidence gate passes; oracle and
+  inventory unit tests pass 46/46. A fresh full 60-fixture v2 run against the
+  marker build reports 19/60 all-gates PASS, 60/60 semantic PASS, 0
+  cross-engine disagreements, 41 fixtures blocked by unauthorized clone
+  provenance, and 252 direct runtime `.clone()` occurrences. This is a new
+  run, not the frozen R7-008 result. Artifacts:
+  `tmp/r7-010-oracle-marker-final/results.json` and
+  `tmp/r7-010-oracle-marker-final/failure-ledger.md`.
+- Durable independent review record is imported unchanged from reviewer commit
+  `e2a7da7ca8597a61ab382e272d3fc299756805f0` at
+  `docs/phase28/agent2-reviews/R7-010-executor-runtime-3711.md`.
+- Frozen v2 expectations, runtime registry and certification are unchanged
+  (SHA-256 respectively `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`,
+  `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`, and
+  `00e9d648286a90de7266622f18dad6f2b53693c5b3645cb37cb2b30bb4c4ccc9`).
+- Remaining work: do not authorize markers or edit v2. Create and independently
+  review a separately versioned runtime provenance successor with fail-closed
+  exact source/operator/type/context binding for the three direct clone sites
+  and eight qualified Arc sites; independently audit other duplicate
+  mechanisms. Full default/EST-shadow acceptance suites and final architect GO
+  remain outstanding. No merge to `phase28-work` or `main`.
+
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 
 - Worktree branch `phase28-r7-010-team-b-root-capture-nested` is based on

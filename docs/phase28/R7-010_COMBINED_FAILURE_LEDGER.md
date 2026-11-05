@@ -1,5 +1,41 @@
 # Phase 28 R7-010 Combined Oracle Failure Ledger
 
+# Fresh marker-build oracle run (2026-11-05)
+
+- **Implementation base:** `a8abbe32b98971e6d0470a167369123d39b77598`
+  plus uncommitted runtime-site locator comments (source SHA-256
+  `c84a1391e7fb4355d48f204578e1192e68dc69deb50bf829fe3b2497cc1ecda1`).
+- **Run artifacts:** `tmp/r7-010-oracle-marker-final/results.json` and
+  `tmp/r7-010-oracle-marker-final/failure-ledger.md`.
+- Fresh 60-fixture result: **19/60 all applicable gates PASS**; **60/60
+  semantic PASS**; no Fast Debug/Native Debug/Native Optimized disagreements;
+  no infrastructure failures; **41 fixtures fail only clone provenance**.
+  There are **252 direct runtime `.clone()` occurrences**, all reported
+  unauthorized under the unchanged frozen v2 registry. The 41 failures are
+  provenance blocks, not 41 confirmed Moss semantic copy defects.
+- The ORACLE-10A current output has one checker-authorized explicit copy and
+  three unauthorized/unclassified direct runtime `.clone()` rows. The
+  independent locator gate identifies 11 runtime source sites total (3 direct
+  `.clone()`, 8 `Arc::clone()`), but it does not authorize any. Qualified Arc
+  calls remain outside the per-artifact v3 `.clone()` sidecar bijection and
+  require separate successor audit coverage.
+- The independent reviewer returned **GO for the marker gate as a
+  non-authoritative locator only** and **NO authorization for every runtime
+  site**. The marker-stripped ORACLE-10A artifact digest matches its pre-marker
+  baseline. Durable review is
+  `docs/phase28/agent2-reviews/R7-010-executor-runtime-3711.md` (review commit
+  `e2a7da7ca8597a61ab382e272d3fc299756805f0`). Frozen v2 expectation, registry
+  and certification digests remain unchanged.
+- Targeted validation: isolated `moss-dev` build PASS; runtime evidence gate
+  PASS including missing/duplicate/string-decoy, ID-swap and relocation
+  mutations; oracle and clone-inventory unit tests **46/46 PASS**; `git diff
+  --check` PASS.
+- **Disposition remains NO-GO.** Remaining acceptance work includes a reviewed
+  separately versioned provenance successor, complete duplicate-operator
+  audit, full default and EST-shadow regression suites, and final independent
+  architect GO. Do not change frozen oracle expectations or merge to
+  `phase28-work`/`main`.
+
 - **Implementation SHA:** `5120cfbf85d7eb7b274d6c25532dd84e72c3877e`
 - **Branch:** `phase28-r7-010-l7-copy-authority`
 - **Specification:** certified frozen R7-005 v2 expectations; no expectation or digest changes.

@@ -55,7 +55,7 @@ impl<T> MossFairMutex<T> {
             released: std::sync::atomic::AtomicBool::new(false),
             waiter: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
         });
-        let raw = std::sync::Arc::into_raw(std::sync::Arc::clone(&node)) as *mut MossFairNode;
+        let raw = std::sync::Arc::into_raw(/* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-04 */ std::sync::Arc::clone(&node)) as *mut MossFairNode;
         let previous = self.tail.swap(raw, Ordering::AcqRel);
         if !previous.is_null() {
             // SAFETY: swapping the tail transferred its owned Arc to us.
@@ -149,7 +149,7 @@ impl MossFairCondvar {
             notified: std::sync::atomic::AtomicBool::new(false),
         });
         // SAFETY: the associated fair guard exclusively protects this queue.
-        unsafe { &mut *self.waiters.get() }.push_back(std::sync::Arc::clone(&waiter));
+        unsafe { &mut *self.waiters.get() }.push_back(/* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-05 */ std::sync::Arc::clone(&waiter));
         let lock = guard.lock;
         drop(guard);
         while !waiter.notified.load(std::sync::atomic::Ordering::Acquire) {
@@ -435,7 +435,7 @@ impl MossGlobalExec {
     /// the entry was in transit; its join then cleared `queued` but could not
     /// find the entry, so the pusher removes it.
     fn push_ready_scope(&self, scope: &std::sync::Arc<MossBranchScopeState>) {
-        self.branch_scopes.lock().push_back(std::sync::Arc::clone(scope));
+        self.branch_scopes.lock().push_back(/* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-06 */ std::sync::Arc::clone(scope));
         let stale = {
             let pending = scope.lock_pending();
             pending.joined && !pending.queued
@@ -494,7 +494,7 @@ impl MossProcessRuntime {
     }
 
     fn active_executor(&self) -> std::option::Option<std::sync::Arc<MossGlobalExec>> {
-        self.lock_inner().active_executor.clone()
+        /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-01 */ self.lock_inner().active_executor.clone()
     }
 }
 
@@ -640,7 +640,7 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
 /// another lock. Lock acquisition is strictly non-nested.
 fn worker_loop(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
     let _abort_guard = MossAbortOnUnwind;
-    let _worker = MossWorkerContextGuard::enter(worker_id, std::sync::Arc::clone(gx));
+    let _worker = MossWorkerContextGuard::enter(worker_id, /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-07 */ std::sync::Arc::clone(gx));
 
     loop {
         // Phase 1: exit decision or Root work, under gx.inner only.
@@ -720,7 +720,7 @@ impl Drop for MossWorkerThreadGuard {
 /// Spawn a worker whose physical slot the caller already reserved in
 /// `live_threads` (and `active_workers`).
 fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
-    let gx2 = std::sync::Arc::clone(gx);
+    let gx2 = /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-08 */ std::sync::Arc::clone(gx);
     let priority = gx.config.priority;
     let handle = std::thread::Builder::new()
         .name(format!("moss-worker-{}", wid))
@@ -844,7 +844,7 @@ impl MossExecutor {
     /// The resolved configuration this builder would start with.
     pub fn config(&self) -> MossExecutorConfig {
         MossExecutorConfig::resolved(self.threads, self.max_threads, self.queue_capacity,
-                                     self.affinity.clone(), self.priority)
+                                     /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-02 */ self.affinity.clone(), self.priority)
     }
 
     /// INLINE → ACTIVE transition (§5.2 / §5.3 / E6 / R15).
@@ -906,7 +906,7 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
 
         inner.state = MossIngressState::Active;
         inner.start_pending = false;
-        inner.active_executor = Some(std::sync::Arc::clone(&gx));
+        inner.active_executor = Some(/* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-09 */ std::sync::Arc::clone(&gx));
         // Waiting callers re-evaluate and use ACTIVE executor admission.
         rt.ingress_cv.notify_all(&inner);
     }
@@ -1076,7 +1076,7 @@ where
 
     let reply_slot: std::sync::Arc<(std::sync::Mutex<std::option::Option<R>>, std::sync::Condvar)> =
         std::sync::Arc::new((std::sync::Mutex::new(None), std::sync::Condvar::new()));
-    let reply = std::sync::Arc::clone(&reply_slot);
+    let reply = /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-10 */ std::sync::Arc::clone(&reply_slot);
     let mut root_work: std::option::Option<MossWork> = Some(std::boxed::Box::new(move || {
         let res = work();
         let (lock, cvar) = &*reply;
@@ -1103,7 +1103,7 @@ where
                     inner = rt.ingress_cv.wait(inner);
                     continue;
                 }
-                let gx = std::sync::Arc::clone(inner.active_executor.as_ref().expect("active executor missing in ACTIVE state"));
+                let gx = /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-11 */ std::sync::Arc::clone(inner.active_executor.as_ref().expect("active executor missing in ACTIVE state"));
                 drop(inner);
                 let desc = MossRootDescriptor {
                     root_id,
@@ -1394,7 +1394,7 @@ pub extern "C" fn __moss_branch_scope_new_current() -> *const () {
 #[no_mangle]
 pub unsafe extern "C" fn __moss_branch_scope_clone(scope: *const ()) -> *const () {
     // SAFETY: the caller owns a live count for `scope` across this call.
-    unsafe { MossBranchScope::with_raw_borrowed(scope, |s| s.clone().into_raw_owned()) }
+    unsafe { MossBranchScope::with_raw_borrowed(scope, |s| /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-03 */ s.clone().into_raw_owned()) }
 }
 
 #[no_mangle]
