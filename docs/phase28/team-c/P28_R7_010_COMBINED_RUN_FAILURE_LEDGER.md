@@ -23,6 +23,8 @@ The summary below was recomputed from all 60 JSON rows and cross-checked against
 | Missing/invalid provenance block | 1 fixture | ORACLE-54; four missing sidecars contribute six unclassified clone observations each. |
 | Infrastructure failures | 0 fixtures | No timeout, artifact-generation failure, Rust compilation failure, or other infrastructure failure is recorded in the JSON run. |
 
+**Clone occurrence reconciliation:** 538 raw `.clone()` observations = 2 authorized checked-copy rows + 512 submitted rows rejected as unauthorized + 24 ORACLE-54 missing-sidecar observations; therefore 536 remain unverified. The 2 authorized rows are the `explicit_copy` occurrences in `ORACLE-10A-EXPLICIT-COPY-ONLY` `native_debug` and `native_optimized`, both at Rust span `3448:98–106`, source copy `copy@7:16`, fact `typed-copy-fact-v1:9a0cc0da2beb958795086461529aa7eff83742cef90c30924a26271e9035e57b`; these were counted by summing `len(clone_audit[mode].occurrences)` and selecting rows whose `origin_kind` is `explicit_copy` in the pinned results JSON.
+
 ## Checker and semantic findings
 
 The checker outcome counters are 54 `PASS`, four `WRONG_DIAGNOSTIC`, and two `UNEXPECTED_ACCEPT`. Overall semantic status is 53 PASS / 7 FAIL because ORACLE-07's checked program passes the checker but later fails execution requirements.
