@@ -1,3 +1,26 @@
+### Team B Root-ingress arena lookup follow-up (2026-11-05)
+
+- Worktree branch `phase28-r7-010-team-b-root-capture-nested` is based on
+  `7762b813d38554deaae9cee505322e335f21df9e`. The candidate change is in
+  `src/native_generator.cpp`: active Root-ingress handles resolve against the
+  canonical checked Program's expression arenas when available, retaining the
+  exact selected handle, arena bounds, ExprId bounds, and EST Message checks.
+- Build passes with
+  `make --jobs="$(nproc)" COMPILER_DIR=tmp/team-b-root-capture-nested/build/compiler moss-dev`.
+- `python3 tests/tooling/check_phase26_1_1_x1.py tmp/team-b-root-capture-nested/build/compiler/moss-dev tmp/team-b-root-capture-nested/artifacts/x1`
+  passes (`ok: true`), including the gate's Native Debug/Optimized generation
+  and output checks. This reproduces the previously failing optimized second
+  generation path.
+- On base `7762b813`,
+  `python3 tests/tooling/check_phase27_5_1_facts_and_fast_debug.py tmp/team-b-root-capture-nested/build/compiler/moss-dev`
+  still stops at `join_try.moss` because an unreachable recovery arm has a
+  checker fact but no emitted Rust clone. L7 owns the writer/auditor boundary
+  and has now pushed its fix at `b18fcddfc8028cadb172e100c37474347879afd1`;
+  validate this candidate atop that descendant before final freeze.
+- No checker facts are filtered or inferred by this change. Temporary trace
+  hooks were removed. Focused review and push are pending. Broad runtime/domain
+  clone authorization remains unapproved and outside this repair.
+
 ### Team B native generator g++ warning follow-up (2026-11-05)
 
 - Branch `phase28-r7-010-team-b-warning-fix` is based on L7 staging SHA
