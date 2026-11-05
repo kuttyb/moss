@@ -1738,13 +1738,40 @@ class FastInterpreter {
   }
 
   const FunctionSpecialization* specialization_for_call(
-      const Function& target, const Frame& caller, int line) const {
+      const Function& target, const Frame& caller, int line,
+      const ExpressionTreeView* tree = nullptr,
+      std::optional<est::ExprId> call_expr = std::nullopt) const {
     if (!target.static_dispatch) return nullptr;
     const auto checked = checked_call_edge_specialization(
         program_, caller.functional_context, target.name, line);
     if (checked.test_fact_dropped || checked.test_fact_perturbed)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
+    if (tree && call_expr) {
+      const auto* facts = tree->arena->facts(*call_expr,
+                                             caller.functional_context);
+      if (facts && !facts->specialization_result.empty()) {
+        if (facts->resolved_target.empty() ||
+            facts->resolved_target != target.semantic_callable_id)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT exact call specialization target mismatch");
+        const FunctionSpecialization* match = nullptr;
+        for (const auto& candidate : target.specializations) {
+          if (candidate.stable_type_key != facts->specialization_result) continue;
+          if (match)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT exact call specialization is ambiguous");
+          match = &candidate;
+        }
+        if (!match)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT exact call specialization is unavailable");
+        return match;
+      }
+    }
+    if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT exact call specialization is unavailable for ambiguous call edge");
     return checked.kind == CheckedCallEdgeSelectionKind::Unique
         ? checked.unique : nullptr;
   }
@@ -2737,7 +2764,7 @@ class FastInterpreter {
         }
         if (auto fn = function(callee))
           return call(*fn, args, frame, line, output, tree,
-                      call_argument_nodes);
+                      call_argument_nodes, nullptr, current_root);
         auto callable_local = frame.locals.find(callee);
         const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;
         if (!callable_val) {
@@ -2749,7 +2776,7 @@ class FastInterpreter {
         if (callable_val && callable_val->kind == Value::Kind::Callable) {
           if (auto fn = function(callable_val->string))
             return call(*fn, args, frame, line, output, tree,
-                        call_argument_nodes);
+                        call_argument_nodes, nullptr, current_root);
           throw RuntimeError(line, program_.file_check_scope
               ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
                     callable_val->string + "' was not checked in this run"
@@ -3601,12 +3628,14 @@ class FastInterpreter {
              Frame& caller, int line, std::ostream& output,
              const ExpressionTreeView* tree = nullptr,
              const std::vector<est::ExprId>* argument_nodes = nullptr,
-             const std::vector<Value>* argument_values = nullptr) {
+             const std::vector<Value>* argument_values = nullptr,
+             std::optional<est::ExprId> call_expr = std::nullopt) {
     if (arguments.size() != target.params.size())
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
     Frame frame;
     frame.function = target.name;
-    const auto* specialization = specialization_for_call(target, caller, line);
+    const auto* specialization = specialization_for_call(
+        target, caller, line, tree, call_expr);
     if (!specialization && checked_call_requires_specialization(target, caller, line)) {
 #ifndef NDEBUG
       if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
