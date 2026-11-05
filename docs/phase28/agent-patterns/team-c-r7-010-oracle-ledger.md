@@ -1,0 +1,18 @@
+# Team C R7-010 combined oracle ledger closeout
+
+Closeout follows the literal categories in [`docs/AGENT_TEAM_EFFICIENCY.md`](../../AGENT_TEAM_EFFICIENCY.md). Scope is the combined-run failure-ledger workstream, not the earlier full Team C conformance assignment.
+
+| Category | Report |
+|---|---|
+| **Leaf agents** | `0 observed` for this report workstream: the ledger is authored in the L6 coordinator worktree; no distinct worker submission appears in the branch history. Planned slots: unknown. Evidence: branch commits `23ba0b17d69177b3377227e2c3241848f633ba79` and `1a5562ac2487e12d0fdc985f1df438806f421ce0`. |
+| **Peak leaf concurrency** | `unknown`; no leaf-agent active intervals are recorded. |
+| **Non-leaf reviewers/managers** | L6 Coordinator: 1. Architect: 0 documented for this handoff. Independent adversarial reviewer: 1 (Agent 2). L7 is recorded separately under **Other review events**. |
+| **Submissions** | PRs: 0. Non-PR handoffs: 1 ledger handoff, revised once after L7 requested the missing count reconciliation; reviewed GO and scoped branch delivery. Two report commits (`23ba0b17…`, `1a5562ac…`) are revisions within that handoff, not separate submissions. |
+| **Coordinator reviews** | 1/1 handoff reviewed by the L6 coordinator through JSON reconciliation and report verification. Coordinator-only repair rounds: average 0, max 0. L7 feedback is excluded from this count. |
+| **Other review events** | Architect: 0 documented events. Adversarial: 1 planned independent Agent 2 review, **GO** on report SHA `1a5562ac2487e12d0fdc985f1df438806f421ce0`. L7: 1 follow-up review event on the prior report revision, requesting the 538/2/512/24 reconciliation; fixed in `1a5562ac…`. The L7 request was not an Agent 2 finding. |
+| **Defects** | No compiler defect was first discovered or fixed by this report-only workstream. The ledger documents the combined run's 3 implementation/runtime failures, 4 diagnostic-contract mismatches, and provenance results; first-discoverer attribution for those underlying issues is not established by this report. The follow-up count omission was a report-completeness issue and is corrected. |
+| **Test evidence** | Combined frozen v2 oracle: 60 unique fixtures; Checker, Fast Debug, Native Debug, and Native Optimized outcomes are preserved per fixture in `tmp/phase28-r7-010-l7-query/tmp/phase28-r7-010-combined-results.json` (SHA-256 `077618b0b60f3037b72e48d53f4296dca0b56df516c5a2cd322d8d9da213a4e8`). A one-off reconciliation assertion passed: 60 rows, 13 all-gate PASS, 7 `semantic_status` FAIL, 40 unauthorized-provenance fixtures, 1 missing-provenance fixture, 538 total clone observations, 2 authorized, 512 unauthorized, and 536 unverified. This assertion is not an additional test-suite count. |
+| **Review provenance** | Independent Agent 2 reviewed ledger SHA `1a5562ac2487e12d0fdc985f1df438806f421ce0` and returned **GO**. The later closeout commit is documentation-only; its diff from the reviewed ledger changes no compiler, tests, oracle inputs, or acceptance gates. Final delivery SHA is the closeout commit recorded in this branch's Git history and the delivery handoff. No L7 implementation approval is claimed. |
+| **Usage** | `unknown`; no provider-reported token or cost data was available for this handoff. |
+| **Value** | The ledger makes overlapping failure counts explicit and ties them to the exact run JSON and frozen expectation/mapping digests. Independent review confirmed the report after the total clone reconciliation identified 2 authorized rows separately from the 536 unverified observations. L7's later correction caught the omitted total; the report now records 538 total observations without changing any compiler or oracle artifact. |
+
