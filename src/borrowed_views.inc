@@ -11,6 +11,10 @@
     return "MossAccess_" + canonical_type_name(type);
   }
 
+  string access_value_method(const string& type) const {
+    return access_trait(type) + "__moss_value";
+  }
+
   // Return a view-aware place only for checked paths rooted in state or a
   // generic access parameter. This is representation selection, not effects.
   std::optional<string> view_place(const string& path, const Domain* d,
@@ -137,11 +141,15 @@
         o << "    fn __moss_field_" << field.name << "(&self) -> &" << result << ";\n"
           << "    fn __moss_field_" << field.name << "_mut(&mut self) -> &mut " << result << ";\n";
       }
-      o << "    fn __moss_value(&self) -> " << t.name << " { " << t.name << " { ";
+      const string value_method = access_value_method(t.name);
+      o << "    // MOSS_OBJECT_VALUE_HELPER_BEGIN:" << value_method << "\n"
+        << "    fn " << value_method << "(&self) -> " << t.name << " { " << t.name << " { ";
       for (const auto& field : t.fields)
         o << rust_identifier(field.name) << ": self.__moss_field_" << field.name << "()."
-          << (view_object_type(field.type) ? "__moss_value()" : "clone()") << ", ";
-      o << "} }\n    fn __moss_replace(&mut self, value: " << t.name << ") {\n";
+          << (view_object_type(field.type)
+              ? access_value_method(field.type) + "()" : "clone()") << ", ";
+      o << "} }\n    // MOSS_OBJECT_VALUE_HELPER_END:" << value_method << "\n"
+        << "    fn __moss_replace(&mut self, value: " << t.name << ") {\n";
       for (const auto& field : t.fields) {
         if (view_object_type(field.type)) o << "        self.__moss_field_" << field.name << "_mut().__moss_replace(value." << rust_identifier(field.name) << ");\n";
         else o << "        *self.__moss_field_" << field.name << "_mut() = value." << rust_identifier(field.name) << ";\n";

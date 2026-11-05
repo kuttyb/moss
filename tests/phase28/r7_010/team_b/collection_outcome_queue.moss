@@ -1,0 +1,7 @@
+fn main():
+  q = Queue()
+  try:
+    let item = q.pop()
+    echo "unreached"
+  recover CollectionError.Empty:
+    echo "empty_queue"

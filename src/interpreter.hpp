@@ -2752,6 +2752,23 @@ class FastInterpreter {
             }
           }
           auto receiver = evaluate_member_receiver();
+          if (tree && member_node && member_argument_nodes &&
+              ((method_name == "pop" && method_args.empty() &&
+                receiver.kind == Value::Kind::Queue) ||
+               (method_name == "remove" && method_args.size() == 1 &&
+                receiver.kind == Value::Kind::Map))) {
+            const auto operation = method_name == "pop"
+                ? TypedCollectionOutcomeFactV1::Operation::QueuePop
+                : TypedCollectionOutcomeFactV1::Operation::MapRemove;
+            const auto* outcome = resolve_collection_outcome_fact(
+                *tree, current_root, operation, frame, line);
+            if (outcome) {
+              if (method_name == "remove") (void)evaluate_method_argument(0);
+              raise_collection_error(frame, line,
+                  outcome->error_variant_identity == "Empty"
+                      ? "Empty" : "MissingKey");
+            }
+          }
           if (receiver.kind == Value::Kind::Float) {
             if (method_name == "to_string" && method_args.empty()) {
               return Value::string_value(rust_f64_to_string(receiver.floating));
@@ -3802,6 +3819,72 @@ class FastInterpreter {
       return program_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
       throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+    }
+  }
+
+  const TypedCollectionOutcomeFactV1* resolve_collection_outcome_fact(
+      const ExpressionTreeView& tree, est::ExprId operation_expression,
+      TypedCollectionOutcomeFactV1::Operation operation,
+      const Frame& frame, int line) const {
+    if (!program_.typed_semantics || !tree.arena)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT typed collection outcome semantics are unavailable");
+    const std::string context = frame.functional_context.empty()
+        ? "main" : frame.functional_context;
+    const TypedCollectionOutcomeRequirementV1* requirement = nullptr;
+    std::size_t count = 0;
+#ifdef MOSS_TEST_BUILD
+    const bool drop_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+    const bool duplicate_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+#else
+    constexpr bool drop_requirement = false;
+    constexpr bool duplicate_requirement = false;
+#endif
+    for (const auto& candidate :
+         program_.typed_semantics->required_collection_outcome_occurrences) {
+      if (!drop_requirement && candidate.operation == operation &&
+          candidate.operation_est_arena_index == tree.arena_index &&
+          candidate.operation_expression_occurrence_id == operation_expression &&
+          candidate.specialization_identity == frame.specialization_key &&
+          candidate.specialization_context == context) {
+        requirement = &candidate;
+        ++count;
+        if (duplicate_requirement) ++count;
+      }
+    }
+    if (count != 1 || !requirement) {
+      const auto* semantic = tree.arena->facts(operation_expression, context);
+      if (count || (semantic && semantic->type &&
+                    semantic->type->kind == TypeKind::Never))
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT required checked collection outcome missing or ambiguous");
+      return nullptr;
+    }
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_OUTCOME_FACT"))
+        throw std::invalid_argument(
+            "required checked collection outcome fact missing");
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_OUTCOME_FACT"))
+        throw std::invalid_argument(
+            "duplicate checked collection outcome facts");
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_OUTCOME_REQUIREMENT") ||
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_OUTCOME_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.error_variant_identity = "forged";
+        (void)program_.typed_semantics->find_collection_outcome_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed collection outcome authority unexpectedly passed");
+      }
+#endif
+      return program_.typed_semantics->find_collection_outcome_fact(*requirement);
+    } catch (const RuntimeError&) {
+      throw;
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
     }
   }
 
