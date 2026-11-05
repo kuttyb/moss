@@ -105,6 +105,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_clone_proven
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_explicit_copy_source_borrow.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_map_get_write_through.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_match_payload_write.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_match_projection_read_borrow.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_nested_copy_helper.py "$compiler" tmp/team-b/nested-copy-helper
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_collection_outcome_consumers.py "$compiler" tmp/team-b/collection-outcome-gate
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_native_join_slot.py "$compiler"

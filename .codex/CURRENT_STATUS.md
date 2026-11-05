@@ -16101,9 +16101,13 @@ untouched.
   ORACLE-19 match-borrow checkpoint `4c1093127c068c720661da26271ab572aa04477f`
   plus test-only negative follow-up `7c15378d6717afb22de2ecb78000b930e372496f`
   have Agent 2 focused GO; the negative test proves unsupported nested
-  projections fail closed. Team B's scoped branch is still awaiting push/feedback
-  closeout. Team B overall remains NO-GO: Map view/ReturnValue consumers and the
-  broad clone corpus remain unresolved. No runtime clone has been authorized by
-  this status update.
+  projections fail closed. Team B's scoped branch is pushed at
+  `004bec9a6d7b0923b83a466a56cf5a062df0d8a6`; its only post-review changes are
+  docs/feedback. L7 imported the code as `ea772f48` and test as `9cea1bc0`,
+  rebuilt `moss`, and validated the projection gate, Match WRITE gate and B4
+  21-case corruption harness. L7 owns registering the new gate in `tests/run.sh`.
+  Team B overall remains NO-GO: Map view/ReturnValue consumers and the broad
+  clone corpus remain unresolved. No runtime clone has been authorized by this
+  status update.
 - Full default and EST-shadow suite runs have not yet been performed; rerun the
   60-fixture oracle after focused repairs settle.
