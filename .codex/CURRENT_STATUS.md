@@ -15822,3 +15822,32 @@ untouched.
   root-ingress borrowing is impossible under the current runtime ABI. No
   expectations changed. Full 60-fixture combined oracle and final default/
   shadow suites have not been rerun.
+
+## R7-010 follow-up checkpoint (2026-11-05)
+
+- Team C clone-capability/conformance audit is independently approved and pushed:
+  `2b23276ec0524dacda881856a04a0770baffe634` on
+  `origin/phase28-r7-010-team-c-conformance`. Reviewer GO; expectations digest
+  remains `7ca0d550e38f33c47105f7e22f5993d234de924657f23a2` (v2 fixtures
+  unchanged). The report separately pins 30 derives in the six-file conformance
+  comparison set and 28 in Team B's different six-file gate set; derives are
+  capabilities, not authorized copy invocations.
+- Team A's checker-owned Echo authority producer is frozen locally at
+  `b5294b52c92154e88053811a6d7dfcd82d654c9f`, pending independent Agent 2
+  review. It publishes exact `TypedEchoArgumentFactV1`/requirement rows for
+  `ExpressionValue` vs `BorrowedVectorElement`, with occurrence/context/type
+  identities, READ, non-escaping display, and `permits_copy=false`. Its
+  drop/perturb contract gate passes locally; L7 has not yet registered it in
+  `tests/run.sh` or imported it.
+- Team B's consumer follow-up is reopening on a separate branch based on its
+  NO-GO candidate, with the reviewed Team A checker chain plus Echo fact as
+  dependencies. The consumer must read the exact fact; the prior inferred
+  `generated_expr_type` borrow choice remains disallowed. Runtime clone
+  reachability audit continues; no site has blanket runtime authorization.
+- Root-ingress replies remain separate: nonprimitive `READ` reply lowering
+  fails closed because `runtime_invoke` accepts only a `Send + 'static` thunk,
+  so a local borrow cannot safely cross that boundary. The checker has no
+  exact message-argument copy/consume authority fact. The legacy String indexed
+  reply test acceptance conflicts with the active Phase 28 rule requiring
+  `copy(x)` for an owned nonprimitive reply; do not alter frozen expectations or
+  invent a borrowing fact. This remains a semantic-contract blocker.
