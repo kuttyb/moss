@@ -28,6 +28,6 @@ The R7-008 branch does not contain `docs/COMPILER_ARCHITECTURE.md`. For its curr
 
 ## Review and inherited defects
 
-Independent adversarial review: pending on the frozen implementation commit. No review verdict is claimed yet.
+Independent adversarial review: **GO** on final implementation and test-registration commit `81350ff6046cff120da61a1c35f4af8c91049804`. The reviewer confirmed the registered B4 corruption harness entry, reported no unrelated change or regression, and accepted the recorded focused harness result. This documentation-only follow-up records that verdict; it does not change the reviewed implementation.
 
 The R7-008 report's other known items are unchanged: native clone provenance sidecar is missing; native `copy(x)` and one-argument `Map.get(key)` retain clone debt; nested `take(...)` native lowering is limited to supported root slots; and CollectionError registration/raise inference is absent. This slice does not claim those defects are repaired.
