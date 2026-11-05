@@ -16210,3 +16210,8 @@ untouched.
 
 - Staging merge commit `9dc745fe06ffd1660b8a2a3d30552fe9d93d3c01` integrates exact reviewed Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a`.
 - `python3 tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes all eight cases on this source: existing exact nested EchoArgument fact plus drop, access-perturb, and EST-context-perturb fail-closed checks. Team B still needs to consume this authority for ORACLE-42 native lowering.
+
+## Team A ORACLE-58 ReturnValue context follow-up (2026-11-05)
+
+- Team A exact SHA `b4af885d879abd8da0afab475facb8b71dd37e0b` is pushed and remote-verified with independent Agent 2 GO. It sets ReturnValue `est_fact_context` to the actual generic arena context while preserving per-specialization contexts, IDs, closed types, and actions; it adds exact generic EST readback and a context-perturb corruption hook. The 28-scenario authority harness, R7-009 17/17, Echo authority 8 cases, feedback, and diff checks pass.
+- The exact reviewed checker change is now being integrated into L7 staging and must be included as ancestry in Team B's consumer follow-up before final review.
