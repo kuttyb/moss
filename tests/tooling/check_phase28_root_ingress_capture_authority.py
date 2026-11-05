@@ -83,6 +83,12 @@ def main():
         assert missing_edge.returncode != 0, (source, missing_edge.stdout)
         assert "exact checked Root-ingress message call edge" in missing_edge.stdout
         scenario_count += 1
+        duplicate_edge = check(source, {
+            "MOSS_TEST_DUPLICATE_ROOT_INGRESS_MESSAGE_EDGE": "1"
+        })
+        assert duplicate_edge.returncode != 0, (source, duplicate_edge.stdout)
+        assert "duplicate exact Root-ingress message call edges" in duplicate_edge.stdout
+        scenario_count += 1
         perturbed_edge = check(source, {
             "MOSS_TEST_PERTURB_ROOT_INGRESS_MESSAGE_EDGE": "1"
         })
