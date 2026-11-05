@@ -1,0 +1,20 @@
+enum Numeric:
+  Some(value: Int)
+  None
+
+enum Textual:
+  Some(value: String)
+  None
+
+fn show(value):
+  match value:
+    case Some(value):
+      echo value
+    case None:
+      echo "none"
+
+fn main():
+  let numeric = Numeric.Some(value: 7)
+  let textual = Textual.Some(value: "text")
+  show(numeric)
+  show(textual)

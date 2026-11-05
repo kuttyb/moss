@@ -15501,3 +15501,27 @@ or full repository suite was requested or run.
 Push the corrected draft, report its exact SHA, and stop for L7 approval. Do not
 self-approve, freeze or merge. The private holdout remains local-only and
 untouched.
+# Phase 28 Team C — B4 consumer fail-closed checkpoint
+
+- Worktree branch `phase28-r7-b4-consumers`, based on frozen R7-008
+  `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`.
+- Native and Fast Debug Match lowering now require one exact-context and
+  exact-specialization match requirement/fact. Option kind, enum type, and
+  payload types come from the checker record; type-string/runtime-string
+  Option inference is removed. Loop/exception ownership lookup also uses exact
+  context and stable specialization identity.
+- Added `tests/tooling/check_phase28_b4_consumer_fails_closed.py`, including
+  cross-engine generic enum context coverage and 21 drop/perturb/duplicate,
+  missing-requirement, and substring-collision failures. The script remains
+  standalone pending L7 test-runner registration.
+- Current validation: `make --jobs="$(nproc)"`; B4 harness (21/21 negative
+  corruption paths plus positive debug/native/-O parity); R7-003 consumer;
+  specialized native consumer; Team B consumer; take consumer (22/22);
+  agent-feedback validator; `git diff --check`; Python compile of the new
+  harness all passed. No full `make check` or `make check-shadow` run.
+- Architecture guide `docs/COMPILER_ARCHITECTURE.md` is absent at the frozen
+  base; read its current version from `origin/main`, and record that boundary
+  in `docs/phase28/B4_CONSUMER_FAIL_CLOSED_VERIFICATION.md`.
+- Remaining: freeze the implementation commit, obtain independent adversarial
+  review on that exact SHA, address any review findings, then commit the review
+  result and push the scoped branch. Do not merge to `phase28-work` or `main`.

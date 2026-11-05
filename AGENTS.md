@@ -243,6 +243,11 @@ When working with Moss:
   `phase28-r7-008-integration`, L7 authorized staging integration, and the user
   authorized scoped local commits and normal pushes to the configured remote.
   Do not merge into `phase28-work` or `main` without separate L7 authorization.
+  For Phase 28 R7-009 Team A equivalence, R7-005.1 Team B oracle revision, and
+  B4 Team C consumer verification, the user authorized scoped local commits
+  and normal pushes to the configured remote after independent adversarial
+  review. Keep the three branches separate; do not merge into `phase28-work`
+  or `main` without separate L7 authorization.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

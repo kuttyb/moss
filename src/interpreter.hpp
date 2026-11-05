@@ -740,6 +740,7 @@ class FastInterpreter {
   struct Frame {
     std::string function;
     std::string functional_context;
+    std::string specialization_key;
     std::string source_file;
     std::string semantic_identity;
     std::string specialization_identity;
@@ -3390,6 +3391,8 @@ class FastInterpreter {
 #endif
     }
     frame.functional_context = functional_function_context(target, specialization);
+    frame.specialization_key = specialization
+        ? specialization->stable_type_key : std::string();
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
@@ -3628,9 +3631,8 @@ class FastInterpreter {
     for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
       if (req.loop_est_arena_index == matched_handle->arena_index &&
           req.loop_expression_occurrence_id == matched_handle->expr &&
-          (req.specialization_context == context ||
-           (!frame.specialization_identity.empty() &&
-            req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+          req.specialization_context == context &&
+          req.specialization_identity == frame.specialization_key) {
         if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -3647,15 +3649,16 @@ class FastInterpreter {
     for (const auto& fact : program_.typed_semantics->loop_ownership_facts) {
       if (fact.loop_est_arena_index == matched_handle->arena_index &&
           fact.loop_expression_occurrence_id == matched_handle->expr &&
-          (fact.specialization_context == context ||
-           (!frame.specialization_identity.empty() &&
-            fact.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+          fact.specialization_context == context &&
+          fact.specialization_identity == frame.specialization_key) {
         if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
               req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
+              req.specialization_context == fact.specialization_context &&
+              req.specialization_identity == fact.specialization_identity &&
               req.definition_identity == fact.definition_identity &&
               req.edge_kind == fact.edge_kind) {
             found_req = true;
@@ -3678,9 +3681,8 @@ class FastInterpreter {
 
     std::vector<const TypedExceptionalOwnershipFactV1*> facts;
     for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
-      if (req.specialization_context == context ||
-          (!frame.specialization_identity.empty() &&
-           req.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+      if (req.specialization_context == context &&
+          req.specialization_identity == frame.specialization_key) {
         if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -3692,14 +3694,15 @@ class FastInterpreter {
       }
     }
     for (const auto& fact : program_.typed_semantics->exceptional_ownership_facts) {
-      if (fact.specialization_context == context ||
-          (!frame.specialization_identity.empty() &&
-           fact.specialization_context.find(frame.specialization_identity) != std::string::npos)) {
+      if (fact.specialization_context == context &&
+          fact.specialization_identity == frame.specialization_key) {
         if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
+              req.specialization_context == fact.specialization_context &&
+              req.specialization_identity == fact.specialization_identity &&
               req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
               req.raised_variant_identity == fact.raised_variant_identity) {
             found_req = true;
@@ -3716,7 +3719,9 @@ class FastInterpreter {
 
   const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
       const Stmt& s, const Frame& frame, int line) const {
-    if (!program_.typed_semantics) return nullptr;
+    if (!program_.typed_semantics)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT typed match semantics are unavailable");
     const est::Handle* matched_handle = nullptr;
     for (const auto& handle : s.expression_handles) {
       if (handle.slot == est::ExprSlot::Scrutinee && handle.argument_index == 0) {
@@ -3724,20 +3729,36 @@ class FastInterpreter {
         break;
       }
     }
-    if (!matched_handle) return nullptr;
+    if (!matched_handle)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked match scrutinee occurrence is missing");
     const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
+    std::string active_specialization_identity = frame.specialization_key;
     const TypedMatchOwnershipRequirementV1* requirement = nullptr;
+#ifdef MOSS_TEST_BUILD
+    const bool drop_match_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_REQUIREMENT") != nullptr;
+    if (std::getenv("MOSS_TEST_CONSUMER_COLLIDE_MATCH_SPECIALIZATION_IDENTITY")) {
+      const auto delimiter = context.find('<');
+      active_specialization_identity = context.substr(0, delimiter);
+    }
+#else
+    constexpr bool drop_match_requirement = false;
+#endif
+    size_t requirement_count = 0;
     for (const auto& req : program_.typed_semantics->required_match_occurrences) {
-      if (req.est_arena_index == matched_handle->arena_index &&
+      if (!drop_match_requirement &&
+          req.est_arena_index == matched_handle->arena_index &&
           req.scrutinee_occurrence_id == matched_handle->expr &&
-          (req.specialization_context == context ||
-           (!frame.specialization_identity.empty() &&
-            req.specialization_context.find(frame.specialization_identity) != std::string::npos))) {
+          req.specialization_context == context &&
+          req.specialization_identity == active_specialization_identity) {
         requirement = &req;
-        break;
+        ++requirement_count;
       }
     }
-    if (!requirement) return nullptr;
+    if (requirement_count != 1 || !requirement)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT required checked match requirement missing or ambiguous");
     try {
       return program_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
@@ -3926,15 +3947,27 @@ class FastInterpreter {
           return opt;
         }();
         const auto* match_fact = resolve_match_ownership_fact(statement, frame, statement.line);
-        const bool is_option_match = match_fact
-            ? (match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option)
-            : (selected.object->type == "option" || selected.object->type.rfind("option[", 0) == 0);
+        if (!match_fact || !match_fact->scrutinee_type)
+          throw RuntimeError(statement.line,
+              "MOSS_INTERNAL_INVARIANT checked match fact lacks its scrutinee type");
+        const bool is_option_match =
+            match_fact->scrutinee_kind == TypedMatchScrutineeKindV1::Option;
+        const std::string checked_match_type =
+            match_fact->scrutinee_type->to_canonical_string();
+        if (is_option_match &&
+            (match_fact->scrutinee_type->kind != TypeKind::Builtin ||
+             match_fact->scrutinee_type->name != "option"))
+          throw RuntimeError(statement.line,
+              "MOSS_INTERNAL_INVARIANT checked Option match fact has a non-Option type");
+        if (!is_option_match && selected.object->type != checked_match_type)
+          throw RuntimeError(statement.line,
+              "MOSS_INTERNAL_INVARIANT runtime enum type contradicts checked match fact");
         const EnumType* declaration = nullptr;
         if (is_option_match) {
           declaration = &option_enum;
         } else {
           for (const auto& candidate : program_.enums)
-            if (candidate.name == selected.object->type) declaration = &candidate;
+            if (candidate.name == checked_match_type) declaration = &candidate;
         }
         if (!declaration) throw RuntimeError(statement.line, "unknown matched enum");
         size_t cursor = index + 1;
@@ -3962,6 +3995,17 @@ class FastInterpreter {
             for (const auto& candidate : declaration->cases)
               if (candidate.name == pattern->case_name) item = &candidate;
             if (!item) throw RuntimeError(arm.line, "unknown enum case");
+            const auto checked_arm = std::find_if(
+                match_fact->arms.begin(), match_fact->arms.end(),
+                [&](const TypedMatchArmFactV1& candidate) {
+                  return candidate.case_name == pattern->case_name;
+                });
+            if (!pattern->payload_bindings.empty() &&
+                (checked_arm == match_fact->arms.end() ||
+                 checked_arm->payload_binding_names != pattern->payload_bindings ||
+                 checked_arm->payload_types.size() != pattern->payload_bindings.size()))
+              throw RuntimeError(arm.line,
+                  "MOSS_INTERNAL_INVARIANT checked match arm fact is missing or contradictory");
             for (size_t field_index = 0; field_index < pattern->payload_bindings.size(); ++field_index) {
               const auto& binding = pattern->payload_bindings[field_index];
               auto prior_local = frame.locals.find(binding);
@@ -3986,7 +4030,11 @@ class FastInterpreter {
                 frame.locals[binding] = field->second;
               else
                 frame.aliases[binding] = Place{&field->second, nullptr, {}};
-              frame.local_types[binding] = item->fields[field_index].type;
+              const auto& payload_type = checked_arm->payload_types[field_index];
+              if (!payload_type)
+                throw RuntimeError(arm.line,
+                    "MOSS_INTERNAL_INVARIANT checked match payload type is missing");
+              frame.local_types[binding] = payload_type->to_canonical_string();
             }
             flow = execute_block(statements, frame, output, cursor + 1, arm_end,
                                  &statement);
