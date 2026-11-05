@@ -17226,3 +17226,18 @@ untouched.
   independent ledger on the exact combined SHA; finish the duplication
   provenance audit; then run full default and EST-shadow suites and obtain
   independent final review.
+- Team B has completed a fresh frozen-v2 oracle and artifact inventory run
+  against exact source SHA `ae57a3e3eccd2fbbc4a85f94228fe86102d4929b`, isolated
+  under `tmp/r7-010-current-ae57-v2/`. Result: **19/60** all-applicable
+  PASS, **60/60** semantic PASS, **41/60** clone-provenance failures. Its 84
+  generated Rust artifacts contain **258 direct `.clone()` occurrences** at
+  six grouped sites: three executor-runtime templates repeated 84 times each
+  (252), two root-domain capture callsites repeated in debug/optimized output
+  (4), and one checked explicit-copy helper repeated in debug/optimized output
+  (2). The oracle recognizes only 19 fixtures as all-gate PASS; the remaining
+  41 fail clone provenance. The broader inventory reports 1,876 candidate
+  operations in 36 grouped source-site fingerprints, including 588 qualified
+  `Arc::clone` observations. Those qualified clones and the broader operation
+  classes still require independent authority classification; none are
+  implicitly approved by this count. This fresh run supersedes neither the
+  frozen expectations nor the required independent Team C audit.
