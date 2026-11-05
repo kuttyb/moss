@@ -8134,7 +8134,6 @@ class Generator {
     const string context = functional_context.empty() ? "main" : functional_context;
     const string specialization = codegen_active_specialization_key_;
     auto& required = checked_program.typed_semantics->required_local_transfer_occurrences;
-    auto& facts = checked_program.typed_semantics->local_transfer_facts;
     auto same_query = [&](const TypedLocalTransferFactV1& candidate) {
       return candidate.est_arena_index == rhs_handle->arena_index &&
           candidate.rhs_expression_occurrence_id == rhs_handle->expr &&
@@ -8144,6 +8143,7 @@ class Generator {
           candidate.specialization_identity == specialization;
     };
 #ifdef MOSS_TEST_BUILD
+    auto& facts = checked_program.typed_semantics->local_transfer_facts;
     const bool require_fact =
         std::getenv("MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT") != nullptr;
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_REQUIREMENT")) {
