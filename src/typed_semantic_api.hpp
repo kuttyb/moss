@@ -556,7 +556,7 @@ struct TypedEchoArgumentFactV1 {
         echo_statement_occurrence_id == UINT32_MAX ||
         argument_index == UINT32_MAX || est_arena_index == UINT32_MAX ||
         argument_expression_occurrence_id == UINT32_MAX ||
-        est_fact_context.empty() || required_access != Effect::Read ||
+        required_access != Effect::Read ||
         !display_result_non_escaping || permits_copy)
       return false;
     if (mode == TypedEchoArgumentModeV1::ExpressionValue)
@@ -602,7 +602,7 @@ struct TypedEchoArgumentRequirementV1 {
     if (echo_statement_occurrence_id == UINT32_MAX ||
         argument_index == UINT32_MAX || est_arena_index == UINT32_MAX ||
         argument_expression_occurrence_id == UINT32_MAX ||
-        est_fact_context.empty() || required_access != Effect::Read ||
+        required_access != Effect::Read ||
         !display_result_non_escaping || permits_copy)
       return false;
     if (mode == TypedEchoArgumentModeV1::ExpressionValue)
