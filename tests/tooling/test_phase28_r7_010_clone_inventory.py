@@ -3,6 +3,7 @@
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -88,6 +89,39 @@ fn f() {
         masked = inventory.mask_non_code(source)
         spans = inventory.operator_spans(masked, "dot_clone")
         self.assertEqual(len(spans), 2)
+
+    def test_moss_clone_derive_is_reported_as_capability_not_invocation(self):
+        fact_id = "typed-copy-fact-v1:" + "a" * 64
+        source = '''// Moss tooling begin|type|type:Record@2|Record|
+#[derive(Clone, Debug)]
+struct Record { value: String }
+// Moss tooling end|type:Record@2
+#[derive(Clone)]
+struct RuntimeState { value: usize }
+fn __moss_copy_value_aaaaaaaaaaaaaaaa(value: &Record) -> Record { (*value).clone() }
+fn explicit_copy(value: &Record) -> Record {
+  { /* Moss copy fact call: FACT_ID */ __moss_copy_value_aaaaaaaaaaaaaaaa(value) }
+}
+'''
+        source = source.replace("FACT_ID", fact_id)
+        with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as tmp:
+            root = Path(tmp)
+            path = root / "fixture.rs"
+            path.write_text(source)
+            capabilities = inventory.inspect_moss_clone_derives(path, root)
+            uses = inventory.inspect_moss_clone_derive_uses(path, root, capabilities)
+        self.assertEqual(len(capabilities), 1)
+        self.assertEqual(capabilities[0]["rust_type"], "Record")
+        self.assertEqual(capabilities[0]["moss_region_symbol"], "Record")
+        self.assertEqual(capabilities[0]["capability"], "derived Clone implementation")
+        self.assertFalse(capabilities[0]["is_invocation"])
+        self.assertEqual(len(uses), 1)
+        self.assertEqual(uses[0]["rust_type"], "Record")
+        self.assertEqual(uses[0]["fact_marker_locator"], fact_id)
+        self.assertTrue(uses[0]["helper_prefix_matches_marker"])
+        self.assertEqual(uses[0]["authority_status"], "not independently verified")
+        masked = inventory.mask_non_code(source)
+        self.assertEqual(len(inventory.operator_spans(masked, "dot_clone")), 1)
 
 
 if __name__ == "__main__":
