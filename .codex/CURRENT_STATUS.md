@@ -16804,3 +16804,10 @@ untouched.
   provenance-only FAIL, with 252 unauthorized direct `.clone()` rows and no
   semantic failures or engine disagreements. Final disposition is **NO-GO**;
   focused TLS Agent 2 GO is not combined architect acceptance.
+
+### Team A checker follow-up: regex Match arm authority — `dee17faf` (2026-11-05)
+
+- Starting from exact staging commit `563275155d961ae9d44ef1bf4a247cc8bf0b4e56`, fixed match ownership fact collection to continue across nested arm bodies while recording only immediate `Case` arms. This prevents a nested statement in the first arm from hiding later sibling cases.
+- The focused fixture verifies `NoMatch` and `Matched(start,end)`, exact payload binding identities, closed Int payload types, payload access, and no ownership transfer. Drop, duplicate, and case/name/identity/type/access/transfer perturbations fail closed.
+- Frozen checker candidate `dee17faf7ee8acc0eca2579c15f461cbbb4715c7` received independent Agent 2 GO and is published at `origin/phase28-r7-010-team-a-regex-match-authority`. Gates: dev/opt `make moss` and `make moss-opt`, the 9-scenario match authority harness, Phase 28 W12 checker suite (dev/opt), feedback validation, and diff check passed. L7 still owns registration of `python3 tests/tooling/check_phase28_match_arm_authority.py ./moss` in `tests/run.sh`.
+- With L7's provisional regex package copy edits applied locally, direct `moss check` and `margo build --check` passed. Native `margo build` then failed earlier at `MOSS_INTERNAL_INVARIANT explicit copy lacks checked EST context`; this separate consumer/context issue is assigned to L7/Team B. The provisional package source edits were reverted and are not in the Team A branch.
