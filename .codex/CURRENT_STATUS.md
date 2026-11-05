@@ -15887,3 +15887,15 @@ untouched.
   SHA `644d2c71`; full native sidecar/provenance still fails closed on six
   runtime clones and the other audit sites. No 60-fixture combined run or final
   default/shadow suites have been started.
+
+## Team B recovery patch review (2026-11-05)
+
+- Independent Agent 2 returned focused **NO-GO** for checkpoint `83a9eed6`:
+  the captured-carrier bare re-raise fixture
+  `tests/tooling/fixtures/phase21_capture_nested_reraise.moss` now fails native
+  generation with `bare raise lacks a selected error`. The pruning condition
+  omits the local selected-error value for captured tries although lowering
+  still checks it before selecting the captured carrier. Team B is adding this
+  missing case and narrowing pruning to truly unused selected-error clones.
+  ORACLE-07 no-bare-raise and the uncaptured bare-re-raise test pass; captured
+  re-raise remains a known regression until a reviewed follow-up lands.
