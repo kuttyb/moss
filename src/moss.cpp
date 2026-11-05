@@ -10779,6 +10779,19 @@ static std::string normalized_source_path(const std::string& source_file) {
   return absolute.lexically_normal().string();
 }
 
+static string checked_callable_context_base(string context) {
+  const auto at = context.rfind('@');
+  if (at == string::npos || at + 1 >= context.size()) return context;
+  auto suffix_end = context.find('#', at + 1);
+  if (suffix_end == string::npos) suffix_end = context.size();
+  if (suffix_end == at + 1 || !std::all_of(
+          context.begin() + at + 1, context.begin() + suffix_end,
+          [](unsigned char ch) { return std::isdigit(ch); }))
+    return context;
+  context.erase(at);
+  return context;
+}
+
 static void write_copy_authority_json(std::ostream& out,
                                       const Program& program,
                                       const std::string& source_file) {
@@ -10823,6 +10836,61 @@ static void write_copy_authority_json(std::ostream& out,
                  right->est_arena_index,
                  right->copy_occurrence_id);
   });
+
+  // This emitter projection is returned beside, not inside, canonical
+  // TypedCopyFactV1 rows. It lets independent artifact auditors compare
+  // sidecar callable claims with the checked Program's exact generated names.
+  std::map<std::string, std::set<std::string>> callable_projections;
+  for (const auto* fact : facts) {
+    const string context = fact->specialization_context.empty()
+        ? fact->provenance.enclosing_callable_id
+        : fact->specialization_context;
+    auto& symbols = callable_projections[context];
+    const auto same_module = [&](const string& module) {
+      if (fact->provenance.defining_module_id.empty()) return true;
+      const auto found = program.module_identities.find(module);
+      return found == program.module_identities.end() ||
+          found->second == fact->provenance.defining_module_id;
+    };
+    const auto same_source_callable = [&](const string& source,
+                                          const string& module) {
+      if (!source.empty()) return normalized_source_path(source) == normalized_file;
+      return same_module(module);
+    };
+    const string context_base = checked_callable_context_base(context);
+    if (context_base == "main" && program.main) symbols.insert("main");
+    for (const auto& function : program.functions) {
+      if (!same_source_callable(function.source_file,
+                                function.defining_module) ||
+          !same_module(function.defining_module)) continue;
+      if (checked_callable_context_base(
+              functional_function_context(function)) == context_base) {
+        symbols.insert(function.name);
+        symbols.insert("__moss_view_" + function.name);
+      }
+      for (const auto& specialization : function.specializations)
+        if (checked_callable_context_base(functional_function_context(
+                function, &specialization)) == context_base) {
+          symbols.insert(specialization.generated_name);
+          symbols.insert("__moss_view_" + specialization.generated_name);
+        }
+    }
+    for (const auto& object : program.objects) {
+      if (!same_module(object.defining_module)) continue;
+      for (const auto& method : object.methods)
+        if (same_source_callable(method.source_file,
+                                 object.defining_module) &&
+            checked_callable_context_base(
+                functional_method_context(object, method)) == context_base) {
+          symbols.insert(object.name + "::" + method.name);
+          symbols.insert(object.name + "::__moss_view_" + method.name);
+        }
+    }
+    if (symbols.empty())
+      throw std::invalid_argument(
+          "checked copy fact has no callable projection in its source Program: " +
+          context + " (base " + context_base + ")");
+  }
 
   out << "\"available\", \"facts\": [";
   for (std::size_t index = 0; index < facts.size(); ++index) {
@@ -10902,6 +10970,22 @@ static void write_copy_authority_json(std::ostream& out,
     out << ",\"enclosing_callable_id\":";
     write_debug_json_string(out, fact.provenance.enclosing_callable_id);
     out << "}}";
+  }
+  out << "],\"callable_projections\":[";
+  bool first_projection = true;
+  for (const auto& [context, symbols] : callable_projections) {
+    if (!first_projection) out << ",";
+    first_projection = false;
+    out << "{\"context\":";
+    write_debug_json_string(out, context);
+    out << ",\"symbols\":[";
+    bool first_symbol = true;
+    for (const auto& symbol : symbols) {
+      if (!first_symbol) out << ",";
+      first_symbol = false;
+      write_debug_json_string(out, symbol);
+    }
+    out << "]}";
   }
   out << "]}";
 }
@@ -23628,6 +23712,60 @@ static string native_clone_provenance_v3_json(
     NativeCheckedCopyFactV1 native_fact;
     try {
       native_fact = native_checked_copy_fact_from_typed(*fact, source_bytes);
+      const string context = fact->specialization_context.empty()
+          ? fact->provenance.enclosing_callable_id
+          : fact->specialization_context;
+      const string context_base = checked_callable_context_base(context);
+      std::set<string> generated_symbols;
+      const auto same_module = [&](const string& module) {
+        if (fact->provenance.defining_module_id.empty()) return true;
+        const auto found = program.module_identities.find(module);
+        return found == program.module_identities.end() ||
+            found->second == fact->provenance.defining_module_id;
+      };
+      const auto same_source_callable = [&](const string& source,
+                                            const string& module) {
+        if (!source.empty()) return normalized_source_path(source) == normalized_source;
+        return same_module(module);
+      };
+      if (context_base == "main" && program.main)
+        generated_symbols.insert("main");
+      for (const auto& function : program.functions) {
+        if (!same_source_callable(function.source_file,
+                                  function.defining_module) ||
+            !same_module(function.defining_module))
+          continue;
+        if (checked_callable_context_base(
+                functional_function_context(function)) == context_base) {
+          generated_symbols.insert(function.name);
+          generated_symbols.insert("__moss_view_" + function.name);
+        }
+        for (const auto& specialization : function.specializations)
+          if (checked_callable_context_base(functional_function_context(
+                  function, &specialization)) == context_base) {
+            generated_symbols.insert(specialization.generated_name);
+            generated_symbols.insert("__moss_view_" +
+                                     specialization.generated_name);
+          }
+      }
+      for (const auto& object : program.objects) {
+        if (!same_module(object.defining_module)) continue;
+        for (const auto& method : object.methods) {
+          if (!same_source_callable(method.source_file,
+                                    object.defining_module) ||
+              checked_callable_context_base(
+                  functional_method_context(object, method)) != context_base)
+            continue;
+          generated_symbols.insert(object.name + "::" + method.name);
+          generated_symbols.insert(object.name + "::__moss_view_" + method.name);
+        }
+      }
+      native_fact.generated_callable_symbols.assign(generated_symbols.begin(),
+                                                      generated_symbols.end());
+      if (native_fact.generated_callable_symbols.empty())
+        throw std::invalid_argument(
+            "checked copy fact has no exact generated callable projection in its source Program: " +
+            context + " (base " + context_base + ")");
     } catch (const std::exception& error) {
       throw ProjectError("MOSS_INTERNAL_INVARIANT",
           string("cannot serialize checked copy fact: ") + error.what(),

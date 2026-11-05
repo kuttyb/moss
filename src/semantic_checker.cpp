@@ -2247,6 +2247,14 @@ class Checker {
         for (const auto& requirement :
              p_.typed_semantics->required_copy_occurrences)
           (void)p_.typed_semantics->find_copy_fact(requirement);
+      if (std::getenv("MOSS_TEST_REQUIRE_COPY_FACT") &&
+          p_.typed_semantics->required_copy_occurrences.empty())
+        throw std::invalid_argument(
+            "checker did not retain an exact checked copy fact");
+      if (std::getenv("MOSS_TEST_ASSERT_NO_COPY_REQUIREMENT") &&
+          !p_.typed_semantics->required_copy_occurrences.empty())
+        throw std::invalid_argument(
+            "checker retained copy authority without an exact checked occurrence");
       if (std::getenv("MOSS_TEST_VALIDATE_MATCH_CONTRACT"))
         for (const auto& requirement :
              p_.typed_semantics->required_match_occurrences)
@@ -27259,6 +27267,16 @@ class Checker {
             }
           }
         }
+
+        // A source-level copy without a checker-owned EST occurrence cannot
+        // authorize any downstream lowering. Do not publish a requirement
+        // containing sentinel arena/expression/span identities; exact
+        // consumers will fail closed when no checked requirement exists.
+        if (fact.est_arena_index == UINT32_MAX ||
+            fact.copy_occurrence_id == UINT32_MAX ||
+            fact.source_occurrence_id == UINT32_MAX ||
+            fact.statement_occurrence_id == UINT32_MAX)
+          return;
 
         TypedCopyRequirementV1 req;
         req.est_arena_index = fact.est_arena_index;

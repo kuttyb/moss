@@ -361,6 +361,64 @@ def _source_byte_span_offsets(source: str, span: dict) -> tuple[int, int]:
     return start, end
 
 
+def _tooling_function_variant_at(rust: str, position: int) -> tuple[str, str, int, int, str]:
+    function_prefix = "// Moss tooling begin|function|"
+    main_prefix = "// Moss tooling begin|main|"
+    method_prefix = "// Moss tooling begin|method|"
+    end_prefix = "// Moss tooling end|"
+    function_begin = rust.rfind(function_prefix, 0, position + 1)
+    main_begin = rust.rfind(main_prefix, 0, position + 1)
+    method_begin = rust.rfind(method_prefix, 0, position + 1)
+    prefix, kind = max(((function_begin, function_prefix, "function"),
+                        (main_begin, main_prefix, "main"),
+                        (method_begin, method_prefix, "method")),
+                       key=lambda row: row[0])[1:]
+    begin = max(function_begin, main_begin, method_begin)
+    if begin < 0:
+        raise ValueError("explicit-copy clone is outside a tooling function variant")
+    line_end = rust.find("\n", begin)
+    if line_end < 0 or position < line_end:
+        raise ValueError("malformed tooling function variant marker")
+    identity_start = begin + len(prefix)
+    identity_end = rust.find("|", identity_start)
+    symbol_start = identity_end + 1
+    symbol_end = rust.find("|", symbol_start)
+    if identity_end < 0 or symbol_end < 0 or symbol_end == symbol_start or symbol_end >= line_end:
+        raise ValueError("tooling function variant lacks exact identity or generated symbol")
+    identity = rust[identity_start:identity_end]
+    symbol = rust[symbol_start:symbol_end]
+    end_marker = end_prefix + identity
+    end = rust.find(end_marker, line_end)
+    next_function_candidates = [rust.find(candidate, line_end)
+                                for candidate in (function_prefix, main_prefix,
+                                                  method_prefix)]
+    next_function_candidates = [candidate for candidate in next_function_candidates
+                                if candidate >= 0]
+    next_function = min(next_function_candidates) if next_function_candidates else -1
+    if end < 0 or (next_function >= 0 and next_function < end) or position >= end:
+        raise ValueError("tooling function variant is unterminated or overlapping")
+    return identity, symbol, begin, end, kind
+
+
+def _function_variant_identity(rust: str, identity: str, symbol: str,
+                               begin: int, end: int) -> str:
+    material = identity + "\n" + symbol + "\n" + rust[begin:end]
+    return "rust-function-variant-v1:" + hashlib.sha256(material.encode()).hexdigest()
+
+
+def _variant_matches_checked_copy(fact: dict, semantic_identity: str,
+                                   generated_symbol: str,
+                                   checked_symbols: list) -> bool:
+    normalize = lambda value: re.sub(r"@\d+(?:#.*)?$", "", value)
+    expected = fact.get("specialization_context") or \
+        fact.get("provenance", {}).get("enclosing_callable_id", "")
+    if normalize(semantic_identity) != normalize(expected):
+        return False
+    if not isinstance(checked_symbols, list) or not checked_symbols:
+        return False
+    return generated_symbol in checked_symbols
+
+
 def _span_key(span: dict) -> tuple[int, int, int, int]:
     return (span["start"]["line"], span["start"]["column"],
             span["end"]["line"], span["end"]["column"])
@@ -723,11 +781,29 @@ def validate_checked_copy_authority(source: str, source_path: Path,
         raise ValueError(authority.get("reason", "copy authority queries conflict"))
     if not isinstance(authority, dict) or authority.get("status") != "available":
         raise LookupError("checked TypedCopyFactV1 authority is unavailable")
-    if set(authority) != {"status", "facts"}:
+    if set(authority) != {"status", "facts", "callable_projections"}:
         raise ValueError("copy_authority top-level schema has missing or unknown fields")
     facts = authority.get("facts")
     if not isinstance(facts, list):
         raise ValueError("copy_authority facts is not an array")
+    projection_rows = authority.get("callable_projections")
+    if not isinstance(projection_rows, list):
+        raise ValueError("copy authority callable projections are malformed")
+    projections: dict[str, list[str]] = {}
+    for row in projection_rows:
+        if (not isinstance(row, dict) or set(row) != {"context", "symbols"} or
+                not isinstance(row["context"], str) or not row["context"] or
+                not isinstance(row["symbols"], list) or not row["symbols"] or
+                any(not isinstance(symbol, str) or not symbol for symbol in row["symbols"]) or
+                row["symbols"] != sorted(set(row["symbols"])) or
+                row["context"] in projections):
+            raise ValueError("copy authority callable projection row is invalid")
+        projections[row["context"]] = row["symbols"]
+    fact_contexts = {fact.get("specialization_context") or
+                     fact.get("provenance", {}).get("enclosing_callable_id")
+                     for fact in facts if isinstance(fact, dict)}
+    if not fact_contexts or set(projections) != fact_contexts:
+        raise ValueError("copy authority callable projections do not exactly cover checked facts")
     source_digest = "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
     expected_path = str(source_path.resolve())
     copies_by_key = {_nested_span_key(span): span for span in source_copies}
@@ -845,6 +921,7 @@ def validate_checked_copy_authority(source: str, source_path: Path,
             raise ValueError("sidecar copy source span differs from checked fact")
         validated_row = dict(row)
         validated_row["checked_copy_facts"] = expected_facts
+        validated_row["callable_projections"] = projections
         sidecar_by_copy_key[key] = validated_row
         source_row_order.append(key)
     if set(sidecar_by_copy_key) != set(copies_by_key):
@@ -862,14 +939,14 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
     comments: list[dict] = []
     masked = mask_rust_non_code(rust, comments)
     tokens = rust_code_tokens(masked)
-    tooling_begin = re.compile(r"Moss tooling begin\|function\|([^|]+)\|")
+    tooling_begin = re.compile(r"Moss tooling begin\|(function|main|method)\|([^|]+)\|")
     emitted_callable_ids = set()
     raw_emitted_callable_ids = []
     emitted_source_lines = set()
     for comment in comments:
         identity_match = tooling_begin.search(comment["text"])
         if identity_match:
-            raw_id = identity_match.group(1)
+            raw_id = identity_match.group(2)
             raw_emitted_callable_ids.append(raw_id)
             emitted_callable_ids.add(re.sub(r"@\d+(?:#.*)?$", "", raw_id))
         line_match = re.search(r"Moss line (\d+):", comment["text"])
@@ -955,70 +1032,92 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
             # inventory shows no base callable and either its specialized
             # descendants are all fact-linked or its source line is absent.
             continue
-        if len(fact_markers) != 1:
-            raise ValueError("fact helper must have exactly one raw Rust call marker")
         definitions = [i for i in positions if i > 0 and tokens[i - 1][0] == "fn"]
         calls = [i for i in positions if i not in definitions and i + 1 < len(tokens)
                  and tokens[i + 1][0] == "("]
-        if len(definitions) != 1 or len(calls) != 1 or len(positions) != 2:
-            raise ValueError("fact helper must have one definition, one direct call, and no aliases")
-        marker_start, marker_end = fact_markers[0]
-        call_index = calls[0]
-        if tokens[call_index][1] < marker_end or \
-                rust[marker_end:tokens[call_index][1]].strip() or \
-                tokens[call_index + 1][0] != "(":
-            raise ValueError("copy fact marker is not immediately adjacent to its direct helper call")
-        # Parse the helper signature and balanced body using token boundaries.
-        open_paren = definitions[0] + 1
-        if tokens[open_paren][0] != "(":
-            raise ValueError("copy helper definition has malformed parameter list")
-        depth = 0
-        close_paren = None
-        for i in range(open_paren, len(tokens)):
-            if tokens[i][0] == "(":
-                depth += 1
-            elif tokens[i][0] == ")":
-                depth -= 1
-                if depth == 0:
-                    close_paren = i
-                    break
-        if close_paren is None:
-            raise ValueError("copy helper parameter list is unterminated")
-        body_open = next((i for i in range(close_paren + 1, len(tokens))
-                          if tokens[i][0] == "{"), None)
-        if body_open is None:
-            raise ValueError("copy helper has no body")
-        brace_depth = 0
-        body_close = None
-        for i in range(body_open, len(tokens)):
-            if tokens[i][0] == "{":
-                brace_depth += 1
-            elif tokens[i][0] == "}":
-                brace_depth -= 1
-                if brace_depth == 0:
-                    body_close = i
-                    break
-        if body_close is None:
-            raise ValueError("copy helper body is unterminated")
-        body_start, body_end = tokens[body_open][1], tokens[body_close][2]
-        if any(token.startswith("__moss_value") for token in token_values[body_open:body_close + 1]):
-            raise ValueError("per-fact helper depends on shared __moss_value materialization")
-        masked_body = masked[body_start:body_end]
-        for operator in RUST_DUPLICATION_OPERATORS:
-            if operator == "dot_clone":
-                continue
-            if rust_operator_spans(masked_body, operator):
-                raise ValueError(f"per-fact helper contains unclassified duplication candidate: {operator}")
-        helper_clones = []
-        for clone_key, span in rust_by_key.items():
-            clone_start, clone_end = _span_offsets(rust, span)
-            if body_start <= clone_start and clone_end <= body_end:
-                helper_clones.append(clone_key)
-        for clone_key in helper_clones:
-            if clone_key in derived:
-                raise ValueError("one Rust clone is attributed to multiple checker facts")
-            derived[clone_key] = (copy_id, fact_id)
-            expected_clone_spans[copy_id].append(clone_key)
+        if len(definitions) != len(fact_markers) or \
+                len(calls) != len(fact_markers) or \
+                len(positions) != 2 * len(fact_markers):
+            raise ValueError("fact helper must have one definition and direct call per generated variant, with no aliases")
+        seen_variants = set()
+        used_calls = set()
+        for marker_start, marker_end in fact_markers:
+            variant_id, variant_symbol, variant_begin, variant_end, variant_kind = \
+                _tooling_function_variant_at(rust, marker_start)
+            normalized_context = re.sub(r"@\d+(?:#.*)?$", "", checked_fact["specialization_context"])
+            if re.sub(r"@\d+(?:#.*)?$", "", variant_id) != normalized_context:
+                raise ValueError("raw copy marker is inside a different checked callable")
+            variant_key = (variant_id, variant_symbol)
+            if variant_key in seen_variants:
+                raise ValueError("checked copy fact repeats in one generated function variant")
+            seen_variants.add(variant_key)
+            declaration = variant_symbol.rsplit("::", 1)[-1] if variant_kind == "method" else variant_symbol
+            declaration_pattern = re.compile(r"\bfn\s+" + re.escape(declaration) + r"\b")
+            if len(list(declaration_pattern.finditer(masked[variant_begin:variant_end]))) != 1:
+                raise ValueError("tooling function variant symbol is not its exact Rust declaration")
+            call_candidates = [i for i in calls
+                               if i not in used_calls and tokens[i][1] >= marker_end and
+                               not rust[marker_end:tokens[i][1]].strip()]
+            if len(call_candidates) != 1:
+                raise ValueError("copy-fact marker is not adjacent to one direct helper call")
+            call_index = call_candidates[0]
+            if tokens[call_index + 1][0] != "(":
+                raise ValueError("copy fact marker does not precede a direct helper call")
+            used_calls.add(call_index)
+            variant_definitions = [i for i in definitions
+                                   if variant_begin <= tokens[i][1] < variant_end]
+            variant_calls = [i for i in calls
+                             if variant_begin <= tokens[i][1] < variant_end]
+            if len(variant_definitions) != 1 or variant_calls != [call_index]:
+                raise ValueError("generated function variant does not contain exactly one local helper definition and call")
+            # Parse the helper signature and balanced body using token boundaries.
+            open_paren = variant_definitions[0] + 1
+            if tokens[open_paren][0] != "(":
+                raise ValueError("copy helper definition has malformed parameter list")
+            depth = 0
+            close_paren = None
+            for i in range(open_paren, len(tokens)):
+                if tokens[i][0] == "(":
+                    depth += 1
+                elif tokens[i][0] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        close_paren = i
+                        break
+            if close_paren is None:
+                raise ValueError("copy helper parameter list is unterminated")
+            body_open = next((i for i in range(close_paren + 1, len(tokens))
+                              if tokens[i][0] == "{"), None)
+            if body_open is None:
+                raise ValueError("copy helper has no body")
+            brace_depth = 0
+            body_close = None
+            for i in range(body_open, len(tokens)):
+                if tokens[i][0] == "{":
+                    brace_depth += 1
+                elif tokens[i][0] == "}":
+                    brace_depth -= 1
+                    if brace_depth == 0:
+                        body_close = i
+                        break
+            if body_close is None:
+                raise ValueError("copy helper body is unterminated")
+            body_start, body_end = tokens[body_open][1], tokens[body_close][2]
+            if any(token.startswith("__moss_value") for token in token_values[body_open:body_close + 1]):
+                raise ValueError("per-fact helper depends on shared __moss_value materialization")
+            masked_body = masked[body_start:body_end]
+            for operator in RUST_DUPLICATION_OPERATORS:
+                if operator == "dot_clone":
+                    continue
+                if rust_operator_spans(masked_body, operator):
+                    raise ValueError(f"per-fact helper contains unclassified duplication candidate: {operator}")
+            for clone_key, span in rust_by_key.items():
+                clone_start, clone_end = _span_offsets(rust, span)
+                if body_start <= clone_start and clone_end <= body_end:
+                    if clone_key in derived:
+                        raise ValueError("one Rust clone is attributed to multiple checker facts")
+                    derived[clone_key] = (copy_id, fact_id)
+                    expected_clone_spans[copy_id].append(clone_key)
 
     return derived
 
@@ -1128,7 +1227,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 raise ValueError("clone evidence lacks type, ownership, or semantic identity")
             if origin == "explicit_copy":
                 if set(evidence) != {"rust_context_span", "rust_context_sha256",
-                                     "semantic_type", "ownership_fact", "semantic_identity"}:
+                                     "semantic_type", "ownership_fact", "semantic_identity",
+                                     "generated_function_variant_id", "generated_function_symbol",
+                                     "generated_function_span", "checked_callable_symbols"}:
                     raise ValueError("explicit-copy evidence has missing or unknown v2 fields")
                 rust_key = _span_key(row["rust_span"])
                 copy_id = row.get("source_copy_id")
@@ -1144,6 +1245,35 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                         evidence["ownership_fact"] != fact["required_source_access"] or
                         evidence["semantic_identity"] != typed_copy_fact_identity(fact)):
                     raise ValueError("explicit-copy evidence disagrees with independently queried TypedCopyFactV1")
+                callable_context = fact["specialization_context"] or \
+                    fact["provenance"]["enclosing_callable_id"]
+                checked_projection = source_by_id[copy_id]["callable_projections"].get(
+                    callable_context)
+                if evidence["checked_callable_symbols"] != checked_projection:
+                    raise ValueError("sidecar callable symbols differ from independently queried checked Program projection")
+                variant_id, variant_symbol, variant_begin, variant_end, variant_kind = \
+                    _tooling_function_variant_at(rust, clone_start)
+                if not _variant_matches_checked_copy(
+                        fact, variant_id, variant_symbol,
+                        evidence["checked_callable_symbols"]):
+                    raise ValueError("explicit-copy generated function variant does not match checked callable authority")
+                declaration = variant_symbol.rsplit("::", 1)[-1] \
+                    if variant_kind == "method" else variant_symbol
+                masked_rust = mask_rust_non_code(rust)
+                declaration_pattern = re.compile(r"\bfn\s+" +
+                    re.escape(declaration) + r"\b")
+                if len(list(declaration_pattern.finditer(
+                        masked_rust[variant_begin:variant_end]))) != 1:
+                    raise ValueError("tooling function variant symbol is not its exact Rust declaration")
+                recorded_variant_begin, recorded_variant_end = _span_offsets(
+                    rust, evidence["generated_function_span"])
+                if (evidence["generated_function_symbol"] != variant_symbol or
+                        evidence["generated_function_variant_id"] !=
+                        _function_variant_identity(rust, variant_id, variant_symbol,
+                                                   variant_begin, variant_end) or
+                        (recorded_variant_begin, recorded_variant_end) !=
+                        (variant_begin, variant_end)):
+                    raise ValueError("explicit-copy generated function variant evidence is stale or forged")
                 if derived_copy_links.get(rust_key) != (copy_id, fact_id):
                     raise ValueError("explicit-copy sidecar link disagrees with raw Rust helper derivation")
                 explicit_by_id[copy_id].append(rust_key)

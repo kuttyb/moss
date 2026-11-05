@@ -61,6 +61,50 @@
   `phase28-work` default and shadow baselines are recorded separately above.
   No production merge is authorized.
 
+### Team B canonical checked Program consumer follow-up (2026-11-05)
+
+- Branch `phase28-r7-010-team-b-copy-est-context` is based on Team A's frozen
+  checker commit `dee17faf7ee8acc0eca2579c15f461cbbb4715c7`. The tracked regex
+  package source is unchanged. The L7 provisional regex copy edits were applied
+  only to a temporary package copy to reproduce the native/Margo failure.
+- Root cause: the package artifact's projected `p_` had no `typed_semantics`,
+  while `semantic_program_` retained the checker facts and the active statement
+  retained the exact handles. For `copy(raw_chars[r_idx])` at statement 147,
+  line 276, the canonical active handle is arena 0 / ExprId 1062, fingerprint
+  `1695494155644128695`, span `[0,22)`. This matches the copy expression. The
+  consumer now resolves Copy, LocalOwnership, and Match facts against the same
+  canonical Program as their EST arenas, preserving exact requirement, context,
+  span, authority, and EST effect checks. Test-only fact corruption hooks
+  mutate that same canonical module.
+- Targeted passing evidence:
+  `make --jobs="$(nproc)" COMPILER_DIR=tmp/team-b-copy-est-context/build/compiler moss-dev`;
+  `check_canonical_copy_context.py` (temporary package source; canonical fact
+  drop and perturb both fail closed);
+  `check_nested_copy_helper.py` (Fast Debug/native Debug/Optimized plus five
+  corruption cases);
+  `check_native_join_slot.py` (ORACLE-51 parity plus five copy corruption
+  cases);
+  `check_match_projection_read_borrow.py` (ORACLE-19);
+  `check_match_payload_write.py` (ORACLE-32); and
+  `check_phase27_5_1_facts_and_fast_debug.py` all pass.
+- Normal temporary-package `margo build --json` now gets past the explicit-copy
+  context failure and writes Rust, then fails in the production provenance
+  builder at `native_clone_provenance.hpp:543` (`per-fact helper definition
+  missing or duplicated`). For the temporary source SHA-256
+  `20bdb819ad54b8d950748be812d2a23b7e8b288b336c193535d23d6ee8c29c8e`, Rust
+  artifact SHA-256 is
+  `6196cf2a7bf86248714438a7cbf92b71b85e88f4eec47b41933ed1ee9456adb60`; it
+  contains 20 helper definitions / 16 unique names. Four fact identities are
+  each defined and called twice across `regex__run_nfa_search_from` and
+  `__moss_view_regex__run_nfa_search_from`:
+  `c2d8f1b98b321122`, `8126c0362fc26de4`, `6da60120846fe42e`, and
+  `df6f364d09e84cea`. L7 owns this separate builder/schema issue; no validator
+  relaxation was made.
+- Consumer candidate is uncommitted and awaits independent review. No checker,
+  oracle expectation, `moss.cpp`, or tracked package source edits are included.
+  The provenance-builder limitation must remain explicit in review and
+  integration results.
+
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 
 - Worktree branch `phase28-r7-010-team-b-root-capture-nested` is based on
@@ -16857,3 +16901,142 @@ untouched.
   Optimized; B4 consumer boundary passes 21 corruption cases. The package
   build's remaining explicit-copy context issue has been assigned to Team B
   on an isolated worktree based on Team A's frozen checker fix.
+
+### L7 variant-aware provenance and canonical-copy integration — 2026-11-05
+
+- Staging branch: `phase28-r7-010-l7-copy-authority`, HEAD before this
+  checkpoint's uncommitted integration is `85013c83`. Team A remains integrated
+  at `583fc919`. Team B's independently reviewed canonical Program resolver is
+  `e44069de`; its pushed branch head is `9b6acd29` (status-only follow-up).
+- Integrated Team B's native-generator resolver, exact-fact corruption test,
+  and feedback record in the L7 worktree. Agent 2 GO covers `e44069de`. The
+  consumer continues to use the canonical checked Program and its matching
+  arenas; no semantic fallback was added.
+- Updated v3 clone provenance to allow a checked copy fact once per distinct
+  tooling function variant, keyed by semantic identity and generated symbol.
+  Each explicit clone now carries variant ID, generated symbol, exact function
+  span, and a hash over that span. The Python oracle audit independently checks
+  those fields against raw Rust. Added accepted concrete/view variant coverage,
+  same-variant duplicate rejection, and sidecar forged-ID/symbol/span cases.
+- Rebuilt `moss-dev`. Focused provenance-v3 builder plus production-sidecar
+  corruption gate passes; canonical-copy drop/perturb gate passes; match-arm
+  authority passes 9/9 default and 9/9 shadow; B4 consumer corruption/parity
+  passes 21 cases; Map.get write-through parity plus five corruptions passes;
+  feedback validation and `git diff --check` pass.
+- The earlier reported indexed-String TYPE_MISMATCH was invalid: that Margo
+  invocation resolved the repository-root compiler because its `MOSS` path was
+  relative. With the absolute isolated compiler, package `moss check` and
+  `margo build --check` pass; Team A confirmed the Regex copy facts have exact
+  handles and `string` types. Team A separately found a test-only contract
+  validator issue for standalone sources without EST handles and is returning
+  its evidence; no sentinel checker fact should be interpreted as valid.
+- Positive Regex `margo build` now writes Rust and v3 sidecar successfully but
+  Cargo fails on 20 generated Rust E0308 mismatches. Reported sites include
+  `Vec` versus `&Vec` assignments at generated lines 6293/6295 and mutable
+  integer references passed as `i64` around lines 6909–7193. Assigned to Team
+  B for native-emitter root cause and baseline classification. Its initial
+  source map shows the 20 failures come from unchanged Regex lines 871–972 and
+  appear to be pre-existing lowering issues newly exposed by this package
+  build; clean-base reproduction is still being checked. No package native
+  build, full oracle, or full default/shadow suite is accepted yet.
+- Agent 2 initially returned NO-GO on L7 provenance because an unrelated
+  generated callable could claim the same copy fact. The fix now binds marker
+  identity to the checked specialization context and constrains generated
+  symbols to concrete/view projections; an unrelated callable rejection test
+  is added. Agent 2 fixup review is pending. Final SHA, oracle, full suites, and
+  final architect GO remain pending. No merge to `phase28-work` or `main`.
+
+### Additional checker/native deliveries and provenance fixup — 2026-11-05
+
+- Team A checker follow-up `4e3aaaec2b7305c148ecbe71b779e47abe3691e7`
+  (`phase28-r7-010-team-a-copy-index-facts`) received independent Agent 2 GO.
+  It omits CopyFact facts/requirements when exact EST identities are absent,
+  rather than publishing sentinel identity data. The 8-scenario default/shadow
+  gate passes. L7 has cherry-picked it locally; runner registration remains
+  pending final integration.
+- Team B primitive Match WRITE payload repair is frozen at
+  `7d78ebef0d90426339eb650b4907fee0da6157b3` on
+  `phase28-r7-010-team-b-regex-rust-types`, pushed through status commit
+  `0e4f94d2`, with Agent 2 GO. Only exact, non-consuming WRITE primitive
+  payloads use dereferenced value/lvalue lowering. Debug/Optimized/Fast Debug,
+  drop/perturb, match read-borrow and consume gates pass. L7 has cherry-picked
+  the implementation and its new scalar fixture/gates locally.
+- The Team B Regex Vec assignments remain a NO-GO: checker facts currently
+  report READ and lack an exact whole-local transfer/liveness decision. Team A
+  is defining a bounded `TransferOwnedValue` checker fact for unique final-use
+  loop-local owned vectors assigned to outer targets; Team B will not move or
+  clone under READ.
+- The L7 provenance fixup now also parses `method` tooling variants, binds the
+  allowed generated symbols to exact checked Program functions/methods and
+  specializations, requires the actual Rust declaration inside the variant
+  span, and tests concrete/view method variants plus altered specialization
+  suffix rejection. Its focused builder and production sidecar gate pass;
+  Agent 2 re-review is pending.
+- The Regex generated v3 sidecar now has 16 exact source-copy rows, 20
+  fact-authorized clone rows (four source occurrences each emitted in concrete
+  and view bodies), and 6 remaining runtime clone rows. Independent audit
+  reports 16 authorized source copies, 3 unauthorized runtime clones, and 3
+  unclassified runtime clones. Package Cargo still fails on 20 inherited
+  generated Rust type errors. Team B's reviewed Match payload value/lvalue
+  repair is now integrated locally; the Vec assignment errors still require
+  the new checker-owned transfer/liveness fact described above.
+
+### L7 integration update — 2026-11-05 (later checkpoint)
+
+- The initially reported conflict markers and missing
+  `mutable_match_primitive_values_` implementation were integration artifacts
+  from the Team B cherry-pick resolution. They are repaired in the staging
+  worktree. `make moss-dev` and `make moss-opt` both completed successfully;
+  `git diff --check` passes.
+- Revalidated the integrated Team B payload change: the ORACLE-32 checked
+  payload gate passes native Debug/Optimized compilation, Fast Debug, output,
+  and fact corruption checks. Match-arm authority is 9/9 default and shadow;
+  indexed-copy authority is 8/8 default/shadow; Map.get write-through, B4's
+  21 consumer corruption cases, canonical imported-copy drop/perturb, v3
+  builder/sidecar, and feedback validation pass.
+- Team A's indexed-copy gate was registered by L7 in Makefile and tests/run.sh.
+  Its setup now accepts already-explicit Regex package copies, while retaining
+  exact copy-fact drop/perturb assertions.
+- Independent Agent 2 exposed a coordinated provenance forgery: a Rust marker,
+  declaration, variant hash, artifact digest, and sidecar symbol list could be
+  changed together and still authorize a clone. L7 added exact per-context
+  callable projections to the live checker copy-authority query, derived from
+  the checked Program, without changing canonical TypedCopyFactV1 identities.
+  The oracle now requires the sidecar's callable symbols to equal that
+  independent projection. The coordinated `main` to `xain` regression passes;
+  Agent 2 re-review is pending.
+- The isolated Regex package build still fails Cargo after the reviewed Match
+  WRITE lowering: remaining Vec/`&Vec` assignment mismatches plus denied
+  unnecessary-parentheses warnings in primitive Match lowering. Team A is
+  implementing a checker-owned exact local-transfer fact for the Vec
+  assignments; Team B was reactivated to classify/fix remaining native
+  lowering diagnostics without introducing READ-based moves or clones.
+- No full 60-fixture oracle or full default/shadow suite has been run on this
+  moving integrated worktree. R7 acceptance remains NO-GO pending the checker
+  transfer contract, native follow-up, fresh integration gates, clone audit,
+  and independent final review.
+- Provenance projection received another independent NO-GO for ordinary
+  function contexts. L7 normalized the checked source-location suffix and
+  gated source-file-empty matching by the exact current checked Program and
+  module compatibility. A new non-main function copy artifact now generates
+  and audits successfully; the coordinated raw marker/declaration/sidecar
+  forgery remains rejected. The v3 gate and 46 oracle harness/clone inventory
+  unit tests pass after this update. Agent 2 re-review is pending.
+- Team A froze its checker-only local-transfer authority at
+  0a3c4c0b503f5db0dc5b8a9c0bd1888d39cca63c, with 23 default/shadow
+  transfer corruption/liveness scenarios and the indexed-copy gate passing.
+  Agent 2 gave GO on that exact checker-only SHA. Its parent chain conflicts
+  with the separate reviewed match-fact producer in Team B's native branch;
+  Team A is preparing a checker-owned successor on the combined dependency
+  chain for fresh review. Team B has not consumed transfer authority; no
+  READ-based Vec move or clone has been introduced.
+- Team B's native-only successor is at `88803726` and addresses unnecessary
+  Rust parentheses while retaining checked primitive Match WRITE facts. It
+  locally simulates the Regex artifact and leaves only the Vec transfer sites;
+  a fresh independent review is pending. L7 has not integrated this native
+  change yet.
+- Agent 2 gave GO on L7's callable-provenance fix. Ordinary-function copy
+  projection, coordinated marker/declaration/sidecar forgery rejection, the
+  v3 builder gate, and 46 oracle harness/clone inventory tests pass. This
+  resolves the provenance review blocker but does not resolve the Regex Cargo
+  failures or R7 final acceptance.

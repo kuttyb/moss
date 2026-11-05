@@ -1,0 +1,6 @@
+fn append(values: Vector[String], index: Int):
+  var output = Vector[String]()
+  output.push(copy(values[index]))
+
+fn main():
+  append(["value"], 0)

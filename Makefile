@@ -161,6 +161,9 @@ check-parallel: moss-dev moss-opt
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_match_arm_authority.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_match_arm_authority.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase28_copy_index_authority.py $(MOSS_DEV)
+	python3 tests/phase28/r7_010/team_b/check_match_payload_write.py $(MOSS_DEV)
+	python3 tests/phase28/r7_010/team_b/check_clone_provenance_v3_builder.py
 	python3 tests/phase28/verify_take_fixtures.py
 	python3 tests/tooling/check_phase28_take_consumer.py $(MOSS_DEV)
 	python3 tests/tooling/check_phase28_team_b_consumer.py $(MOSS_DEV)

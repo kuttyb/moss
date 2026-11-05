@@ -237,6 +237,9 @@ class Generator {
       }
     }
 #ifdef MOSS_TEST_BUILD
+    TypedSemanticModuleV1* test_semantic_facts = semantic_program.typed_semantics
+        ? semantic_program.typed_semantics.get()
+        : p_.typed_semantics.get();
     const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
     auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
       for (auto& f : facts) {
@@ -276,89 +279,89 @@ class Generator {
     };
 
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_COPY_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
-        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
+      if (test_semantic_facts && !test_semantic_facts->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(test_semantic_facts->copy_facts))
           fact->availability = TypedCopyFactV1::Availability::MissingCopyOccurrence;
     }
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COPY_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
-        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
+      if (test_semantic_facts && !test_semantic_facts->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(test_semantic_facts->copy_facts))
           fact->required_source_access = Effect::Consume;
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_COPY_REQUIREMENT")) {
-      if (p_.typed_semantics &&
-          !p_.typed_semantics->required_copy_occurrences.empty())
-        p_.typed_semantics->required_copy_occurrences.erase(
-            p_.typed_semantics->required_copy_occurrences.begin());
+      if (test_semantic_facts &&
+          !test_semantic_facts->required_copy_occurrences.empty())
+        test_semantic_facts->required_copy_occurrences.erase(
+            test_semantic_facts->required_copy_occurrences.begin());
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COPY_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
-        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
-          p_.typed_semantics->copy_facts.push_back(*fact);
+      if (test_semantic_facts && !test_semantic_facts->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(test_semantic_facts->copy_facts))
+          test_semantic_facts->copy_facts.push_back(*fact);
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COPY_REQUIREMENT")) {
-      if (p_.typed_semantics &&
-          !p_.typed_semantics->required_copy_occurrences.empty())
+      if (test_semantic_facts &&
+          !test_semantic_facts->required_copy_occurrences.empty())
         if (auto* requirement = find_target_copy_req(
-                p_.typed_semantics->required_copy_occurrences))
-          p_.typed_semantics->required_copy_occurrences.push_back(*requirement);
+                test_semantic_facts->required_copy_occurrences))
+          test_semantic_facts->required_copy_occurrences.push_back(*requirement);
     }
 
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
           fact->availability = TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_OWNERSHIP_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
           fact->access = (fact->access == Effect::Read) ? Effect::Write : Effect::Read;
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
         if (target_spec) {
-          for (auto it = p_.typed_semantics->local_ownership_facts.begin();
-               it != p_.typed_semantics->local_ownership_facts.end(); ++it) {
+          for (auto it = test_semantic_facts->local_ownership_facts.begin();
+               it != test_semantic_facts->local_ownership_facts.end(); ++it) {
             if (it->specialization_context.find(target_spec) != std::string::npos) {
-              p_.typed_semantics->local_ownership_facts.erase(it);
+              test_semantic_facts->local_ownership_facts.erase(it);
               break;
             }
           }
         } else {
-          p_.typed_semantics->local_ownership_facts.erase(
-              p_.typed_semantics->local_ownership_facts.begin());
+          test_semantic_facts->local_ownership_facts.erase(
+              test_semantic_facts->local_ownership_facts.begin());
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
           fact->specialization_identity = "perturbed-specialization-id";
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SOURCE_ID")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
           fact->source_binding_identity = "perturbed-source-id";
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_FACT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
-        if (auto* fact = find_target_fact(p_.typed_semantics->local_ownership_facts)) {
-          p_.typed_semantics->local_ownership_facts.push_back(*fact);
+      if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
+        if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
+          test_semantic_facts->local_ownership_facts.push_back(*fact);
         }
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_OWNERSHIP_REQUIREMENT")) {
-      if (p_.typed_semantics && !p_.typed_semantics->required_local_ownership_occurrences.empty()) {
-        if (auto* req = find_target_req(p_.typed_semantics->required_local_ownership_occurrences)) {
-          p_.typed_semantics->required_local_ownership_occurrences.push_back(*req);
+      if (test_semantic_facts && !test_semantic_facts->required_local_ownership_occurrences.empty()) {
+        if (auto* req = find_target_req(test_semantic_facts->required_local_ownership_occurrences)) {
+          test_semantic_facts->required_local_ownership_occurrences.push_back(*req);
         }
       }
     }
@@ -985,6 +988,9 @@ class Generator {
   // an ordinary immutable lookup.
   bool checked_map_get_write_through_ = false;
   std::set<string> borrowed_function_parameters_;
+  // Primitive Match payloads in checked WRITE arms are borrowed mutably, but
+  // Rust value reads and assignments must dereference that borrow.
+  std::set<string> mutable_match_primitive_values_;
   string construction_binding_;
   bool view_domain_ = false;
   bool view_domain_access_ = false;
@@ -5569,6 +5575,8 @@ class Generator {
            phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
+    if (root_name && mutable_match_primitive_values_.count(*root_name))
+      return "(*" + rust_identifier(*root_name) + ")";
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (root_name && write_through_parameters_.count(*root_name) && types &&
         types->count(*root_name) && copy_type(types->at(*root_name)))
@@ -8018,7 +8026,8 @@ class Generator {
 
   const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
       const Stmt& s, const string& functional_context) const {
-    if (!p_.typed_semantics) return nullptr;
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics) return nullptr;
 
     const est::ExprSlot slot =
         (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
@@ -8039,12 +8048,12 @@ class Generator {
     const TypedLocalOwnershipRequirementV1* requirement = nullptr;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     try {
-      requirement = p_.typed_semantics->find_local_ownership_requirement(
+      requirement = checked_program.typed_semantics->find_local_ownership_requirement(
           matched_handle->arena_index, matched_handle->expr, context);
       if (!requirement) {
         return nullptr;
       }
-      found_fact = &p_.typed_semantics->find_local_ownership_fact(*requirement);
+      found_fact = &checked_program.typed_semantics->find_local_ownership_fact(*requirement);
     } catch (const std::exception& e) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
@@ -8070,11 +8079,11 @@ class Generator {
 
     // Verify EST arena and facts:
     const est::Arena* arena = nullptr;
-    if (found_fact->est_arena_index < p_.expression_arenas.size() &&
-        p_.expression_arenas[found_fact->est_arena_index]) {
-      arena = p_.expression_arenas[found_fact->est_arena_index].get();
-    } else if (found_fact->est_arena_index == 0 && p_.expression_arena) {
-      arena = p_.expression_arena.get();
+    if (found_fact->est_arena_index < checked_program.expression_arenas.size() &&
+        checked_program.expression_arenas[found_fact->est_arena_index]) {
+      arena = checked_program.expression_arenas[found_fact->est_arena_index].get();
+    } else if (found_fact->est_arena_index == 0 && checked_program.expression_arena) {
+      arena = checked_program.expression_arena.get();
     }
     if (!arena) {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing EST arena");
@@ -8093,17 +8102,18 @@ class Generator {
 
   const TypedCopyFactV1& resolve_copy_fact(
       std::string_view expression) const {
-    if (!p_.typed_semantics || !active_functional_expression_handles_)
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics || !active_functional_expression_handles_)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT explicit copy lacks checked EST context");
     const auto fingerprint = est::fingerprint(string(expression));
     const est::Handle* matched = nullptr;
     for (const auto& handle : *active_functional_expression_handles_) {
       if (handle.source_fingerprint != fingerprint ||
-          handle.arena_index >= p_.expression_arenas.size() ||
-          !p_.expression_arenas[handle.arena_index])
+          handle.arena_index >= checked_program.expression_arenas.size() ||
+          !checked_program.expression_arenas[handle.arena_index])
         continue;
-      const auto span = p_.expression_arenas[handle.arena_index]->span(handle.expr);
+      const auto span = checked_program.expression_arenas[handle.arena_index]->span(handle.expr);
       if (span.source_begin != 0 || span.source_end != expression.size())
         continue;
       if (matched)
@@ -8117,9 +8127,9 @@ class Generator {
     const string context = codegen_body_context_.empty()
         ? "main" : codegen_body_context_;
     try {
-      const auto& requirement = p_.typed_semantics->find_copy_requirement(
+      const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
           matched->arena_index, matched->expr, context);
-      const auto* fact = p_.typed_semantics->find_copy_fact(requirement);
+      const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
       if (!fact)
         throw std::runtime_error("required checked copy fact missing");
       return *fact;
@@ -8429,7 +8439,8 @@ class Generator {
 
   const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
       const Stmt& s, const string& functional_context) const {
-    if (!p_.typed_semantics)
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT typed match semantics are unavailable");
     const est::Handle* matched_handle = nullptr;
@@ -8456,7 +8467,7 @@ class Generator {
     constexpr bool drop_match_requirement = false;
 #endif
     size_t requirement_count = 0;
-    for (const auto& req : p_.typed_semantics->required_match_occurrences) {
+    for (const auto& req : checked_program.typed_semantics->required_match_occurrences) {
       if (!drop_match_requirement &&
           req.est_arena_index == matched_handle->arena_index &&
           req.scrutinee_occurrence_id == matched_handle->expr &&
@@ -8478,14 +8489,14 @@ class Generator {
       arm.payload_access = arm.payload_access == Effect::Write
           ? Effect::Read : Effect::Write;
       try {
-        (void)p_.typed_semantics->find_match_ownership_fact(corrupted);
+      (void)checked_program.typed_semantics->find_match_ownership_fact(corrupted);
       } catch (const std::exception& e) {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
       }
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT perturbed match access was accepted");
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_FACT")) {
-      auto corrupted = *p_.typed_semantics;
+      auto corrupted = *checked_program.typed_semantics;
       auto fact = std::find_if(corrupted.match_ownership_facts.begin(),
           corrupted.match_ownership_facts.end(), [&](const auto& candidate) {
             return candidate.est_arena_index == requirement->est_arena_index &&
@@ -8506,7 +8517,7 @@ class Generator {
     }
 #endif
     try {
-      return p_.typed_semantics->find_match_ownership_fact(*requirement);
+      return checked_program.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
     }
@@ -9615,6 +9626,7 @@ class Generator {
             auto branch_locals = locals;
             auto branch_types = types;
             auto saved_borrowed = borrowed_function_parameters_;
+            auto saved_match_primitive_values = mutable_match_primitive_values_;
             for (size_t field_index = 0;
                  field_index < pattern.payload_bindings.size(); ++field_index) {
               const string& name = pattern.payload_bindings[field_index];
@@ -9629,6 +9641,8 @@ class Generator {
               if (s.b != "consume") {
                 if (checked_arm->payload_access == Effect::Write) {
                   borrowed_function_parameters_.insert(name);
+                  if (copy_type_name(type))
+                    mutable_match_primitive_values_.insert(name);
                 } else if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
@@ -9641,6 +9655,8 @@ class Generator {
                       branch_locals, branch_types, base, in_handler, in_function,
                       branch_join, functional_context);
             borrowed_function_parameters_ = std::move(saved_borrowed);
+            mutable_match_primitive_values_ =
+                std::move(saved_match_primitive_values);
             o << indent(level + 1) << "},\n";
           }
           o << indent(level) << "}\n";
@@ -10353,7 +10369,10 @@ class Generator {
                   o << indent(level) << "let " << (mutable_decl ? "mut " : "")
                     << rust_identifier(s.a) << " = " << assigned << ";\n";
                 } else {
-                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) && !write_through_parameters_.count(s.a)) ? rust_identifier(s.a) : lhs;
+                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) &&
+                      !write_through_parameters_.count(s.a) &&
+                      !mutable_match_primitive_values_.count(s.a))
+                      ? rust_identifier(s.a) : lhs;
                   o << indent(level) << target_lhs << " = " << assigned << ";\n";
                 }
               }

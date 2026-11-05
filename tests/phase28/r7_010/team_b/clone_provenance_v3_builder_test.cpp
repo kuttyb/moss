@@ -31,18 +31,26 @@ int main(int argc, char** argv) {
   typed.creates_independent_owner = true;
   typed.availability = TypedCopyFactV1::Availability::Present;
   auto first = native_checked_copy_fact_from_typed(typed, source);
+  first.generated_callable_symbols = {"first", "__moss_view_first"};
   typed.specialization_identity = "spec:second";
   typed.specialization_context = typed.est_fact_context = "fn:second";
   auto second = native_checked_copy_fact_from_typed(typed, source);
+  second.generated_callable_symbols = {"second", "__moss_view_second"};
   const auto first_id = native_checked_copy_identity(first);
   const auto second_id = native_checked_copy_identity(second);
   const auto first_helper = "__moss_copy_value_" + first_id.substr(19, 16);
   const auto second_helper = "__moss_copy_value_" + second_id.substr(19, 16);
   const std::string rust =
-      "fn " + first_helper + "(value: &i64) -> i64 { (*value).clone() }\n" +
-      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&v);\n" +
-      "fn " + second_helper + "(value: &i64) -> i64 { (*value).clone() }\n" +
-      "/* Moss copy fact call: " + second_id + " */ " + second_helper + "(&v);\n" +
+      std::string("// Moss tooling begin|function|fn:first|first|\n") +
+      "fn first() { fn " + first_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&v); }\n" +
+      "// Moss tooling end|fn:first\n" +
+      "// Moss tooling begin|function|fn:second|second|\n" +
+      "fn second() { fn " + second_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + second_id + " */ " + second_helper + "(&v); }\n" +
+      "// Moss tooling end|fn:second\n" +
       "fn runtime_clone(value: &i64) -> i64 { value.clone() } // fake .clone(\n";
   NativeCloneSourceCopyV3 source_row;
   source_row.copy_id = native_clone_source_copy_id(first.copy_occurrence_span);
@@ -58,6 +66,135 @@ int main(int argc, char** argv) {
       manifest.occurrences[2].origin_kind != "unclassified" ||
       manifest.source_copy_occurrences[0].rust_clone_spans.size() != 2)
     return 3;
+
+  // One checked fact may be emitted once in each distinct generated function
+  // variant (for example, an owned body and its borrowed-view body). The
+  // builder must authorize both exact helper/call pairs, while rejecting a
+  // repeated fact marker in the same variant.
+  const std::string variant_rust =
+      std::string("// Moss tooling begin|function|fn:first|first|\n") +
+      "fn first() { fn " + first_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&v); }\n" +
+      "// Moss tooling end|fn:first\n" +
+      "// Moss tooling begin|function|fn:first|__moss_view_first|\n" +
+      "fn __moss_view_first() { fn " + first_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&view); }\n" +
+      "// Moss tooling end|fn:first\n";
+  NativeCloneCheckedCopyFactV3 one_fact;
+  one_fact.copy_id = source_row.copy_id;
+  one_fact.facts = {first};
+  const auto variant_manifest = build_native_clone_provenance_v3(
+      "debug", variant_rust, source, {source_row}, {one_fact});
+  if (variant_manifest.occurrences.size() != 2 ||
+      variant_manifest.source_copy_occurrences[0].rust_clone_spans.size() != 2)
+    return 28;
+  std::ostringstream variant_json;
+  write_native_clone_provenance_v3(
+      variant_json, variant_rust, source, variant_manifest);
+  const auto serialized_variants = variant_json.str();
+  if (serialized_variants.find("rust-function-variant-v1:") == std::string::npos ||
+      serialized_variants.find("__moss_view_first") == std::string::npos ||
+      serialized_variants.find("generated_function_span") == std::string::npos)
+    return 31;
+  auto duplicate_variant = variant_rust;
+  const auto second_call = duplicate_variant.find(
+      "/* Moss copy fact call: " + first_id + " */", duplicate_variant.find("__moss_view_first"));
+  if (second_call == std::string::npos) return 29;
+  duplicate_variant.insert(second_call,
+      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&view);\n");
+  bool duplicate_rejected = false;
+  try {
+    (void)build_native_clone_provenance_v3(
+        "debug", duplicate_variant, source, {source_row}, {one_fact});
+  } catch (const std::exception&) {
+    duplicate_rejected = true;
+  }
+  if (!duplicate_rejected) return 30;
+  const auto unrelated_variant = variant_rust +
+      "// Moss tooling begin|function|fn:unrelated|unrelated|\n" +
+      "fn unrelated() { fn " + first_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + first_id + " */ " + first_helper + "(&v); }\n" +
+      "// Moss tooling end|fn:unrelated\n";
+  bool unrelated_rejected = false;
+  try {
+    (void)build_native_clone_provenance_v3(
+        "debug", unrelated_variant, source, {source_row}, {one_fact});
+  } catch (const std::exception&) {
+    unrelated_rejected = true;
+  }
+  if (!unrelated_rejected) return 32;
+
+  auto specialized_typed = typed;
+  specialized_typed.specialization_identity = "specialization:checked-first-int";
+  specialized_typed.specialization_context =
+      specialized_typed.est_fact_context = "fn:first<int>";
+  auto specialized_fact = native_checked_copy_fact_from_typed(
+      specialized_typed, source);
+  specialized_fact.generated_callable_symbols = {
+      "__moss_specialize_first_7", "__moss_view___moss_specialize_first_7"};
+  const auto specialized_id = native_checked_copy_identity(specialized_fact);
+  const auto specialized_helper = "__moss_copy_value_" +
+      specialized_id.substr(19, 16);
+  NativeCloneCheckedCopyFactV3 specialized_group;
+  specialized_group.copy_id = source_row.copy_id;
+  specialized_group.facts = {specialized_fact};
+  const std::string specialized_rust =
+      std::string("// Moss tooling begin|function|fn:first<int>@2#spec|__moss_specialize_first_7|\n") +
+      "fn __moss_specialize_first_7() { fn " + specialized_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + specialized_id + " */ " +
+      specialized_helper + "(&v); }\n" +
+      "// Moss tooling end|fn:first<int>@2#spec\n";
+  const auto specialized_manifest = build_native_clone_provenance_v3(
+      "debug", specialized_rust, source, {source_row}, {specialized_group});
+  if (specialized_manifest.occurrences.size() != 1) return 33;
+  auto altered_specialization_name = specialized_rust;
+  const auto altered_name_at = altered_specialization_name.find(
+      "__moss_specialize_first_7");
+  altered_specialization_name.replace(altered_name_at,
+      std::string("__moss_specialize_first_7").size(),
+      "__moss_specialize_first_999");
+  bool altered_specialization_rejected = false;
+  try {
+    (void)build_native_clone_provenance_v3(
+        "debug", altered_specialization_name, source,
+        {source_row}, {specialized_group});
+  } catch (const std::exception&) {
+    altered_specialization_rejected = true;
+  }
+  if (!altered_specialization_rejected) return 34;
+
+  auto method_typed = typed;
+  method_typed.specialization_identity.clear();
+  method_typed.specialization_context =
+      method_typed.est_fact_context = "method:Record.check";
+  auto method_fact = native_checked_copy_fact_from_typed(method_typed, source);
+  method_fact.generated_callable_symbols = {
+      "Record::check", "Record::__moss_view_check"};
+  const auto method_id = native_checked_copy_identity(method_fact);
+  const auto method_helper = "__moss_copy_value_" + method_id.substr(19, 16);
+  NativeCloneCheckedCopyFactV3 method_group;
+  method_group.copy_id = source_row.copy_id;
+  method_group.facts = {method_fact};
+  const std::string method_rust =
+      std::string("// Moss tooling begin|method|method:Record.check@4|Record::check|\n") +
+      "impl Record { fn check() { fn " + method_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + method_id + " */ " +
+      method_helper + "(&v); } }\n" +
+      "// Moss tooling end|method:Record.check@4\n" +
+      "// Moss tooling begin|method|method:Record.check@4|Record::__moss_view_check|\n" +
+      "impl Record { fn __moss_view_check() { fn " + method_helper +
+      "(value: &i64) -> i64 { (*value).clone() }\n" +
+      "/* Moss copy fact call: " + method_id + " */ " +
+      method_helper + "(&v); } }\n" +
+      "// Moss tooling end|method:Record.check@4\n";
+  const auto method_manifest = build_native_clone_provenance_v3(
+      "debug", method_rust, source, {source_row}, {method_group});
+  if (method_manifest.occurrences.size() != 2) return 35;
 
   // The builder must derive authorization from the exact fact/helper/call
   // relation. Each corrupted input below must fail before a manifest is

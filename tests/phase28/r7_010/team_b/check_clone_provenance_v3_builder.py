@@ -92,6 +92,57 @@ try:
     rejects_mutation(lambda value: value.update(rust_sha256="0" * 64))
     rejects_mutation(lambda value: value["occurrences"][-1]["evidence"].update(
         semantic_identity="typed-copy-fact-v1:" + "0" * 64))
+    explicit_index = next(index for index, row in enumerate(original_manifest["occurrences"])
+                          if row["origin_kind"] == "explicit_copy")
+    rejects_mutation(lambda value: value["occurrences"][explicit_index]["evidence"].update(
+        generated_function_variant_id="rust-function-variant-v1:" + "0" * 64))
+    rejects_mutation(lambda value: value["occurrences"][explicit_index]["evidence"].update(
+        generated_function_symbol="forged_body"))
+    rejects_mutation(lambda value: value["occurrences"][explicit_index]["evidence"].update(
+        checked_callable_symbols=["forged_body"]))
+    rejects_mutation(lambda value: value["occurrences"][explicit_index]["evidence"][
+        "generated_function_span"]["start"].update(column=2))
+
+    # Coordinate a raw artifact marker/declaration rename with a forged
+    # checked_callable_symbols sidecar list. The oracle must compare callable
+    # symbols with independent checked-program authority, not trust the list
+    # supplied by the same sidecar being audited.
+    original_rust = rust_path.read_text()
+    explicit_row = original_manifest["occurrences"][explicit_index]
+    clone_begin, _ = oracle._span_offsets(original_rust,
+                                           explicit_row["rust_span"])
+    variant_identity, variant_symbol, variant_begin, variant_end, variant_kind = \
+        oracle._tooling_function_variant_at(original_rust, clone_begin)
+    assert variant_kind == "main" and variant_symbol == "main"
+    marker = ("// Moss tooling begin|main|" + variant_identity +
+              "|main|")
+    forged_marker = ("// Moss tooling begin|main|" + variant_identity +
+                     "|xain|")
+    assert original_rust.count(marker) == 1
+    assert original_rust.count("\nfn main() {") == 1
+    forged_rust = original_rust.replace(marker, forged_marker).replace(
+        "\nfn main() {", "\nfn xain() {")
+    assert len(forged_rust) == len(original_rust)
+    forged_manifest = json.loads(original)
+    forged_row = forged_manifest["occurrences"][explicit_index]
+    forged_evidence = forged_row["evidence"]
+    forged_evidence["generated_function_symbol"] = "xain"
+    forged_evidence["checked_callable_symbols"] = ["xain"]
+    forged_variant = oracle._tooling_function_variant_at(forged_rust,
+                                                          clone_begin)
+    forged_evidence["generated_function_variant_id"] = \
+        oracle._function_variant_identity(forged_rust, *forged_variant[:4])
+    forged_manifest["rust_sha256"] = hashlib.sha256(
+        forged_rust.encode()).hexdigest()
+    rust_path.write_text(forged_rust)
+    sidecar.write_text(json.dumps(forged_manifest))
+    coordinated_forgery = oracle.audit_clone_provenance(
+        rust_path, fixture, "debug", 1, authority, root_authority)
+    assert coordinated_forgery.get("status") == "INVALID_PROVENANCE", \
+        coordinated_forgery
+    rust_path.write_text(original_rust)
+    sidecar.write_text(original)
+
     rejects_mutation(lambda value: value["checked_copy_facts"].append(
         value["checked_copy_facts"][0]))
     runtime_indices = [index for index, row in enumerate(original_manifest["occurrences"])
@@ -103,5 +154,36 @@ try:
         rejects_mutation(lambda value, i=runtime_index:
                          value["occurrences"][i].update(origin_kind="runtime_support"))
 finally:
+    if "original_rust" in locals():
+        rust_path.write_text(original_rust)
     sidecar.write_text(original)
 print("provenance v3 production sidecar: exact copy fact accepted; missing, duplicate, forged and corrupt cases fail closed")
+
+# Keep the checker/emitter projection covered for an ordinary named function,
+# whose semantic context includes a source-location suffix in some paths.
+function_fixture = real_dir / "function_copy.moss"
+function_fixture.write_text("""type Record:
+  tag: Int
+
+fn duplicate(values: Vector[Record]) -> Record:
+  return copy(values[0])
+
+fn main():
+  var values = [Record(tag: 1)]
+  let result = duplicate(values)
+  echo result.tag
+""")
+function_rust = real_dir / "function_copy.rs"
+subprocess.run([compiler, function_fixture, "-o", function_rust], cwd=ROOT,
+               check=True, capture_output=True, text=True)
+function_authority = oracle.query_copy_authority(compiler, function_fixture)
+assert function_authority and function_authority.get("status") == "available", \
+    function_authority
+function_root_authority = oracle.query_root_ingress_capture_authority(
+    compiler, function_fixture)
+function_audit = oracle.audit_clone_provenance(
+    function_rust, function_fixture, "debug", 1, function_authority,
+    function_root_authority)
+assert function_audit.get("status") in {"PASS", "UNAUTHORIZED"} and \
+       function_audit.get("authorized", 0) >= 1, function_audit
+print("provenance v3 ordinary-function callable projection: PASS")

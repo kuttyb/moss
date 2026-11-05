@@ -273,8 +273,8 @@ export fn compile(pattern: String) -> Regex:
       if is_atom_end(prev_k) and is_atom_start(cur_k):
         add_tok(kinds, chars_list, classes_list, negs_list, 10, "&", "", false)
     push_int(kinds, raw_kinds[r_idx])
-    push_str(chars_list, raw_chars[r_idx])
-    push_str(classes_list, raw_classes[r_idx])
+    push_str(chars_list, copy(raw_chars[r_idx]))
+    push_str(classes_list, copy(raw_classes[r_idx]))
     push_bool(negs_list, raw_negs[r_idx])
     r_idx = r_idx + 1
 
@@ -298,13 +298,13 @@ export fn compile(pattern: String) -> Regex:
     let tneg = negs_list[t_idx]
 
     if tk == 1 or tk == 2 or tk == 3 or tk == 4 or tk == 5:
-      add_tok(post_kinds, post_chars, post_classes, post_negs, tk, tc, tclass, tneg)
+      add_tok(post_kinds, post_chars, post_classes, post_negs, tk, copy(tc), copy(tclass), tneg)
     else:
       if tk == 12 or tk == 13 or tk == 14:
-        add_tok(post_kinds, post_chars, post_classes, post_negs, tk, tc, tclass, tneg)
+        add_tok(post_kinds, post_chars, post_classes, post_negs, tk, copy(tc), copy(tclass), tneg)
       else:
         if tk == 15: # (
-          add_tok(op_kinds, op_chars, op_classes, op_negs, tk, tc, tclass, tneg)
+          add_tok(op_kinds, op_chars, op_classes, op_negs, tk, copy(tc), copy(tclass), tneg)
         else:
           if tk == 16: # )
             var popping = true
@@ -343,7 +343,7 @@ export fn compile(pattern: String) -> Regex:
                   checking_prec = false
               else:
                 checking_prec = false
-            add_tok(op_kinds, op_chars, op_classes, op_negs, tk, tc, tclass, tneg)
+            add_tok(op_kinds, op_chars, op_classes, op_negs, tk, copy(tc), copy(tclass), tneg)
     t_idx = t_idx + 1
 
   while (op_kinds |> count) > 0:
@@ -394,8 +394,8 @@ export fn compile(pattern: String) -> Regex:
 
 
       push_int(st_kinds, node_kind)
-      push_str(st_chars, pc)
-      push_str(st_classes, pcl)
+      push_str(st_chars, copy(pc))
+      push_str(st_classes, copy(pcl))
       push_bool(st_negs, pn)
       push_int(st_outs, 0 - 1)
       push_int(st_out1s, 0 - 1)
@@ -670,7 +670,8 @@ fn run_nfa_from(re: Regex, chars_vec: Vector[Char], start_idx: Int) -> Int:
       let k = re.kinds[st_id]
       var matched = false
       if k == 1:
-        if char_matches(re.chars[st_id], chars_vec[pos]):
+        let state_char = copy(re.chars[st_id])
+        if char_matches(state_char, chars_vec[pos]):
           matched = true
       else:
         if k == 2:
@@ -678,7 +679,8 @@ fn run_nfa_from(re: Regex, chars_vec: Vector[Char], start_idx: Int) -> Int:
             matched = true
         else:
           if k == 3:
-            let in_cls = char_in_class(re.classes[st_id], chars_vec[pos])
+            let class_chars = copy(re.classes[st_id])
+            let in_cls = char_in_class(class_chars, chars_vec[pos])
             if re.negs[st_id]:
               matched = not in_cls
             else:
@@ -835,7 +837,8 @@ fn run_nfa_search_from(re: Regex, chars_vec: Vector[Char], start_scan: Int) -> M
           let k = re.kinds[st_id]
           var matched = false
           if k == 1:
-            if char_matches(re.chars[st_id], chars_vec[pos]):
+            let state_char = copy(re.chars[st_id])
+            if char_matches(state_char, chars_vec[pos]):
               matched = true
           else:
             if k == 2:
@@ -843,7 +846,8 @@ fn run_nfa_search_from(re: Regex, chars_vec: Vector[Char], start_scan: Int) -> M
                 matched = true
             else:
               if k == 3:
-                let in_cls = char_in_class(re.classes[st_id], chars_vec[pos])
+                let class_chars = copy(re.classes[st_id])
+                let in_cls = char_in_class(class_chars, chars_vec[pos])
                 if re.negs[st_id]:
                   matched = not in_cls
                 else:

@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -220,18 +221,38 @@ class CloneProvenanceTests(unittest.TestCase):
                    "end": harness._position(self.rust, len(self.rust.rstrip("\n")))}
         context_start, context_end = harness._span_offsets(self.rust, context)
         context_hash = hashlib.sha256(self.rust[context_start:context_end].encode()).hexdigest()
+        callable_projections = {}
+        for occurrence in harness.clone_occurrences(self.rust):
+            clone_start, _ = harness._span_offsets(self.rust, occurrence)
+            variant_context, variant_symbol, _begin, _end, _kind = \
+                harness._tooling_function_variant_at(self.rust, clone_start)
+            variant_context = re.sub(r"@\d+(?:#.*)?$", "", variant_context)
+            callable_projections.setdefault(variant_context, set()).add(variant_symbol)
         for fact, copy_id in fact_links:
             fact_id = harness.typed_copy_fact_identity(fact)
             facts_by_copy[copy_id].append(fact)
             clone_span = clone_spans_by_fact[fact_id]
             clone_keys_by_copy[copy_id].append(clone_span)
+            clone_start, _ = harness._span_offsets(self.rust, clone_span)
+            variant_context, variant_symbol, variant_begin, variant_end, _kind = \
+                harness._tooling_function_variant_at(self.rust, clone_start)
+            variant_id = harness._function_variant_identity(
+                self.rust, variant_context, variant_symbol,
+                variant_begin, variant_end)
             occurrences.append({"rust_span": clone_span, "origin_kind": "explicit_copy",
                 "source_copy_id": copy_id,
                 "evidence": {"rust_context_span": context,
                     "rust_context_sha256": context_hash,
                     "semantic_type": fact["result_type_key"],
                     "ownership_fact": fact["required_source_access"],
-                    "semantic_identity": fact_id}})
+                    "semantic_identity": fact_id,
+                    "generated_function_variant_id": variant_id,
+                    "generated_function_symbol": variant_symbol,
+                    "generated_function_span": {
+                        "start": harness._position(self.rust, variant_begin),
+                        "end": harness._position(self.rust, variant_end)},
+                    "checked_callable_symbols": sorted(callable_projections[
+                        re.sub(r"@\d+(?:#.*)?$", "", variant_context)])}})
         source_rows = [{"copy_id": span["copy_id"], "source_span": span,
             "semantic_status": "implemented",
             "rust_clone_spans": clone_keys_by_copy[span["copy_id"]]}
@@ -279,7 +300,24 @@ class CloneProvenanceTests(unittest.TestCase):
                 "enclosing_callable_id": specialization or "fn:duplicate"}}
 
     def authority(self, facts=None):
-        return {"status": "available", "facts": facts or [self.fact_row]}
+        checked_facts = [self.fact_row] if facts is None else facts
+        projection = {}
+        for occurrence in harness.clone_occurrences(self.rust):
+            clone_start, _ = harness._span_offsets(self.rust, occurrence)
+            context, symbol, _begin, _end, _kind = \
+                harness._tooling_function_variant_at(self.rust, clone_start)
+            context = re.sub(r"@\d+(?:#.*)?$", "", context)
+            projection.setdefault(context, set()).add(symbol)
+        contexts = {fact["specialization_context"] or
+                    fact["provenance"]["enclosing_callable_id"]
+                    for fact in checked_facts}
+        for context in contexts:
+            if context not in projection:
+                projection[context] = {context.removeprefix("fn:")}
+        return {"status": "available", "facts": checked_facts,
+                "callable_projections": [
+                    {"context": context, "symbols": sorted(projection[context])}
+                    for context in sorted(contexts)]}
 
     def _offset(self, span, point):
         return harness._span_offsets(self.rust, {
@@ -374,7 +412,7 @@ class CloneProvenanceTests(unittest.TestCase):
         fact = self.fact()
         self.write_manifest(manifest)
         audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
-            {"status": "available", "facts": [fact, fact]})
+            self.authority([fact, fact]))
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
     def test_two_specialization_facts_share_one_lexical_copy_occurrence(self):
@@ -405,7 +443,7 @@ class CloneProvenanceTests(unittest.TestCase):
               "semantic_status": "implemented", "rust_clone_spans": []}],
             [{"copy_id": copy_span["copy_id"],
               "facts": sorted([second, first, template], key=harness.typed_copy_fact_identity)}],
-            {"status": "available", "facts": [template, first, second]})
+            self.authority([template, first, second]))
         self.assertEqual(set(result), {copy_span["copy_id"]})
         self.assertEqual(len(result[copy_span["copy_id"]]["checked_copy_facts"]), 3)
 
@@ -563,7 +601,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.assertEqual(audit["status"], "PASS", audit.get("error"))
 
     def test_query_uses_first_source_copy_location_and_returns_checker_fact_set(self):
-        authority = {"status": "available", "facts": [self.fact()]}
+        authority = self.authority([self.fact()])
         with mock.patch.object(harness, "run_process", return_value=(0,
                 json.dumps({"ok": True, "result": {"copy_authority": authority}}), "", 0)) as run:
             actual = harness.query_copy_authority(Path("./moss"), self.source_path)
@@ -578,7 +616,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.source = raw.decode("utf-8")
         copies = harness.moss_copy_call_spans(self.source)
         expected = copies[0]["start"]["column"]
-        authority = {"status": "available", "facts": []}
+        authority = self.authority([])
         with mock.patch.object(harness, "run_process", return_value=(0,
                 json.dumps({"ok": True, "result": {"copy_authority": authority}}), "", 0)) as run:
             harness.query_copy_authority(Path("./moss"), self.source_path)
@@ -591,7 +629,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.source = raw
         self.source_occ = harness.moss_copy_call_spans(raw)[0]
         target = harness.moss_copy_call_spans(raw)[0]["start"]
-        authority = {"status": "available", "facts": [self.fact()]}
+        authority = self.authority([self.fact()])
         responses = iter([
             (1, "", "ambiguous location", 0),
             (1, "", "not a binding", 0),
@@ -611,10 +649,10 @@ class CloneProvenanceTests(unittest.TestCase):
                          ["binding", "call", "statement", "function", "method", "handler"])
 
     def test_query_conflicting_successful_retries_fail_closed(self):
-        first = {"status": "available", "facts": [self.fact()]}
+        first = self.authority([self.fact()])
         second_fact = self.fact()
         second_fact["specialization_identity"] = "different"
-        second = {"status": "available", "facts": [second_fact]}
+        second = self.authority([second_fact])
         responses = iter([
             (1, "", "ambiguous", 0), (1, "", "missing", 0),
             (0, json.dumps({"ok": True, "result": {"copy_authority": first}}), "", 0),
