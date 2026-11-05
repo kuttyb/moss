@@ -43,10 +43,11 @@ The suite currently contains 60 successor fixtures covering:
 
 ## Invocation
 
-Current status: draft pending final R7-005.1 certification. The v1 oracle remains independently certified and unchanged. The emitter does
-not yet provide the specified v2 clone provenance sidecar. A generated-Rust
-duplication audit beyond `.clone()` scanning also remains open. Oracle
-certification does not establish compiler compliance.
+Current status: v2 oracle expectations and diagnostic mappings are
+`CERTIFIED_FROZEN`; see `certification.json` and the Phase 28 successor report.
+The v1 oracle remains independently certified and unchanged. The R7-008
+implementation comparison records semantic mismatches and missing clone
+provenance; oracle certification does not establish compiler compliance.
 
 Run against the repository compiler:
 ```bash
@@ -59,4 +60,4 @@ python3 tests/phase28/oracle_r7_005_1/oracle_harness.py --compiler build/compile
 ```
 
 
-This is the separately versioned P28-R7-005.1 successor. The certified v1 oracle remains unchanged at `tests/phase28/oracle/`; its expectations and runtime allowlist digests are recorded as parent pins in this successor. The successor remains `DRAFT_PENDING_L7_APPROVAL` until final artifact review and certification are complete. Compiler failures against expected ownership semantics are recorded as implementation findings; oracle certification does not assert compiler conformance.
+This is the separately versioned P28-R7-005.1 successor. The certified v1 oracle remains unchanged at `tests/phase28/oracle/`; its expectations and runtime allowlist digests are recorded as parent pins in this successor. Compiler failures against expected ownership semantics are recorded as implementation findings; oracle certification does not assert compiler conformance.
