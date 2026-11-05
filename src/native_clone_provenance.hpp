@@ -313,6 +313,23 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
   manifest.mode = std::move(mode);
   manifest.source_copy_occurrences = std::move(lexical_copies);
   manifest.checked_copy_facts = std::move(exact_fact_groups);
+  std::sort(manifest.source_copy_occurrences.begin(),
+      manifest.source_copy_occurrences.end(), [](const auto& left, const auto& right) {
+        return left.source_span.source_begin < right.source_span.source_begin;
+      });
+  std::map<std::string, std::size_t> lexical_order;
+  for (std::size_t i = 0; i < manifest.source_copy_occurrences.size(); ++i)
+    lexical_order.emplace(manifest.source_copy_occurrences[i].copy_id, i);
+  std::sort(manifest.checked_copy_facts.begin(),
+      manifest.checked_copy_facts.end(), [&](const auto& left, const auto& right) {
+        const auto left_order = lexical_order.find(left.copy_id);
+        const auto right_order = lexical_order.find(right.copy_id);
+        if ((left_order != lexical_order.end()) !=
+            (right_order != lexical_order.end()))
+          return left_order != lexical_order.end();
+        if (left_order == lexical_order.end()) return left.copy_id < right.copy_id;
+        return left_order->second < right_order->second;
+      });
   const auto code = native_clone_mask_rust_non_code(rust_bytes);
   struct FactBinding {
     std::string copy_id, helper, identity;
