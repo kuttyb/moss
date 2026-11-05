@@ -428,6 +428,12 @@ struct Method {
   vector<Stmt> body;
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
+  // Versioned checker-authority records transported beside a source-free
+  // method body. They remain wire rows until the importer remaps exact EST
+  // handles and statement occurrences after rebuilding the expression arena.
+  vector<string> execution_return_value_artifact_records;
+  string execution_return_value_body_hash;
+  unsigned execution_body_section_version{0};
   std::optional<string> execution_result_expression;
   string execution_source_file;
   std::optional<string> result_expression;

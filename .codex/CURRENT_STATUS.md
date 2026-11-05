@@ -16373,3 +16373,38 @@ untouched.
   integrated into L7 staging.
 - Do not use the earlier `19/60`/`41` provenance result as final after new code;
   rerun targeted gates and full oracle after the X1 correction and clone repair.
+
+## R7-010 method ReturnValue transport follow-up — L7 WIP
+
+- Team B's narrow conditional Map fix is integrated as `e5c2a0a2`, with Agent 2
+  GO on source `4b290ee3b2cd49f5a82ff572ffab2c1bf7d2b972`. It returns before
+  Map authority lookup only for an exact Identifier/parenthesized-Identifier
+  target; the conditional Map parity and 20 corruption combinations pass.
+- Team B's separately reviewed clone corruption-test SHA
+  `896dcdf284c4fbf43f9251892afbee8115247264` is integrated as `f38bb93f`.
+  The synthetic and production-sidecar drop/duplicate/stale-hash/forged-fact
+  and six-runtime-row drop/relabel checks pass. The pinned ORACLE-10A evidence
+  gate also passes on the canonical staging source path. No runtime calls are
+  authorized.
+- Team B's refreshed clone scan at base `0b35bec` selected 84 generated Rust
+  artifacts: 2,296 candidate duplication operators, 41 lexical groups; 510
+  `.clone()` calls comprise 2 exact checked-copy clones, 4 unapproved routing
+  handle clones, and 504 unapproved occurrences at six repeated runtime
+  templates. The full oracle remains 508 unverified occurrences (484 explicit
+  unauthorized rows plus 24 missing sidecars). The broader operator counts
+  remain candidate operations, not confirmed application-value copies.
+- L7 is extending the existing Section 2 v2 `return_value_fact_v1` transport
+  from functions to methods. The WIP adds method-owned wire records with exact
+  body hash, statement ordinal, ReturnValue handle fingerprint, source
+  provenance, checker type/action/access, and specialization/context. Import
+  validates method identity/source/body/ordinal and complete valued-return
+  coverage, remaps statement IDs/EST handles, then projects the checked facts.
+  This responds to X1's exact `method:x1_library__HiddenBox.increment` checker
+  fact, which was present locally but absent from the imported `.mossi`.
+- The X1 script now asserts the method artifact row and exercises method-only
+  drop/identity-perturb hooks. The test reaches those checks successfully, then
+  still fails closed in Fast Debug at `return-value EST type fact missing
+  outside exact imported owner`; Team B will add exact imported-method owner
+  recognition in Fast Debug/Native consumers after L7 freezes this transport.
+  The X1 test is not yet registered in `tests/run.sh` because the combined gate
+  is not green. No final full-suite/oracle run has occurred after these changes.

@@ -8,11 +8,19 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
 MARGO = ROOT / "margo"
+if len(sys.argv) not in {2, 3}:
+    raise SystemExit("usage: check_phase26_1_1_x1.py COMPILER [WORK_DIR]")
 MOSS = Path(sys.argv[1]).resolve()
-WORK = ROOT / "tmp/phase26-1-1-x1" / str(time.time_ns())
+WORK = (Path(sys.argv[2]).resolve() if len(sys.argv) == 3 else
+        ROOT / "tmp/phase26-1-1-x1" / str(time.time_ns()))
+TMP_ROOT = (ROOT / "tmp").resolve()
+if TMP_ROOT not in WORK.parents:
+    raise SystemExit(f"X1 work directory must be under {TMP_ROOT}: {WORK}")
+shutil.rmtree(WORK, ignore_errors=True)
 
 
 def run(env: dict[str, str]) -> dict:
@@ -153,6 +161,32 @@ def main() -> int:
     if checked(generic) != {"x1_library", "x1_app"}:
         raise AssertionError(f"generic edit did not recheck its consumer: {generic}")
 
+    interface_text = interface.read_text(encoding="utf-8")
+    method_identity = '"method:x1_library__HiddenBox.increment"'
+    if not any(line.startswith("return_value_fact_v1 ") and
+               method_identity in line
+               for line in interface_text.splitlines()):
+        raise AssertionError(
+            "Section 2 omitted exact ReturnValue authority for HiddenBox.increment")
+    method_artifact_corruptions = {
+        "MOSS_TEST_DROP_RETURN_VALUE_METHOD_ARTIFACT_FACT":
+            "source-free method body has missing or duplicate ReturnValue authority",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_ARTIFACT_FACT":
+            "ReturnValue artifact callable identity mismatch",
+    }
+    for hook, expected in method_artifact_corruptions.items():
+        corruption_env = env.copy()
+        corruption_env[hook] = "1"
+        corrupted_method = subprocess.run(
+            [str(MARGO), "build", "--check", "--json"], cwd=app,
+            env=corruption_env, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        output = corrupted_method.stdout + corrupted_method.stderr
+        if corrupted_method.returncode == 0 or expected not in output:
+            raise AssertionError(
+                f"method ReturnValue corruption {hook} did not fail closed:\n"
+                f"{output}")
+
     native = subprocess.run([str(MARGO), "build", "--json"], cwd=app,
                             env=env, text=True, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
@@ -272,6 +306,8 @@ def main() -> int:
     print(json.dumps({"initial": sorted(checked(initial)),
                       "non_generic_e1": sorted(checked(non_generic)),
                       "generic_body_edit": sorted(checked(generic)),
+                      "method_return_value_corruptions":
+                          sorted(method_artifact_corruptions),
                       "fast_debug_trace_events": len(trace), "ok": True},
                      sort_keys=True))
     return 0
