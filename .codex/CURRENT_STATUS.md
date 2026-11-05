@@ -15851,3 +15851,17 @@ untouched.
   reply test acceptance conflicts with the active Phase 28 rule requiring
   `copy(x)` for an owned nonprimitive reply; do not alter frozen expectations or
   invent a borrowing fact. This remains a semantic-contract blocker.
+
+## Echo fact review correction (2026-11-05)
+
+- Independent Agent 2 returned **NO-GO** on Team A Echo authority SHA
+  `b5294b52c92154e88053811a6d7dfcd82d654c9f`. It found that EST argument
+  facts are recorded under `echo_context`, but the published fact advertises
+  `expression_fact_context()`; the keys differ for both ordinary and
+  specialized checks. The existing contract gate compared copied metadata but
+  did not prove arena readback at the advertised context.
+- Team A is repairing the context identity, adding arena readback and
+  wrong/missing-context coverage on its isolated follow-up branch. Team B must
+  not consume b5294b52; consumer implementation waits for a corrected exact
+  SHA and independent GO. Previously reviewed Team A checker SHA and pushed
+  branch remain unchanged.
