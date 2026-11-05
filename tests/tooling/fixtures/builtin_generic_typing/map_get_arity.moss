@@ -2,4 +2,4 @@ fn main():
   m = Map()
   m["a"] = 1
   var found = false
-  echo m.get("a")
+  echo m.get()

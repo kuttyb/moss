@@ -2159,6 +2159,27 @@ class Generator {
   string read_call_place(const string& argument, const Domain* d,
                          const std::set<string>& locals,
                          const std::unordered_map<string,string>* types) const {
+    string proj_base, proj_field;
+    if (tree_parse_member_access(trim(argument), proj_base, proj_field) &&
+        tree_plain_identifier(proj_field)) {
+      string p_b, p_i;
+      if (tree_parse_index(proj_base, p_b, p_i)) {
+        auto projection_type = generated_expr_type(proj_base, types);
+        if (projection_type) {
+          auto object = objects_.find(nominal_template_name(*projection_type));
+          if (object != objects_.end()) {
+            auto field = std::find_if(object->second->fields.begin(),
+                object->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == proj_field;
+                });
+            if (field != object->second->fields.end()) {
+              return "(" + read_call_place(proj_base, d, locals, types) + ")." +
+                  rust_identifier(proj_field);
+            }
+          }
+        }
+      }
+    }
     string base, index;
     if (!tree_parse_index(trim(argument), base, index)) return expr(argument, d, locals, types);
     string storage = read_call_place(base, d, locals, types);
@@ -4267,10 +4288,14 @@ class Generator {
                 });
             if (field != object->second->fields.end()) {
               string p_b, p_i;
-              string base_rendered = tree_parse_index(projection_base, p_b, p_i)
+              const bool indexed_base = tree_parse_index(projection_base, p_b, p_i);
+              string base_rendered = indexed_base
                   ? read_call_place(projection_base, d, locals, types)
                   : expr(projection_base, d, locals, types);
-              return "(" + base_rendered + ")." + rust_identifier(projection_field);
+              string projected = "(" + base_rendered + ")." + rust_identifier(projection_field);
+              if (indexed_base && !copy_type(field->type))
+                return "(" + projected + ").clone()";
+              return projected;
             }
           }
         }
@@ -7692,10 +7717,17 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
-              string rendered = expr(
-                  s.args[argument], d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context,
-                                                   argument));
+              string proj_base, proj_field, idx_b, idx_i;
+              const bool is_indexed_member =
+                  statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
+                  tree_parse_member_access(trim(s.args[argument]), proj_base, proj_field) &&
+                  tree_parse_index(proj_base, idx_b, idx_i);
+              string rendered = is_indexed_member
+                  ? read_call_place(s.args[argument], d, locals, &types)
+                  : expr(
+                      s.args[argument], d, locals, &types,
+                      statement_functional_pipeline_id(s, functional_context,
+                                                       argument));
               auto type = generated_expr_type(s.args[argument], &types);
               auto resolved = [](const std::optional<string>& t) {
                 if (!t) return false;

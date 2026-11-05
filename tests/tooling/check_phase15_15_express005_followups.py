@@ -562,7 +562,7 @@ fn main():
 fn main():
   echo 0
 """, check="reject", needle="requires a type"),
-    Case("D9", "control", "legacy option[T] remains separate from enum match",
+    Case("D9", "control", "option[T] supports Some/None match",
          """type Countdown:
   current: Int
   fn next() -> option[Int]:
@@ -580,7 +580,7 @@ fn main():
       echo value
     case None:
       echo 0
-""", check="reject", needle="MATCH_REQUIRES_ENUM"),
+""", output="2"),
     Case("D10", "control", "iterator contract uses lowercase option[T]",
          """type Countdown:
   current: Int

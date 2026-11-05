@@ -16544,6 +16544,27 @@ class Checker {
     return storage_location<TypeEnv>(expression, TypeEnv{}, require_known_root);
   }
 
+  bool is_current_object_field(const string& name) const {
+    return current_object_ && name != "self" &&
+        std::any_of(current_object_->fields.begin(), current_object_->fields.end(),
+                    [&](const Field& field) { return field.name == name; });
+  }
+
+  std::optional<StorageLocation> indexed_borrow_storage_location(
+      const string& expression, const TypeEnv& env) const {
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
+    string base, index;
+    if (!tree_parse_index(value, base, index)) return std::nullopt;
+    auto loc = storage_location(value, env);
+    if (!loc || loc->path.empty() || loc->path.back() != "[]") return std::nullopt;
+    auto elem_type = inferred_expr_type(value, env);
+    if (!elem_type || !effect_requires_borrow(*elem_type) ||
+        canonical_type_name(*elem_type) == "string" ||
+        fileio_scoped_type(*elem_type))
+      return std::nullopt;
+    return loc;
+  }
+
   // Optional observation sink on the existing semantic effect traversal.
   // No ownership summaries are rewritten to encode synchronization modes.
   struct LeafEffectCapture {
@@ -23549,7 +23570,7 @@ class Checker {
         string source_name;
         if (local_source) {
           source_name = *local_source;
-        } else if (auto loc = storage_location(s.b, flow_env_types)) {
+        } else if (auto loc = indexed_borrow_storage_location(s.b, flow_env_types)) {
           source_name = loc->root;
         }
         if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
@@ -23570,7 +23591,9 @@ class Checker {
         else immutable_sources.erase(def.name);
         stmt_gen_defs[i].push_back(def.id);
         analysis.definitions.push_back(std::move(def));
-      } else if (s.kind == Stmt::Kind::Assign && tree_simple_identifier(s.a)) {
+      } else if (s.kind == Stmt::Kind::Assign && tree_simple_identifier(s.a) &&
+                 !is_current_object_field(s.a)) {
+        const bool had_prior_binding = current_binding_identities.count(s.a) != 0;
         BodyOwnershipFlowAnalysis::DefinitionInfo def;
         def.id = static_cast<uint32_t>(analysis.definitions.size());
         def.name = s.a;
@@ -23597,8 +23620,9 @@ class Checker {
         string source_name;
         if (local_source) {
           source_name = *local_source;
-        } else if (auto loc = storage_location(s.b, flow_env_types)) {
-          source_name = loc->root;
+        } else if ((!had_prior_binding || s.indent > 0) &&
+                   indexed_borrow_storage_location(s.b, flow_env_types)) {
+          source_name = indexed_borrow_storage_location(s.b, flow_env_types)->root;
         }
         if (transfers && !source_name.empty() && current_binding_identities.count(source_name)) {
           def.is_borrow = true;
@@ -23810,7 +23834,7 @@ class Checker {
                           statements[u].kind == Stmt::Kind::Var
                       ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue)) {
             source_name = *direct;
-          } else if (auto loc = storage_location(statements[u].b, env_types)) {
+          } else if (auto loc = indexed_borrow_storage_location(statements[u].b, env_types)) {
             source_name = loc->root;
           }
           if (source_name.empty()) continue;
@@ -25575,7 +25599,8 @@ class Checker {
 
   std::optional<EstExpressionCursor> ownership_take_cursor(
       const string& expression) {
-    if (!ownership_current_stmt_) return std::nullopt;
+    if (!ownership_current_stmt_ || functions_.count("take"))
+      return std::nullopt;
     auto view = checker_est_view(expression);
     if (!view || !view->arena || view->root >= view->arena->size() ||
         !std::holds_alternative<est::Take>(view->arena->at(view->root)))
@@ -26441,13 +26466,20 @@ class Checker {
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      if (requested == Effect::Consume) {
-        auto elem_type = inferred_expr_type(value, env.types);
-        if (elem_type && effect_requires_borrow(*elem_type)) {
-          err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
-              "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
-          return;
-        }
+      const bool direct_assignment_rhs = ownership_current_stmt_ &&
+          (ownership_current_stmt_->kind == Stmt::Kind::Let ||
+           ownership_current_stmt_->kind == Stmt::Kind::Var ||
+           ownership_current_stmt_->kind == Stmt::Kind::Assign) &&
+          tree_strip_expression_parens(
+              tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
+      if (requested == Effect::Consume &&
+          ownership_current_stmt_ &&
+          ownership_current_stmt_->kind != Stmt::Kind::Return &&
+          !direct_assignment_rhs &&
+          indexed_borrow_storage_location(value, env.types)) {
+        err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
+            "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+        return;
       }
       check_ownership_expression(line, base, env, Effect::Read);
       check_ownership_expression(line, index, env, Effect::Read);
@@ -26457,10 +26489,13 @@ class Checker {
     string member_base, member_name;
     if (tree_parse_member_access(value, member_base, member_name)) {
       (void)member_name;
-      check_ownership_expression(
-          line, member_base, env,
-          requested == Effect::Write ? Effect::Read :
-              projection_effect(value, requested, env.types));
+      string index_base, index_expr;
+      const Effect base_effect =
+          (requested == Effect::Write ||
+           tree_parse_index(member_base, index_base, index_expr))
+              ? Effect::Read
+              : projection_effect(value, requested, env.types);
+      check_ownership_expression(line, member_base, env, base_effect);
       return;
     }
     require_available(line, value, env);
@@ -27309,7 +27344,7 @@ class Checker {
           string source_root;
           if (local_source) {
             source_root = *local_source;
-          } else if (auto loc = storage_location(s.b, env.types)) {
+          } else if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
             source_root = loc->root;
           }
           auto source_binding = !source_root.empty()
@@ -27470,11 +27505,15 @@ class Checker {
           Effect source_access = transfers ? Effect::Consume : Effect::Read;
           const auto local_source = direct_statement_identifier(
               s, est::ExprSlot::RhsValue);
+          const bool targets_object_field = is_current_object_field(s.a);
           string source_root;
           if (local_source) {
             source_root = *local_source;
-          } else if (auto loc = storage_location(s.b, env.types)) {
-            source_root = loc->root;
+          } else if (!had_lexical_binding && !targets_object_field &&
+                     !env.state_fields.count(s.a)) {
+            if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
+              source_root = loc->root;
+            }
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
@@ -27482,7 +27521,7 @@ class Checker {
           const bool is_indexed_source = !source_root.empty() && !local_source;
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
-              !env.state_fields.count(s.a) &&
+              !env.state_fields.count(s.a) && !targets_object_field &&
               (!local_source || (!env.borrowed_enum_payloads.count(*local_source) &&
                                  !env.message_payloads.count(*local_source)))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
@@ -27771,6 +27810,8 @@ class Checker {
       int line, const string& receiver_type, const string& method,
       const vector<string>& argument_types) const {
     const auto* operation = builtin_operation(receiver_type, method, argument_types.size());
+    if (!operation)
+      operation = builtin_operation(receiver_type, method);
     if (!operation)
       err(line, "invalid builtin operation '" + receiver_type + "." + method + "'",
           "TYPE_MISMATCH");

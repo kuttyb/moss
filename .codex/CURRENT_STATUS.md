@@ -1,3 +1,27 @@
+### P28-R7-008 — Phase 28 Controlled Staging Integration (2026-11-04)
+
+Branch: `phase28-r7-008-integration` (branched from `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`).
+Report: `docs/phase28/P28_R7_008_INTEGRATION_REPORT.md`.
+
+- **Inputs Integrated:**
+  - Certified oracle (`544506774211fbb5b9d4d3e8116525b389faa3dd`) & oracle handoff (`46619968f64ec618f4cc2576f601b86569399f3c`): preserved bit-for-bit unchanged (`0` diff against `46619968` across `tests/phase28/oracle`, `P28_R7_005_ORACLE_CERTIFICATION.md`, and `P28_R7_005_LANGUAGE_ADDENDUM.md`; SHA-256 pins verified; `test_oracle_harness.py` 16/16 PASS).
+  - Reviewed R7-003 (`480fa258`), R7-006 (`76af12a6`), and R7-007 (`c32bdddd`) implementation.
+- **Inherited W12 & R7-006 Audit and Reconciliation:**
+  1. **`Map.get(key)` 1-arg semantics:** `src/moss.cpp:673` returns `$value` (`V`), matching `ORACLE-05`; corrected false `option[V]` claim in `docs/phase28/TEAM_A_W12_CHECKER_HANDOFF.md:96`.
+  2. **User-defined `copy` shadowing:** Repaired in `src/semantic_checker.cpp` by rejecting user declarations (`fn`, `type`, `enum`, `domain`, `trait`) named `copy` with `RESERVED_KEYWORD` (`ORACLE-08-USER-COPY-RESOLUTION` now PASSES).
+  3. **Checker-side text parsing (`starts_with` / `substr`):** Excluded W12 raw string prefix slicing in `inferred_expr_core` and `ownership_take_cursor` and replaced with EST node inspection (`checker_est_view` / `est::Take`) and `tree_parse_simple_call` (`copy`).
+  4. **Unauthorized W12 consumer edits:** W12's buggy `match` lowering was replaced by Team B in R7-003 (`480fa258`) using `TypedMatchOwnershipFactV1`; `copy(x)` and `Vector.remove`/`swap_remove`/`Map.remove`/`Map.get` lowering retained with residual clone-provenance sidecar debt documented in `docs/phase28/P28_R7_008_INTEGRATION_REPORT.md`.
+  5. **R7-006 index-base effect, borrowed consume site, and over-broad indexed borrow scoping:** Restored `Effect::Read` on index expression base in `check_ownership_expression_walk` (`check_phase28_selector_argument_effects.py` PASS), clamped indexed local borrow definitions to `Effect::Read` so consuming uses of borrowed indexed locals fail at the consume site with `OWNERSHIP_ILLEGAL_CONSUME` (`ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT` now PASSES), and scoped indexed local borrow definitions and `OWNERSHIP_COLLECTION_ELEMENT_CONSUME` via `indexed_borrow_storage_location` and `is_current_object_field` (excluding `String` indexing, object fields, and existing-local reassignments).
+  6. **W12 arity fallback, user `fn take` shadowing, and R7-003 native indexed member projection lowering:** Restored `builtin_operation(receiver_type, method)` fallback in `validate_builtin_argument_types`, skipped `ownership_take_cursor` when a user `fn take` is declared, borrowed indexed member projections (`v[0].tag`) in `Echo` and `read_call_place` while cloning non-Copy projections when evaluated as owned values in `expr()`, and updated `map_get_arity.moss` and `check_phase15_15_express005_followups.py` (`D9`) for Phase 28 1-arg `Map.get(key)` and native `option[T]` `match`.
+- **Full `make check` & Targeted Gate Validation:**
+  - `make --jobs="$(nproc)" check`: **166 of 167 jobs PASS, 1 pre-existing FAIL (`check_phase21_borrowed_view_write`), 0 SKIP (353.72s)** — **ZERO regressions** relative to `phase28-work` (`150ab36b`); all 22 regressions inherited from W12/R7-006 resolved.
+- **Certified 56-Fixture Oracle Comparison (Baseline `150ab36b` vs Staging `phase28-r7-008-integration`):**
+  - Passed all applicable gates: **8 -> 11 (+3: `ORACLE-08`, `ORACLE-10B`, `ORACLE-14`)**.
+  - Semantic pass (`semantic_status == PASS`): **22 -> 38 (+16: `ORACLE-01`, `04`, `05`, `06`, `08`, `10A`, `10B`, `14`, `16`, `17`, `18`, `19`, `20`, `26`, `40`, `42`)**.
+  - Semantic failures (`semantic_status == FAIL`): **34 -> 18 (-16)**.
+  - Provenance-blocked (`clone_provenance_status == BLOCKED_MISSING_OR_INVALID`): **19 -> 29** (27 of which pass all 4 semantic/execution gates and are blocked solely by unimplemented v2 `.moss_clone_provenance.json` sidecar emission).
+- **Hard Boundary:** Staging integration only on `phase28-r7-008-integration`. No merge to `phase28-work` or `main`.
+
 ### P28-R7-005 — Independent Oracle Certification (2026-11-04)
 
 Certified the 56-row Phase 28 semantic oracle after L7 GO and independent Agent 2
