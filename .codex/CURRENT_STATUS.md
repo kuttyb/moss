@@ -17241,3 +17241,11 @@ untouched.
   classes still require independent authority classification; none are
   implicitly approved by this count. This fresh run supersedes neither the
   frozen expectations nor the required independent Team C audit.
+- Team B froze and pushed the clone-audit refresh on
+  `phase28-r7-010-team-b-runtime-clone-evidence` at
+  `9313b46c6c788e3e9a0c40b5b93ad58e0c82ae4f`. Independent Agent 2 returned GO
+  on that exact SHA and independently reproduced the 60/60 semantic, 19/60
+  all-gates, 41 provenance-only result, the 258 direct clone groups, and the
+  broader operator counts. Runtime evidence, Root-ingress provenance (42
+  checks), and v3 builder corruption gates passed. The report authorizes no
+  runtime clone exception and identifies no safe runtime repair yet.
