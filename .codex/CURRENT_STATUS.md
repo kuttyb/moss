@@ -16251,6 +16251,20 @@ untouched.
   facts now retain the rebuilt EST span (the wire DTO still preserves original
   source span/fingerprint); this aligns exact remapped identity without
   relaxing consumer span checks. The build passes after this correction.
+- Team B froze and pushed consumer SHA `5fbfc24a20a5d9c057f25ebc285c17ac56ac52ea`;
+  Agent 2 found no code-level fail-open and returned NO-GO only because the new
+  imported ReturnValue and Echo gates were not yet registered in `make check`.
+  L7 integrated that exact SHA by cherry-pick `1ab49e0a` (source SHA is recorded
+  in the commit body) and registered the three new scripts in `tests/run.sh`;
+  the existing ReturnValue gate remains registered with an isolated output path.
+- Rebuilt compiler and reran the four Team B gates from isolated directories:
+  ORACLE-13/58 parity and corruption (6/6 and 7/7), ORACLE-54 imported output
+  plus 8 consumer and 2 artifact corruptions, projected-module Echo 7/7, and
+  ORACLE-39/42 three-engine parity plus 7/7 corruption checks all pass. The
+  final independent reviewer GO after gate registration is pending.
+- Team A checker repair `9d9a5ae459d56b1473ed3e92c9405ee7fa12580d` is frozen
+  locally and awaiting Agent 2 review. It fixes the generic source-free
+  ReturnValue statement/context regression; L7 has not integrated it yet.
 
 ## Team B ReturnValue/Echo consumer follow-up (2026-11-05)
 

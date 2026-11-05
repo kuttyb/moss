@@ -40,7 +40,8 @@ def run(env: dict[str, str], ok: bool = True) -> subprocess.CompletedProcess[str
 
 def main() -> None:
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "./moss").resolve()
-    work = ROOT / "tmp/team-b-consumer/oracle54"
+    work = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else \
+        ROOT / "tmp/team-b-consumer/oracle54"
     work.mkdir(parents=True, exist_ok=True)
     base = dict(os.environ)
     base["MOSS"] = str(compiler)

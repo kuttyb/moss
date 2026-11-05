@@ -8,7 +8,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[4]
 MOSS = Path(sys.argv[1]).resolve()
 MARGO = ROOT / "margo"
-PROJECT = ROOT / "tmp/team-b/echo-projected-fact"
+PROJECT = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else \
+    ROOT / "tmp/team-b/echo-projected-fact"
 SOURCE = PROJECT / "src/provider.moss"
 
 PROJECT.mkdir(parents=True, exist_ok=True)

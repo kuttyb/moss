@@ -6,7 +6,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[4]
-OUT = ROOT / "tmp/team-b/vector-read-and-echo"
+OUT = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else \
+    ROOT / "tmp/team-b/vector-read-and-echo"
 OUT.mkdir(parents=True, exist_ok=True)
 MOSS = Path(sys.argv[1]).resolve()
 ORACLE39 = ROOT / "tests/phase28/oracle/fixtures/oracle_39_vector_for_read.moss"
