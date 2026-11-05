@@ -147,3 +147,35 @@ source/artifact evidence, not authorization.
 - The full 60-fixture result recorded above is bound to `cd2310ef` before this
   local change; no complete oracle rerun or new corpus total is claimed for the
   current working tree.
+
+## Fresh combined 60-fixture oracle — implementation `fc305b645e96f46edadbd75b3023f4ef051ba590`
+
+- Run used the rebuilt compiler from exact staging implementation SHA
+  `fc305b645e96f46edadbd75b3023f4ef051ba590`; certified v2 expectations and
+  certification digests were unchanged. Results and raw artifacts are in
+  `tmp/r7-010-oracle-fc305b64/`.
+- **19/60 fixtures pass all applicable gates; 41/60 fail only clone
+  provenance.** All semantic statuses and applicable execution results pass;
+  there are zero engine disagreements, infrastructure errors, or
+  missing/invalid sidecars.
+- The refreshed scanner reports 336 unverified generated `.clone()` rows,
+  all tied to provenance sidecars and currently unclassified/unauthorized: four
+  per each direct artifact and four per each of ORACLE-54's four
+  provider/consumer Debug/Optimized artifacts. This is a measured reduction
+  from the earlier 420 rows after the test-only config snapshot clone removal.
+  Exact checked Moss copies and Root-ingress capture-only rows remain
+  separately accounted; neither permits a runtime clone.
+- Commit `fc305b64` also removes the worker-thread guard's redundant
+  `Arc::clone`: the thread guard takes ownership of the captured executor Arc,
+  and setup/worker-loop borrow it while the guard remains live.
+  `check_phase20c_executor.py` passes 54/54. A current ORACLE-10A generated
+  probe contains eight `Arc::clone` calls, one fewer than the previous
+  nine-site probe; this qualified-call inventory is outside the certified v2
+  `.clone()` sidecar count. Independent review of this exact change is pending.
+- The candidate-specific provenance builder and corruption test passes with
+  one checked copy and four unclassified direct clone rows. The historical
+  Team C runtime-evidence script rejects this changed source hash before
+  reusing its pinned artifact; its historical evidence is unchanged.
+- Disposition remains **NO-GO**. The 336 provenance rows and the wider
+  qualified duplication audit remain unresolved. Full default and EST-shadow
+  suites have not run at this SHA.

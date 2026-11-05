@@ -16623,3 +16623,32 @@ untouched.
 - Preserved the documented `MossExecutor::config(&self) -> MossExecutorConfig` API after independent review rejected a consuming-builder signature. The snapshot clone at executor source line 839 therefore remains intentionally present pending any reviewed API change or certified runtime classification.
 - Removed the test-only active-config clone at the former source line 1594. `moss_executor_active_config_matches(&expected)` now compares each config field and affinity slice synchronously without returning or cloning the config. Phase 20 executor suite passes 54/54; the updated test checks that inspecting config does not consume the builder and that it can still be started.
 - Independent Agent 2 GO covers this exact delta and reports four remaining direct `.clone()` sites (source lines 497, 839, 1389, 1431); it does not authorize them. The generated runtime also contains nine `Arc::clone(...)` operations per probe, which remain outside the `.clone()` sidecar scan and need independent duplication audit. Focused ORACLE-10A and ORACLE-54 runs now show four unauthorized direct clone rows per artifact; a fresh full 60-fixture run has not been made after this delta. Overall status remains NO-GO.
+
+## Worker-thread guard Arc follow-up — `fc305b645e96f46edadbd75b3023f4ef051ba590` (2026-11-05)
+
+- Pushed commit `fc305b645e96f46edadbd75b3023f4ef051ba590` to
+  `phase28-r7-010-l7-copy-authority`; no production merge. `MossWorkerThreadGuard`
+  now owns the executor Arc captured by the worker closure. Affinity setup and
+  `worker_loop` borrow it, keeping the guard alive across worker and TLS
+  teardown while removing one strong-reference clone.
+- Validation at this candidate: `make --jobs="$(nproc)"
+  COMPILER_DIR=tmp/r7-010-module-provenance/build/compiler moss-dev` PASS;
+  `check_phase20c_executor.py` 54/54 PASS; provenance-v3 builder/corruption
+  gate PASS (one checked copy, four direct unclassified rows); clone inventory
+  unit tests 7/7 PASS; agent-feedback validator and `git diff --check` PASS.
+- The full certified v2 oracle was rerun against this exact SHA. It reports
+  19/60 all-gate PASS and 41 provenance-only failures; 0 semantic failures,
+  engine disagreements, infrastructure errors, or missing sidecars. There are
+  336 unverified `.clone()` rows, all four per artifact and unclassified /
+  unauthorized. Raw artifacts are in `tmp/r7-010-oracle-fc305b64/`; durable
+  results are in `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`.
+- A current ORACLE-10A generated probe has eight `Arc::clone` calls, down from
+  nine. The v2 `.clone()` sidecar scan does not count these qualified calls;
+  they remain a separate audit obligation. The historical Team C source/artifact
+  evidence test rejects this changed source hash as designed; historical pins
+  were not rewritten. Independent Agent 2 review of this exact commit is
+  pending.
+- Remaining acceptance work: independently review the change; reconcile the
+  336 provenance rows without changing frozen oracle expectations; audit all
+  qualified duplication sites; run default and EST-shadow suites only after
+  focused repairs settle. Current disposition is NO-GO.
