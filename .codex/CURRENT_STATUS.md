@@ -16139,3 +16139,27 @@ untouched.
   fail closed without Rust artifacts.
 - The native ORACLE-07 missing-key panic remains a Team B consumer integration
   dependency; Team A changed no consumer or oracle expectation/mapping files.
+
+## L7 Team A integration checkpoint (2026-11-05)
+
+- L7 staging branch `phase28-r7-010-l7-copy-authority` integrates the Team A
+  reviewed ancestry through `21d150212e367e9d20d2a07627f49bba66d415f4`; current
+  L7 HEAD is `7997bf35a61cc186f90bab85a10b4e4bdb09ea30`. The shared status merge
+  retained both the prior L7 oracle ledger and the reviewed Team A handoff.
+- Registered `check_phase28_oracle_authority_facts.py` in `tests/run.sh`.
+  Rebuilt `moss`; on this exact L7 SHA, R7-009 passes 17/17, the authority
+  harness passes 24 scenarios, and the specialized ownership contract passes.
+- Before the final ReturnValue deferral commit was integrated, L7 also passed
+  focused bare-raise transfer, Echo authority, B4 21-case corruption, Map.get
+  write-through, ORACLE-19 match borrow, ORACLE-32 payload WRITE, collection
+  outcomes, nested explicit copy, ORACLE-51 join slot, explicit-copy source
+  borrow, and pinned ORACLE-10A evidence gates. Rerun these after Team B's
+  consumer delivery before treating them as final combined evidence.
+- Team B is implementing checker-authorized conditional Map index read and
+  write-through lowering in isolated `interpreter.hpp` and
+  `native_generator.cpp` changes, with a dedicated ORACLE-07 gate. Its current
+  worktree is not integrated or independently reviewed. Update it to consume
+  Team A's latest `21d15021` base before freezing.
+- Fresh 60-fixture oracle, full default suite, EST-shadow suite, final clone
+  provenance audit, and final Agent 2 review remain pending. No production
+  branch merge has occurred.
