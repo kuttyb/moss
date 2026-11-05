@@ -19,11 +19,14 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
           expected_records: tuple[int, int, int] | None = None,
           expected_unsupported: tuple[int, int] | None = None,
           expected_join_predecessors: int = 0,
-          expected_rebinding: bool = False) -> None:
+          expected_rebinding: bool = False,
+          expected_fresh_owned_rebind: bool = False) -> None:
     env = os.environ.copy()
     env["MOSS_EST_FACTS_DUMP"] = "1"
     env.pop("MOSS_TEST_DROP_OWNERSHIP_FACT", None)
     env.pop("MOSS_TEST_PERTURB_OWNERSHIP_FACT", None)
+    env.pop("MOSS_TEST_DROP_FRESH_OWNERSHIP_FACT", None)
+    env.pop("MOSS_TEST_PERTURB_FRESH_OWNERSHIP_FACT", None)
     for hook in hooks:
         env[hook] = "1"
     proc = subprocess.run(
@@ -102,6 +105,29 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
         if [int(row[4]) for row in definitions] != [0, 2]:
             raise AssertionError(
                 f"independent definitions must remain READ then CONSUME: {definitions!r}")
+    if expected_fresh_owned_rebind:
+        definitions = re.findall(
+            r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="([^"]*)" '
+            r'binding="([^"]*)" killed="([^"]*)" expr=(\d+) '
+            r'context="([^"]+)" access=(\d+) availability=(\d+) '
+            r'source_kind=(\d+) type="([^"]*)"', proc.stderr)
+        borrowed = [row for row in definitions
+                    if row[1] and int(row[8]) == 0]
+        fresh = [row for row in definitions if int(row[8]) == 2]
+        if len(borrowed) != 1 or len(fresh) != 1:
+            raise AssertionError(
+                f"expected one borrowed source and one FreshOwnedValue fact, "
+                f"got {definitions!r}; stderr: {proc.stderr}")
+        old_definition = borrowed[0]
+        new_definition = fresh[0]
+        if (new_definition[1] or not new_definition[2] or
+                new_definition[3] != old_definition[0] or
+                new_definition[2] != old_definition[2] or
+                int(new_definition[6]) != 0 or int(new_definition[7]) != 1 or
+                not new_definition[9].startswith("type-key-v1:")):
+            raise AssertionError(
+                "FreshOwnedValue fact did not preserve binding identity, kill "
+                f"the exact prior definition, and carry a closed type: {definitions!r}")
 
 
 def check_take_contract(compiler: str) -> None:
@@ -455,10 +481,62 @@ def check_exceptional_ownership_contract(compiler: str) -> None:
             raise AssertionError(
                 f"{hook} did not fail closed: {corrupted_result!r}")
 
+def check_collection_outcome_contract(compiler: str) -> None:
+    fixtures = (
+        (ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_07_catchable_collection_errors.moss",
+         "fresh-empty Queue.pop"),
+        (ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_53_map_remove_missing.moss",
+         "fresh-empty Map.remove"),
+    )
+    for fixture, operation in fixtures:
+        dump_env = os.environ.copy()
+        dump_env["MOSS_EST_FACTS_DUMP"] = "1"
+        accepted = subprocess.run(
+            [compiler, "check", str(fixture), "--json"], cwd=ROOT,
+            text=True, capture_output=True, env=dump_env, check=False)
+        accepted_result = json.loads(accepted.stdout)
+        if not accepted_result.get("ok"):
+            raise AssertionError(
+                f"{operation} should be accepted with checked Never authority: "
+                f"{accepted_result!r}")
+        rows = re.findall(
+            r'MOSS_COLLECTION_OUTCOME_FACT operation=(\d+) outcome=(\d+) '
+            r'receiver="([^"]+)" definition="([^"]+)" expr=(\d+) '
+            r'span=(\d+):(\d+) error="([^"]+)" availability=(\d+)',
+            accepted.stderr)
+        expected_operation = 0 if "Queue.pop" in operation else 1
+        if not any(int(row[0]) == expected_operation and int(row[1]) == 0 and
+                   row[2] and row[3] and row[4].isdigit() and
+                   int(row[6]) > int(row[5]) and int(row[8]) == 0
+                   for row in rows):
+            raise AssertionError(
+                f"{operation}: exact checked AlwaysRaises fact missing: {rows!r}")
+        for hook in (
+            "MOSS_TEST_DROP_COLLECTION_OUTCOME_FACT",
+            "MOSS_TEST_PERTURB_COLLECTION_OUTCOME_FACT",
+            "MOSS_TEST_DUPLICATE_COLLECTION_OUTCOME_FACT",
+            "MOSS_TEST_DUPLICATE_COLLECTION_OUTCOME_REQUIREMENT",
+        ):
+            env = os.environ.copy()
+            env[hook] = "1"
+            rejected = subprocess.run(
+                [compiler, "check", str(fixture), "--json"], cwd=ROOT,
+                text=True, capture_output=True, env=env, check=False)
+            rejected_result = json.loads(rejected.stdout)
+            if rejected_result.get("ok") or \
+                    rejected_result.get("error", {}).get("code") != "MOSS_INTERNAL_OR_IO_ERROR":
+                raise AssertionError(
+                    f"{operation} {hook}: expected fail-closed collection outcome authority; "
+                    f"got {rejected_result!r}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_local_ownership.py COMPILER")
     compiler = sys.argv[1]
+    check(compiler, "internal_never_not_source_type.moss",
+          expected_error="UNKNOWN_SYMBOL_OR_TYPE")
+    check_collection_outcome_contract(compiler)
     check(compiler, "read_alias.moss", expected_effect=0)
     check(compiler, "write_alias.moss", expected_effect=1)
     check(compiler, "consume_transfer.moss", expected_effect=2)
@@ -513,6 +591,14 @@ def main() -> int:
     check(compiler, "vector_consume_iteration.moss",
           expected_error="OWNERSHIP_VECTOR_ELEMENT_CONSUME")
     check(compiler, "implicit_method_argument_effect.moss")
+    check(compiler, "fresh_owned_rebind.moss",
+          expected_fresh_owned_rebind=True)
+    check(compiler, "fresh_owned_rebind.moss",
+          expected_error="MOSS_INTERNAL_INVARIANT",
+          hooks=("MOSS_TEST_DROP_FRESH_OWNERSHIP_FACT",))
+    check(compiler, "fresh_owned_rebind.moss",
+          expected_error="MOSS_INTERNAL_INVARIANT",
+          hooks=("MOSS_TEST_PERTURB_FRESH_OWNERSHIP_FACT",))
     # Slice B: General Ownership Joins and Early Exits
     check(compiler, "nested_branch_read.moss")
     check(compiler, "dead_branch_local.moss")

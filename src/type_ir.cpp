@@ -75,6 +75,7 @@ std::optional<TypeRef> Type::parse_canonical(std::string_view raw) {
           return Type::builtin(head, std::move(args));
         }
         if (head == "unit") return Type::unit();
+        if (head == "never") return Type::never();
         if (head == "Int" || head == "int") return Type::primitive("int");
         if (head == "Float" || head == "float") return Type::primitive("float");
         if (head == "Bool" || head == "bool") return Type::primitive("bool");

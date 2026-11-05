@@ -1957,6 +1957,11 @@ class Checker {
       p_.typed_semantics->copy_facts = copy_facts_;
       p_.typed_semantics->required_copy_occurrences =
           required_copy_occurrences_;
+      p_.typed_semantics->collection_outcome_facts =
+          collection_outcome_facts_;
+      p_.typed_semantics->required_collection_outcome_occurrences =
+          required_collection_outcome_occurrences_;
+      (void)p_.typed_semantics->require_all_collection_outcome_facts();
       p_.typed_semantics->match_ownership_facts = match_ownership_facts_;
       p_.typed_semantics->required_match_occurrences =
           required_match_occurrences_;
@@ -2490,6 +2495,9 @@ class Checker {
   vector<TypedTakeRequirementV1> required_take_occurrences_;
   vector<TypedCopyFactV1> copy_facts_;
   vector<TypedCopyRequirementV1> required_copy_occurrences_;
+  vector<TypedCollectionOutcomeFactV1> collection_outcome_facts_;
+  vector<TypedCollectionOutcomeRequirementV1>
+      required_collection_outcome_occurrences_;
   vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
   vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
   std::unordered_map<std::string, EnumType> option_enums_cache_;
@@ -2872,6 +2880,8 @@ class Checker {
     std::unordered_map<string, moss::TypeRef> scoped_locals;
     bool scoped_locals_active = false;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
+    std::unordered_map<const Stmt*, TypedCollectionOutcomeFactV1>
+        collection_outcome_facts;
     vector<moss::OpenCallableSummaryFacts::OperationFact> open_operations;
     vector<moss::Requirement> open_operator_requirements;
     TypeEnv closed_projection;
@@ -8957,6 +8967,9 @@ class Checker {
     string type = canonical_type_name(t);
     auto parsed = moss::Type::parse_canonical(type);
     if (!parsed) return false;
+    // Never is a checker-internal no-normal-result term, not a Moss source
+    // type annotation that users may select to close an open generic.
+    if ((*parsed)->kind == moss::TypeKind::Never) return false;
     if ((*parsed)->kind == moss::TypeKind::NominalInstance) {
       // Resolved at name resolution to an interned declaration. The bare
       // template is valid; an instance substitutes every inferred slot.
@@ -14293,6 +14306,9 @@ class Checker {
     };
     vector<BlockScope> block_scopes;
     std::unordered_map<int, const EnumType*> match_enums;
+    std::unordered_map<string, std::pair<string, string>>
+        fresh_empty_collections;
+    vector<int> fresh_empty_recovery_scopes;
     auto leave_blocks = [&](const Stmt* next) {
       while (!block_scopes.empty() &&
              (!next || next->indent <= block_scopes.back().indent)) {
@@ -14300,12 +14316,14 @@ class Checker {
         if (next && next->indent == scope.indent &&
             next->kind == Stmt::Kind::Else &&
             scope.kind == Stmt::Kind::If && !scope.in_else) {
+          fresh_empty_collections.clear();
           scope.then_locals = locals;
           locals = scope.incoming_locals;
           scan = scope.incoming_scan;
           scope.in_else = true;
           return;
         }
+        fresh_empty_collections.clear();
         if (scope.kind == Stmt::Kind::If && scope.in_else) {
           for (const auto& [name, then_term] : scope.then_locals) {
             if (scope.incoming_locals.count(name)) continue;
@@ -14340,7 +14358,228 @@ class Checker {
       }
     };
     for (const Stmt& statement : statements) {
+      while (!fresh_empty_recovery_scopes.empty() &&
+             statement.indent <= fresh_empty_recovery_scopes.back()) {
+        fresh_empty_collections.clear();
+        fresh_empty_recovery_scopes.pop_back();
+      }
       leave_blocks(&statement);
+      body_types.statement_occurrence_id(statement);
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match ||
+          statement.kind == Stmt::Kind::Case ||
+          statement.kind == Stmt::Kind::Else ||
+          statement.kind == Stmt::Kind::Recover) {
+        fresh_empty_collections.clear();
+        if (statement.kind == Stmt::Kind::Recover)
+          fresh_empty_recovery_scopes.push_back(statement.indent);
+      }
+
+      // Only a direct checked member call on a tracked fresh-empty local can
+      // close its otherwise-open payload type with Never. EST identities and
+      // byte spans below, rather than this source-level selector, are the
+      // published authority.
+      struct CollectionCallOccurrence {
+        std::uint32_t arena_index{UINT32_MAX};
+        est::ExprId expression_id{UINT32_MAX};
+        est::SourceSpan expression_span;
+        std::string method;
+        std::string receiver;
+        est::ExprId argument_id{UINT32_MAX};
+        est::SourceSpan argument_span;
+      };
+      std::optional<CollectionCallOccurrence> collection_call;
+      if (statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign) {
+        string text_receiver, text_method;
+        vector<string> text_arguments;
+        if (tree_parse_member_call(statement.b, text_receiver, text_method,
+                                   text_arguments) &&
+            ((text_method == "pop" && text_arguments.empty()) ||
+             (text_method == "remove" && text_arguments.size() == 1)) &&
+            tree_simple_identifier(text_receiver)) {
+          const est::ExprSlot slot = statement.kind == Stmt::Kind::Let ||
+                  statement.kind == Stmt::Kind::Var
+              ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+          for (const auto& handle : statement.expression_handles) {
+            if (handle.slot != slot || handle.argument_index != 0) continue;
+            const auto* arena = expression_arena(handle.arena_index);
+            if (!arena || handle.expr >= arena->size()) continue;
+            est::ExprId expression_id = handle.expr;
+            while (const auto* group =
+                       std::get_if<est::Parenthesized>(&arena->at(expression_id)))
+              expression_id = group->inner;
+            const auto* call = std::get_if<est::Call>(&arena->at(expression_id));
+            if (!call) continue;
+            const auto* member = std::get_if<est::Member>(&arena->at(call->callee));
+            if (!member || member->name != text_method) continue;
+            const auto* receiver = std::get_if<est::Identifier>(
+                &arena->at(member->base));
+            if (!receiver || receiver->name != text_receiver) continue;
+            if ((text_method == "pop" && !call->arguments.empty()) ||
+                (text_method == "remove" && call->arguments.size() != 1))
+              continue;
+            CollectionCallOccurrence found;
+            found.arena_index = handle.arena_index;
+            found.expression_id = expression_id;
+            found.expression_span = arena->span(expression_id);
+            found.method = text_method;
+            found.receiver = receiver->name;
+            if (!call->arguments.empty()) {
+              found.argument_id = call->arguments.front();
+              found.argument_span = arena->span(found.argument_id);
+            }
+            collection_call = std::move(found);
+            break;
+          }
+        }
+      }
+      bool proved_collection_outcome = false;
+      if (collection_call) {
+        auto empty = fresh_empty_collections.find(collection_call->receiver);
+        auto local = locals.find(collection_call->receiver);
+        if (empty != fresh_empty_collections.end() && local != locals.end()) {
+          auto receiver_type = solver.resolve(local->second);
+          if (receiver_type && receiver_type->kind == moss::TypeKind::Builtin) {
+            TypedCollectionOutcomeFactV1 fact;
+            bool valid_operation = false;
+            if (collection_call->method == "pop" &&
+                receiver_type->name == "queue" &&
+                receiver_type->type_args.size() == 1) {
+              valid_operation = solver.unify(receiver_type->type_args.front(),
+                                               moss::Type::never());
+              fact.operation = TypedCollectionOutcomeFactV1::Operation::QueuePop;
+              fact.error_variant_identity = "Empty";
+            } else if (collection_call->method == "remove" &&
+                       receiver_type->name == "map" &&
+                       receiver_type->type_args.size() == 2) {
+              string member_receiver, member_method;
+              vector<string> member_arguments;
+              if (tree_parse_member_call(statement.b, member_receiver,
+                                         member_method, member_arguments) &&
+                  member_arguments.size() == 1) {
+                const auto argument = term_for(member_arguments.front());
+                if (argument) {
+                  valid_operation = solver.unify(
+                      receiver_type->type_args.front(), argument) &&
+                      solver.unify(receiver_type->type_args.back(),
+                                   moss::Type::never());
+                  fact.argument_expression_occurrence_id =
+                      collection_call->argument_id;
+                  fact.argument_occurrence_span = collection_call->argument_span;
+                  fact.argument_type = solver.resolve(argument);
+                }
+              }
+              fact.operation = TypedCollectionOutcomeFactV1::Operation::MapRemove;
+              fact.error_variant_identity = "MissingKey";
+            }
+            if (valid_operation) {
+              fact.outcome = TypedCollectionOutcomeFactV1::Outcome::AlwaysRaises;
+              fact.availability =
+                  TypedCollectionOutcomeFactV1::Availability::Present;
+              fact.operation_est_arena_index = collection_call->arena_index;
+              fact.operation_expression_occurrence_id =
+                  collection_call->expression_id;
+              fact.operation_occurrence_span =
+                  collection_call->expression_span;
+              fact.statement_occurrence_id =
+                  body_types.statement_occurrence_id(statement);
+              fact.specialization_context = expression_fact_context();
+              const string effective_semantic_context =
+                  !semantic_context.empty() ? semantic_context
+                  : !current_semantic_context_.empty()
+                      ? current_semantic_context_ : string("main");
+              if (checking_specialization_ &&
+                  starts_with(effective_semantic_context, "fn:")) {
+                auto function = functions_.find(
+                    effective_semantic_context.substr(3));
+                if (function != functions_.end())
+                  fact.specialization_context = functional_function_context(
+                      *function->second, checking_specialization_);
+              }
+              fact.specialization_identity =
+                  local_ownership_specialization_identity();
+              fact.est_fact_context = expression_fact_context();
+              fact.provenance.source_file = statement.source_file.empty()
+                  ? current_source_file_ : statement.source_file;
+              fact.provenance.line = statement.line;
+              fact.provenance.enclosing_callable_id = effective_semantic_context;
+              string defining_module = p_.main_module;
+              if (starts_with(effective_semantic_context, "fn:")) {
+                auto function = functions_.find(
+                    effective_semantic_context.substr(3));
+                if (function != functions_.end())
+                  defining_module = function->second->defining_module;
+              } else if (starts_with(effective_semantic_context, "handler:")) {
+                const string identity = effective_semantic_context.substr(8);
+                const auto separator = identity.find('.');
+                auto domain = domains_.find(identity.substr(0, separator));
+                if (domain != domains_.end())
+                  defining_module = domain->second->defining_module;
+              }
+              fact.provenance.defining_module_id =
+                  program_module_identity(p_, defining_module);
+              fact.receiver_binding_identity = empty->second.first;
+              fact.receiver_definition_identity = empty->second.second;
+              fact.fresh_empty_definition_identity = empty->second.second;
+              fact.receiver_type = solver.resolve(local->second);
+              fact.result_type = moss::Type::never();
+              fact.error_type_identity = "std__CollectionError";
+              if (fact.is_authoritative()) {
+                body_types.collection_outcome_facts[&statement] = fact;
+                proved_collection_outcome = true;
+              }
+            }
+          }
+        }
+      }
+
+      // Invalidate the proof on control-flow splits, aliases, unknown calls,
+      // structural mutation, and writes. Fresh literal construction starts a
+      // new exact definition after the current operation has been examined.
+      if (!proved_collection_outcome) {
+        if (statement.kind == Stmt::Kind::Call ||
+            statement.kind == Stmt::Kind::Echo ||
+            statement.kind == Stmt::Kind::Return ||
+            statement.kind == Stmt::Kind::Reply)
+          fresh_empty_collections.clear();
+        if (statement.kind == Stmt::Kind::Let ||
+            statement.kind == Stmt::Kind::Var ||
+            statement.kind == Stmt::Kind::Assign) {
+          if (tree_simple_identifier(statement.a)) {
+            vector<string> escaped_empty_collections;
+            for (const auto& [name, identities] : fresh_empty_collections) {
+              (void)identities;
+              if (tree_identifier_named(statement.b, name))
+                escaped_empty_collections.push_back(name);
+            }
+            for (const auto& name : escaped_empty_collections)
+              fresh_empty_collections.erase(name);
+            fresh_empty_collections.erase(statement.a);
+            if (tree_empty_constructor_named(statement.b, "Queue") ||
+                tree_empty_constructor_named(statement.b, "Map")) {
+              const string effective_context =
+                  !semantic_context.empty() ? semantic_context
+                  : !current_semantic_context_.empty()
+                      ? current_semantic_context_ : string("main");
+              const string binding_identity =
+                  statement_binding_identity(effective_context,
+                                             statement.line);
+              fresh_empty_collections[statement.a] = {
+                  binding_identity, binding_identity + ":" + statement.a};
+            }
+          } else {
+            string place_root, place_index;
+            if (tree_parse_index(statement.a, place_root, place_index))
+              fresh_empty_collections.erase(place_root);
+          }
+        }
+        if (collection_call)
+          fresh_empty_collections.erase(collection_call->receiver);
+      }
       if (statement.kind == Stmt::Kind::If ||
           statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For)
@@ -24984,13 +25223,16 @@ class Checker {
       const string& source_binding_identity, Effect access,
       const string& binding_identity = {},
       const string& killed_definition_identity = {},
-      const string& join_definition_identity = {}) {
+      const string& join_definition_identity = {},
+      TypedLocalOwnershipFactV1::SourceKind source_kind =
+          TypedLocalOwnershipFactV1::SourceKind::LocalBinding) {
     TypedLocalOwnershipFactV1 fact;
     fact.definition_identity = definition_identity;
     fact.binding_identity = binding_identity;
     fact.killed_definition_identity = killed_definition_identity;
     fact.join_definition_identity = join_definition_identity;
     fact.source_binding_identity = source_binding_identity;
+    fact.source_kind = source_kind;
     fact.specialization_context = local_ownership_consumer_context();
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.access = access;
@@ -25039,8 +25281,15 @@ class Checker {
         }
       }
     }
-    if (fact.definition_identity.empty() ||
-        fact.source_binding_identity.empty())
+    const bool source_identity_missing =
+        (source_kind == TypedLocalOwnershipFactV1::SourceKind::LocalBinding &&
+         fact.source_binding_identity.empty()) ||
+        (source_kind == TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue &&
+         (!fact.source_binding_identity.empty() || fact.binding_identity.empty() ||
+          fact.killed_definition_identity.empty() ||
+          fact.killed_definition_identity == fact.definition_identity ||
+          !fact.join_definition_identity.empty() || fact.access != Effect::Read));
+    if (fact.definition_identity.empty() || source_identity_missing)
       fact.availability =
           TypedLocalOwnershipFactV1::Availability::MissingBindingIdentity;
     else if (fact.statement_occurrence_id == UINT32_MAX)
@@ -25075,7 +25324,12 @@ class Checker {
         arena = nullptr;
       } else {
 #ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_DROP_OWNERSHIP_FACT")) {
+        const bool drop_ownership_fact =
+            std::getenv("MOSS_TEST_DROP_OWNERSHIP_FACT") ||
+            (source_kind ==
+                 TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue &&
+             std::getenv("MOSS_TEST_DROP_FRESH_OWNERSHIP_FACT"));
+        if (drop_ownership_fact) {
           arena = nullptr;
           fact.availability =
               TypedLocalOwnershipFactV1::Availability::MissingEstOccurrence;
@@ -25083,7 +25337,10 @@ class Checker {
 #endif
           Effect retained_access = access;
 #ifdef MOSS_TEST_BUILD
-          if (std::getenv("MOSS_TEST_PERTURB_OWNERSHIP_FACT"))
+          if (std::getenv("MOSS_TEST_PERTURB_OWNERSHIP_FACT") ||
+              (source_kind ==
+                   TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue &&
+               std::getenv("MOSS_TEST_PERTURB_FRESH_OWNERSHIP_FACT")))
             retained_access = access == Effect::Read ? Effect::Write
                 : access == Effect::Write ? Effect::Consume : Effect::Read;
 #endif
@@ -25097,6 +25354,10 @@ class Checker {
 #endif
       }
     }
+    if (source_kind == TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue &&
+        (!fact.value_type || !fact.value_type->is_closed()))
+      fact.availability =
+          TypedLocalOwnershipFactV1::Availability::ContradictoryEffect;
     std::optional<Effect> checked_access;
     if (arena && matched) {
       const auto* retained = arena->facts(matched->expr,
@@ -25116,7 +25377,10 @@ class Checker {
                 << fact.expression_occurrence_id << " context="
                 << std::quoted(fact.specialization_context) << " access="
                 << static_cast<int>(fact.access) << " availability="
-                << static_cast<int>(fact.availability) << '\n';
+                << static_cast<int>(fact.availability) << " source_kind="
+                << static_cast<int>(fact.source_kind) << " type="
+                << std::quoted(fact.value_type && fact.value_type->is_closed()
+                    ? fact.value_type->stable_type_key() : string()) << '\n';
     TypedLocalOwnershipRequirementV1 req;
     req.est_arena_index = fact.est_arena_index;
     req.expression_occurrence_id = fact.expression_occurrence_id;
@@ -25128,6 +25392,7 @@ class Checker {
     req.killed_definition_identity = fact.killed_definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
+    req.value_type = fact.value_type;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -25206,6 +25471,7 @@ class Checker {
     req.definition_identity = fact.definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
+    req.value_type = fact.value_type;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -25292,6 +25558,7 @@ class Checker {
     req.definition_identity = fact.definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
+    req.value_type = fact.value_type;
     req.access = fact.access;
     req.source_kind = fact.source_kind;
     req.inference_status = fact.inference_status;
@@ -26391,6 +26658,32 @@ class Checker {
         fact.specialization_context = local_ownership_consumer_context();
         fact.specialization_identity = local_ownership_specialization_identity();
         fact.est_fact_context = expression_fact_context();
+        fact.provenance.source_file = ownership_current_stmt_ &&
+                !ownership_current_stmt_->source_file.empty()
+            ? ownership_current_stmt_->source_file : current_source_file_;
+        fact.provenance.line = ownership_current_stmt_
+            ? ownership_current_stmt_->line : line;
+        fact.provenance.enclosing_callable_id = current_semantic_context_;
+        string defining_module = p_.main_module;
+        if (starts_with(current_semantic_context_, "fn:")) {
+          auto function = functions_.find(current_semantic_context_.substr(3));
+          if (function != functions_.end())
+            defining_module = function->second->defining_module;
+        } else if (starts_with(current_semantic_context_, "handler:")) {
+          const string identity = current_semantic_context_.substr(8);
+          const auto separator = identity.find('.');
+          auto domain = domains_.find(identity.substr(0, separator));
+          if (domain != domains_.end())
+            defining_module = domain->second->defining_module;
+        } else if (starts_with(current_semantic_context_, "method:")) {
+          const string identity = current_semantic_context_.substr(7);
+          const auto separator = identity.find('.');
+          auto object = objects_.find(identity.substr(0, separator));
+          if (object != objects_.end())
+            defining_module = object->second->defining_module;
+        }
+        fact.provenance.defining_module_id =
+            program_module_identity(p_, defining_module);
         fact.source_type = arg_type ? moss::Type::parse_canonical(canonical_type_name(*arg_type)).value_or(nullptr) : nullptr;
         fact.result_type = fact.source_type;
         fact.required_source_access = Effect::Read;
@@ -26464,9 +26757,12 @@ class Checker {
               visited_copies_in_current_stmt_.insert({handle.arena_index, *found_id});
               fact.est_arena_index = handle.arena_index;
               fact.copy_occurrence_id = *found_id;
+              fact.copy_occurrence_span = arena->span(*found_id);
               const auto* c = std::get_if<est::Call>(&arena->at(*found_id));
-              if (c && !c->arguments.empty())
+              if (c && !c->arguments.empty()) {
                 fact.source_occurrence_id = c->arguments.front();
+                fact.source_occurrence_span = arena->span(fact.source_occurrence_id);
+              }
               break;
             }
           }
@@ -26480,6 +26776,9 @@ class Checker {
         req.specialization_context = fact.specialization_context;
         req.specialization_identity = fact.specialization_identity;
         req.est_fact_context = fact.est_fact_context;
+        req.provenance = fact.provenance;
+        req.copy_occurrence_span = fact.copy_occurrence_span;
+        req.source_occurrence_span = fact.source_occurrence_span;
         req.source_type = fact.source_type;
         req.result_type = fact.result_type;
         req.required_source_access = fact.required_source_access;
@@ -26741,6 +27040,67 @@ class Checker {
     BodyTypeScope body_scope(current_body_types_,
         retained == checked_body_states_.end() ? nullptr : retained->second.get());
     if (current_body_types_) {
+      for (const auto& [statement, checked_fact] :
+           current_body_types_->collection_outcome_facts) {
+        (void)statement;
+        if (std::getenv("MOSS_EST_FACTS_DUMP"))
+          std::cerr << "MOSS_COLLECTION_OUTCOME_FACT operation="
+                    << static_cast<int>(checked_fact.operation)
+                    << " outcome=" << static_cast<int>(checked_fact.outcome)
+                    << " receiver="
+                    << std::quoted(checked_fact.receiver_binding_identity)
+                    << " definition="
+                    << std::quoted(checked_fact.fresh_empty_definition_identity)
+                    << " expr=" << checked_fact.operation_expression_occurrence_id
+                    << " span="
+                    << checked_fact.operation_occurrence_span.source_begin << ":"
+                    << checked_fact.operation_occurrence_span.source_end
+                    << " error="
+                    << std::quoted(checked_fact.error_type_identity + "." +
+                                   checked_fact.error_variant_identity)
+                    << " availability="
+                    << static_cast<int>(checked_fact.availability) << '\n';
+        TypedCollectionOutcomeFactV1 fact = checked_fact;
+        TypedCollectionOutcomeRequirementV1 requirement;
+        static_cast<TypedCollectionOutcomeFactV1&>(requirement) = checked_fact;
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_PERTURB_COLLECTION_OUTCOME_FACT"))
+          fact.fresh_empty_definition_identity += ":perturbed";
+        const bool drop_fact =
+            std::getenv("MOSS_TEST_DROP_COLLECTION_OUTCOME_FACT") != nullptr;
+        const bool duplicate_fact =
+            std::getenv("MOSS_TEST_DUPLICATE_COLLECTION_OUTCOME_FACT") != nullptr;
+        const bool drop_requirement =
+            std::getenv("MOSS_TEST_DROP_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+        const bool duplicate_requirement =
+            std::getenv("MOSS_TEST_DUPLICATE_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+        if (!drop_fact) {
+          collection_outcome_facts_.push_back(fact);
+          if (duplicate_fact)
+            collection_outcome_facts_.push_back(fact);
+        }
+        if (!drop_requirement) {
+          required_collection_outcome_occurrences_.push_back(requirement);
+          if (duplicate_requirement)
+            required_collection_outcome_occurrences_.push_back(requirement);
+        }
+#else
+        collection_outcome_facts_.push_back(std::move(fact));
+        required_collection_outcome_occurrences_.push_back(
+            std::move(requirement));
+#endif
+        if (!checked_fact.specialization_identity.empty()) {
+          const auto [identity, inserted] =
+              local_ownership_specialization_contexts_.emplace(
+                  checked_fact.specialization_context,
+                  checked_fact.specialization_identity);
+          if (!inserted && identity->second !=
+                  checked_fact.specialization_identity)
+            err(checked_fact.provenance.line,
+                "conflicting checked collection outcome specialization",
+                "MOSS_INTERNAL_INVARIANT");
+        }
+      }
       auto analysis = analyze_body_ownership_flow(
           statements, *current_body_types_, env.types, env.binding_identities,
           env.immutable_locals);
@@ -27730,6 +28090,28 @@ class Checker {
                   source_binding->second, unsupported);
             }
           }
+          const auto prior_borrow = env.borrowed_local_sources.find(s.a);
+          const bool replacing_borrowed_definition =
+              had_lexical_binding && !targets_state_field &&
+              !targets_object_field && !killed_definition_identity.empty() &&
+              prior_borrow != env.borrowed_local_sources.end() &&
+              !prior_borrow->second.empty();
+          const bool fresh_owned_rhs = source_type &&
+              transfer_type(*source_type) &&
+              !fileio_scoped_type(*source_type) &&
+              !storage_location(s.b, env.types);
+          if (replacing_borrowed_definition && fresh_owned_rhs) {
+            const auto retained_access = retain_local_ownership_fact(
+                s, statement_binding_identity(current_semantic_context_, s.line) +
+                       ":" + s.a,
+                {}, Effect::Read, target_binding_identity,
+                killed_definition_identity, {},
+                TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue);
+            if (!retained_access || *retained_access != Effect::Read)
+              err(s.line,
+                  "checker could not retain the required fresh-owned rebind fact",
+                  "MOSS_INTERNAL_INVARIANT");
+          }
           if (source_access == Effect::Consume) {
             if (local_source) {
               require_available(s.line, *local_source, env);
@@ -27900,7 +28282,7 @@ class Checker {
           if (type && fileio_scoped_type(*type))
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");
-          check_ownership_expression(s.line, s.a, env, Effect::Read);
+          check_ownership_expression(s.line, s.a, env, Effect::Consume);
           record_direct_raise();
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,

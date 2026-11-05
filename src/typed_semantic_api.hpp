@@ -75,7 +75,7 @@ struct TypedSpecializationV1 {
 // rebinding versions of one source name or the exact loop element binding.
 // Consumers must treat unavailable records as missing semantic authority.
 struct TypedLocalOwnershipFactV1 {
-  enum class SourceKind { LocalBinding, VectorElement };
+  enum class SourceKind { LocalBinding, VectorElement, FreshOwnedValue };
   enum class InferenceStatus { Inferred, Unsupported };
   enum class UnsupportedReason {
     None, ControlFlowJoin, LoopCarriedUse, AmbiguousUse, UnsupportedSource,
@@ -115,15 +115,26 @@ struct TypedLocalOwnershipFactV1 {
   // identity needed to locate its checker decision is present. Unsupported
   // inference and incomplete/contradictory records are never authority.
   bool is_authoritative() const noexcept {
-    return inference_status == InferenceStatus::Inferred &&
-        availability == Availability::Present &&
-        !definition_identity.empty() && !source_binding_identity.empty() &&
-        (source_kind != SourceKind::LocalBinding ||
-         !binding_identity.empty()) &&
-        !specialization_context.empty() &&
-        statement_occurrence_id != UINT32_MAX &&
-        est_arena_index != UINT32_MAX &&
-        expression_occurrence_id != UINT32_MAX;
+    if (inference_status != InferenceStatus::Inferred ||
+        availability != Availability::Present ||
+        definition_identity.empty() || specialization_context.empty() ||
+        statement_occurrence_id == UINT32_MAX ||
+        est_arena_index == UINT32_MAX ||
+        expression_occurrence_id == UINT32_MAX)
+      return false;
+    switch (source_kind) {
+      case SourceKind::LocalBinding:
+        return !binding_identity.empty() && !source_binding_identity.empty();
+      case SourceKind::VectorElement:
+        return !source_binding_identity.empty();
+      case SourceKind::FreshOwnedValue:
+        return !binding_identity.empty() && source_binding_identity.empty() &&
+            !killed_definition_identity.empty() &&
+            killed_definition_identity != definition_identity &&
+            join_definition_identity.empty() && access == Effect::Read &&
+            value_type && value_type->is_closed();
+    }
+    return false;
   }
 
   bool is_intentionally_unsupported() const noexcept {
@@ -154,6 +165,7 @@ struct TypedLocalOwnershipRequirementV1 {
   std::string killed_definition_identity;
   std::string join_definition_identity;
   std::string source_binding_identity;
+  TypeRef value_type;
   Effect access{Effect::Read};
   SourceKind source_kind{SourceKind::LocalBinding};
   InferenceStatus inference_status{InferenceStatus::Inferred};
@@ -387,6 +399,9 @@ struct TypedCopyFactV1 {
   std::string specialization_identity;
   std::string specialization_context;
   std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+  est::SourceSpan copy_occurrence_span;
+  est::SourceSpan source_occurrence_span;
   TypeRef source_type;
   TypeRef result_type;
   Effect required_source_access{Effect::Read};
@@ -401,6 +416,11 @@ struct TypedCopyFactV1 {
         statement_occurrence_id != UINT32_MAX &&
         !specialization_context.empty() &&
         !est_fact_context.empty() &&
+        !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty() &&
+        !provenance.enclosing_callable_id.empty() &&
+        copy_occurrence_span.source_end > copy_occurrence_span.source_begin &&
+        source_occurrence_span.source_end > source_occurrence_span.source_begin &&
         source_type && result_type &&
         source_type->structurally_equal(*result_type) &&
         required_source_access == Effect::Read &&
@@ -416,11 +436,90 @@ struct TypedCopyRequirementV1 {
   std::string specialization_identity;
   std::string specialization_context;
   std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+  est::SourceSpan copy_occurrence_span;
+  est::SourceSpan source_occurrence_span;
   TypeRef source_type;
   TypeRef result_type;
   Effect required_source_access{Effect::Read};
   bool creates_independent_owner{true};
 };
+
+// Exact checker proof that one fresh-empty collection operation cannot return
+// normally. This is not a generic default and does not authorize copying. The
+// Never result and Never collection payload are valid only with this fact.
+struct TypedCollectionOutcomeFactV1 {
+  enum class Operation { QueuePop, MapRemove };
+  enum class Outcome { AlwaysRaises };
+  enum class Availability {
+    Present, MissingOperationOccurrence, MissingStatementOccurrence,
+    MissingReceiverIdentity, MissingArgumentOccurrence, MissingType,
+    Contradictory
+  };
+  Operation operation{Operation::QueuePop};
+  Outcome outcome{Outcome::AlwaysRaises};
+  Availability availability{Availability::MissingOperationOccurrence};
+  std::uint32_t operation_est_arena_index{UINT32_MAX};
+  est::ExprId operation_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan operation_occurrence_span;
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  std::string fresh_empty_definition_identity;
+  TypeRef receiver_type;
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan argument_occurrence_span;
+  TypeRef argument_type;
+  TypeRef result_type;
+  std::string error_type_identity;
+  std::string error_variant_identity;
+
+  bool is_authoritative() const noexcept {
+    if (availability != Availability::Present ||
+        outcome != Outcome::AlwaysRaises ||
+        operation_est_arena_index == UINT32_MAX ||
+        operation_expression_occurrence_id == UINT32_MAX ||
+        statement_occurrence_id == UINT32_MAX ||
+        specialization_context.empty() || est_fact_context.empty() ||
+        provenance.source_file.empty() || provenance.line <= 0 ||
+        provenance.defining_module_id.empty() ||
+        provenance.enclosing_callable_id.empty() ||
+        operation_occurrence_span.source_end <=
+            operation_occurrence_span.source_begin ||
+        receiver_binding_identity.empty() ||
+        receiver_definition_identity.empty() ||
+        fresh_empty_definition_identity.empty() ||
+        receiver_definition_identity != fresh_empty_definition_identity ||
+        !receiver_type || !receiver_type->is_closed() ||
+        !result_type || result_type->kind != TypeKind::Never ||
+        error_type_identity != "std__CollectionError")
+      return false;
+    if (operation == Operation::QueuePop)
+      return error_variant_identity == "Empty" &&
+          receiver_type->kind == TypeKind::Builtin &&
+          receiver_type->name == "queue" &&
+          receiver_type->type_args.size() == 1 &&
+          receiver_type->type_args.front()->kind == TypeKind::Never &&
+          argument_expression_occurrence_id == UINT32_MAX &&
+          !argument_type;
+    if (operation != Operation::MapRemove) return false;
+    return error_variant_identity == "MissingKey" &&
+        receiver_type->kind == TypeKind::Builtin &&
+        receiver_type->name == "map" && receiver_type->type_args.size() == 2 &&
+        receiver_type->type_args[1]->kind == TypeKind::Never &&
+        argument_expression_occurrence_id != UINT32_MAX &&
+        argument_occurrence_span.source_end >
+            argument_occurrence_span.source_begin &&
+        argument_type && argument_type->is_closed() &&
+        receiver_type->type_args.front()->structurally_equal(*argument_type);
+  }
+};
+
+struct TypedCollectionOutcomeRequirementV1 : TypedCollectionOutcomeFactV1 {};
 
 enum class TypedMatchScrutineeKindV1 { Enum, Option };
 
@@ -629,6 +728,9 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedTakeRequirementV1> required_take_occurrences;
   std::vector<TypedCopyFactV1> copy_facts;
   std::vector<TypedCopyRequirementV1> required_copy_occurrences;
+  std::vector<TypedCollectionOutcomeFactV1> collection_outcome_facts;
+  std::vector<TypedCollectionOutcomeRequirementV1>
+      required_collection_outcome_occurrences;
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
@@ -687,6 +789,12 @@ struct TypedSemanticModuleV1 {
       (void)find_local_ownership_fact(*result);
     }
     return result;
+  }
+
+  static bool same_local_ownership_type(const TypeRef& left,
+                                        const TypeRef& right) {
+    return left && right ? left->structurally_equal(*right)
+                         : !left && !right;
   }
 
   void validate_loop_ownership_requirement_specialization(
@@ -842,6 +950,7 @@ struct TypedSemanticModuleV1 {
           candidate.killed_definition_identity == req.killed_definition_identity &&
           candidate.join_definition_identity == req.join_definition_identity &&
           candidate.source_binding_identity == req.source_binding_identity &&
+          same_local_ownership_type(candidate.value_type, req.value_type) &&
           candidate.access == req.access &&
           candidate.source_kind == req.source_kind &&
           candidate.inference_status == req.inference_status &&
@@ -875,6 +984,7 @@ struct TypedSemanticModuleV1 {
     if (!result)
       throw std::invalid_argument("required local ownership fact missing");
     if (result->access != req.access ||
+        !same_local_ownership_type(result->value_type, req.value_type) ||
         result->source_kind != req.source_kind ||
         result->inference_status != req.inference_status ||
         result->unsupported_reason != req.unsupported_reason ||
@@ -1030,6 +1140,20 @@ struct TypedSemanticModuleV1 {
     auto same_type = [](const TypeRef& left, const TypeRef& right) {
       return (left == right) || (left && right && left->structurally_equal(*right));
     };
+    auto same_span = [](const est::SourceSpan& left,
+                        const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                              const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file &&
+          left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
     const TypedCopyRequirementV1* required = nullptr;
     std::size_t matching_requirements = 0;
     for (const auto& candidate : required_copy_occurrences) {
@@ -1065,6 +1189,11 @@ struct TypedSemanticModuleV1 {
     if (result->source_occurrence_id != requirement.source_occurrence_id ||
         result->statement_occurrence_id != requirement.statement_occurrence_id ||
         result->est_fact_context != requirement.est_fact_context ||
+        !same_provenance(result->provenance, requirement.provenance) ||
+        !same_span(result->copy_occurrence_span,
+                   requirement.copy_occurrence_span) ||
+        !same_span(result->source_occurrence_span,
+                   requirement.source_occurrence_span) ||
         !same_type(result->source_type, requirement.source_type) ||
         !same_type(result->result_type, requirement.result_type) ||
         result->required_source_access != requirement.required_source_access ||
@@ -1105,6 +1234,120 @@ struct TypedSemanticModuleV1 {
     if (requirement.specialization_identity != specialization_identity)
       throw std::invalid_argument("checker copy requirement specialization mismatch");
     return requirement;
+  }
+
+  // Resolve the complete checker-declared copy authority set. This is the
+  // read-only query contract for artifact auditors: callers must serialize
+  // these returned checked facts, never discover copy() occurrences by
+  // scanning source or generated output. Each required occurrence is matched
+  // exactly once and any missing, duplicate, or contradictory row throws.
+  std::vector<const TypedCopyFactV1*> require_all_copy_facts() const {
+    std::vector<const TypedCopyFactV1*> result;
+    result.reserve(required_copy_occurrences.size());
+    for (const auto& requirement : required_copy_occurrences)
+      result.push_back(find_copy_fact(requirement));
+    return result;
+  }
+
+  const TypedCollectionOutcomeFactV1* find_collection_outcome_fact(
+      const TypedCollectionOutcomeRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return (left == right) || (left && right && left->structurally_equal(*right));
+    };
+    auto same_span = [](const est::SourceSpan& left,
+                        const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                              const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file && left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    auto same_fields = [&](const TypedCollectionOutcomeFactV1& left,
+                           const TypedCollectionOutcomeFactV1& right) {
+      return left.operation == right.operation && left.outcome == right.outcome &&
+          left.availability == right.availability &&
+          left.operation_est_arena_index == right.operation_est_arena_index &&
+          left.operation_expression_occurrence_id ==
+              right.operation_expression_occurrence_id &&
+          same_span(left.operation_occurrence_span,
+                    right.operation_occurrence_span) &&
+          left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_provenance(left.provenance, right.provenance) &&
+          left.receiver_binding_identity == right.receiver_binding_identity &&
+          left.receiver_definition_identity == right.receiver_definition_identity &&
+          left.fresh_empty_definition_identity ==
+              right.fresh_empty_definition_identity &&
+          same_type(left.receiver_type, right.receiver_type) &&
+          left.argument_expression_occurrence_id ==
+              right.argument_expression_occurrence_id &&
+          same_span(left.argument_occurrence_span, right.argument_occurrence_span) &&
+          same_type(left.argument_type, right.argument_type) &&
+          same_type(left.result_type, right.result_type) &&
+          left.error_type_identity == right.error_type_identity &&
+          left.error_variant_identity == right.error_variant_identity;
+    };
+    const TypedCollectionOutcomeRequirementV1* required = nullptr;
+    std::size_t matching_requirements = 0;
+    for (const auto& candidate : required_collection_outcome_occurrences) {
+      if (candidate.operation != requirement.operation ||
+          candidate.operation_est_arena_index !=
+              requirement.operation_est_arena_index ||
+          candidate.operation_expression_occurrence_id !=
+              requirement.operation_expression_occurrence_id ||
+          candidate.specialization_identity != requirement.specialization_identity ||
+          candidate.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_requirements;
+      required = &candidate;
+    }
+    if (matching_requirements != 1 || !required)
+      throw std::invalid_argument(matching_requirements
+          ? "duplicate or contradictory required collection outcome"
+          : "unknown required collection outcome occurrence");
+    const TypedCollectionOutcomeFactV1* result = nullptr;
+    std::size_t matching_facts = 0;
+    for (const auto& candidate : collection_outcome_facts) {
+      if (candidate.operation != requirement.operation ||
+          candidate.operation_est_arena_index !=
+              requirement.operation_est_arena_index ||
+          candidate.operation_expression_occurrence_id !=
+              requirement.operation_expression_occurrence_id ||
+          candidate.specialization_identity != requirement.specialization_identity ||
+          candidate.specialization_context != requirement.specialization_context)
+        continue;
+      ++matching_facts;
+      result = &candidate;
+    }
+    if (matching_facts != 1 || !result)
+      throw std::invalid_argument(matching_facts
+          ? "duplicate or contradictory checked collection outcome facts"
+          : "required checked collection outcome fact missing");
+    if (!same_fields(*required, requirement) ||
+        !same_fields(*result, requirement) || !result->is_authoritative())
+      throw std::invalid_argument(
+          "required checked collection outcome fact unavailable or contradictory");
+    return result;
+  }
+
+  std::vector<const TypedCollectionOutcomeFactV1*>
+  require_all_collection_outcome_facts() const {
+    if (collection_outcome_facts.size() !=
+        required_collection_outcome_occurrences.size())
+      throw std::invalid_argument(
+          "checked collection outcome fact/requirement set is incomplete");
+    std::vector<const TypedCollectionOutcomeFactV1*> result;
+    result.reserve(required_collection_outcome_occurrences.size());
+    for (const auto& requirement : required_collection_outcome_occurrences)
+      result.push_back(find_collection_outcome_fact(requirement));
+    return result;
   }
 
   const TypedMatchOwnershipFactV1* find_match_ownership_fact(

@@ -1,0 +1,5 @@
+type Invalid:
+  value: never
+
+fn main():
+  pass

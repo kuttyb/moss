@@ -38,6 +38,7 @@ static TypedLocalOwnershipFactV1 fact(
   result.killed_definition_identity = req.killed_definition_identity;
   result.join_definition_identity = req.join_definition_identity;
   result.source_binding_identity = req.source_binding_identity;
+  result.value_type = req.value_type;
   result.access = req.access;
   result.source_kind = req.source_kind;
   result.availability = req.availability;
@@ -96,6 +97,169 @@ static TypedLoopOwnershipFactV1 loop_fact(
 }
 
 int main() {
+  auto require_throw = [](auto&& operation) {
+    bool threw = false;
+    try { operation(); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
+  };
+  const auto never_type = Type::never();
+  assert(never_type->is_closed());
+  assert(never_type->kind == TypeKind::Never);
+  assert(never_type->to_canonical_string() == "never");
+  assert(never_type->stable_type_key() == Type::never()->stable_type_key());
+  TypedCopyRequirementV1 copy_req;
+  copy_req.est_arena_index = 2;
+  copy_req.copy_occurrence_id = 19;
+  copy_req.source_occurrence_id = 20;
+  copy_req.statement_occurrence_id = 7;
+  copy_req.specialization_identity = "spec:copy";
+  copy_req.specialization_context = "fn:copy";
+  copy_req.est_fact_context = "ctx:copy";
+  copy_req.provenance = {"fixture.moss", 8, "module:fixture", "fn:copy"};
+  copy_req.copy_occurrence_span = {8, 3, 1, 31, 38};
+  copy_req.source_occurrence_span = {8, 8, 1, 35, 36};
+  copy_req.source_type = Type::builtin("vector", {Type::primitive("int")});
+  copy_req.result_type = copy_req.source_type;
+  TypedCopyFactV1 copy_fact;
+  copy_fact.est_arena_index = copy_req.est_arena_index;
+  copy_fact.copy_occurrence_id = copy_req.copy_occurrence_id;
+  copy_fact.source_occurrence_id = copy_req.source_occurrence_id;
+  copy_fact.statement_occurrence_id = copy_req.statement_occurrence_id;
+  copy_fact.specialization_identity = copy_req.specialization_identity;
+  copy_fact.specialization_context = copy_req.specialization_context;
+  copy_fact.est_fact_context = copy_req.est_fact_context;
+  copy_fact.provenance = copy_req.provenance;
+  copy_fact.copy_occurrence_span = copy_req.copy_occurrence_span;
+  copy_fact.source_occurrence_span = copy_req.source_occurrence_span;
+  copy_fact.source_type = copy_req.source_type;
+  copy_fact.result_type = copy_req.result_type;
+  copy_fact.availability = TypedCopyFactV1::Availability::Present;
+  TypedSemanticModuleV1 copies;
+  copies.required_copy_occurrences = {copy_req};
+  copies.copy_facts = {copy_fact};
+  const auto resolved_copies = copies.require_all_copy_facts();
+  assert(resolved_copies.size() == 1 && resolved_copies.front()->is_authoritative());
+  auto missing_copy_authority = copies;
+  missing_copy_authority.copy_facts.clear();
+  require_throw([&] { missing_copy_authority.require_all_copy_facts(); });
+  auto duplicate_copy_authority = copies;
+  duplicate_copy_authority.copy_facts.push_back(copy_fact);
+  require_throw([&] { duplicate_copy_authority.require_all_copy_facts(); });
+  auto perturbed_copy_span = copies;
+  perturbed_copy_span.copy_facts.front().source_occurrence_span.source_begin++;
+  require_throw([&] { perturbed_copy_span.require_all_copy_facts(); });
+  auto incomplete_copy_set = copies;
+  incomplete_copy_set.required_copy_occurrences.push_back(copy_req);
+  require_throw([&] { incomplete_copy_set.require_all_copy_facts(); });
+
+  TypedCollectionOutcomeRequirementV1 queue_outcome;
+  queue_outcome.operation = TypedCollectionOutcomeFactV1::Operation::QueuePop;
+  queue_outcome.outcome = TypedCollectionOutcomeFactV1::Outcome::AlwaysRaises;
+  queue_outcome.availability = TypedCollectionOutcomeFactV1::Availability::Present;
+  queue_outcome.operation_est_arena_index = 4;
+  queue_outcome.operation_expression_occurrence_id = 28;
+  queue_outcome.operation_occurrence_span = {9, 7, 2, 46, 53};
+  queue_outcome.statement_occurrence_id = 12;
+  queue_outcome.specialization_identity = "spec:queue";
+  queue_outcome.specialization_context = "fn:queue";
+  queue_outcome.est_fact_context = "ctx:queue";
+  queue_outcome.provenance = {"fixture.moss", 9, "module:fixture", "fn:queue"};
+  queue_outcome.receiver_binding_identity = "binding:q";
+  queue_outcome.receiver_definition_identity = "definition:q:fresh";
+  queue_outcome.fresh_empty_definition_identity = "definition:q:fresh";
+  queue_outcome.receiver_type = Type::builtin("queue", {Type::never()});
+  queue_outcome.result_type = Type::never();
+  queue_outcome.error_type_identity = "std__CollectionError";
+  queue_outcome.error_variant_identity = "Empty";
+  TypedSemanticModuleV1 collection_outcomes;
+  collection_outcomes.required_collection_outcome_occurrences = {queue_outcome};
+  collection_outcomes.collection_outcome_facts = {queue_outcome};
+  const auto resolved_outcomes =
+      collection_outcomes.require_all_collection_outcome_facts();
+  assert(resolved_outcomes.size() == 1 &&
+         resolved_outcomes.front()->is_authoritative());
+  auto missing_outcome = collection_outcomes;
+  missing_outcome.collection_outcome_facts.clear();
+  require_throw([&] { missing_outcome.require_all_collection_outcome_facts(); });
+  auto missing_outcome_requirement = collection_outcomes;
+  missing_outcome_requirement.required_collection_outcome_occurrences.clear();
+  require_throw([&] {
+    missing_outcome_requirement.require_all_collection_outcome_facts();
+  });
+  auto duplicate_outcome_fact = collection_outcomes;
+  duplicate_outcome_fact.collection_outcome_facts.push_back(queue_outcome);
+  require_throw([&] {
+    duplicate_outcome_fact.require_all_collection_outcome_facts();
+  });
+  auto duplicate_outcome_requirement = collection_outcomes;
+  duplicate_outcome_requirement.required_collection_outcome_occurrences
+      .push_back(queue_outcome);
+  require_throw([&] {
+    duplicate_outcome_requirement.require_all_collection_outcome_facts();
+  });
+  auto perturbed_empty_definition = collection_outcomes;
+  perturbed_empty_definition.collection_outcome_facts.front()
+      .fresh_empty_definition_identity += ":other";
+  require_throw([&] {
+    perturbed_empty_definition.require_all_collection_outcome_facts();
+  });
+  auto perturbed_collection_error = collection_outcomes;
+  perturbed_collection_error.collection_outcome_facts.front()
+      .error_variant_identity = "MissingKey";
+  require_throw([&] {
+    perturbed_collection_error.require_all_collection_outcome_facts();
+  });
+  auto perturbed_collection_type = collection_outcomes;
+  perturbed_collection_type.collection_outcome_facts.front().receiver_type =
+      Type::builtin("queue", {Type::primitive("int")});
+  require_throw([&] {
+    perturbed_collection_type.require_all_collection_outcome_facts();
+  });
+  auto forged_collection_outcome = collection_outcomes;
+  forged_collection_outcome.collection_outcome_facts.front().outcome =
+      static_cast<TypedCollectionOutcomeFactV1::Outcome>(99);
+  forged_collection_outcome.required_collection_outcome_occurrences.front().outcome =
+      static_cast<TypedCollectionOutcomeFactV1::Outcome>(99);
+  require_throw([&] {
+    forged_collection_outcome.require_all_collection_outcome_facts();
+  });
+  auto forged_collection_operation = collection_outcomes;
+  forged_collection_operation.collection_outcome_facts.front().operation =
+      static_cast<TypedCollectionOutcomeFactV1::Operation>(99);
+  forged_collection_operation.required_collection_outcome_occurrences.front().operation =
+      static_cast<TypedCollectionOutcomeFactV1::Operation>(99);
+  require_throw([&] {
+    forged_collection_operation.require_all_collection_outcome_facts();
+  });
+
+  auto map_outcome = queue_outcome;
+  map_outcome.operation = TypedCollectionOutcomeFactV1::Operation::MapRemove;
+  map_outcome.operation_expression_occurrence_id = 35;
+  map_outcome.operation_occurrence_span = {10, 7, 2, 54, 74};
+  map_outcome.statement_occurrence_id = 13;
+  map_outcome.specialization_identity = "spec:map";
+  map_outcome.specialization_context = "fn:map";
+  map_outcome.est_fact_context = "ctx:map";
+  map_outcome.provenance.line = 10;
+  map_outcome.receiver_binding_identity = "binding:m";
+  map_outcome.receiver_definition_identity = "definition:m:fresh";
+  map_outcome.fresh_empty_definition_identity = "definition:m:fresh";
+  map_outcome.receiver_type = Type::builtin(
+      "map", {Type::primitive("string"), Type::never()});
+  map_outcome.argument_expression_occurrence_id = 36;
+  map_outcome.argument_occurrence_span = {10, 16, 2, 63, 71};
+  map_outcome.argument_type = Type::primitive("string");
+  map_outcome.error_variant_identity = "MissingKey";
+  TypedSemanticModuleV1 map_outcomes;
+  map_outcomes.required_collection_outcome_occurrences = {map_outcome};
+  map_outcomes.collection_outcome_facts = {map_outcome};
+  assert(map_outcomes.require_all_collection_outcome_facts().front()
+             ->operation == TypedCollectionOutcomeFactV1::Operation::MapRemove);
+  auto missing_map_argument = map_outcomes;
+  missing_map_argument.collection_outcome_facts.front()
+      .argument_expression_occurrence_id = UINT32_MAX;
+  require_throw([&] { missing_map_argument.require_all_collection_outcome_facts(); });
+
   const auto first = requirement("fn:inspect<First>", "spec:first", "fn:inspect@8:alias");
   const auto second = requirement("fn:inspect<Second>", "spec:second", "fn:inspect@8:alias");
   TypedSemanticModuleV1 module;
@@ -130,11 +294,74 @@ int main() {
   assert(module.find_local_ownership_fact(*second_req).specialization_identity ==
          "spec:second");
 
-  auto require_throw = [](auto&& operation) {
-    bool threw = false;
-    try { operation(); } catch (const std::invalid_argument&) { threw = true; }
-    assert(threw);
-  };
+  auto fresh_req = requirement("fn:inspect<Rebind>", "spec:rebind",
+                               "definition:new");
+  fresh_req.definition_identity = "definition:new";
+  fresh_req.binding_identity = "binding:inspect:alias";
+  fresh_req.killed_definition_identity = "definition:borrowed";
+  fresh_req.join_definition_identity.clear();
+  fresh_req.source_binding_identity.clear();
+  fresh_req.source_kind =
+      TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue;
+  fresh_req.access = Effect::Read;
+  fresh_req.value_type = Type::builtin("vector", {Type::primitive("int")});
+  auto fresh_value_fact = fact(fresh_req);
+  TypedSemanticModuleV1 fresh_module;
+  fresh_module.required_local_ownership_occurrences = {fresh_req};
+  fresh_module.local_ownership_facts = {fresh_value_fact};
+  fresh_module.local_ownership_specialization_contexts = {
+      {fresh_req.specialization_context, fresh_req.specialization_identity}};
+  fresh_module.specializations.emplace(fresh_req.specialization_identity,
+                                       TypedSpecializationV1{});
+  const auto* fresh_found = fresh_module.find_local_ownership_requirement(
+      fresh_req.est_arena_index, fresh_req.expression_occurrence_id,
+      fresh_req.specialization_context);
+  assert(fresh_found);
+  const auto& fresh_checked =
+      fresh_module.find_local_ownership_fact(*fresh_found);
+  assert(fresh_checked.is_authoritative());
+  assert(fresh_checked.source_kind ==
+         TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue);
+  assert(fresh_checked.source_binding_identity.empty());
+  assert(fresh_checked.killed_definition_identity == "definition:borrowed");
+
+  auto dropped_fresh_requirement = fresh_module;
+  dropped_fresh_requirement.required_local_ownership_occurrences.clear();
+  require_throw([&] {
+    dropped_fresh_requirement.find_local_ownership_fact(fresh_req);
+  });
+  auto dropped_fresh_fact = fresh_module;
+  dropped_fresh_fact.local_ownership_facts.clear();
+  require_throw([&] {
+    dropped_fresh_fact.find_local_ownership_fact(fresh_req);
+  });
+  auto duplicate_fresh_fact = fresh_module;
+  duplicate_fresh_fact.local_ownership_facts.push_back(fresh_value_fact);
+  require_throw([&] {
+    duplicate_fresh_fact.find_local_ownership_fact(fresh_req);
+  });
+  auto perturbed_fresh_kill = fresh_module;
+  perturbed_fresh_kill.local_ownership_facts[0]
+      .killed_definition_identity = "definition:other";
+  require_throw([&] {
+    perturbed_fresh_kill.find_local_ownership_fact(fresh_req);
+  });
+  auto perturbed_fresh_type = fresh_module;
+  perturbed_fresh_type.local_ownership_facts[0].value_type =
+      Type::builtin("vector", {Type::primitive("string")});
+  require_throw([&] {
+    perturbed_fresh_type.find_local_ownership_fact(fresh_req);
+  });
+  auto source_forged_fresh_fact = fresh_module;
+  source_forged_fresh_fact.local_ownership_facts[0]
+      .source_binding_identity = "binding:invented";
+  require_throw([&] {
+    source_forged_fresh_fact.find_local_ownership_fact(fresh_req);
+  });
+  auto untyped_fresh_fact = fresh_value_fact;
+  untyped_fresh_fact.value_type.reset();
+  assert(!untyped_fresh_fact.is_authoritative());
+
   auto missing = module;
   missing.local_ownership_facts.erase(missing.local_ownership_facts.begin());
   require_throw([&] { missing.find_local_ownership_fact(*first_req); });
