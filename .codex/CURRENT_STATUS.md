@@ -15580,3 +15580,27 @@ untouched.
   independent Agent 2 GO. The scoped branch was pushed and
   `git ls-remote origin refs/heads/phase28-r7-009-equivalence` verified the
   same SHA. No merge to `phase28-work` or `main`.
+
+### R7-010 Team A Echo authority follow-up (local, review pending)
+
+- Follow-up is on separate branch `phase28-r7-010-team-a-echo-authority` from
+  approved Team A SHA `82a34b299bf4596ab7f63a278869e10ceae26ee5`; the pushed
+  Team A delivery remains unchanged.
+- Added checker-owned `TypedEchoArgumentFactV1` and requirement API for every
+  Echo argument, keyed by exact statement/argument/EST/context identity. Direct
+  Vector-index display facts carry checked receiver/element TypeRefs, READ
+  access, non-escaping display semantics, and no copy permission. Test-build
+  drop/perturb hooks are `MOSS_TEST_DROP_ECHO_ARGUMENT_FACT` and
+  `MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT`.
+- Checker gate: `python3
+  tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes exact
+  requirement resolution and proves drop/perturb fail closed. Dev build and
+  local ownership, W12, R7-006, feedback validator, and diff check pass; opt
+  build and baseline checker probe pass. L7 owns `tests/run.sh` registration;
+  Team B consumer integration is pending import of this checker API.
+- A separate Team B root-ingress issue was assessed: no exact message argument
+  fact currently exists, and a READ borrow cannot cross `runtime_invoke`'s
+  `Send + 'static` thunk. L7 is tracking the conflict with the existing
+  borrowed-read fixture separately; no root-ingress authority was added here.
+- Next: freeze the checker API for independent review, then hand the exact
+  reviewed SHA to Team B. No push or merge yet.

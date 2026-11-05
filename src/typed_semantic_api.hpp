@@ -422,6 +422,108 @@ struct TypedCopyRequirementV1 {
   bool creates_independent_owner{true};
 };
 
+enum class TypedEchoArgumentModeV1 {
+  ExpressionValue, BorrowedVectorElement
+};
+
+struct TypedEchoArgumentFactV1 {
+  enum class Availability {
+    Present, MissingStatementOccurrence, MissingArgumentOccurrence,
+    MissingEstFactContext, MissingReceiverType, MissingElementType,
+    Contradictory
+  };
+  std::uint32_t echo_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  est::ExprId indexed_expression_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_occurrence_id{UINT32_MAX};
+  est::ExprId selector_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef argument_type;
+  TypeRef receiver_type;
+  TypeRef element_type;
+  TypedEchoArgumentModeV1 mode{TypedEchoArgumentModeV1::ExpressionValue};
+  Effect required_access{Effect::Read};
+  bool display_result_non_escaping{false};
+  bool permits_copy{false};
+  Availability availability{Availability::MissingArgumentOccurrence};
+
+  bool is_authoritative() const noexcept {
+    if (availability != Availability::Present ||
+        echo_statement_occurrence_id == UINT32_MAX ||
+        argument_index == UINT32_MAX || est_arena_index == UINT32_MAX ||
+        argument_expression_occurrence_id == UINT32_MAX ||
+        est_fact_context.empty() || required_access != Effect::Read ||
+        !display_result_non_escaping || permits_copy)
+      return false;
+    if (mode == TypedEchoArgumentModeV1::ExpressionValue)
+      return indexed_expression_occurrence_id == UINT32_MAX &&
+          receiver_occurrence_id == UINT32_MAX &&
+          selector_occurrence_id == UINT32_MAX && !receiver_type &&
+          !element_type;
+    if (mode != TypedEchoArgumentModeV1::BorrowedVectorElement ||
+        indexed_expression_occurrence_id == UINT32_MAX ||
+        receiver_occurrence_id == UINT32_MAX ||
+        selector_occurrence_id == UINT32_MAX || !argument_type ||
+        !receiver_type || !element_type ||
+        !argument_type->structurally_equal(*element_type) ||
+        receiver_type->kind != TypeKind::Builtin ||
+        receiver_type->name != "vector" ||
+        receiver_type->type_args.size() != 1 ||
+        !receiver_type->type_args.front())
+      return false;
+    return receiver_type->type_args.front()->structurally_equal(*element_type);
+  }
+};
+
+struct TypedEchoArgumentRequirementV1 {
+  std::uint32_t echo_statement_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  est::ExprId indexed_expression_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_occurrence_id{UINT32_MAX};
+  est::ExprId selector_occurrence_id{UINT32_MAX};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef argument_type;
+  TypeRef receiver_type;
+  TypeRef element_type;
+  TypedEchoArgumentModeV1 mode{TypedEchoArgumentModeV1::ExpressionValue};
+  Effect required_access{Effect::Read};
+  bool display_result_non_escaping{false};
+  bool permits_copy{false};
+
+  bool is_complete() const noexcept {
+    if (echo_statement_occurrence_id == UINT32_MAX ||
+        argument_index == UINT32_MAX || est_arena_index == UINT32_MAX ||
+        argument_expression_occurrence_id == UINT32_MAX ||
+        est_fact_context.empty() || required_access != Effect::Read ||
+        !display_result_non_escaping || permits_copy)
+      return false;
+    if (mode == TypedEchoArgumentModeV1::ExpressionValue)
+      return indexed_expression_occurrence_id == UINT32_MAX &&
+          receiver_occurrence_id == UINT32_MAX &&
+          selector_occurrence_id == UINT32_MAX && !receiver_type &&
+          !element_type;
+    return mode == TypedEchoArgumentModeV1::BorrowedVectorElement &&
+        indexed_expression_occurrence_id != UINT32_MAX &&
+        receiver_occurrence_id != UINT32_MAX &&
+        selector_occurrence_id != UINT32_MAX && argument_type &&
+        receiver_type && element_type &&
+        argument_type->structurally_equal(*element_type) &&
+        receiver_type->kind == TypeKind::Builtin &&
+        receiver_type->name == "vector" &&
+        receiver_type->type_args.size() == 1 &&
+        receiver_type->type_args.front() &&
+        receiver_type->type_args.front()->structurally_equal(*element_type);
+  }
+};
+
 enum class TypedMatchScrutineeKindV1 { Enum, Option };
 
 struct TypedMatchArmFactV1 {
@@ -631,6 +733,9 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedCopyRequirementV1> required_copy_occurrences;
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
+  std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
+  std::vector<TypedEchoArgumentRequirementV1>
+      required_echo_argument_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -638,6 +743,98 @@ struct TypedSemanticModuleV1 {
   // False until A2 emits all reachable open summaries directly from solver
   // terms. ABI consumers must call require_complete_open_summaries().
   bool open_summaries_complete{true};
+
+  const TypedEchoArgumentRequirementV1& find_echo_argument_requirement(
+      std::uint32_t arena_index, est::ExprId argument_occurrence,
+      std::uint32_t argument_index,
+      const std::string& specialization_context) const {
+    const TypedEchoArgumentRequirementV1* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& requirement : required_echo_argument_occurrences) {
+      if (requirement.est_arena_index != arena_index ||
+          requirement.argument_expression_occurrence_id !=
+              argument_occurrence ||
+          requirement.argument_index != argument_index ||
+          requirement.specialization_context != specialization_context)
+        continue;
+      ++matches;
+      result = &requirement;
+    }
+    if (matches != 1 || !result)
+      throw std::invalid_argument(matches
+          ? "duplicate or contradictory required Echo argument identity"
+          : "required Echo argument occurrence missing");
+    if (!result->is_complete())
+      throw std::invalid_argument("required Echo argument is incomplete");
+    return *result;
+  }
+
+  const TypedEchoArgumentFactV1& find_echo_argument_fact(
+      const TypedEchoArgumentRequirementV1& requirement) const {
+    const auto& retained = find_echo_argument_requirement(
+        requirement.est_arena_index,
+        requirement.argument_expression_occurrence_id,
+        requirement.argument_index, requirement.specialization_context);
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return (left == right) ||
+          (left && right && left->structurally_equal(*right));
+    };
+    if (retained.echo_statement_occurrence_id !=
+            requirement.echo_statement_occurrence_id ||
+        retained.indexed_expression_occurrence_id !=
+            requirement.indexed_expression_occurrence_id ||
+        retained.receiver_occurrence_id != requirement.receiver_occurrence_id ||
+        retained.selector_occurrence_id != requirement.selector_occurrence_id ||
+        retained.specialization_identity != requirement.specialization_identity ||
+        retained.est_fact_context != requirement.est_fact_context ||
+        !same_type(retained.argument_type, requirement.argument_type) ||
+        !same_type(retained.receiver_type, requirement.receiver_type) ||
+        !same_type(retained.element_type, requirement.element_type) ||
+        retained.mode != requirement.mode ||
+        retained.required_access != requirement.required_access ||
+        retained.display_result_non_escaping !=
+            requirement.display_result_non_escaping ||
+        retained.permits_copy != requirement.permits_copy)
+      throw std::invalid_argument(
+          "unknown or contradictory required Echo argument");
+
+    const TypedEchoArgumentFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& fact : echo_argument_facts) {
+      if (fact.echo_statement_occurrence_id !=
+              requirement.echo_statement_occurrence_id ||
+          fact.argument_index != requirement.argument_index ||
+          fact.est_arena_index != requirement.est_arena_index ||
+          fact.argument_expression_occurrence_id !=
+              requirement.argument_expression_occurrence_id ||
+          fact.specialization_context != requirement.specialization_context)
+        continue;
+      ++fact_matches;
+      result = &fact;
+    }
+    if (fact_matches != 1 || !result)
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory checked Echo argument facts"
+          : "required checked Echo argument fact missing");
+    if (!result->is_authoritative() ||
+        result->indexed_expression_occurrence_id !=
+            requirement.indexed_expression_occurrence_id ||
+        result->receiver_occurrence_id != requirement.receiver_occurrence_id ||
+        result->selector_occurrence_id != requirement.selector_occurrence_id ||
+        result->specialization_identity != requirement.specialization_identity ||
+        result->est_fact_context != requirement.est_fact_context ||
+        !same_type(result->argument_type, requirement.argument_type) ||
+        !same_type(result->receiver_type, requirement.receiver_type) ||
+        !same_type(result->element_type, requirement.element_type) ||
+        result->mode != requirement.mode ||
+        result->required_access != requirement.required_access ||
+        result->display_result_non_escaping !=
+            requirement.display_result_non_escaping ||
+        result->permits_copy != requirement.permits_copy)
+      throw std::invalid_argument(
+          "required checked Echo argument fact missing or contradictory");
+    return *result;
+  }
 
   const std::string& local_ownership_specialization_identity(
       const std::string& consumer_context) const {
