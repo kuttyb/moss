@@ -15725,3 +15725,29 @@ untouched.
   exact fixing hunk is not yet isolated. Team B v3 raw-Rust builder checkpoint
   `ed85390c` is imported provisionally into L7; its standalone builder tests
   have not yet been run in L7.
+- L7 now has uncommitted `src/moss.cpp` v3 sidecar wiring for standalone
+  compiler outputs and single-source legacy project artifacts. The L7 compiler
+  builds. It serializes exact `require_all_copy_facts()` rows, groups facts by
+  lexical occurrence, and calls the raw-Rust v3 builder; cache hits require a
+  sidecar. Multi-source and explicit-module artifacts intentionally have no
+  v3 sidecar yet, so oracle validation remains blocked for those layouts.
+- Real `oracle_10a_explicit_copy_only.moss` artifact generation now emits a v3
+  sidecar, but the independent harness rejects it because the producer spans
+  `.clone(` (7 bytes) while the scanner records the complete `.clone()` call
+  (8 bytes). Team B is fixing the span boundary.
+- Independent raw-artifact review found 8 clone sites in ORACLE-10A: two in
+  the explicit-copy expression (a pre-helper indexed-element clone plus the
+  fact-specific helper clone, i.e. duplicate materialization), and six
+  runtime/framework sites (`Arc` worker references, executor `Vec`/config,
+  and an Arc-backed branch scope). None of the six has an allowlist entry.
+  Team B owns removal of the duplicate clone; runtime sites remain unclassified
+  pending exact evidence and independent review/L7 authorization.
+- L7's integrated Team B checkpoint passes the Map.get write-through,
+  Match WRITE, nested-copy authority, collection-outcome, native join-slot,
+  and v3 builder gates. `make moss` passes. The borrowed-read composite gate
+  remains blocked by the A checker regression until its repaired candidate is
+  independently approved and imported.
+- Team A candidate `9a46ff3725926f25f3f09cdee101382157441c12` received
+  independent NO-GO: Option/Resource indexed aliases (`value = values[0];
+  reply value`) bypass the direct reply guard. Team A has been assigned a
+  checker-only origin/alias repair plus focused regressions; no push.

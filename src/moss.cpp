@@ -60,6 +60,7 @@
 #include "functional_optimizer_support.hpp"
 #include "native_generator.hpp"
 #include "native_generator_support.hpp"
+#include "native_clone_provenance.hpp"
 #include "functional_source_pipeline.hpp"
 #include "semantic_checker.hpp"
 #include "semantic_checker_support.hpp"
@@ -22953,6 +22954,7 @@ static vector<std::filesystem::path> write_module_interfaces(
 
 struct NativeArtifact {
   std::filesystem::path rust;
+  std::filesystem::path clone_provenance;
   std::filesystem::path debug_map;
   std::filesystem::path executable;
   std::filesystem::path cache_metadata;
@@ -22966,6 +22968,112 @@ struct NativeArtifact {
   bool semantic_analysis_reused = false;
   bool generated_rust_rewritten = false;
 };
+
+static string native_clone_provenance_v3_json(
+    const Program& program, const std::filesystem::path& source_file,
+    std::string_view rust_bytes, bool optimized) {
+  if (!program.typed_semantics)
+    throw ProjectError("MOSS_INTERNAL_INVARIANT",
+        "native clone provenance requires checker-owned copy facts",
+        source_file.string());
+  const string normalized_source = normalized_source_path(source_file.string());
+  if (normalized_source.empty())
+    throw ProjectError("MOSS_INTERNAL_INVARIANT",
+        "cannot normalize clone provenance source path",
+        source_file.string());
+  std::ifstream source_input(normalized_source, std::ios::binary);
+  if (!source_input)
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+        "cannot read clone provenance source bytes", normalized_source);
+  const string source_bytes((std::istreambuf_iterator<char>(source_input)),
+                            std::istreambuf_iterator<char>());
+
+  std::map<string, NativeCloneSourceCopyV3> source_rows;
+  std::map<string, NativeCloneCheckedCopyFactV3> fact_groups;
+  for (const auto* fact : program.typed_semantics->require_all_copy_facts()) {
+    if (!fact)
+      throw ProjectError("MOSS_INTERNAL_INVARIANT",
+          "checker returned a null explicit-copy fact", normalized_source);
+    if (normalized_source_path(fact->provenance.source_file) != normalized_source)
+      continue;
+    NativeCheckedCopyFactV1 native_fact;
+    try {
+      native_fact = native_checked_copy_fact_from_typed(*fact, source_bytes);
+    } catch (const std::exception& error) {
+      throw ProjectError("MOSS_INTERNAL_INVARIANT",
+          string("cannot serialize checked copy fact: ") + error.what(),
+          normalized_source, fact->provenance.line);
+    }
+    const string copy_id = native_clone_source_copy_id(
+        native_fact.copy_occurrence_span);
+    auto source = source_rows.find(copy_id);
+    if (source == source_rows.end()) {
+      NativeCloneSourceCopyV3 row;
+      row.copy_id = copy_id;
+      row.source_span = native_fact.copy_occurrence_span;
+      source = source_rows.emplace(copy_id, std::move(row)).first;
+    } else {
+      const auto& prior = source->second.source_span;
+      const auto& current = native_fact.copy_occurrence_span;
+      if (prior.start_line != current.start_line ||
+          prior.start_column != current.start_column ||
+          prior.end_line != current.end_line ||
+          prior.end_column != current.end_column ||
+          prior.source_begin != current.source_begin ||
+          prior.source_end != current.source_end)
+        throw ProjectError("MOSS_INTERNAL_INVARIANT",
+            "checked copy facts disagree on their lexical source span",
+            normalized_source, fact->provenance.line);
+    }
+    auto& group = fact_groups[copy_id];
+    group.copy_id = copy_id;
+    group.facts.push_back(std::move(native_fact));
+  }
+
+  vector<NativeCloneSourceCopyV3> lexical_copies;
+  lexical_copies.reserve(source_rows.size());
+  for (auto& entry : source_rows)
+    lexical_copies.push_back(std::move(entry.second));
+  vector<NativeCloneCheckedCopyFactV3> exact_fact_groups;
+  exact_fact_groups.reserve(fact_groups.size());
+  for (auto& entry : fact_groups)
+    exact_fact_groups.push_back(std::move(entry.second));
+
+  NativeCloneProvenanceV3 manifest = build_native_clone_provenance_v3(
+      optimized ? "optimized" : "debug", rust_bytes, source_bytes,
+      std::move(lexical_copies), std::move(exact_fact_groups));
+  std::ostringstream output;
+  write_native_clone_provenance_v3(
+      output, rust_bytes, source_bytes, manifest);
+  return output.str();
+}
+
+static bool update_native_clone_provenance_v3(
+    const Program& program, const std::filesystem::path& rust_file,
+    const std::filesystem::path& source_file, std::string_view rust_bytes,
+    bool optimized) {
+  const auto sidecar = std::filesystem::path(rust_file.string() +
+                                              ".mossclone.json");
+  const string contents = native_clone_provenance_v3_json(
+      program, source_file, rust_bytes, optimized);
+  std::ifstream prior(sidecar, std::ios::binary);
+  if (prior) {
+    std::ostringstream bytes;
+    bytes << prior.rdbuf();
+    if (bytes.str() == contents) return false;
+  }
+  std::ofstream output(sidecar, std::ios::binary);
+  if (!output)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+        "cannot write clone provenance sidecar '" + sidecar.string() + "'",
+        source_file.string());
+  output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+  if (!output)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+        "cannot finish clone provenance sidecar '" + sidecar.string() + "'",
+        source_file.string());
+  return true;
+}
 
 static string artifact_stem(const ProjectManifest& manifest,
                             const std::filesystem::path& source) {
@@ -22999,6 +23107,8 @@ static NativeArtifact compile_native_artifact(
   const bool cargo_driver = cargo_driver_setting &&
       string(cargo_driver_setting) == "1";
   artifact.rust = directory / (stem + ".rs");
+  artifact.clone_provenance = std::filesystem::path(
+      artifact.rust.string() + ".mossclone.json");
   artifact.debug_map = directory / (stem + ".mossmap");
   artifact.executable = directory / stem;
   artifact.cache_metadata = directory / (stem + ".mossbuild");
@@ -23144,6 +23254,8 @@ static NativeArtifact compile_native_artifact(
       mode == ProgramGenerationMode::Application && early_cache &&
       early_cache_stream.str() == cache_text &&
       std::filesystem::is_regular_file(artifact.rust) &&
+      (sources.size() != 1 ||
+       std::filesystem::is_regular_file(artifact.clone_provenance)) &&
       std::filesystem::is_regular_file(artifact.debug_map) &&
       std::filesystem::is_regular_file(artifact.executable) &&
       artifact.module_rlibs.size() == artifact.module_interfaces.size()) {
@@ -23358,7 +23470,17 @@ static NativeArtifact compile_native_artifact(
             std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
       }
       rust_changed = update_file(rust_file, generated) || rust_changed;
-      if (module == root_module) artifact.rust = rust_file;
+      error.clear();
+      std::filesystem::remove(std::filesystem::path(
+          rust_file.string() + ".mossclone.json"), error);
+      if (error)
+        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+            "cannot remove unsupported module clone provenance sidecar: " +
+                error.message(), rust_file.string());
+      if (module == root_module) {
+        artifact.rust = rust_file;
+        artifact.clone_provenance.clear();
+      }
     }
   if (!cargo_driver) for (const auto& external : unit.program.external_modules) {
       // Pair native code with the exact .mossi interface selected during
@@ -23383,6 +23505,20 @@ static NativeArtifact compile_native_artifact(
   } else {
     rust_changed = update_file(artifact.rust, unit.rust);
     root_module = manifest.name;
+    if (sources.size() == 1) {
+      artifact.clone_provenance = std::filesystem::path(
+          artifact.rust.string() + ".mossclone.json");
+      (void)update_native_clone_provenance_v3(
+          unit.program, artifact.rust, sources.front(), unit.rust, optimized);
+    } else {
+      error.clear();
+      std::filesystem::remove(artifact.clone_provenance, error);
+      if (error)
+        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+            "cannot remove unsupported multi-source clone provenance sidecar: " +
+                error.message(), artifact.clone_provenance.string());
+      artifact.clone_provenance.clear();
+    }
   }
   artifact.generated_rust_rewritten = rust_changed;
 
@@ -23853,6 +23989,10 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
     write_debug_json_string(std::cout, artifact.executable.string());
     std::cout << ", \"generated_rust\": ";
     write_debug_json_string(std::cout, artifact.rust.string());
+    std::cout << ", \"clone_provenance\": ";
+    if (artifact.clone_provenance.empty()) std::cout << "null";
+    else write_debug_json_string(std::cout,
+                                 artifact.clone_provenance.string());
     std::cout << ", \"debug_map\": ";
     write_debug_json_string(std::cout, artifact.debug_map.string());
     std::cout << ", \"module_interfaces\": [";
@@ -28173,10 +28313,25 @@ int main(int argc, char** argv) {
         : std::filesystem::absolute(native_output).lexically_normal().string();
 
     string rust = moss::generate_native(program, plan, debug_build);
+    const string clone_provenance = moss::native_clone_provenance_v3_json(
+        program, absolute_input, rust, optimize_shared_memory);
     std::ofstream out(output);
     if (!out) { std::cerr << "moss: cannot write " << output << "\n"; return 1; }
     out << rust;
     out.close();
+    const string clone_provenance_path = absolute_output + ".mossclone.json";
+    std::ofstream provenance_out(clone_provenance_path, std::ios::binary);
+    if (!provenance_out) {
+      std::cerr << "moss: cannot write " << clone_provenance_path << "\n";
+      return 1;
+    }
+    provenance_out.write(clone_provenance.data(),
+        static_cast<std::streamsize>(clone_provenance.size()));
+    provenance_out.close();
+    if (!provenance_out) {
+      std::cerr << "moss: cannot finish " << clone_provenance_path << "\n";
+      return 1;
+    }
     std::ofstream map_out(debug_map_output);
     if (!map_out) {
       std::cerr << "moss: cannot write " << debug_map_output << "\n";
@@ -28188,6 +28343,7 @@ int main(int argc, char** argv) {
                               absolute_native, debug_build,
                               optimize_shared_memory));
     std::cout << "generated " << output << "\n";
+    std::cout << "generated " << clone_provenance_path << "\n";
     std::cout << "generated " << debug_map_output << "\n";
     return 0;
   } catch (const moss::CompileError& e) {
