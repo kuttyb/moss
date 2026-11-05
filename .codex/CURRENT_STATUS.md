@@ -17120,6 +17120,18 @@ untouched.
   and a required exact row for every applicable whole-local assignment, with
   unsupported outcomes explicit. L7/native production fail-closed status stays
   open until this reviewed contract is integrated.
+- Interim frozen-v2 oracle run against combined compiler source at L7 commit
+  `b2dddb80` (the following commit only updates this status): **19/60** passed
+  all applicable gates; **60/60** semantic expectations passed; **41/60** failed
+  only clone provenance. No Fast Debug/Native Debug/Native Optimized semantic
+  disagreement was reported. The ledger and JSON are under
+  `tmp/phase28-r7-010-l7-oracle-90446/`. It counts **252 unverified generated
+  Rust `.clone()` occurrences** across the applicable artifacts; three repeated
+  executor-runtime template sites account for these rows. Do not interpret the
+  rows as distinct illegal Moss-level copies. Four root-ingress captures and
+  two checked explicit-copy rows are separately classified by the oracle.
+  Category-separated failure ledger:
+  `tmp/phase28-r7-010-l7-oracle-90446/combined_failure_ledger.md`.
 - Team B is investigating a native formatting follow-up: the fresh package
   build reports 12 warnings-as-errors from borrowed primitive MatchResult READ
   payloads (`((*end))`, `(*start)` etc.). This occurs after the reviewed
