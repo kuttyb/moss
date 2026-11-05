@@ -17071,17 +17071,21 @@ untouched.
   reconstructed by the interpreter.
 - Added `tests/phase28/r7_010/l7/local_transfer_interpreter.moss` and a gate
   registered in both `make check` and `tests/run.sh`. Default and EST-shadow
-  each pass the nested Vector reproducer and four fail-closed corruptions
+  each pass the nested Vector reproducer and five fail-closed corruptions
   (consumer fact drop, checker fact drop, liveness perturbation, duplicate
-  fact). Also passed `make moss-dev`, local-transfer authority (23 scenarios),
-  Match-arm authority (9 scenarios), feedback validation, and `git diff
-  --check`.
-- Agent 2 review is pending. Team B independently reports native Debug and
-  Optimized generation now emits `target = source;` from the same checker fact
-  and its seven consumer corruptions fail closed; native delivery/review is
-  pending. Team B's Fast Debug SIGSEGV report is superseded on L7 staging by
-  the focused interpreter fix above, but Team B should retain its observed
-  result on its own unchanged native worktree.
+  fact, and removed requirement under a strict test hook). Also passed
+  `make moss-dev`, local-transfer authority (23 scenarios), Match-arm
+  authority (9 scenarios), feedback validation, and `git diff --check`.
+- Agent 2 review found a remaining checker-contract gap: production lookup
+  cannot distinguish a missing requirement for an eligible transfer from an
+  ordinary local assignment. Team A is defining a checker-owned decision-slot
+  contract; the strict consumer hook tests requirement loss but does not
+  replace this production contract. Reviewer verdict is pending that fixup.
+- Team B froze native consumer commit `2eb2039c7b76c49d0174d9eba47a9d01ad4ffd88`
+  on `phase28-r7-010-team-b-regex-final`. Its focused native Debug/Optimized
+  transfer and seven corruption cases pass, and an Agent 2 review is pending.
+  It remains a separate worktree; full Regex package build and Fast Debug
+  parity were not part of that PASS.
 - Remaining acceptance blockers are the fresh Regex package build, complete
   clone authorization/provenance audit, frozen 60-fixture oracle, and full
   default/EST-shadow regression suites. Team C has no new frozen conformance

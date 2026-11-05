@@ -21,16 +21,20 @@ def run(env=None, expect=0):
     return proc.stdout.strip(), proc.stderr
 
 
-assert run()[0] == "1"
+required_env = dict(os.environ)
+required_env["MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT"] = "1"
+assert run(required_env)[0] == "1"
 for corruption in (
         {"MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_FACT": "1"},
         {"MOSS_TEST_DROP_LOCAL_TRANSFER_FACT": "1"},
         {"MOSS_TEST_PERTURB_LOCAL_TRANSFER_FACT": "liveness"},
         {"MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT": "1"},
+        {"MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_REQUIREMENT": "1"},
 ):
     env = dict(os.environ)
+    env["MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT"] = "1"
     env.update(corruption)
     stdout, stderr = run(env, expect=1)
     assert "MOSS_INTERNAL_INVARIANT" in stdout + stderr, corruption
 
-print("Fast Debug local transfer and four fail-closed corruptions PASS")
+print("Fast Debug local transfer and five fail-closed corruptions PASS")

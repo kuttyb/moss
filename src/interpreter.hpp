@@ -3886,6 +3886,10 @@ class FastInterpreter {
         program_.typed_semantics->required_local_transfer_occurrences;
     bool has_requirement = false;
     for (const auto& candidate : required) {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_REQUIREMENT"))
+        continue;
+#endif
       if (candidate.est_arena_index == rhs->arena_index &&
           candidate.rhs_expression_occurrence_id == rhs->expr &&
           candidate.statement_occurrence_id ==
@@ -3898,7 +3902,14 @@ class FastInterpreter {
         has_requirement = true;
       }
     }
-    if (!has_requirement) return nullptr;
+    if (!has_requirement) {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT"))
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT required local transfer requirement missing");
+#endif
+      return nullptr;
+    }
     try {
       return program_.typed_semantics->find_local_transfer_fact(
           rhs->arena_index, rhs->expr,
