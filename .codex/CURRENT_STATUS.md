@@ -17058,3 +17058,31 @@ untouched.
   NO-GO until the two owned Vec transfers consume the exact checker fact and
   the generated package compiles. Full oracle and full default/shadow suites
   remain outstanding.
+
+### L7 Fast Debug local-transfer consumer repair (2026-11-05)
+
+- Staging branch `phase28-r7-010-l7-copy-authority` is at implementation
+  commit `16d1766e68f72bf0968807fc2df94a5f90f5707f` (pending Agent 2 review).
+  It consumes Team A's exact `TypedLocalTransferFactV1` for the nested-scope
+  owned Vector assignment, validates the checked RHS/source and target
+  definitions against runtime bindings, stores the owned value in the target,
+  and consumes the source before block restoration. This removes the Fast
+  Debug alias into a local erased at scope exit. No source-level semantics are
+  reconstructed by the interpreter.
+- Added `tests/phase28/r7_010/l7/local_transfer_interpreter.moss` and a gate
+  registered in both `make check` and `tests/run.sh`. Default and EST-shadow
+  each pass the nested Vector reproducer and four fail-closed corruptions
+  (consumer fact drop, checker fact drop, liveness perturbation, duplicate
+  fact). Also passed `make moss-dev`, local-transfer authority (23 scenarios),
+  Match-arm authority (9 scenarios), feedback validation, and `git diff
+  --check`.
+- Agent 2 review is pending. Team B independently reports native Debug and
+  Optimized generation now emits `target = source;` from the same checker fact
+  and its seven consumer corruptions fail closed; native delivery/review is
+  pending. Team B's Fast Debug SIGSEGV report is superseded on L7 staging by
+  the focused interpreter fix above, but Team B should retain its observed
+  result on its own unchanged native worktree.
+- Remaining acceptance blockers are the fresh Regex package build, complete
+  clone authorization/provenance audit, frozen 60-fixture oracle, and full
+  default/EST-shadow regression suites. Team C has no new frozen conformance
+  delivery. Staging remains WIP; no merge to `phase28-work` or `main`.
