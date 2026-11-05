@@ -1,0 +1,12 @@
+enum MatchResult:
+  NoMatch
+  Matched(start: Int, end: Int)
+
+fn main():
+  var res = MatchResult.NoMatch
+  match res:
+    case NoMatch:
+      if true:
+        pass
+    case Matched(start, end):
+      echo start

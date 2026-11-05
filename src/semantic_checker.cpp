@@ -2123,6 +2123,29 @@ class Checker {
       p_.typed_semantics->match_ownership_facts = match_ownership_facts_;
       p_.typed_semantics->required_match_occurrences =
           required_match_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DUMP_MATCH_AUTHORITY_FACTS"))
+        for (const auto& fact :
+             p_.typed_semantics->match_ownership_facts)
+          for (const auto& arm : fact.arms) {
+            std::cerr << "MATCH_AUTHORITY_FACT case=" << arm.case_name
+                      << " stmt=" << fact.statement_occurrence_id
+                      << " context=" << fact.specialization_context
+                      << " bindings=";
+            for (std::size_t i = 0; i < arm.payload_binding_names.size(); ++i)
+              std::cerr << (i ? "," : "") << arm.payload_binding_names[i];
+            std::cerr << " identities=";
+            for (std::size_t i = 0; i < arm.payload_binding_identities.size(); ++i)
+              std::cerr << (i ? "," : "") << arm.payload_binding_identities[i];
+            std::cerr << " types=";
+            for (std::size_t i = 0; i < arm.payload_types.size(); ++i)
+              std::cerr << (i ? "," : "") <<
+                  (arm.payload_types[i]
+                      ? arm.payload_types[i]->to_canonical_string() : "<missing>");
+            std::cerr << " access=" << static_cast<int>(arm.payload_access)
+                      << " transfer=" << arm.transfers_ownership << '\n';
+          }
+#endif
       p_.typed_semantics->echo_argument_facts = echo_argument_facts_;
       p_.typed_semantics->required_echo_argument_occurrences =
           required_echo_argument_occurrences_;
@@ -28435,9 +28458,11 @@ class Checker {
         fact.availability = TypedMatchOwnershipFactV1::Availability::Present;
 
         size_t scan_arm = index + 1;
-        while (scan_arm < statements.size() && statements[scan_arm].indent == level + 1) {
+        while (scan_arm < statements.size() &&
+               statements[scan_arm].indent > level) {
           const Stmt& arm = statements[scan_arm];
-          if (arm.est_pattern) {
+          if (arm.indent == level + 1 &&
+              arm.kind == Stmt::Kind::Case && arm.est_pattern) {
             TypedMatchArmFactV1 arm_fact;
             arm_fact.case_name = arm.est_pattern->case_name;
             arm_fact.payload_binding_names = arm.est_pattern->payload_bindings;
@@ -28498,6 +28523,42 @@ class Checker {
                   ? Effect::Read : Effect::Write;
             else if (field == "transfers_ownership")
               arm.transfers_ownership = !arm.transfers_ownership;
+          }
+        }
+        if (const char* case_corruption =
+                std::getenv("MOSS_TEST_PERTURB_MATCH_ARM_CASE")) {
+          auto arm = std::find_if(fact.arms.begin(), fact.arms.end(),
+              [&](const TypedMatchArmFactV1& candidate) {
+                return candidate.case_name == case_corruption;
+              });
+          if (arm != fact.arms.end()) arm->case_name += "_perturbed";
+        }
+        if (const char* arm_field_corruption =
+                std::getenv("MOSS_TEST_PERTURB_MATCH_ARM_FIELD_FOR_CASE")) {
+          const string selector = arm_field_corruption;
+          const auto separator = selector.find(':');
+          if (separator != string::npos) {
+            const string case_name = selector.substr(0, separator);
+            const string field = selector.substr(separator + 1);
+            auto arm = std::find_if(fact.arms.begin(), fact.arms.end(),
+                [&](const TypedMatchArmFactV1& candidate) {
+                  return candidate.case_name == case_name;
+                });
+            if (arm != fact.arms.end()) {
+              if (field == "payload_type" && !arm->payload_types.empty())
+                arm->payload_types.front() = moss::Type::primitive("bool");
+              else if (field == "payload_binding_name" &&
+                       !arm->payload_binding_names.empty())
+                arm->payload_binding_names.front() += "_perturbed";
+              else if (field == "payload_binding_identity" &&
+                       !arm->payload_binding_identities.empty())
+                arm->payload_binding_identities.front() += "_perturbed";
+              else if (field == "payload_access")
+                arm->payload_access = arm->payload_access == Effect::Read
+                    ? Effect::Write : Effect::Read;
+              else if (field == "transfers_ownership")
+                arm->transfers_ownership = !arm->transfers_ownership;
+            }
           }
         }
         const bool drop_match_fact = std::getenv("MOSS_TEST_DROP_MATCH_FACT") != nullptr;
