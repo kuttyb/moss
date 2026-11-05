@@ -770,6 +770,13 @@ struct SemanticCallEdge {
   // target. This distinguishes two expressions on one source line without
   // changing the callable or specialization identity.
   uint32_t occurrence = 0;
+  // Exact EST message edge when invocation_kind is synchronous_message.
+  // These fields let typed authority bind to the checked source occurrence,
+  // not just a displayed target/line pair.
+  uint32_t message_est_arena_index = UINT32_MAX;
+  est::ExprId message_expression_occurrence_id = UINT32_MAX;
+  est::ExprId receiver_expression_occurrence_id = UINT32_MAX;
+  uint64_t message_source_fingerprint = 0;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic

@@ -2134,6 +2134,10 @@ class Checker {
       if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
           !p_.typed_semantics->root_ingress_domain_capture_facts.empty())
         p_.typed_semantics->root_ingress_domain_capture_facts.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
+          !p_.typed_semantics->root_ingress_domain_capture_facts.empty())
+        p_.typed_semantics->root_ingress_domain_capture_facts.push_back(
+            p_.typed_semantics->root_ingress_domain_capture_facts.back());
       if (std::getenv("MOSS_TEST_PERTURB_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
           !p_.typed_semantics->root_ingress_domain_capture_facts.empty()) {
         auto& fact = p_.typed_semantics->root_ingress_domain_capture_facts.back();
@@ -20416,7 +20420,45 @@ class Checker {
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines, const string& physical_source) {
     std::map<std::tuple<string,int,string>, uint32_t> call_occurrences;
-    auto retain_message_edge = [&](int line, const string& expression,
+    auto bind_message_est_occurrence = [&](SemanticCallEdge& edge,
+                                           const Stmt& statement,
+                                           const string* source_expression,
+                                           std::size_t expression_index) {
+      for (const auto& handle : statement.expression_handles) {
+        if (!source_expression) {
+          if (handle.slot != est::ExprSlot::Receiver) continue;
+        } else {
+          if (handle.source_fingerprint !=
+              est::fingerprint(*source_expression)) continue;
+          if (statement.kind == Stmt::Kind::Echo &&
+              (handle.slot != est::ExprSlot::Argument ||
+               handle.argument_index != expression_index)) continue;
+          if (statement.kind == Stmt::Kind::Assign &&
+              ((expression_index == 0 && handle.slot != est::ExprSlot::LhsPlace) ||
+               (expression_index == 1 && handle.slot != est::ExprSlot::RhsValue)))
+            continue;
+        }
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena || handle.expr >= arena->size()) continue;
+        const auto root = est::unparenthesized(*arena, handle.expr);
+        const auto* message = std::get_if<est::Message>(&arena->at(root));
+        if (!message || message->handler != edge.target.substr(
+                edge.target.find_last_of('.') + 1))
+          continue;
+        const auto* receiver = std::get_if<est::Identifier>(
+            &arena->at(message->target));
+        if (!receiver || receiver->name != edge.receiver) continue;
+        edge.message_est_arena_index = handle.arena_index;
+        edge.message_expression_occurrence_id = root;
+        edge.receiver_expression_occurrence_id = message->target;
+        edge.message_source_fingerprint = handle.source_fingerprint;
+        return true;
+      }
+      return false;
+    };
+    auto retain_message_edge = [&](const Stmt* statement, int line,
+                                   const string& expression,
+                                   std::size_t expression_index,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
       string receiver_name;
@@ -20443,20 +20485,18 @@ class Checker {
           argument_types, expression_source.empty() ? physical_source
                                                      : expression_source,
           "synchronous_message", receiver_name, {}, {}};
-      if (std::find_if(
-              p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
-              [&](const SemanticCallEdge& existing) {
-                return existing.source == edge.source &&
-                    existing.target == edge.target &&
-                    existing.line == edge.line &&
-                    existing.invocation_kind == edge.invocation_kind &&
-                    existing.receiver == edge.receiver;
-              }) == p_.semantic_call_edges.end())
-        p_.semantic_call_edges.push_back(std::move(edge));
+      if (!statement || !bind_message_est_occurrence(
+              edge, *statement, &expression, expression_index)) return;
+      edge.occurrence = call_occurrences[std::make_tuple(
+          edge.source_file, edge.line, edge.target)]++;
+      p_.semantic_call_edges.push_back(std::move(edge));
     };
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
-      for (const auto& expression : statement_expressions(statement)) {
+      const auto expressions = statement_expressions(statement);
+      for (std::size_t expression_index = 0;
+           expression_index < expressions.size(); ++expression_index) {
+        const auto& expression = expressions[expression_index];
         vector<LocalCallSite> calls;
         collect_local_call_sites(statement.line, expression, current_env,
                                  implicit_owner, calls);
@@ -20473,7 +20513,8 @@ class Checker {
               edge.source_file, edge.line, edge.target)]++;
           p_.semantic_call_edges.push_back(std::move(edge));
         }
-        retain_message_edge(statement.line, expression, current_env,
+        retain_message_edge(&statement, statement.line, expression,
+                            expression_index, current_env,
                             statement.source_file);
       }
       if (statement.kind == Stmt::Kind::Message) {
@@ -20494,17 +20535,11 @@ class Checker {
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
                 "synchronous_message", statement.a, {}, {}};
-            if (std::find_if(
-                    p_.semantic_call_edges.begin(),
-                    p_.semantic_call_edges.end(),
-                    [&](const SemanticCallEdge& existing) {
-                      return existing.source == edge.source &&
-                          existing.target == edge.target &&
-                          existing.line == edge.line &&
-                          existing.invocation_kind == edge.invocation_kind &&
-                          existing.receiver == edge.receiver;
-                    }) == p_.semantic_call_edges.end())
+            if (bind_message_est_occurrence(edge, statement, nullptr, 0)) {
+              edge.occurrence = call_occurrences[std::make_tuple(
+                  edge.source_file, edge.line, edge.target)]++;
               p_.semantic_call_edges.push_back(std::move(edge));
+            }
           }
         }
       }
@@ -20527,7 +20562,7 @@ class Checker {
             edge.source_file, edge.line, edge.target)]++;
         p_.semantic_call_edges.push_back(std::move(edge));
       }
-      retain_message_edge(result_line, *result_expression, env,
+      retain_message_edge(nullptr, result_line, *result_expression, 0, env,
                           physical_source);
     }
   }
@@ -20649,6 +20684,28 @@ class Checker {
       collect_callable_edges(p_.main->body, std::nullopt, 0, {}, nullptr,
                              "main", graph, edge_lines, p_.main->source_file);
     }
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_MESSAGE_EDGE")) {
+      auto edge = std::find_if(
+          p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+          [](const SemanticCallEdge& candidate) {
+            return candidate.source == "main" &&
+                candidate.invocation_kind == "synchronous_message";
+          });
+      if (edge != p_.semantic_call_edges.end())
+        p_.semantic_call_edges.erase(edge);
+    }
+    if (std::getenv("MOSS_TEST_PERTURB_ROOT_INGRESS_MESSAGE_EDGE")) {
+      auto edge = std::find_if(
+          p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+          [](const SemanticCallEdge& candidate) {
+            return candidate.source == "main" &&
+                candidate.invocation_kind == "synchronous_message";
+          });
+      if (edge != p_.semantic_call_edges.end())
+        ++edge->receiver_expression_occurrence_id;
+    }
+#endif
     for (const auto& test : p_.tests) {
       string source = "test:" + test.name;
       graph[source];
@@ -35018,12 +35075,57 @@ class Checker {
         }
         fact.selected_handler_identity = handler_semantic_identity(
             *domain->second, *handler);
+        const string expected_edge_target =
+            "handler:" + domain_name + "." + message.handler;
+        const SemanticCallEdge* selected_edge = nullptr;
+        std::size_t selected_edge_matches = 0;
+        for (const auto& edge : p_.semantic_call_edges)
+          if (edge.source == "main" && edge.target == expected_edge_target &&
+              edge.line == fact.source_line &&
+              edge.source_file == fact.source_file &&
+              edge.invocation_kind == "synchronous_message" &&
+              edge.receiver == fact.receiver_binding &&
+              edge.message_est_arena_index == fact.est_arena_index &&
+              edge.message_expression_occurrence_id ==
+                  fact.message_expression_occurrence_id &&
+              edge.receiver_expression_occurrence_id ==
+                  fact.receiver_expression_occurrence_id &&
+              edge.message_source_fingerprint == fact.source_fingerprint) {
+            selected_edge = &edge;
+            ++selected_edge_matches;
+          }
+        if (selected_edge_matches != 1 || !selected_edge)
+          err(statement.source_file, statement.line,
+              selected_edge_matches
+                  ? "checker retained duplicate exact Root-ingress message call edges"
+                  : "checker could not retain the exact checked Root-ingress message call edge",
+              "MOSS_INTERNAL_INVARIANT");
+        fact.selected_call_edge_source = selected_edge->source;
+        fact.selected_call_edge_target = selected_edge->target;
+        fact.selected_call_edge_invocation_kind =
+            selected_edge->invocation_kind;
+        fact.selected_call_edge_receiver = selected_edge->receiver;
+        fact.selected_call_edge_source_file = selected_edge->source_file;
+        fact.selected_call_edge_line = selected_edge->line;
+        fact.selected_call_edge_occurrence = selected_edge->occurrence;
+        fact.selected_call_edge_est_arena_index =
+            selected_edge->message_est_arena_index;
+        fact.selected_call_edge_message_expression_occurrence_id =
+            selected_edge->message_expression_occurrence_id;
+        fact.selected_call_edge_receiver_expression_occurrence_id =
+            selected_edge->receiver_expression_occurrence_id;
+        fact.selected_call_edge_source_fingerprint =
+            selected_edge->message_source_fingerprint;
         fact.selected_call_edge_identity =
-            "main:" + std::to_string(fact.statement_occurrence_id) + ":" +
-            std::to_string(fact.est_arena_index) + ":" +
-            std::to_string(fact.message_expression_occurrence_id) + "->" +
-            fact.selected_handler_identity + "@" +
-            fact.domain_instance_identity;
+            selected_edge->source + "|" + selected_edge->target + "|" +
+            selected_edge->source_file + ":" +
+            std::to_string(selected_edge->line) + ":" +
+            std::to_string(selected_edge->occurrence) + "|receiver=" +
+            selected_edge->receiver + "|est=" +
+            std::to_string(selected_edge->message_est_arena_index) + ":" +
+            std::to_string(selected_edge->message_expression_occurrence_id) +
+            ":" + std::to_string(
+                selected_edge->receiver_expression_occurrence_id);
         fact.availability =
             TypedRootIngressDomainCaptureFactV1::Availability::Present;
         if (!fact.is_authoritative())

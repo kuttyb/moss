@@ -1031,6 +1031,17 @@ struct TypedRootIngressDomainCaptureFactV1 {
   std::string concrete_graph_identity;
   std::string route_capability_identity;
   std::string selected_call_edge_identity;
+  std::string selected_call_edge_source;
+  std::string selected_call_edge_target;
+  std::string selected_call_edge_invocation_kind;
+  std::string selected_call_edge_receiver;
+  std::string selected_call_edge_source_file;
+  int selected_call_edge_line{0};
+  std::uint32_t selected_call_edge_occurrence{UINT32_MAX};
+  std::uint32_t selected_call_edge_est_arena_index{UINT32_MAX};
+  est::ExprId selected_call_edge_message_expression_occurrence_id{UINT32_MAX};
+  est::ExprId selected_call_edge_receiver_expression_occurrence_id{UINT32_MAX};
+  std::uint64_t selected_call_edge_source_fingerprint{0};
   std::string selected_handler_identity;
   std::string source_file;
   int source_line{0};
@@ -1052,6 +1063,19 @@ struct TypedRootIngressDomainCaptureFactV1 {
         !concrete_graph_identity.empty() &&
         !route_capability_identity.empty() &&
         !selected_call_edge_identity.empty() &&
+        selected_call_edge_source == "main" &&
+        selected_call_edge_target.rfind("handler:", 0) == 0 &&
+        selected_call_edge_invocation_kind == "synchronous_message" &&
+        selected_call_edge_receiver == receiver_binding &&
+        selected_call_edge_source_file == source_file &&
+        selected_call_edge_line == source_line &&
+        selected_call_edge_occurrence != UINT32_MAX &&
+        selected_call_edge_est_arena_index == est_arena_index &&
+        selected_call_edge_message_expression_occurrence_id ==
+            message_expression_occurrence_id &&
+        selected_call_edge_receiver_expression_occurrence_id ==
+            receiver_expression_occurrence_id &&
+        selected_call_edge_source_fingerprint == source_fingerprint &&
         !selected_handler_identity.empty() && !source_file.empty() &&
         source_line > 0 && synchronous_root_ingress &&
         compiler_generated_capture_only && !permits_moss_value_copy;
@@ -1578,6 +1602,24 @@ struct TypedSemanticModuleV1 {
           left.route_capability_identity == right.route_capability_identity &&
           left.selected_call_edge_identity ==
               right.selected_call_edge_identity &&
+          left.selected_call_edge_source == right.selected_call_edge_source &&
+          left.selected_call_edge_target == right.selected_call_edge_target &&
+          left.selected_call_edge_invocation_kind ==
+              right.selected_call_edge_invocation_kind &&
+          left.selected_call_edge_receiver == right.selected_call_edge_receiver &&
+          left.selected_call_edge_source_file ==
+              right.selected_call_edge_source_file &&
+          left.selected_call_edge_line == right.selected_call_edge_line &&
+          left.selected_call_edge_occurrence ==
+              right.selected_call_edge_occurrence &&
+          left.selected_call_edge_est_arena_index ==
+              right.selected_call_edge_est_arena_index &&
+          left.selected_call_edge_message_expression_occurrence_id ==
+              right.selected_call_edge_message_expression_occurrence_id &&
+          left.selected_call_edge_receiver_expression_occurrence_id ==
+              right.selected_call_edge_receiver_expression_occurrence_id &&
+          left.selected_call_edge_source_fingerprint ==
+              right.selected_call_edge_source_fingerprint &&
           left.selected_handler_identity == right.selected_handler_identity &&
           left.source_file == right.source_file &&
           left.source_line == right.source_line &&
