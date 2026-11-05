@@ -11385,11 +11385,13 @@ class Checker {
   }
 
   bool transfer_type(const string& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    const string canonical = canonical_type_name(type);
+    return !phase28_copy_primitive_type(canonical) && !domains_.count(canonical);
   }
 
   bool transfer_type(const moss::TypeRef& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    const string canonical = canonical_type_name(type);
+    return !phase28_copy_primitive_type(canonical) && !domains_.count(canonical);
   }
 
   const EnumType* resolve_enum_or_option(const string& type_name) {
@@ -16459,7 +16461,8 @@ class Checker {
 
   bool effect_requires_borrow(const string& type) const {
     string t = canonical_type_name(type);
-    if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
+    if (t.empty() || contains_internal_placeholder(t) ||
+        phase28_copy_primitive_type(t) || domains_.count(t)) return false;
     return true;
   }
 
@@ -25230,7 +25233,12 @@ class Checker {
             binding->second)
       return;
     auto& fact = local_ownership_facts_[tracked->second];
-    if (requested == Effect::Consume) {
+    const string element_type = fact.value_type
+        ? canonical_type_name(fact.value_type) : string{};
+    const bool concrete_noncopy_element =
+        !element_type.empty() && !unresolved_semantic_type(element_type) &&
+        !phase28_copy_primitive_type(element_type);
+    if (requested == Effect::Consume && concrete_noncopy_element) {
       fact.inference_status =
           TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
       fact.unsupported_reason =
@@ -25247,6 +25255,10 @@ class Checker {
           "OWNERSHIP_VECTOR_ELEMENT_CONSUME");
       return;
     }
+    // A primitive Vector element is copied as a value. A consuming use of the
+    // loop-local element therefore reads the Vector's borrowed element view;
+    // it cannot consume the owning collection or invalidate its loop fact.
+    if (requested == Effect::Consume) requested = Effect::Read;
     fact.access = stronger_ownership_effect(fact.access, requested);
     if (tracked->second < required_local_ownership_occurrences_.size()) {
       required_local_ownership_occurrences_[tracked->second].access = fact.access;
@@ -26466,20 +26478,27 @@ class Checker {
 
     string base, index;
     if (tree_parse_index(value, base, index)) {
-      const bool direct_assignment_rhs = ownership_current_stmt_ &&
-          (ownership_current_stmt_->kind == Stmt::Kind::Let ||
-           ownership_current_stmt_->kind == Stmt::Kind::Var ||
-           ownership_current_stmt_->kind == Stmt::Kind::Assign) &&
-          tree_strip_expression_parens(
-              tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
-      if (requested == Effect::Consume &&
-          ownership_current_stmt_ &&
-          ownership_current_stmt_->kind != Stmt::Kind::Return &&
-          !direct_assignment_rhs &&
-          indexed_borrow_storage_location(value, env.types)) {
-        err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
-            "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
-        return;
+      if (requested == Effect::Consume) {
+        const bool direct_assignment_rhs = ownership_current_stmt_ &&
+            (ownership_current_stmt_->kind == Stmt::Kind::Let ||
+             ownership_current_stmt_->kind == Stmt::Kind::Var ||
+             ownership_current_stmt_->kind == Stmt::Kind::Assign) &&
+            tree_strip_expression_parens(
+                tree_normalize_pipeline(trim(ownership_current_stmt_->b))) == value;
+        if (!direct_assignment_rhs) {
+          auto elem_type = inferred_expr_type(value, env.types);
+          const bool concrete_noncopy_element = elem_type &&
+              !unresolved_semantic_type(*elem_type) &&
+              !phase28_copy_primitive_type(*elem_type);
+          if (concrete_noncopy_element) {
+            err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
+                "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
+          }
+        }
+        // Indexed access borrows its collection owner. Consuming a Copy
+        // element consumes only the scalar value; it never consumes the
+        // collection or invalidates ownership facts for that owner.
+        requested = Effect::Read;
       }
       check_ownership_expression(line, base, env, Effect::Read);
       check_ownership_expression(line, index, env, Effect::Read);

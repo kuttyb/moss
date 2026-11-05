@@ -15503,3 +15503,82 @@ or full repository suite was requested or run.
 Push the corrected draft, report its exact SHA, and stop for L7 approval. Do not
 self-approve, freeze or merge. The private holdout remains local-only and
 untouched.
+
+## 2026-11-04 P28-R7-009 integration-equivalence checkpoint
+
+- Team A worktree is `tmp/phase28-worktrees/team-a`, branch
+  `phase28-r7-009-equivalence`, based on frozen R7-008
+  `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`. Reference fix is
+  `a0a3bd90113223afbee73c08d468e63afcf16e0d`; comparison baseline is
+  `150ab36b41e45504aaa400aa717da241be7542fb`.
+- R7-008 passed all four reference R7-009 checker cases: primitive indexed
+  read in a loop, primitive indexed read reuse, repeated indexed method writes,
+  and rejection of nonprimitive indexed consumption. The focused harness adds
+  negatives for generic nonprimitive indexed returns and `option[Int]` transfers
+  through both indexing and Vector iteration (seven total cases).
+- The 238-source comparison uses the exact direct `tests/*.moss` and
+  `examples/*.moss` files at the reference candidate SHA, checked by separately
+  built baseline, R7-008-plus-fix, and reference compilers. Baseline to candidate
+  has five verdict changes: three primitive Vector-iteration cases now accept
+  (`branch_confined_open_type.moss`, `phase47_iteration.moss`,
+  `swarm_048_callable_argument.moss`) and two nonprimitive indexed transfers
+  now reject (`examples/collections_and_methods.moss`,
+  `swarm_044_index_specialization.moss`). Candidate and reference agree on all
+  these changes. Their sole remaining verdict difference is
+  `tests/domain_name_collision_routes.moss` (`TAKE_REQUIRES_FIELD_PLACE` on
+  reference); it is an unrelated `take`/domain-name case and remains unchanged.
+  No rejection diagnostic codes differ for shared rejected inputs. Raw summary:
+  `tmp/r7_009_acceptance_comparison.json` (disposable).
+- Minimal checker correction in `src/semantic_checker.cpp`: primitive Vector
+  iteration element consumes become READ facts; concrete nonprimitive iteration
+  element consume remains rejected; indexed nonprimitive consumes reject outside
+  direct assignment RHS alias formation; indexed Copy consumes become reads.
+  The added focused test is
+  `tests/tooling/check_phase28_r7_009_primitive_index.py`, registered in
+  `tests/run.sh` by L7 after the implementation commit. No consumer or oracle
+  files were changed.
+- Validation after final source edits: build `moss-dev` and `moss-opt`; focused
+  R7-009 harness 7/7; `check_phase28_local_ownership.py` PASS;
+  `check_phase28_w12_checker.py` PASS on dev and opt;
+  `check_phase28_r7_006_checker_facts.py` PASS; feedback validation and
+  `git diff --check` PASS. Full `make check` and `make check-shadow` were not run
+  per the scoped targeted-test orchestration.
+- Implementation and runner registration are locally committed on the scoped
+  branch. Review of the previous frozen SHA returned NO-GO: legacy `copy_type`
+  treated `option[Int]` as Copy, allowing indexed and iteration transfer. The
+  correction below is uncommitted and requires fresh review. No merge to
+  `phase28-work` or `main`.
+
+### R7-009 adversarial-review repair (completed)
+
+- Reviewer NO-GO on `8d760085ffab49101dad1baf39a6bf4b7b3eeb9c` confirmed that
+  the legacy shared Copy predicate recurses through `option[T]`, contrary to
+  Phase 28's primitive-only Copy rule. Both collection-element checks now use
+  the existing checker-side `phase28_copy_primitive_type` predicate.
+- Added rejection cases for `return items[0]` and `for item in items: return item`
+  with `Vector[option[Int]]`. Both report the expected indexed/iteration consume
+  diagnostic; no Option transfer is accepted.
+- Rebuilt dev/opt and reran the focused harness 7/7, local ownership,
+  W12 checker on dev/opt, R7-006 checker facts, feedback validator, and diff
+  check. The refreshed 238-source result is unchanged: five intended baseline
+  verdict changes and only the unrelated domain/take discrepancy versus a0.
+- Full suites remain unrun per scope; targeted validation and independent review
+  are recorded below.
+
+### R7-009 Option alias-flow re-review repair (completed)
+
+- Re-review returned NO-GO on `e5fb2264fdad2f955d19950e6ef4ec72911d1271`:
+  direct Option transfers rejected, but `value = items[0]; return value`
+  passed for `Vector[option[Int]]`. The old `effect_requires_borrow` and
+  `transfer_type` still delegated to recursive `copy_type` and lost Option
+  ownership before the indexed alias fact was formed.
+- Both Phase 28 classifiers now use `phase28_copy_primitive_type`. Added
+  indexed and Vector-iteration alias-return negatives for Option, preserving
+  primitive Int acceptance and Resource rejection.
+- The registered R7-009 harness now passes 9/9. Rebuilt dev/opt; local
+  ownership, W12 checker dev/opt, R7-006 facts, feedback validation, and diff
+  check pass. The refreshed 238-source verdict matrix is unchanged.
+- Final implementation SHA `6abe746ae7d641c8abbc7970ec1ee2ec5b97bc56` received
+  independent Agent 2 GO. The scoped branch was pushed and
+  `git ls-remote origin refs/heads/phase28-r7-009-equivalence` verified the
+  same SHA. No merge to `phase28-work` or `main`.
