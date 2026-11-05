@@ -15680,3 +15680,26 @@ untouched.
 - Bounded repair implemented in `src/native_generator.cpp`: recovery arms now emit a selected-error clone only when a bare `raise` needs it and no captured carrier supplies the re-raise. The 9 unused ORACLE-07 `CollectionError` clones are gone; bare re-raise remains generated in `phase21_recovery_native`.
 - Validation on this follow-up diff: `make --jobs="$(nproc)" moss` PASS; `python3 tests/phase28/r7_010/team_b/check_recovery_dead_error_clones.py ./moss` PASS (ORACLE-07 clone count 9→0, six unrelated runtime `.clone()` calls remain; Debug/Optimized rustc compile; re-raise count retains one selected-error clone and Native Debug/Optimized output matches Fast Debug); `python3 tests/phase28/r7_010/team_b/check_vector_echo_borrow.py ./moss` PASS (ORACLE-39/42 existing behavior); `git diff --check` PASS. Full suite not run.
 - Echo consumer still waits for Team A's corrected, independently reviewed fact SHA. No final freeze, Agent 2 Team B review, or push yet.
+### R7-010 Team A Echo authority follow-up (local, review pending)
+
+- Follow-up is on separate branch `phase28-r7-010-team-a-echo-authority` from
+  approved Team A SHA `82a34b299bf4596ab7f63a278869e10ceae26ee5`; the pushed
+  Team A delivery remains unchanged.
+- Added checker-owned `TypedEchoArgumentFactV1` and requirement API for every
+  Echo argument, keyed by exact statement/argument/EST/context identity. Direct
+  Vector-index display facts carry checked receiver/element TypeRefs, READ
+  access, non-escaping display semantics, and no copy permission. Test-build
+  drop/perturb hooks are `MOSS_TEST_DROP_ECHO_ARGUMENT_FACT` and
+  `MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT`.
+- Checker gate: `python3
+  tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes exact
+  requirement resolution and proves drop/perturb fail closed. Dev build and
+  local ownership, W12, R7-006, feedback validator, and diff check pass; opt
+  build and baseline checker probe pass. L7 owns `tests/run.sh` registration;
+  Team B consumer integration is pending import of this checker API.
+- A separate Team B root-ingress issue was assessed: no exact message argument
+  fact currently exists, and a READ borrow cannot cross `runtime_invoke`'s
+  `Send + 'static` thunk. L7 is tracking the conflict with the existing
+  borrowed-read fixture separately; no root-ingress authority was added here.
+- Next: freeze the checker API for independent review, then hand the exact
+  reviewed SHA to Team B. No push or merge yet.

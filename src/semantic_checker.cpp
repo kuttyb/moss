@@ -1965,6 +1965,47 @@ class Checker {
       p_.typed_semantics->match_ownership_facts = match_ownership_facts_;
       p_.typed_semantics->required_match_occurrences =
           required_match_occurrences_;
+      p_.typed_semantics->echo_argument_facts = echo_argument_facts_;
+      p_.typed_semantics->required_echo_argument_occurrences =
+          required_echo_argument_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_ECHO_ARGUMENT_FACT")) {
+        auto found = std::find_if(
+            p_.typed_semantics->echo_argument_facts.begin(),
+            p_.typed_semantics->echo_argument_facts.end(),
+            [](const TypedEchoArgumentFactV1& fact) {
+              return fact.mode ==
+                  TypedEchoArgumentModeV1::BorrowedVectorElement;
+            });
+        if (found != p_.typed_semantics->echo_argument_facts.end())
+          p_.typed_semantics->echo_argument_facts.erase(found);
+      }
+      if (std::getenv("MOSS_TEST_PERTURB_ECHO_ARGUMENT_FACT")) {
+        auto found = std::find_if(
+            p_.typed_semantics->echo_argument_facts.begin(),
+            p_.typed_semantics->echo_argument_facts.end(),
+            [](const TypedEchoArgumentFactV1& fact) {
+              return fact.mode ==
+                  TypedEchoArgumentModeV1::BorrowedVectorElement;
+            });
+        if (found != p_.typed_semantics->echo_argument_facts.end())
+          found->required_access = Effect::Consume;
+      }
+      if (std::getenv("MOSS_TEST_VALIDATE_ECHO_ARGUMENT_CONTRACT")) {
+        bool found_borrowed_vector_element = false;
+        for (const auto& requirement :
+             p_.typed_semantics->required_echo_argument_occurrences) {
+          const auto& fact =
+              p_.typed_semantics->find_echo_argument_fact(requirement);
+          found_borrowed_vector_element |= fact.mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement;
+        }
+        if (std::getenv("MOSS_TEST_REQUIRE_BORROWED_ECHO_ARGUMENT_FACT") &&
+            !found_borrowed_vector_element)
+          throw std::invalid_argument(
+              "checker did not retain the expected Vector Echo borrow fact");
+      }
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_VALIDATE_TAKE_CONTRACT"))
         for (const auto& requirement :
@@ -2500,6 +2541,9 @@ class Checker {
       required_collection_outcome_occurrences_;
   vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
   vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
+  vector<TypedEchoArgumentFactV1> echo_argument_facts_;
+  vector<TypedEchoArgumentRequirementV1>
+      required_echo_argument_occurrences_;
   std::unordered_map<std::string, EnumType> option_enums_cache_;
   std::set<std::string> taken_places_in_current_stmt_;
   std::set<std::pair<std::uint32_t, est::ExprId>> visited_takes_in_current_stmt_;
@@ -34422,6 +34466,161 @@ class Checker {
           if (est::mode() == est::Mode::Shadow)
             assert(echo_types[index] ==
                    canonical_type_name(echo_type_refs[index]));
+        }
+        const std::uint32_t echo_statement_occurrence_id = current_body_types_
+            ? current_body_types_->statement_occurrence_id(statement)
+            : UINT32_MAX;
+        const string echo_fact_context = expression_fact_context();
+        for (size_t index = 0; index < statement.args.size(); ++index) {
+          TypedEchoArgumentFactV1 fact;
+          fact.echo_statement_occurrence_id = echo_statement_occurrence_id;
+          fact.argument_index = static_cast<std::uint32_t>(index);
+          fact.specialization_identity =
+              local_ownership_specialization_identity();
+          fact.specialization_context = echo_context;
+          fact.est_fact_context = echo_fact_context;
+          fact.argument_type = index < echo_type_refs.size()
+              ? echo_type_refs[index] : nullptr;
+          fact.required_access = Effect::Read;
+          fact.display_result_non_escaping = true;
+          fact.permits_copy = false;
+
+          const est::Handle* argument_handle = nullptr;
+          bool duplicate_handle = false;
+          for (const auto& handle : statement.expression_handles) {
+            if (handle.slot != est::ExprSlot::Argument ||
+                handle.argument_index != index) continue;
+            if (argument_handle) {
+              duplicate_handle = true;
+              break;
+            }
+            argument_handle = &handle;
+          }
+          if (!argument_handle || duplicate_handle) {
+            fact.availability =
+                TypedEchoArgumentFactV1::Availability::MissingArgumentOccurrence;
+            err(statement.line,
+                "Echo argument lacks one exact checker expression occurrence",
+                "MOSS_INTERNAL_INVARIANT");
+          } else {
+            fact.est_arena_index = argument_handle->arena_index;
+            fact.argument_expression_occurrence_id = argument_handle->expr;
+            auto* arena = expression_arena(argument_handle->arena_index);
+            est::ExprId root = argument_handle->expr;
+            if (arena) {
+              while (const auto* grouped =
+                         std::get_if<est::Parenthesized>(&arena->at(root)))
+                root = grouped->inner;
+            }
+            const auto* indexed = arena && root < arena->size()
+                ? std::get_if<est::Index>(&arena->at(root)) : nullptr;
+            if (indexed) {
+              const string normalized_argument = tree_strip_expression_parens(
+                  tree_normalize_pipeline(trim(statement.args[index])));
+              string receiver_source, selector_source;
+              if (tree_parse_index(normalized_argument, receiver_source,
+                                   selector_source)) {
+                auto receiver_spelling =
+                    inferred_expr_type(receiver_source, current_env);
+                auto parsed_receiver = receiver_spelling
+                    ? moss::Type::parse_canonical(
+                          canonical_type_name(*receiver_spelling))
+                    : std::optional<moss::TypeRef>{};
+                if (parsed_receiver && *parsed_receiver &&
+                    (*parsed_receiver)->kind == moss::TypeKind::Builtin &&
+                    (*parsed_receiver)->name == "vector" &&
+                    (*parsed_receiver)->type_args.size() == 1 &&
+                    (*parsed_receiver)->type_args.front() &&
+                    fact.argument_type &&
+                    (*parsed_receiver)->type_args.front()->structurally_equal(
+                        *fact.argument_type)) {
+                  fact.mode =
+                      TypedEchoArgumentModeV1::BorrowedVectorElement;
+                  fact.indexed_expression_occurrence_id = root;
+                  fact.receiver_occurrence_id = indexed->base;
+                  fact.selector_occurrence_id = indexed->index;
+                  fact.receiver_type = *parsed_receiver;
+                  fact.element_type = (*parsed_receiver)->type_args.front();
+                }
+              }
+            }
+            if (!current_body_types_ ||
+                echo_statement_occurrence_id == UINT32_MAX)
+              fact.availability = TypedEchoArgumentFactV1::Availability::
+                  MissingStatementOccurrence;
+            else if (fact.est_fact_context.empty())
+              fact.availability = TypedEchoArgumentFactV1::Availability::
+                  MissingEstFactContext;
+            else if (fact.mode ==
+                         TypedEchoArgumentModeV1::BorrowedVectorElement &&
+                     (!fact.receiver_type || !fact.element_type))
+              fact.availability = TypedEchoArgumentFactV1::Availability::
+                  MissingReceiverType;
+            else
+              fact.availability =
+                  TypedEchoArgumentFactV1::Availability::Present;
+          }
+          if (!fact.is_authoritative())
+            err(statement.line, "required checker Echo argument fact is incomplete",
+                "MOSS_INTERNAL_INVARIANT");
+
+          TypedEchoArgumentRequirementV1 requirement;
+          requirement.echo_statement_occurrence_id =
+              fact.echo_statement_occurrence_id;
+          requirement.argument_index = fact.argument_index;
+          requirement.est_arena_index = fact.est_arena_index;
+          requirement.argument_expression_occurrence_id =
+              fact.argument_expression_occurrence_id;
+          requirement.indexed_expression_occurrence_id =
+              fact.indexed_expression_occurrence_id;
+          requirement.receiver_occurrence_id = fact.receiver_occurrence_id;
+          requirement.selector_occurrence_id = fact.selector_occurrence_id;
+          requirement.specialization_identity = fact.specialization_identity;
+          requirement.specialization_context = fact.specialization_context;
+          requirement.est_fact_context = fact.est_fact_context;
+          requirement.argument_type = fact.argument_type;
+          requirement.receiver_type = fact.receiver_type;
+          requirement.element_type = fact.element_type;
+          requirement.mode = fact.mode;
+          requirement.required_access = fact.required_access;
+          requirement.display_result_non_escaping =
+              fact.display_result_non_escaping;
+          requirement.permits_copy = fact.permits_copy;
+          const auto existing = std::find_if(
+              required_echo_argument_occurrences_.begin(),
+              required_echo_argument_occurrences_.end(),
+              [&](const TypedEchoArgumentRequirementV1& candidate) {
+                return candidate.est_arena_index ==
+                        requirement.est_arena_index &&
+                    candidate.argument_expression_occurrence_id ==
+                        requirement.argument_expression_occurrence_id &&
+                    candidate.argument_index == requirement.argument_index &&
+                    candidate.specialization_context ==
+                        requirement.specialization_context;
+              });
+          if (existing != required_echo_argument_occurrences_.end()) {
+            *existing = requirement;
+            auto existing_fact = std::find_if(
+                echo_argument_facts_.begin(), echo_argument_facts_.end(),
+                [&](const TypedEchoArgumentFactV1& candidate) {
+                  return candidate.est_arena_index ==
+                          fact.est_arena_index &&
+                      candidate.argument_expression_occurrence_id ==
+                          fact.argument_expression_occurrence_id &&
+                      candidate.argument_index == fact.argument_index &&
+                      candidate.specialization_context ==
+                          fact.specialization_context;
+                });
+            if (existing_fact == echo_argument_facts_.end())
+              err(statement.line, "required checker Echo fact disappeared",
+                  "MOSS_INTERNAL_INVARIANT");
+            else
+              *existing_fact = std::move(fact);
+            continue;
+          }
+          echo_argument_facts_.push_back(std::move(fact));
+          required_echo_argument_occurrences_.push_back(
+              std::move(requirement));
         }
         return;
       }
