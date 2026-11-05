@@ -15754,3 +15754,23 @@ untouched.
 - Builds `make --jobs="$(nproc)" moss` and `make --jobs="$(nproc)" moss-opt` pass. Targeted gates pass: `check_phase28_r7_009_primitive_index.py` (17 cases), `check_borrowed_reads.py ./moss tmp/team-b/phase106d1`, `check_phase28_echo_argument_authority.py`, Team B Vector Echo and projected Echo corruption gates, recovery clone/captured-payload parity, local ownership, R7-006 facts, W12 checker dev/opt, feedback validation, and `git diff --check`. Full default/EST-shadow suites were not run.
 - Clone audit remains NO-GO. ORACLE-10A has one exact checked-copy helper clone, six runtime `.clone()` candidates from `src/executor_runtime.cpp`, 9 runtime `Arc::clone` handle sites, 9 `.to_string()` sites (numeric display, substring materialization and Int display), and 3 `mem::replace` transfers/state flags. These are site/type classifications, not authorized runtime exceptions; the certified exception registry remains empty. The uncaptured bare re-raise artifact still clones nonprimitive `WorkError::Missing` at generated `reraise-debug.rs:3585` for source `phase21_recovery_native.moss:36`. `TypedExceptionalOwnershipFactV1` does not authorize selected-carrier transfer. Team A has been asked to identify or supply an exact checker fact; no clone was reclassified or weakened. Broader Team C inventory remains unverified.
 - Current implementation commit is `3ecae82a649ed367e41d8b0808b82da81ac4c61c`, based on the reviewed Team B Echo consumer and corrected Team A reply-contract dependency. Fresh overall Agent 2 review is pending; no push or merge. The unresolved semantic clone and broader inventory block GO.
+
+### R7-010 bare re-raise carrier transfer authority (local, review pending)
+
+- Exact `TypedExceptionalOwnershipFactV1` only describes the originating
+  exceptional edge and state-at-raise; it did not authorize transferring the
+  selected caught carrier through a bare `raise`.
+- Added checker-owned `TypedBareRaiseTransferFactV1` and matching requirement,
+  keyed by bare Raise and Recover statement occurrence, exact present source
+  exceptional edge and selected variant/type, plus specialization context.
+  The only mode transfers the original carrier and explicitly forbids copy.
+  Checker-populated `Stmt::checked_statement_occurrence_id` survives module
+  projection for consumer lookup.
+- `python3 tests/tooling/check_phase28_bare_raise_transfer.py ./moss` passes
+  exact resolution and proves drop/perturb fail closed. Direct
+  `MOSS_TEST_VALIDATE_BARE_RAISE_TRANSFER_CONTRACT=1` plus
+  `MOSS_TEST_REQUIRE_BARE_RAISE_TRANSFER_FACT=1` check on
+  `tests/tooling/fixtures/phase21_recovery_native.moss` passes; existing local
+  ownership contract gate passes. Dev build and diff check pass. L7 owns
+  `tests/run.sh` registration; Team B consumer import and native identity test
+  are pending. Await fresh Agent2 review; no push or merge.
