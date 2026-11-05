@@ -8379,11 +8379,17 @@ class Generator {
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
               string proj_base, proj_field, idx_b, idx_i;
+              const bool is_direct_vector_index =
+                  statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
+                  tree_parse_index(trim(s.args[argument]), idx_b, idx_i) &&
+                  generated_expr_type(idx_b, &types).has_value() &&
+                  starts_with(canonical_type_name(*generated_expr_type(idx_b, &types)),
+                              "vector[");
               const bool is_indexed_member =
                   statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
                   tree_parse_member_access(trim(s.args[argument]), proj_base, proj_field) &&
                   tree_parse_index(proj_base, idx_b, idx_i);
-              string rendered = is_indexed_member
+              string rendered = (is_indexed_member || is_direct_vector_index)
                   ? read_call_place(s.args[argument], d, locals, &types)
                   : expr(
                       s.args[argument], d, locals, &types,
