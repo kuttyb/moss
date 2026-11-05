@@ -51,4 +51,28 @@ for hook in ("MOSS_TEST_CONSUMER_DROP_MATCH_FACT",
         stdout, stderr = run(command, env=env, expect=1)
         assert "MOSS_INTERNAL_INVARIANT" in stdout + stderr, (hook, stdout, stderr)
 
+# The exact match fact can require a READ borrow even when native place
+# lowering does not yet support the nested projection. Fast Debug can execute
+# it, while native codegen must fail closed instead of materializing a clone.
+nested = OUT / "nested-match-projection.moss"
+nested.write_text('''type Inner:
+  pending: option[String]
+type Node:
+  inner: Inner
+fn main():
+  var v = [Node(inner = Inner(pending = Some("task")))]
+  match v[0].inner.pending:
+    case Some(s):
+      echo s
+    case None:
+      echo "cleared"
+''')
+assert run([MOSS, "check", "--json", nested])[0]
+assert run([MOSS, "run", "--interp", nested])[0] == "task"
+nested_rust = OUT / "nested-match-projection.rs"
+nested_rust.unlink(missing_ok=True)
+stdout, stderr = run([MOSS, nested, "-o", nested_rust], expect=1)
+assert "MOSS_INTERNAL_INVARIANT checked READ match scrutinee" in stdout + stderr
+assert not nested_rust.exists(), "unsupported borrowed projection emitted Rust"
+
 print("ORACLE-19 checked match READ borrow: checker, Fast Debug, native Debug/Optimized PASS")
