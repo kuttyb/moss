@@ -381,6 +381,39 @@ class CloneProvenanceTests(unittest.TestCase):
         self.assertEqual(set(result), {copy_span["copy_id"]})
         self.assertEqual(len(result[copy_span["copy_id"]]["checked_copy_facts"]), 3)
 
+    def test_template_fact_sort_position_does_not_change_provenance_result(self):
+        source = "value = copy(item)\n"
+        cases = {}
+        for index in range(512):
+            source_path = self.root / f"copy-order-{index}.moss"
+            source_path.write_text(source)
+            copy_span = harness.moss_copy_call_spans(source)[0]
+            template = self.fact_for_source(source_path, source, copy_span, "", 11)
+            concrete = self.fact_for_source(source_path, source, copy_span,
+                                            "fn:duplicate<First>", 22)
+            template_id = harness.typed_copy_fact_identity(template)
+            concrete_id = harness.typed_copy_fact_identity(concrete)
+            template_first = template_id < concrete_id
+            cases.setdefault(template_first, (source_path, copy_span, template, concrete))
+            if len(cases) == 2:
+                break
+        self.assertEqual(set(cases), {False, True}, "fixture paths must cover both fact sort orders")
+        for template_first, (source_path, copy_span, template, concrete) in cases.items():
+            with self.subTest(template_first=template_first):
+                self.source_path = source_path
+                self.source = source
+                self.source_occ = copy_span
+                manifest = self.manifest_for_facts([(concrete, copy_span["copy_id"])])
+                group = manifest["checked_copy_facts"][0]
+                group["facts"].append(template)
+                group["facts"].sort(key=harness.typed_copy_fact_identity)
+                self.write_manifest(manifest)
+                audit = harness.audit_clone_provenance(
+                    self.rust_path, source_path, "debug", 1,
+                    self.authority([template, concrete]))
+                self.assertEqual(audit["status"], "PASS", audit.get("error"))
+                self.assertEqual(audit["authorized"], 1)
+
     def test_two_lexical_copy_sites_share_each_specialization_context(self):
         source_path = ROOT / "tests/phase28/team_c_r7_010/copy_two_sites_specialization.moss"
         source = source_path.read_bytes().decode("utf-8")
