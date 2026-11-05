@@ -435,7 +435,8 @@ def moss_copy_call_spans(source: str) -> list[dict]:
     return spans
 
 
-def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
+def query_copy_authority(compiler: Path, source_path: Path,
+                        env: dict | None = None) -> dict | None:
     """Ask the checker at a copy occurrence for unit-complete copy authority."""
     source = source_path.read_bytes().decode("utf-8")
     copies = moss_copy_call_spans(source)
@@ -452,7 +453,7 @@ def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
         if kind is not None:
             args.extend(["--kind", kind])
         args.append("--json")
-        code, stdout, stderr, _ = run_process(args)
+        code, stdout, stderr, _ = run_process(args, env=env)
         if code != 0:
             failures.append((stderr or stdout).strip())
             continue
@@ -478,10 +479,31 @@ def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
 
 
 def query_root_ingress_capture_authority(compiler: Path,
-                                        source_path: Path) -> dict:
+                                        source_path: Path,
+                                        env: dict | None = None) -> dict:
     """Read source-complete Root-ingress capture facts from the checker."""
+    targets = ["main"]
     code, stdout, stderr, _ = run_process([
-        str(compiler), "ownership", "main", "--source", str(source_path), "--json"])
+        str(compiler), "ownership", targets[0], "--source", str(source_path),
+        "--json"], env=env)
+    if code != 0:
+        symbols_code, symbols_stdout, symbols_stderr, _ = run_process([
+            str(compiler), "symbols", "--source", str(source_path), "--json"],
+            env=env)
+        if symbols_code == 0:
+            try:
+                symbols = json.loads(symbols_stdout).get("result", {}).get(
+                    "symbols", [])
+                callable_symbol = next((item for item in symbols
+                    if item.get("kind") == "function" and
+                    isinstance(item.get("entity_id"), str)), None)
+                if callable_symbol:
+                    target = callable_symbol["entity_id"].split(":")[-1]
+                    code, stdout, stderr, _ = run_process([
+                        str(compiler), "ownership", target, "--source",
+                        str(source_path), "--json"], env=env)
+            except (json.JSONDecodeError, AttributeError, IndexError):
+                stderr = symbols_stderr or symbols_stdout
     if code != 0:
         return {"status": "unavailable", "reason": (stderr or stdout).strip()}
     try:
@@ -1197,6 +1219,7 @@ def evaluate_project_fixture(fixture: dict, compiler: Path, tmp_dir: Path,
     source = project / "src/main.moss"
     env = os.environ.copy()
     env["MOSS"] = str(compiler)
+    provider_env = env.copy()
     provider_code, provider_out, provider_err, provider_time = run_process(
         [str(MARGO), "build", "--json"], cwd=provider,
         timeout=180, env=env)
@@ -1227,7 +1250,14 @@ def evaluate_project_fixture(fixture: dict, compiler: Path, tmp_dir: Path,
         result["modes"]["provider_mossi"] = "MISSING"
         result["failures"].append("Provider build did not produce provider.mossi")
         return result
+    provider_copy_authority = query_copy_authority(
+        compiler, provider / "src/provider.moss", provider_env)
+    provider_root_ingress_authority = query_root_ingress_capture_authority(
+        compiler, provider / "src/provider.moss", provider_env)
     env["MOSS_MODULE_PATH"] = str(provider / "build/debug")
+    consumer_copy_authority = query_copy_authority(compiler, source, env)
+    consumer_root_ingress_authority = query_root_ingress_capture_authority(
+        compiler, source, env)
     check_code, check_out, check_err, check_time = run_process(
         [str(compiler), "check", "--json", str(source)], cwd=project,
         timeout=180, env=env)
@@ -1307,9 +1337,13 @@ def evaluate_project_fixture(fixture: dict, compiler: Path, tmp_dir: Path,
             result["modes"][profile + "_clone_audit"] = "GENERATED_RUST_MISSING"
             result["failures"].append(f"{profile} Margo result lacks generated Rust artifact path")
         else:
-            consumer_audit = audit_clone_provenance(generated_rust, source, mode, 0)
+            consumer_audit = audit_clone_provenance(
+                generated_rust, source, mode, 0,
+                consumer_copy_authority, consumer_root_ingress_authority)
             provider_source = provider / "src/provider.moss"
-            provider_audit = audit_clone_provenance(provider_rust, provider_source, mode, 0)
+            provider_audit = audit_clone_provenance(
+                provider_rust, provider_source, mode, 0,
+                provider_copy_authority, provider_root_ingress_authority)
             result["clone_audit"][profile + "_consumer"] = consumer_audit
             result["clone_audit"][profile + "_provider"] = provider_audit
             for package_name, audit in (("consumer", consumer_audit), ("provider", provider_audit)):

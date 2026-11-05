@@ -24079,6 +24079,32 @@ static NativeArtifact compile_native_artifact(
     root_module = unit.program.main_module.empty()
         ? (module_order.empty() ? string() : module_order.back())
         : unit.program.main_module;
+    // Module artifacts need their own clone-provenance sidecars. A sidecar
+    // binds one exact Moss source digest, so only emit it when the module has
+    // exactly one physical source file; multi-file modules remain fail-closed
+    // until the provenance format can represent a checked source set.
+    std::map<string, vector<std::filesystem::path>> module_sources;
+    for (const auto& source : sources) {
+      const string source_text = read_text_file(
+          source, "PROJECT_SOURCE_NOT_FOUND");
+      std::istringstream source_lines(source_text);
+      string source_line;
+      std::set<string> declared_in_file;
+      while (std::getline(source_lines, source_line)) {
+        source_line = trim(source_line);
+        if (!starts_with(source_line, "module ")) continue;
+        std::istringstream declaration(source_line.substr(7));
+        string declared_module;
+        if (declaration >> declared_module)
+          declared_in_file.insert(std::move(declared_module));
+      }
+      if (declared_in_file.size() > 1)
+        throw ProjectError("MOSS_INTERNAL_INVARIANT",
+            "one source file declares multiple modules for clone provenance",
+            source.string());
+      if (!declared_in_file.empty())
+        module_sources[*declared_in_file.begin()].push_back(source);
+    }
     for (const auto& module : module_order) {
       std::filesystem::path rust_file = directory / (tooling_name(module) + ".rs");
       module_rust[module] = rust_file;
@@ -24128,16 +24154,27 @@ static NativeArtifact compile_native_artifact(
             std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
       }
       rust_changed = update_file(rust_file, generated) || rust_changed;
-      error.clear();
-      std::filesystem::remove(std::filesystem::path(
-          rust_file.string() + ".mossclone.json"), error);
-      if (error)
-        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
-            "cannot remove unsupported module clone provenance sidecar: " +
-                error.message(), rust_file.string());
+      const auto module_sources_it = module_sources.find(module);
+      if (module_sources_it != module_sources.end() &&
+          module_sources_it->second.size() == 1) {
+        const auto& module_source = module_sources_it->second.front();
+        (void)update_native_clone_provenance_v3(
+            unit.program, rust_file, module_source, generated, optimized);
+      } else {
+        error.clear();
+        std::filesystem::remove(std::filesystem::path(
+            rust_file.string() + ".mossclone.json"), error);
+        if (error)
+          throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+              "cannot remove unsupported multi-source module clone provenance sidecar: " +
+                  error.message(), rust_file.string());
+      }
       if (module == root_module) {
         artifact.rust = rust_file;
-        artifact.clone_provenance.clear();
+        artifact.clone_provenance = module_sources_it != module_sources.end() &&
+                module_sources_it->second.size() == 1
+            ? std::filesystem::path(rust_file.string() + ".mossclone.json")
+            : std::filesystem::path{};
       }
     }
   if (!cargo_driver) for (const auto& external : unit.program.external_modules) {

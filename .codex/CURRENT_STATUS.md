@@ -16600,3 +16600,12 @@ untouched.
   application-value copies; they remain unclassified and block acceptance.
   Refresh and independently reconcile the full clone inventory and ORACLE-54
   sidecar production before final full-suite validation.
+
+## Phase 28 R7-010 — module provenance and runtime clone follow-up (2026-11-05)
+
+- Current staging branch remains `phase28-r7-010-l7-copy-authority`, based at `a07a03e8` before these uncommitted changes. No integration to `phase28-work` or `main`.
+- `src/moss.cpp` now emits v3 provenance sidecars for explicit-module Rust artifacts when that module has exactly one source file. Sidecars bind the source bytes and full checked Program facts. Multi-source modules remain fail-closed; v3 does not yet represent source sets. The ORACLE-54 project path previously deleted every module sidecar and is now audited against exact copy and Root-ingress checker queries, including provider modules without a `main` target.
+- `src/executor_runtime.cpp` removes one data clone: `spawn_one_worker` now reads `gx2.config.affinity` through its already-owned executor `Arc` instead of cloning `Option<Vec<usize>>` into the closure. Independent Agent 2 confirms the clone is absent from generated Rust. Five runtime clone sites remain; four clone executor/branch handles, and one snapshots `MossExecutorConfig` including its affinity vector. Reviewer verdict is NO-GO to authorize any remaining site: no checker copy fact or approved runtime exception was found.
+- Validation on the current working tree: isolated compiler build passes; `tests/tooling/check_phase20c_executor.py` passes 54/54; oracle harness plus independent clone inventory unit tests pass 46/46; Python compile and `git diff --check` pass. Targeted ORACLE-54 checker/effect/Fast Debug/Native Debug/Native Optimized all pass; clone audit correctly reports 5 unauthorized rows in each of four artifacts. Full 60-fixture, default, and shadow suites have not been rerun after these changes. The previous 60-fixture result at `5120cfbf` is stale for this tree.
+- Current changes are uncommitted and unpushed pending continued repairs and review.
+- Refreshed Agent 2 evidence is recorded in `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`: source `executor_runtime.cpp` SHA-256 `e8a06b21315910792200c820d6777f005b91986379517db03d1fec28855e9ebc`, generated probe SHA-256 `e20f94bab26b4482300431ee5c0f34420e188b71c90388eb4d7ec02c8534a059`. Five exact source/artifact pairs remain explicitly unauthorized; reviewer NO-GO, so no runtime allowlist edit is permitted by this evidence.

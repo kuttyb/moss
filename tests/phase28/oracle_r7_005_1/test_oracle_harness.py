@@ -140,6 +140,28 @@ class OracleDataValidationTests(unittest.TestCase):
         harness.validate_mutation_assertions(row)
 
 
+class ProjectAuthorityQueryTests(unittest.TestCase):
+    def test_root_ingress_query_falls_back_to_callable_for_provider_module(self):
+        symbols = {"result": {"symbols": [{
+            "kind": "function",
+            "entity_id": "entity-v1:function:provider__lookup"}]}}
+        authority = {"result": {"root_ingress_capture_authority": {
+            "status": "available", "facts": []}}}
+        responses = [
+            (1, "", "no main", 0.0),
+            (0, json.dumps(symbols), "", 0.0),
+            (0, json.dumps(authority), "", 0.0),
+        ]
+        with mock.patch.object(harness, "run_process",
+                               side_effect=responses) as run:
+            result = harness.query_root_ingress_capture_authority(
+                Path("moss"), Path("provider.moss"), {"MOSS_MODULE_PATH": "build"})
+        self.assertEqual(result, authority["result"]["root_ingress_capture_authority"])
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("provider__lookup", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["env"], {"MOSS_MODULE_PATH": "build"})
+
+
 class CloneProvenanceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=ROOT / "tmp")
@@ -221,6 +243,7 @@ class CloneProvenanceTests(unittest.TestCase):
             "checked_copy_facts": [{"copy_id": span["copy_id"],
                 "facts": sorted(facts_by_copy[span["copy_id"]],
                                 key=harness.typed_copy_fact_identity)} for span in copies],
+            "root_ingress_domain_captures": [],
             "occurrences": occurrences}
 
     def fact(self):
@@ -265,8 +288,13 @@ class CloneProvenanceTests(unittest.TestCase):
     def write_manifest(self, manifest):
         Path(str(self.rust_path) + ".mossclone.json").write_text(json.dumps(manifest))
 
+    def audit_clone_provenance(self, *args, **kwargs):
+        kwargs.setdefault("root_ingress_authority",
+                          {"status": "available", "facts": []})
+        return harness.audit_clone_provenance(*args, **kwargs)
+
     def test_missing_provenance_is_rejected(self):
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "PROVENANCE_MISSING")
 
@@ -277,12 +305,12 @@ class CloneProvenanceTests(unittest.TestCase):
     def test_missing_sidecar_fails_closed_without_clone_or_copy_calls(self):
         self.rust_path.write_text("fn main() {}\n")
         self.source_path.write_text("fn main(): pass\n")
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 0)
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 0)
         self.assertEqual(audit["status"], "PROVENANCE_MISSING")
 
     def test_runtime_label_without_source_evidence_is_rejected(self):
         self.write_manifest(self.manifest("runtime_support"))
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -298,7 +326,7 @@ class CloneProvenanceTests(unittest.TestCase):
                                          "end": {"line": 1, "column": len(forged.read_text().rstrip()) + 1}},
             "runtime_callsite_id": "forged-reviewed-callsite"})
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -306,7 +334,7 @@ class CloneProvenanceTests(unittest.TestCase):
         manifest = self.manifest()
         manifest["source_copy_occurrences"][0]["source_span"] = self.rust_occ
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -314,7 +342,7 @@ class CloneProvenanceTests(unittest.TestCase):
         manifest = self.manifest()
         manifest["rust_sha256"] = "0" * 64
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -324,20 +352,20 @@ class CloneProvenanceTests(unittest.TestCase):
         evidence.update({"semantic_type": "FileIO", "ownership_fact": "CONSUME_NOT_READ",
                          "semantic_identity": "forged:unrelated-binding"})
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
     def test_missing_checker_authority_is_blocked(self):
         self.write_manifest(self.manifest())
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
         self.assertEqual(audit["status"], "PROVENANCE_MISSING")
 
     def test_perturbed_checked_fact_is_rejected(self):
         manifest = self.manifest()
         manifest["checked_copy_facts"][0]["facts"][0]["required_source_access"] = "CONSUME"
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -345,7 +373,7 @@ class CloneProvenanceTests(unittest.TestCase):
         manifest = self.manifest()
         fact = self.fact()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
             {"status": "available", "facts": [fact, fact]})
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -366,7 +394,7 @@ class CloneProvenanceTests(unittest.TestCase):
         manifest["checked_copy_facts"][0]["facts"].append(template)
         manifest["checked_copy_facts"][0]["facts"].sort(key=harness.typed_copy_fact_identity)
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, source_path, "debug", 1,
                                                self.authority([template, first, second]))
         self.assertEqual(audit["status"], "PASS", audit.get("error"))
         self.assertEqual(audit["authorized"], 1)
@@ -408,7 +436,7 @@ class CloneProvenanceTests(unittest.TestCase):
                 group["facts"].append(template)
                 group["facts"].sort(key=harness.typed_copy_fact_identity)
                 self.write_manifest(manifest)
-                audit = harness.audit_clone_provenance(
+                audit = self.audit_clone_provenance(
                     self.rust_path, source_path, "debug", 1,
                     self.authority([template, concrete]))
                 self.assertEqual(audit["status"], "PASS", audit.get("error"))
@@ -441,7 +469,7 @@ class CloneProvenanceTests(unittest.TestCase):
             group["facts"].sort(key=harness.typed_copy_fact_identity)
         self.write_manifest(manifest)
         all_facts = [fact for fact, _ in concrete + templates]
-        audit = harness.audit_clone_provenance(self.rust_path, source_path, "debug", 2,
+        audit = self.audit_clone_provenance(self.rust_path, source_path, "debug", 2,
                                                self.authority(all_facts))
         self.assertEqual(audit["status"], "PASS", audit.get("error"))
         self.assertEqual(audit["authorized"], 2)
@@ -463,7 +491,7 @@ class CloneProvenanceTests(unittest.TestCase):
             manifest["occurrences"][1]["source_copy_id"], \
             manifest["occurrences"][0]["source_copy_id"]
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, source_path, "debug", 2,
+        audit = self.audit_clone_provenance(self.rust_path, source_path, "debug", 2,
                                                self.authority([first, second]))
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -475,7 +503,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.rust_path.write_text(self.rust)
         manifest["rust_sha256"] = hashlib.sha256(self.rust.encode()).hexdigest()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -488,7 +516,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.rust_path.write_text(self.rust)
         manifest["rust_sha256"] = hashlib.sha256(self.rust.encode()).hexdigest()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -500,7 +528,7 @@ class CloneProvenanceTests(unittest.TestCase):
         manifest["occurrences"] = []
         manifest["rust_sha256"] = hashlib.sha256(self.rust.encode()).hexdigest()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -510,7 +538,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.rust_path.write_text(self.rust)
         manifest["rust_sha256"] = hashlib.sha256(self.rust.encode()).hexdigest()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -518,7 +546,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.write_manifest(self.manifest())
         authority = self.authority()
         authority["claimed_by_sidecar"] = True
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                authority)
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
@@ -530,7 +558,7 @@ class CloneProvenanceTests(unittest.TestCase):
         self.fact_row = self.fact()
         manifest = self.manifest()
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+        audit = self.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
                                                self.authority())
         self.assertEqual(audit["status"], "PASS", audit.get("error"))
 
@@ -573,7 +601,8 @@ class CloneProvenanceTests(unittest.TestCase):
             (1, "", "not a method", 0),
             (1, "", "not a handler", 0),
         ])
-        with mock.patch.object(harness, "run_process", side_effect=lambda *_: next(responses)) as run:
+        with mock.patch.object(harness, "run_process",
+                               side_effect=lambda *_, **__: next(responses)) as run:
             actual = harness.query_copy_authority(Path("./moss"), self.source_path)
         self.assertEqual(actual, authority)
         args = [call.args[0] for call in run.call_args_list]
@@ -592,7 +621,8 @@ class CloneProvenanceTests(unittest.TestCase):
             (0, json.dumps({"ok": True, "result": {"copy_authority": second}}), "", 0),
             (1, "", "missing", 0), (1, "", "missing", 0), (1, "", "missing", 0),
         ])
-        with mock.patch.object(harness, "run_process", side_effect=lambda *_: next(responses)):
+        with mock.patch.object(harness, "run_process",
+                               side_effect=lambda *_, **__: next(responses)):
             actual = harness.query_copy_authority(Path("./moss"), self.source_path)
         self.assertEqual(actual["status"], "conflicting")
 

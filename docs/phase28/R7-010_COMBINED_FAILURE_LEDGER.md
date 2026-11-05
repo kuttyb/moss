@@ -78,3 +78,33 @@ Each listed fixture has zero semantic failures and passes its checker and execut
 ## Disposition
 
 **NO-GO.** The combined compiler is semantically conformant on this oracle run, but the 480 unclassified clone rows and 24 missing-sidecar occurrences remain blocking provenance gaps. The 19/60 overall pass count reflects provenance acceptance, not 41 semantic defects. Next work: refresh the independent grouping by actual emitter site, establish exact authorization or eliminate Moss-value duplication, and restore complete ORACLE-54 consumer/provider provenance. Do not alter frozen expectations.
+
+## Focused follow-up after implementation `a07a03e8` (not a full oracle rerun)
+
+- Single-source explicit-module artifacts now receive their own v3 provenance sidecars, bound to the module source and full checked Program facts. Multi-source modules still omit the sidecar and remain fail-closed because v3 currently has a single-source digest contract.
+- The targeted ORACLE-54 project rerun now reports sidecar-backed `UNAUTHORIZED` rows for each runtime clone instead of `PROVENANCE_MISSING`: 5 unclassified/unauthorized clones in each of four provider/consumer Debug/Optimized artifacts. Checker, imported `.mossi` raise effects, Fast Debug, and Native Debug/Optimized outputs all pass. This is a focused result, not a refreshed 60-fixture total.
+- Removed the worker-spawn affinity `Vec<usize>` clone by borrowing the affinity list through the executor `Arc` already owned by the worker closure. `check_phase20c_executor.py` passes all 54 runtime tests. Independent Agent 2 verified the affinity clone is absent from generated Rust.
+- Independent Agent 2 re-audited the changed runtime template at source SHA-256 `e8a06b21315910792200c820d6777f005b91986379517db03d1fec28855e9ebc`: five sites remain. Four clone executor/branch `Arc` handles; one clones an owned config snapshot including its affinity vector. Verdict remains NO-GO to authorize/allowlist any of the five: no checker `copy(x)` authority or approved runtime exception exists, and the config snapshot duplicates data.
+- Oracle unit and inventory gates pass 46/46. A fresh complete 60-fixture run is still required after implementation changes; the prior `5120cfbf` counts are stale for this tree.
+
+### Refreshed executor runtime callsite audit
+
+Independent Agent 2 pinned the updated source `src/executor_runtime.cpp` to
+SHA-256 `e8a06b21315910792200c820d6777f005b91986379517db03d1fec28855e9ebc`
+and generated a minimal artifact with SHA-256
+`e20f94bab26b4482300431ee5c0f34420e188b71c90388eb4d7ec02c8534a059`. The
+removed affinity clone is absent from both. Remaining generated Rust lines map
+to these exact C++ source lines:
+
+| Rust line | C++ line | Type / behavior | Review disposition |
+|---:|---:|---|---|
+| 2014 | 497 | `Option<Arc<MossGlobalExec>>`, process active-executor handle | Not authorized |
+| 2356 | 839 | `Option<Vec<usize>>`, owned executor config snapshot | Data duplication; not authorized |
+| 2906 | 1389 | `MossBranchScope`, raw-ABI Arc reference count | Not authorized |
+| 2948 | 1431 | `Option<Arc<MossGlobalExec>>`, worker TLS handle | Not authorized |
+| 3111 | 1594 | test/perf config snapshot including affinity vector | Not authorized |
+
+Agent 2's refreshed verdict is NO-GO to allowlist any of the five. The four
+handle sites have no approved runtime exception; the config snapshot also
+copies owned vector data. All five lack checker `copy(x)` facts. This table is
+source/artifact evidence, not authorization.

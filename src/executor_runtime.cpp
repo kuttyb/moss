@@ -721,7 +721,6 @@ impl Drop for MossWorkerThreadGuard {
 /// `live_threads` (and `active_workers`).
 fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
     let gx2 = std::sync::Arc::clone(gx);
-    let affinity = gx.config.affinity.clone();
     let priority = gx.config.priority;
     let handle = std::thread::Builder::new()
         .name(format!("moss-worker-{}", wid))
@@ -729,7 +728,7 @@ fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
             let _slot = MossWorkerThreadGuard(std::sync::Arc::clone(&gx2));
             #[cfg(any(test, moss_perf))]
             moss_rt_ev(MossRtEvent::WorkerSpawned, 0, 0, wid);
-            apply_affinity_and_priority(affinity.as_ref(), priority);
+            apply_affinity_and_priority(gx2.config.affinity.as_ref(), priority);
             worker_loop(gx2, wid);
         })
         .expect("failed to spawn worker thread");
