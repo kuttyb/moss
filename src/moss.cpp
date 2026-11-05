@@ -10906,6 +10906,73 @@ static void write_copy_authority_json(std::ostream& out,
   out << "]}";
 }
 
+static void write_root_ingress_capture_authority_json(
+    std::ostream& out, const Program& program,
+    const std::string& source_file) {
+  if (!program.typed_semantics) {
+    out << "{\"status\":\"unavailable\",\"facts\":[]}";
+    return;
+  }
+  const std::string normalized_file = normalized_source_path(source_file);
+  if (normalized_file.empty()) {
+    out << "{\"status\":\"unavailable\",\"facts\":[]}";
+    return;
+  }
+  std::ifstream input(normalized_file, std::ios::binary);
+  if (!input) {
+    out << "{\"status\":\"unavailable\",\"facts\":[]}";
+    return;
+  }
+  const std::string source((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+  const std::string source_digest =
+      "sha256:" + source_free_contract_sha256(source);
+  std::vector<const TypedRootIngressDomainCaptureRequirementV1*> requirements;
+  for (const auto& requirement : program.typed_semantics
+           ->required_root_ingress_domain_capture_occurrences)
+    if (normalized_source_path(requirement.source_file) == normalized_file)
+      requirements.push_back(&requirement);
+  std::sort(requirements.begin(), requirements.end(), [](const auto* left,
+                                                          const auto* right) {
+    return std::tie(left->source_line, left->selected_call_edge_occurrence,
+                    left->est_arena_index,
+                    left->message_expression_occurrence_id,
+                    left->specialization_context) <
+        std::tie(right->source_line, right->selected_call_edge_occurrence,
+                 right->est_arena_index,
+                 right->message_expression_occurrence_id,
+                 right->specialization_context);
+  });
+  std::vector<const TypedRootIngressDomainCaptureFactV1*> facts;
+  for (const auto& fact : program.typed_semantics
+           ->root_ingress_domain_capture_facts)
+    if (normalized_source_path(fact.source_file) == normalized_file)
+      facts.push_back(&fact);
+  if (facts.size() != requirements.size())
+    throw std::invalid_argument(
+        "Root-ingress capture requirements and facts do not exactly cover the source");
+  out << "{\"status\":\"available\",\"facts\":[";
+  for (std::size_t index = 0; index < requirements.size(); ++index) {
+    const auto& requirement = *requirements[index];
+    const auto& fact = program.typed_semantics
+        ->find_root_ingress_domain_capture_fact(requirement);
+    if (normalized_source_path(fact.source_file) != normalized_file ||
+        !fact.is_authoritative() || fact.permits_moss_value_copy)
+      throw std::invalid_argument(
+          "Root-ingress capture authority is not exact for its source");
+    if (index) out << ',';
+    out << "{\"capture_id\":";
+    write_debug_json_string(out, native_root_ingress_capture_identity(fact));
+    out << ",\"source_file\":";
+    write_debug_json_string(out, normalized_file);
+    out << ",\"source_sha256\":";
+    write_debug_json_string(out, source_digest);
+    out << ",\"checked_fact\":"
+        << native_root_ingress_capture_fact_json(fact) << '}';
+  }
+  out << "]}";
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
@@ -10989,6 +11056,8 @@ static bool write_semantic_query_json(
         out, "effects are inferred from the checked body and its statically resolved callees");
     out << ", \"copy_authority\": ";
     write_copy_authority_json(out, program, source_file);
+    out << ", \"root_ingress_capture_authority\": ";
+    write_root_ingress_capture_authority_json(out, program, source_file);
   }
   if (command == "inspect" || command == "ownership" || command == "effects") {
     out << ", \"ownership_facts\": ";
@@ -23599,9 +23668,31 @@ static string native_clone_provenance_v3_json(
   for (auto& entry : fact_groups)
     exact_fact_groups.push_back(std::move(entry.second));
 
+  vector<NativeRootIngressCaptureInputV1> root_capture_inputs;
+  for (const auto& requirement : program.typed_semantics
+           ->required_root_ingress_domain_capture_occurrences) {
+    if (normalized_source_path(requirement.source_file) != normalized_source)
+      continue;
+    try {
+      const auto& fact = program.typed_semantics
+          ->find_root_ingress_domain_capture_fact(requirement);
+      if (normalized_source_path(fact.source_file) != normalized_source ||
+          fact.permits_moss_value_copy || !fact.is_authoritative())
+        throw std::invalid_argument(
+            "Root-ingress capture fact is not authoritative for this source artifact");
+      root_capture_inputs.push_back({fact, source_bytes});
+    } catch (const std::exception& error) {
+      throw ProjectError("MOSS_INTERNAL_INVARIANT",
+          string("cannot serialize checked Root-ingress capture fact: ") +
+              error.what(),
+          normalized_source, requirement.source_line);
+    }
+  }
+
   NativeCloneProvenanceV3 manifest = build_native_clone_provenance_v3(
       optimized ? "optimized" : "debug", rust_bytes, source_bytes,
-      std::move(lexical_copies), std::move(exact_fact_groups));
+      std::move(lexical_copies), std::move(exact_fact_groups),
+      std::move(root_capture_inputs));
   std::ostringstream output;
   write_native_clone_provenance_v3(
       output, rust_bytes, source_bytes, manifest);

@@ -477,6 +477,150 @@ def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
     return successful_authorities[0]
 
 
+def query_root_ingress_capture_authority(compiler: Path,
+                                        source_path: Path) -> dict:
+    """Read source-complete Root-ingress capture facts from the checker."""
+    code, stdout, stderr, _ = run_process([
+        str(compiler), "ownership", "main", "--source", str(source_path), "--json"])
+    if code != 0:
+        return {"status": "unavailable", "reason": (stderr or stdout).strip()}
+    try:
+        payload = json.loads(stdout)
+        result = payload.get("result")
+        authority = result.get("root_ingress_capture_authority") \
+            if isinstance(result, dict) else None
+    except (json.JSONDecodeError, AttributeError):
+        return {"status": "unavailable", "reason": "ownership query returned malformed JSON"}
+    if not isinstance(authority, dict):
+        return {"status": "unavailable", "reason": "ownership query omitted Root-ingress capture authority"}
+    return authority
+
+
+def validate_root_ingress_capture_authority(
+        source: str, source_path: Path, sidecar_rows: list[dict],
+        authority: dict | None, rust: str,
+        rust_occurrences: list[dict], occurrence_rows: list[dict]) -> dict[str, dict]:
+    """Bind each sidecar capture marker and clone to a live exact checker fact."""
+    if not isinstance(authority, dict) or authority.get("status") != "available":
+        reason = authority.get("reason", "Root-ingress checker authority is unavailable") \
+            if isinstance(authority, dict) else "Root-ingress checker authority is unavailable"
+        raise LookupError(reason)
+    if set(authority) != {"status", "facts"} or not isinstance(authority["facts"], list):
+        raise ValueError("Root-ingress capture authority has missing or unknown fields")
+    source_digest = "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
+    expected_path = str(source_path.resolve())
+    authority_by_id: dict[str, dict] = {}
+    fact_keys = {
+        "availability", "compiler_generated_capture_only", "concrete_graph_identity",
+        "domain_instance_identity", "domain_type_identity", "est_arena_index",
+        "est_fact_context", "message_expression_occurrence_id", "origin_id",
+        "permits_moss_value_copy", "receiver_binding", "receiver_definition_identity",
+        "receiver_expression_occurrence_id", "route_capability_identity",
+        "selected_call_edge_est_arena_index", "selected_call_edge_identity",
+        "selected_call_edge_invocation_kind", "selected_call_edge_line",
+        "selected_call_edge_message_expression_occurrence_id",
+        "selected_call_edge_occurrence", "selected_call_edge_receiver",
+        "selected_call_edge_receiver_expression_occurrence_id",
+        "selected_call_edge_source", "selected_call_edge_source_file",
+        "selected_call_edge_source_fingerprint", "selected_call_edge_target",
+        "selected_handler_identity", "source_file", "source_fingerprint",
+        "source_line", "specialization_context", "statement_occurrence_id",
+        "synchronous_root_ingress",
+    }
+    for row in authority["facts"]:
+        if not isinstance(row, dict) or set(row) != {
+                "capture_id", "source_file", "source_sha256", "checked_fact"}:
+            raise ValueError("Root-ingress checker authority row has missing or unknown fields")
+        fact = row["checked_fact"]
+        if not isinstance(fact, dict) or set(fact) != fact_keys:
+            raise ValueError("checked Root-ingress fact has missing or unknown fields")
+        canonical = json.dumps(fact, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"), allow_nan=False).encode("utf-8")
+        capture_id = "root-ingress-domain-capture-fact-v1:" + hashlib.sha256(canonical).hexdigest()
+        if row["capture_id"] != capture_id or capture_id in authority_by_id:
+            raise ValueError("duplicate or malformed Root-ingress checked fact identity")
+        if (row["source_file"] != expected_path or fact["source_file"] != expected_path or
+                row["source_sha256"] != source_digest):
+            raise ValueError("Root-ingress checked fact source identity or digest mismatch")
+        if (fact["availability"] != "Present" or
+                fact["synchronous_root_ingress"] is not True or
+                fact["compiler_generated_capture_only"] is not True or
+                fact["permits_moss_value_copy"] is not False or
+                fact["selected_call_edge_source"] != "main" or
+                fact["selected_call_edge_invocation_kind"] != "synchronous_message" or
+                fact["selected_call_edge_receiver"] != fact["receiver_binding"] or
+                fact["selected_call_edge_source_file"] != expected_path or
+                fact["selected_call_edge_line"] != fact["source_line"] or
+                fact["selected_call_edge_source_fingerprint"] != fact["source_fingerprint"] or
+                fact["selected_call_edge_message_expression_occurrence_id"] !=
+                    fact["message_expression_occurrence_id"] or
+                fact["selected_call_edge_receiver_expression_occurrence_id"] !=
+                    fact["receiver_expression_occurrence_id"]):
+            raise ValueError("Root-ingress checker fact violates its capture-only contract")
+        for name in ("concrete_graph_identity", "domain_instance_identity", "domain_type_identity",
+                     "est_fact_context", "receiver_binding", "receiver_definition_identity",
+                     "route_capability_identity", "selected_call_edge_identity",
+                     "selected_call_edge_target", "selected_handler_identity",
+                     "specialization_context"):
+            if not isinstance(fact[name], str) or not fact[name]:
+                raise ValueError(f"Root-ingress checked fact lacks {name}")
+        authority_by_id[capture_id] = fact
+
+    if not isinstance(sidecar_rows, list):
+        raise ValueError("root_ingress_domain_captures is not an array")
+    sidecar_by_id: dict[str, dict] = {}
+    for row in sidecar_rows:
+        if not isinstance(row, dict) or set(row) != {
+                "capture_id", "checked_fact", "source_sha256", "rust_span"}:
+            raise ValueError("Root-ingress sidecar row has missing or unknown fields")
+        capture_id = row["capture_id"]
+        if capture_id in sidecar_by_id or authority_by_id.get(capture_id) != row["checked_fact"]:
+            raise ValueError("Root-ingress sidecar row differs from exact checker authority")
+        if row["source_sha256"] != source_digest:
+            raise ValueError("Root-ingress sidecar source digest mismatch")
+        span = row["rust_span"]
+        if not isinstance(span, dict) or set(span) != {"start", "end"}:
+            raise ValueError("Root-ingress sidecar Rust span is malformed")
+        key = _span_key(span)
+        if key not in {_span_key(occurrence) for occurrence in rust_occurrences}:
+            raise ValueError("Root-ingress sidecar span is not a Rust clone occurrence")
+        clone_start, _ = _span_offsets(rust, span)
+        marker = f"/* Moss root ingress capture fact: {capture_id} */"
+        before = rust[:clone_start].rstrip()
+        if not before.endswith(marker):
+            raise ValueError("Root-ingress sidecar clone lacks its exact adjacent marker")
+        marker_start = len(before) - len(marker)
+        receiver_prefix = before[:marker_start].rstrip()
+        receiver_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)$", receiver_prefix)
+        if not receiver_match or receiver_match.group(1) != row["checked_fact"]["receiver_binding"]:
+            raise ValueError("Root-ingress marker is not adjacent to its checked receiver")
+        sidecar_by_id[capture_id] = row
+    if set(sidecar_by_id) != set(authority_by_id):
+        raise ValueError("Root-ingress sidecar rows do not exactly cover checker authority")
+
+    roots_by_id: dict[str, list[dict]] = {}
+    for occurrence in occurrence_rows:
+        if occurrence.get("origin_kind") != "root_ingress_domain_capture":
+            continue
+        evidence = occurrence.get("evidence")
+        if not isinstance(evidence, dict):
+            raise ValueError("Root-ingress clone occurrence lacks evidence")
+        capture_id = evidence.get("semantic_identity")
+        capture = sidecar_by_id.get(capture_id)
+        if (capture is None or occurrence.get("source_copy_id") is not None or
+                occurrence.get("rust_span") != capture["rust_span"] or
+                evidence.get("semantic_type") !=
+                    capture["checked_fact"]["domain_type_identity"] or
+                evidence.get("ownership_fact") !=
+                    "compiler_generated_capture_only;permits_moss_value_copy=false"):
+            raise ValueError("Root-ingress clone occurrence differs from its checker fact")
+        roots_by_id.setdefault(capture_id, []).append(occurrence)
+    if set(roots_by_id) != set(sidecar_by_id) or any(
+            len(rows) != 1 for rows in roots_by_id.values()):
+        raise ValueError("Root-ingress checker facts and clone occurrences are not one-to-one")
+    return sidecar_by_id
+
+
 def clone_occurrences(rust: str) -> list[dict]:
     masked = mask_rust_non_code(rust)
     return [{"start": _position(rust, start), "end": _position(rust, end)}
@@ -853,7 +997,8 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
 
 def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                            expected_copy_calls: int,
-                           checked_copy_authority: dict | None = None) -> dict:
+                           checked_copy_authority: dict | None = None,
+                           root_ingress_authority: dict | None = None) -> dict:
     """Require a bijective artifact map for every Rust clone occurrence."""
     if not rust_path.exists():
         return {"status": "RUST_MISSING", "authorized": 0, "unauthorized": 0, "unclassified": 0, "occurrences": []}
@@ -882,7 +1027,8 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         if manifest.get("format") != "moss-clone-provenance" or manifest.get("version") != 3:
             raise ValueError("unsupported clone provenance format")
         if set(manifest) != {"format", "version", "mode", "rust_sha256", "source_sha256",
-                             "source_copy_occurrences", "checked_copy_facts", "occurrences"}:
+                             "source_copy_occurrences", "checked_copy_facts",
+                             "root_ingress_domain_captures", "occurrences"}:
             raise ValueError("clone provenance v3 manifest has missing or unknown fields")
         if manifest.get("mode") != mode:
             raise ValueError(f"mode mismatch: expected {mode}")
@@ -893,6 +1039,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         rows = manifest.get("occurrences")
         if not isinstance(rows, list):
             raise ValueError("occurrences is not an array")
+        root_capture_rows = validate_root_ingress_capture_authority(
+            source, source_path, manifest.get("root_ingress_domain_captures"),
+            root_ingress_authority, rust, rust_occurrences, rows)
         indexed = {}
         for row in rows:
             if not isinstance(row, dict) or set(row) != {
@@ -988,6 +1137,10 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                     actual = row.get("origin_kind") if key == "origin_kind" else evidence.get(key)
                     if actual != callsite.get(key):
                         raise ValueError(f"runtime clone evidence disagrees with reviewed callsite field: {key}")
+            elif origin == "root_ingress_domain_capture":
+                if set(evidence) != {"rust_context_span", "rust_context_sha256",
+                                     "semantic_type", "ownership_fact", "semantic_identity"}:
+                    raise ValueError("Root-ingress evidence has missing or unknown fields")
             else:
                 if _span_key(row["rust_span"]) in derived_copy_links:
                     raise ValueError("fact-derived clone is mislabeled as unclassified")
@@ -999,8 +1152,11 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
             declared = [_span_key(x) for x in source_row["rust_clone_spans"]]
             if sorted(declared) != sorted(explicit_by_id[copy_id]):
                 raise ValueError(f"source-to-Rust copy lowering links mismatch: {copy_id}")
-        return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(source_by_id),
-                "unauthorized": unauthorized, "unclassified": unclassified, "occurrences": rows}
+        return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED",
+                "authorized": len(source_by_id),
+                "root_ingress_captures": len(root_capture_rows),
+                "unauthorized": unauthorized, "unclassified": unclassified,
+                "occurrences": rows}
     except LookupError as error:
         return {"status": "PROVENANCE_MISSING", "authorized": 0,
                 "unauthorized": 0, "unclassified": len(rust_occurrences),
@@ -1208,6 +1364,9 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["copy_authority_query"] = {
             "status": copy_authority.get("status", "malformed")
             if isinstance(copy_authority, dict) else "malformed"}
+    root_ingress_authority = query_root_ingress_capture_authority(compiler, fpath)
+    result["root_ingress_capture_authority_query"] = {
+        "status": root_ingress_authority.get("status", "malformed")}
 
     # 1. Semantic Checker
     check_code, check_stdout, check_stderr, check_time = run_process(
@@ -1323,7 +1482,8 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["failures"].append(f"Native emission failed: {emit_stderr.strip()}")
     else:
         clone_audit = audit_clone_provenance(out_rs, fpath, "debug",
-            fixture.get("authorized_explicit_copies", 0), copy_authority)
+            fixture.get("authorized_explicit_copies", 0), copy_authority,
+            root_ingress_authority)
         result["clone_audit"]["native_debug"] = clone_audit
         if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
                 clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):
@@ -1390,7 +1550,8 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["failures"].append(f"Native -O emission failed: {emit_opt_stderr.strip()}")
     else:
         clone_audit = audit_clone_provenance(out_opt_rs, fpath, "optimized",
-            fixture.get("authorized_explicit_copies", 0), copy_authority)
+            fixture.get("authorized_explicit_copies", 0), copy_authority,
+            root_ingress_authority)
         result["clone_audit"]["native_optimized"] = clone_audit
         if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
                 clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):

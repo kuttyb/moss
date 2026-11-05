@@ -62,7 +62,10 @@ subprocess.run([compiler, fixture, "-o", rust_path], cwd=ROOT, check=True,
                capture_output=True, text=True)
 authority = oracle.query_copy_authority(compiler, fixture)
 assert authority and authority.get("status") == "available", authority
-real_audit = oracle.audit_clone_provenance(rust_path, fixture, "debug", 1, authority)
+root_authority = oracle.query_root_ingress_capture_authority(compiler, fixture)
+assert root_authority and root_authority.get("status") == "available", root_authority
+real_audit = oracle.audit_clone_provenance(
+    rust_path, fixture, "debug", 1, authority, root_authority)
 assert (real_audit.get("status"), real_audit.get("authorized"),
         real_audit.get("unauthorized"), real_audit.get("unclassified")) == (
             "UNAUTHORIZED", 1, 6, 6), real_audit
@@ -74,12 +77,14 @@ def rejects_mutation(mutator):
     candidate = json.loads(original)
     mutator(candidate)
     sidecar.write_text(json.dumps(candidate))
-    result = oracle.audit_clone_provenance(rust_path, fixture, "debug", 1, authority)
+    result = oracle.audit_clone_provenance(
+        rust_path, fixture, "debug", 1, authority, root_authority)
     assert result.get("status") == "INVALID_PROVENANCE", result
 
 try:
     sidecar.unlink()
-    missing = oracle.audit_clone_provenance(rust_path, fixture, "debug", 1, authority)
+    missing = oracle.audit_clone_provenance(
+        rust_path, fixture, "debug", 1, authority, root_authority)
     assert missing.get("status") == "PROVENANCE_MISSING", missing
     sidecar.write_text(original)
 

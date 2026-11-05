@@ -16494,9 +16494,47 @@ untouched.
   harness (38 scenarios); direct C++ provenance-v3 builder unit (including
   missing, forged, duplicate, wrong-receiver, copy-permission and source
   corruption cases); manifest JSON parse/key check; `git diff --check`.
-- Real artifact end-to-end is blocked pending L7 `src/moss.cpp` writer wiring:
-  the current old 5-argument writer rejects the emitted Root-ingress marker as
-  unknown because it supplies no `root_capture_inputs`. The exact builder
-  signature and schema were sent to L7. No sidecar or clone authorization is
-  accepted until the writer and independent validator are integrated and run.
-  Independent Agent 2 review is pending; no push.
+- At this checkpoint the real artifact path was blocked pending L7
+  `src/moss.cpp` writer wiring; that work and the independent review are recorded
+  below.
+
+### Root-ingress provenance writer integration (2026-11-05)
+
+- Team B's frozen consumer commit `34475dd0677942ed2145674f5bc5f83734537a5b`
+  was independently reviewed GO by Agent 2 and pushed to
+  `phase28-r7-010-team-b-domain-capture-v2`. L7 integrated the exact source
+  commit as `309ef30d` on `phase28-r7-010-l7-copy-authority`.
+- L7 updated `src/moss.cpp` to filter checked Root-ingress requirements by
+  normalized source, resolve each through
+  `find_root_ingress_domain_capture_fact`, reject non-authoritative or
+  copy-permitting facts, and pass the exact fact plus current source bytes to
+  the v3 provenance builder. The ownership JSON query now also exposes the
+  same source-complete checker facts for independent sidecar validation.
+- The oracle validator now requires the v3 Root-ingress array, compares every
+  full fact with a live checker query and source digest, validates canonical
+  fact IDs, adjacent receiver markers, exact Rust clone spans, and one-to-one
+  occurrence mappings. It does not count a capture-only fact as permission to
+  copy a Moss value. Registered
+  `check_phase28_root_ingress_provenance.py` exercises ORACLE-43/45 in Debug
+  and Optimized modes and rejects dropped, duplicate, forged, displaced, or
+  unpaired rows.
+- Validation: `make --jobs="$(nproc)" moss` PASS; Root-ingress checker authority
+  gate 38/38 PASS; production provenance gate 32 checks PASS; provenance-v3
+  builder/real ORACLE-10A sidecar corruption gate PASS; direct ORACLE-43/45
+  audits each bind one Root-ingress row and leave six unrelated clone
+  occurrences unclassified; Python compile, feedback validation, and
+  `git diff --check` PASS. Regression probes also exposed incomplete native
+  consumption for Root-ingress facts in try/recover assignments: the
+  Phase 27.5.1 `join_try.moss` emission fails the builder's exact-marker
+  coverage, and X1 package build fails closed because an active message ExprId
+  is unavailable. These are real combined regressions, not passes.
+- Team B has a focused follow-up to preserve exact active-message identities
+  through those try/recover/package lowering paths. L7 will rerun both
+  regressions before treating the writer integration as complete. The stricter
+  builder currently prevents artifacts with missing Root-ingress markers from
+  receiving a misleading sidecar.
+- Full 60-fixture oracle, default/shadow suites, refreshed full clone census,
+  runtime clone provenance, and final integration review remain pending. The
+  six runtime-template clone sites are still unapproved. The local staging
+  branch has not yet pushed the L7 integration commit; no production merge is
+  authorized.
