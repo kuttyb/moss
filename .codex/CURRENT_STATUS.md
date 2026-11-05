@@ -17040,3 +17040,7 @@ untouched.
   v3 builder gate, and 46 oracle harness/clone inventory tests pass. This
   resolves the provenance review blocker but does not resolve the Regex Cargo
   failures or R7 final acceptance.
+- L7 checkpoint `f3e837db` is committed and pushed to
+  `origin/phase28-r7-010-l7-copy-authority`. It is explicitly WIP. The working
+  tree was clean immediately after push. No AGENTS.md no-push rule was present
+  in this branch, so no AGENTS.md edit was required before the authorized push.
