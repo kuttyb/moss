@@ -17141,3 +17141,28 @@ untouched.
   clone authorization/provenance audit, frozen 60-fixture oracle, and full
   default/EST-shadow regression suites. Team C has no new frozen conformance
   delivery. Staging remains WIP; no merge to `phase28-work` or `main`.
+
+### L7 Match formatting and Regex package follow-up (2026-11-05, later)
+
+- L7 integrated the independently reviewed Team B primitive Match value-place
+  fix `88803726` as commit `d40cd85d`. This was missing from the earlier
+  cherry-pick of the later transfer commit. `make moss-dev` and `make moss-opt`
+  pass; the Match payload WRITE/READ gates pass; fresh `margo build --json` for
+  the isolated Regex package now passes, including provenance generation. The
+  previous 12 Rust `unused_parens` diagnostics are resolved on this exact tree.
+- Regex package tests remain blocked: `margo test --json` and direct
+  `moss test --json` fail in native generation with
+  `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
+  READ/WRITE, Copy, or projected-borrow authority` at the native indexed-read
+  consumer. The test source `tests/regex_test.moss` uses nonprimitive
+  `spans[0].text` in `assertEqual`; direct `moss check --json` of that file
+  passes. Team B is investigating the exact projected-read consumer context;
+  it will not infer missing checker authority.
+- The 19/60 full-gate, 60/60 semantic, 41 provenance-blocked oracle result and
+  252 unverified `.clone()` rows were measured immediately before `d40cd85d`.
+  `d40cd85d` changes primitive Match WRITE formatting and fixtures only; rerun
+  the full oracle after the checker and native follow-ups settle. The three
+  repeated executor-runtime clone template sites remain unclassified.
+- Agent 2 GO covers the scoped Match change and the interpreter test-only
+  requirement-loss hook. The production checker decision-slot contract remains
+  pending; it is not represented as fixed by the test-only strict mode.
