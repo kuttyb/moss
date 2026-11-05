@@ -1,3 +1,22 @@
+### Team B native generator g++ warning follow-up (2026-11-05)
+
+- Branch `phase28-r7-010-team-b-warning-fix` is based on L7 staging SHA
+  `e8af2534`. In `src/native_generator.cpp`, remove unused local bindings for
+  checked Queue.pop and Map.remove collection outcome facts; the resolver call
+  and conditional behavior are unchanged.
+- `make --jobs="$(nproc)" moss-dev COMPILER_DIR=tmp/team-b-warning/build/compiler`
+  passes. The updated native generator also compiles with the statement-call
+  harness's g++ `-Werror` flags. Compiling the exact pre-fix file from
+  `e8af2534` reproduces both unused-variable errors at lines 5891 and 5902.
+- `check_collection_outcome_consumers.py` passes Native Debug/Optimized and
+  Fast Debug parity, fact drop/duplicate/perturb checks, and source-level Never
+  rejection.
+- `check_phase25_statement_call_occurrence_roles.py` now compiles its C++ test
+  successfully but fails its checker assertion at runtime. The same assertion
+  fails on `phase28-work` baseline `150ab36b`; this is not caused by the native
+  warning fix. Do not report the overall harness as passing.
+- Candidate awaits independent Agent 2 review. No push yet.
+
 ### Team B checked match projection borrow (2026-11-05)
 
 - Branch `phase28-r7-010-team-b-clone-sites` is based on L7 integration SHA
