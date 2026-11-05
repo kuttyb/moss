@@ -25,7 +25,7 @@ The successor preserves each parent expected semantic verdict and diagnostic pri
 | ORACLE-30 | Accept `OWNERSHIP_INCOMPATIBLE_JOIN` alongside `OWNERSHIP_MIXED_JOIN`. | R7-008 §6D reports the implementation's incompatible-join diagnostic for the forbidden borrowed/owned live join; proposal §4 rejects an impossible promotion. The frozen baseline result itself was unexpected acceptance, so this mapping must not be treated as proof that behavior is repaired. |
 | ORACLE-34 | Accept `MATCH_READ_BORROW_ACTIVE` alongside `OWNERSHIP_CONFLICTING_ACCESS`. | The certified ledger reports the match-borrow-specific rejection; proposal §6.1 prohibits overwriting the scrutinee while its payload is live. |
 | ORACLE-35 | Accept `BORROWED_ENUM_PAYLOAD_ACCESS` alongside `OWNERSHIP_ILLEGAL_CONSUME`. | The certified ledger reports the borrowed-payload rejection; proposal §6.1 requires ordinary match to borrow and forbids extracting an owned payload. |
-| ORACLE-10B | Add the certified baseline `TYPE_AMBIGUOUS_OPEN_RESULT` as a narrow alternative only when its message is `unbound open result type` and its reported source line is the `.clone()` call. Keep `CLONE_ALIAS_UNSUPPORTED` as primary. | The frozen fixture at `oracle_10b_clone_alias_rejected.moss:7` applies the unsupported `.clone()` spelling to a concrete indexed `Record`. The certified failure ledger records the type-ambiguity rejection at that source location, while the expected semantic rule is that `.clone()` is not a source duplication alias. Because this code/message is generic, the reviewer must decide whether the exact message+line anchor attributes it sufficiently or whether ORACLE-10B should instead receive a context-strengthened fixture. R7-008 §6B reports it later passes; §6D does not include it among remaining mismatches.
+| ORACLE-10B | Keep only `CLONE_ALIAS_UNSUPPORTED`; constrain `v[0].clone()` through `observe(record: Record)` so the result type has a concrete consumer. The v2 harness explicitly rejects `TYPE_AMBIGUOUS_OPEN_RESULT` at the clone source line. | The approved P28-R7-005 addendum reserves explicit duplication for `copy(x)`. The certified baseline reported generic open-result ambiguity for a bare assignment, while R7-008 §6B records the fixture later passing. The first normative review rejected accepting that generic code; this successor changes the probe context and retains only the clone-specific diagnostic. |
 
 The five R7-008 §6D candidates and ORACLE-10B form the six candidate mapping repairs requested. The 10B change was revised after independent NO-GO: the generic alternative was removed and the source probe now constrains the clone result through a concrete consumer.
 
@@ -48,3 +48,9 @@ Please re-review the revised ORACLE-10B fixture/mapping along with the five acce
   alternative was removed and the fixture was changed to provide a concrete
   `Record` consumer. No implementation comparison was run. Re-review is
   pending on the corrected successor SHA.
+- Re-review of `13a3cebec067fb65bf65e6d5d6da3a2bc9540644` confirmed that the
+  mapping, fixture, negative unit test, earlier accepted candidates, fixture
+  expectations, and v1 digest pins were sound, but returned **NO-GO** because
+  this table still described the removed generic alternative. The stale row is
+  now corrected. No compiler comparison was run; final normative re-review is
+  pending on the updated SHA.

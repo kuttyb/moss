@@ -15425,3 +15425,12 @@ untouched.
 - Successor validation after correction: 60-row data validation passes;
   harness self-tests pass 17/17; feedback validation and `git diff --check` pass.
   No comparison against the compiler has run.
+
+## 2026-11-04 Phase 28 R7-005.1 normative review document correction
+
+- Re-review of `13a3cebec067fb65bf65e6d5d6da3a2bc9540644` confirmed the narrowed
+  ORACLE-10B mapping and fixture, the harness negative test, all previously
+  approved candidates, v1 digest preservation, and 17/17 tests. It returned
+  NO-GO because the normative review table still described the rejected generic
+  mapping alternative. Corrected that stale table row; final normative
+  re-review is pending. No compiler comparison has run.
