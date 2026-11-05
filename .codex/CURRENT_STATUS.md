@@ -15611,3 +15611,25 @@ untouched.
   borrowed-read fixture separately; no root-ingress authority was added here.
 - Next: freeze the corrected checker API for a fresh independent review, then
   hand the exact reviewed SHA to Team B. No push or merge yet.
+
+### R7-010 Reply contract correction (separate local follow-up)
+
+- On branch `phase28-r7-010-team-a-reply-contract` from Echo authority SHA
+  `644d2c71c773bfcf41604189593d3e852f8797e7`, corrected a stale R7-009
+  expectation: proposal §10 and §485 classify String as non-Copy and require
+  explicit `copy(x)` to produce an owned nonprimitive reply. Removed the
+  String exceptions from direct/alias reply validation and from
+  `indexed_borrow_storage_location`, which had prevented String indexed
+  aliases from retaining borrowed provenance.
+- The R7-009 harness now verifies direct `reply strings[0]` rejection,
+  `reply copy(strings[0])` acceptance, String alias reply rejection, and
+  primitive direct indexed reply acceptance. Option/Resource and nonprimitive
+  consume negatives remain in the matrix. No v2 oracle fixture or digest was
+  changed.
+- `tests/phase106d1_read_projection.moss` now uses
+  `reply copy(strings[0])` for `IndexReply`; this preserves the test's owned
+  snapshot intent across later collection mutation. The borrowed-read gate's
+  exact expected output remains unchanged and passes.
+- Dev/opt builds and R7-009 17-case harness pass. The full borrowed-read gate,
+  Echo authority contract, local ownership, W12 dev/opt, R7-006 facts, feedback
+  validator, and diff check pass. Awaiting independent review; no push or merge.
