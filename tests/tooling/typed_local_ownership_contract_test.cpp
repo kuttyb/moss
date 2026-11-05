@@ -19,8 +19,10 @@ static TypedLocalOwnershipRequirementV1 requirement(
   result.killed_definition_identity = "definition:prior";
   result.join_definition_identity = "join:inspect:alias";
   result.source_binding_identity = "parameter:0";
+  result.source_definition_identity = "parameter:0:definition";
   result.access = Effect::Consume;
   result.source_kind = TypedLocalOwnershipFactV1::SourceKind::LocalBinding;
+  result.disposition = TypedLocalOwnershipFactV1::Disposition::Transferred;
   result.availability = TypedLocalOwnershipFactV1::Availability::Present;
   return result;
 }
@@ -39,8 +41,10 @@ static TypedLocalOwnershipFactV1 fact(
   result.join_definition_identity = req.join_definition_identity;
   result.source_binding_identity = req.source_binding_identity;
   result.value_type = req.value_type;
+  result.source_definition_identity = req.source_definition_identity;
   result.access = req.access;
   result.source_kind = req.source_kind;
+  result.disposition = req.disposition;
   result.availability = req.availability;
   return result;
 }
@@ -461,6 +465,75 @@ int main() {
   untyped_fresh_fact.value_type.reset();
   assert(!untyped_fresh_fact.is_authoritative());
 
+  auto borrowed_read_req = first;
+  borrowed_read_req.specialization_context = "fn:borrowed";
+  borrowed_read_req.specialization_identity.clear();
+  borrowed_read_req.access = Effect::Read;
+  borrowed_read_req.disposition =
+      TypedLocalOwnershipFactV1::Disposition::Borrowed;
+  TypedSemanticModuleV1 borrowed_read_module;
+  borrowed_read_module.required_local_ownership_occurrences = {borrowed_read_req};
+  borrowed_read_module.local_ownership_facts = {fact(borrowed_read_req)};
+  assert(borrowed_read_module.find_local_ownership_fact(borrowed_read_req)
+             .is_authoritative());
+  assert(borrowed_read_module.require_all_local_ownership_facts().size() == 1);
+
+  auto borrowed_write_req = borrowed_read_req;
+  borrowed_write_req.access = Effect::Write;
+  TypedSemanticModuleV1 borrowed_write_module;
+  borrowed_write_module.required_local_ownership_occurrences = {borrowed_write_req};
+  borrowed_write_module.local_ownership_facts = {fact(borrowed_write_req)};
+  assert(borrowed_write_module.find_local_ownership_fact(borrowed_write_req)
+             .is_authoritative());
+
+  auto require_throw = [](auto&& operation) {
+    bool threw = false;
+    try { operation(); } catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
+  };
+  auto dropped_borrow_fact = borrowed_read_module;
+  dropped_borrow_fact.local_ownership_facts.clear();
+  require_throw([&] {
+    dropped_borrow_fact.require_all_local_ownership_facts();
+  });
+  auto missing_borrow_requirement = borrowed_read_module;
+  missing_borrow_requirement.required_local_ownership_occurrences.clear();
+  require_throw([&] {
+    missing_borrow_requirement.find_local_ownership_fact(borrowed_read_req);
+  });
+  auto perturbed_borrow_disposition = borrowed_read_module;
+  perturbed_borrow_disposition.local_ownership_facts.front().disposition =
+      TypedLocalOwnershipFactV1::Disposition::Transferred;
+  require_throw([&] {
+    perturbed_borrow_disposition.find_local_ownership_fact(borrowed_read_req);
+  });
+  auto contradictory_borrow_access = borrowed_read_module;
+  contradictory_borrow_access.local_ownership_facts.front().access =
+      Effect::Consume;
+  contradictory_borrow_access.local_ownership_facts.front().disposition =
+      TypedLocalOwnershipFactV1::Disposition::Transferred;
+  require_throw([&] {
+    contradictory_borrow_access.find_local_ownership_fact(borrowed_read_req);
+  });
+  auto duplicate_borrow_fact = borrowed_read_module;
+  duplicate_borrow_fact.local_ownership_facts.push_back(
+      duplicate_borrow_fact.local_ownership_facts.front());
+  require_throw([&] {
+    duplicate_borrow_fact.find_local_ownership_fact(borrowed_read_req);
+  });
+  auto duplicate_borrow_requirement = borrowed_read_module;
+  duplicate_borrow_requirement.required_local_ownership_occurrences.push_back(
+      borrowed_read_req);
+  require_throw([&] {
+    duplicate_borrow_requirement.find_local_ownership_fact(borrowed_read_req);
+  });
+  auto perturbed_borrow_requirement = borrowed_read_module;
+  perturbed_borrow_requirement.required_local_ownership_occurrences.front()
+      .disposition = TypedLocalOwnershipFactV1::Disposition::Transferred;
+  require_throw([&] {
+    perturbed_borrow_requirement.find_local_ownership_fact(
+        perturbed_borrow_requirement.required_local_ownership_occurrences.front());
+  });
   auto missing = module;
   missing.local_ownership_facts.erase(missing.local_ownership_facts.begin());
   require_throw([&] { missing.find_local_ownership_fact(*first_req); });

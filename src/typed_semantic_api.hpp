@@ -76,6 +76,7 @@ struct TypedSpecializationV1 {
 // rebinding versions of one source name or the exact loop element binding.
 // Consumers must treat unavailable records as missing semantic authority.
 struct TypedLocalOwnershipFactV1 {
+  enum class Disposition { NotApplicable, Borrowed, Transferred };
   enum class SourceKind { LocalBinding, VectorElement, FreshOwnedValue };
   enum class InferenceStatus { Inferred, Unsupported };
   enum class UnsupportedReason {
@@ -96,6 +97,7 @@ struct TypedLocalOwnershipFactV1 {
   // predecessor facts for that joined local share this identity.
   std::string join_definition_identity;
   std::string source_binding_identity;
+  std::string source_definition_identity;
   // Stable checker-issued key for the checked specialization, empty for a
   // non-specialized body. This is distinct from specialization_context, which
   // is the checker-published consumer lookup alias used by existing engines.
@@ -106,6 +108,9 @@ struct TypedLocalOwnershipFactV1 {
   est::ExprId expression_occurrence_id{UINT32_MAX};
   Effect access{Effect::Read};
   SourceKind source_kind{SourceKind::LocalBinding};
+  // Explicit whole-local value flow. A missing row is never interpreted as a
+  // borrow; Borrowed and Transferred are checker decisions for LocalBinding.
+  Disposition disposition{Disposition::NotApplicable};
   InferenceStatus inference_status{InferenceStatus::Inferred};
   UnsupportedReason unsupported_reason{UnsupportedReason::None};
   Availability availability{Availability::MissingEstOccurrence};
@@ -116,20 +121,29 @@ struct TypedLocalOwnershipFactV1 {
   // identity needed to locate its checker decision is present. Unsupported
   // inference and incomplete/contradictory records are never authority.
   bool is_authoritative() const noexcept {
+    const bool disposition_matches_source =
+        source_kind == SourceKind::LocalBinding
+            ? ((disposition == Disposition::Borrowed &&
+                (access == Effect::Read || access == Effect::Write)) ||
+               (disposition == Disposition::Transferred &&
+                access == Effect::Consume))
+            : disposition == Disposition::NotApplicable;
     if (inference_status != InferenceStatus::Inferred ||
         availability != Availability::Present ||
         definition_identity.empty() || specialization_context.empty() ||
         statement_occurrence_id == UINT32_MAX ||
-        est_arena_index == UINT32_MAX ||
-        expression_occurrence_id == UINT32_MAX)
+        est_arena_index == UINT32_MAX || expression_occurrence_id == UINT32_MAX)
       return false;
     switch (source_kind) {
       case SourceKind::LocalBinding:
-        return !binding_identity.empty() && !source_binding_identity.empty();
+        return disposition_matches_source && !binding_identity.empty() &&
+            !source_binding_identity.empty() && !source_definition_identity.empty();
       case SourceKind::VectorElement:
-        return !source_binding_identity.empty();
+        return disposition == Disposition::NotApplicable &&
+            !source_binding_identity.empty();
       case SourceKind::FreshOwnedValue:
-        return !binding_identity.empty() && source_binding_identity.empty() &&
+        return disposition == Disposition::NotApplicable &&
+            source_binding_identity.empty() && !binding_identity.empty() &&
             !killed_definition_identity.empty() &&
             killed_definition_identity != definition_identity &&
             join_definition_identity.empty() && access == Effect::Read &&
@@ -151,6 +165,7 @@ struct TypedLocalOwnershipFactV1 {
 // intentionally unsupported fact is present in local_ownership_facts.
 struct TypedLocalOwnershipRequirementV1 {
   using SourceKind = TypedLocalOwnershipFactV1::SourceKind;
+  using Disposition = TypedLocalOwnershipFactV1::Disposition;
   using InferenceStatus = TypedLocalOwnershipFactV1::InferenceStatus;
   using UnsupportedReason = TypedLocalOwnershipFactV1::UnsupportedReason;
   using Availability = TypedLocalOwnershipFactV1::Availability;
@@ -167,8 +182,10 @@ struct TypedLocalOwnershipRequirementV1 {
   std::string join_definition_identity;
   std::string source_binding_identity;
   TypeRef value_type;
+  std::string source_definition_identity;
   Effect access{Effect::Read};
   SourceKind source_kind{SourceKind::LocalBinding};
+  Disposition disposition{Disposition::NotApplicable};
   InferenceStatus inference_status{InferenceStatus::Inferred};
   UnsupportedReason unsupported_reason{UnsupportedReason::None};
   Availability availability{Availability::MissingEstOccurrence};
@@ -1940,8 +1957,10 @@ struct TypedSemanticModuleV1 {
           candidate.join_definition_identity == req.join_definition_identity &&
           candidate.source_binding_identity == req.source_binding_identity &&
           same_local_ownership_type(candidate.value_type, req.value_type) &&
+          candidate.source_definition_identity == req.source_definition_identity &&
           candidate.access == req.access &&
           candidate.source_kind == req.source_kind &&
+          candidate.disposition == req.disposition &&
           candidate.inference_status == req.inference_status &&
           candidate.unsupported_reason == req.unsupported_reason &&
           candidate.availability == req.availability)
@@ -1964,7 +1983,8 @@ struct TypedSemanticModuleV1 {
           fact.binding_identity != req.binding_identity ||
           fact.killed_definition_identity != req.killed_definition_identity ||
           fact.join_definition_identity != req.join_definition_identity ||
-          fact.source_binding_identity != req.source_binding_identity)
+          fact.source_binding_identity != req.source_binding_identity ||
+          fact.source_definition_identity != req.source_definition_identity)
         continue;
       if (result)
         throw std::invalid_argument("duplicate local ownership fact");
@@ -1975,6 +1995,7 @@ struct TypedSemanticModuleV1 {
     if (result->access != req.access ||
         !same_local_ownership_type(result->value_type, req.value_type) ||
         result->source_kind != req.source_kind ||
+        result->disposition != req.disposition ||
         result->inference_status != req.inference_status ||
         result->unsupported_reason != req.unsupported_reason ||
         result->availability != req.availability)
@@ -2088,6 +2109,19 @@ struct TypedSemanticModuleV1 {
     if (!result)
       throw std::invalid_argument("required local transfer fact missing");
     return &find_local_transfer_fact(*result);
+  }
+
+  std::vector<const TypedLocalOwnershipFactV1*>
+  require_all_local_ownership_facts() const {
+    if (local_ownership_facts.size() !=
+        required_local_ownership_occurrences.size())
+      throw std::invalid_argument(
+          "local ownership fact/requirement set is incomplete");
+    std::vector<const TypedLocalOwnershipFactV1*> result;
+    result.reserve(required_local_ownership_occurrences.size());
+    for (const auto& requirement : required_local_ownership_occurrences)
+      result.push_back(&find_local_ownership_fact(requirement));
+    return result;
   }
 
   const TypedTakeFactV1* find_take_fact(
