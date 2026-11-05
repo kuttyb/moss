@@ -19,8 +19,8 @@ sys.modules[spec.name] = oracle
 spec.loader.exec_module(oracle)
 
 FIXTURES = (
-    "oracle_43_handler_primitive_reply.moss",
-    "oracle_45_handler_primitive_rebind_local.moss",
+    ("oracle_43_handler_primitive_reply.moss", "42\n"),
+    ("oracle_45_handler_primitive_rebind_local.moss", "11\n"),
 )
 
 
@@ -41,12 +41,16 @@ def rejects_mutation(sidecar: Path, source: Path, mode: str,
 def main() -> None:
     fixture_dir = ROOT / "tests/phase28/oracle_r7_005_1/fixtures"
     cases = 0
-    for filename in FIXTURES:
+    for filename, expected_output in FIXTURES:
         source = fixture_dir / filename
         root_authority = oracle.query_root_ingress_capture_authority(COMPILER, source)
         assert root_authority.get("status") == "available", root_authority
         assert len(root_authority.get("facts", [])) == 1, root_authority
         copy_authority = oracle.query_copy_authority(COMPILER, source)
+        fd_code, fd_stdout, fd_stderr, _ = oracle.run_process(
+            [str(COMPILER), "run", "--interp", str(source)])
+        assert (fd_code, fd_stdout) == (0, expected_output), (fd_code, fd_stdout, fd_stderr)
+        cases += 1
         for mode, flag in (("debug", []), ("optimized", ["-O"])):
             rust = OUT / f"{filename}.{mode}.rs"
             subprocess.run([str(COMPILER), *flag, str(source), "-o", str(rust)],
@@ -62,6 +66,17 @@ def main() -> None:
             assert audit.get("root_ingress_captures") == 1, audit
             assert audit.get("error") is None, audit
             cases += 1
+            native_bin = OUT / f"{filename}.{mode}.bin"
+            rustc_args = ["rustc", "--crate-name",
+                          f"phase28_root_capture_{mode}"] + \
+                (["-O"] if mode == "optimized" else []) + [
+                    str(rust), "-o", str(native_bin)]
+            subprocess.run(rustc_args, cwd=ROOT, check=True,
+                           capture_output=True, text=True)
+            native = subprocess.run([str(native_bin)], cwd=ROOT, check=True,
+                                    capture_output=True, text=True)
+            assert native.stdout == expected_output, (filename, mode, native.stdout)
+            cases += 2
 
             def mutate_drop(value):
                 value["root_ingress_domain_captures"].clear()

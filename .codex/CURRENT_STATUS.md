@@ -16519,7 +16519,9 @@ untouched.
   and Optimized modes and rejects dropped, duplicate, forged, displaced, or
   unpaired rows.
 - Validation: `make --jobs="$(nproc)" moss` PASS; Root-ingress checker authority
-  gate 38/38 PASS; production provenance gate 32 checks PASS; provenance-v3
+  gate 38/38 PASS; production provenance gate 42 checks PASS (including Fast
+  Debug output plus Native Debug/Optimized compilation and output parity);
+  provenance-v3
   builder/real ORACLE-10A sidecar corruption gate PASS; direct ORACLE-43/45
   audits each bind one Root-ingress row and leave six unrelated clone
   occurrences unclassified; Python compile, feedback validation, and
