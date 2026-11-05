@@ -8092,12 +8092,29 @@ class Generator {
               [](const TypedMatchArmFactV1& arm) {
                 return arm.payload_access == Effect::Write;
               });
-          if (s.b != "consume" && !recovery_slot)
+          // The checked match fact, not the source spelling, selects whether
+          // the scrutinee is borrowed or transferred.  In particular, lower
+          // a READ match over an indexed member as an addressable place so
+          // expr() cannot materialize it with a hidden non-Copy clone.
+          const bool borrow_match_scrutinee =
+              !match_fact->is_consuming && !recovery_slot;
+          if (borrow_match_scrutinee)
             o << (mutable_match_payload ? "&mut " : "&");
           if (struct_literal) o << "(";
-          if (recovery_slot && s.b == "consume")
+          if (recovery_slot && match_fact->is_consuming)
             o << "__moss_recovery_slot_" << s.a
               << ".take().unwrap_or_else(|| std::process::abort())";
+          else if (borrow_match_scrutinee) {
+            const string borrowed_scrutinee =
+                read_call_place(s.a, d, locals, &types);
+            if (borrowed_scrutinee.find(".clone(") != string::npos ||
+                borrowed_scrutinee.find(".cloned(") != string::npos ||
+                borrowed_scrutinee.find(".to_owned(") != string::npos)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked READ match scrutinee "
+                  "could not be lowered without materializing a copy");
+            o << borrowed_scrutinee;
+          }
           else
             o << expr(s.a, d, locals, &types);
           if (struct_literal) o << ")";
