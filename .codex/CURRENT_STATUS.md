@@ -17166,3 +17166,18 @@ untouched.
 - Agent 2 GO covers the scoped Match change and the interpreter test-only
   requirement-loss hook. The production checker decision-slot contract remains
   pending; it is not represented as fixed by the test-only strict mode.
+- A second full frozen-v2 oracle run against `d40cd85d` completed with the same
+  counts: **19/60** all-applicable PASS, **60/60** semantic PASS, **41/60**
+  provenance-only failures, zero cross-engine disagreements, and **252**
+  unverified generated clone occurrences from the same three executor-runtime
+  template sites. It predates only the test/comment follow-up `401982e9`; no
+  source semantics changed. Its exact results and categorized ledger are in
+  `tmp/phase28-r7-010-l7-oracle-d40cd85/`.
+- Team B's independent Match READ render follow-up is frozen at
+  `dd76a6f2f36ad48dcd43009b3bdb7c27070b9118`, with Agent 2 GO. L7 integrated it
+  as `401982e9`; the expanded checked READ/WRITE Match gate passes Fast Debug,
+  Native Debug/Optimized, `rustc -D warnings`, and fact-corruption cases.
+  Team B's push for that reviewed branch and L7's most recent push attempts
+  both received GitHub `fatal error in commit_refs`; remote refs were not
+  advanced, and no force push was attempted. Retry normal pushes when the
+  remote accepts updates.
