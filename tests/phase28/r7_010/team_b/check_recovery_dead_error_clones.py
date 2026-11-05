@@ -40,9 +40,12 @@ for mode, moss_flags, rust_flags in (
     binary = OUT / f"reraise-{mode}"
     run([MOSS, *moss_flags, RERAISE, "-o", rust])
     generated = rust.read_text()
-    assert "let __moss_selected_error = __MossRaised::" in generated
-    assert "return Err(__moss_selected_error);" in generated
-    assert len(re.findall(r"\.clone\(\)", generated)) == 7
+    assert "let __moss_selected_error = __MossRaised::" not in generated
+    assert re.search(
+        r"return Err\(__MossRaised::Raised_[0-9a-f]+\(__moss_selected_value\)\);",
+        generated)
+    assert len(re.findall(r"\.clone\(\)", generated)) == 6
+    assert "__moss_selected_value.clone()" not in generated
     run(["rustc", *rust_flags, rust, "-o", binary])
     assert run([binary])[0] == reraised_fast
 

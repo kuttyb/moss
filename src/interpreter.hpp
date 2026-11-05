@@ -370,6 +370,31 @@ class FastInterpreter {
       }
     }
 
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_BARE_RAISE_TRANSFER_FACT") &&
+        !semantics->bare_raise_transfer_facts.empty())
+      semantics->bare_raise_transfer_facts.erase(
+          semantics->bare_raise_transfer_facts.begin());
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_BARE_RAISE_TRANSFER_FACT") &&
+        !semantics->bare_raise_transfer_facts.empty())
+      semantics->bare_raise_transfer_facts.push_back(
+          semantics->bare_raise_transfer_facts.front());
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_BARE_RAISE_TRANSFER_FACT") &&
+        !semantics->bare_raise_transfer_facts.empty())
+      semantics->bare_raise_transfer_facts.front().transfers_original_carrier =
+          false;
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_BARE_RAISE_TRANSFER_EDGE") &&
+        !semantics->bare_raise_transfer_facts.empty())
+      ++semantics->bare_raise_transfer_facts.front()
+            .recovery_statement_occurrence_id;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_BARE_RAISE_TRANSFER_REQUIREMENT") &&
+        !semantics->required_bare_raise_transfer_occurrences.empty())
+      semantics->required_bare_raise_transfer_occurrences.erase(
+          semantics->required_bare_raise_transfer_occurrences.begin());
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_BARE_RAISE_TRANSFER_REQUIREMENT") &&
+        !semantics->required_bare_raise_transfer_occurrences.empty())
+      semantics->required_bare_raise_transfer_occurrences.push_back(
+          semantics->required_bare_raise_transfer_occurrences.front());
+
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -896,6 +921,12 @@ class FastInterpreter {
     std::unordered_map<std::string, Value> edge_locals;
   };
 
+  struct SelectedError {
+    RaisedSignal* signal{nullptr};
+    std::uint32_t recovery_statement_occurrence_id{UINT32_MAX};
+    std::vector<const TypedExceptionalOwnershipFactV1*> source_edges;
+  };
+
   const Program& program_;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
   const RaiseSet* active_checked_exceptional_alternatives_ = nullptr;
@@ -906,7 +937,7 @@ class FastInterpreter {
   std::vector<int> message_stack_;
   std::vector<int> handler_stack_;
   std::vector<int> control_stack_;
-  std::vector<RaisedSignal> selected_errors_;
+  std::vector<SelectedError> selected_errors_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
 
   bool recovery_pattern_matches(const est::PatternNode& pattern,
@@ -3870,6 +3901,44 @@ class FastInterpreter {
     return facts;
   }
 
+  void require_bare_raise_transfer(
+      const Stmt& raise, const SelectedError& selected,
+      const Frame& frame, int line) const {
+    if (!program_.typed_semantics ||
+        raise.checked_statement_occurrence_id == UINT32_MAX ||
+        selected.recovery_statement_occurrence_id == UINT32_MAX ||
+        selected.source_edges.empty())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT bare raise transfer authority unavailable");
+    const std::string context = frame.functional_context.empty()
+        ? "main" : frame.functional_context;
+    for (const auto* source_edge : selected.source_edges) {
+      if (!selected.signal || !source_edge ||
+          source_edge->raised_variant_identity !=
+              selected.signal->identity.canonical())
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT bare raise source edge mismatch");
+      try {
+        const auto& requirement =
+            program_.typed_semantics->find_bare_raise_transfer_requirement(
+                raise.checked_statement_occurrence_id,
+                selected.recovery_statement_occurrence_id,
+                *source_edge, selected.signal->identity.type);
+        if (requirement.specialization_context != context ||
+            requirement.specialization_identity != frame.specialization_key ||
+            requirement.raised_variant_identity !=
+                selected.signal->identity.canonical())
+          throw std::invalid_argument(
+              "bare raise transfer edge/context mismatch");
+        (void)program_.typed_semantics->find_bare_raise_transfer_fact(
+            requirement);
+      } catch (const std::exception& e) {
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+    }
+  }
+
   const TypedMatchOwnershipFactV1* resolve_match_ownership_fact(
       const Stmt& s, const Frame& frame, int line) const {
     if (!program_.typed_semantics)
@@ -4121,7 +4190,7 @@ class FastInterpreter {
           Flow flow = execute_block(statements, frame, output, index + 1, try_end,
                                     &statement);
           if (flow.returned) return flow;
-        } catch (const RaisedSignal& raised) {
+        } catch (RaisedSignal& raised) {
           size_t arm = try_end;
           bool handled = false;
           while (arm < after) {
@@ -4192,7 +4261,17 @@ class FastInterpreter {
               }
               for (const auto& item : error_pattern_payloads(*recovery.est_pattern, raised, recovery.line))
                 bind(item.first, item.second.first, item.second.second);
-              selected_errors_.push_back(raised);
+              SelectedError selected;
+              selected.signal = &raised;
+              selected.recovery_statement_occurrence_id =
+                  recovery.checked_statement_occurrence_id;
+              for (const auto* fact : ex_facts)
+                if (fact->recovery_statement_occurrence_id ==
+                        recovery.checked_statement_occurrence_id &&
+                    fact->raised_variant_identity ==
+                        raised.identity.canonical())
+                  selected.source_edges.push_back(fact);
+              selected_errors_.push_back(std::move(selected));
               try {
                 Flow flow = execute_block(
                     statements, frame, output, arm + 1, arm_end,
@@ -4716,9 +4795,11 @@ class FastInterpreter {
             if (selected_errors_.empty())
               throw RuntimeError(statement.line,
                                  "bare raise has no selected recovery error");
+            require_bare_raise_transfer(
+                statement, selected_errors_.back(), frame, statement.line);
             emit("raise", frame, statement.line,
-                 selected_errors_.back().identity.canonical());
-            throw selected_errors_.back();
+                 selected_errors_.back().signal->identity.canonical());
+            throw std::move(*selected_errors_.back().signal);
           }
           Value value = independent(evaluate_expression_source(statement.a, frame,
               statement.line, output,

@@ -1,3 +1,36 @@
+### Team B exact bare-raise carrier transfer consumer (2026-11-04)
+
+- Imported Team A's independently approved bare-raise authority commit
+  `28da73762a97a74618e2d50d0801bb64981aaaca` as local commit `35057257`,
+  preserving both status records during the `.codex/CURRENT_STATUS.md` conflict.
+- Native lowering now queries the exact transfer requirement/fact by bare Raise
+  occurrence, Recover occurrence, each checked incoming exceptional edge, variant,
+  specialization identity and context. It moves the selected payload at the
+  bare-raise statement; no payload clone is emitted. Catch-all recovery binding
+  uses the checked binding as the moved payload source. Fast Debug resolves the
+  same exact fact and moves its selected raised signal when rethrowing.
+- Focused same-source native artifact comparison for
+  `tests/tooling/fixtures/phase21_recovery_native.moss` (source SHA-256
+  `122a50649264dc3309f738cd02f21afe548360fb8b6ade336a7ab5f89d87ca1e`): base
+  `35057257` generated artifact SHA-256
+  `7deaa7d8982c86f3a9bdd3cd3628b1cd33f4b01a16db60402142377257c37aef`, with
+  7 raw `.clone()` calls; candidate artifact SHA-256
+  `6a41ff8b50ed7f2be01b1e33a0425d2bdc9b3ecd7520a972ab4a337f2db3e2e9`, with
+  6 raw `.clone()` calls. The one removed call is the selected
+  `WorkError::Missing` payload at the bare re-raise path. Command: generate each
+  artifact with `./moss <fixture> -o <artifact>` and count
+  `rg -o '\\.clone\\(\\)' <artifact> | wc -l`.
+- Tests pass: dev and optimized compiler builds; Team B bare-raise consumer gate
+  (Debug/Optimized/Fast Debug parity and drop/perturb/duplicate/wrong-edge
+  fail-closed cases); ORACLE-07 recovery clone gate (9 dead selected-error clones
+  remain removed; 6 runtime clones); Team A bare-raise checker gate; Phase 21
+  recovery semantics/native/peer recovery; Phase 27 EST focused checks; feedback
+  validator; `git diff --check`. Full suites not run.
+- Broader clone provenance audit remains NO-GO: six runtime clones in the
+  focused recovery artifact and corpus-wide duplicate-operation inventory are
+  still unclassified; no runtime exception is authorized. Independent Agent 2
+  review of this exact consumer candidate is pending. No push or merge.
+
 ### P28-R7-008 — Phase 28 Controlled Staging Integration (2026-11-04)
 
 Branch: `phase28-r7-008-integration` (branched from `phase28-work` at `150ab36b41e45504aaa400aa717da241be7542fb`; implementation commit `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`).
