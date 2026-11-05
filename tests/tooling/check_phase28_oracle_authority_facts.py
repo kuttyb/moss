@@ -28,6 +28,19 @@ RETURN_SOURCE.write_text(
     encoding="utf-8",
 )
 
+NONPRIMITIVE_INDEX_RETURN_SOURCE = TMP / "nonprimitive_index_return_rejected.moss"
+NONPRIMITIVE_INDEX_RETURN_SOURCE.write_text(
+    "type Resource:\n"
+    "  tag: String\n\n"
+    "fn first(items: Vector):\n"
+    "  return items[0]\n\n"
+    "fn main():\n"
+    "  items = [Resource(tag = \"x\")]\n"
+    "  value = first(items)\n"
+    "  echo value.tag\n",
+    encoding="utf-8",
+)
+
 CASES = {
     "conditional": ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_07_catchable_collection_errors.moss",
     "return": RETURN_SOURCE,
@@ -94,6 +107,16 @@ def expect_count(source: Path, field: str, minimum: int = 1) -> None:
     print(f"PASS {field}: {source.name} ({counts[field]})")
 
 
+def expect_diagnostic(source: Path, expected_code: str) -> None:
+    response, stderr = run(source)
+    error = response.get("error") or {}
+    if response.get("ok") or error.get("code") != expected_code:
+        raise AssertionError(
+            f"{source.name}: expected {expected_code}, got {error}\n{stderr}"
+        )
+    print(f"PASS rejected return diagnostic: {source.name} ({expected_code})")
+
+
 def expect_specialized_returns(source: Path) -> None:
     response, stderr = run(source)
     if not response.get("ok"):
@@ -137,6 +160,10 @@ def main() -> int:
     expect_specialized_returns(CASES["return_specialization"])
     expect_count(CASES["view"], "view", 2)
     expect_count(CASES["projected_read"], "projected_read")
+    expect_diagnostic(
+        NONPRIMITIVE_INDEX_RETURN_SOURCE,
+        "OWNERSHIP_COLLECTION_ELEMENT_CONSUME",
+    )
 
     for source, hook in (
         (CASES["conditional"], "MOSS_TEST_DROP_CONDITIONAL_COLLECTION_ERROR_FACT"),

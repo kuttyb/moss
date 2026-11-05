@@ -16114,22 +16114,28 @@ untouched.
 
 ## Team A checker/API oracle follow-up — reviewed GO (2026-11-05)
 
-- Team A frozen SHA `73ee9a387a53acc27eb8ab14deee44d4bcd73d34` is pushed to
-  `origin/phase28-r7-010-team-a-oracle-followup` and independently reviewed GO.
-  The reviewer reran the compiler build, 23-scenario authority harness,
-  specialized ownership contract, feedback validator, and exact diff check.
-- Adds exact conditional MissingKey authority for Map index read, nested
-  write-through, `get`, and conditional `remove`; exact ReturnValue transfer or
-  primitive-read actions; bounded Map keys/values view facts; and direct
+- Team A final reviewed SHA `21d150212e367e9d20d2a07627f49bba66d415f4`
+  is pushed to `origin/phase28-r7-010-team-a-oracle-followup`; exact remote ref
+  verified. Agent 2 GO applies to this SHA.
+- The delivery adds exact conditional MissingKey authority for Map index read,
+  nested write-through, `get`, and conditional `remove`; exact ReturnValue
+  transfer/primitive-read actions; bounded Map keys/values views; and direct
   Map Index→Member projected READ facts.
 - Projected-read authority binds Map index value type to the Map value argument,
-  projection base type to the indexed result, and projected collection type to
-  the exact checked member occurrence. Requirement matching compares all
-  occurrence IDs/spans/statements, type refs, specialization identity/context,
-  EST context, and provenance. Five corruption cases cover wrong index,
-  specialization, invented result type, missing provenance, and mismatched
-  provenance; all fail closed across checker/interpreter/native and emit no Rust.
-- ORACLE-58 returns exactly two closed `First`/`Second` specialization facts
-  with `Consume` effects. Nine targeted checker outcomes pass. The full-oracle
-  native ORACLE-07 missing-key panic remains for Team B consumer integration;
-  no oracle expectation/mapping or consumer file changed in this delivery.
+  projection base to the checked index result, and projected type to the exact
+  member occurrence. Requirement readback checks all occurrence IDs/spans,
+  statement IDs, types, specialization identity/context, EST context, and
+  provenance. Five corruption cases cover wrong index, specialization,
+  invented result type, missing provenance, and mismatched provenance.
+- An L7 R7-009 integration regression showed unresolved generic return type
+  handling preempted the expected ownership diagnostic. The fix defers only
+  unresolved non-specialized return facts; concrete specialization facts remain
+  required. The exact negative case now returns
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`.
+- Final Team A focused gates: R7-009 17/17; authority harness 24 scenarios;
+  specialized ownership contract, feedback validation, build, and diff checks
+  pass. The Agent 2 reviewer also tested ORACLE-58 return fact drop/perturb/
+  duplicate hooks across checker, interpreter, and native generation; all nine
+  fail closed without Rust artifacts.
+- The native ORACLE-07 missing-key panic remains a Team B consumer integration
+  dependency; Team A changed no consumer or oracle expectation/mapping files.
