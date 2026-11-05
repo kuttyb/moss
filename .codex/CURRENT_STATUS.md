@@ -16106,3 +16106,27 @@ untouched.
   corruption/drop cases). Corruptions fail closed in checker, interpreter,
   and native generation with no Rust artifact. Build and `git diff --check`
   pass. This change awaits exact-SHA Agent2 review; no push yet.
+
+## Team B checked consumer follow-up (2026-11-05)
+
+- Active worktree: `phase28-r7-010-team-b-typed-consumer-followup`, based on
+  reviewed Team A chain through `21d150212e367e9d20d2a07627f49bba66d415f4`.
+  This worktree is separate from the frozen runtime-clone evidence branch.
+- Reconciled projected-read producer/consumer evidence on this exact source and
+  binary: `MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS=1 ./moss check
+  tests/phase28/oracle/fixtures/oracle_20_take_nested_map_vector.moss --json`
+  reports `projected_read=1`. The earlier negative gate used a different
+  minimal fixture that had no producer fact; it was replaced by an ORACLE-20
+  positive parity/corruption gate.
+- `check_projected_collection_read_fail_closed.py ./moss
+  tmp/team-b-consumer/oracle20-projected` passes Native Debug, Native
+  Optimized, and Fast Debug (`2\nb1\n0\n`); emitted line-12 pipeline borrows
+  the projected collection and has no collection clone. All five projected
+  authority drop/duplicate/perturb hooks fail closed in Native and Fast Debug,
+  and failed Native generation leaves no artifact.
+- Re-ran the conditional Map gate (20/20 corruption combinations), Map view
+  gate (5/5), and ReturnValue transfer gate (5/5); all pass. Build was current,
+  feedback validation passes, and `git diff --check` passes. Full suites were
+  not run. The consumer candidate is now frozen locally for independent review;
+  broader runtime clone groups remain unapproved and overall Team B status
+  remains NO-GO.

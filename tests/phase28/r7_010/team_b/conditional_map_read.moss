@@ -1,0 +1,8 @@
+fn main():
+  var m = Map()
+  m["present"] = 1
+  try:
+    let missing = m["missing"]
+    echo missing
+  recover CollectionError.MissingKey:
+    echo "missing_key_read"
