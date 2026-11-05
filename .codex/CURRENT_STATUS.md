@@ -15511,8 +15511,9 @@ untouched.
   `150ab36b41e45504aaa400aa717da241be7542fb`.
 - R7-008 passed all four reference R7-009 checker cases: primitive indexed
   read in a loop, primitive indexed read reuse, repeated indexed method writes,
-  and rejection of nonprimitive indexed consumption. The focused harness adds a
-  fifth negative for nonprimitive indexed transfer through a generic return.
+  and rejection of nonprimitive indexed consumption. The focused harness adds
+  negatives for generic nonprimitive indexed returns and `option[Int]` transfers
+  through both indexing and Vector iteration (seven total cases).
 - The 238-source comparison uses the exact direct `tests/*.moss` and
   `examples/*.moss` files at the reference candidate SHA, checked by separately
   built baseline, R7-008-plus-fix, and reference compilers. Baseline to candidate
@@ -15535,12 +15536,29 @@ untouched.
   `tests/run.sh` by L7 after the implementation commit. No consumer or oracle
   files were changed.
 - Validation after final source edits: build `moss-dev` and `moss-opt`; focused
-  R7-009 harness 5/5; `check_phase28_local_ownership.py` PASS;
+  R7-009 harness 7/7; `check_phase28_local_ownership.py` PASS;
   `check_phase28_w12_checker.py` PASS on dev and opt;
   `check_phase28_r7_006_checker_facts.py` PASS; feedback validation and
   `git diff --check` PASS. Full `make check` and `make check-shadow` were not run
   per the scoped targeted-test orchestration.
 - Implementation and runner registration are locally committed on the scoped
-  branch. Independent adversarial review and push are pending because the
-  shared platform concurrency limit is occupied by the three team leads plus
-  L7. No merge to `phase28-work` or `main`.
+  branch. Review of the previous frozen SHA returned NO-GO: legacy `copy_type`
+  treated `option[Int]` as Copy, allowing indexed and iteration transfer. The
+  correction below is uncommitted and requires fresh review. No merge to
+  `phase28-work` or `main`.
+
+### R7-009 adversarial-review repair (uncommitted)
+
+- Reviewer NO-GO on `8d760085ffab49101dad1baf39a6bf4b7b3eeb9c` confirmed that
+  the legacy shared Copy predicate recurses through `option[T]`, contrary to
+  Phase 28's primitive-only Copy rule. Both collection-element checks now use
+  the existing checker-side `phase28_copy_primitive_type` predicate.
+- Added rejection cases for `return items[0]` and `for item in items: return item`
+  with `Vector[option[Int]]`. Both report the expected indexed/iteration consume
+  diagnostic; no Option transfer is accepted.
+- Rebuilt dev/opt and reran the focused harness 7/7, local ownership,
+  W12 checker on dev/opt, R7-006 checker facts, feedback validator, and diff
+  check. The refreshed 238-source result is unchanged: five intended baseline
+  verdict changes and only the unrelated domain/take discrepancy versus a0.
+- Next: commit the minimal predicate/test repair, request independent review of
+  the new exact SHA, then push only after GO. Full suites remain unrun per scope.

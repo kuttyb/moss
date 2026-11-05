@@ -25234,7 +25234,7 @@ class Checker {
         ? canonical_type_name(fact.value_type) : string{};
     const bool concrete_noncopy_element =
         !element_type.empty() && !unresolved_semantic_type(element_type) &&
-        !copy_type(fact.value_type);
+        !phase28_copy_primitive_type(element_type);
     if (requested == Effect::Consume && concrete_noncopy_element) {
       fact.inference_status =
           TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
@@ -26486,7 +26486,7 @@ class Checker {
           auto elem_type = inferred_expr_type(value, env.types);
           const bool concrete_noncopy_element = elem_type &&
               !unresolved_semantic_type(*elem_type) &&
-              !copy_type(*elem_type);
+              !phase28_copy_primitive_type(*elem_type);
           if (concrete_noncopy_element) {
             err(line, "collection elements cannot be implicitly consumed; indexed access borrows",
                 "OWNERSHIP_COLLECTION_ELEMENT_CONSUME");
