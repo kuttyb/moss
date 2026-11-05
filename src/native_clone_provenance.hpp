@@ -4,11 +4,14 @@
 #include "typed_semantic_api.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <ostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -172,6 +175,308 @@ inline std::string native_checked_copy_identity(
     const NativeCheckedCopyFactV1& fact) {
   const auto row = native_checked_copy_fact_json(fact);
   return "typed-copy-fact-v1:" + source_free_contract_sha256(row);
+}
+
+inline std::string native_clone_mask_rust_non_code(std::string_view rust) {
+  std::string masked(rust);
+  auto blank = [&](std::size_t begin, std::size_t end) {
+    for (std::size_t i = begin; i < end; ++i)
+      if (masked[i] != '\n' && masked[i] != '\r') masked[i] = ' ';
+  };
+  std::size_t i = 0;
+  while (i < rust.size()) {
+    if (i + 1 < rust.size() && rust[i] == '/' && rust[i + 1] == '/') {
+      auto end = rust.find('\n', i + 2);
+      if (end == std::string_view::npos) end = rust.size();
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (i + 1 < rust.size() && rust[i] == '/' && rust[i + 1] == '*') {
+      std::size_t depth = 1, end = i + 2;
+      while (end < rust.size() && depth) {
+        if (end + 1 < rust.size() && rust[end] == '/' && rust[end + 1] == '*') {
+          ++depth; end += 2;
+        } else if (end + 1 < rust.size() && rust[end] == '*' && rust[end + 1] == '/') {
+          --depth; end += 2;
+        } else ++end;
+      }
+      if (depth) throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated Rust comment in clone audit");
+      blank(i, end); i = end; continue;
+    }
+    // Raw strings are common in embedded generated runtime text.
+    if (rust[i] == 'r') {
+      std::size_t quote = i + 1;
+      while (quote < rust.size() && rust[quote] == '#') ++quote;
+      if (quote < rust.size() && rust[quote] == '"') {
+        const auto hashes = quote - i - 1;
+        std::string terminator = "\"" + std::string(hashes, '#');
+        auto end = rust.find(terminator, quote + 1);
+        if (end == std::string_view::npos)
+          throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated Rust raw string in clone audit");
+        end += terminator.size(); blank(i, end); i = end; continue;
+      }
+    }
+    if (rust[i] == '"') {
+      std::size_t end = i + 1;
+      bool closed = false;
+      while (end < rust.size()) {
+        if (rust[end] == '\\') { end += std::min<std::size_t>(2, rust.size() - end); continue; }
+        if (rust[end++] == '"') { closed = true; break; }
+      }
+      if (!closed) throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated Rust string in clone audit");
+      blank(i, end); i = end; continue;
+    }
+    if (rust[i] == '\'') {
+      std::size_t end = i + 1;
+      if (end < rust.size() && rust[end] == '\\') end += 2;
+      else if (end < rust.size()) ++end;
+      if (end < rust.size() && rust[end] == '\'') {
+        ++end; blank(i, end); i = end; continue;
+      }
+    }
+    ++i;
+  }
+  return masked;
+}
+
+inline bool native_clone_identifier_char(char value) {
+  const auto c = static_cast<unsigned char>(value);
+  return std::isalnum(c) || value == '_';
+}
+
+inline std::vector<std::size_t> native_clone_identifier_occurrences(
+    std::string_view code, std::string_view identifier) {
+  std::vector<std::size_t> result;
+  for (std::size_t at = 0; (at = code.find(identifier, at)) != std::string_view::npos;
+       at += identifier.size()) {
+    const bool left = at == 0 || !native_clone_identifier_char(code[at - 1]);
+    const auto end = at + identifier.size();
+    const bool right = end == code.size() || !native_clone_identifier_char(code[end]);
+    if (left && right) result.push_back(at);
+  }
+  return result;
+}
+
+inline std::string native_clone_normalize_callable_identity(std::string value) {
+  const auto at = value.rfind('@');
+  if (at != std::string::npos && at + 1 < value.size()) {
+    std::size_t end = at + 1;
+    while (end < value.size() && std::isdigit(static_cast<unsigned char>(value[end]))) ++end;
+    if (end > at + 1 && (end == value.size() || value[end] == '#'))
+      value.erase(at);
+  }
+  return value;
+}
+
+inline std::set<std::string> native_clone_tooling_function_inventory(
+    std::string_view rust) {
+  constexpr std::string_view prefix = "// Moss tooling begin|function|";
+  std::set<std::string> identities;
+  std::size_t at = 0;
+  while ((at = rust.find(prefix, at)) != std::string_view::npos) {
+    const auto begin = at + prefix.size();
+    const auto end = rust.find('|', begin);
+    if (end == std::string_view::npos)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT malformed Moss function inventory marker");
+    identities.insert(native_clone_normalize_callable_identity(
+        std::string(rust.substr(begin, end - begin))));
+    at = end + 1;
+  }
+  return identities;
+}
+
+inline std::size_t native_clone_matching_delimiter(
+    std::string_view code, std::size_t open, char left, char right) {
+  if (open >= code.size() || code[open] != left)
+    throw std::runtime_error("MOSS_INTERNAL_INVARIANT invalid Rust helper delimiter");
+  std::size_t depth = 0;
+  for (std::size_t i = open; i < code.size(); ++i) {
+    if (code[i] == left) ++depth;
+    else if (code[i] == right && --depth == 0) return i;
+  }
+  throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated Rust helper delimiter");
+}
+
+inline NativeCloneSpanV2 native_checked_copy_source_span(
+    std::string_view source_bytes, std::uint64_t begin, std::uint64_t end);
+
+// Builds provenance from the raw artifact. Caller-supplied clone rows are not
+// accepted: explicit-copy links come only from exact fact IDs in the emitted
+// marker/helper/call graph; every other clone remains unclassified.
+inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
+    std::string mode, std::string_view rust_bytes,
+    std::string_view source_bytes,
+    std::vector<NativeCloneSourceCopyV3> lexical_copies,
+    std::vector<NativeCloneCheckedCopyFactV3> exact_fact_groups) {
+  NativeCloneProvenanceV3 manifest;
+  manifest.mode = std::move(mode);
+  manifest.source_copy_occurrences = std::move(lexical_copies);
+  manifest.checked_copy_facts = std::move(exact_fact_groups);
+  const auto code = native_clone_mask_rust_non_code(rust_bytes);
+  struct FactBinding {
+    std::string copy_id, helper, identity;
+    const NativeCheckedCopyFactV1* fact{};
+    std::size_t body_begin{}, body_end{};
+  };
+  std::map<std::string, std::string> source_copy_ids;
+  for (const auto& row : manifest.source_copy_occurrences) {
+    if (row.copy_id != native_clone_source_copy_id(row.source_span) ||
+        !source_copy_ids.emplace(row.copy_id, row.copy_id).second)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT duplicate or invalid lexical copy row");
+  }
+  std::map<std::string, FactBinding> bindings;
+  for (const auto& group : manifest.checked_copy_facts) {
+    if (!source_copy_ids.count(group.copy_id) || group.facts.empty())
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT checked-copy group lacks lexical source row");
+    for (const auto& fact : group.facts) {
+      if (fact.source_bytes != source_bytes || group.copy_id !=
+          native_clone_source_copy_id(fact.copy_occurrence_span))
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT checked-copy source bytes/locator mismatch");
+      const auto id = native_checked_copy_identity(fact);
+      const auto helper = "__moss_copy_value_" + id.substr(19, 16);
+      if (!bindings.emplace(id, FactBinding{group.copy_id, helper, id, &fact, 0, 0}).second)
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT duplicate checked-copy identity");
+    }
+  }
+  if (manifest.checked_copy_facts.size() != manifest.source_copy_occurrences.size())
+    throw std::runtime_error("MOSS_INTERNAL_INVARIANT lexical copy lacks a checked-copy group");
+
+  const std::string marker_prefix = "/* Moss copy fact call: ";
+  std::set<std::string> marked_facts;
+  std::size_t marker_at = 0;
+  while ((marker_at = rust_bytes.find(marker_prefix, marker_at)) != std::string_view::npos) {
+    const auto id_begin = marker_at + marker_prefix.size();
+    const auto marker_end = rust_bytes.find(" */", id_begin);
+    if (marker_end == std::string_view::npos)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated explicit-copy marker");
+    const std::string id(rust_bytes.substr(id_begin, marker_end - id_begin));
+    auto binding = bindings.find(id);
+    if (binding == bindings.end() || !marked_facts.insert(id).second) {
+      std::string known;
+      for (const auto& item : bindings) known += " [" + item.first + "]";
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT unknown or duplicate explicit-copy marker: " + id + known);
+    }
+    std::size_t call = marker_end + 3;
+    while (call < code.size() && std::isspace(static_cast<unsigned char>(code[call]))) ++call;
+    const auto& helper = binding->second.helper;
+    if (call + helper.size() > code.size() || code.substr(call, helper.size()) != helper ||
+        (call + helper.size() < code.size() &&
+         native_clone_identifier_char(code[call + helper.size()])))
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT explicit-copy marker is not adjacent to its helper call");
+    auto open_call = call + helper.size();
+    while (open_call < code.size() && std::isspace(static_cast<unsigned char>(code[open_call]))) ++open_call;
+    if (open_call >= code.size() || code[open_call] != '(')
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT explicit-copy marker does not precede a direct call");
+
+    const std::string function_prefix = "fn " + helper;
+    auto def = code.find(function_prefix);
+    if (def == std::string::npos || code.find(function_prefix, def + 1) != std::string::npos)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT per-fact helper definition missing or duplicated");
+    const auto helper_references = native_clone_identifier_occurrences(code, helper);
+    if (helper_references.size() != 2 || helper_references[0] != def + 3 ||
+        helper_references[1] != call)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT per-fact helper has extra references or callers");
+    auto params_open = def + function_prefix.size();
+    while (params_open < code.size() && std::isspace(static_cast<unsigned char>(code[params_open]))) ++params_open;
+    const auto params_close = native_clone_matching_delimiter(code, params_open, '(', ')');
+    auto body_open = code.find('{', params_close + 1);
+    if (body_open == std::string::npos)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT per-fact helper has no body");
+    const auto body_close = native_clone_matching_delimiter(code, body_open, '{', '}');
+    binding->second.body_begin = def;
+    binding->second.body_end = body_close + 1;
+    marker_at = marker_end + 3;
+  }
+
+  const auto function_inventory = native_clone_tooling_function_inventory(rust_bytes);
+  for (auto& entry : bindings) {
+    auto& binding = entry.second;
+    if (binding.body_end) continue;
+    // A base template fact can be uninstantiated only when its callable is
+    // absent from the raw emitted-function inventory and an exact specialized
+    // descendant for the same lexical copy was emitted.
+    const auto& fact = *binding.fact;
+    if (!fact.specialization_identity.empty())
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT required checked-copy helper is absent from raw Rust");
+    const auto base_context = native_clone_normalize_callable_identity(
+        fact.specialization_context.empty() ? fact.enclosing_callable_id
+                                            : fact.specialization_context);
+    bool base_callable_emitted = function_inventory.count(base_context) != 0;
+    std::string callable_name = base_context;
+    if (callable_name.rfind("fn:", 0) == 0) callable_name.erase(0, 3);
+    const auto generic = callable_name.find('<');
+    if (generic != std::string::npos) callable_name.erase(generic);
+    const auto context_suffix = callable_name.find('#');
+    if (context_suffix != std::string::npos) callable_name.erase(context_suffix);
+    const auto rust_fn_token = "fn " + callable_name;
+    for (auto at = code.find(rust_fn_token); at != std::string::npos;
+         at = code.find(rust_fn_token, at + 1)) {
+      const auto end = at + rust_fn_token.size();
+      if (end == code.size() || !native_clone_identifier_char(code[end])) {
+        base_callable_emitted = true;
+        break;
+      }
+    }
+    if (base_callable_emitted)
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT emitted base callable lacks its checked-copy helper");
+    std::set<std::string> descendants;
+    for (const auto& callable : function_inventory)
+      if (callable.rfind(base_context + "<", 0) == 0)
+        descendants.insert(callable);
+    if (descendants.empty())
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT uninstantiated copy template lacks specialization inventory");
+    for (const auto& descendant : descendants) {
+      bool exact_emitted_fact = false;
+      for (const auto& sibling : bindings)
+        if (sibling.second.copy_id == binding.copy_id && sibling.second.body_end &&
+            native_clone_normalize_callable_identity(
+                sibling.second.fact->specialization_context) == descendant)
+          exact_emitted_fact = true;
+      if (!exact_emitted_fact)
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT specialization inventory lacks exact checked-copy helper");
+    }
+  }
+
+  std::map<std::string, NativeCloneSourceCopyV3*> source_rows;
+  for (auto& row : manifest.source_copy_occurrences) {
+    row.rust_clone_spans.clear();
+    source_rows.emplace(row.copy_id, &row);
+  }
+  for (std::size_t at = 0; (at = code.find(".clone(", at)) != std::string::npos; at += 7) {
+    const auto span = native_checked_copy_source_span(rust_bytes, at, at + 7);
+    const FactBinding* owner = nullptr;
+    for (const auto& entry : bindings) {
+      const auto& candidate = entry.second;
+      if (candidate.body_end && at >= candidate.body_begin && at + 7 <= candidate.body_end) {
+        if (owner) throw std::runtime_error("MOSS_INTERNAL_INVARIANT clone lies in overlapping copy helpers");
+        owner = &candidate;
+      }
+    }
+    NativeCloneOccurrenceV2 occurrence;
+    occurrence.rust_span = span;
+    if (owner) {
+      occurrence.origin_kind = "explicit_copy";
+      occurrence.source_copy_id = owner->copy_id;
+      occurrence.semantic_identity = owner->identity;
+    } else {
+      occurrence.origin_kind = "unclassified";
+      occurrence.semantic_type = "unclassified";
+      occurrence.ownership_fact = "unclassified";
+      occurrence.semantic_identity = "unclassified";
+    }
+    const auto context_begin = owner ? owner->body_begin :
+        (rust_bytes.rfind('\n', at) == std::string_view::npos ? 0 : rust_bytes.rfind('\n', at) + 1);
+    const auto line_end = rust_bytes.find('\n', at);
+    const auto context_end = owner ? owner->body_end :
+        (line_end == std::string_view::npos ? rust_bytes.size() : line_end);
+    occurrence.rust_context_span = native_checked_copy_source_span(
+        rust_bytes, context_begin, std::max(context_begin + 1, context_end));
+    if (owner)
+      source_rows.at(owner->copy_id)->rust_clone_spans.push_back(span);
+    manifest.occurrences.push_back(std::move(occurrence));
+  }
+  return manifest;
 }
 
 inline NativeCloneSpanV2 native_checked_copy_source_span(
