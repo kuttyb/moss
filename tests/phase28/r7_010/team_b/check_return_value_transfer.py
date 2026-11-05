@@ -10,13 +10,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = ROOT / "tests/phase28/oracle/fixtures/oracle_13_assignment_consume_return.moss"
+SPECIALIZED_FIXTURE = ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_58_specialization_identity_collision.moss"
 EXPECTED = "hello\n"
+SPECIALIZED_EXPECTED = "1\n2\n"
 HOOKS = (
     "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT",
     "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_REQUIREMENT",
     "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT",
     "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT",
     "MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_FACT",
+    "MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT",
 )
 
 
@@ -70,10 +73,52 @@ def main() -> None:
                 "return-value" not in fast_failure.stderr.lower():
             raise AssertionError(f"{hook}: unrelated Fast Debug failure:\n{fast_failure.stderr}")
 
+    specialized_fast = run([compiler, "run", "--interp", str(SPECIALIZED_FIXTURE)])
+    if specialized_fast.stdout != SPECIALIZED_EXPECTED:
+        raise AssertionError(
+            f"ORACLE-58 Fast Debug expected {SPECIALIZED_EXPECTED!r}, "
+            f"got {specialized_fast.stdout!r}")
+    for suffix, flags in (("debug", []), ("optimized", ["-Oshared-memory"])):
+        rust = out / f"specialized-return-{suffix}.rs"
+        run([compiler, *flags, str(SPECIALIZED_FIXTURE), "-o", str(rust)])
+        binary = out / f"specialized-return-{suffix}"
+        run(["rustc", "--edition=2021", str(rust), "-o", str(binary)])
+        native = run([str(binary)])
+        if native.stdout != SPECIALIZED_EXPECTED:
+            raise AssertionError(
+                f"ORACLE-58 Native {suffix} expected {SPECIALIZED_EXPECTED!r}, "
+                f"got {native.stdout!r}")
+
+    specialized_hooks = (*HOOKS,
+        "MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION")
+    for hook in specialized_hooks:
+        env = os.environ.copy()
+        env[hook] = "1"
+        artifact = out / f"specialized-corrupt-{hook}.rs"
+        artifact.unlink(missing_ok=True)
+        native_failure = run(
+            [compiler, str(SPECIALIZED_FIXTURE), "-o", str(artifact)],
+            env=env, expected_ok=False)
+        if "MOSS_INTERNAL_INVARIANT" not in native_failure.stderr or \
+                "return-value" not in native_failure.stderr.lower():
+            raise AssertionError(
+                f"ORACLE-58 {hook}: unrelated Native failure:\n{native_failure.stderr}")
+        if artifact.exists():
+            raise AssertionError(f"ORACLE-58 {hook}: failure left a Rust artifact")
+        fast_failure = run(
+            [compiler, "run", "--interp", str(SPECIALIZED_FIXTURE)],
+            env=env, expected_ok=False)
+        if "MOSS_INTERNAL_INVARIANT" not in fast_failure.stderr or \
+                "return-value" not in fast_failure.stderr.lower():
+            raise AssertionError(
+                f"ORACLE-58 {hook}: unrelated Fast Debug failure:\n{fast_failure.stderr}")
+
     print("ORACLE-13 ReturnValue exact owned transfer: Native Debug, Native Optimized, Fast Debug parity PASS")
     print("generated Rust return has no implicit nonprimitive clone: PASS")
-    print("ReturnValue requirement/fact drop/duplicate/perturb checks: 5/5 hooks across Native and Fast Debug PASS")
+    print("ReturnValue requirement/fact/context drop/duplicate/perturb checks: 6/6 hooks across Native and Fast Debug PASS")
     print("failed Native generation leaves no Rust artifact: PASS")
+    print("ORACLE-58 specialized ReturnValue Native Debug/Optimized/Fast Debug parity PASS")
+    print("ORACLE-58 ReturnValue authority corruption checks: 7/7 hooks across Native and Fast Debug PASS")
 
 
 if __name__ == "__main__":

@@ -1245,8 +1245,13 @@ class Generator {
 
   const TypedReturnValueFactV1* resolve_return_value_fact(
       const Stmt& statement, const string& functional_context) const {
-    if (!p_.typed_semantics || statement.kind != Stmt::Kind::Return ||
-        statement.a.empty() || statement.checked_statement_occurrence_id == UINT32_MAX)
+    const auto* typed_semantics = semantic_program_ &&
+            semantic_program_->typed_semantics
+        ? semantic_program_->typed_semantics.get()
+        : p_.typed_semantics.get();
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!typed_semantics || statement.kind != Stmt::Kind::Return ||
+        statement.a.empty())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked return-value identity unavailable");
     const est::Handle* handle = nullptr;
@@ -1258,34 +1263,130 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT duplicate checked return-value handle");
       handle = &candidate;
     }
-    if (!handle || handle->arena_index >= p_.expression_arenas.size() ||
-        !p_.expression_arenas[handle->arena_index])
+    if (!handle && statement.checked_statement_occurrence_id != UINT32_MAX) {
+      string callable = functional_context;
+      const auto specialization_suffix = callable.find('<');
+      if (specialization_suffix != string::npos)
+        callable.resize(specialization_suffix);
+      const string function_name = starts_with(callable, "fn:")
+          ? callable.substr(3) : string();
+      const Function* owner = nullptr;
+      size_t owner_count = 0;
+      for (const auto& candidate : checked_program.functions)
+        if (!function_name.empty() && candidate.name == function_name) {
+          owner = &candidate;
+          ++owner_count;
+        }
+      if (owner_count == 1 && owner) {
+        vector<const est::Handle*> exact_handles;
+        for (const auto& candidate : owner->body)
+          if (candidate.kind == Stmt::Kind::Return &&
+              candidate.checked_statement_occurrence_id ==
+                  statement.checked_statement_occurrence_id &&
+              candidate.line == statement.line &&
+              (statement.source_file.empty() || candidate.source_file.empty() ||
+               candidate.source_file == statement.source_file))
+            for (const auto& candidate_handle : candidate.expression_handles)
+              if (candidate_handle.slot == est::ExprSlot::ReturnValue &&
+                  candidate_handle.argument_index == 0)
+                exact_handles.push_back(&candidate_handle);
+        if (exact_handles.size() == 1) handle = exact_handles.front();
+        else if (exact_handles.size() > 1)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT ambiguous canonical checked return-value handle");
+      }
+    }
+    if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[handle->arena_index])
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked return-value EST handle missing");
     const string context = functional_context.empty() ? "main" : functional_context;
+    string query_context = context;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT"))
+      query_context += ":wrong-context";
+#endif
     const string specialization = codegen_active_specialization_key_;
+    string callable_context = context;
+    const auto callable_suffix = callable_context.find('<');
+    if (callable_suffix != string::npos)
+      callable_context.resize(callable_suffix);
+    string query_specialization = specialization;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
+      query_specialization += ":wrong-specialization";
+#endif
+    auto fact_is_from_exact_imported_owner =
+        [&](const TypedReturnValueFactV1& candidate) {
+      string callable = callable_context;
+      if (starts_with(callable, "fn:")) callable.erase(0, 3);
+      const Function* owner = nullptr;
+      size_t owner_count = 0;
+      for (const auto& function : checked_program.functions)
+        if (function.name == callable) {
+          owner = &function;
+          ++owner_count;
+        }
+      if (owner_count != 1 || !owner) return false;
+      const string module = module_name_from_symbol(owner->name);
+      if (module.empty() || !checked_program.external_modules.count(module))
+        return false;
+      const auto module_identity = checked_program.module_identities.find(module);
+      return module_identity != checked_program.module_identities.end() &&
+          !module_identity->second.empty() &&
+          candidate.provenance.defining_module_id == module_identity->second &&
+          candidate.provenance.enclosing_callable_id == callable_context &&
+          !statement.source_file.empty() &&
+          candidate.provenance.source_file == statement.source_file;
+    };
+    const auto occurrence_span =
+        checked_program.expression_arenas[handle->arena_index]->span(handle->expr);
     const TypedReturnValueRequirementV1* requirement = nullptr;
     size_t requirement_count = 0;
     size_t fact_count = 0;
     for (const auto& candidate :
-         p_.typed_semantics->required_return_value_occurrences) {
-      if (candidate.statement_occurrence_id ==
-              statement.checked_statement_occurrence_id &&
+         typed_semantics->required_return_value_occurrences) {
+      if ((statement.checked_statement_occurrence_id == UINT32_MAX ||
+           candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id) &&
           candidate.est_arena_index == handle->arena_index &&
           candidate.expression_occurrence_id == handle->expr &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization) {
+          candidate.expression_occurrence_span.source_begin ==
+              occurrence_span.source_begin &&
+          candidate.expression_occurrence_span.source_end ==
+              occurrence_span.source_end &&
+          candidate.expression_occurrence_span.line == occurrence_span.line &&
+          candidate.expression_occurrence_span.column == occurrence_span.column &&
+          candidate.expression_occurrence_span.origin_id == occurrence_span.origin_id &&
+          candidate.provenance.line == statement.line &&
+          candidate.provenance.enclosing_callable_id == callable_context &&
+          (statement.source_file.empty() ||
+           candidate.provenance.source_file == statement.source_file) &&
+          candidate.specialization_context == query_context &&
+          candidate.specialization_identity == query_specialization) {
         requirement = &candidate;
         ++requirement_count;
       }
     }
-    for (const auto& candidate : p_.typed_semantics->return_value_facts) {
-      if (candidate.statement_occurrence_id ==
-              statement.checked_statement_occurrence_id &&
+    for (const auto& candidate : typed_semantics->return_value_facts) {
+      if ((statement.checked_statement_occurrence_id == UINT32_MAX ||
+           candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id) &&
           candidate.est_arena_index == handle->arena_index &&
           candidate.expression_occurrence_id == handle->expr &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization)
+          candidate.expression_occurrence_span.source_begin ==
+              occurrence_span.source_begin &&
+          candidate.expression_occurrence_span.source_end ==
+              occurrence_span.source_end &&
+          candidate.expression_occurrence_span.line == occurrence_span.line &&
+          candidate.expression_occurrence_span.column == occurrence_span.column &&
+          candidate.expression_occurrence_span.origin_id == occurrence_span.origin_id &&
+          candidate.provenance.line == statement.line &&
+          candidate.provenance.enclosing_callable_id == callable_context &&
+          (statement.source_file.empty() ||
+           candidate.provenance.source_file == statement.source_file) &&
+          candidate.specialization_context == query_context &&
+          candidate.specialization_identity == query_specialization)
         ++fact_count;
     }
 #ifdef MOSS_TEST_BUILD
@@ -1305,19 +1406,37 @@ class Generator {
         auto corrupted = *requirement;
         corrupted.required_access = corrupted.required_access == Effect::Consume
             ? Effect::Read : Effect::Consume;
-        (void)p_.typed_semantics->find_return_value_fact(corrupted);
+        (void)typed_semantics->find_return_value_fact(corrupted);
         throw std::runtime_error("perturbed return-value fact unexpectedly passed");
       }
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
+        auto corrupted = *requirement;
+        corrupted.provenance.defining_module_id += ":wrong-module";
+        (void)typed_semantics->find_return_value_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed imported ReturnValue module authority unexpectedly passed");
+      }
 #endif
-      const auto* fact = p_.typed_semantics->find_return_value_fact(*requirement);
+      const auto* fact = typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
-      const auto& arena = *p_.expression_arenas[handle->arena_index];
-      const auto* expression_facts = arena.facts(handle->expr, context);
-      if (!expression_facts || !expression_facts->type || !fact->expression_type ||
-          !expression_facts->type->structurally_equal(*fact->expression_type))
+      const auto& arena = *checked_program.expression_arenas[handle->arena_index];
+      if (handle->expr >= arena.size() || !fact->expression_type ||
+          !fact->expression_type->is_closed())
         throw std::invalid_argument(
-            "return-value fact type does not match its exact EST occurrence");
+            "return-value fact lacks a closed type for its exact specialized EST occurrence");
+      const auto* occurrence = arena.facts(handle->expr,
+                                            fact->est_fact_context);
+      if (!occurrence || !occurrence->type) {
+        if (!fact_is_from_exact_imported_owner(*fact))
+          throw std::invalid_argument(
+              "return-value EST type fact missing outside exact imported owner");
+      } else if (occurrence->type->is_closed()
+              ? !occurrence->type->structurally_equal(*fact->expression_type)
+              : occurrence->type->kind != TypeKind::InferenceVar) {
+        throw std::invalid_argument(
+            "ReturnValue fact does not bind a concrete or generic EST type at its checked context");
+      }
       return fact;
     } catch (const std::exception& error) {
       throw std::runtime_error(
@@ -1467,6 +1586,168 @@ class Generator {
             fact->view_definition_identity.empty())))
         throw std::invalid_argument("collection-view fact is not authoritative");
       return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  const TypedEchoArgumentFactV1* resolve_echo_argument_fact(
+      const Stmt& statement, std::uint32_t argument_index,
+      const string& functional_context) const {
+    if (statement.kind != Stmt::Kind::Echo)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Echo argument identity unavailable");
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    string context = functional_context.empty() ? "main" : functional_context;
+    if (!statement.echo_types_by_context.count(context)) {
+      if (!statement.echo_types_by_context.count(string()))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
+      context.clear();
+    }
+    const auto& checked_types = statement.echo_types_by_context.at(context);
+    if (argument_index >= checked_types.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Echo argument type missing");
+    const auto checked_type = moss::Type::parse_canonical(
+        checked_types[argument_index]);
+    const bool primitive_value = checked_type && *checked_type &&
+        is_primitive_copy_type(*checked_type);
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::Argument ||
+          candidate.argument_index != argument_index) continue;
+      if (handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate checked Echo argument handle");
+      handle = &candidate;
+    }
+    if (!handle && statement.checked_statement_occurrence_id != UINT32_MAX) {
+      vector<const est::Handle*> canonical_handles;
+      auto inspect_statement = [&](const Stmt& canonical) {
+        if (canonical.kind != Stmt::Kind::Echo ||
+            canonical.checked_statement_occurrence_id !=
+                statement.checked_statement_occurrence_id ||
+            canonical.line != statement.line ||
+            (!statement.source_file.empty() && !canonical.source_file.empty() &&
+             canonical.source_file != statement.source_file))
+          return;
+        for (const auto& candidate : canonical.expression_handles)
+          if (candidate.slot == est::ExprSlot::Argument &&
+              candidate.argument_index == argument_index)
+            canonical_handles.push_back(&candidate);
+      };
+      if (checked_program.main)
+        for (const auto& candidate : checked_program.main->body)
+          inspect_statement(candidate);
+      string callable = functional_context;
+      const auto suffix = callable.find('<');
+      if (suffix != string::npos) callable.resize(suffix);
+      const string function_name = starts_with(callable, "fn:")
+          ? callable.substr(3) : string();
+      if (!function_name.empty())
+        for (const auto& function : checked_program.functions)
+          if (function.name == function_name)
+            for (const auto& candidate : function.body)
+              inspect_statement(candidate);
+      if (canonical_handles.size() == 1) handle = canonical_handles.front();
+      else if (canonical_handles.size() > 1)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous canonical checked Echo argument handle");
+    }
+    if ((!handle || statement.checked_statement_occurrence_id == UINT32_MAX) &&
+        primitive_value)
+      return nullptr;
+    if (statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Echo argument statement identity unavailable");
+    if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[handle->arena_index] ||
+        argument_index >= statement.args.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Echo argument EST handle missing");
+    const auto* typed_semantics = semantic_program_ &&
+            semantic_program_->typed_semantics
+        ? semantic_program_->typed_semantics.get() : nullptr;
+    if (!typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT typed Echo argument facts are unavailable");
+    try {
+#ifdef MOSS_TEST_BUILD
+      auto& requirements = semantic_program_->typed_semantics->required_echo_argument_occurrences;
+      auto req = std::find_if(requirements.begin(), requirements.end(),
+          [&](const TypedEchoArgumentRequirementV1& item) {
+            return item.est_arena_index == handle->arena_index &&
+                item.argument_expression_occurrence_id == handle->expr &&
+                item.argument_index == argument_index &&
+                item.specialization_context == context;
+          });
+      const bool borrowed_requirement = req != requirements.end() &&
+          req->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_requirement && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_REQUIREMENT"))
+        requirements.erase(req);
+      else if (borrowed_requirement && std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_REQUIREMENT"))
+        requirements.push_back(*req);
+      auto& facts = semantic_program_->typed_semantics->echo_argument_facts;
+      auto fact_it = std::find_if(facts.begin(), facts.end(),
+          [&](const TypedEchoArgumentFactV1& item) {
+            return item.est_arena_index == handle->arena_index &&
+                item.argument_expression_occurrence_id == handle->expr &&
+                item.argument_index == argument_index &&
+                item.specialization_context == context;
+          });
+      const bool borrowed_fact = fact_it != facts.end() &&
+          fact_it->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_fact && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_FACT"))
+        facts.erase(fact_it);
+      else if (borrowed_fact && std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_FACT"))
+        facts.push_back(*fact_it);
+      else if (borrowed_fact && std::getenv(
+                   "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT"))
+        fact_it->required_access = Effect::Consume;
+#endif
+      string query_context = context;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
+        query_context += ":wrong-context";
+#endif
+      const auto& requirement = typed_semantics->find_echo_argument_requirement(
+          handle->arena_index, handle->expr, argument_index, query_context);
+      auto exact_requirement = requirement;
+#ifdef MOSS_TEST_BUILD
+      if (requirement.mode == TypedEchoArgumentModeV1::BorrowedVectorElement &&
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
+        exact_requirement.est_fact_context += ":consumer-perturbed";
+#endif
+      const auto& fact = typed_semantics->find_echo_argument_fact(exact_requirement);
+      if (!fact.is_authoritative() || fact.required_access != Effect::Read ||
+          !fact.display_result_non_escaping || fact.permits_copy)
+        throw std::invalid_argument(
+            "checked Echo argument fact is not authoritative for display");
+      if (fact.mode == TypedEchoArgumentModeV1::BorrowedVectorElement) {
+        const auto& arena = *checked_program.expression_arenas[handle->arena_index];
+        est::ExprId root = handle->expr;
+        while (root < arena.size()) {
+          const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(root));
+          if (!grouped) break;
+          root = grouped->inner;
+        }
+        if (root != fact.indexed_expression_occurrence_id ||
+            root >= arena.size())
+          throw std::invalid_argument(
+              "borrowed Echo argument is not the exact checked index occurrence");
+        const auto* index = std::get_if<est::Index>(&arena.at(root));
+        if (!index || index->base != fact.receiver_occurrence_id ||
+            index->index != fact.selector_occurrence_id)
+          throw std::invalid_argument(
+              "borrowed Echo argument receiver/selector identity mismatch");
+      }
+      return &fact;
     } catch (const std::exception& error) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT " + string(error.what()));
@@ -1766,7 +2047,9 @@ class Generator {
     if (statement.checked_statement_occurrence_id == UINT32_MAX) return nullptr;
     const est::ExprSlot slot =
         statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var
-            ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+            ? est::ExprSlot::Initializer
+            : statement.kind == Stmt::Kind::Return
+                ? est::ExprSlot::ReturnValue : est::ExprSlot::RhsValue;
     const est::Handle* handle = nullptr;
     for (const auto& candidate : statement.expression_handles) {
       if (candidate.slot != slot || candidate.argument_index != 0) continue;
@@ -9387,12 +9670,17 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              const auto* echo_fact = resolve_echo_argument_fact(
+                  s, static_cast<std::uint32_t>(argument), functional_context);
               string proj_base, proj_field, idx_b, idx_i;
               const bool is_indexed_member =
                   statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
                   tree_parse_member_access(trim(s.args[argument]), proj_base, proj_field) &&
                   tree_parse_index(proj_base, idx_b, idx_i);
-              string rendered = is_indexed_member
+              const bool checked_vector_borrow = echo_fact &&
+                  echo_fact->mode ==
+                      TypedEchoArgumentModeV1::BorrowedVectorElement;
+              string rendered = checked_vector_borrow || is_indexed_member
                   ? read_call_place(s.args[argument], d, locals, &types)
                   : expr(
                       s.args[argument], d, locals, &types,
