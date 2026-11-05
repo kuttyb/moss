@@ -166,12 +166,6 @@ class CloneProvenanceTests(unittest.TestCase):
         return manifest
 
     def build_rust_for_facts(self, fact_links):
-        chunks = []
-        for index, (fact, _copy_id) in enumerate(fact_links):
-            fact_id = harness.typed_copy_fact_identity(fact)
-            prefix = fact_id.removeprefix("typed-copy-fact-v1:")[:16]
-            symbol = "__moss_copy_value_" + prefix
-            chunks.append(f"fn {symbol}(value: Record) -> Record {{\n    let copied = value.clone();\n    copied\n}}")
         calls = []
         callers = []
         for index, (fact, _copy_id) in enumerate(fact_links):
@@ -182,10 +176,11 @@ class CloneProvenanceTests(unittest.TestCase):
             callers.append(
                 f"// Moss tooling begin|function|{callable_id}@1|callsite{index}|callsite{index}\n"
                 f"fn callsite{index}() {{ let _copy{index} = "
-                f"(/* Moss copy fact call: {fact_id} */ {symbol}(value{index})); }}\n"
+                f"{{ fn {symbol}(value: Record) -> Record {{ let copied = value.clone(); copied }} "
+                f"/* Moss copy fact call: {fact_id} */ {symbol}(value{index}) }}; }}\n"
                 f"// Moss tooling end|{callable_id}@1")
             calls.append(f"    callsite{index}();")
-        self.rust = "\n".join(chunks + callers) + "\nfn main() {\n" + "\n".join(calls) + "\n}\n"
+        self.rust = "\n".join(callers) + "\nfn main() {\n" + "\n".join(calls) + "\n}\n"
         self.rust_path.write_text(self.rust)
         all_spans = harness.clone_occurrences(self.rust)
         spans_by_fact = {}
@@ -386,6 +381,38 @@ class CloneProvenanceTests(unittest.TestCase):
         self.assertEqual(set(result), {copy_span["copy_id"]})
         self.assertEqual(len(result[copy_span["copy_id"]]["checked_copy_facts"]), 3)
 
+    def test_two_lexical_copy_sites_share_each_specialization_context(self):
+        source_path = ROOT / "tests/phase28/team_c_r7_010/copy_two_sites_specialization.moss"
+        source = source_path.read_bytes().decode("utf-8")
+        copy_spans = harness.moss_copy_call_spans(source)
+        self.assertEqual(len(copy_spans), 2)
+        self.source_path = source_path
+        self.source = source
+        self.source_occ = copy_spans[0]
+        concrete = []
+        templates = []
+        expr_id = 301
+        for span in copy_spans:
+            for specialization in ("fn:duplicate<First>", "fn:duplicate<Second>"):
+                concrete.append((self.fact_for_source(source_path, source, span,
+                                                       specialization, expr_id), span["copy_id"]))
+                expr_id += 1
+            templates.append((self.fact_for_source(source_path, source, span, "", expr_id),
+                              span["copy_id"]))
+            expr_id += 1
+        manifest = self.manifest_for_facts(concrete)
+        for template, copy_id in templates:
+            group = next(row for row in manifest["checked_copy_facts"]
+                         if row["copy_id"] == copy_id)
+            group["facts"].append(template)
+            group["facts"].sort(key=harness.typed_copy_fact_identity)
+        self.write_manifest(manifest)
+        all_facts = [fact for fact, _ in concrete + templates]
+        audit = harness.audit_clone_provenance(self.rust_path, source_path, "debug", 2,
+                                               self.authority(all_facts))
+        self.assertEqual(audit["status"], "PASS", audit.get("error"))
+        self.assertEqual(audit["authorized"], 2)
+
     def test_swapped_valid_source_copy_links_are_rejected(self):
         source_path = self.root / "two_copies.moss"
         source = "left = copy(item)\nright = copy(other)\n"
@@ -554,13 +581,15 @@ fn main():
   sink("é", copy(record))
 ''')
         multi_specialization = ROOT / "tests/phase28/team_c_r7_010/copy_multi_specialization.moss"
-        for source_path in (fixture, utf8_source, multi_specialization):
+        two_sites = ROOT / "tests/phase28/team_c_r7_010/copy_two_sites_specialization.moss"
+        for source_path in (fixture, utf8_source, multi_specialization, two_sites):
             source = source_path.read_bytes().decode("utf-8")
             code, stdout, stderr, _ = harness.run_process(
                 [str(compiler), "check", "--json", str(source_path)])
             self.assertEqual(code, 0, stdout + stderr)
             authority = harness.query_copy_authority(compiler, source_path)
             self.assertEqual(authority.get("status"), "available", authority)
+            copies = harness.moss_copy_call_spans(source)
             if source_path == multi_specialization:
                 self.assertGreaterEqual(len(authority["facts"]), 2)
                 self.assertEqual(len({harness._flat_fact_span_key(f["copy_occurrence_span"])
@@ -568,7 +597,14 @@ fn main():
                 specialized = {f["specialization_identity"] for f in authority["facts"]
                                if f["specialization_identity"]}
                 self.assertEqual(len(specialized), 2)
-            copies = harness.moss_copy_call_spans(source)
+            if source_path == two_sites:
+                self.assertEqual(len(copies), 2)
+                per_context = {}
+                for fact in authority["facts"]:
+                    if fact["specialization_identity"]:
+                        per_context[fact["specialization_identity"]] = \
+                            per_context.get(fact["specialization_identity"], 0) + 1
+                self.assertEqual(set(per_context.values()), {2})
             grouped = {span["copy_id"]: [] for span in copies}
             for fact in authority["facts"]:
                 key = harness._flat_fact_span_key(fact["copy_occurrence_span"])
