@@ -11,10 +11,13 @@
   `results.json` and generated ledger are in
   `tmp/r7-010-570ad802-oracle/`. All 252 repeated direct runtime `.clone()`
   rows are reported UNAUTHORIZED against the unchanged v2 registry. This is an
-  authorization result, not proof of 252 distinct semantic copies. Broader
-  inventory remains 1,960 lexical candidates across 37 sites/groups; qualified
-  `Arc::clone` and other duplication operations still need independent
-  source/type/authority analysis.
+  authorization result, not proof of 252 distinct semantic copies. The fresh
+  scanner reports 84 generated Rust artifacts and 1,960 lexical duplication
+  candidates across 37 groups. All 252 direct `.clone()` rows map to three
+  repeated runtime template source sites (100% source-site-root-caused, 0/3
+  sites removed or authorized); the exact-expression locator gate passes but
+  authorizes none. Eight qualified `Arc::clone` sites and other duplication
+  operations still need independent source/type/authority analysis.
 - **Regression suites:** candidate Default and EST-shadow each report 87/167
   PASS, 79 FAIL, 1 SKIP. Logs are
   `tmp/r7-010-f388ee2a-default.log` and

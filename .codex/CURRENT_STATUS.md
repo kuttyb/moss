@@ -43,7 +43,13 @@
   applicable gates; 60/60 semantic PASS; zero Fast Debug/Native Debug/Native
   Optimized disagreements; 41/60 fail only provenance**. The sidecars classify
   252 repeated runtime `.clone()` rows as unauthorized under the unchanged v2
-  registry. This does not prove 252 Moss-level semantic copies. Frozen digests
+  registry. This does not prove 252 Moss-level semantic copies. The current
+  artifact inventory confirms 84 Rust files with 3 repeated direct runtime
+  `.clone()` rows each: all 252/252 rows map to 3 source template sites (100%
+  source-site-root-caused, 0/3 sites removed or authorized). The exact-expression
+  locator gate passes but grants no authorization. Eight qualified
+  `Arc::clone` source sites and other duplication mechanisms still need an
+  independent authorization audit. Frozen digests
   remain expectations `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`,
   runtime registry `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`,
   and certification `00e9d648286a90de7266622f18dad6f2b53693c5b3645cb37cb2b30bb4c4ccc9`.
