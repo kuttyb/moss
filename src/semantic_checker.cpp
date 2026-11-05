@@ -2126,6 +2126,53 @@ class Checker {
       p_.typed_semantics->echo_argument_facts = echo_argument_facts_;
       p_.typed_semantics->required_echo_argument_occurrences =
           required_echo_argument_occurrences_;
+      p_.typed_semantics->root_ingress_domain_capture_facts =
+          root_ingress_domain_capture_facts_;
+      p_.typed_semantics->required_root_ingress_domain_capture_occurrences =
+          required_root_ingress_domain_capture_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
+          !p_.typed_semantics->root_ingress_domain_capture_facts.empty())
+        p_.typed_semantics->root_ingress_domain_capture_facts.pop_back();
+      if (std::getenv("MOSS_TEST_PERTURB_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
+          !p_.typed_semantics->root_ingress_domain_capture_facts.empty()) {
+        auto& fact = p_.typed_semantics->root_ingress_domain_capture_facts.back();
+        const string field = std::getenv(
+            "MOSS_TEST_PERTURB_ROOT_INGRESS_DOMAIN_CAPTURE_FACT");
+        if (field == "instance") fact.domain_instance_identity += ":perturbed";
+        else if (field == "route") fact.route_capability_identity += ":perturbed";
+        else if (field == "handler") fact.selected_handler_identity += ":perturbed";
+        else if (field == "call-edge")
+          fact.selected_call_edge_identity += ":perturbed";
+        else if (field == "occurrence") ++fact.statement_occurrence_id;
+        else if (field == "context") fact.specialization_context += ":perturbed";
+        else fact.route_capability_identity += ":perturbed";
+      }
+#endif
+      if (p_.typed_semantics->root_ingress_domain_capture_facts.size() !=
+          p_.typed_semantics->required_root_ingress_domain_capture_occurrences.size())
+        throw std::invalid_argument(
+            "Root-ingress domain capture checker fact/requirement set is incomplete");
+      for (const auto& requirement :
+           p_.typed_semantics->required_root_ingress_domain_capture_occurrences)
+        (void)p_.typed_semantics->find_root_ingress_domain_capture_fact(requirement);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DUMP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT"))
+        for (const auto& fact :
+             p_.typed_semantics->root_ingress_domain_capture_facts)
+          std::cerr << "ROOT_INGRESS_DOMAIN_CAPTURE_FACT stmt="
+                    << fact.statement_occurrence_id << " arena="
+                    << fact.est_arena_index << " expr="
+                    << fact.message_expression_occurrence_id << " receiver="
+                    << fact.receiver_expression_occurrence_id << " context="
+                    << fact.specialization_context << " est_context="
+                    << fact.est_fact_context << " instance="
+                    << fact.domain_instance_identity << " route="
+                    << fact.route_capability_identity << " handler="
+                    << fact.selected_handler_identity << " call_edge="
+                    << fact.selected_call_edge_identity << " source="
+                    << fact.source_file << ":" << fact.source_line << '\n';
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DROP_ECHO_ARGUMENT_FACT")) {
         auto found = std::find_if(
@@ -2729,6 +2776,10 @@ class Checker {
   vector<TypedEchoArgumentFactV1> echo_argument_facts_;
   vector<TypedEchoArgumentRequirementV1>
       required_echo_argument_occurrences_;
+  vector<TypedRootIngressDomainCaptureFactV1>
+      root_ingress_domain_capture_facts_;
+  vector<TypedRootIngressDomainCaptureRequirementV1>
+      required_root_ingress_domain_capture_occurrences_;
   std::unordered_map<std::string, EnumType> option_enums_cache_;
   std::set<std::string> taken_places_in_current_stmt_;
   std::set<std::pair<std::uint32_t, est::ExprId>> visited_takes_in_current_stmt_;
@@ -34889,9 +34940,135 @@ class Checker {
       // bodies) receives the checked Root-ingress fact.
       if (main_body && current == nullptr && current_function == nullptr)
         statement.message_root_ingress = true;
+      auto retain_root_capture = [&](const est::Handle& handle,
+                                     est::ExprId message_id,
+                                     const est::Message& message) {
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena || message.target >= arena->size())
+          err(statement.source_file, statement.line,
+              "Root-ingress message has no checked EST receiver occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto* target_name =
+            std::get_if<est::Identifier>(&arena->at(message.target));
+        if (!target_name)
+          err(statement.source_file, statement.line,
+              "Root-ingress receiver is not a checked static domain binding",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto receiver = current_env.find(target_name->name);
+        const auto domain_name = receiver == current_env.end()
+            ? string() : canonical_type_name(receiver->second);
+        const auto domain = domains_.find(domain_name);
+        const Handler* handler = domain == domains_.end()
+            ? nullptr : find_handler(*domain->second, message.handler);
+        if (!handler)
+          err(statement.source_file, statement.line,
+              "Root-ingress call edge has no exact checked handler target",
+              "MOSS_INTERNAL_INVARIANT");
+
+        TypedRootIngressDomainCaptureFactV1 fact;
+        fact.statement_occurrence_id =
+            checked_types.statement_occurrence_id(statement);
+        fact.est_arena_index = handle.arena_index;
+        fact.message_expression_occurrence_id = message_id;
+        fact.receiver_expression_occurrence_id = message.target;
+        fact.source_fingerprint = handle.source_fingerprint;
+        fact.origin_id = handle.origin_id;
+        fact.specialization_context = "main";
+        fact.est_fact_context = expression_fact_context();
+        fact.receiver_binding = target_name->name;
+        fact.source_file = statement.source_file.empty()
+            ? p_.main->source_file : statement.source_file;
+        fact.source_line = statement.line;
+        fact.synchronous_root_ingress = true;
+        fact.compiler_generated_capture_only = true;
+        fact.permits_moss_value_copy = false;
+        fact.domain_type_identity = domain_name;
+        const ConcreteDomainInstance* instance = nullptr;
+        for (const auto& candidate : p_.concrete_domain_graph.instances)
+          if (candidate.binding == target_name->name) {
+            if (instance) {
+              instance = nullptr;
+              break;
+            }
+            instance = &candidate;
+          }
+        if (instance) {
+          fact.domain_instance_identity = instance->identity;
+          fact.receiver_definition_identity =
+              "domain-instance:" + instance->identity;
+          std::vector<std::string> route_edges;
+          for (const auto& edge : p_.concrete_domain_graph.edges)
+            if (edge.source_instance == instance->identity)
+              route_edges.push_back(edge.route + "=" + edge.target_instance);
+          std::sort(route_edges.begin(), route_edges.end());
+          fact.route_capability_identity = instance->identity;
+          for (const auto& route : route_edges)
+            fact.route_capability_identity += "|" + route;
+          fact.concrete_graph_identity = "concrete-domain-graph";
+          std::vector<std::string> graph_instances;
+          std::vector<std::string> graph_edges;
+          for (const auto& item : p_.concrete_domain_graph.instances)
+            graph_instances.push_back(item.identity + "=" + item.domain);
+          for (const auto& edge : p_.concrete_domain_graph.edges)
+            graph_edges.push_back(edge.source_instance + "." + edge.route +
+                                  "=" + edge.target_instance);
+          std::sort(graph_instances.begin(), graph_instances.end());
+          std::sort(graph_edges.begin(), graph_edges.end());
+          for (const auto& item : graph_instances)
+            fact.concrete_graph_identity += "|I:" + item;
+          for (const auto& edge : graph_edges)
+            fact.concrete_graph_identity += "|E:" + edge;
+        }
+        fact.selected_handler_identity = handler_semantic_identity(
+            *domain->second, *handler);
+        fact.selected_call_edge_identity =
+            "main:" + std::to_string(fact.statement_occurrence_id) + ":" +
+            std::to_string(fact.est_arena_index) + ":" +
+            std::to_string(fact.message_expression_occurrence_id) + "->" +
+            fact.selected_handler_identity + "@" +
+            fact.domain_instance_identity;
+        fact.availability =
+            TypedRootIngressDomainCaptureFactV1::Availability::Present;
+        if (!fact.is_authoritative())
+          err(statement.source_file, statement.line,
+              "checker could not retain exact synchronous Root-ingress domain capture authority",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto duplicate = std::find_if(
+            required_root_ingress_domain_capture_occurrences_.begin(),
+            required_root_ingress_domain_capture_occurrences_.end(),
+            [&](const auto& item) {
+              return item.statement_occurrence_id ==
+                      fact.statement_occurrence_id &&
+                  item.est_arena_index == fact.est_arena_index &&
+                  item.message_expression_occurrence_id ==
+                      fact.message_expression_occurrence_id &&
+                  item.specialization_context == fact.specialization_context;
+            });
+        if (duplicate != required_root_ingress_domain_capture_occurrences_.end())
+          err(statement.source_file, statement.line,
+              "duplicate synchronous Root-ingress domain capture occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        root_ingress_domain_capture_facts_.push_back(fact);
+        required_root_ingress_domain_capture_occurrences_.push_back(
+            std::move(fact));
+      };
       if (check_executor_or_fileio_statement(statement, current_env, current,
                                              current_function, &statements))
         return;
+      if (statement.message_root_ingress &&
+          statement.kind != Stmt::Kind::Message) {
+        std::set<std::pair<std::uint32_t, est::ExprId>> seen_messages;
+        for (const auto& handle : statement.expression_handles) {
+          const auto* arena = expression_arena(handle.arena_index);
+          if (!arena || handle.expr >= arena->size()) continue;
+          const auto root = est::unparenthesized(*arena, handle.expr);
+          if (const auto* message =
+                  std::get_if<est::Message>(&arena->at(root))) {
+            if (seen_messages.emplace(handle.arena_index, root).second)
+              retain_root_capture(handle, root, *message);
+          }
+        }
+      }
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         if (legacy_spawn_expression(statement.b))
@@ -35128,6 +35305,17 @@ class Checker {
             current_env);
         check_static_message_receiver(
             statement.line, statement.a, *target, current_env);
+        if (statement.message_root_ingress) {
+          for (const auto& handle : statement.expression_handles) {
+            if (handle.slot != est::ExprSlot::Receiver) continue;
+            const auto* arena = expression_arena(handle.arena_index);
+            if (!arena || handle.expr >= arena->size()) continue;
+            const auto root = est::unparenthesized(*arena, handle.expr);
+            if (const auto* message =
+                    std::get_if<est::Message>(&arena->at(root)))
+              retain_root_capture(handle, root, *message);
+          }
+        }
         auto destination = current_env.find(statement.message_result);
         if (!statement.message_result.empty() && destination != current_env.end() &&
             contains_domain_handle(destination->second))

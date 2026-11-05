@@ -1011,6 +1011,56 @@ struct TypedEchoArgumentRequirementV1 {
   }
 };
 
+// Narrow compiler-internal authority for cloning a statically constructed
+// domain routing capability into a synchronous Root-ingress thunk. This does
+// not authorize Moss-level copies, payload copies, or domain-handle values.
+struct TypedRootIngressDomainCaptureFactV1 {
+  enum class Availability { Present, MissingOccurrence, Contradictory };
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId message_expression_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_expression_occurrence_id{UINT32_MAX};
+  std::uint64_t source_fingerprint{0};
+  std::uint64_t origin_id{0};
+  std::string specialization_context;
+  std::string est_fact_context;
+  std::string receiver_binding;
+  std::string receiver_definition_identity;
+  std::string domain_instance_identity;
+  std::string domain_type_identity;
+  std::string concrete_graph_identity;
+  std::string route_capability_identity;
+  std::string selected_call_edge_identity;
+  std::string selected_handler_identity;
+  std::string source_file;
+  int source_line{0};
+  bool synchronous_root_ingress{false};
+  bool compiler_generated_capture_only{false};
+  bool permits_moss_value_copy{false};
+  Availability availability{Availability::MissingOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        message_expression_occurrence_id != UINT32_MAX &&
+        receiver_expression_occurrence_id != UINT32_MAX &&
+        source_fingerprint != 0 &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        !receiver_binding.empty() && !receiver_definition_identity.empty() &&
+        !domain_instance_identity.empty() && !domain_type_identity.empty() &&
+        !concrete_graph_identity.empty() &&
+        !route_capability_identity.empty() &&
+        !selected_call_edge_identity.empty() &&
+        !selected_handler_identity.empty() && !source_file.empty() &&
+        source_line > 0 && synchronous_root_ingress &&
+        compiler_generated_capture_only && !permits_moss_value_copy;
+  }
+};
+
+using TypedRootIngressDomainCaptureRequirementV1 =
+    TypedRootIngressDomainCaptureFactV1;
+
 enum class TypedMatchScrutineeKindV1 { Enum, Option };
 
 struct TypedMatchArmFactV1 {
@@ -1401,6 +1451,10 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
   std::vector<TypedEchoArgumentRequirementV1>
       required_echo_argument_occurrences;
+  std::vector<TypedRootIngressDomainCaptureFactV1>
+      root_ingress_domain_capture_facts;
+  std::vector<TypedRootIngressDomainCaptureRequirementV1>
+      required_root_ingress_domain_capture_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -1498,6 +1552,72 @@ struct TypedSemanticModuleV1 {
         result->permits_copy != requirement.permits_copy)
       throw std::invalid_argument(
           "required checked Echo argument fact missing or contradictory");
+    return *result;
+  }
+
+  const TypedRootIngressDomainCaptureFactV1&
+  find_root_ingress_domain_capture_fact(
+      const TypedRootIngressDomainCaptureRequirementV1& requirement) const {
+    const auto same = [](const TypedRootIngressDomainCaptureFactV1& left,
+                         const TypedRootIngressDomainCaptureFactV1& right) {
+      return left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.est_arena_index == right.est_arena_index &&
+          left.message_expression_occurrence_id ==
+              right.message_expression_occurrence_id &&
+          left.receiver_expression_occurrence_id ==
+              right.receiver_expression_occurrence_id &&
+          left.source_fingerprint == right.source_fingerprint &&
+          left.origin_id == right.origin_id &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          left.receiver_binding == right.receiver_binding &&
+          left.receiver_definition_identity == right.receiver_definition_identity &&
+          left.domain_instance_identity == right.domain_instance_identity &&
+          left.domain_type_identity == right.domain_type_identity &&
+          left.concrete_graph_identity == right.concrete_graph_identity &&
+          left.route_capability_identity == right.route_capability_identity &&
+          left.selected_call_edge_identity ==
+              right.selected_call_edge_identity &&
+          left.selected_handler_identity == right.selected_handler_identity &&
+          left.source_file == right.source_file &&
+          left.source_line == right.source_line &&
+          left.synchronous_root_ingress == right.synchronous_root_ingress &&
+          left.compiler_generated_capture_only ==
+              right.compiler_generated_capture_only &&
+          left.permits_moss_value_copy == right.permits_moss_value_copy &&
+          left.availability == right.availability;
+    };
+    const TypedRootIngressDomainCaptureRequirementV1* retained = nullptr;
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate : required_root_ingress_domain_capture_occurrences)
+      if (candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.message_expression_occurrence_id ==
+              requirement.message_expression_occurrence_id &&
+          candidate.specialization_context == requirement.specialization_context) {
+        retained = &candidate;
+        ++requirement_matches;
+      }
+    if (requirement_matches != 1 || !retained || !same(*retained, requirement) ||
+        !retained->is_authoritative())
+      throw std::invalid_argument(
+          "unknown or contradictory required Root-ingress domain capture");
+    const TypedRootIngressDomainCaptureFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : root_ingress_domain_capture_facts)
+      if (candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.message_expression_occurrence_id ==
+              requirement.message_expression_occurrence_id &&
+          candidate.specialization_context == requirement.specialization_context) {
+        result = &candidate;
+        ++fact_matches;
+      }
+    if (fact_matches != 1 || !result || !same(*result, requirement) ||
+        !result->is_authoritative())
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory Root-ingress domain capture facts"
+          : "required Root-ingress domain capture fact missing");
     return *result;
   }
 
