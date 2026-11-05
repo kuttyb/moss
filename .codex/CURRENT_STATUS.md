@@ -100,10 +100,13 @@
   `c2d8f1b98b321122`, `8126c0362fc26de4`, `6da60120846fe42e`, and
   `df6f364d09e84cea`. L7 owns this separate builder/schema issue; no validator
   relaxation was made.
-- Consumer candidate is uncommitted and awaits independent review. No checker,
-  oracle expectation, `moss.cpp`, or tracked package source edits are included.
-  The provenance-builder limitation must remain explicit in review and
-  integration results.
+- Consumer implementation/test SHA `e44069de018fe0d9d73c404d347dbad88213b5aa`
+  received independent Agent 2 GO. Reviewer confirmed canonical Program/fact/
+  arena alignment, unique exact handle/context matching, fail-closed missing,
+  ambiguous, and contradictory facts, and passing focused build/corruption
+  gates. No checker, oracle expectation, `moss.cpp`, or tracked package source
+  edits are included. The provenance-builder limitation must remain explicit
+  in integration results; runtime clone authorization remains NO-GO.
 
 ### Team B Root-ingress arena lookup follow-up (2026-11-05)
 
