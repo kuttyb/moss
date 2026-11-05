@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -29,6 +31,7 @@
 #include "functional_optimizer_support.hpp"
 #include "semantic_checker_support.hpp"
 #include "native_generator.hpp"
+#include "native_clone_provenance.hpp"
 #include "native_generator_support.hpp"
 #include "type_placeholders.hpp"
 #include "native_cache_identity.hpp"
@@ -253,6 +256,53 @@ class Generator {
       }
       return reqs.empty() ? nullptr : &reqs.front();
     };
+    auto find_target_copy_fact = [&](std::vector<TypedCopyFactV1>& facts) -> TypedCopyFactV1* {
+      for (auto& fact : facts) {
+        if (!fact.specialization_identity.empty() &&
+            (!target_spec ||
+             fact.specialization_context.find(target_spec) != std::string::npos))
+          return &fact;
+      }
+      return facts.empty() ? nullptr : &facts.front();
+    };
+    auto find_target_copy_req = [&](std::vector<TypedCopyRequirementV1>& reqs) -> TypedCopyRequirementV1* {
+      for (auto& requirement : reqs) {
+        if (!requirement.specialization_identity.empty() &&
+            (!target_spec ||
+             requirement.specialization_context.find(target_spec) != std::string::npos))
+          return &requirement;
+      }
+      return reqs.empty() ? nullptr : &reqs.front();
+    };
+
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_COPY_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
+          fact->availability = TypedCopyFactV1::Availability::MissingCopyOccurrence;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COPY_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
+          fact->required_source_access = Effect::Consume;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DELETE_COPY_REQUIREMENT")) {
+      if (p_.typed_semantics &&
+          !p_.typed_semantics->required_copy_occurrences.empty())
+        p_.typed_semantics->required_copy_occurrences.erase(
+            p_.typed_semantics->required_copy_occurrences.begin());
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COPY_FACT")) {
+      if (p_.typed_semantics && !p_.typed_semantics->copy_facts.empty())
+        if (auto* fact = find_target_copy_fact(p_.typed_semantics->copy_facts))
+          p_.typed_semantics->copy_facts.push_back(*fact);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COPY_REQUIREMENT")) {
+      if (p_.typed_semantics &&
+          !p_.typed_semantics->required_copy_occurrences.empty())
+        if (auto* requirement = find_target_copy_req(
+                p_.typed_semantics->required_copy_occurrences))
+          p_.typed_semantics->required_copy_occurrences.push_back(*requirement);
+    }
 
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_OWNERSHIP_FACT")) {
       if (p_.typed_semantics && !p_.typed_semantics->local_ownership_facts.empty()) {
@@ -767,10 +817,73 @@ class Generator {
       gen_main(o, *p_.main);
     else
       o << "fn main() {}\n";
-    return o.str();
+    return strip_unused_object_value_helpers(o.str());
   }
 
  private:
+  static string strip_unused_object_value_helpers(string generated) {
+    constexpr std::string_view begin_marker = "    // MOSS_OBJECT_VALUE_HELPER_BEGIN:";
+    constexpr std::string_view end_prefix = "    // MOSS_OBJECT_VALUE_HELPER_END:";
+    struct Helper {
+      std::size_t begin, body_begin, body_end, end;
+      string method;
+    };
+    std::vector<Helper> helpers;
+    std::size_t cursor = 0;
+    while ((cursor = generated.find(begin_marker, cursor)) != string::npos) {
+      const auto name_begin = cursor + begin_marker.size();
+      const auto marker_end = generated.find('\n', name_begin);
+      if (marker_end == string::npos)
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT malformed object value helper marker");
+      const string method = generated.substr(name_begin, marker_end - name_begin);
+      const auto body_begin = marker_end + 1;
+      const string end_marker = string(end_prefix) + method + "\n";
+      const auto end = generated.find(end_marker, body_begin);
+      if (end == string::npos)
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT unterminated object value helper");
+      helpers.push_back({cursor, body_begin, end,
+                         end + end_marker.size(), method});
+      cursor = end + end_marker.size();
+    }
+    if (helpers.empty()) return generated;
+
+    string without_helper_bodies;
+    cursor = 0;
+    for (const auto& helper : helpers) {
+      without_helper_bodies.append(generated, cursor, helper.begin - cursor);
+      cursor = helper.end;
+    }
+    without_helper_bodies.append(generated, cursor, string::npos);
+
+    std::set<string> reachable;
+    std::vector<string> pending;
+    auto records_call = [](std::string_view text, const string& method) {
+      return text.find("." + method + "()") != std::string_view::npos;
+    };
+    for (const auto& helper : helpers)
+      if (records_call(without_helper_bodies, helper.method))
+        pending.push_back(helper.method);
+    while (!pending.empty()) {
+      string method = std::move(pending.back());
+      pending.pop_back();
+      if (!reachable.insert(method).second) continue;
+      auto definition = std::find_if(helpers.begin(), helpers.end(),
+          [&](const Helper& helper) { return helper.method == method; });
+      if (definition == helpers.end())
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing object value helper dependency");
+      const std::string_view body(generated.data() + definition->body_begin,
+                                  definition->body_end - definition->body_begin);
+      for (const auto& dependency : helpers)
+        if (!reachable.count(dependency.method) &&
+            records_call(body, dependency.method))
+          pending.push_back(dependency.method);
+    }
+    for (auto helper = helpers.rbegin(); helper != helpers.rend(); ++helper)
+      if (!reachable.count(helper->method))
+        generated.erase(helper->begin, helper->end - helper->begin);
+    return generated;
+  }
+
   const Program& p_;
   // Keeps this program's interned declarations bound while lowering.
   moss::TypeContext::Binding type_scope_;
@@ -919,6 +1032,7 @@ class Generator {
   const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
   string codegen_body_context_;
   string codegen_active_specialization_key_;
+  mutable std::map<string, string> generated_copy_helper_fact_ids_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
   string codegen_result_expression_;
 
@@ -1036,6 +1150,103 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT checked CollectionError fact was dropped or perturbed: " +
           identity.canonical());
     return consumer_has;
+  }
+
+  const TypedCollectionOutcomeFactV1* resolve_collection_outcome_fact(
+      TypedCollectionOutcomeFactV1::Operation operation) const {
+    if (!p_.typed_semantics || !phase21_codegen_statement_) return nullptr;
+    const Stmt& statement = *phase21_codegen_statement_;
+    const est::ExprSlot slot = statement.kind == Stmt::Kind::Let ||
+            statement.kind == Stmt::Kind::Var
+        ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles)
+      if (candidate.slot == slot && candidate.argument_index == 0) {
+        handle = &candidate;
+        break;
+      }
+    if (!handle || handle->arena_index >= p_.expression_arenas.size() ||
+        !p_.expression_arenas[handle->arena_index]) return nullptr;
+    const auto& arena = *p_.expression_arenas[handle->arena_index];
+    est::ExprId root = handle->expr;
+    while (const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(root)))
+      root = grouped->inner;
+    const auto* call = std::get_if<est::Call>(&arena.at(root));
+    if (!call) return nullptr;
+    const auto* member = std::get_if<est::Member>(&arena.at(call->callee));
+    if (!member || std::get_if<est::Identifier>(&arena.at(member->base)) == nullptr)
+      return nullptr;
+    const bool queue_pop = operation ==
+            TypedCollectionOutcomeFactV1::Operation::QueuePop &&
+        member->name == "pop" && call->arguments.empty();
+    const bool map_remove = operation ==
+            TypedCollectionOutcomeFactV1::Operation::MapRemove &&
+        member->name == "remove" && call->arguments.size() == 1;
+    if (!queue_pop && !map_remove) return nullptr;
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    std::string specialization = codegen_active_specialization_key_;
+    size_t requirement_count = 0;
+    const TypedCollectionOutcomeRequirementV1* requirement = nullptr;
+#ifdef MOSS_TEST_BUILD
+    const bool drop_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+    const bool duplicate_requirement =
+        std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_OUTCOME_REQUIREMENT") != nullptr;
+#else
+    constexpr bool drop_requirement = false;
+    constexpr bool duplicate_requirement = false;
+#endif
+    for (const auto& candidate :
+         p_.typed_semantics->required_collection_outcome_occurrences) {
+      if (!drop_requirement && candidate.operation == operation &&
+          candidate.operation_est_arena_index == handle->arena_index &&
+          candidate.operation_expression_occurrence_id == root &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization) {
+        requirement = &candidate;
+        ++requirement_count;
+        if (duplicate_requirement) ++requirement_count;
+      }
+    }
+    size_t orphan_fact_count = 0;
+    for (const auto& fact : p_.typed_semantics->collection_outcome_facts)
+      if (fact.operation == operation &&
+          fact.operation_est_arena_index == handle->arena_index &&
+          fact.operation_expression_occurrence_id == root &&
+          fact.specialization_context == context &&
+          fact.specialization_identity == specialization)
+        ++orphan_fact_count;
+    if (requirement_count != 1 || !requirement) {
+      if (requirement_count || orphan_fact_count)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked collection outcome requirement missing or ambiguous");
+      const auto* tree_facts = arena.facts(root, context);
+      if (tree_facts && tree_facts->type &&
+          tree_facts->type->kind == TypeKind::Never)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT Never collection result lacks exact outcome authority");
+      return nullptr;
+    }
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_COLLECTION_OUTCOME_FACT"))
+        throw std::invalid_argument("required checked collection outcome fact missing");
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_COLLECTION_OUTCOME_FACT"))
+        throw std::invalid_argument("duplicate checked collection outcome facts");
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_OUTCOME_FACT") ||
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_COLLECTION_OUTCOME_REQUIREMENT")) {
+        auto corrupted = *requirement;
+        corrupted.error_variant_identity = "forged";
+        (void)p_.typed_semantics->find_collection_outcome_fact(corrupted);
+        throw std::invalid_argument("perturbed collection outcome authority unexpectedly passed");
+      }
+#endif
+      return p_.typed_semantics->find_collection_outcome_fact(*requirement);
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
   }
 
   static string phase21_rust_variant(const RaisedIdentity& identity) {
@@ -1467,18 +1678,71 @@ class Generator {
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
-    if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+    if (starts_with(x, "queue[") && ends_with(x, "]")) {
+      const string item = trim(x.substr(6, x.size() - 7));
+      if (canonical_type_name(item) == "never") {
+        bool authorized = false;
+        if (p_.typed_semantics) {
+          for (const auto& requirement :
+               p_.typed_semantics->required_collection_outcome_occurrences) {
+            if (requirement.operation !=
+                TypedCollectionOutcomeFactV1::Operation::QueuePop) continue;
+            const auto* fact = p_.typed_semantics->find_collection_outcome_fact(
+                requirement);
+            if (fact && fact->receiver_type &&
+                fact->receiver_type->kind == TypeKind::Builtin &&
+                fact->receiver_type->name == "queue" &&
+                fact->receiver_type->type_args.size() == 1 &&
+                fact->receiver_type->type_args.front()->kind == TypeKind::Never)
+              authorized = true;
+          }
+        }
+        if (!authorized)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT Queue[Never] storage lacks exact checked outcome authority");
+        return "std::collections::VecDeque<std::convert::Infallible>";
+      }
+      return "std::collections::VecDeque<" + rust_type(item) + ">";
+    }
     if (staged_abi_v10() && starts_with(x, "set[") && ends_with(x, "]"))
       return "moss_runtime::MossSet<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto parsed = parsed_type_arguments(x);
       if (!parsed || parsed->size() != 2) return x;
       const auto& ps = *parsed;
+      if (canonical_type_name(ps[1]) == "never") {
+        bool authorized = false;
+        if (p_.typed_semantics) {
+          for (const auto& requirement :
+               p_.typed_semantics->required_collection_outcome_occurrences) {
+            if (requirement.operation !=
+                TypedCollectionOutcomeFactV1::Operation::MapRemove) continue;
+            const auto* fact = p_.typed_semantics->find_collection_outcome_fact(
+                requirement);
+            if (fact && fact->receiver_type &&
+                fact->receiver_type->kind == TypeKind::Builtin &&
+                fact->receiver_type->name == "map" &&
+                fact->receiver_type->type_args.size() == 2 &&
+                fact->receiver_type->type_args[1]->kind == TypeKind::Never &&
+                fact->receiver_type->type_args[0]->to_canonical_string() ==
+                    canonical_type_name(ps[0]))
+              authorized = true;
+          }
+        }
+        if (!authorized)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT Map[K, Never] storage lacks exact checked outcome authority");
+        return "std::collections::HashMap<" + rust_type(ps[0]) +
+            ", std::convert::Infallible>";
+      }
       if (shared_protocol_map_key(ps[0]))
         return "moss_runtime::MossMap<" + rust_type(ps[0]) + ", " +
                rust_type(ps[1]) + ">";
       return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
+    if (x == "never")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unbounded internal Never type cannot be lowered");
     if (starts_with(x, "option[") && ends_with(x, "]"))
       return "Option<" + rust_type(x.substr(7, x.size()-8)) + ">";
     if (starts_with(x, "table[") && ends_with(x, "]")) {
@@ -3966,8 +4230,9 @@ class Generator {
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
-          call << message_arg(arguments[index], target_handler->params.at(index).type,
-                              d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
+          call << shared_message_arg(arguments[index], target_handler->params.at(index).type,
+                                     d, locals, types,
+                                     message_argument_plans ? message_argument_plans->at(index) : 0);
         }
         call << ")";
         return raises ? phase21_propagate(call.str()) : call.str();
@@ -4379,6 +4644,30 @@ class Generator {
       }
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (collection_named(parsed_type(concrete), {"queue"}) &&
+            member_name == "pop" && member_arguments.empty()) {
+          if (const auto* outcome = resolve_collection_outcome_fact(
+                  TypedCollectionOutcomeFactV1::Operation::QueuePop)) {
+            if (!phase21_result_context_ ||
+                !phase21_collection_error_checked("Empty"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked Queue.pop outcome lacks its error context");
+            return phase21_collection_error_exit("Empty");
+          }
+        }
+        if (collection_named(parsed_type(concrete), {"map"}) &&
+            member_name == "remove" && member_arguments.size() == 1) {
+          if (const auto* outcome = resolve_collection_outcome_fact(
+                  TypedCollectionOutcomeFactV1::Operation::MapRemove)) {
+            if (!phase21_result_context_ ||
+                !phase21_collection_error_checked("MissingKey"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked Map.remove outcome lacks its error context");
+            const string key = expr(member_arguments.front(), d, locals, types);
+            return "{ let __moss_checked_collection_key = " + key + "; " +
+                phase21_collection_error_exit("MissingKey") + " }";
+          }
+        }
         if (concrete == "FileIO" && member_name == "read" &&
             member_arguments.size() == 2) {
           string read = receiver_expression +
@@ -4666,7 +4955,7 @@ class Generator {
               member_arguments.size() == 1) {
             string key = expr(member_arguments[0], d, locals, types);
             if (nominal && is_object_view(member_arguments[0], d, locals, types))
-              key = "(" + key + ").__moss_value()";
+              key = "(" + key + ")." + access_value_method(key_type) + "()";
             const auto key_binding = tree_identifier_name(member_arguments[0]);
             const string borrowed = key_binding &&
                 borrowed_function_parameters_.count(*key_binding)
@@ -4691,7 +4980,8 @@ class Generator {
             string flag = write_call_place(member_arguments[2], d, locals, types);
             if (shared_key) {
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
-              if (view_key) key = "(" + key + ").__moss_value()";
+              if (view_key)
+                key = "(" + key + ")." + access_value_method(map_types->first) + "()";
               const auto key_binding = tree_identifier_name(member_arguments[0]);
               const string borrowed = !view_key && key_binding &&
                   borrowed_function_parameters_.count(*key_binding)
@@ -4717,7 +5007,8 @@ class Generator {
             if (shared_key) {
               string fallback = expr(member_arguments[1], d, locals, types);
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
-              if (view_key) key = "(" + key + ").__moss_value()";
+              if (view_key)
+                key = "(" + key + ")." + access_value_method(map_types->first) + "()";
               const auto key_binding = tree_identifier_name(member_arguments[0]);
               const string borrowed = !view_key && key_binding &&
                   borrowed_function_parameters_.count(*key_binding)
@@ -4766,6 +5057,16 @@ class Generator {
           }
           if (member_name == "remove" && member_arguments.size() == 1) {
             string key = expr(member_arguments.front(), d, locals, types);
+            const auto* outcome = resolve_collection_outcome_fact(
+                TypedCollectionOutcomeFactV1::Operation::MapRemove);
+            if (outcome) {
+              if (!phase21_result_context_ ||
+                  !phase21_collection_error_checked("MissingKey"))
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked Map.remove outcome lacks its error context");
+              return "{ let __moss_checked_collection_key = " + key + "; " +
+                  phase21_collection_error_exit("MissingKey") + " }";
+            }
             const string lookup = map_types->first == "string"
                 ? "(" + key + ").as_str()" : "&( " + key + " )";
             const string remove = "(" + receiver_expression + ").remove(" +
@@ -4807,7 +5108,8 @@ class Generator {
           // at this native boundary before selecting the owned method.
           if (method->receiver_effect == Effect::Consume) {
             if (is_object_view(member_receiver, d, locals, types))
-              receiver_expression = "(" + receiver_expression + ").__moss_value()";
+              receiver_expression = "(" + receiver_expression + ")." +
+                  access_value_method(receiver_type.value_or("")) + "()";
             else if (tree_identifier_name(member_receiver) &&
                      borrowed_function_parameters_.count(
                          *tree_identifier_name(member_receiver)))
@@ -4924,6 +5226,17 @@ class Generator {
         if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
             (member_name == "pop" || member_name == "pop_front") &&
             member_arguments.empty()) {
+          if (member_name == "pop") {
+            const auto* outcome = resolve_collection_outcome_fact(
+                TypedCollectionOutcomeFactV1::Operation::QueuePop);
+            if (outcome) {
+              if (!phase21_result_context_ ||
+                  !phase21_collection_error_checked("Empty"))
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked Queue.pop outcome lacks its error context");
+              return phase21_collection_error_exit("Empty");
+            }
+          }
           const string pop = receiver_expression + "." +
               viewed_method_name(member_receiver, member_name, member_arguments,
                                  d, locals, types) + "()";
@@ -4951,6 +5264,15 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"map"}) &&
             member_name == "remove" && member_arguments.size() == 1) {
+          const auto* outcome = resolve_collection_outcome_fact(
+              TypedCollectionOutcomeFactV1::Operation::MapRemove);
+          if (outcome) {
+            if (!phase21_result_context_ ||
+                !phase21_collection_error_checked("MissingKey"))
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked Map.remove outcome lacks its error context");
+            return phase21_collection_error_exit("MissingKey");
+          }
           return receiver_expression + ".remove(&(" +
               expr(member_arguments.front(), d, locals, types) + "))" +
               ".unwrap_or_else(|| std::process::abort())";
@@ -4974,8 +5296,18 @@ class Generator {
     if (tree_parse_simple_call(e, builtin, builtin_args)) {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
-      if (builtin == "copy" && builtin_args.size() == 1)
-        return "(" + expr(builtin_args.front(), d, locals, types) + ").clone()";
+      if (builtin == "copy" && builtin_args.size() == 1) {
+        const auto& checked_copy = resolve_copy_fact(e);
+        if (!checked_copy.is_authoritative())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT explicit copy fact is not authoritative");
+        const auto source_type = generated_expr_type(builtin_args.front(), types);
+        if (!source_type)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT explicit copy source type is unavailable");
+        return lower_fact_authorized_copy(checked_copy, builtin_args.front(),
+                                          *source_type, d, locals, types);
+      }
       if (builtin == "sqrt" && builtin_args.size() == 1)
         return "{ let __moss_sqrt_value: f64 = " +
             expr(builtin_args.front(), d, locals, types) +
@@ -5235,13 +5567,18 @@ class Generator {
                      size_t functional_pipeline_id = 0) const {
     string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
-    if (is_object_view(e, d, locals, types)) return "(" + r + ").__moss_value()";
-    if (copy_type(t) || t == "_") return r;
-    // Messages are the explicit Moss semantic copy boundary.  A payload is
-    // detached from the sender even when the source binding remains available;
-    // the generated clone is an implementation of that boundary, never an
-    // implicit copy for an ordinary local call.
-    return "(" + r + ").clone()";
+    if (copy_type(t)) return r;
+    string callee;
+    vector<string> arguments;
+    if (tree_parse_simple_call(e, callee, arguments) && callee == "copy" &&
+        arguments.size() == 1) {
+      // expr() above required the exact checker TypedCopyFactV1 and emitted
+      // the authorized independent owner. Transfer that fresh result into the
+      // root message closure without cloning it again.
+      return r;
+    }
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT root message payload needs a checked copy(x) fact or exact consume authority");
   }
 
   string shared_message_arg(const string& e, const string& type,
@@ -5263,7 +5600,9 @@ class Generator {
         // An incoming object payload is already `&impl MossAccess_T` and can
         // be forwarded directly. State projections are compact values holding
         // field borrows, so lend the temporary view for this nested call.
-        return borrowed_message_parameter(e) ? trim(e) : "&(" + rendered + ")";
+        if (borrowed_message_parameter(e)) return trim(e);
+        if (auto place = view_place(e, d, locals, types)) return "&(" + *place + ")";
+        return "&(" + rendered + ")";
       case MessagePayloadLowering::MaterializeOwned:
         break;
     }
@@ -5739,7 +6078,7 @@ class Generator {
         if (param_it != f.params.end()) {
           size_t p_idx = std::distance(f.params.begin(), param_it);
           if (function_effect(f, p_idx, types.at(f.params[p_idx].name), specialization) != Effect::Consume) {
-            if (view) rendered = *expr_binding + ".__moss_value()";
+            if (view) rendered = *expr_binding + "." + access_value_method(return_type) + "()";
             else rendered = "(" + rendered + ").clone()";
           }
         }
@@ -5901,7 +6240,7 @@ class Generator {
         o << "    pub fn __moss_message_" << handler.name << "(&self";
         string arguments;
         for (const auto& parameter : handler.params) {
-          o << ", " << parameter.name << ": " << rust_type(parameter.type);
+          o << ", " << shared_message_parameter(parameter);
           if (!arguments.empty()) arguments += ", ";
           arguments += parameter.name;
         }
@@ -5937,15 +6276,21 @@ class Generator {
     out << "impl " << domain.name << "Ref {\n";
     exported_domain_bridge_body_ = true;
     for (const auto& handler : domain.handlers) {
+      const auto saved_borrowed_message_parameters = borrowed_message_parameters_;
+      const auto saved_view_parameters = view_parameters_;
       std::set<string> locals{"self"};
       std::unordered_map<string,string> types{{"self", domain.name}};
       string call = "message self." + handler.name + "(";
       out << "    pub fn __moss_message_" << handler.name << "(&self";
       for (size_t index = 0; index < handler.params.size(); ++index) {
         const auto& parameter = handler.params[index];
-        out << ", " << parameter.name << ": " << rust_type(parameter.type);
+        out << ", " << shared_message_parameter(parameter);
         locals.insert(parameter.name);
         types[parameter.name] = parameter.type;
+        if (borrowed_message_type(parameter.type))
+          borrowed_message_parameters_.insert(parameter.name);
+        if (view_object_type(parameter.type))
+          view_parameters_.insert(parameter.name);
         if (index) call += ", ";
         call += parameter.name;
       }
@@ -5974,6 +6319,8 @@ class Generator {
       }
       out << "\n    }\n";
       phase21_result_context_ = saved_phase21_result_context;
+      borrowed_message_parameters_ = saved_borrowed_message_parameters;
+      view_parameters_ = saved_view_parameters;
     }
     exported_domain_bridge_body_ = false;
     out << "}\n\n";
@@ -6060,11 +6407,11 @@ class Generator {
       }
       o << "        Err(payload) => {\n";
       o << "            failures += 1;\n";
-      o << "            let detail = if let Some(value) = payload.downcast_ref::<String>() { value.clone() } else if let Some(value) = payload.downcast_ref::<&str>() { (*value).to_string() } else { \"test panicked without a Moss assertion message\".to_string() };\n";
+      o << "            let detail: &str = if let Some(value) = payload.downcast_ref::<String>() { value.as_str() } else if let Some(value) = payload.downcast_ref::<&str>() { value } else { \"test panicked without a Moss assertion message\" };\n";
       o << "            println!(\"MOSS_TEST|FAIL|{}|{}|{}\", "
         << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
         << "), __moss_protocol_hex(" << rust_string_literal(test.name)
-        << "), __moss_protocol_hex(&detail));\n";
+        << "), __moss_protocol_hex(detail));\n";
       o << "        }\n";
       o << "    }\n";
     }
@@ -6283,6 +6630,132 @@ class Generator {
     }
 
     return found_fact;
+  }
+
+  const TypedCopyFactV1& resolve_copy_fact(
+      std::string_view expression) const {
+    if (!p_.typed_semantics || !active_functional_expression_handles_)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT explicit copy lacks checked EST context");
+    const auto fingerprint = est::fingerprint(string(expression));
+    const est::Handle* matched = nullptr;
+    for (const auto& handle : *active_functional_expression_handles_) {
+      if (handle.source_fingerprint != fingerprint ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index])
+        continue;
+      const auto span = p_.expression_arenas[handle.arena_index]->span(handle.expr);
+      if (span.source_begin != 0 || span.source_end != expression.size())
+        continue;
+      if (matched)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT ambiguous checked explicit copy occurrence");
+      matched = &handle;
+    }
+    if (!matched)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT explicit copy occurrence is not an exact checked EST handle");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    try {
+      const auto& requirement = p_.typed_semantics->find_copy_requirement(
+          matched->arena_index, matched->expr, context);
+      const auto* fact = p_.typed_semantics->find_copy_fact(requirement);
+      if (!fact)
+        throw std::runtime_error("required checked copy fact missing");
+      return *fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  std::pair<NativeCheckedCopyFactV1, string> native_copy_provenance_identity(
+      const TypedCopyFactV1& fact) const {
+    std::error_code error;
+    const auto source_path = std::filesystem::absolute(
+        std::filesystem::path(fact.provenance.source_file), error).lexically_normal();
+    if (error)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT cannot normalize explicit-copy source path");
+    std::ifstream source(source_path, std::ios::binary);
+    if (!source)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT cannot read exact explicit-copy source bytes");
+    const string source_bytes{std::istreambuf_iterator<char>(source),
+                              std::istreambuf_iterator<char>()};
+    NativeCheckedCopyFactV1 row = native_checked_copy_fact_from_typed(
+        fact, source_bytes);
+    const string identity = native_checked_copy_identity(row);
+    return {std::move(row), identity};
+  }
+
+  string lower_fact_authorized_copy(
+      const TypedCopyFactV1& fact, const string& source_expression,
+      const string& source_type, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string, string>* types) const {
+    auto [row, identity] = native_copy_provenance_identity(fact);
+    (void)row;
+    if (identity.rfind("typed-copy-fact-v1:", 0) != 0 || identity.size() != 83)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT invalid explicit-copy fact identity");
+    const string digest = identity.substr(19);
+    const string prefix = digest.substr(0, 16);
+    auto prior = generated_copy_helper_fact_ids_.find(prefix);
+    if (prior != generated_copy_helper_fact_ids_.end() && prior->second != identity)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT explicit-copy helper identity prefix collision");
+    generated_copy_helper_fact_ids_[prefix] = identity;
+    const string helper = "__moss_copy_value_" + prefix;
+    const string concrete = canonical_type_name(source_type);
+    const string result_type = rust_type(source_type);
+    const bool view_copy = is_object_view(source_expression, domain, locals, types);
+    std::ostringstream definition;
+    if (view_copy) {
+      auto object = objects_.find(concrete);
+      const bool generic_object = object != objects_.end() &&
+          std::any_of(object->second->fields.begin(), object->second->fields.end(),
+              [](const Field& field) { return field.inferred || field.type.empty(); });
+      if (object == objects_.end() || !view_object_type(concrete) || generic_object)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT per-fact view copy helper lacks a concrete object layout");
+      std::function<string(const string&, const string&)> build =
+          [&](const string& type, const string& view) -> string {
+        const string canonical = canonical_type_name(type);
+        auto found = objects_.find(canonical);
+        const bool generic = found != objects_.end() &&
+            std::any_of(found->second->fields.begin(), found->second->fields.end(),
+                [](const Field& field) { return field.inferred || field.type.empty(); });
+        if (found == objects_.end() || !view_object_type(canonical) ||
+            generic)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT nested per-fact copy layout is not closed");
+        std::ostringstream value;
+        value << rust_type(canonical) << " { ";
+        for (const auto& field : found->second->fields) {
+          const string field_view = view + ".__moss_field_" +
+              rust_identifier(field.name) + "()";
+          value << rust_identifier(field.name) << ": ";
+          if (view_object_type(field.type))
+            value << build(field.type, field_view);
+          else
+            value << field_view << ".clone()";
+          value << ", ";
+        }
+        value << "}";
+        return value.str();
+      };
+      definition << "fn " << helper << "(value: &impl "
+          << access_trait(concrete) << ") -> " << result_type << " { "
+          << build(concrete, "value") << " } ";
+    } else {
+      definition << "fn " << helper << "(value: &" << result_type << ") -> "
+          << result_type << " { (*value).clone() } ";
+    }
+    return "{ " + definition.str() + "/* Moss copy fact call: " +
+        identity + " */ " + helper + "(&(" +
+        expr(source_expression, domain, locals, types) + ")) }";
   }
 
   std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
@@ -6506,6 +6979,42 @@ class Generator {
     if (requirement_count != 1 || !requirement)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT required checked match requirement missing or ambiguous");
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_MATCH_ARM_ACCESS")) {
+      auto corrupted = *requirement;
+      if (corrupted.arms.empty())
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT cannot perturb empty checked match arms");
+      auto& arm = corrupted.arms.front();
+      arm.payload_access = arm.payload_access == Effect::Write
+          ? Effect::Read : Effect::Write;
+      try {
+        (void)p_.typed_semantics->find_match_ownership_fact(corrupted);
+      } catch (const std::exception& e) {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT perturbed match access was accepted");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_FACT")) {
+      auto corrupted = *p_.typed_semantics;
+      auto fact = std::find_if(corrupted.match_ownership_facts.begin(),
+          corrupted.match_ownership_facts.end(), [&](const auto& candidate) {
+            return candidate.est_arena_index == requirement->est_arena_index &&
+                candidate.scrutinee_occurrence_id == requirement->scrutinee_occurrence_id &&
+                candidate.statement_occurrence_id == requirement->statement_occurrence_id &&
+                candidate.specialization_identity == requirement->specialization_identity &&
+                candidate.specialization_context == requirement->specialization_context;
+          });
+      if (fact == corrupted.match_ownership_facts.end())
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT cannot drop absent checked match fact");
+      corrupted.match_ownership_facts.erase(fact);
+      try {
+        (void)corrupted.find_match_ownership_fact(*requirement);
+      } catch (const std::exception& e) {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing checked match fact was accepted");
+    }
+#endif
     try {
       return p_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
@@ -6579,7 +7088,9 @@ class Generator {
       if constexpr (std::is_same_v<T, est::Identifier>) {
         if (value.name == "true" || value.name == "false") return value.name;
         if (view_parameters_.count(value.name)) {
-          return value.name + ".__moss_value()";
+          if (!types || !types->count(value.name))
+            throw std::runtime_error("MOSS_INTERNAL_INVARIANT access view lacks checked type");
+          return value.name + "." + access_value_method(types->at(value.name)) + "()";
         }
         if (borrowed_function_parameters_.count(value.name)) {
           return "(*" + value.name + ")";
@@ -7482,7 +7993,13 @@ class Generator {
           }
           o << indent(level) << "match ";
           const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
-          if (s.b != "consume" && !recovery_slot) o << "&";
+          const bool mutable_match_payload = std::any_of(
+              match_fact->arms.begin(), match_fact->arms.end(),
+              [](const TypedMatchArmFactV1& arm) {
+                return arm.payload_access == Effect::Write;
+              });
+          if (s.b != "consume" && !recovery_slot)
+            o << (mutable_match_payload ? "&mut " : "&");
           if (struct_literal) o << "(";
           if (recovery_slot && s.b == "consume")
             o << "__moss_recovery_slot_" << s.a
@@ -7560,7 +8077,9 @@ class Generator {
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
-                if (copy_type_name(type))
+                if (checked_arm->payload_access == Effect::Write) {
+                  borrowed_function_parameters_.insert(name);
+                } else if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
               }
@@ -7997,6 +8516,11 @@ class Generator {
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
             lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
           }
+          else if (joined_assignment && tree_plain_identifier(s.a))
+            // A checker-proved first definition at a control-flow join is an
+            // assignment to the predeclared join slot in each branch. It is
+            // not a write through an alias established by a sibling branch.
+            lhs = rust_identifier(s.a);
           else lhs = write_call_place(s.a, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
@@ -8031,6 +8555,10 @@ class Generator {
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
               annotation = rust_type(statement_type);
             else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
+            else if (starts_with(canonical_type_name(statement_type), "queue[") &&
+                     ends_with(canonical_type_name(statement_type), "]") &&
+                     canonical_type_name(statement_type).find("never") != string::npos)
+              annotation = rust_type(statement_type);
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
             const auto* take_fact = resolve_take_fact(s, functional_context);
@@ -8115,7 +8643,7 @@ class Generator {
               auto key_type = generated_expr_type(mi, &types);
               if (key_type && shared_nominal_map_key(*key_type) &&
                   is_object_view(mi, d, locals, &types))
-                key = "(" + key + ").__moss_value()";
+                key = "(" + key + ")." + access_value_method(*key_type) + "()";
               else if (key_type && !copy_type(*key_type) &&
                   !string_key)
                 key = "(" + key + ").clone()";
@@ -8654,6 +9182,11 @@ class Generator {
                        (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
                 o << ": " << rust_type(!inferred_map_type.empty()
                     ? inferred_map_type : statement_type);
+              else if (!joined_assignment && !domain_capability && !ownership_fact &&
+                       starts_with(canonical_type_name(statement_type), "queue[") &&
+                       ends_with(canonical_type_name(statement_type), "]") &&
+                       canonical_type_name(statement_type).find("never") != string::npos)
+                o << ": " << rust_type(statement_type);
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
                                         s, functional_context, 0));
@@ -8770,7 +9303,8 @@ class Generator {
                             s, functional_context, 0));
               const auto returned_binding = tree_identifier_name(s.a);
               if (returned_binding && view_parameters_.count(*returned_binding)) {
-                rendered = *returned_binding + ".__moss_value()";
+                rendered = *returned_binding + "." +
+                    access_value_method(types.at(*returned_binding)) + "()";
               } else if (returned_binding && types.count(*returned_binding) &&
                          view_object_type(types.at(*returned_binding))) {
                 rendered = "(" + rendered + ").clone()";
