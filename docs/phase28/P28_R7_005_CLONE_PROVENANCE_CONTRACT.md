@@ -1,7 +1,10 @@
-# P28-R7-005 — Clone Provenance Contract (Draft v2)
+# P28-R7-005 — Clone Provenance Contract (Draft v3)
 
-**Status:** Proposed harness contract for L7 review. The language semantics are
-approved; the oracle is not frozen. No compiler-side implementation is claimed.
+**Status:** Proposed harness contract. Version 3 adds checked specialization
+fact lists and an independently derived source-to-Rust mapping. It does not
+change the certified v1/v2 oracle fixtures or their digests. The language
+semantics are approved; the oracle is not frozen. No complete compiler-side
+implementation is claimed.
 
 ## Artifact naming and coverage
 
@@ -10,7 +13,7 @@ For a generated Rust artifact named `generated.rs`, the sidecar is exactly
 debug and optimized artifact has its own sidecar. Audit the complete generated
 file, including helper definitions before `main`.
 
-The manifest uses format `moss-clone-provenance`, version `2`, mode `debug` or
+The manifest uses format `moss-clone-provenance`, version `3`, mode `debug` or
 `optimized`, and SHA-256 digests of the exact generated Rust and Moss source
 bytes. Coordinates are one-based, and span ends are exclusive. No count
 subtraction or aggregate clone budget is permitted.
@@ -21,17 +24,44 @@ The manifest carries two independent lists:
 
 - `source_copy_occurrences`: one entry for every lexically discovered Moss
   `copy(expression)` call, identified by a unique `copy_id`, exact `source_span`,
-  `semantic_status: "implemented"`, and `rust_clone_spans`. The latter list may
-  be empty, contain one span, or contain multiple emitted Rust clone spans.
+  `semantic_status`, `checked_copy_facts`, and `rust_clone_spans`. The fact list
+  contains every exact live checker fact for that lexical occurrence, including
+  one row per specialization. Its rows must match the independent checker query
+  byte-for-byte after canonical JSON encoding. A missing or unavailable fact
+  cannot be marked `implemented`. `rust_clone_spans` is the union of clone spans
+  derived from all per-fact materializer helpers for this lexical occurrence.
 - `occurrences`: one entry for every generated Rust `.clone()` call. Every Rust
   occurrence appears exactly once. A row classified `explicit_copy` names the
-  responsible `copy_id`; the harness compares its Rust span with that source
-  entry's `rust_clone_spans`.
+  responsible lexical `copy_id`; `evidence.semantic_identity` is the full
+  canonical `typed-copy-fact-v1:<sha256>` identity of the exact specialization
+  fact that authorizes the call. The harness compares its Rust span with the
+  source row's `rust_clone_spans` and independently derives which fact-specific
+  helper body contains that clone.
 
 This permits a valid source copy to lower to zero, one or multiple Rust
 duplications, without treating source-copy count as Rust clone count. It also
 requires every source copy's semantics to be explicitly represented, even when
 lowering emits no `.clone()` call.
+
+An explicit-copy helper is unique to one complete checked fact, including its
+specialization identity and context. Its Rust symbol is derived from that fact's
+canonical hash; shortened symbol prefixes must be collision-checked against all
+facts in the artifact. The checked lowering path emits one direct helper call
+with this marker immediately before the helper identifier:
+
+```rust
+(/* Moss copy fact call: typed-copy-fact-v1:<full sha256> */
+ __moss_copy_value_<hash-prefix>(...))
+```
+
+The harness parses the raw generated Rust to bind this marker to the direct
+call, finds the unique helper definition, rejects aliases and extra callsites,
+and traverses its nested helper closure to derive every clone span. The marker
+and symbol are locators, not authority: the matching full checker fact must be
+present in the live query, and independent review must verify that native
+lowering resolves that exact fact before emitting the call and helper. Shared
+materializers that can be called outside this fact-gated path remain
+unclassified and block acceptance.
 
 Each Rust row has `rust_span`, `origin_kind`, and an `evidence` object containing
 nonempty `semantic_type`, `ownership_fact`, and `semantic_identity`, plus the
@@ -52,7 +82,7 @@ or out-of-bounds evidence fails closed.
 The harness independently checks Rust/source digests, exact clone occurrence
 spans, exact source-copy spans and identities, source-to-Rust links, context
 hashes, and exact equality with an independently reviewed runtime callsite row.
-A v2 sidecar is mandatory for every generated Rust artifact, including artifacts
+A v3 sidecar is mandatory for every generated Rust artifact, including artifacts
 whose Rust has no `.clone()` occurrence and whose Moss source has no `copy(...)`
 call. An empty textual scan cannot stand in for provenance evidence.
 A sidecar assertion is not itself semantic proof; independent harness review
@@ -84,8 +114,8 @@ Controls against alternate duplication mechanisms are therefore explicit:
    `Copy` as open review items until an independent audit demonstrates adequate
    coverage. Do not infer absence from an empty textual search.
 
-The current harness implements occurrence-level `.clone()` checks and strict
-sidecar evidence shape checks. It does not yet implement a complete Rust AST/MIR
-duplication audit and the compiler does not emit v2 provenance. Consequently,
+The harness implements occurrence-level `.clone()` checks and strict sidecar
+evidence shape checks. It does not yet implement a complete Rust AST/MIR
+duplication audit and the compiler does not yet emit v3 provenance. Consequently,
 the clone gate remains blocked, and existing observed clone occurrences remain
 **unverified**, not proven hidden Moss-value clones.

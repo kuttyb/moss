@@ -8652,6 +8652,20 @@ static void write_agent_command_schema(
   out << "}";
 }
 
+static string semantic_query_raise_identity(
+    const moss::RaisedIdentity& raised) {
+  static const std::map<string, string> standard_error_names = {
+      {"std__FileError", "FileError"},
+      {"std__ParseError", "ParseError"},
+      {"std__ConversionError", "ConversionError"},
+      {"std__CollectionError", "CollectionError"}};
+  const auto standard = standard_error_names.find(raised.type);
+  if (standard == standard_error_names.end()) return raised.canonical();
+  if (raised.kind == moss::RaisedIdentityKind::EnumVariant)
+    return "enum:" + standard->second + ":" + raised.variant;
+  return "scalar:" + standard->second;
+}
+
 static void write_observable_effects_json(
     std::ostream& out, const ObservableEffects& effects) {
   out << "{\"local_capture_read\": "
@@ -8670,7 +8684,7 @@ static void write_observable_effects_json(
   bool first_raise = true;
   for (const auto& raised : effects.raise_set) {
     if (!first_raise) out << ", ";
-    write_debug_json_string(out, raised.canonical());
+    write_debug_json_string(out, semantic_query_raise_identity(raised));
     first_raise = false;
   }
   out << "]"
@@ -10689,6 +10703,208 @@ static void write_typed_semantic_projection_json(std::ostream& out,
   out << "]}";
 }
 
+struct SourceCoordinate {
+  std::uint32_t line{0};
+  std::uint32_t column{0};
+};
+
+// EST columns count source bytes. Convert through absolute byte offsets so
+// spans from separately parsed expression slices map to the original file.
+static std::optional<std::size_t> source_byte_offset_at_est_location(
+    std::string_view source, std::uint32_t line, std::uint32_t column) {
+  if (line == 0 || column == 0) return std::nullopt;
+  std::size_t line_begin = 0;
+  for (std::uint32_t current = 1; current < line; ++current) {
+    const auto newline = source.find('\n', line_begin);
+    if (newline == std::string_view::npos) return std::nullopt;
+    line_begin = newline + 1;
+  }
+  const auto newline = source.find('\n', line_begin);
+  const std::size_t line_end = newline == std::string_view::npos
+      ? source.size() : newline;
+  const std::size_t byte_column = static_cast<std::size_t>(column - 1);
+  if (byte_column > line_end - line_begin) return std::nullopt;
+  return line_begin + byte_column;
+}
+
+static std::optional<SourceCoordinate> source_coordinate_at_byte_offset(
+    std::string_view source, std::size_t offset) {
+  if (offset > source.size()) return std::nullopt;
+  SourceCoordinate coordinate{1, 1};
+  for (std::size_t index = 0; index < offset; ++index) {
+    const auto byte = static_cast<unsigned char>(source[index]);
+    if (byte == '\n') {
+      ++coordinate.line;
+      coordinate.column = 1;
+    } else {
+      ++coordinate.column;
+    }
+  }
+  return coordinate;
+}
+
+struct JsonSourceSpan {
+  SourceCoordinate start;
+  SourceCoordinate end;
+};
+
+static std::optional<JsonSourceSpan> checked_copy_json_span(
+    std::string_view source, const est::SourceSpan& span,
+    std::size_t byte_begin, std::size_t byte_end) {
+  if (byte_end <= byte_begin || byte_end > source.size()) return std::nullopt;
+  auto start = source_coordinate_at_byte_offset(source, byte_begin);
+  auto end = source_coordinate_at_byte_offset(source, byte_end);
+  if (!start || !end) return std::nullopt;
+  (void)span;
+  return JsonSourceSpan{*start, *end};
+}
+
+static void write_copy_authority_span_json(
+    std::ostream& out, const JsonSourceSpan& span,
+    std::size_t source_begin, std::size_t source_end) {
+  out << "{\"start_line\":" << span.start.line
+      << ",\"start_column\":" << span.start.column
+      << ",\"end_line\":" << span.end.line
+      << ",\"end_column\":" << span.end.column
+      << ",\"source_begin\":" << source_begin
+      << ",\"source_end\":" << source_end << "}";
+}
+
+static std::string normalized_source_path(const std::string& source_file) {
+  if (source_file.empty()) return {};
+  std::error_code error;
+  const auto absolute = std::filesystem::absolute(source_file, error);
+  if (error) return {};
+  return absolute.lexically_normal().string();
+}
+
+static void write_copy_authority_json(std::ostream& out,
+                                      const Program& program,
+                                      const std::string& source_file) {
+  out << "{\"status\": ";
+  if (!program.typed_semantics) {
+    out << "\"unavailable\", \"facts\": []}";
+    return;
+  }
+  const std::string normalized_file = normalized_source_path(source_file);
+  if (normalized_file.empty()) {
+    out << "\"unavailable\", \"facts\": []}";
+    return;
+  }
+  std::ifstream input(normalized_file, std::ios::binary);
+  if (!input) {
+    out << "\"unavailable\", \"facts\": []}";
+    return;
+  }
+  const std::string source((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+  const std::string source_digest =
+      "sha256:" + source_free_contract_sha256(source);
+
+  auto all_facts = program.typed_semantics->require_all_copy_facts();
+  std::vector<const TypedCopyFactV1*> facts;
+  for (const auto* fact : all_facts) {
+    if (fact && normalized_source_path(fact->provenance.source_file) ==
+                    normalized_file)
+      facts.push_back(fact);
+  }
+  std::sort(facts.begin(), facts.end(), [](const auto* left, const auto* right) {
+    return std::tie(left->copy_occurrence_span.line,
+                    left->copy_occurrence_span.column,
+                    left->specialization_identity,
+                    left->specialization_context,
+                    left->est_arena_index,
+                    left->copy_occurrence_id) <
+        std::tie(right->copy_occurrence_span.line,
+                 right->copy_occurrence_span.column,
+                 right->specialization_identity,
+                 right->specialization_context,
+                 right->est_arena_index,
+                 right->copy_occurrence_id);
+  });
+
+  out << "\"available\", \"facts\": [";
+  for (std::size_t index = 0; index < facts.size(); ++index) {
+    const auto& fact = *facts[index];
+    auto close_token = source_byte_offset_at_est_location(
+        source, fact.copy_occurrence_span.line,
+        fact.copy_occurrence_span.column);
+    const std::size_t copy_width =
+        fact.copy_occurrence_span.source_end -
+        fact.copy_occurrence_span.source_begin;
+    if (!close_token || *close_token >= source.size() ||
+        source[*close_token] != ')' || copy_width == 0 ||
+        copy_width > *close_token + 1)
+      throw std::invalid_argument(
+          "checked copy fact cannot be mapped to exact source bytes");
+    const std::size_t copy_end = *close_token + 1;
+    const std::size_t copy_begin = copy_end - copy_width;
+    if (source.compare(copy_begin, 4, "copy") != 0 ||
+        fact.source_occurrence_span.source_begin <
+            fact.copy_occurrence_span.source_begin ||
+        fact.source_occurrence_span.source_end <
+            fact.source_occurrence_span.source_begin ||
+        fact.source_occurrence_span.source_end >
+            fact.copy_occurrence_span.source_end)
+      throw std::invalid_argument(
+          "checked copy fact source ranges are contradictory");
+    const std::size_t argument_begin = copy_begin +
+        (fact.source_occurrence_span.source_begin -
+         fact.copy_occurrence_span.source_begin);
+    const std::size_t argument_end = copy_begin +
+        (fact.source_occurrence_span.source_end -
+         fact.copy_occurrence_span.source_begin);
+    auto copy_span = checked_copy_json_span(
+        source, fact.copy_occurrence_span, copy_begin, copy_end);
+    auto argument_span = checked_copy_json_span(
+        source, fact.source_occurrence_span, argument_begin, argument_end);
+    if (!copy_span || !argument_span || argument_begin <= copy_begin ||
+        argument_end >= copy_end)
+      throw std::invalid_argument(
+          "checked copy fact source coordinates are invalid");
+
+    if (index) out << ",";
+    out << "{\"source_file\":";
+    write_debug_json_string(out, normalized_file);
+    out << ",\"source_sha256\":";
+    write_debug_json_string(out, source_digest);
+    out << ",\"est_arena_index\":" << fact.est_arena_index
+        << ",\"copy_expression_id\":" << fact.copy_occurrence_id
+        << ",\"source_expression_id\":" << fact.source_occurrence_id
+        << ",\"copy_occurrence_span\":";
+    write_copy_authority_span_json(
+        out, *copy_span, copy_begin, copy_end);
+    out << ",\"source_occurrence_span\":";
+    write_copy_authority_span_json(
+        out, *argument_span, argument_begin, argument_end);
+    out << ",\"statement_occurrence_id\":"
+        << fact.statement_occurrence_id << ",\"specialization_identity\":";
+    write_debug_json_string(out, fact.specialization_identity);
+    out << ",\"specialization_context\":";
+    write_debug_json_string(out, fact.specialization_context);
+    out << ",\"est_fact_context\":";
+    write_debug_json_string(out, fact.est_fact_context);
+    out << ",\"source_type_key\":";
+    write_debug_json_string(out, fact.source_type->stable_type_key());
+    out << ",\"result_type_key\":";
+    write_debug_json_string(out, fact.result_type->stable_type_key());
+    out << ",\"required_source_access\":";
+    write_debug_json_string(out,
+        ownership_effect_name(fact.required_source_access));
+    out << ",\"creates_independent_owner\":true"
+        << ",\"availability\":\"Present\",\"provenance\":{"
+        << "\"source_file\":";
+    write_debug_json_string(out, normalized_file);
+    out << ",\"line\":" << fact.provenance.line
+        << ",\"defining_module_id\":";
+    write_debug_json_string(out, fact.provenance.defining_module_id);
+    out << ",\"enclosing_callable_id\":";
+    write_debug_json_string(out, fact.provenance.enclosing_callable_id);
+    out << "}}";
+  }
+  out << "]}";
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
@@ -10770,6 +10986,8 @@ static bool write_semantic_query_json(
     out << ", \"reason\": ";
     write_debug_json_string(
         out, "effects are inferred from the checked body and its statically resolved callees");
+    out << ", \"copy_authority\": ";
+    write_copy_authority_json(out, program, source_file);
   }
   if (command == "inspect" || command == "ownership" || command == "effects") {
     out << ", \"ownership_facts\": ";
@@ -19710,6 +19928,10 @@ static std::optional<abi_v10::WireType> abi_v10_checked_type(
     case moss::TypeKind::Unit:
       wire.kind = abi_v10::WireTypeKind::Unit;
       break;
+    case moss::TypeKind::Never:
+      // Never is an internal checker result used only with an exact checked
+      // always-raises operation; it is not a source-level ABI type.
+      return std::nullopt;
     case moss::TypeKind::TraitConstraint:
       return std::nullopt;
   }
