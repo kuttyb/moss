@@ -4851,7 +4851,26 @@ class FastInterpreter {
   resolve_conditional_map_write_fact(
       const Stmt& statement, const ExpressionTreeView& tree,
       const Frame& frame, int line) const {
-    if (!program_.typed_semantics || !tree.arena ||
+    if (!tree.arena || tree.root >= tree.arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT conditional Map write-through target tree unavailable");
+    // This resolver is called for every assignment target. A plain binding
+    // target (possibly wrapped in parentheses) cannot be a conditional Map
+    // index write-through, so it needs no Map outcome authority even when a
+    // source-free imported body has no process-local statement identity.
+    auto target_root = tree.root;
+    while (target_root < tree.arena->size()) {
+      const auto* grouped = std::get_if<est::Parenthesized>(
+          &tree.arena->at(target_root));
+      if (!grouped) break;
+      target_root = grouped->inner;
+    }
+    if (target_root >= tree.arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT conditional Map write-through target child is invalid");
+    if (std::holds_alternative<est::Identifier>(tree.arena->at(target_root)))
+      return nullptr;
+    if (!program_.typed_semantics ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT conditional Map write-through identity unavailable");
