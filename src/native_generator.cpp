@@ -10144,7 +10144,10 @@ class Generator {
                   o << indent(level) << "let " << (mutable_decl ? "mut " : "")
                     << rust_identifier(s.a) << " = " << assigned << ";\n";
                 } else {
-                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) && !write_through_parameters_.count(s.a)) ? rust_identifier(s.a) : lhs;
+                  string target_lhs = (tree_plain_identifier(s.a) && locals.count(s.a) &&
+                      !write_through_parameters_.count(s.a) &&
+                      !mutable_match_primitive_values_.count(s.a))
+                      ? rust_identifier(s.a) : lhs;
                   o << indent(level) << target_lhs << " = " << assigned << ";\n";
                 }
               }

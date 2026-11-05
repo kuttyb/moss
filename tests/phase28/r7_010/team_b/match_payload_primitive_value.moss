@@ -6,6 +6,7 @@ fn main():
   let result = MatchResult.Matched(start: 3, end: 8)
   match result:
     case Matched(start, end):
+      start = 4
       echo end - start
     case NoMatch:
       echo 0
