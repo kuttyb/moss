@@ -393,6 +393,8 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
   for (auto& entry : bindings) {
     auto& binding = entry.second;
     if (binding.body_end) continue;
+    if (!native_clone_identifier_occurrences(code, binding.helper).empty())
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT unmarked or uncalled per-fact helper exists in raw Rust");
     // A base template fact can be uninstantiated only when its callable is
     // absent from the raw emitted-function inventory and an exact specialized
     // descendant for the same lexical copy was emitted.
