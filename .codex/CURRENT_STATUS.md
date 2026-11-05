@@ -16200,3 +16200,8 @@ untouched.
 - Four semantic/execution failures: ORACLE-42 native Debug/Optimized emission, ORACLE-54 imported provider `.mossi` build, ORACLE-55 native Debug/Optimized emission, ORACLE-58 Fast Debug plus native Debug/Optimized. Exact failure details are in `docs/phase28/P28_R7_010_COMBINED_RUN_FAILURE_LEDGER_8B9AD2C5.md`.
 - Thirty-seven additional fixtures fail clone provenance with 448 unauthorized emitted clone rows; no missing-sidecar blocks or harness infrastructure failures in this run. Rows are occurrences, not distinct causes. Team B is reconciling its separate pinned 67-artifact / 84-site audit; no runtime clones are authorized.
 - This fresh result supersedes neither the earlier ledger nor changes any expectations; it is bound to exact SHA `8b9ad2c5`. Targeted consumer fixes integrated later in `0fd269d2` have been revalidated on the current staging source; rerun the full oracle after the four semantic failures are repaired. Final default/shadow suites remain pending.
+
+## Team A ORACLE-42 Echo authority shape follow-up (2026-11-05)
+
+- Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a` is pushed and remote-verified; Agent 2 GO applies to the exact SHA. It adds ORACLE-42's nested `b.elements[1]` Echo borrow to the existing `TypedEchoArgumentFactV1` contract harness, with drop/access/context perturbation checks. No checker or consumer semantics changed.
+- The gate passes all eight baseline/corruption cases. Its fact authorizes only an exact display-only Echo READ borrow with nonescape and `permits_copy=false`. L7 is integrating the reviewed test follow-up; Team B is implementing the native consumer of this existing fact.
