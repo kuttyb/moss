@@ -16453,3 +16453,28 @@ untouched.
 - On staging, `make --jobs="$(nproc)" moss`, the 38-scenario authority gate, X1 (including Native/check-only trace parity), R7-009 primitive/index (17 cases), Echo authority, Phase 28 authority-fact matrix, `.mossi` EST checks, feedback validation, and `git diff --check` pass.
 - Additional call-occurrence regression harness `check_phase25_statement_call_occurrence_roles.py` currently fails during its separate g++ `-Werror` helper build: two unused `outcome` pointers in `src/native_generator.cpp` at the Queue.pop and Map.remove checked-outcome branches. These lines were introduced by `fb388c551` and do not appear on the `phase28-work` baseline `150ab36b`. Team B is repairing this narrow native-generator issue on an isolated branch; the harness has not yet passed on current staging. Rerun this and the remaining native/call-edge gates after that reviewed fix integrates.
 - Staging HEAD before this status/test-registration commit is `c5398b74317257a78cd3668c5bd0716a03dacf4f`; pending documentation and runner edits are L7-owned. No clone occurrences are newly authorized by the checker fact. Team B still must consume it at each domain-handle capture; six runtime sites and the complete clone provenance inventory remain unresolved. The latest full oracle remains bound to `feccc473` and is not a current combined result.
+
+### Team B exact EST call specialization handoff (2026-11-05)
+
+- Worktree `phase28-r7-010-team-b-return-value-phase27-regression`, branch based
+  on staging `8886b458c8a9a634919cb26856fbaa391be043bc`.
+- Fast Debug previously failed Phase 27.5.1 on repeated generic `identity`
+  calls because the call ExprId was not passed from EST evaluation to
+  `specialization_for_call`; the callee frame therefore had an empty
+  specialization key. The exact call-node facts were present for both calls.
+- WIP change threads the exact call ExprId into `call()`, verifies the EST
+  `resolved_target` against the checked callable identity, and selects the unique
+  specialization by checked `specialization_result`. Ambiguous line-level call
+  edges fail closed if no exact call-node specialization is present. No type or
+  runtime value inference is used.
+- Passing validation: `make --jobs="$(nproc)"` (compiler build),
+  `python3 tests/tooling/check_phase27_5_1_facts_and_fast_debug.py build/compiler/moss-dev`,
+  `python3 tests/tooling/check_phase26_1_1_x1.py build/compiler/moss-dev`,
+  `python3 tests/phase28/r7_010/team_b/check_imported_return_value.py build/compiler/moss-dev`,
+  and `python3 tests/phase28/r7_010/team_b/check_return_value_transfer.py build/compiler/moss-dev`.
+  A new focused gate checks exact call-node selection and drop/specialization/
+  target corruption fail-closed behavior.
+- Not yet frozen or independently reviewed. Next: run feedback validator and
+  diff checks, commit the scoped consumer/test/status/feedback delta, request
+  Agent 2 review, then push only after GO. Domain-capture work remains paused in
+  its separate worktree and is not included here.

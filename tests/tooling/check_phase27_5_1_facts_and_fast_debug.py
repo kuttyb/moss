@@ -68,7 +68,25 @@ def main():
     work = ROOT / "tmp" / "phase27-5-1-targeted" / str(time.time_ns())
     work.mkdir(parents=True)
 
-    parity(FIXTURES / "call_edges.moss", work)
+    call_edges_output = parity(FIXTURES / "call_edges.moss", work)
+    if call_edges_output != "8 text\n7\n":
+        raise SystemExit(f"unexpected repeated-call output: {call_edges_output!r}")
+    # The second same-line identity invocation has its own exact EST call fact
+    # (ExprId 6). Corrupt that node's checked specialization authority and make
+    # sure Fast Debug rejects it instead of selecting by source line/runtime args.
+    for mutation in ("drop_fact", "corrupt_specialization", "perturb_target"):
+        corrupted = invoke(
+            [str(COMPILER), "run", "--interp",
+             str(FIXTURES / "call_edges.moss")],
+            extra_env={
+                "MOSS_TEST_TARGET_ARENA": "0",
+                "MOSS_TEST_TARGET_EXPR": "6",
+                "MOSS_TEST_TARGET_CONTEXT": "main",
+                "MOSS_TEST_TARGET_MUTATION": mutation,
+            })
+        if corrupted.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in corrupted.stderr:
+            raise SystemExit(f"exact call fact {mutation} did not fail closed:\n"
+                             f"{corrupted.stdout}{corrupted.stderr}")
     for name in ("join_if.moss", "join_match.moss", "join_try.moss",
                  "join_recover_binding.moss", "pattern_local_payload.moss",
                  "pattern_parenthesized.moss", "default_char.moss"):
