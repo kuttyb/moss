@@ -156,19 +156,56 @@ class CloneProvenanceTests(unittest.TestCase):
         self.temp.cleanup()
 
     def manifest(self, origin="explicit_copy"):
+        fact = self.fact()
         copy_id = self.source_occ["copy_id"]
+        source_copy = {"copy_id": copy_id, "source_span": self.source_occ,
+                       "checked_copy_fact": fact,
+                       "semantic_status": "implemented",
+                       "rust_clone_spans": [self.rust_occ] if origin == "explicit_copy" else []}
+        evidence = {"rust_context_span": self.rust_occ,
+            "rust_context_sha256": hashlib.sha256(
+                self.rust[self._offset(self.rust_occ, "start"):self._offset(self.rust_occ, "end")].encode()).hexdigest(),
+            "semantic_type": fact["result_type_key"],
+            "ownership_fact": fact["required_source_access"],
+            "semantic_identity": harness.typed_copy_fact_identity(fact)}
+        if origin not in ("explicit_copy",):
+            evidence.update({"semantic_type": "String", "ownership_fact": "READ", "semantic_identity": "helper:value"})
         return {"format": "moss-clone-provenance", "version": 2, "mode": "debug",
                 "rust_sha256": hashlib.sha256(self.rust.encode()).hexdigest(),
                 "source_sha256": hashlib.sha256(self.source.encode()).hexdigest(),
-                "source_copy_occurrences": [{"copy_id": copy_id,
-                    "source_span": self.source_occ, "semantic_status": "implemented",
-                    "rust_clone_spans": [self.rust_occ] if origin == "explicit_copy" else []}],
+                "source_copy_occurrences": [source_copy],
                 "occurrences": [{"rust_span": self.rust_occ, "origin_kind": origin,
                     "source_copy_id": copy_id if origin == "explicit_copy" else None,
-                    "evidence": {"rust_context_span": self.rust_occ,
-                        "rust_context_sha256": hashlib.sha256(
-                            self.rust[self._offset(self.rust_occ, "start"):self._offset(self.rust_occ, "end")].encode()).hexdigest(),
-                        "semantic_type": "String", "ownership_fact": "READ", "semantic_identity": "helper:value"}}]}
+                    "evidence": evidence}]}
+
+    def fact(self):
+        copy_start, copy_end = harness._source_byte_span_offsets(self.source, self.source_occ)
+        source_start = self.source.index("item")
+        source_end = source_start + len("item")
+        def flat_span(start, end):
+            start_pos = harness._source_byte_position(self.source, start)
+            end_pos = harness._source_byte_position(self.source, end)
+            return {"start_line": start_pos["line"], "start_column": start_pos["column"],
+                    "end_line": end_pos["line"], "end_column": end_pos["column"],
+                    "source_begin": len(self.source[:start].encode()),
+                    "source_end": len(self.source[:end].encode())}
+        path = str(self.source_path.resolve())
+        return {"source_file": path,
+            "source_sha256": "sha256:" + hashlib.sha256(self.source.encode()).hexdigest(),
+            "est_arena_index": 0, "copy_expression_id": 11, "source_expression_id": 12,
+            "copy_occurrence_span": flat_span(copy_start, copy_end),
+            "source_occurrence_span": flat_span(source_start, source_end),
+            "statement_occurrence_id": 3, "specialization_identity": "main",
+            "specialization_context": "main@1", "est_fact_context": "unit:main",
+            "source_type_key": "type:string", "result_type_key": "type:string",
+            "required_source_access": "READ", "creates_independent_owner": True,
+            "availability": "Present",
+            "provenance": {"source_file": path,
+                "line": self.source_occ["start"]["line"],
+                "defining_module_id": "module:unit", "enclosing_callable_id": "callable:main"}}
+
+    def authority(self, fact=None):
+        return {"status": "available", "facts": [fact or self.fact()]}
 
     @staticmethod
     def _offset(span, point):
@@ -179,7 +216,8 @@ class CloneProvenanceTests(unittest.TestCase):
         Path(str(self.rust_path) + ".mossclone.json").write_text(json.dumps(manifest))
 
     def test_missing_provenance_is_rejected(self):
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
         self.assertEqual(audit["status"], "PROVENANCE_MISSING")
 
     def test_missing_sidecar_fails_closed_without_clone_or_copy_calls(self):
@@ -190,7 +228,8 @@ class CloneProvenanceTests(unittest.TestCase):
 
     def test_runtime_label_without_source_evidence_is_rejected(self):
         self.write_manifest(self.manifest("runtime_support"))
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
     def test_forged_runtime_source_claim_is_rejected(self):
@@ -205,22 +244,97 @@ class CloneProvenanceTests(unittest.TestCase):
                                          "end": {"line": 1, "column": len(forged.read_text().rstrip()) + 1}},
             "runtime_callsite_id": "forged-reviewed-callsite"})
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
     def test_incorrect_source_span_is_rejected(self):
         manifest = self.manifest()
         manifest["source_copy_occurrences"][0]["source_span"] = self.rust_occ
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
 
     def test_stale_manifest_digest_is_rejected(self):
         manifest = self.manifest()
         manifest["rust_sha256"] = "0" * 64
         self.write_manifest(manifest)
-        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
         self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
+    def test_forged_nonempty_evidence_no_longer_passes(self):
+        manifest = self.manifest()
+        evidence = manifest["occurrences"][0]["evidence"]
+        evidence.update({"semantic_type": "FileIO", "ownership_fact": "CONSUME_NOT_READ",
+                         "semantic_identity": "forged:unrelated-binding"})
+        self.write_manifest(manifest)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
+        self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
+    def test_missing_checker_authority_is_blocked(self):
+        self.write_manifest(self.manifest())
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1)
+        self.assertEqual(audit["status"], "PROVENANCE_MISSING")
+
+    def test_perturbed_checked_fact_is_rejected(self):
+        manifest = self.manifest()
+        manifest["source_copy_occurrences"][0]["checked_copy_fact"]["required_source_access"] = "CONSUME"
+        self.write_manifest(manifest)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
+        self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
+    def test_duplicate_checker_fact_is_rejected(self):
+        manifest = self.manifest()
+        fact = self.fact()
+        self.write_manifest(manifest)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+            {"status": "available", "facts": [fact, fact]})
+        self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
+    def test_unknown_copy_authority_top_level_field_is_rejected(self):
+        self.write_manifest(self.manifest())
+        authority = self.authority()
+        authority["claimed_by_sidecar"] = True
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               authority)
+        self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
+    def test_exact_source_digest_and_byte_spans_preserve_crlf_and_utf8(self):
+        raw = "prefix = \"é\"; value = copy(item)\r\n".encode("utf-8")
+        self.source_path.write_bytes(raw)
+        self.source = raw.decode("utf-8")
+        self.source_occ = harness.moss_copy_call_spans(self.source)[0]
+        manifest = self.manifest()
+        self.write_manifest(manifest)
+        audit = harness.audit_clone_provenance(self.rust_path, self.source_path, "debug", 1,
+                                               self.authority())
+        self.assertEqual(audit["status"], "PASS", audit.get("error"))
+
+    def test_query_uses_first_source_copy_location_and_returns_checker_fact_set(self):
+        authority = {"status": "available", "facts": [self.fact()]}
+        with mock.patch.object(harness, "run_process", return_value=(0,
+                json.dumps({"ok": True, "result": {"copy_authority": authority}}), "", 0)) as run:
+            actual = harness.query_copy_authority(Path("./moss"), self.source_path)
+        self.assertEqual(actual, authority)
+        args = run.call_args.args[0]
+        self.assertEqual(args[1:3], ["ownership", "at:1:9"])
+
+    def test_query_target_uses_byte_column_after_utf8_on_same_line(self):
+        raw = "prefix = \"é\"; value = copy(item)\n".encode("utf-8")
+        self.source_path.write_bytes(raw)
+        self.source = raw.decode("utf-8")
+        copies = harness.moss_copy_call_spans(self.source)
+        expected = copies[0]["start"]["column"]
+        authority = {"status": "available", "facts": []}
+        with mock.patch.object(harness, "run_process", return_value=(0,
+                json.dumps({"ok": True, "result": {"copy_authority": authority}}), "", 0)) as run:
+            harness.query_copy_authority(Path("./moss"), self.source_path)
+        self.assertEqual(run.call_args.args[0][2], f"at:1:{expected}")
+        self.assertGreater(expected, self.source.index("copy") + 1)
 
 
 if __name__ == "__main__":

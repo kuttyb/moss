@@ -304,6 +304,14 @@ def _position(source: str, offset: int) -> dict:
     return {"line": line, "column": offset - line_start + 1}
 
 
+def _source_byte_position(source: str, offset: int) -> dict:
+    """Return Moss source coordinates with byte-counted columns."""
+    line = source.count("\n", 0, offset) + 1
+    line_start = source.rfind("\n", 0, offset) + 1
+    return {"line": line,
+            "column": len(source[line_start:offset].encode("utf-8")) + 1}
+
+
 def _span_offsets(source: str, span: dict) -> tuple[int, int]:
     def offset(pos: dict) -> int:
         line, column = pos["line"], pos["column"]
@@ -316,6 +324,34 @@ def _span_offsets(source: str, span: dict) -> tuple[int, int]:
     start, end = offset(span["start"]), offset(span["end"])
     if end < start:
         raise ValueError("span end precedes start")
+    return start, end
+
+
+def _source_byte_span_offsets(source: str, span: dict) -> tuple[int, int]:
+    """Map byte-column source spans to Python character offsets safely."""
+    encoded = source.encode("utf-8")
+    line_starts = [0]
+    line_starts.extend(index + 1 for index, byte in enumerate(encoded) if byte == 0x0A)
+
+    def offset(pos: dict) -> int:
+        line, column = pos["line"], pos["column"]
+        if line < 1 or column < 1 or line > len(line_starts):
+            raise ValueError("source byte span coordinates are outside artifact")
+        start = line_starts[line - 1]
+        line_end = encoded.find(b"\n", start)
+        if line_end < 0:
+            line_end = len(encoded)
+        byte_offset = start + column - 1
+        if byte_offset > line_end:
+            raise ValueError("source byte column is outside its line")
+        try:
+            return len(encoded[:byte_offset].decode("utf-8"))
+        except UnicodeDecodeError as error:
+            raise ValueError("source byte column splits a UTF-8 code point") from error
+
+    start, end = offset(span["start"]), offset(span["end"])
+    if end < start:
+        raise ValueError("source span end precedes start")
     return start, end
 
 
@@ -374,7 +410,8 @@ def moss_copy_call_spans(source: str) -> list[dict]:
                             depth -= 1
                             if depth == 0:
                                 k += 1
-                                spans.append({"start": _position(source, i), "end": _position(source, k)})
+                                spans.append({"start": _source_byte_position(source, i),
+                                              "end": _source_byte_position(source, k)})
                                 # Continue inside this call so nested copy calls
                                 # are independently enumerated.
                                 i = end_name + 1
@@ -390,6 +427,29 @@ def moss_copy_call_spans(source: str) -> list[dict]:
         start = span["start"]
         span["copy_id"] = f"copy@{start['line']}:{start['column']}"
     return spans
+
+
+def query_copy_authority(compiler: Path, source_path: Path) -> dict | None:
+    """Ask the checker at a copy occurrence for unit-complete copy authority."""
+    source = source_path.read_bytes().decode("utf-8")
+    copies = moss_copy_call_spans(source)
+    if not copies:
+        return None
+    first = copies[0]["start"]
+    target = f"at:{first['line']}:{first['column']}"
+    code, stdout, stderr, _ = run_process(
+        [str(compiler), "ownership", target, "--source", str(source_path), "--json"])
+    if code != 0:
+        return {"status": "unavailable", "reason": (stderr or stdout).strip()}
+    try:
+        payload = json.loads(stdout)
+        result = payload.get("result")
+        authority = result.get("copy_authority") if isinstance(result, dict) else None
+    except (json.JSONDecodeError, AttributeError):
+        authority = None
+    if not isinstance(authority, dict):
+        return {"status": "unavailable", "reason": "ownership query omitted copy_authority"}
+    return authority
 
 
 def clone_occurrences(rust: str) -> list[dict]:
@@ -447,13 +507,169 @@ def clone_occurrences(rust: str) -> list[dict]:
     return occurrences
 
 
+COPY_AUTHORITY_FACT_KEYS = {
+    "source_file", "source_sha256", "est_arena_index", "copy_expression_id",
+    "source_expression_id", "copy_occurrence_span", "source_occurrence_span",
+    "statement_occurrence_id", "specialization_identity",
+    "specialization_context", "est_fact_context", "source_type_key",
+    "result_type_key", "required_source_access", "creates_independent_owner",
+    "availability", "provenance",
+}
+COPY_AUTHORITY_SPAN_KEYS = {
+    "start_line", "start_column", "end_line", "end_column",
+    "source_begin", "source_end",
+}
+
+
+def typed_copy_fact_identity(fact: dict) -> str:
+    canonical = json.dumps(fact, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return "typed-copy-fact-v1:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _fact_span_matches_source(span: dict, source: str) -> tuple[int, int]:
+    if not isinstance(span, dict) or set(span) != COPY_AUTHORITY_SPAN_KEYS:
+        raise ValueError("checked copy fact span has an invalid schema")
+    for name in COPY_AUTHORITY_SPAN_KEYS:
+        if not isinstance(span[name], int) or isinstance(span[name], bool):
+            raise ValueError(f"checked copy fact span field is not an integer: {name}")
+    start_line = span["start_line"]
+    start_column = span["start_column"]
+    end_line = span["end_line"]
+    end_column = span["end_column"]
+    start = _source_byte_span_offsets(source,
+        {"start": {"line": start_line, "column": start_column},
+         "end": {"line": start_line, "column": start_column}})[0]
+    end = _source_byte_span_offsets(source,
+        {"start": {"line": end_line, "column": end_column},
+         "end": {"line": end_line, "column": end_column}})[1]
+    encoded_start = len(source[:start].encode("utf-8"))
+    encoded_end = len(source[:end].encode("utf-8"))
+    if span["source_begin"] != encoded_start or span["source_end"] != encoded_end:
+        raise ValueError("checked copy fact byte range does not match its source coordinates")
+    if encoded_end <= encoded_start:
+        raise ValueError("checked copy fact span is empty or reversed")
+    return start, end
+
+
+def _flat_fact_span_key(span: dict) -> tuple[int, int, int, int]:
+    return (span["start_line"], span["start_column"],
+            span["end_line"], span["end_column"])
+
+
+def _nested_span_key(span: dict) -> tuple[int, int, int, int]:
+    return (span["start"]["line"], span["start"]["column"],
+            span["end"]["line"], span["end"]["column"])
+
+
+def validate_checked_copy_authority(source: str, source_path: Path,
+                                    source_copies: list[dict], source_rows: list[dict],
+                                    authority: dict | None) -> dict[str, dict]:
+    """Match sidecar copy rows to exact live checker TypedCopyFactV1 query rows."""
+    if not source_copies:
+        if source_rows:
+            raise ValueError("sidecar includes copy rows for source with no copy(...) calls")
+        return {}
+    if not isinstance(authority, dict) or authority.get("status") != "available":
+        raise LookupError("checked TypedCopyFactV1 authority is unavailable")
+    if set(authority) != {"status", "facts"}:
+        raise ValueError("copy_authority top-level schema has missing or unknown fields")
+    facts = authority.get("facts")
+    if not isinstance(facts, list):
+        raise ValueError("copy_authority facts is not an array")
+    if len(facts) != len(source_copies):
+        raise ValueError("copy_authority does not exactly cover source copy occurrences")
+
+    source_digest = "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
+    expected_path = str(source_path.resolve())
+    copies_by_key = {_nested_span_key(span): span for span in source_copies}
+    facts_by_copy_key: dict[tuple[int, int, int, int], dict] = {}
+    for fact in facts:
+        if not isinstance(fact, dict) or set(fact) != COPY_AUTHORITY_FACT_KEYS:
+            raise ValueError("checked TypedCopyFactV1 row has missing or unknown fields")
+        if fact["availability"] != "Present":
+            raise ValueError("checked copy fact is not available")
+        if fact["source_file"] != expected_path or fact["source_sha256"] != source_digest:
+            raise ValueError("checked copy fact source identity or digest mismatch")
+        if fact["required_source_access"] != "READ" or fact["creates_independent_owner"] is not True:
+            raise ValueError("checked copy fact does not authorize an independent READ copy")
+        if not all(isinstance(fact[k], str) and fact[k] for k in
+                   ("source_type_key", "result_type_key")):
+            raise ValueError("checked copy fact source/result types are absent")
+        if not all(isinstance(fact[k], str) for k in
+                   ("specialization_identity", "specialization_context", "est_fact_context")):
+            raise ValueError("checked copy fact specialization identity fields are malformed")
+        if not fact["est_fact_context"]:
+            raise ValueError("checked copy fact lacks fact context")
+        for name in ("est_arena_index", "copy_expression_id", "source_expression_id",
+                     "statement_occurrence_id"):
+            if not isinstance(fact[name], int) or isinstance(fact[name], bool) or fact[name] < 0:
+                raise ValueError(f"checked copy fact identity is invalid: {name}")
+        provenance = fact["provenance"]
+        if not isinstance(provenance, dict) or set(provenance) != {
+                "source_file", "line", "defining_module_id", "enclosing_callable_id"}:
+            raise ValueError("checked copy fact provenance schema is invalid")
+        if provenance["source_file"] != expected_path or not isinstance(provenance["line"], int) or \
+                provenance["line"] < 1 or not all(isinstance(provenance[k], str) and provenance[k]
+                    for k in ("defining_module_id", "enclosing_callable_id")):
+            raise ValueError("checked copy fact provenance does not identify its source callable")
+        copy_start, copy_end = _fact_span_matches_source(fact["copy_occurrence_span"], source)
+        source_start, source_end = _fact_span_matches_source(fact["source_occurrence_span"], source)
+        copy_span_key = _flat_fact_span_key(fact["copy_occurrence_span"])
+        scanned = copies_by_key.get(copy_span_key)
+        if scanned is None:
+            raise ValueError("checked copy fact span does not match a scanned source copy call")
+        scan_start, scan_end = _source_byte_span_offsets(source, scanned)
+        if (copy_start, copy_end) != (scan_start, scan_end):
+            raise ValueError("checked copy fact span disagrees with independent source scanner")
+        if not (copy_start < source_start < source_end < copy_end):
+            raise ValueError("checked source-expression span is outside its copy occurrence")
+        if provenance["line"] != fact["copy_occurrence_span"]["start_line"]:
+            raise ValueError("checked copy fact source line conflicts with its occurrence span")
+        if copy_span_key in facts_by_copy_key:
+            raise ValueError("duplicate checked TypedCopyFactV1 for source occurrence")
+        facts_by_copy_key[copy_span_key] = fact
+
+    if set(facts_by_copy_key) != set(copies_by_key):
+        raise ValueError("checked copy facts do not exactly cover scanned copy occurrences")
+    sidecar_by_copy_key: dict[tuple[int, int, int, int], dict] = {}
+    for row in source_rows:
+        if not isinstance(row, dict):
+            raise ValueError("source copy occurrence is not an object")
+        span = row.get("source_span")
+        key = _nested_span_key(span)
+        if key in sidecar_by_copy_key:
+            raise ValueError("duplicate sidecar source-copy occurrence")
+        fact = facts_by_copy_key.get(key)
+        if fact is None:
+            raise ValueError("sidecar source copy has no matching checked copy fact")
+        if row.get("checked_copy_fact") != fact:
+            raise ValueError("sidecar TypedCopyFactV1 differs from independent checker query")
+        if row.get("semantic_status") != "implemented":
+            raise ValueError("source copy semantics are not attested as implemented")
+        expected_copy_id = f"copy@{key[0]}:{key[1]}"
+        if row.get("copy_id") != expected_copy_id or span.get("copy_id") != expected_copy_id:
+            raise ValueError("sidecar copy ID is not the frozen lexical occurrence locator")
+        sidecar_span = row.get("source_span", {})
+        fact_span = fact["copy_occurrence_span"]
+        if _nested_span_key(sidecar_span) != _flat_fact_span_key(fact_span):
+            raise ValueError("sidecar copy source span differs from checked fact")
+        sidecar_by_copy_key[key] = row
+    if set(sidecar_by_copy_key) != set(copies_by_key):
+        raise ValueError("sidecar copy rows do not exactly cover checked copy facts")
+    return {row["copy_id"]: row for row in sidecar_by_copy_key.values()}
+
+
 def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
-                           expected_copy_calls: int) -> dict:
+                           expected_copy_calls: int,
+                           checked_copy_authority: dict | None = None) -> dict:
     """Require a bijective artifact map for every Rust clone occurrence."""
     if not rust_path.exists():
         return {"status": "RUST_MISSING", "authorized": 0, "unauthorized": 0, "unclassified": 0, "occurrences": []}
-    rust = rust_path.read_text()
-    source = source_path.read_text()
+    rust_bytes = rust_path.read_bytes()
+    source_bytes = source_path.read_bytes()
+    rust = rust_bytes.decode("utf-8")
+    source = source_bytes.decode("utf-8")
     rust_occurrences = clone_occurrences(rust)
     source_copies = moss_copy_call_spans(source)
     if len(source_copies) != expected_copy_calls:
@@ -476,9 +692,9 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
             raise ValueError("unsupported clone provenance format")
         if manifest.get("mode") != mode:
             raise ValueError(f"mode mismatch: expected {mode}")
-        if manifest.get("rust_sha256") != hashlib.sha256(rust.encode()).hexdigest():
+        if manifest.get("rust_sha256") != hashlib.sha256(rust_bytes).hexdigest():
             raise ValueError("generated Rust digest mismatch")
-        if manifest.get("source_sha256") != hashlib.sha256(source.encode()).hexdigest():
+        if manifest.get("source_sha256") != hashlib.sha256(source_bytes).hexdigest():
             raise ValueError("Moss source digest mismatch")
         rows = manifest.get("occurrences")
         if not isinstance(rows, list):
@@ -494,22 +710,13 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
         if set(indexed) != rust_keys:
             raise ValueError(f"incomplete or extra Rust clone mappings: rust={len(rust_keys)}, mapped={len(indexed)}")
         source_by_id = {}
-        scanned_copy_ids = {_span_key(span): span["copy_id"] for span in source_copies}
         source_rows = manifest.get("source_copy_occurrences")
         if not isinstance(source_rows, list):
             raise ValueError("source_copy_occurrences is not an array")
+        validate_checked_copy_authority(source, source_path, source_copies,
+                                        source_rows, checked_copy_authority)
         for source_row in source_rows:
-            copy_id = source_row.get("copy_id")
-            span = source_row.get("source_span", {})
-            if not isinstance(copy_id, str) or not copy_id or copy_id in source_by_id:
-                raise ValueError("missing or duplicate source copy identity")
-            start, end = _span_offsets(source, span)
-            if source[start:end] != "copy" and not re.fullmatch(r"copy\s*\(.*\)", source[start:end], re.S):
-                raise ValueError(f"source copy span does not cover a copy(...) occurrence: {copy_id}")
-            if scanned_copy_ids.get(_span_key(span)) != copy_id:
-                raise ValueError(f"source copy identity does not match independent scanner: {copy_id}")
-            if source_row.get("semantic_status") != "implemented":
-                raise ValueError(f"source copy semantics not attested as implemented: {copy_id}")
+            copy_id = source_row["copy_id"]
             if not isinstance(source_row.get("rust_clone_spans"), list):
                 raise ValueError(f"source copy lacks emitted clone list: {copy_id}")
             source_by_id[copy_id] = source_row
@@ -543,6 +750,11 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 copy_id = row.get("source_copy_id")
                 if copy_id not in source_by_id:
                     raise ValueError("explicit clone points to unknown Moss copy occurrence")
+                fact = source_by_id[copy_id]["checked_copy_fact"]
+                if (evidence["semantic_type"] != fact["result_type_key"] or
+                        evidence["ownership_fact"] != fact["required_source_access"] or
+                        evidence["semantic_identity"] != typed_copy_fact_identity(fact)):
+                    raise ValueError("explicit-copy evidence disagrees with independently queried TypedCopyFactV1")
                 explicit_by_id[copy_id].append(_span_key(row["rust_span"]))
             elif origin in {"compiler_runtime_handle", "runtime_support"}:
                 callsite_id = evidence.get("runtime_callsite_id")
@@ -563,6 +775,10 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                 raise ValueError(f"source-to-Rust copy lowering links mismatch: {copy_id}")
         return {"status": "PASS" if unauthorized == 0 else "UNAUTHORIZED", "authorized": len(source_by_id),
                 "unauthorized": unauthorized, "unclassified": unclassified, "occurrences": rows}
+    except LookupError as error:
+        return {"status": "PROVENANCE_MISSING", "authorized": 0,
+                "unauthorized": 0, "unclassified": len(rust_occurrences),
+                "error": str(error), "occurrences": rust_occurrences}
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
         return {"status": "INVALID_PROVENANCE", "authorized": 0, "unauthorized": 0,
                 "unclassified": len(rust_occurrences), "error": str(error), "occurrences": rust_occurrences}
@@ -761,6 +977,12 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["failures"].append(f"Fixture file missing: {fpath}")
         return result
 
+    copy_authority = query_copy_authority(compiler, fpath)
+    if copy_authority is not None:
+        result["copy_authority_query"] = {
+            "status": copy_authority.get("status", "malformed")
+            if isinstance(copy_authority, dict) else "malformed"}
+
     # 1. Semantic Checker
     check_code, check_stdout, check_stderr, check_time = run_process(
         [str(compiler), "check", "--json", str(fpath)]
@@ -874,7 +1096,8 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["modes"]["native_debug"] = "EMIT_FAIL"
         result["failures"].append(f"Native emission failed: {emit_stderr.strip()}")
     else:
-        clone_audit = audit_clone_provenance(out_rs, fpath, "debug", fixture.get("authorized_explicit_copies", 0))
+        clone_audit = audit_clone_provenance(out_rs, fpath, "debug",
+            fixture.get("authorized_explicit_copies", 0), copy_authority)
         result["clone_audit"]["native_debug"] = clone_audit
         if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
                 clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):
@@ -940,7 +1163,8 @@ def evaluate_fixture(fixture: dict, compiler: Path, tmp_dir: Path) -> dict:
         result["modes"]["native_opt"] = "EMIT_FAIL"
         result["failures"].append(f"Native -O emission failed: {emit_opt_stderr.strip()}")
     else:
-        clone_audit = audit_clone_provenance(out_opt_rs, fpath, "optimized", fixture.get("authorized_explicit_copies", 0))
+        clone_audit = audit_clone_provenance(out_opt_rs, fpath, "optimized",
+            fixture.get("authorized_explicit_copies", 0), copy_authority)
         result["clone_audit"]["native_optimized"] = clone_audit
         if (clone_audit["status"] != "PASS" or clone_audit["unclassified"] != 0 or
                 clone_audit["unauthorized"] > fixture.get("max_hidden_clones", 0)):
