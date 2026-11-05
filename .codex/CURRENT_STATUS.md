@@ -16565,13 +16565,38 @@ untouched.
   Root-ingress provenance 42 checks PASS; v3 builder/ORACLE-10A sidecar
   corruption gate PASS. The independent Agent 2 also verified the combined
   worktree `665c51be` with Phase 27.5.1, X1, and the same 42 provenance checks.
-- Full 60-fixture oracle, full default and EST-shadow suites, refreshed full
-  clone census, runtime clone provenance, and final integration review remain
-  pending. Six runtime-template clone sites remain unapproved; no overall clone
-  acceptance is claimed.
+- The fresh full 60-fixture oracle is recorded below. Full default and
+  EST-shadow suites, refreshed full clone census, runtime clone provenance, and
+  final integration review remain pending. No overall clone acceptance is
+  claimed.
 - Full 60-fixture oracle, default/shadow suites, refreshed full clone census,
   runtime clone provenance, and final integration review remain pending. The
   six runtime-template clone sites are still unapproved. L7 WIP integration
-  and test commits through `b18fcddfc8028cadb172e100c37474347879afd1` are
-  pushed; the reviewed arena-lookup fix `81a61d5b` is currently local and must
-  be pushed after this status update. No production merge is authorized.
+  and test commits, including the reviewed arena-lookup fix, are pushed on
+  `phase28-r7-010-l7-copy-authority` through
+  `5120cfbf85d7eb7b274d6c25532dd84e72c3877e`. No production merge is
+  authorized.
+
+## Fresh combined 60-fixture oracle — implementation `5120cfbf`
+
+- Run used `build/compiler/moss-dev` from implementation SHA
+  `5120cfbf85d7eb7b274d6c25532dd84e72c3877e`; no source edits occurred during
+  the run. Certified v2 expectation files/digests were unchanged.
+- Results: 19/60 pass all applicable gates; 41/60 fail at least one gate.
+  Semantic/checker failures: 0. Native/Fast Debug and Native Debug/Optimized
+  output disagreements: 0. Infrastructure failures: 0. All 60 semantic
+  statuses passed; accepted execution cases matched expected results.
+- Provenance: 40 fixtures fail due to 480 unclassified clone rows (six in each
+  Debug and Optimized artifact per fixture). ORACLE-54 is blocked by four
+  missing consumer/provider sidecars, six occurrences each, 24 total. The
+  oracle reports 504 unverified occurrences overall. Four Root-ingress
+  routing-handle clones (ORACLE-43/45, Debug/Optimized) are now covered by exact
+  capture-only checker facts with `permits_moss_value_copy=false`.
+- The previous 508-occurrence result at `feccc473` is not reused. The measured
+  result and separate categories are in
+  `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`; raw run output is in the
+  disposable `tmp/r7-010-oracle-5120cfbf/` directory.
+- Disposition remains NO-GO. The 480 rows have not been proven to be 480
+  application-value copies; they remain unclassified and block acceptance.
+  Refresh and independently reconcile the full clone inventory and ORACLE-54
+  sidecar production before final full-suite validation.
