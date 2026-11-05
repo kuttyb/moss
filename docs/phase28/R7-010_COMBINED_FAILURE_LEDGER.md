@@ -179,3 +179,23 @@ source/artifact evidence, not authorization.
 - Disposition remains **NO-GO**. The 336 provenance rows and the wider
   qualified duplication audit remain unresolved. Full default and EST-shadow
   suites have not run at this SHA.
+
+### Refreshed generated-artifact duplication inventory at `fc305b64`
+
+- Re-scanned the exact oracle artifact directory with
+  `check_phase28_r7_010_clone_inventory.py`: 84 artifacts, 2,044 candidate
+  operations, and 38 lexical site groups. The JSON and Markdown outputs are
+  disposable under `tmp/r7-010-oracle-fc305b64/`.
+- Operator counts: `dot_clone` 342 (336 runtime rows plus six Moss-marked
+  rows, of which two are checked `copy` and four are Root-ingress
+  capture-only); qualified `Arc::clone` 672 (eight runtime sites repeated in
+  84 artifacts); `dot_to_string` 756; `mem_replace` 252; `mem_take` 14;
+  `dot_copied` 6; and String/Vec constructors 2. The scanner also sees 408
+  generated Moss-type `Clone` derives; these are capabilities, not invocation
+  evidence.
+- The counts are operation/site observations, not counts of confirmed illegal
+  Moss copies. Existing Team C analysis classifies the listed Arc occurrences
+  as runtime handles; the current sidecar scanner omits them, so they remain a
+  provenance-completeness blocker until the independent audit and successor
+  evidence path are complete. Other APIs and `Copy` behavior remain subject to
+  the scanner's documented limits.

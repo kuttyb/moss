@@ -16652,3 +16652,12 @@ untouched.
   336 provenance rows without changing frozen oracle expectations; audit all
   qualified duplication sites; run default and EST-shadow suites only after
   focused repairs settle. Current disposition is NO-GO.
+- Refreshed the full generated-artifact inventory for this exact run: 84 Rust
+  artifacts, 2,044 candidate operations in 38 lexical site groups: 342 direct
+  `.clone()` calls (336 runtime and six Moss-marked), 672 qualified
+  `Arc::clone` calls across eight runtime sites, 756 `.to_string()`, 252
+  `mem::replace`, 14 `mem::take`, six `.copied()`, and two String/Vec
+  constructors. 408 Clone derives are capabilities, not invocations. These
+  scanner counts do not assert semantic duplication; the qualified Arc calls
+  remain absent from the sidecar occurrence inventory and block provenance
+  completeness. Durable summary: `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`.
