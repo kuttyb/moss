@@ -15944,3 +15944,32 @@ untouched.
 - The integrated ORACLE-10A sidecar still reports 1 fact-authorized explicit
   copy and 6 unclassified runtime clones. Final combined oracle and full
   default/EST-shadow suites remain pending focused repair.
+
+## Provider authority and remaining raise/clone blockers (2026-11-05)
+
+- Team B provider-projection consumer patch `3ecae82a649ed367e41d8b0808b82da81ac4c61`
+  received focused independent Agent 2 GO. The provider `Program` is projected,
+  but its original Echo `ExprId`/arena handles survive; exact fact lookup now
+  uses the full checked `resolution_program->typed_semantics`. Provider build,
+  seven corruption hooks, and borrowed-read gate pass. This was an introduced
+  projection-boundary consumer bug, not missing checker authority or `.mossi`
+  serialization debt for the tested non-generic provider method.
+- Team B current clean checkpoint `73f403f92a6f92590906454fe96c04eedbb8b410`
+  includes the reviewed Team A String reply contract correction and all focused
+  Echo, projection, borrowed-read, recovery, R7-009, ownership, R7-006, W12,
+  feedback, and diff gates. Overall B remains NO-GO: uncaptured bare re-raise
+  still emits `WorkError::Missing.clone()` (a nonprimitive Moss value), and the
+  six runtime ORACLE-10A clone sites plus the wider operation inventory are not
+  yet authorized/provenanced.
+- Existing `TypedExceptionalOwnershipFactV1` does not authorize moving the
+  caught error through a bare re-raise. Team A is implementing exact
+  `TransferSelectedCarrier` checker authority keyed to exact Raise/Recover/
+  exceptional-edge occurrence, variant, specialization/context and type;
+  Team B will consume it only after review. No implicit clone authorization.
+- Team C runtime evidence report SHA `7eaa9616` received Agent 2 NO-GO because
+  its regression did not read/scan the pinned Rust artifact or verify line/type
+  mappings, although the manual artifact/source evidence checked out. Team C is
+  strengthening the regression to generate/read the artifact bytes, verify its
+  SHA and exact spans, and keep all six runtime sites unclassified.
+- L7 has not run the combined 60-fixture oracle or final default/EST-shadow
+  suites after these moving repairs; those remain final-stage gates.
