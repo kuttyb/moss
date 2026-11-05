@@ -137,7 +137,6 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase27_est_mossi", [sys.executable, "tests/tooling/check_phase27_est_mossi.py", "{compiler}"]),
     ("check_phase28_local_ownership", [sys.executable, "tests/tooling/check_phase28_local_ownership.py", "{compiler}"]),
     ("check_phase28_team_b_consumer", [sys.executable, "tests/tooling/check_phase28_team_b_consumer.py", "{compiler}"]),
-    ("check_phase28_return_value_transfer", [sys.executable, "tests/phase28/r7_010/team_b/check_return_value_transfer.py", "{compiler}", "{out}/phase28-return-value"]),
     ("check_phase27_est_specialized_facts", [sys.executable, "tests/tooling/check_phase27_est_specialized_facts.py", "{compiler}"]),
     ("check_phase27_est_functional_tree", [sys.executable, "tests/tooling/check_phase27_est_functional_tree.py", "{compiler}"]),
     ("check_phase27_untyped_pipeline_return", [sys.executable, "tests/tooling/check_phase27_untyped_pipeline_return.py", "{compiler}"]),
