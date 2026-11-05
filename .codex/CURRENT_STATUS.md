@@ -15725,3 +15725,24 @@ untouched.
 - The test now changes the captured local to `let item = 7`, changes only `Run`'s return type and its normal `reply "ok"` to Int, and retains `reply item`. It asserts Fast Debug output `4\n7`, checks generated native Rust forwards `Err(__moss_selected_carrier)`, compiles both Native Debug and Optimized artifacts, and compares their output to Fast Debug.
 - `python3 tests/phase28/r7_010/team_b/check_recovery_dead_error_clones.py ./moss`: PASS. ORACLE-07 selected-error clones remain 9-to-0; uncaptured and actual captured-payload re-raise parity passes. Runtime clone count remains 6 and unclassified. Other Team B targeted gates remain as previously recorded; no full suite was run.
 - Follow-up implementation commit: `0cb9589feb1738812472aabab2a862d7f0cbcf77`; fresh independent review is required. The corrected Team A reply-contract delivery `33aaeea` is not imported here and should remain a dependency for the later combined branch after its review. No push.
+### R7-010 Reply contract correction (separate local follow-up)
+
+- On branch `phase28-r7-010-team-a-reply-contract` from Echo authority SHA
+  `644d2c71c773bfcf41604189593d3e852f8797e7`, corrected a stale R7-009
+  expectation: proposal §10 and §485 classify String as non-Copy and require
+  explicit `copy(x)` to produce an owned nonprimitive reply. Removed the
+  String exceptions from direct/alias reply validation and from
+  `indexed_borrow_storage_location`, which had prevented String indexed
+  aliases from retaining borrowed provenance.
+- The R7-009 harness now verifies direct `reply strings[0]` rejection,
+  `reply copy(strings[0])` acceptance, String alias reply rejection, and
+  primitive direct indexed reply acceptance. Option/Resource and nonprimitive
+  consume negatives remain in the matrix. No v2 oracle fixture or digest was
+  changed.
+- `tests/phase106d1_read_projection.moss` now uses
+  `reply copy(strings[0])` for `IndexReply`; this preserves the test's owned
+  snapshot intent across later collection mutation. The borrowed-read gate's
+  exact expected output remains unchanged and passes.
+- Dev/opt builds and R7-009 17-case harness pass. The full borrowed-read gate,
+  Echo authority contract, local ownership, W12 dev/opt, R7-006 facts, feedback
+  validator, and diff check pass. Awaiting independent review; no push or merge.

@@ -41,7 +41,7 @@ domain Store:
   fn MutateValues():
     value.values[0] = 10
   fn IndexReply() -> String:
-    reply strings[0]
+    reply copy(strings[0])
   fn ReplaceStrings():
     strings = ["changed indexed"]
   fn Dataflow() -> Int:
