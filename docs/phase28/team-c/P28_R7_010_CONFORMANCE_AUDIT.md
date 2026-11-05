@@ -190,9 +190,12 @@ these hooks perturb consumers, not checker output.
 
 The expanded inventory separately reports generated Moss `Clone` derive
 capabilities. Across the 71-file checkpoint set it found 344 declarations
-(26 unique Moss type/enum names); on Team B's six focused artifacts it found
-28 declarations, including `Node` and `Bag`. These are capabilities, not clone
-occurrences. The ORACLE-10A `Record` derive at Rust line 3402 has one observed
+(26 unique Moss type/enum names). The six-file conformance comparison set
+contains 30 declarations: four error enums in each of six files, `Node` in
+four ORACLE-39 artifacts, and `Bag` in two ORACLE-42 artifacts. The full
+Team B gate directory is a separate six-file set (including the two lifetime
+probe artifacts) and contains 28 declarations. These are capabilities, not
+clone occurrences. The ORACLE-10A `Record` derive at Rust line 3402 has one observed
 fact-specific helper use at line 3448; the independent provenance validator
 matches that call to its checker fact. No other derived-type call reachability
 is established by the scanner, which remains an explicit audit limit.

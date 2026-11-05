@@ -82,14 +82,23 @@ artifacts do not use fact-specific helper symbols, so the new helper-use
 association finds none there; this is a scanner-format limit, not evidence
 that the older `.clone()` sites are unauthorized or absent.
 
-The Team B 44513837 vector-read-and-echo debug/optimized artifacts comprise
-six Rust files and produce 162 candidate observations in 27 groups, with 36
-`.clone()` calls (six runtime sites repeated six times). There are 28 Clone
-derive declarations across those files: four standard error enums repeated in
-each artifact plus `Node` and `Bag` in their corresponding debug/optimized
-files. The application loops contain no detected clone operation. Their
-`Node`/`Bag` derives expose a capability but do not prove an invoked duplicate;
-the inventory cannot rule out unscanned or future call paths from the derive
+There are two distinct six-file scopes. Team B's complete
+`tmp/team-b/vector-read-and-echo` gate directory contains four oracle artifacts
+plus the two read-then-write lifetime-probe artifacts. That directory yields
+162 candidates in 27 groups, 36 `.clone()` calls, and **28** derive
+declarations (four standard error enums per file, plus `Node` twice and `Bag`
+twice).
+
+The six-file conformance comparison scope used for Agent 2 review is exactly:
+Team B ORACLE-39 Debug/Optimized, the independent full-v2-evaluator ORACLE-39
+Debug/Optimized outputs, and Team B ORACLE-42 Debug/Optimized. Those files are
+copied to `tmp/team-c/team-b-44513837/derive-audit-six/` for the grouped scan.
+They yield **30** derive declarations: four error enums in each of six files
+(24), `Node` in four ORACLE-39 files, and `Bag` in two ORACLE-42 files. The
+scanner regression pins those exact six filenames and 30 declarations. The
+application loop/indexed echo code contains no detected clone operation;
+`Node`/`Bag` derives expose capabilities but do not prove an invoked duplicate,
+and the scanner cannot rule out unscanned or future call paths from a derive
 alone.
 
 ## Moss-marked operations observed
