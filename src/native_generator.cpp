@@ -1656,6 +1656,7 @@ class Generator {
   std::optional<RootIngressMessageOccurrence>
   root_ingress_message_occurrence(const Stmt& statement, est::ExprSlot slot,
                                  std::uint32_t argument_index) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
     const est::Handle* selected = nullptr;
     for (const auto& handle : statement.expression_handles) {
       if (handle.slot != slot || handle.argument_index != argument_index) continue;
@@ -1664,10 +1665,11 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT duplicate active Root-ingress message handle");
       selected = &handle;
     }
-    if (!selected || selected->arena_index >= p_.expression_arenas.size() ||
-        !p_.expression_arenas[selected->arena_index])
+    if (!selected || selected->arena_index >=
+            checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[selected->arena_index])
       return std::nullopt;
-    const auto& arena = *p_.expression_arenas[selected->arena_index];
+    const auto& arena = *checked_program.expression_arenas[selected->arena_index];
     if (selected->expr >= arena.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT active Root-ingress expression handle is invalid");
