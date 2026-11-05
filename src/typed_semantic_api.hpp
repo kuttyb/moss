@@ -715,6 +715,75 @@ struct TypedReturnValueFactV1 {
 };
 struct TypedReturnValueRequirementV1 : TypedReturnValueFactV1 {};
 
+// Stable source-free transport record for a checker ReturnValue fact.
+// Process-local arena, ExprId, and statement occurrence IDs are deliberately
+// absent. A .mossi reader remaps the stable body/statement/slot identity to
+// the newly parsed checked EST handle before creating an in-memory fact and
+// requirement.
+struct TypedReturnValueArtifactFactV1 {
+  enum class ValueSlot { ReturnValue };
+  static constexpr std::uint32_t kVersion = 1;
+  std::uint32_t version{kVersion};
+  // This is the stable checker callable identity `fn:<qualified-name>` used
+  // in ReturnValue provenance, not a process-local callable pointer.
+  std::string callable_identity;
+  // Hash of this callable's canonical execution-body records in the
+  // containing source-free artifact.
+  std::string execution_body_hash;
+  // Deterministic preorder ordinal across the callable's serialized body.
+  std::uint32_t statement_preorder_ordinal{UINT32_MAX};
+  ValueSlot value_slot{ValueSlot::ReturnValue};
+  std::uint32_t value_argument_index{0};
+  int source_line{0};
+  // EST byte offsets are relative to the original checked expression source;
+  // origin_id is intentionally omitted because it is process-local.
+  std::uint32_t expression_span_line{0};
+  std::uint32_t expression_span_column{0};
+  std::uint32_t expression_source_begin{0};
+  std::uint32_t expression_source_end{0};
+  std::uint64_t expression_source_fingerprint{0};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef expression_type;
+  std::string source_binding_identity;
+  std::string source_definition_identity;
+  Effect required_access{Effect::Consume};
+  TypedReturnValueActionV1 action{
+      TypedReturnValueActionV1::TransferOwnedValue};
+  bool checker_proved_owned_rvalue{false};
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_well_formed() const noexcept {
+    if (version != kVersion || callable_identity.empty() ||
+        execution_body_hash.empty() ||
+        statement_preorder_ordinal == UINT32_MAX ||
+        value_slot != ValueSlot::ReturnValue || value_argument_index != 0 ||
+        source_line <= 0 || source_line != provenance.line ||
+        expression_span_line == 0 || expression_span_column == 0 ||
+        expression_source_end <= expression_source_begin ||
+        expression_source_fingerprint == 0 ||
+        specialization_context.empty() || est_fact_context.empty() ||
+        provenance.source_file.empty() ||
+        provenance.defining_module_id.empty() ||
+        provenance.enclosing_callable_id != callable_identity || !expression_type ||
+        !expression_type->is_closed())
+      return false;
+    if (action == TypedReturnValueActionV1::ReadCopyPrimitive)
+      return required_access == Effect::Read &&
+          source_binding_identity.empty() && source_definition_identity.empty() &&
+          !checker_proved_owned_rvalue &&
+          expression_type->kind == TypeKind::Primitive &&
+          (expression_type->name == "int" || expression_type->name == "float" ||
+           expression_type->name == "bool" || expression_type->name == "char");
+    if (action != TypedReturnValueActionV1::TransferOwnedValue ||
+        required_access != Effect::Consume) return false;
+    const bool binding = !source_binding_identity.empty() &&
+        !source_definition_identity.empty();
+    return binding != checker_proved_owned_rvalue;
+  }
+};
+
 enum class TypedCollectionViewOperationV1 { MapKeys, MapValues };
 struct TypedCollectionViewFactV1 {
   enum class Availability { Present, MissingOperation, MissingStatement,
