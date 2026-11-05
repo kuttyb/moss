@@ -15,6 +15,7 @@ FIXTURES = [
     "tests/phase28/oracle/fixtures/oracle_45_handler_primitive_rebind_local.moss",
 ]
 ALIAS_REJECTED = "tests/tooling/fixtures/phase28_root_domain_handle_alias_rejected.moss"
+UNKNOWN_HANDLER = "tests/tooling/fixtures/phase28_root_unknown_handler.moss"
 
 
 def check(source, extra_env=None):
@@ -71,7 +72,13 @@ def main():
     assert "domain handles cannot be used as ordinary values or payloads" in (
         alias.stdout + alias.stderr)
 
-    print("Phase 28 Root-ingress domain capture authority: 17 scenarios PASS")
+    unknown = check(UNKNOWN_HANDLER)
+    unknown_response = parse_result(unknown)
+    assert unknown.returncode != 0 and not unknown_response.get("ok"), unknown.stdout
+    assert unknown_response.get("error", {}).get("code") != "MOSS_INTERNAL_INVARIANT", unknown.stdout
+    assert "no message handler" in unknown_response.get("error", {}).get("message", "").lower(), unknown.stdout
+
+    print("Phase 28 Root-ingress domain capture authority: 18 scenarios PASS")
 
 
 if __name__ == "__main__":

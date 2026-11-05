@@ -1,0 +1,7 @@
+domain Worker:
+  fn Process(n: Int) -> Int:
+    reply n
+
+fn main():
+  w = Worker()
+  echo message w.Unknown(1)

@@ -34950,20 +34950,16 @@ class Checker {
               "MOSS_INTERNAL_INVARIANT");
         const auto* target_name =
             std::get_if<est::Identifier>(&arena->at(message.target));
-        if (!target_name)
-          err(statement.source_file, statement.line,
-              "Root-ingress receiver is not a checked static domain binding",
-              "MOSS_INTERNAL_INVARIANT");
+        if (!target_name) return;
         const auto receiver = current_env.find(target_name->name);
         const auto domain_name = receiver == current_env.end()
             ? string() : canonical_type_name(receiver->second);
         const auto domain = domains_.find(domain_name);
         const Handler* handler = domain == domains_.end()
             ? nullptr : find_handler(*domain->second, message.handler);
-        if (!handler)
-          err(statement.source_file, statement.line,
-              "Root-ingress call edge has no exact checked handler target",
-              "MOSS_INTERNAL_INVARIANT");
+        // The normal expression/Message checker below owns diagnostics for
+        // unresolved targets. Never let authority collection mask them.
+        if (!handler) return;
 
         TypedRootIngressDomainCaptureFactV1 fact;
         fact.statement_occurrence_id =
@@ -34992,6 +34988,7 @@ class Checker {
             }
             instance = &candidate;
           }
+        if (!instance) return;
         if (instance) {
           fact.domain_instance_identity = instance->identity;
           fact.receiver_definition_identity =
