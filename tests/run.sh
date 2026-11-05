@@ -109,6 +109,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_nested_copy_
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_collection_outcome_consumers.py "$compiler" tmp/team-b/collection-outcome-gate
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_native_join_slot.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 MOSS_PHASE28_QUERY_COMPILER="$compiler" python3 -m unittest tests.phase28.oracle_r7_005_1.test_oracle_harness tests.tooling.test_phase28_r7_010_clone_inventory
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py "$compiler" "$PWD/tests/phase28/oracle_r7_005_1/fixtures/oracle_10a_explicit_copy_only.moss"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_b4_consumer_fails_closed.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sc_safe_arithmetic.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sa_numeric_literals.py "$compiler"

@@ -15991,3 +15991,19 @@ untouched.
   NO-GO pending a regression that reads or generates the exact artifact and
   checks the claimed clone spans/types/slice locations against its bytes. C is
   preparing that correction; the six runtime sites remain unclassified.
+
+## Team C runtime evidence gate integrated (2026-11-05)
+
+- Team C corrected artifact evidence commit `d620e35c60ce6967ee5cb9f4df5415cfc2251244`
+  received independent Agent 2 GO and is pushed to
+  `origin/phase28-r7-010-team-c-conformance`; remote ref verified at that SHA.
+  L7 imported the corrected report and regression on top of its evidence base.
+- Registered the evidence regression in `tests/run.sh`. On this L7 compiler and
+  canonical ORACLE-10A source it passes against the pinned Rust artifact bytes:
+  one checker-authorized explicit copy, six unauthorized/unclassified runtime
+  clones, two string materializers, and zero raised-error clone calls. The six
+  runtime clones remain unapproved.
+- The full clone corpus is still under Team B's independent site audit. No
+  aggregate fixed percentage is claimed until the same corpus is re-audited
+  after the bare-raise consumer repair. Combined oracle and final default/shadow
+  suites remain pending focused repairs.
