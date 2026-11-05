@@ -15751,3 +15751,23 @@ untouched.
   independent NO-GO: Option/Resource indexed aliases (`value = values[0];
   reply value`) bypass the direct reply guard. Team A has been assigned a
   checker-only origin/alias repair plus focused regressions; no push.
+- Team B checkpoint `ae45a3ec627d436920ac49a556ca49755fee510b` is integrated
+  locally (plus its dependency checkpoints) as `14c4ad4c`. It fixes both the
+  producer span to the complete `.clone()` token and the ORACLE-10A duplicate
+  clone by borrowing the indexed source into one fact-specific helper. L7's
+  source-borrow and provenance-builder gates pass, and the compiler builds.
+- The real L7 ORACLE-10A sidecar audit now validates all 7 raw clone spans and
+  the exact source/fact association: 1 explicit copy is authorized by its
+  checker fact; 6 runtime/framework clone sites remain unclassified and the
+  artifact status is `UNAUTHORIZED` (correct fail-closed result). Team B's
+  independent review of the follow-up checkpoint and these 6 runtime sites is
+  pending; no runtime exception has been approved.
+- L7 targeted B gates pass: Map.get write-through (five corruptions), Match
+  WRITE parity/drop/perturb, nested copy materializer (five authority
+  corruptions), CollectionOutcome, native join slot/ORACLE-51, v3 builder,
+  and explicit-copy source-borrow parity. Team C harness+inventory tests pass
+  43/43 with live checker query; without query 42 pass and one live test skips.
+- Team A's latest candidate `9a46ff3725926f25f3f09cdee101382157441c12`
+  received another independent NO-GO: Option/Resource indexed aliases can be
+  replied after assignment (`value = values[0]; reply value`). Team A is
+  fixing origin tracking/checking and adding alias negatives; no push.
