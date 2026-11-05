@@ -6557,6 +6557,128 @@ class Generator {
     return plans->second[slot];
   }
 
+  const TypedEchoArgumentFactV1& resolve_echo_argument_fact(
+      const Stmt& statement, const string& specialization_context,
+      size_t argument_index) const {
+    string query_specialization_context = specialization_context;
+    if (!statement.echo_types_by_context.count(query_specialization_context)) {
+      if (!statement.echo_types_by_context.count(string()))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
+      query_specialization_context.clear();
+    }
+    if (!p_.typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT typed Echo argument facts are unavailable");
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::Argument ||
+          handle.argument_index != argument_index)
+        continue;
+      if (matched_handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate Echo argument expression handles");
+      matched_handle = &handle;
+    }
+    if (!matched_handle)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing Echo argument expression handle");
+
+    try {
+#ifdef MOSS_TEST_BUILD
+      auto& required =
+          p_.typed_semantics->required_echo_argument_occurrences;
+      const auto same_requirement_key =
+          [&](const TypedEchoArgumentRequirementV1& item) {
+            return item.est_arena_index == matched_handle->arena_index &&
+                item.argument_expression_occurrence_id == matched_handle->expr &&
+                item.argument_index == argument_index &&
+                item.specialization_context == query_specialization_context;
+          };
+      auto required_it = std::find_if(
+          required.begin(), required.end(), same_requirement_key);
+      const bool borrowed_requirement = required_it != required.end() &&
+          required_it->mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_requirement && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_REQUIREMENT")) {
+        required.erase(required_it);
+      } else if (borrowed_requirement && std::getenv(
+                     "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_REQUIREMENT")) {
+        const auto duplicate = *required_it;
+        required.push_back(duplicate);
+      }
+
+      auto& facts = p_.typed_semantics->echo_argument_facts;
+      const auto same_fact_key = [&](const TypedEchoArgumentFactV1& item) {
+        return item.est_arena_index == matched_handle->arena_index &&
+            item.argument_expression_occurrence_id == matched_handle->expr &&
+            item.argument_index == argument_index &&
+            item.specialization_context == query_specialization_context;
+      };
+      auto fact_it = std::find_if(facts.begin(), facts.end(), same_fact_key);
+      const bool borrowed_fact = fact_it != facts.end() &&
+          fact_it->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_fact && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_FACT")) {
+        facts.erase(fact_it);
+      } else if (borrowed_fact && std::getenv(
+                     "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT")) {
+        fact_it->required_access = Effect::Consume;
+      } else if (borrowed_fact && std::getenv(
+                     "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_FACT")) {
+        const auto duplicate = *fact_it;
+        facts.push_back(duplicate);
+      }
+#endif
+      string query_context = query_specialization_context;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
+        query_context += ":wrong-context";
+#endif
+      const auto& requirement =
+          p_.typed_semantics->find_echo_argument_requirement(
+              matched_handle->arena_index, matched_handle->expr,
+              static_cast<std::uint32_t>(argument_index), query_context);
+      auto exact_requirement = requirement;
+#ifdef MOSS_TEST_BUILD
+      if (requirement.mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement &&
+          std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
+        exact_requirement.est_fact_context += ":consumer-perturbed";
+#endif
+      const auto& fact =
+          p_.typed_semantics->find_echo_argument_fact(exact_requirement);
+      if (!fact.is_authoritative() ||
+          fact.required_access != Effect::Read ||
+          !fact.display_result_non_escaping || fact.permits_copy)
+        throw std::invalid_argument(
+            "checked Echo argument fact is not authoritative for display");
+      return fact;
+    } catch (const std::exception& error) {
+      std::string candidates;
+      for (const auto& candidate :
+           p_.typed_semantics->required_echo_argument_occurrences) {
+        if (candidate.est_arena_index != matched_handle->arena_index ||
+            candidate.argument_expression_occurrence_id != matched_handle->expr ||
+            candidate.argument_index != argument_index)
+          continue;
+        if (!candidates.empty()) candidates += ",";
+        candidates += "context=" + candidate.specialization_context +
+            ";mode=" + std::to_string(static_cast<int>(candidate.mode)) +
+            ";stmt=" + std::to_string(candidate.echo_statement_occurrence_id);
+      }
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()) +
+          " [Echo query arena=" +
+          std::to_string(matched_handle->arena_index) + ",expr=" +
+          std::to_string(matched_handle->expr) + ",arg=" +
+          std::to_string(argument_index) + ",context=" +
+          query_specialization_context + ",candidates=" + candidates + "]");
+    }
+  }
+
   const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
       const Stmt& s, const string& functional_context) const {
     if (!p_.typed_semantics) return nullptr;
@@ -7796,7 +7918,7 @@ class Generator {
                                           joined_bindings.end());
               const string saved_selected_error = phase21_selected_error_;
               const string saved_selected_carrier = phase21_selected_carrier_;
-              phase21_selected_error_ = preserve_selected_error
+              phase21_selected_error_ = arm_has_bare_raise
                   ? selected : string();
               phase21_selected_carrier_ = captured_try
                   ? "__moss_selected_carrier" : string();
@@ -8389,13 +8511,18 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              const auto& echo_fact = resolve_echo_argument_fact(
+                  s, functional_context, argument);
               string proj_base, proj_field, idx_b, idx_i;
               const bool is_direct_vector_index =
-                  statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
-                  tree_parse_index(trim(s.args[argument]), idx_b, idx_i) &&
-                  generated_expr_type(idx_b, &types).has_value() &&
-                  starts_with(canonical_type_name(*generated_expr_type(idx_b, &types)),
-                              "vector[");
+                  echo_fact.mode ==
+                      TypedEchoArgumentModeV1::BorrowedVectorElement;
+              if (is_direct_vector_index &&
+                  (statement_functional_pipeline_id(
+                       s, functional_context, argument) != 0 ||
+                   !tree_parse_index(trim(s.args[argument]), idx_b, idx_i)))
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT checked borrowed Echo argument is not its direct index expression");
               const bool is_indexed_member =
                   statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
                   tree_parse_member_access(trim(s.args[argument]), proj_base, proj_field) &&

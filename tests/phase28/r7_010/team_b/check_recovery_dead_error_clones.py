@@ -10,6 +10,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 MOSS = Path(sys.argv[1]).resolve()
 ORACLE07 = ROOT / "tests/phase28/oracle/fixtures/oracle_07_catchable_collection_errors.moss"
 RERAISE = ROOT / "tests/tooling/fixtures/phase21_recovery_native.moss"
+CAPTURE_RERAISE = ROOT / "tests/tooling/fixtures/phase21_capture_nested_reraise.moss"
 
 
 def run(args, expect=0):
@@ -45,4 +46,20 @@ for mode, moss_flags, rust_flags in (
     run(["rustc", *rust_flags, rust, "-o", binary])
     assert run([binary])[0] == reraised_fast
 
-print("ORACLE-07 dead recovery clones removed (9 to 0), runtime clone count 6; bare re-raise clone retained, native/Fast Debug parity PASS")
+capture_source = OUT / "capture_nested_reraise_int.moss"
+capture_text = CAPTURE_RERAISE.read_text()
+capture_text = capture_text.replace("fn Run() -> String:", "fn Run() -> Int:")
+capture_text = capture_text.replace('reply "ok"', "reply 1")
+capture_text = capture_text.replace("reply item", "reply 2")
+capture_source.write_text(capture_text)
+capture_fast = run([MOSS, "run", "--interp", capture_source])[0]
+for mode, moss_flags, rust_flags in (
+        ("debug", [], []), ("optimized", ["-O"], ["-O"])):
+    rust = OUT / f"captured-reraise-{mode}.rs"
+    binary = OUT / f"captured-reraise-{mode}"
+    run([MOSS, *moss_flags, capture_source, "-o", rust])
+    generated = rust.read_text()
+    run(["rustc", *rust_flags, rust, "-o", binary])
+    assert run([binary])[0] == capture_fast
+
+print("ORACLE-07 dead recovery clones removed (9 to 0), runtime clone count 6; uncaptured and captured bare re-raise Native/Fast Debug parity PASS")

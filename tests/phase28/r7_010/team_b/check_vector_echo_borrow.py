@@ -1,5 +1,6 @@
 """Ensure echo of an indexed Vector element borrows the element for display."""
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -12,16 +13,16 @@ ORACLE39 = ROOT / "tests/phase28/oracle/fixtures/oracle_39_vector_for_read.moss"
 ORACLE42 = ROOT / "tests/phase28/oracle/fixtures/oracle_42_custom_wrapper_remove.moss"
 
 
-def run(args):
-    proc = subprocess.run(list(map(str, args)), cwd=ROOT, text=True,
+def run(args, env=None, expect=0):
+    proc = subprocess.run(list(map(str, args)), cwd=ROOT, env=env, text=True,
                           capture_output=True, check=False, timeout=90)
-    if proc.returncode:
+    if proc.returncode != expect:
         raise RuntimeError(f"{args!r} failed\n{proc.stdout}\n{proc.stderr}")
-    return proc.stdout.strip()
+    return proc.stdout.strip(), proc.stderr
 
 
-assert run([MOSS, "check", "--json", ORACLE39])
-assert run([MOSS, "run", "--interp", ORACLE39]) == "1\n2"
+assert run([MOSS, "check", "--json", ORACLE39])[0]
+assert run([MOSS, "run", "--interp", ORACLE39])[0] == "1\n2"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"oracle39-vector-for-read-{mode}.rs"
@@ -32,10 +33,10 @@ for mode, moss_flags, rust_flags in (
     body = body.split("// Moss tooling end|", 1)[0]
     assert ".clone()" not in body, "ORACLE-39 Vector READ loop cloned an element"
     run(["rustc", *rust_flags, rust, "-o", binary])
-    assert run([binary]) == "1\n2"
+    assert run([binary])[0] == "1\n2"
 
-assert run([MOSS, "check", "--json", ORACLE42])
-assert run([MOSS, "run", "--interp", ORACLE42]) == "y\n2\nz"
+assert run([MOSS, "check", "--json", ORACLE42])[0]
+assert run([MOSS, "run", "--interp", ORACLE42])[0] == "y\n2\nz"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"oracle42-custom-wrapper-remove-{mode}.rs"
@@ -48,7 +49,33 @@ for mode, moss_flags, rust_flags in (
         "ORACLE-42 indexed Vector echo materialized an element clone",
         match.group(1) if match else None)
     run(["rustc", *rust_flags, rust, "-o", binary])
-    assert run([binary]) == "y\n2\nz"
+    assert run([binary])[0] == "y\n2\nz"
+
+echo_source = OUT / "echo_fact_corruption.moss"
+echo_source.write_text(
+    "fn main():\n"
+    "  var values = [\"before\"]\n"
+    "  echo values[0]\n")
+hooks = (
+    "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_FACT",
+    "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_REQUIREMENT",
+    "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_FACT",
+    "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_REQUIREMENT",
+    "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT",
+    "MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT",
+    "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT",
+)
+for hook in hooks:
+    env = dict(os.environ)
+    env[hook] = "1"
+    for mode, moss_flags in (("debug", []), ("optimized", ["-O"])):
+        _, stderr = run([MOSS, *moss_flags, echo_source, "-o",
+                         OUT / f"corrupt-{hook}-{mode}.rs"],
+                        env=env, expect=1)
+        assert "MOSS_INTERNAL_INVARIANT" in stderr, (hook, mode, stderr)
+    _, stderr = run([MOSS, "run", "--interp", echo_source],
+                    env=env, expect=1)
+    assert "MOSS_INTERNAL_INVARIANT" in stderr, (hook, "fast-debug", stderr)
 
 lifetime_source = OUT / "read_then_write.moss"
 lifetime_source.write_text(
@@ -57,8 +84,8 @@ lifetime_source.write_text(
     "  echo values[0]\n"
     "  values[0] = \"after\"\n"
     "  echo values[0]\n")
-assert run([MOSS, "check", "--json", lifetime_source])
-assert run([MOSS, "run", "--interp", lifetime_source]) == "before\nafter"
+assert run([MOSS, "check", "--json", lifetime_source])[0]
+assert run([MOSS, "run", "--interp", lifetime_source])[0] == "before\nafter"
 for mode, moss_flags, rust_flags in (
         ("debug", [], []), ("optimized", ["-O"], ["-O"])):
     rust = OUT / f"read-then-write-{mode}.rs"
@@ -70,6 +97,6 @@ for mode, moss_flags, rust_flags in (
         assert match and ".clone()" not in match.group(1), (
             "indexed Vector echo cloned its source", line)
     run(["rustc", *rust_flags, rust, "-o", binary])
-    assert run([binary]) == "before\nafter"
+    assert run([binary])[0] == "before\nafter"
 
-print("ORACLE-39 Vector-for-read and ORACLE-42 custom-wrapper indexed Vector echo: parity PASS")
+print("ORACLE-39/42 parity and seven Echo fact corruption gates across Native Debug/Optimized and Fast Debug PASS")

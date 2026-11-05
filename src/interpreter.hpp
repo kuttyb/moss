@@ -526,6 +526,46 @@ class FastInterpreter {
         if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
       }
     }
+
+    auto borrowed_echo_fact = std::find_if(
+        semantics->echo_argument_facts.begin(),
+        semantics->echo_argument_facts.end(), [](const auto& fact) {
+          return fact.mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement;
+        });
+    auto borrowed_echo_requirement = std::find_if(
+        semantics->required_echo_argument_occurrences.begin(),
+        semantics->required_echo_argument_occurrences.end(),
+        [](const auto& requirement) {
+          return requirement.mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement;
+        });
+    if (borrowed_echo_fact != semantics->echo_argument_facts.end()) {
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_FACT"))
+        semantics->echo_argument_facts.erase(borrowed_echo_fact);
+      else if (std::getenv(
+                   "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT"))
+        borrowed_echo_fact->required_access = Effect::Consume;
+      else if (std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_FACT"))
+        {
+          const auto duplicate = *borrowed_echo_fact;
+          semantics->echo_argument_facts.push_back(duplicate);
+        }
+    }
+    if (borrowed_echo_requirement !=
+        semantics->required_echo_argument_occurrences.end()) {
+      if (std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_REQUIREMENT"))
+        semantics->required_echo_argument_occurrences.erase(
+            borrowed_echo_requirement);
+      else if (std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_REQUIREMENT"))
+        {
+          const auto duplicate = *borrowed_echo_requirement;
+          semantics->required_echo_argument_occurrences.push_back(duplicate);
+        }
+    }
   }
 #endif
 
@@ -3596,6 +3636,63 @@ class FastInterpreter {
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
+  const TypedEchoArgumentFactV1& resolve_echo_argument_fact(
+      const Stmt& statement, const Frame& frame, size_t argument_index,
+      int line) const {
+    if (!program_.typed_semantics)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT typed Echo argument facts are unavailable");
+    const est::Handle* matched_handle = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::Argument ||
+          handle.argument_index != argument_index)
+        continue;
+      if (matched_handle)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT duplicate Echo argument expression handles");
+      matched_handle = &handle;
+    }
+    if (!matched_handle)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing Echo argument expression handle");
+    std::string context = frame.functional_context;
+    if (!statement.echo_types_by_context.count(context)) {
+      if (!statement.echo_types_by_context.count(std::string()))
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
+      context.clear();
+    }
+    try {
+      std::string query_context = context;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
+        query_context += ":wrong-context";
+#endif
+      const auto& requirement =
+          program_.typed_semantics->find_echo_argument_requirement(
+              matched_handle->arena_index, matched_handle->expr,
+              static_cast<std::uint32_t>(argument_index), query_context);
+      auto exact_requirement = requirement;
+#ifdef MOSS_TEST_BUILD
+      if (requirement.mode ==
+              TypedEchoArgumentModeV1::BorrowedVectorElement &&
+          std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
+        exact_requirement.est_fact_context += ":consumer-perturbed";
+#endif
+      const auto& fact = program_.typed_semantics->find_echo_argument_fact(
+          exact_requirement);
+      if (!fact.is_authoritative() || fact.required_access != Effect::Read ||
+          !fact.display_result_non_escaping || fact.permits_copy)
+        throw std::invalid_argument(
+            "checked Echo argument fact is not authoritative for display");
+      return fact;
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+  }
+
   const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
       const Stmt& s, const Frame& frame, int line) const {
     if (!program_.typed_semantics) return nullptr;
@@ -4542,6 +4639,8 @@ class FastInterpreter {
           std::vector<std::string> rendered_args;
           rendered_args.reserve(statement.args.size());
           for (size_t i = 0; i < statement.args.size(); ++i) {
+            (void)resolve_echo_argument_fact(statement, frame, i,
+                                            statement.line);
             rendered_args.push_back(echo_text(evaluate_expression_source(statement.args[i],
                                 frame, statement.line, output,
                                 std::pair{est::ExprSlot::Argument,
