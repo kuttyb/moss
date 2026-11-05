@@ -16753,3 +16753,22 @@ untouched.
   to `into_config`. Qualified Arc sites remain omitted from v2 occurrence
   provenance. Full default and EST-shadow suites remain pending. Overall
   disposition: NO-GO.
+
+## Worker-context TLS Arc clone removal follow-up (2026-11-05)
+
+- L7 candidate on `phase28-r7-010-l7-copy-authority` is based on pushed SHA
+  `d92e6dcf42069daee3e08e064099e79a7f0ad4f2`; uncommitted source SHA-256 is
+  `3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690`.
+  It replaces the worker TLS-owned executor Arc with a borrow to the existing
+  worker-slot Arc, ties the guard to that borrow, makes the guard `!Send`/`!Sync`,
+  and clears TLS on Drop.
+- Independent adversarial review returned **GO, no fixups**. The reviewer
+  confirmed the slot guard's lifetime, synchronous non-escaping callback, and
+  thread-local drop behavior. Isolated `moss-dev`/`moss-opt` builds, runtime
+  marker/corruption gate in both modes, Phase 20 executor tests 55/55,
+  generated ORACLE-10A Rust compilation/execution, and `git diff --check` pass.
+- Generated ORACLE-10A has three unclassified direct runtime `.clone()` sites
+  plus one checked Moss `copy`; qualified `Arc::clone` calls fell from eight to
+  seven. No runtime clone site is authorized. Full oracle and default/shadow
+  suites have not been rerun for this candidate. Results and source refs are in
+  `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`; overall NO-GO remains.

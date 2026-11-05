@@ -518,7 +518,10 @@ fn next_branch_id() -> u64 {
 // ─── Runtime-owned execution context (TLS) ───────────────────────────────
 thread_local! {
     static MOSS_CURRENT_WORKER_ID: std::cell::Cell<std::option::Option<usize>> = const { std::cell::Cell::new(None) };
-    static MOSS_CURRENT_WORKER_EXEC: std::cell::RefCell<std::option::Option<std::sync::Arc<MossGlobalExec>>> = const { std::cell::RefCell::new(None) };
+    // SAFETY: a non-null pointer borrows the Arc owned by the worker-slot guard.
+    // MossWorkerContextGuard carries that borrow's lifetime and clears TLS before
+    // the slot guard can drop.
+    static MOSS_CURRENT_WORKER_EXEC: std::cell::Cell<*const std::sync::Arc<MossGlobalExec>> = const { std::cell::Cell::new(std::ptr::null()) };
     static MOSS_CURRENT_ROOT_ID: std::cell::Cell<std::option::Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
@@ -535,20 +538,27 @@ pub fn current_root_id() -> std::option::Option<u64> {
 }
 
 /// RAII: install a worker identity for the lifetime of a worker thread.
-struct MossWorkerContextGuard;
+struct MossWorkerContextGuard<'a> {
+    _executor: std::marker::PhantomData<&'a std::sync::Arc<MossGlobalExec>>,
+    // A TLS guard must be dropped on the thread where it installed the pointer.
+    _thread_local: std::marker::PhantomData<std::rc::Rc<()>>,
+}
 
-impl MossWorkerContextGuard {
-    fn enter(worker_id: usize, gx: std::sync::Arc<MossGlobalExec>) -> Self {
+impl<'a> MossWorkerContextGuard<'a> {
+    fn enter(worker_id: usize, gx: &'a std::sync::Arc<MossGlobalExec>) -> Self {
         MOSS_CURRENT_WORKER_ID.with(|c| c.set(Some(worker_id)));
-        MOSS_CURRENT_WORKER_EXEC.with(|c| *c.borrow_mut() = Some(gx));
-        MossWorkerContextGuard
+        MOSS_CURRENT_WORKER_EXEC.with(|c| c.set(gx as *const std::sync::Arc<MossGlobalExec>));
+        MossWorkerContextGuard {
+            _executor: std::marker::PhantomData,
+            _thread_local: std::marker::PhantomData,
+        }
     }
 }
 
-impl Drop for MossWorkerContextGuard {
+impl Drop for MossWorkerContextGuard<'_> {
     fn drop(&mut self) {
         MOSS_CURRENT_WORKER_ID.with(|c| c.set(None));
-        MOSS_CURRENT_WORKER_EXEC.with(|c| *c.borrow_mut() = None);
+        MOSS_CURRENT_WORKER_EXEC.with(|c| c.set(std::ptr::null()));
     }
 }
 
@@ -640,7 +650,7 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
 /// another lock. Lock acquisition is strictly non-nested.
 fn worker_loop(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
     let _abort_guard = MossAbortOnUnwind;
-    let _worker = MossWorkerContextGuard::enter(worker_id, /* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-07 */ std::sync::Arc::clone(gx));
+    let _worker = MossWorkerContextGuard::enter(worker_id, gx);
 
     loop {
         // Phase 1: exit decision or Root work, under gx.inner only.
@@ -1439,8 +1449,15 @@ fn with_current_worker_exec<R>(
 ) -> std::option::Option<R> {
     let worker_id = current_worker_id()?;
     MOSS_CURRENT_WORKER_EXEC.with(|c| {
-        let current = c.borrow();
-        current.as_ref().map(|gx| f(worker_id, gx))
+        let current = c.get();
+        if current.is_null() {
+            return None;
+        }
+        // SAFETY: MossWorkerContextGuard installs this pointer from a borrowed
+        // worker-slot Arc, holds that borrow in PhantomData for the whole guard
+        // lifetime, and clears the pointer in Drop. This callback is synchronous
+        // inside the thread-local access and cannot retain the reference.
+        Some(unsafe { f(worker_id, &*current) })
     })
 }
 

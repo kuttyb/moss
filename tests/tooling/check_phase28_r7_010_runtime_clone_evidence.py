@@ -49,7 +49,6 @@ def audit_marked_runtime_sites(rust: str) -> None:
         "r7-010-runtime-04": ("qualified_clone", "std::sync::Arc::clone(&node)"),
         "r7-010-runtime-05": ("qualified_clone", "std::sync::Arc::clone(&waiter)"),
         "r7-010-runtime-06": ("qualified_clone", "std::sync::Arc::clone(scope)"),
-        "r7-010-runtime-07": ("qualified_clone", "MossWorkerContextGuard::enter(worker_id, std::sync::Arc::clone(gx))"),
         "r7-010-runtime-08": ("qualified_clone", "let gx2 = std::sync::Arc::clone(gx)"),
         "r7-010-runtime-09": ("qualified_clone", "inner.active_executor = Some(std::sync::Arc::clone(&gx))"),
         "r7-010-runtime-10": ("qualified_clone", "let reply = std::sync::Arc::clone(&reply_slot)"),
@@ -86,7 +85,7 @@ def audit_marked_runtime_sites(rust: str) -> None:
         assert span not in bound, f"multiple markers map to one operator: {marker}"
         bound.add(span)
     assert len(operator_spans["dot_clone"]) == 4  # three runtime sites plus one checked copy
-    assert len(operator_spans["qualified_clone"]) == 8
+    assert len(operator_spans["qualified_clone"]) == 7
 
 
 def main() -> None:
@@ -147,6 +146,9 @@ def main() -> None:
         audit_marked_runtime_sites(rust)
         # Marker parsing must fail closed under omission, duplication and text
         # hidden inside a Rust literal.
+        assert "MossWorkerContextGuard::enter(worker_id, gx)" in rust
+        assert "Cell<*const std::sync::Arc<MossGlobalExec>>" in rust
+        assert "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-07" not in rust
         marker = "/* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-04 */"
         assert marker in rust
         for corrupted in (rust.replace(marker, "", 1),
@@ -187,8 +189,9 @@ def main() -> None:
 
         marker_stripped = re.sub(
             rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
+        # Updated after removing the redundant worker-context Arc increment.
         assert hashlib.sha256(marker_stripped).hexdigest() == (
-            "801517768d0e9493b90c66e2aff18f760fdbcbf37b82874fedf5b220c0a60bca")
+            "113847626e46a1ec7e92107fa9c45d207f35664b27eccafcb6c5315f844e45e6")
 
         # Generated runtime lines remain byte-identical to the reviewed
         # implementation after removing marker comments; markers are locators,
@@ -210,7 +213,7 @@ def main() -> None:
         assert [row["origin_kind"] for row in sidecar["occurrences"]].count("unclassified") == 3
 
     print("phase28 R7-010 runtime clone evidence: PASS "
-          "(historical artifact record validated; current output has 11 marked runtime sites, "
+          "(historical artifact record validated; current output has 10 marked runtime sites, "
           "1 checked copy and 3 unauthorized/unclassified direct clones; markers grant no authorization)")
 
 
