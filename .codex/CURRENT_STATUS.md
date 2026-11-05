@@ -15531,16 +15531,16 @@ untouched.
   element consume remains rejected; indexed nonprimitive consumes reject outside
   direct assignment RHS alias formation; indexed Copy consumes become reads.
   The added focused test is
-  `tests/tooling/check_phase28_r7_009_primitive_index.py`. No consumer, oracle,
-  or tests/run.sh files were changed.
+  `tests/tooling/check_phase28_r7_009_primitive_index.py`, registered in
+  `tests/run.sh` by L7 after the implementation commit. No consumer or oracle
+  files were changed.
 - Validation after final source edits: build `moss-dev` and `moss-opt`; focused
   R7-009 harness 5/5; `check_phase28_local_ownership.py` PASS;
   `check_phase28_w12_checker.py` PASS on dev and opt;
   `check_phase28_r7_006_checker_facts.py` PASS; feedback validation and
   `git diff --check` PASS. Full `make check` and `make check-shadow` were not run
   per the scoped targeted-test orchestration.
-- Implementation is locally committed on the scoped branch. Independent
-  adversarial review and push are pending because the shared
-  platform concurrency limit is occupied by the three team leads plus L7.
-  `tests/run.sh` registration is reserved for L7 as shared runner owner.
-  No merge to `phase28-work` or `main`.
+- Implementation and runner registration are locally committed on the scoped
+  branch. Independent adversarial review and push are pending because the
+  shared platform concurrency limit is occupied by the three team leads plus
+  L7. No merge to `phase28-work` or `main`.
