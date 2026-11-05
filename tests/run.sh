@@ -110,6 +110,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_collection_v
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_projected_collection_read_fail_closed.py "$compiler" "$test_build/phase28-projected-read"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_return_value_transfer.py "$compiler" "$test_build/phase28-return-value"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_imported_return_value.py "$compiler" "$test_build/phase28-imported-return-value"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase26_1_1_x1.py "$compiler" "$test_build/phase26-1-1-x1"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_echo_projected_fact.py "$compiler" "$test_build/phase28-echo-projected-fact"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_vector_echo_borrow.py "$compiler" "$test_build/phase28-vector-echo-borrow"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_match_payload_write.py "$compiler"
