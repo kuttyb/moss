@@ -15703,3 +15703,10 @@ untouched.
   scans generated Rust and exact copy facts, maps helper clones, and leaves
   other clones unclassified. L7 requested explicit handling of C's reviewed
   no-helper template rule before wiring artifact output.
+- Team C fixed the order-dependent template-fact check in local commit
+  `8a8129446d20e2d7cbc6654713bb1a82fd0d896a`; L7 cherry-picked it as
+  `6f18c5f7`. The new tests force both canonical fact sort orders across
+  source paths. L7 integration rerun passes 43/43 with the live query compiler
+  and 42/43 plus one intentional skip without it; scanner tests are included.
+  Feedback validation and `git diff --check 04564464..HEAD` pass. Fresh
+  independent review of 8a is pending, so the candidate is not accepted/pushed.
