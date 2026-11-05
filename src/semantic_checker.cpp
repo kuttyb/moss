@@ -27385,6 +27385,27 @@ class Checker {
           fact.specialization_identity += ":perturbed";
         if (std::getenv("MOSS_TEST_PERTURB_MATCH_SCRUTINEE"))
           fact.scrutinee_name += ":perturbed";
+        if (const char* arm_corruption =
+                std::getenv("MOSS_TEST_PERTURB_MATCH_ARM_FIELD")) {
+          if (!fact.arms.empty()) {
+            auto& arm = fact.arms.front();
+            const string field = arm_corruption;
+            if (field == "case_name") arm.case_name += "_perturbed";
+            else if (field == "payload_binding_name" &&
+                     !arm.payload_binding_names.empty())
+              arm.payload_binding_names.front() += "_perturbed";
+            else if (field == "payload_binding_identity" &&
+                     !arm.payload_binding_identities.empty())
+              arm.payload_binding_identities.front() += "_perturbed";
+            else if (field == "payload_type" && !arm.payload_types.empty())
+              arm.payload_types.front() = moss::Type::primitive("int");
+            else if (field == "payload_access")
+              arm.payload_access = arm.payload_access == Effect::Write
+                  ? Effect::Read : Effect::Write;
+            else if (field == "transfers_ownership")
+              arm.transfers_ownership = !arm.transfers_ownership;
+          }
+        }
         const bool drop_match_fact = std::getenv("MOSS_TEST_DROP_MATCH_FACT") != nullptr;
         const bool duplicate_match_fact = std::getenv("MOSS_TEST_DUPLICATE_MATCH_FACT") != nullptr;
         if (!drop_match_fact) {

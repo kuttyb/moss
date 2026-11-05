@@ -232,6 +232,105 @@ int main() {
     forged_collection_operation.require_all_collection_outcome_facts();
   });
 
+  TypedMatchOwnershipRequirementV1 match_req;
+  match_req.statement_occurrence_id = 8;
+  match_req.est_arena_index = 3;
+  match_req.scrutinee_occurrence_id = 21;
+  match_req.specialization_identity = "spec:match";
+  match_req.specialization_context = "fn:match";
+  match_req.scrutinee_binding_identity = "binding:state";
+  match_req.scrutinee_name = "state";
+  match_req.scrutinee_type = Type::primitive("int");
+  match_req.scrutinee_kind = TypedMatchScrutineeKindV1::Enum;
+  TypedMatchArmFactV1 match_arm;
+  match_arm.case_name = "Active";
+  match_arm.payload_binding_names = {"payload"};
+  match_arm.payload_binding_identities = {"fn:match@9:payload"};
+  match_arm.payload_types = {Type::primitive("string")};
+  match_arm.payload_access = Effect::Write;
+  match_req.arms = {match_arm};
+  TypedMatchOwnershipFactV1 match_fact;
+  match_fact.statement_occurrence_id = match_req.statement_occurrence_id;
+  match_fact.est_arena_index = match_req.est_arena_index;
+  match_fact.scrutinee_occurrence_id = match_req.scrutinee_occurrence_id;
+  match_fact.specialization_identity = match_req.specialization_identity;
+  match_fact.specialization_context = match_req.specialization_context;
+  match_fact.scrutinee_binding_identity = match_req.scrutinee_binding_identity;
+  match_fact.scrutinee_name = match_req.scrutinee_name;
+  match_fact.scrutinee_type = match_req.scrutinee_type;
+  match_fact.scrutinee_kind = match_req.scrutinee_kind;
+  match_fact.arms = match_req.arms;
+  match_fact.availability =
+      TypedMatchOwnershipFactV1::Availability::Present;
+  TypedSemanticModuleV1 matches;
+  matches.required_match_occurrences = {match_req};
+  matches.match_ownership_facts = {match_fact};
+  const auto* resolved_match = matches.find_match_ownership_fact(match_req);
+  assert(resolved_match && resolved_match->is_authoritative());
+  auto reject_perturbed_match_arm = [&](const auto& mutate) {
+    auto corrupted = matches;
+    mutate(corrupted.match_ownership_facts.front().arms.front());
+    require_throw([&] {
+      corrupted.find_match_ownership_fact(match_req);
+    });
+  };
+  reject_perturbed_match_arm([](auto& arm) { arm.case_name += "_forged"; });
+  reject_perturbed_match_arm(
+      [](auto& arm) { arm.payload_binding_names.front() += "_forged"; });
+  reject_perturbed_match_arm(
+      [](auto& arm) { arm.payload_binding_identities.front() += "_forged"; });
+  reject_perturbed_match_arm(
+      [](auto& arm) { arm.payload_types.front() = Type::primitive("int"); });
+  reject_perturbed_match_arm([](auto& arm) { arm.payload_access = Effect::Read; });
+  reject_perturbed_match_arm(
+      [](auto& arm) { arm.transfers_ownership = true; });
+  auto missing_match_fact = matches;
+  missing_match_fact.match_ownership_facts.clear();
+  require_throw([&] { missing_match_fact.find_match_ownership_fact(match_req); });
+  auto duplicate_match_fact = matches;
+  duplicate_match_fact.match_ownership_facts.push_back(match_fact);
+  require_throw([&] {
+    duplicate_match_fact.find_match_ownership_fact(match_req);
+  });
+  auto duplicate_match_requirement = matches;
+  duplicate_match_requirement.required_match_occurrences.push_back(match_req);
+  require_throw([&] {
+    duplicate_match_requirement.find_match_ownership_fact(match_req);
+  });
+  auto forged_ordinary_match_access = matches;
+  forged_ordinary_match_access.match_ownership_facts.front().arms.front()
+      .payload_access = Effect::Consume;
+  forged_ordinary_match_access.match_ownership_facts.front().arms.front()
+      .transfers_ownership = true;
+  forged_ordinary_match_access.required_match_occurrences.front().arms.front()
+      .payload_access = Effect::Consume;
+  forged_ordinary_match_access.required_match_occurrences.front().arms.front()
+      .transfers_ownership = true;
+  require_throw([&] {
+    forged_ordinary_match_access.find_match_ownership_fact(
+        forged_ordinary_match_access.required_match_occurrences.front());
+  });
+  auto consuming_match = matches;
+  consuming_match.required_match_occurrences.front().is_consuming = true;
+  consuming_match.match_ownership_facts.front().is_consuming = true;
+  consuming_match.required_match_occurrences.front().arms.front()
+      .payload_access = Effect::Consume;
+  consuming_match.match_ownership_facts.front().arms.front()
+      .payload_access = Effect::Consume;
+  consuming_match.required_match_occurrences.front().arms.front()
+      .transfers_ownership = true;
+  consuming_match.match_ownership_facts.front().arms.front()
+      .transfers_ownership = true;
+  assert(consuming_match.find_match_ownership_fact(
+             consuming_match.required_match_occurrences.front())
+             ->is_authoritative());
+  consuming_match.match_ownership_facts.front().arms.front()
+      .transfers_ownership = false;
+  require_throw([&] {
+    consuming_match.find_match_ownership_fact(
+        consuming_match.required_match_occurrences.front());
+  });
+
   auto map_outcome = queue_outcome;
   map_outcome.operation = TypedCollectionOutcomeFactV1::Operation::MapRemove;
   map_outcome.operation_expression_occurrence_id = 35;
