@@ -151,6 +151,11 @@ def main() -> int:
         (CASES["projected_read"], "MOSS_TEST_DROP_PROJECTED_COLLECTION_READ_FACT"),
         (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_COLLECTION_READ_FACT"),
         (CASES["projected_read"], "MOSS_TEST_DUPLICATE_PROJECTED_COLLECTION_READ_FACT"),
+        (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_MAP_INDEX_OCCURRENCE"),
+        (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_SPECIALIZATION_IDENTITY"),
+        (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_COLLECTION_TYPE"),
+        (CASES["projected_read"], "MOSS_TEST_DROP_PROJECTED_PROVENANCE"),
+        (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_PROVENANCE"),
     ):
         expect_closed(source, hook)
     print("Phase 28 oracle authority facts: PASS")

@@ -16059,3 +16059,28 @@ untouched.
   no consumer or oracle expectation/mapping file was changed in this branch.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass.
   Independent Agent 2 review is pending for the exact frozen commit.
+
+## Projected collection-read authority re-review (2026-11-05)
+
+- Independent Agent 2 returned NO-GO on checker commit
+  `ae80f9e5545b53778533cdf38d10a8875db958c4`. Findings: projected collection
+  type lacked an exact check against the indexed Map value/base types; the
+  phase authority gate compared only an occurrence subset and omitted the Map
+  index ID, projection span/statement, specialization identity, EST context,
+  and provenance; projection corruption tests did not cover these fields; the
+  Team A closeout file had a trailing blank line.
+- Follow-up adds `indexed_value_type` and `projection_base_type` to prove the
+  Map Index result is the member projection base. The projected member type
+  remains distinct (ORACLE-20 is `Map[String, Bucket]` projected to
+  `Bucket.items: Vector[Int]`) and is constrained to a closed supported
+  collection shape with closed type arguments.
+- Exact authority readback now matches both Map Index/member ExprIds, spans,
+  statement IDs, receiver identities/types, key/indexed/projection types,
+  specialization identity/context, EST context, and provenance.
+- Five additional projection corruptions (unrelated index occurrence,
+  specialization identity, invented projection type, missing provenance,
+  mismatched provenance) pass fail-closed check/interpreter/native-generation
+  tests; failed native generation leaves no Rust artifact. Full focused
+  authority suite passes with 23 unique cases, including all prior drop,
+  perturb, duplicate hooks. No new full oracle run has been done after this
+  follow-up yet. The prior native ORACLE-07 consumer blocker remains.

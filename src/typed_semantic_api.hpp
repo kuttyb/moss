@@ -789,6 +789,8 @@ struct TypedProjectedCollectionReadFactV1 {
   std::string receiver_definition_identity;
   TypeRef receiver_type;
   TypeRef key_type;
+  TypeRef indexed_value_type;
+  TypeRef projection_base_type;
   TypeRef projected_collection_type;
   Effect required_access{Effect::Read};
   bool temporary_non_escaping_query_borrow{false};
@@ -810,11 +812,22 @@ struct TypedProjectedCollectionReadFactV1 {
         receiver_type->kind == TypeKind::Builtin && receiver_type->name == "map" &&
         receiver_type->type_args.size() == 2 && key_type && key_type->is_closed() &&
         receiver_type->type_args.front()->structurally_equal(*key_type) &&
+        indexed_value_type && indexed_value_type->is_closed() &&
+        receiver_type->type_args.back()->structurally_equal(*indexed_value_type) &&
+        projection_base_type && projection_base_type->is_closed() &&
+        indexed_value_type->structurally_equal(*projection_base_type) &&
         projected_collection_type && projected_collection_type->is_closed() &&
         projected_collection_type->kind == TypeKind::Builtin &&
         (projected_collection_type->name == "vector" ||
          projected_collection_type->name == "map" ||
          projected_collection_type->name == "queue") &&
+        projected_collection_type->type_args.size() ==
+            (projected_collection_type->name == "map" ? 2u : 1u) &&
+        std::all_of(projected_collection_type->type_args.begin(),
+                    projected_collection_type->type_args.end(),
+                    [](const TypeRef& argument) {
+                      return argument && argument->is_closed();
+                    }) &&
         required_access == Effect::Read && temporary_non_escaping_query_borrow &&
         !specialization_context.empty() && !est_fact_context.empty() &&
         !provenance.source_file.empty() && provenance.line > 0 &&
@@ -2196,28 +2209,65 @@ struct TypedSemanticModuleV1 {
     if (projected_collection_read_facts.size() !=
         required_projected_collection_read_occurrences.size())
       throw std::invalid_argument("projected collection-read fact/requirement set is incomplete");
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left == right ||
+          (left && right && left->structurally_equal(*right));
+    };
+    const auto same_span = [](const est::SourceSpan& left,
+                              const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    const auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                                    const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file &&
+          left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    const auto same_fields = [&](const TypedProjectedCollectionReadFactV1& left,
+                                 const TypedProjectedCollectionReadFactV1& right) {
+      return left.availability == right.availability &&
+          left.est_arena_index == right.est_arena_index &&
+          left.map_index_expression_occurrence_id ==
+              right.map_index_expression_occurrence_id &&
+          left.member_projection_expression_occurrence_id ==
+              right.member_projection_expression_occurrence_id &&
+          left.query_source_expression_occurrence_id ==
+              right.query_source_expression_occurrence_id &&
+          same_span(left.projection_occurrence_span,
+                    right.projection_occurrence_span) &&
+          left.projection_statement_occurrence_id ==
+              right.projection_statement_occurrence_id &&
+          left.query_statement_occurrence_id == right.query_statement_occurrence_id &&
+          left.receiver_binding_identity == right.receiver_binding_identity &&
+          left.receiver_definition_identity == right.receiver_definition_identity &&
+          same_type(left.receiver_type, right.receiver_type) &&
+          same_type(left.key_type, right.key_type) &&
+          same_type(left.indexed_value_type, right.indexed_value_type) &&
+          same_type(left.projection_base_type, right.projection_base_type) &&
+          same_type(left.projected_collection_type,
+                    right.projected_collection_type) &&
+          left.required_access == right.required_access &&
+          left.temporary_non_escaping_query_borrow ==
+              right.temporary_non_escaping_query_borrow &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_provenance(left.provenance, right.provenance);
+    };
     for (const auto& requirement : required_projected_collection_read_occurrences) {
-      std::size_t matches = 0;
+      std::size_t matching_requirements = 0;
+      for (const auto& candidate : required_projected_collection_read_occurrences)
+        matching_requirements += same_fields(candidate, requirement);
+      std::size_t matching_facts = 0;
       for (const auto& candidate : projected_collection_read_facts)
-        if (candidate.est_arena_index == requirement.est_arena_index &&
-            candidate.member_projection_expression_occurrence_id ==
-                requirement.member_projection_expression_occurrence_id &&
-            candidate.query_source_expression_occurrence_id ==
-                requirement.query_source_expression_occurrence_id &&
-            candidate.query_statement_occurrence_id ==
-                requirement.query_statement_occurrence_id &&
-            candidate.specialization_context == requirement.specialization_context &&
-            candidate.receiver_binding_identity == requirement.receiver_binding_identity &&
-            candidate.receiver_definition_identity == requirement.receiver_definition_identity &&
-            candidate.receiver_type == requirement.receiver_type &&
-            candidate.key_type == requirement.key_type &&
-            candidate.projected_collection_type == requirement.projected_collection_type &&
-            candidate.required_access == requirement.required_access &&
-            candidate.temporary_non_escaping_query_borrow ==
-                requirement.temporary_non_escaping_query_borrow &&
-            candidate.is_authoritative())
-          ++matches;
-      if (matches != 1)
+        matching_facts += same_fields(candidate, requirement) &&
+            candidate.is_authoritative();
+      if (matching_requirements != 1 || matching_facts != 1 ||
+          !requirement.is_authoritative())
         throw std::invalid_argument("projected collection-read fact is missing, duplicate, or contradictory");
     }
   }

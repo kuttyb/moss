@@ -2064,6 +2064,29 @@ class Checker {
           !p_.typed_semantics->projected_collection_read_facts.empty())
         p_.typed_semantics->projected_collection_read_facts.front()
             .temporary_non_escaping_query_borrow = false;
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_MAP_INDEX_OCCURRENCE") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty())
+        ++p_.typed_semantics->projected_collection_read_facts.front()
+              .map_index_expression_occurrence_id;
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_SPECIALIZATION_IDENTITY") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty())
+        p_.typed_semantics->projected_collection_read_facts.front()
+            .specialization_identity += ":perturbed";
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_COLLECTION_TYPE") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty()) {
+        auto invented = moss::Type::parse_canonical("vector[string]");
+        if (invented)
+          p_.typed_semantics->projected_collection_read_facts.front()
+              .projected_collection_type = *invented;
+      }
+      if (std::getenv("MOSS_TEST_DROP_PROJECTED_PROVENANCE") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty())
+        p_.typed_semantics->projected_collection_read_facts.front()
+            .provenance.source_file.clear();
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_PROVENANCE") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty())
+        ++p_.typed_semantics->projected_collection_read_facts.front()
+              .provenance.line;
       if (std::getenv("MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT") &&
           !p_.typed_semantics->return_value_facts.empty())
         p_.typed_semantics->return_value_facts.push_back(
@@ -27947,9 +27970,13 @@ class Checker {
           if (member && index && !pipeline->stages.empty()) {
             const auto* receiver_facts = arena->facts(index->base, context);
             const auto* key_facts = arena->facts(index->index, context);
+            const auto* indexed_value_facts = arena->facts(index_id, context);
+            const auto* projection_base_facts = arena->facts(member->base, context);
             const auto* projected_facts = arena->facts(source_id, context);
-            if (receiver_facts && key_facts && projected_facts &&
+            if (receiver_facts && key_facts && indexed_value_facts &&
+                projection_base_facts && projected_facts &&
                 receiver_facts->type && key_facts->type &&
+                indexed_value_facts->type && projection_base_facts->type &&
                 projected_facts->type &&
                 receiver_facts->type->kind == TypeKind::Builtin &&
                 receiver_facts->type->name == "map") {
@@ -27978,6 +28005,8 @@ class Checker {
                 fact.receiver_definition_identity = definition->second;
                 fact.receiver_type = receiver_facts->type;
                 fact.key_type = key_facts->type;
+                fact.indexed_value_type = indexed_value_facts->type;
+                fact.projection_base_type = projection_base_facts->type;
                 fact.projected_collection_type = projected_facts->type;
                 fact.required_access = Effect::Read;
                 fact.temporary_non_escaping_query_borrow = true;
