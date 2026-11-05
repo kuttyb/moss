@@ -15686,3 +15686,6 @@ untouched.
   (`handler:Store.IndexReply@43`). This occurs before lowering. Team A has
   been assigned a minimal checker-only follow-up and focused regression test;
   Team B is continuing without checker edits.
+- Team C's reviewed branch was pushed normally by L7 after its exact SHA GO;
+  `git ls-remote` confirms `refs/heads/phase28-r7-010-team-c-conformance` at
+  `c8ad405e1e8b0f7c4e653b24ce0a9924f972ef37`. No merge was made.
