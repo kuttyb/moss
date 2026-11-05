@@ -1,0 +1,10 @@
+# A fresh owned RHS ends the prior borrowed definition after its last use.
+type Box:
+  num: Int
+
+fn main():
+  a = Box(num = 1)
+  var b = a
+  echo b.num
+  b = Box(num = 2)
+  echo b.num

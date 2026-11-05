@@ -28,7 +28,10 @@ enum class TypeKind {
   Domain,
   TraitConstraint,
   InferenceVar,
-  Unit
+  Unit,
+  // Internal no-normal-result type. The checker uses it only when an exact
+  // checked outcome proves evaluation always raises before producing a value.
+  Never
 };
 
 struct TypeVarId {
@@ -393,6 +396,13 @@ public:
     return t;
   }
 
+  static TypeRef never() {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Never;
+    t->name = "never";
+    return t;
+  }
+
   // Type-argument count of a built-in collection, or nullopt for other names.
   static std::optional<size_t> collection_arity(std::string_view builtin_name) {
     if (builtin_name == "vector" || builtin_name == "queue" ||
@@ -504,6 +514,7 @@ public:
       case TypeKind::Domain:
       case TypeKind::TraitConstraint:
       case TypeKind::Unit:
+      case TypeKind::Never:
         return name;
       case TypeKind::InferenceVar:
         return "_typevar:" + std::to_string(var_id.session_id) + ":" +
@@ -611,6 +622,9 @@ inline void Type::append_type_key(std::string& out, std::vector<std::string>& ac
       return;
     case TypeKind::Unit:
       append_part(out, "unit");
+      return;
+    case TypeKind::Never:
+      append_part(out, "never");
       return;
     case TypeKind::Enum:
     case TypeKind::Domain:
