@@ -15828,7 +15828,7 @@ untouched.
 - Team C clone-capability/conformance audit is independently approved and pushed:
   `2b23276ec0524dacda881856a04a0770baffe634` on
   `origin/phase28-r7-010-team-c-conformance`. Reviewer GO; expectations digest
-  remains `7ca0d550e38f33c47105f7e22f5993d234de924657f23a2` (v2 fixtures
+  remains `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2` (v2 fixtures
   unchanged). The report separately pins 30 derives in the six-file conformance
   comparison set and 28 in Team B's different six-file gate set; derives are
   capabilities, not authorized copy invocations.
