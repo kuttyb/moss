@@ -20,16 +20,18 @@ subtraction or aggregate clone budget is permitted.
 
 ## Separate source operations from emitted Rust operations
 
-The manifest carries two independent lists:
+The manifest carries three correlated lists:
 
 - `source_copy_occurrences`: one entry for every lexically discovered Moss
   `copy(expression)` call, identified by a unique `copy_id`, exact `source_span`,
-  `semantic_status`, `checked_copy_facts`, and `rust_clone_spans`. The fact list
-  contains every exact live checker fact for that lexical occurrence, including
-  one row per specialization. Its rows must match the independent checker query
-  byte-for-byte after canonical JSON encoding. A missing or unavailable fact
-  cannot be marked `implemented`. `rust_clone_spans` is the union of clone spans
-  derived from all per-fact materializer helpers for this lexical occurrence.
+  `semantic_status`, and `rust_clone_spans`. The latter is the union of clone
+  spans derived from all per-fact materializer helpers for this lexical
+  occurrence.
+- `checked_copy_facts`: one group per lexical `copy_id`, containing every exact
+  live checker fact for that occurrence, including one row per specialization.
+  Group rows must match the independent checker query byte-for-byte after
+  canonical JSON encoding. Every source-copy row must have exactly one fact
+  group; a missing or unavailable fact cannot be marked `implemented`.
 - `occurrences`: one entry for every generated Rust `.clone()` call. Every Rust
   occurrence appears exactly once. A row classified `explicit_copy` names the
   responsible lexical `copy_id`; `evidence.semantic_identity` is the full

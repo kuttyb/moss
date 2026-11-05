@@ -257,7 +257,10 @@ When working with Moss:
   `phase28-r7-010-wip-checkpoint`, the user authorized a clearly marked
   checkpoint commit and normal push before team work begins. This checkpoint
   is not an accepted implementation; do not merge it into `phase28-work` or
-  `main`. Subsequent team delivery pushes remain subject to independent review.
+  `main`. For the current Phase 28 R7-010 completion task, the user authorized
+  scoped local commits and normal pushes to the configured remote. Independent
+  review remains an acceptance gate; push authorization does not authorize a
+  merge into `phase28-work` or `main`.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
