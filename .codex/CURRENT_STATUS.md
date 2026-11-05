@@ -16205,3 +16205,8 @@ untouched.
 
 - Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a` is pushed and remote-verified; Agent 2 GO applies to the exact SHA. It adds ORACLE-42's nested `b.elements[1]` Echo borrow to the existing `TypedEchoArgumentFactV1` contract harness, with drop/access/context perturbation checks. No checker or consumer semantics changed.
 - The gate passes all eight baseline/corruption cases. Its fact authorizes only an exact display-only Echo READ borrow with nonescape and `permits_copy=false`. L7 is integrating the reviewed test follow-up; Team B is implementing the native consumer of this existing fact.
+
+## L7 integrated Team A ORACLE-42 authority test checkpoint (2026-11-05)
+
+- Staging merge commit `9dc745fe06ffd1660b8a2a3d30552fe9d93d3c01` integrates exact reviewed Team A test-only SHA `ff55c9b6d29069a814e7c400f5a5c72f09745a0a`.
+- `python3 tests/tooling/check_phase28_echo_argument_authority.py ./moss` passes all eight cases on this source: existing exact nested EchoArgument fact plus drop, access-perturb, and EST-context-perturb fail-closed checks. Team B still needs to consume this authority for ORACLE-42 native lowering.
