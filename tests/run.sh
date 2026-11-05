@@ -102,6 +102,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_r7_009_primitive_i
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_copy_index_authority.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_local_transfer_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_echo_argument_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_root_ingress_capture_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_root_ingress_provenance.py "$compiler"
