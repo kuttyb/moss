@@ -1,3 +1,29 @@
+### Team B checked match projection borrow (2026-11-05)
+
+- Branch `phase28-r7-010-team-b-clone-sites` is based on L7 integration SHA
+  `422d08a4bf3e5d2a34b3bbf34ef3487b9af0131b`.
+- Reviewed implementation commit `4c1093127c068c720661da26271ab572aa04477f`
+  uses exact `TypedMatchOwnershipFactV1::is_consuming` for Native match lowering.
+  For checked READ scrutinees it lowers the place through `read_call_place` and
+  fails closed if the resulting Rust would materialize `clone`, `cloned`, or
+  `to_owned`. Agent 2 gave focused GO on this exact implementation.
+- Test-only commit `7c15378d6717afb22de2ecb78000b930e372496f` adds a nested
+  projection that Fast Debug executes but native lowering rejects with
+  `MOSS_INTERNAL_INVARIANT` and no output artifact. Agent 2 gave focused GO on
+  this exact commit; it does not change implementation code.
+- Passing targeted gates: `make --jobs="$(nproc)"`,
+  `tests/phase28/r7_010/team_b/check_match_projection_read_borrow.py`,
+  `check_match_payload_write.py`, `check_phase28_b4_consumer_fails_closed.py`
+  (21 corruption cases), and `git diff --check`.
+- Focused scope removes one ORACLE-19 nested Option[String] match materialization
+  site. Overall Team B remains NO-GO: ORACLE-13/58 return transfer, ORACLE-20
+  projected READ, Map keys/values views, and runtime clone provenance remain
+  unresolved. No full suites run.
+- Current docs-only developer-experience feedback is captured at
+  `agent-feedback/phase28/team-b-r7-010-native-clone/match-projection-borrow/`.
+  Source/test diff from reviewed `7c15378` is empty; the following commit is
+  documentation/status only.
+
 ### Team B exact bare-raise carrier transfer consumer (2026-11-04)
 
 - Imported Team A's independently approved bare-raise authority commit
