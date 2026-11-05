@@ -16786,3 +16786,21 @@ untouched.
   and artifact paths are in `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`
   and `tmp/r7-010-oracle-e86f02de/`. Overall NO-GO remains; full default and
   EST-shadow suites are outstanding for final acceptance.
+
+### Exact-SHA full regression suites — `e86f02de` (2026-11-05)
+
+- Full default and EST-shadow `tests/run_parallel.py` were run sequentially,
+  once each, against the same isolated dev/optimized compiler binaries from
+  `e86f02de5989808257802a85ac3f1b38073e1961`.
+- Default: **87/167 PASS, 79 FAIL, 1 SKIP**. EST-shadow: **87/167 PASS,
+  79 FAIL, 1 SKIP**. Logs: `tmp/r7-010-e86f02de-default.log` and
+  `tmp/r7-010-e86f02de-shadow.log`. This is below the recorded
+  `phase28-work` baseline (default 166/167 with one known failure; shadow
+  165/167 with two known failures). Existing borrowed-view failure persists;
+  broader Phase 21–27 and package/runtime regressions remain, as do two
+  pinned performance-fixture hash mismatches. `shard_phase5_tooling` skips on
+  its failed `shard_phase4_diff` dependency.
+- The 60-fixture v2 oracle at this SHA is 19/60 all-gate PASS and 41
+  provenance-only FAIL, with 252 unauthorized direct `.clone()` rows and no
+  semantic failures or engine disagreements. Final disposition is **NO-GO**;
+  focused TLS Agent 2 GO is not combined architect acceptance.
