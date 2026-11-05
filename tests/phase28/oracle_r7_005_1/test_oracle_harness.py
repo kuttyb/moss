@@ -63,7 +63,7 @@ class RejectionAndPanicTests(unittest.TestCase):
         source = harness.FIXTURES_DIR / expectation["fixture_file"]
         payload = {"ok": False, "error": {"code": "TYPE_AMBIGUOUS_OPEN_RESULT",
             "severity": "error", "message": "unbound open result type for variable 'r'",
-            "source_file": str(source.resolve()), "line": 10, "column": 3}}
+            "source_file": str(source.resolve()), "line": 6, "column": 3}}
         mapping = harness._diagnostic_doc["mappings"][expectation["fixture_id"]]
         self.assertFalse(harness.validate_rejection_diagnostic(payload, mapping, source)[0])
 

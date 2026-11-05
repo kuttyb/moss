@@ -15434,3 +15434,21 @@ untouched.
   NO-GO because the normative review table still described the rejected generic
   mapping alternative. Corrected that stale table row; final normative
   re-review is pending. No compiler comparison has run.
+
+## 2026-11-04 Phase 28 R7-005.1 implementation-comparison checkpoints
+
+- After normative GO on `0d4aff6ebdccc2810d7aaf15038a5329f0d7a1b4`, the 60-row
+  successor ran against a clean compiler build at frozen R7-008 SHA
+  `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`. Result: 12 full fixture passes,
+  48 failures, 19 semantic failures, 32 missing-provenance blocks, and 476
+  unverified generated Rust clone occurrences. The 19 semantic failures
+  included the then-contextual ORACLE-10B source probe, which received generic
+  `TYPE_MISMATCH` despite the clone-specific normative mapping.
+- A separate early comparison against compiler source at oracle handoff SHA
+  `46619968f64ec618f4cc2576f601b86569399f3c` is not implementation evidence;
+  that SHA is not the R7-008 implementation base and its outputs were discarded.
+- ORACLE-10B was restored to the direct certified v1 fixture source after a
+  focused probe at R7-008 e9 emitted `CLONE_ALIAS_UNSUPPORTED` at the clone
+  assignment. Since this source edit followed the full comparison, the e9
+  60-row result is stale for the current draft and must be rerun only after
+  independent normative re-review. No oracle expectations were changed.

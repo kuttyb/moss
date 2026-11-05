@@ -25,9 +25,9 @@ The successor preserves each parent expected semantic verdict and diagnostic pri
 | ORACLE-30 | Accept `OWNERSHIP_INCOMPATIBLE_JOIN` alongside `OWNERSHIP_MIXED_JOIN`. | R7-008 §6D reports the implementation's incompatible-join diagnostic for the forbidden borrowed/owned live join; proposal §4 rejects an impossible promotion. The frozen baseline result itself was unexpected acceptance, so this mapping must not be treated as proof that behavior is repaired. |
 | ORACLE-34 | Accept `MATCH_READ_BORROW_ACTIVE` alongside `OWNERSHIP_CONFLICTING_ACCESS`. | The certified ledger reports the match-borrow-specific rejection; proposal §6.1 prohibits overwriting the scrutinee while its payload is live. |
 | ORACLE-35 | Accept `BORROWED_ENUM_PAYLOAD_ACCESS` alongside `OWNERSHIP_ILLEGAL_CONSUME`. | The certified ledger reports the borrowed-payload rejection; proposal §6.1 requires ordinary match to borrow and forbids extracting an owned payload. |
-| ORACLE-10B | Keep only `CLONE_ALIAS_UNSUPPORTED`; constrain `v[0].clone()` through `observe(record: Record)` so the result type has a concrete consumer. The v2 harness explicitly rejects `TYPE_AMBIGUOUS_OPEN_RESULT` at the clone source line. | The approved P28-R7-005 addendum reserves explicit duplication for `copy(x)`. The certified baseline reported generic open-result ambiguity for a bare assignment, while R7-008 §6B records the fixture later passing. The first normative review rejected accepting that generic code; this successor changes the probe context and retains only the clone-specific diagnostic. |
+| ORACLE-10B | Keep only `CLONE_ALIAS_UNSUPPORTED`; retain the direct assignment probe from certified v1 (`r = v[0].clone(); echo r.tag`). | This is the original frozen source case; the approved addendum reserves explicit duplication for `copy(x)`. R7-008 report §6B lists ORACLE-10B as passing, and a focused check of the exact v1 source at R7-008 SHA `e9d3f844` emits `CLONE_ALIAS_UNSUPPORTED` at the clone assignment. The temporary contextual-call variant caused a generic call-argument mismatch and has been discarded without changing expectation or mapping. |
 
-The five R7-008 §6D candidates and ORACLE-10B form the six candidate mapping repairs requested. The 10B change was revised after independent NO-GO: the generic alternative was removed and the source probe now constrains the clone result through a concrete consumer.
+The five R7-008 §6D candidates plus the ORACLE-10B source anchor form the six requested diagnostic-mapping corrections. The 10B mapping stays narrow; the fixture retains the frozen v1 source expression and diagnostic contract.
 
 ## Added fixture expectations (candidate)
 
@@ -45,12 +45,17 @@ Please re-review the revised ORACLE-10B fixture/mapping along with the five acce
 - Initial normative review of `53efceae9ebdf8fd38cef8264af963c17e0c0d0` returned
   **NO-GO** only on the ORACLE-10B generic type-diagnostic alternative. The
   reviewer approved ORACLE-03/28/30/34/35 and fixtures 56–59. The generic
-  alternative was removed and the fixture was changed to provide a concrete
-  `Record` consumer. No implementation comparison was run. Re-review is
-  pending on the corrected successor SHA.
+  alternative was removed and the fixture temporarily gained a concrete
+  `Record` consumer. No implementation comparison had run at that checkpoint.
 - Re-review of `13a3cebec067fb65bf65e6d5d6da3a2bc9540644` confirmed that the
   mapping, fixture, negative unit test, earlier accepted candidates, fixture
   expectations, and v1 digest pins were sound, but returned **NO-GO** because
   this table still described the removed generic alternative. The stale row is
-  now corrected. No compiler comparison was run; final normative re-review is
-  pending on the updated SHA.
+  now corrected. Final normative re-review returned GO on
+  `0d4aff6ebdccc2810d7aaf15038a5329f0d7a1b4`.
+- Subsequent comparison against the frozen R7-008 compiler showed the
+  contextual ORACLE-10B probe reports generic `TYPE_MISMATCH`; a focused check
+  of the exact certified v1 source reports `CLONE_ALIAS_UNSUPPORTED` at the
+  clone assignment. The successor now restores the v1 source fixture without
+  changing its expectation or narrow mapping. This source-only revision needs
+  normative re-review before another implementation comparison.
