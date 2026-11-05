@@ -6753,9 +6753,11 @@ class Generator {
       definition << "fn " << helper << "(value: &" << result_type << ") -> "
           << result_type << " { (*value).clone() } ";
     }
+    const string source_place = read_call_place(
+        source_expression, domain, locals, types);
     return "{ " + definition.str() + "/* Moss copy fact call: " +
         identity + " */ " + helper + "(&(" +
-        expr(source_expression, domain, locals, types) + ")) }";
+        source_place + ")) }";
   }
 
   std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(

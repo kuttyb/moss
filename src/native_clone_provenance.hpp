@@ -462,12 +462,14 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
     row.rust_clone_spans.clear();
     source_rows.emplace(row.copy_id, &row);
   }
-  for (std::size_t at = 0; (at = code.find(".clone(", at)) != std::string::npos; at += 7) {
-    const auto span = native_checked_copy_source_span(rust_bytes, at, at + 7);
+  for (std::size_t at = 0; (at = code.find(".clone(", at)) != std::string::npos; at += 8) {
+    if (at + 8 > code.size() || code.substr(at, 8) != ".clone()")
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT clone method has unexpected arguments");
+    const auto span = native_checked_copy_source_span(rust_bytes, at, at + 8);
     const FactBinding* owner = nullptr;
     for (const auto& entry : bindings) {
       const auto& candidate = entry.second;
-      if (candidate.body_end && at >= candidate.body_begin && at + 7 <= candidate.body_end) {
+      if (candidate.body_end && at >= candidate.body_begin && at + 8 <= candidate.body_end) {
         if (owner) throw std::runtime_error("MOSS_INTERNAL_INVARIANT clone lies in overlapping copy helpers");
         owner = &candidate;
       }
@@ -651,7 +653,7 @@ inline void write_native_clone_provenance_v2(
         row.rust_context_span.source_end > rust_bytes.size())
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT clone context does not enclose occurrence");
     if (row.rust_span.source_begin >= row.rust_span.source_end ||
-        rust_bytes.substr(row.rust_span.source_begin, 7) != ".clone(")
+        rust_bytes.substr(row.rust_span.source_begin, 8) != ".clone()")
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT occurrence is not a Rust clone call");
     const auto context = rust_bytes.substr(
         row.rust_context_span.source_begin,
@@ -723,7 +725,7 @@ inline void write_native_clone_provenance_v3(
     for (const auto& clone : source.rust_clone_spans)
       if (clone.source_begin >= clone.source_end ||
           clone.source_end > rust_bytes.size() ||
-          rust_bytes.substr(clone.source_begin, 7) != ".clone(")
+          rust_bytes.substr(clone.source_begin, 8) != ".clone()")
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT invalid clone span on lexical copy row");
   }
@@ -808,7 +810,7 @@ inline void write_native_clone_provenance_v3(
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT clone context does not enclose occurrence");
     if (row.rust_span.source_begin >= row.rust_span.source_end ||
-        rust_bytes.substr(row.rust_span.source_begin, 7) != ".clone(")
+        rust_bytes.substr(row.rust_span.source_begin, 8) != ".clone()")
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT occurrence is not a Rust clone call");
     const auto context = rust_bytes.substr(
