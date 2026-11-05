@@ -15920,3 +15920,27 @@ untouched.
   fails closed at the nonprimitive owned-reply boundary. Keep the phase contract
   blocker recorded; do not relax copy authority or change frozen oracle
   expectations. No full oracle, `make check`, or `make check-shadow` run yet.
+
+## Reply-contract correction and integrated checker revalidation (2026-11-05)
+
+- Team A contract correction `33aaeea39378a70f3d6368dd1fbefc13304cafc0` received
+  independent Agent 2 GO and is pushed to
+  `origin/phase28-r7-010-team-a-reply-contract`; exact remote SHA verified.
+  Checker behavior now rejects direct/aliased nonprimitive indexed String replies
+  without explicit checked `copy(x)`, preserves primitive indexed reply positives,
+  and accepts direct or alias-source checked copies. `phase106d1_read_projection`
+  now uses `reply copy(strings[0])`; its output/storage assertion is unchanged.
+  No frozen v2 oracle files or digests changed.
+- L7 imported the reviewed correction as commit `5903171f`. Rebuilt successfully.
+  Integrated gates pass: R7-009 17/17, borrowed-read (including phase106d1),
+  Echo authority with wrong-context/drop/perturb failures, local ownership,
+  specialized ownership, R7-006, feedback validation, and diff check.
+- Team B captured-carrier recovery test correction `0cb9589f` received focused
+  Agent 2 GO; final status tip `c77333c4`. It keeps the real `reply item`
+  capture, verifies Fast Debug `4\n7`, and exercises carrier forwarding in
+  Native Debug/Optimized. This is a focused patch verdict only. Team B overall
+  remains NO-GO because the six runtime ORACLE-10A clones and wider duplication
+  sites remain unclassified; no Team B push.
+- The integrated ORACLE-10A sidecar still reports 1 fact-authorized explicit
+  copy and 6 unclassified runtime clones. Final combined oracle and full
+  default/EST-shadow suites remain pending focused repair.
