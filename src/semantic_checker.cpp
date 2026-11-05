@@ -1932,6 +1932,56 @@ class Checker {
       p_.typed_semantics->local_ownership_facts = local_ownership_facts_;
       p_.typed_semantics->required_local_ownership_occurrences =
           required_local_ownership_occurrences_;
+      p_.typed_semantics->local_transfer_facts = local_transfer_facts_;
+      p_.typed_semantics->required_local_transfer_occurrences =
+          required_local_transfer_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_LOCAL_TRANSFER_FACT") &&
+          !p_.typed_semantics->local_transfer_facts.empty())
+        p_.typed_semantics->local_transfer_facts.erase(
+            p_.typed_semantics->local_transfer_facts.begin());
+      if (std::getenv("MOSS_TEST_PERTURB_LOCAL_TRANSFER_FACT") &&
+          !p_.typed_semantics->local_transfer_facts.empty()) {
+        const char* field =
+            std::getenv("MOSS_TEST_PERTURB_LOCAL_TRANSFER_FACT");
+        auto& fact = p_.typed_semantics->local_transfer_facts.front();
+        const string selected = field ? field : "source-definition";
+        if (selected == "source-binding")
+          fact.source_binding_identity += ":perturbed";
+        else if (selected == "source-definition")
+          fact.source_definition_identity += ":perturbed";
+        else if (selected == "target-binding")
+          fact.target_binding_identity += ":perturbed";
+        else if (selected == "target-definition")
+          fact.target_definition_identity += ":perturbed";
+        else if (selected == "killed-target-definition")
+          fact.killed_target_definition_identity += ":perturbed";
+        else if (selected == "scope")
+          fact.source_scope_nested_under_target = false;
+        else if (selected == "liveness")
+          fact.source_dead_after_assignment = false;
+        else if (selected == "last-use")
+          ++fact.source_last_use_statement_occurrence_id;
+        else if (selected == "rhs-handle")
+          ++fact.rhs_expression_occurrence_id;
+        else if (selected == "rhs-span")
+          ++fact.rhs_occurrence_span.source_end;
+        else if (selected == "rhs-type")
+          fact.source_type = moss::Type::primitive("Int");
+        else if (selected == "context")
+          fact.est_fact_context += ":perturbed";
+        else if (selected == "specialization")
+          fact.specialization_identity += ":perturbed";
+        else if (selected == "provenance")
+          fact.provenance.source_file += ":perturbed";
+        else if (selected == "owned")
+          fact.source_is_owned = false;
+      }
+      if (std::getenv("MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT") &&
+          !p_.typed_semantics->local_transfer_facts.empty())
+        p_.typed_semantics->local_transfer_facts.push_back(
+            p_.typed_semantics->local_transfer_facts.front());
+#endif
       p_.typed_semantics->loop_ownership_facts = loop_ownership_facts_;
       p_.typed_semantics->required_loop_ownership_occurrences =
           required_loop_ownership_occurrences_;
@@ -2247,6 +2297,41 @@ class Checker {
         for (const auto& requirement :
              p_.typed_semantics->required_copy_occurrences)
           (void)p_.typed_semantics->find_copy_fact(requirement);
+      if (std::getenv("MOSS_TEST_VALIDATE_LOCAL_TRANSFER_CONTRACT"))
+        for (const auto& requirement :
+             p_.typed_semantics->required_local_transfer_occurrences)
+          (void)p_.typed_semantics->find_local_transfer_fact(requirement);
+      if (std::getenv("MOSS_TEST_DUMP_LOCAL_TRANSFER_FACTS"))
+        for (const auto& fact : p_.typed_semantics->local_transfer_facts)
+          std::cerr << "MOSS_LOCAL_TRANSFER_FACT line=" << fact.provenance.line
+                    << " source_definition="
+                    << std::quoted(fact.source_definition_identity)
+                    << " target_definition="
+                    << std::quoted(fact.target_definition_identity)
+                    << " source_scope=" << fact.source_scope_id
+                    << " target_scope=" << fact.target_scope_id
+                    << " action=" << static_cast<int>(fact.action)
+                    << " source_owned=" << fact.source_is_owned
+                    << " source_dead=" << fact.source_dead_after_assignment
+                    << " nested_scope="
+                    << fact.source_scope_nested_under_target
+                    << " last_use="
+                    << fact.source_last_use_statement_occurrence_id
+                    << " source_type="
+                    << std::quoted(fact.source_type
+                        ? fact.source_type->to_canonical_string() : string())
+                    << " target_type="
+                    << std::quoted(fact.target_type
+                        ? fact.target_type->to_canonical_string() : string())
+                    << '\n';
+      if (const char* required_count =
+              std::getenv("MOSS_TEST_REQUIRE_LOCAL_TRANSFER_COUNT")) {
+        const auto expected = static_cast<std::size_t>(std::stoul(required_count));
+        if (p_.typed_semantics->required_local_transfer_occurrences.size() !=
+            expected)
+          throw std::invalid_argument(
+              "checker retained an unexpected local transfer fact count");
+      }
       if (std::getenv("MOSS_TEST_REQUIRE_COPY_FACT") &&
           p_.typed_semantics->required_copy_occurrences.empty())
         throw std::invalid_argument(
@@ -2775,6 +2860,8 @@ class Checker {
   vector<Warning> warnings_;
   vector<TypedLocalOwnershipFactV1> local_ownership_facts_;
   vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences_;
+  vector<TypedLocalTransferFactV1> local_transfer_facts_;
+  vector<TypedLocalTransferRequirementV1> required_local_transfer_occurrences_;
   vector<TypedLoopOwnershipFactV1> loop_ownership_facts_;
   vector<TypedLoopOwnershipRequirementV1>
       required_loop_ownership_occurrences_;
@@ -24298,6 +24385,7 @@ class Checker {
       string source_name;
       string source_binding_identity;
       string source_storage_path;
+      moss::TypeRef value_type;
       Effect demand = Effect::Read;
       bool has_reachable_use = false;
       string join_definition_identity;
@@ -24320,6 +24408,7 @@ class Checker {
     vector<TypedLoopOwnershipFactV1> loop_facts;
     vector<TypedLoopOwnershipRequirementV1> loop_requirements;
     vector<std::vector<uint32_t>> reaching_definitions_by_statement;
+    vector<std::set<string>> live_out;
   };
 
   BodyOwnershipFlowAnalysis analyze_body_ownership_flow(
@@ -24344,6 +24433,9 @@ class Checker {
       def.is_owned = true;
       def.is_borrow = false;
       def.is_mutable = false;
+      if (auto type = env_types.find(name); type != env_types.end())
+        def.value_type = moss::Type::parse_canonical(
+            canonical_type_name(type->second)).value_or(nullptr);
       analysis.definitions.push_back(std::move(def));
     }
 
@@ -24373,7 +24465,11 @@ class Checker {
         const auto local_source = direct_statement_identifier(
             s, est::ExprSlot::Initializer);
         auto source_type = inferred_expr_type(s.b, flow_env_types);
-        if (source_type) flow_env_types[s.a] = *source_type;
+        if (source_type) {
+          flow_env_types[s.a] = *source_type;
+          def.value_type = moss::Type::parse_canonical(
+              canonical_type_name(*source_type)).value_or(nullptr);
+        }
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
         string source_name;
@@ -24423,7 +24519,11 @@ class Checker {
         const auto local_source = direct_statement_identifier(
             s, est::ExprSlot::RhsValue);
         auto source_type = inferred_expr_type(s.b, flow_env_types);
-        if (source_type) flow_env_types[s.a] = *source_type;
+        if (source_type) {
+          flow_env_types[s.a] = *source_type;
+          def.value_type = moss::Type::parse_canonical(
+              canonical_type_name(*source_type)).value_or(nullptr);
+        }
         bool transfers = storage_location(s.b, flow_env_types) && source_type &&
             effect_requires_borrow(*source_type) && !fileio_scoped_type(*source_type);
         string source_name;
@@ -24483,6 +24583,10 @@ class Checker {
           def.is_owned = false;
           def.is_mutable = false;
           def.is_enum_payload = true;
+          auto payload_type = flow_env_types.find(payload);
+          if (payload_type != flow_env_types.end())
+            def.value_type = moss::Type::parse_canonical(
+                canonical_type_name(payload_type->second)).value_or(nullptr);
           immutable_sources.insert(payload);
           def.def_identity = statement_binding_identity(
               current_semantic_context_, s.line) + ":" + payload;
@@ -24602,6 +24706,7 @@ class Checker {
         }
       }
     }
+    analysis.live_out = live_out;
 
     // 5. Solve effects on reaching definitions to a monotone fixed point.
     // The lattice is READ < WRITE < CONSUME and each iteration only raises a
@@ -27647,6 +27752,157 @@ class Checker {
     required_return_value_occurrences_.push_back(std::move(requirement));
   }
 
+  void retain_local_transfer_authority(const Stmt& statement, size_t statement_index,
+                                       const OwnershipEnv& env) {
+    if (std::getenv("MOSS_TEST_DUMP_LOCAL_TRANSFER") &&
+        statement.line >= 860 && statement.line <= 872)
+      std::cerr << "TRANSFER_HELPER line=" << statement.line
+                << " index=" << statement_index
+                << " flow=" << static_cast<bool>(current_ownership_flow_)
+                << " live_size=" << (current_ownership_flow_
+                    ? current_ownership_flow_->live_out.size() : 0)
+                << " rhs=" << statement.b << '\n';
+    if (!current_body_types_ || !current_ownership_flow_ ||
+        statement.kind != Stmt::Kind::Assign ||
+        !tree_simple_identifier(statement.a))
+      return;
+    const auto source_name = direct_statement_identifier(
+        statement, est::ExprSlot::RhsValue);
+    if (!source_name) return;
+    const auto source_binding = env.binding_identities.find(*source_name);
+    const auto source_definition_id =
+        env.definition_identities.find(*source_name);
+    const auto target_binding = env.binding_identities.find(statement.a);
+    const auto target_definition_id =
+        env.definition_identities.find(statement.a);
+    if (source_binding == env.binding_identities.end() ||
+        source_definition_id == env.definition_identities.end() ||
+        target_binding == env.binding_identities.end() ||
+        target_definition_id == env.definition_identities.end())
+      return;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_WITHHOLD_LOCAL_TRANSFER_SOURCE_IDENTITY"))
+      return;
+#endif
+    const BodyOwnershipFlowAnalysis::DefinitionInfo* source = nullptr;
+    const BodyOwnershipFlowAnalysis::DefinitionInfo* target = nullptr;
+    for (const auto& definition : current_ownership_flow_->definitions) {
+      if (definition.def_identity == source_definition_id->second) {
+        if (source) return;
+        source = &definition;
+      }
+      if (definition.def_identity == target_definition_id->second) {
+        if (target) return;
+        target = &definition;
+      }
+    }
+    if (!source || !target || source->is_param || source->is_enum_payload ||
+        source->is_borrow || !source->is_owned ||
+        source->source_storage_path.find(".[]") != string::npos ||
+        !target->is_owned || target->is_borrow || !target->is_mutable ||
+        source->statement_index == SIZE_MAX ||
+        target->statement_index == SIZE_MAX ||
+        source->statement_index >= current_body_types_->statement_occurrences.size() ||
+        target->statement_index >= current_body_types_->statement_occurrences.size() ||
+        statement_index >= current_ownership_flow_->live_out.size())
+      return;
+    bool source_dead_after_assignment =
+        !current_ownership_flow_->live_out[statement_index].count(*source_name);
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_FORCE_LOCAL_TRANSFER_SOURCE_LIVE"))
+      source_dead_after_assignment = false;
+#endif
+    if (!source_dead_after_assignment) return;
+
+    const auto source_scope = current_body_types_->statement_occurrences[
+        source->statement_index].scope_id;
+    const auto target_scope = current_body_types_->statement_occurrences[
+        target->statement_index].scope_id;
+    std::unordered_map<std::uint32_t, std::uint32_t> scope_parent;
+    for (const auto& occurrence : current_body_types_->statement_occurrences)
+      if (occurrence.entered_scope_id != 0)
+        scope_parent[occurrence.entered_scope_id] = occurrence.scope_id;
+    bool source_scope_nested = false;
+    auto scope = source_scope;
+    std::set<std::uint32_t> visited_scopes;
+    while (scope != 0 && visited_scopes.insert(scope).second) {
+      auto parent = scope_parent.find(scope);
+      if (parent == scope_parent.end()) break;
+      scope = parent->second;
+      if (scope == target_scope) {
+        source_scope_nested = source_scope != target_scope;
+        break;
+      }
+    }
+    if (!source_scope_nested) return;
+
+    const auto handle = std::find_if(
+        statement.expression_handles.begin(),
+        statement.expression_handles.end(), [](const est::Handle& candidate) {
+          return candidate.slot == est::ExprSlot::RhsValue &&
+              candidate.argument_index == 0;
+        });
+    if (handle == statement.expression_handles.end()) return;
+    const auto* arena = expression_arena(handle->arena_index);
+    if (!arena || handle->expr >= arena->size()) return;
+    const auto* est_facts = arena->facts(handle->expr, expression_fact_context());
+    const auto rhs_type = est_facts ? est_facts->type : nullptr;
+    const auto source_type = source->value_type;
+    const auto target_type = target->value_type;
+    if (!rhs_type || !source_type || !target_type ||
+        !rhs_type->is_closed() || !source_type->is_closed() ||
+        !target_type->is_closed() || rhs_type->kind != moss::TypeKind::Builtin ||
+        rhs_type->name != "vector" ||
+        !rhs_type->structurally_equal(*source_type) ||
+        !source_type->structurally_equal(*target_type))
+      return;
+    const auto occurrence = current_body_types_->statement_occurrence_ids.find(
+        &statement);
+    if (occurrence == current_body_types_->statement_occurrence_ids.end()) return;
+
+    TypedLocalTransferFactV1 fact;
+    fact.availability = TypedLocalTransferFactV1::Availability::Present;
+    fact.est_arena_index = handle->arena_index;
+    fact.rhs_expression_occurrence_id = handle->expr;
+    fact.rhs_occurrence_span = arena->span(handle->expr);
+    fact.statement_occurrence_id = occurrence->second;
+    fact.source_binding_identity = source_binding->second;
+    fact.source_definition_identity = source_definition_id->second;
+    fact.target_binding_identity = target_binding->second;
+    fact.target_definition_identity =
+        statement_binding_identity(current_semantic_context_, statement.line) +
+        ":" + statement.a;
+    fact.killed_target_definition_identity = target_definition_id->second;
+    fact.source_scope_id = source_scope;
+    fact.target_scope_id = target_scope;
+    fact.source_scope_nested_under_target = source_scope_nested;
+    fact.source_last_use_statement_occurrence_id = occurrence->second;
+    fact.source_is_owned = true;
+    fact.source_dead_after_assignment = source_dead_after_assignment;
+    fact.source_type = source_type;
+    fact.target_type = target_type;
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.est_fact_context = expression_fact_context();
+    fact.provenance.source_file = statement.source_file.empty()
+        ? current_source_file_ : statement.source_file;
+    fact.provenance.line = statement.line;
+    fact.provenance.enclosing_callable_id = current_semantic_context_;
+    string defining_module = p_.main_module;
+    if (starts_with(current_semantic_context_, "fn:")) {
+      auto function = functions_.find(current_semantic_context_.substr(3));
+      if (function != functions_.end())
+        defining_module = function->second->defining_module;
+    }
+    fact.provenance.defining_module_id =
+        program_module_identity(p_, defining_module);
+    if (!fact.is_authoritative()) return;
+    TypedLocalTransferRequirementV1 requirement;
+    static_cast<TypedLocalTransferFactV1&>(requirement) = fact;
+    local_transfer_facts_.push_back(std::move(fact));
+    required_local_transfer_occurrences_.push_back(std::move(requirement));
+  }
+
   OwnershipEnv check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
                                const Domain* current_domain,
                                const Handler* current_handler,
@@ -29349,6 +29605,7 @@ class Checker {
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
           const bool is_indexed_source = !source_root.empty() && !local_source;
+          retain_local_transfer_authority(s, index, env);
           if (transfers && source_binding != env.binding_identities.end() &&
               !source_binding->second.empty() && transfer_type(*source_type) &&
               !env.state_fields.count(s.a) && !targets_object_field &&

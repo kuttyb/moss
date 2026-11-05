@@ -174,6 +174,70 @@ struct TypedLocalOwnershipRequirementV1 {
   Availability availability{Availability::MissingEstOccurrence};
 };
 
+// Exact checker authorization for transferring an owned local into a longer-
+// lived local binding. This narrowly represents a whole-local move at the
+// source definition's final use; it grants no copy or collection-element
+// consume authority.
+struct TypedLocalTransferFactV1 {
+  enum class Action { TransferOwnedValue };
+  enum class Availability {
+    Present, MissingRhsOccurrence, MissingStatementOccurrence,
+    MissingSourceDefinition, MissingTargetDefinition, SourceBorrowed,
+    SourceStillLive, ScopeDoesNotOutliveTarget, TypeMismatch, Contradictory
+  };
+  Availability availability{Availability::MissingRhsOccurrence};
+  Action action{Action::TransferOwnedValue};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId rhs_expression_occurrence_id{UINT32_MAX};
+  est::SourceSpan rhs_occurrence_span;
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string source_binding_identity;
+  std::string source_definition_identity;
+  std::string target_binding_identity;
+  std::string target_definition_identity;
+  std::string killed_target_definition_identity;
+  std::uint32_t source_scope_id{UINT32_MAX};
+  std::uint32_t target_scope_id{UINT32_MAX};
+  bool source_scope_nested_under_target{false};
+  std::uint32_t source_last_use_statement_occurrence_id{UINT32_MAX};
+  bool source_is_owned{false};
+  bool source_dead_after_assignment{false};
+  TypeRef source_type;
+  TypeRef target_type;
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        action == Action::TransferOwnedValue &&
+        est_arena_index != UINT32_MAX &&
+        rhs_expression_occurrence_id != UINT32_MAX &&
+        rhs_occurrence_span.source_end > rhs_occurrence_span.source_begin &&
+        statement_occurrence_id != UINT32_MAX &&
+        !source_binding_identity.empty() &&
+        !source_definition_identity.empty() &&
+        !target_binding_identity.empty() &&
+        !target_definition_identity.empty() &&
+        !killed_target_definition_identity.empty() &&
+        source_scope_id != UINT32_MAX && target_scope_id != UINT32_MAX &&
+        source_scope_id != target_scope_id &&
+        source_scope_nested_under_target &&
+        source_last_use_statement_occurrence_id == statement_occurrence_id &&
+        source_is_owned && source_dead_after_assignment &&
+        source_type && source_type->is_closed() && target_type &&
+        target_type->is_closed() &&
+        source_type->structurally_equal(*target_type) &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty() &&
+        !provenance.enclosing_callable_id.empty();
+  }
+};
+
+struct TypedLocalTransferRequirementV1 : TypedLocalTransferFactV1 {};
+
 // Checker-owned per-definition observations on the shared control-flow edges
 // of a while/for loop. The loop expression and definition EST occurrence make
 // each backedge/exit result addressable without reconstructing source text.
@@ -1239,6 +1303,9 @@ struct TypedSemanticModuleV1 {
   // Checker-owned occurrences where a local ownership fact is required.
   // Whole-record omission of a required fact causes consumer fail-closed.
   std::vector<TypedLocalOwnershipRequirementV1> required_local_ownership_occurrences;
+  std::vector<TypedLocalTransferFactV1> local_transfer_facts;
+  std::vector<TypedLocalTransferRequirementV1>
+      required_local_transfer_occurrences;
   std::vector<TypedLoopOwnershipFactV1> loop_ownership_facts;
   std::vector<TypedLoopOwnershipRequirementV1>
       required_loop_ownership_occurrences;
@@ -1916,6 +1983,111 @@ struct TypedSemanticModuleV1 {
     if (!result->is_authoritative())
       throw std::invalid_argument("required local ownership fact unavailable");
     return *result;
+  }
+
+  const TypedLocalTransferFactV1& find_local_transfer_fact(
+      const TypedLocalTransferRequirementV1& req) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    auto same_span = [](const est::SourceSpan& left,
+                        const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                              const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file &&
+          left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    auto same_contract = [&](const auto& left, const auto& right) {
+      return left.availability == right.availability &&
+          left.action == right.action &&
+          left.est_arena_index == right.est_arena_index &&
+          left.rhs_expression_occurrence_id ==
+              right.rhs_expression_occurrence_id &&
+          same_span(left.rhs_occurrence_span, right.rhs_occurrence_span) &&
+          left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.source_binding_identity == right.source_binding_identity &&
+          left.source_definition_identity == right.source_definition_identity &&
+          left.target_binding_identity == right.target_binding_identity &&
+          left.target_definition_identity == right.target_definition_identity &&
+          left.killed_target_definition_identity ==
+              right.killed_target_definition_identity &&
+          left.source_scope_id == right.source_scope_id &&
+          left.target_scope_id == right.target_scope_id &&
+          left.source_scope_nested_under_target ==
+              right.source_scope_nested_under_target &&
+          left.source_last_use_statement_occurrence_id ==
+              right.source_last_use_statement_occurrence_id &&
+          left.source_is_owned == right.source_is_owned &&
+          left.source_dead_after_assignment ==
+              right.source_dead_after_assignment &&
+          same_type(left.source_type, right.source_type) &&
+          same_type(left.target_type, right.target_type) &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_provenance(left.provenance, right.provenance);
+    };
+    const TypedLocalTransferRequirementV1* required = nullptr;
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate : required_local_transfer_occurrences) {
+      if (!same_contract(candidate, req)) continue;
+      required = &candidate;
+      ++requirement_matches;
+    }
+    if (requirement_matches != 1 || !required)
+      throw std::invalid_argument(requirement_matches
+          ? "duplicate or contradictory local transfer requirement"
+          : "unknown local transfer requirement");
+    const TypedLocalTransferFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : local_transfer_facts) {
+      if (candidate.est_arena_index != req.est_arena_index ||
+          candidate.rhs_expression_occurrence_id !=
+              req.rhs_expression_occurrence_id ||
+          candidate.statement_occurrence_id != req.statement_occurrence_id ||
+          candidate.specialization_identity != req.specialization_identity ||
+          candidate.specialization_context != req.specialization_context) continue;
+      result = &candidate;
+      ++fact_matches;
+    }
+    if (fact_matches != 1 || !result)
+      throw std::invalid_argument(fact_matches
+          ? "duplicate local transfer fact"
+          : "required local transfer fact missing");
+    if (!same_contract(*result, req) || !result->is_authoritative())
+      throw std::invalid_argument(
+          "required local transfer fact missing or contradictory");
+    return *result;
+  }
+
+  const TypedLocalTransferFactV1* find_local_transfer_fact(
+      std::uint32_t arena_index, est::ExprId rhs_expression_occurrence_id,
+      std::uint32_t statement_occurrence_id,
+      const std::string& specialization_context,
+      const std::string& specialization_identity) const {
+    const TypedLocalTransferRequirementV1* result = nullptr;
+    for (const auto& requirement : required_local_transfer_occurrences) {
+      if (requirement.est_arena_index != arena_index ||
+          requirement.rhs_expression_occurrence_id !=
+              rhs_expression_occurrence_id ||
+          requirement.statement_occurrence_id != statement_occurrence_id ||
+          requirement.specialization_context != specialization_context ||
+          requirement.specialization_identity != specialization_identity)
+        continue;
+      if (result)
+        throw std::invalid_argument("duplicate local transfer lookup");
+      result = &requirement;
+    }
+    if (!result)
+      throw std::invalid_argument("required local transfer fact missing");
+    return &find_local_transfer_fact(*result);
   }
 
   const TypedTakeFactV1* find_take_fact(
