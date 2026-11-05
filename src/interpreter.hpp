@@ -3865,6 +3865,51 @@ class FastInterpreter {
     return found_fact;
   }
 
+  const TypedLocalTransferFactV1* resolve_local_transfer_fact(
+      const Stmt& statement, const Frame& frame, int line) const {
+    if (!program_.typed_semantics ||
+        statement.kind != Stmt::Kind::Assign ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      return nullptr;
+    const est::Handle* rhs = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot == est::ExprSlot::RhsValue &&
+          handle.argument_index == 0) {
+        rhs = &handle;
+        break;
+      }
+    }
+    if (!rhs) return nullptr;
+    const std::string context = frame.functional_context.empty()
+        ? "main" : frame.functional_context;
+    const auto& required =
+        program_.typed_semantics->required_local_transfer_occurrences;
+    bool has_requirement = false;
+    for (const auto& candidate : required) {
+      if (candidate.est_arena_index == rhs->arena_index &&
+          candidate.rhs_expression_occurrence_id == rhs->expr &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == frame.specialization_key) {
+        if (has_requirement)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT duplicate local transfer requirement");
+        has_requirement = true;
+      }
+    }
+    if (!has_requirement) return nullptr;
+    try {
+      return program_.typed_semantics->find_local_transfer_fact(
+          rhs->arena_index, rhs->expr,
+          statement.checked_statement_occurrence_id, context,
+          frame.specialization_key);
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+  }
+
   std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
       const Stmt& s, const Frame& frame, int line) const {
     if (!program_.typed_semantics) return {};
@@ -5665,6 +5710,8 @@ class FastInterpreter {
         }
         case Stmt::Kind::Assign: {
           const auto* ownership_fact = resolve_local_ownership_fact(statement, frame, statement.line);
+          const auto* transfer_fact = resolve_local_transfer_fact(
+              statement, frame, statement.line);
           auto target_tree = expression_tree(statement.a, "assignment_target",
               std::pair{est::ExprSlot::LhsPlace, 0u});
           const TypedConditionalCollectionErrorFactV1* conditional_write =
@@ -5696,6 +5743,50 @@ class FastInterpreter {
           } catch (...) {
             active_collection_view_fact_ = previous_collection_view;
             throw;
+          }
+          if (transfer_fact) {
+            auto rhs_tree = expression_tree(statement.b, "local_transfer_rhs",
+                std::pair{est::ExprSlot::RhsValue, 0u});
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_FACT"))
+              transfer_fact = nullptr;
+#endif
+            if (!transfer_fact || !rhs_tree)
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing checked local transfer authority or RHS tree");
+            const auto* source = std::get_if<est::Identifier>(
+                &rhs_tree->arena->at(rhs_tree->root));
+            const auto suffix = [&](const std::string& identity) {
+              const auto separator = identity.rfind(':');
+              return separator == std::string::npos
+                  ? std::string{} : identity.substr(separator + 1);
+            };
+            if (!source || source->name.empty() ||
+                suffix(transfer_fact->source_definition_identity) != source->name ||
+                suffix(transfer_fact->target_definition_identity) != statement.a ||
+                !binding_identifier(statement.a) || statement.a == "_" ||
+                frame.aliases.count(statement.a) ||
+                !frame.locals.count(source->name) ||
+                frame.aliases.count(source->name))
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT checked local transfer does not match runtime bindings source=" +
+                  (source ? source->name : std::string("<non-identifier>")) +
+                  " source_identity=" + transfer_fact->source_definition_identity +
+                  " target=" + statement.a + " target_identity=" +
+                  transfer_fact->target_definition_identity +
+                  " source_local=" + std::to_string(source &&
+                      frame.locals.count(source->name)) +
+                  " source_alias=" + std::to_string(source &&
+                      frame.aliases.count(source->name)));
+            assign(statement.a, std::move(assigned), frame, statement.line,
+                   output, target_tree ? &*target_tree : nullptr,
+                   target_tree ? std::optional<est::ExprId>(target_tree->root)
+                               : std::nullopt);
+            frame.locals.erase(source->name);
+            frame.aliases.erase(source->name);
+            frame.consumed.insert(source->name);
+            frame.local_types[statement.a] = checked_binding_type(statement, frame);
+            break;
           }
           if (ownership_fact && !ownership_fact->killed_definition_identity.empty()) {
             frame.consumed.erase(statement.a);

@@ -1,0 +1,10 @@
+fn main():
+  var target = Vector[Int]()
+  let flag = true
+  if flag:
+    var source = Vector[Int]()
+    source.push(3)
+    target = source
+  else:
+    return
+  echo target |> count

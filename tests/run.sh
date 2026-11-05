@@ -103,6 +103,8 @@ env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_ma
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_copy_index_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_local_transfer_authority.py "$compiler"
+env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/l7/check_local_transfer_interpreter.py "$compiler"
+MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/l7/check_local_transfer_interpreter.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_echo_argument_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_root_ingress_capture_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_root_ingress_provenance.py "$compiler"
