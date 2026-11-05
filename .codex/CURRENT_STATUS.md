@@ -16247,3 +16247,7 @@ untouched.
   earlier on the same generic ReturnValue checker failure (`x1_library.identity`);
   no Section 2 compatibility verdict is claimed until Team A repairs that
   checker defect and the gate reruns.
+- In response to Team B's exact matcher trace, imported in-memory ReturnValue
+  facts now retain the rebuilt EST span (the wire DTO still preserves original
+  source span/fingerprint); this aligns exact remapped identity without
+  relaxing consumer span checks. The build passes after this correction.
