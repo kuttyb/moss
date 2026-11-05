@@ -1,0 +1,9 @@
+# A nonprimitive handler reply moves an owned local under checked authority.
+domain ReplyWorker:
+  fn Text() -> String:
+    let value = "owned"
+    reply value
+
+fn main():
+  worker = ReplyWorker()
+  echo message worker.Text()

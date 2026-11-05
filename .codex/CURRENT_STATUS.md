@@ -26,6 +26,12 @@
 - Durable independent review record is imported unchanged from reviewer commit
   `e2a7da7ca8597a61ab382e272d3fc299756805f0` at
   `docs/phase28/agent2-reviews/R7-010-executor-runtime-3711.md`.
+- Independent inventory for the same 84 generated Rust artifacts finds 1,960
+  lexical duplication candidates across 37 groups: 258 `.clone()`, 672
+  `Arc::clone()`, 756 `.to_string()`, 252 `mem::replace`, 14 `mem::take`, 6
+  `.copied()`, and 2 `String`/`Vec::from`. These are candidates, not proven
+  Moss-value copies, and remain unclassified except the six checked explicit
+  copy materializers.
 - Frozen v2 expectations, runtime registry and certification are unchanged
   (SHA-256 respectively `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`,
   `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`, and

@@ -1257,7 +1257,9 @@ class Generator {
         ? semantic_program_->typed_semantics.get()
         : p_.typed_semantics.get();
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
-    if (!typed_semantics || statement.kind != Stmt::Kind::Return ||
+    if (!typed_semantics ||
+        (statement.kind != Stmt::Kind::Return &&
+         statement.kind != Stmt::Kind::Reply) ||
         statement.a.empty())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked return-value identity unavailable");
@@ -1287,7 +1289,8 @@ class Generator {
       if (owner_count == 1 && owner) {
         vector<const est::Handle*> exact_handles;
         for (const auto& candidate : owner->body)
-          if (candidate.kind == Stmt::Kind::Return &&
+          if ((candidate.kind == Stmt::Kind::Return ||
+               candidate.kind == Stmt::Kind::Reply) &&
               candidate.checked_statement_occurrence_id ==
                   statement.checked_statement_occurrence_id &&
               candidate.line == statement.line &&
@@ -1318,6 +1321,25 @@ class Generator {
     const auto callable_suffix = callable_context.find('<');
     if (callable_suffix != string::npos)
       callable_context.resize(callable_suffix);
+    if (starts_with(callable_context, "handler:")) {
+      const auto failure_arm = callable_context.find(":on_fail:");
+      const auto source_line = callable_context.rfind('@');
+      const auto failure_index = failure_arm == string::npos
+          ? string::npos : failure_arm + 8;
+      const auto numeric_suffix = [&](std::size_t start) {
+        return start != string::npos && start + 1 < callable_context.size() &&
+            std::all_of(callable_context.begin() + start + 1,
+                        callable_context.end(),
+                        [](unsigned char ch) { return std::isdigit(ch); });
+      };
+      if (numeric_suffix(failure_index)) {
+        callable_context.resize(failure_arm);
+        query_context = callable_context;
+      } else if (numeric_suffix(source_line)) {
+        callable_context.resize(source_line);
+        query_context = callable_context;
+      }
+    }
     string query_specialization = specialization;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
@@ -6995,7 +7017,8 @@ class Generator {
   string message_arg(const string& e, const string& type, const Domain* d,
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
-                     size_t functional_pipeline_id = 0) const {
+                     size_t functional_pipeline_id = 0,
+                     const TypedReturnValueFactV1* return_fact = nullptr) const {
     string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (copy_type(t)) return r;
@@ -7008,6 +7031,11 @@ class Generator {
       // root message closure without cloning it again.
       return r;
     }
+    if (return_fact && return_fact->is_authoritative() &&
+        return_fact->action ==
+            TypedReturnValueActionV1::TransferOwnedValue &&
+        return_fact->required_access == Effect::Consume)
+      return r;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT root message payload needs a checked copy(x) fact or exact consume authority");
   }
@@ -10831,13 +10859,16 @@ class Generator {
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
           const auto* take_fact = resolve_take_fact(s, functional_context);
+          const auto* return_fact = resolve_return_value_fact(
+              s, functional_context);
           if (take_fact) {
             o << indent(level) << reply_slot << " = Some("
               << emit_take_expression(*take_fact, s, d, locals, &types) << ");\n";
           } else {
             o << indent(level) << reply_slot << " = Some("
               << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+                  statement_functional_pipeline_id(s, functional_context, 0),
+                  return_fact) << ");\n";
           }
           o << indent(level) << "break 'handler;\n";
           ++i;

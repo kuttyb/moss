@@ -4167,8 +4167,9 @@ class FastInterpreter {
 
   const TypedReturnValueFactV1* resolve_return_value_fact(
       const Stmt& statement, const Frame& frame, int line) const {
-    if (!program_.typed_semantics || statement.kind != Stmt::Kind::Return ||
-        statement.a.empty() ||
+    if (!program_.typed_semantics ||
+        (statement.kind != Stmt::Kind::Return &&
+         statement.kind != Stmt::Kind::Reply) || statement.a.empty() ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked return-value authority unavailable");
@@ -5900,13 +5901,52 @@ class FastInterpreter {
           }
           break;
         }
-        case Stmt::Kind::Reply:
+        case Stmt::Kind::Reply: {
           flow.returned = true;
-          flow.value = independent(evaluate_expression_source(statement.a,
-              frame, statement.line, output,
-              std::pair{est::ExprSlot::ReturnValue, 0u}));
+          const auto* return_fact = resolve_return_value_fact(
+              statement, frame, statement.line);
+          if (return_fact->action ==
+                  TypedReturnValueActionV1::TransferOwnedValue &&
+              !return_fact->source_binding_identity.empty()) {
+            const est::Handle* handle = nullptr;
+            for (const auto& candidate : statement.expression_handles)
+              if (candidate.slot == est::ExprSlot::ReturnValue &&
+                  candidate.argument_index == 0) {
+                handle = &candidate;
+                break;
+              }
+            if (!handle || handle->arena_index >= program_.expression_arenas.size() ||
+                !program_.expression_arenas[handle->arena_index])
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT missing exact checked reply-value EST handle");
+            const auto* arena = program_.expression_arenas[handle->arena_index].get();
+            est::ExprId root = handle->expr;
+            while (root < arena->size()) {
+              const auto* grouped = std::get_if<est::Parenthesized>(
+                  &arena->at(root));
+              if (!grouped) break;
+              root = grouped->inner;
+            }
+            const auto* identifier = root < arena->size()
+                ? std::get_if<est::Identifier>(&arena->at(root)) : nullptr;
+            if (!identifier ||
+                return_fact->source_definition_identity.empty() ||
+                frame.aliases.count(identifier->name) ||
+                !frame.locals.count(identifier->name))
+              throw RuntimeError(statement.line,
+                  "MOSS_INTERNAL_INVARIANT checked reply transfer source is not an owned local");
+            auto source = frame.locals.find(identifier->name);
+            flow.value = std::move(source->second);
+            frame.locals.erase(source);
+            frame.consumed.insert(identifier->name);
+          } else {
+            flow.value = evaluate_expression_source(statement.a, frame,
+                statement.line, output,
+                std::pair{est::ExprSlot::ReturnValue, 0u});
+          }
           emit("reply", frame, statement.line, summary(flow.value));
           return flow;
+        }
         case Stmt::Kind::Raise: {
           if (statement.a.empty()) {
             if (selected_errors_.empty())

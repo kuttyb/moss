@@ -10493,6 +10493,14 @@ class Checker {
         check_stmts(arm.body, arm_env, &d, &h);
         OwnershipEnv arm_ownership;
         arm_ownership.types = arm_env;
+        for (const auto& capture : arm.captures) {
+          arm_ownership.binding_identities[capture.name] =
+              capture.binding_identity;
+          // The Root trailer's checked capture binding is the stable
+          // definition authority available across each selected raise edge.
+          arm_ownership.definition_identities[capture.name] =
+              capture.binding_identity;
+        }
         for (const auto& field : d.state)
           arm_ownership.state_fields.insert(field.name);
         for (const auto& parameter : h.params)
@@ -21339,15 +21347,17 @@ class Checker {
           direct_index_place = std::holds_alternative<est::Index>(arena->at(id));
           break;
         }
-      const string assignment_place = trim(statement.a);
-      direct_index_place = direct_index_place && !assignment_place.empty() &&
-          assignment_place.back() == ']';
       const bool inserts_map_entry = statement.kind == Stmt::Kind::Assign &&
           direct_index_place &&
           tree_parse_index(statement.a, assignment_map_base,
                            assignment_map_key);
+      std::size_t statement_expression_index = 0;
       for (const auto& expression : statement_expressions(statement)) {
-        if (inserts_map_entry && expression == statement.a) continue;
+        const bool skip_map_assignment_place = inserts_map_entry &&
+            statement.kind == Stmt::Kind::Assign &&
+            statement_expression_index == 0;
+        ++statement_expression_index;
+        if (skip_map_assignment_place) continue;
         direct = raise_set_union(
             std::move(direct),
             observable_expression_effects(
@@ -27506,6 +27516,96 @@ class Checker {
     (void)action;
   }
 
+  void retain_reply_value_authority(const Stmt& statement,
+                                    const OwnershipEnv& env,
+                                    const Handler& handler) {
+    TypedReturnValueFactV1 fact;
+    fact.availability = TypedReturnValueFactV1::Availability::Present;
+    if (current_body_types_) {
+      auto occurrence = current_body_types_->statement_occurrence_ids.find(
+          &statement);
+      if (occurrence != current_body_types_->statement_occurrence_ids.end())
+        fact.statement_occurrence_id = occurrence->second;
+    }
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != est::ExprSlot::ReturnValue ||
+          handle.argument_index != 0) continue;
+      fact.est_arena_index = handle.arena_index;
+      fact.expression_occurrence_id = handle.expr;
+      if (const auto* arena = expression_arena(handle.arena_index))
+        fact.expression_occurrence_span = arena->span(handle.expr);
+      break;
+    }
+    fact.expression_type = moss::Type::parse_canonical(
+        canonical_type_name(handler.reply_type.value_or("unit")))
+        .value_or(nullptr);
+    fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_identity = local_ownership_specialization_identity();
+    fact.est_fact_context = expression_fact_context();
+    fact.provenance.source_file = statement.source_file.empty()
+        ? current_source_file_ : statement.source_file;
+    fact.provenance.line = statement.line;
+    fact.provenance.enclosing_callable_id = current_semantic_context_;
+    string defining_module = p_.main_module;
+    if (starts_with(current_semantic_context_, "handler:")) {
+      const string identity = current_semantic_context_.substr(8);
+      auto domain = domains_.find(identity.substr(0, identity.find('.')));
+      if (domain != domains_.end())
+        defining_module = domain->second->defining_module;
+    }
+    fact.provenance.defining_module_id =
+        program_module_identity(p_, defining_module);
+    if (fact.expression_occurrence_id != UINT32_MAX) {
+      auto* arena = expression_arena(fact.est_arena_index);
+      const string source_context = "source:" + fact.provenance.source_file +
+          ":" + std::to_string(fact.provenance.line);
+      const std::array<string, 2> candidate_contexts{
+          current_semantic_context_, source_context};
+      fact.est_fact_context.clear();
+      for (const auto& context : candidate_contexts) {
+        if (arena && arena->facts(fact.expression_occurrence_id, context)) {
+          fact.est_fact_context = context;
+          break;
+        }
+      }
+    }
+    if (fact.expression_type &&
+        fact.expression_type->kind == TypeKind::Primitive &&
+        (fact.expression_type->name == "int" ||
+         fact.expression_type->name == "float" ||
+         fact.expression_type->name == "bool" ||
+         fact.expression_type->name == "char")) {
+      fact.action = TypedReturnValueActionV1::ReadCopyPrimitive;
+      fact.required_access = Effect::Read;
+    } else {
+      fact.action = TypedReturnValueActionV1::TransferOwnedValue;
+      fact.required_access = Effect::Consume;
+      const string source = tree_strip_expression_parens(
+          tree_normalize_pipeline(trim(statement.a)));
+      if (tree_simple_identifier(source)) {
+        auto binding = env.binding_identities.find(source);
+        auto definition = env.definition_identities.find(source);
+        if (binding == env.binding_identities.end())
+          err(statement.line, "checker could not retain reply binding identity",
+              "MOSS_INTERNAL_INVARIANT");
+        fact.source_binding_identity = binding->second;
+        fact.source_definition_identity =
+            definition == env.definition_identities.end()
+                ? binding->second : definition->second;
+      } else {
+        fact.checker_proved_owned_rvalue = true;
+      }
+    }
+    if (!fact.is_authoritative())
+      err(statement.line,
+          "checker could not retain exact handler reply authority",
+          "MOSS_INTERNAL_INVARIANT");
+    TypedReturnValueRequirementV1 requirement;
+    static_cast<TypedReturnValueFactV1&>(requirement) = fact;
+    return_value_facts_.push_back(fact);
+    required_return_value_occurrences_.push_back(std::move(requirement));
+  }
+
   OwnershipEnv check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
                                const Domain* current_domain,
                                const Handler* current_handler,
@@ -27966,13 +28066,23 @@ class Checker {
             (member->name == "keys" || member->name == "values") &&
             seen.insert({handle.arena_index, id}).second) {
           const bool direct_temporary = statement.kind == Stmt::Kind::Echo;
-          const bool bound_result =
-              (statement.kind == Stmt::Kind::Let ||
+          bool bound_result = false;
+          if ((statement.kind == Stmt::Kind::Let ||
                statement.kind == Stmt::Kind::Var ||
                statement.kind == Stmt::Kind::Assign) &&
               tree_simple_identifier(statement.a) &&
-              (statement.b.find(".keys(") != string::npos ||
-               statement.b.find(".values(") != string::npos);
+              handle.argument_index == 0 &&
+              (handle.slot == est::ExprSlot::Initializer ||
+               handle.slot == est::ExprSlot::RhsValue)) {
+            auto root = handle.expr;
+            while (root < arena->size()) {
+              const auto* grouped =
+                  std::get_if<est::Parenthesized>(&arena->at(root));
+              if (!grouped) break;
+              root = grouped->inner;
+            }
+            bound_result = root == id;
+          }
           if (!direct_temporary && !bound_result) {
             auto children = syntax_children(*arena, id);
             pending.insert(pending.end(), children.begin(), children.end());
@@ -29437,6 +29547,8 @@ class Checker {
                   phase28_copy_primitive_type(*type)
               ? Effect::Read : Effect::Consume;
           check_ownership_expression(s.line, s.a, env, reply_access);
+          if (current_handler && current_handler->reply_type)
+            retain_reply_value_authority(s, env, *current_handler);
           record_direct_raise();
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
@@ -29464,10 +29576,19 @@ class Checker {
               auto owner = functions_.find(current_semantic_context_.substr(3));
               if (owner != functions_.end()) return_owner = owner->second;
             }
+            auto checked_return_type = inferred_return_type;
+            if ((!checked_return_type ||
+                 contains_internal_placeholder(*checked_return_type)) &&
+                checking_specialization_ &&
+                checking_specialization_->return_type_ref &&
+                checking_specialization_->return_type_ref->is_closed()) {
+              checked_return_type = checking_specialization_->return_type_ref
+                  ->to_canonical_string();
+            }
             const bool defer_unresolved_return_fact = return_owner &&
-                !checking_specialization_ &&
-                (!inferred_return_type ||
-                 contains_internal_placeholder(*inferred_return_type));
+                (return_owner->generic || return_owner->static_dispatch) &&
+                (!checked_return_type ||
+                 contains_internal_placeholder(*checked_return_type));
             if (!defer_unresolved_return_fact) {
             TypedReturnValueFactV1 fact;
             fact.availability = TypedReturnValueFactV1::Availability::Present;
@@ -29499,7 +29620,7 @@ class Checker {
                 fact.expression_occurrence_span = arena->span(handle.expr);
               break;
             }
-            const auto return_type = inferred_return_type;
+            const auto return_type = checked_return_type;
             if (return_type)
               fact.expression_type = moss::Type::parse_canonical(
                   canonical_type_name(*return_type)).value_or(nullptr);
@@ -34496,7 +34617,7 @@ class Checker {
             current_body_types_->retain_expression_type(
                 occurrence, current_body_types_->solver.fresh(0));
           }
-        } else {
+        } else if (callee != "copy") {
           retain_active_expression_target("builtin:" + callee);
         }
         for (size_t index = 0; index < args.size(); ++index) {

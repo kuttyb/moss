@@ -13,6 +13,8 @@ FIXTURE = ROOT / "tests/phase28/oracle/fixtures/oracle_13_assignment_consume_ret
 SPECIALIZED_FIXTURE = ROOT / "tests/phase28/oracle_r7_005_1/fixtures/oracle_58_specialization_identity_collision.moss"
 EXPECTED = "hello\n"
 SPECIALIZED_EXPECTED = "1\n2\n"
+REPLY_FIXTURE = ROOT / "tests/phase28/r7_010/team_b/owned_reply_authority.moss"
+REPLY_EXPECTED = "owned\n"
 HOOKS = (
     "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT",
     "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_REQUIREMENT",
@@ -73,6 +75,48 @@ def main() -> None:
                 "return-value" not in fast_failure.stderr.lower():
             raise AssertionError(f"{hook}: unrelated Fast Debug failure:\n{fast_failure.stderr}")
 
+    # A handler Reply carries the same checker-owned ReturnValue authority.
+    reply_fast = run([compiler, "run", "--interp", str(REPLY_FIXTURE)])
+    if reply_fast.stdout != REPLY_EXPECTED:
+        raise AssertionError(
+            f"Reply Fast Debug expected {REPLY_EXPECTED!r}, got {reply_fast.stdout!r}")
+    for suffix, flags in (("debug", []), ("optimized", ["-Oshared-memory"])):
+        rust = out / f"owned-reply-{suffix}.rs"
+        run([compiler, *flags, str(REPLY_FIXTURE), "-o", str(rust)])
+        generated = rust.read_text(encoding="utf-8")
+        handler_start = generated.find("fn __moss_body_ReplyWorker_Text")
+        handler_end = generated.find("// Moss tooling end|handler:ReplyWorker.Text", handler_start)
+        if handler_start < 0 or handler_end < 0:
+            raise AssertionError("owned handler Reply function missing from generated Rust")
+        handler = generated[handler_start:handler_end]
+        if "__moss_reply = Some(value);" not in handler:
+            raise AssertionError("owned handler Reply did not transfer its checked value")
+        if ".clone()" in handler or ".to_owned()" in handler:
+            raise AssertionError("owned handler Reply emitted an implicit clone")
+        binary = out / f"owned-reply-{suffix}"
+        run(["rustc", "--edition=2021", str(rust), "-o", str(binary)])
+        native = run([str(binary)])
+        if native.stdout != REPLY_EXPECTED:
+            raise AssertionError(
+                f"Owned Reply Native {suffix} expected {REPLY_EXPECTED!r}, got {native.stdout!r}")
+    for hook in HOOKS:
+        env = os.environ.copy()
+        env[hook] = "1"
+        artifact = out / f"owned-reply-corrupt-{hook}.rs"
+        artifact.unlink(missing_ok=True)
+        failure = run([compiler, str(REPLY_FIXTURE), "-o", str(artifact)],
+                      env=env, expected_ok=False)
+        if "MOSS_INTERNAL_INVARIANT" not in failure.stderr or \
+                "return-value" not in failure.stderr.lower():
+            raise AssertionError(f"Owned Reply {hook}: unrelated failure:\n{failure.stderr}")
+        if artifact.exists():
+            raise AssertionError(f"Owned Reply {hook}: failed generation left an artifact")
+        fast_failure = run([compiler, "run", "--interp", str(REPLY_FIXTURE)],
+                           env=env, expected_ok=False)
+        if "MOSS_INTERNAL_INVARIANT" not in fast_failure.stderr or \
+                "return-value" not in fast_failure.stderr.lower():
+            raise AssertionError(f"Owned Reply Fast Debug {hook}: unrelated failure:\n{fast_failure.stderr}")
+
     specialized_fast = run([compiler, "run", "--interp", str(SPECIALIZED_FIXTURE)])
     if specialized_fast.stdout != SPECIALIZED_EXPECTED:
         raise AssertionError(
@@ -119,6 +163,8 @@ def main() -> None:
     print("failed Native generation leaves no Rust artifact: PASS")
     print("ORACLE-58 specialized ReturnValue Native Debug/Optimized/Fast Debug parity PASS")
     print("ORACLE-58 ReturnValue authority corruption checks: 7/7 hooks across Native and Fast Debug PASS")
+    print("Owned handler Reply: Native Debug/Optimized/Fast Debug parity and no implicit clone PASS")
+    print("Owned handler Reply authority corruption checks: 6/6 hooks across Native and Fast Debug PASS")
 
 
 if __name__ == "__main__":

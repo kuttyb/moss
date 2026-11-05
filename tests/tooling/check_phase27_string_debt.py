@@ -39,7 +39,7 @@ RAW_NAME_COUNTS = {
     ("checker", "pop"): 3, ("checker", "pop_front"): 3,
     ("checker", "assert"): 2, ("checker", "sort"): 1,
     ("checker", "pass"): 1,
-    ("emitter", "consume"): 3, ("emitter", "_"): 1,
+    ("emitter", "consume"): 1, ("emitter", "_"): 1,
     ("emitter", "delete"): 1, ("emitter", "assert"): 1,
     ("emitter", "assertEqual"): 1, ("emitter", "sort"): 1,
     ("emitter", "pop"): 1, ("emitter", "write"): 1,

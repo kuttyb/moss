@@ -19,6 +19,13 @@
   `.clone()`, 8 `Arc::clone()`), but it does not authorize any. Qualified Arc
   calls remain outside the per-artifact v3 `.clone()` sidecar bijection and
   require separate successor audit coverage.
+- Independent scanner inventory over the 84 generated debug/optimized Rust
+  artifacts: **1,960 duplication candidates across 37 site groups** — 258
+  `.clone()`, 672 qualified `Arc::clone()`, 756 `.to_string()`, 252
+  `mem::replace`, 14 `mem::take`, 6 `.copied()`, and 2 `String`/`Vec::from`.
+  This is a lexical inventory, not 1,960 confirmed Moss-value copies; all
+  groups remain subject to source/type/authority mapping. The six direct clones
+  beyond the 252 repeated runtime clones are explicit-copy materializers.
 - The independent reviewer returned **GO for the marker gate as a
   non-authoritative locator only** and **NO authorization for every runtime
   site**. The marker-stripped ORACLE-10A artifact digest matches its pre-marker

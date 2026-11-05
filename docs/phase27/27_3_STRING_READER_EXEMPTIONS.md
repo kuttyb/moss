@@ -29,7 +29,7 @@ lint until reviewed and recorded here.
 | checker | `assert` | 2 | Builtin call name |
 | checker | `sort` | 1 | Builtin call name |
 | checker | `pass` | 1 | No-op keyword |
-| emitter | `consume` | 3 | Effect keyword |
+| emitter | `consume` | 1 | Effect keyword |
 | emitter | `_` | 1 | Binding placeholder |
 | emitter | `delete` | 1 | Map method name |
 | emitter | `assert` | 1 | Builtin call name |
@@ -62,3 +62,10 @@ dynamic string, and rejects a raw `expression`/`expr` comparison against an
 expression-bearing field on the right. The three former expression reads
 found by full CP-E were moved to EST identifier projections or the EST
 `est_binding_name` fact.
+
+Phase 28 R7-010 checked match lowering removed two Native emitter comparisons
+against the `consume` effect keyword. The registered raw NAME count is now 40
+(down from the Phase 27 baseline of 42); the seven raw binding-name comparisons
+remain unchanged. Phase 28 R7-010 also replaced checker Map-view/Map-assignment
+expression-shape checks with exact EST root/slot checks; these are semantic
+authority paths, not new NAME exemptions.

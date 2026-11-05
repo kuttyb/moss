@@ -647,8 +647,10 @@ def main() -> int:
     check(compiler, "nested_return_consume.moss",
           expected_error="OWNERSHIP_USE_AFTER_CONSUME")
     check(compiler, "copy_field_return.moss")
+    # Option[T] is non-Copy under the Phase 28 ownership contract, including
+    # Option[Int]; returning a field through an alias is illegal consumption.
     check(compiler, "option_field_return_consume.moss",
-          expected_error="OWNERSHIP_USE_AFTER_CONSUME")
+          expected_error="OWNERSHIP_ILLEGAL_CONSUME")
     check(compiler, "control_flow_unsupported.moss",
           expected_records=(0, 0, 1))
     check(compiler, "vector_read_iteration.moss",
