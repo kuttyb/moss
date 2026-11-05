@@ -29387,10 +29387,10 @@ class Checker {
                   canonical_type_name(*return_type)).value_or(nullptr);
             fact.specialization_context = local_ownership_consumer_context();
             fact.specialization_identity = local_ownership_specialization_identity();
-            // A specialization has a distinct consumer identity but shares
-            // its source EST occurrence with the generic function body. Point
-            // the fact at that real arena context; the closed specialized
-            // expression_type remains the checker-issued type authority.
+            // Point the fact at an exact retained EST context. Specialized
+            // bodies share source occurrences with their generic declaration;
+            // ordinary bodies may have typed facts under the callable context
+            // even when their source context contains only parser facts.
             fact.est_fact_context = expression_fact_context();
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
@@ -29407,8 +29407,7 @@ class Checker {
             }
             fact.provenance.defining_module_id =
                 program_module_identity(p_, defining_module);
-            if (checking_specialization_ &&
-                fact.expression_occurrence_id != UINT32_MAX) {
+            if (fact.expression_occurrence_id != UINT32_MAX) {
               auto* arena = expression_arena(fact.est_arena_index);
               const string source_context = "source:" +
                   fact.provenance.source_file + ":" +
