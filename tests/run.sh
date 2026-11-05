@@ -100,6 +100,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s3_key_protocol.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adversarial.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_r7_009_primitive_index.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_echo_argument_authority.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_root_ingress_capture_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_bare_raise_transfer.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_oracle_authority_facts.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_clone_provenance_v3_builder.py
