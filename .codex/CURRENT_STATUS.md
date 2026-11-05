@@ -16772,3 +16772,17 @@ untouched.
   seven. No runtime clone site is authorized. Full oracle and default/shadow
   suites have not been rerun for this candidate. Results and source refs are in
   `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`; overall NO-GO remains.
+
+### Fresh oracle after worker-context TLS clone removal — `e86f02de`
+
+- Exact staging SHA `e86f02de5989808257802a85ac3f1b38073e1961`; full certified
+  v2 oracle rerun against its isolated `moss-dev` build. Results: 19/60 all-gate
+  PASS, 41/60 provenance-only failures; semantic/execution expectations 60/60,
+  zero engine disagreements, infrastructure errors, or missing/invalid
+  sidecars. Frozen v2 data/digests were unchanged.
+- The oracle still reports 252 unauthorized direct `.clone()` rows (three
+  repeated runtime sites per artifact). The TLS repair reduced a separate
+  qualified `Arc::clone` operation; the v2 schema does not count it. Details
+  and artifact paths are in `docs/phase28/R7-010_COMBINED_FAILURE_LEDGER.md`
+  and `tmp/r7-010-oracle-e86f02de/`. Overall NO-GO remains; full default and
+  EST-shadow suites are outstanding for final acceptance.
