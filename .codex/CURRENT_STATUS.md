@@ -15464,14 +15464,23 @@ untouched.
   primitive indexed-only, specialization collision, and shadowed-name controls
   pass. Holdout sources, pre-run plan, hashes and reports are being preserved
   under the successor reports directory.
-- The latest 60-fixture R7-008 result on approved source SHA
-  `f74210891202926055ccaa3ce8c077e61ec144cc` is 13 full applicable passes,
-  47 failures, 18 semantic failures, 32 missing-provenance blocks, and 476
-  unverified generated `.clone()` occurrences. Four added fixture findings are
-  ORACLE-56/57 semantic failures (primitive loop use, Map.get write-through),
-  ORACLE-58/59 runtime parity PASS with provenance-only blocks.
+- The final 60-fixture R7-008 result was rerun after all mapping changes at
+  successor source SHA `c808e9fab5187e25703cac42e4be15162516d39d` against exact
+  compiler SHA `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`: 13 passes, 47
+  failures, 18 semantic failures, 32 missing-provenance blocks, and 476
+  unverified generated `.clone()` occurrences. ORACLE-10B passes with its
+  tightened message/source mapping. Added ORACLE-56/57 fail semantically
+  (primitive loop use and Map.get write-through); ORACLE-58/59 pass
+  semantic/runtime checks but remain provenance-blocked. Durable output is in
+  `tests/phase28/oracle_r7_005_1/reports/`.
 - The sixth mapping correction tightens ORACLE-10B to require the exact
   clone-specific diagnostic message and executable source line, retaining the
-  byte-identical v1 fixture and expectation. Its validator unit tests pass
-  18/18 and data validation passes 60/60. Independent review is required before
-  rerunning the implementation comparison with this mapping revision.
+  byte-identical v1 fixture and expectation. Independent normative review
+  returned GO, the reviewer-controlled holdouts received oracle-spec GO and
+  integrity PASS, and the v2 expectations/mapping were frozen. V1 digests
+  remain pinned and the v1 package is unchanged. Final v2 expectation digest is
+  `7ca0d550e38f33c47105f57e22f5993d23449bf09c1cd5da043de924657f23a2`.
+- Validation: v2 `--validate-only` reports `CERTIFIED_FROZEN`; oracle harness
+  unit tests pass 18/18; agent-feedback validation and `git diff --check` pass.
+  Exact final artifact review is pending on SHA
+  `f78e51ce04186a57033979b409cc4dcf73e1ce0e`; then push the scoped branch only.
