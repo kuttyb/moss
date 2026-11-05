@@ -683,7 +683,7 @@ class FastInterpreter {
 
   struct Value {
     using HashIndex = std::unordered_map<std::int64_t, std::vector<size_t>>;
-    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, BorrowedVector, Queue, Map, Set, DomainHandle, Char } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, BorrowedVector, BorrowedElement, Queue, Map, Set, DomainHandle, Char } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -692,6 +692,8 @@ class FastInterpreter {
     DomainValue* domain = nullptr;
     std::shared_ptr<StructValue> object;
     std::shared_ptr<std::vector<Value>> vector;
+    std::shared_ptr<std::vector<Value>> borrowed_elements;
+    size_t borrowed_element_index = 0;
     std::shared_ptr<std::vector<std::pair<Value, Value>>> borrowed_map_view;
     bool borrowed_map_keys = false;
     std::shared_ptr<std::vector<Value>> queue;
@@ -717,6 +719,8 @@ class FastInterpreter {
     static Value borrowed_map_view_value(
         std::shared_ptr<std::vector<std::pair<Value, Value>>> map,
         bool keys, std::string element_type = {});
+    static Value borrowed_element_value(
+        std::shared_ptr<std::vector<Value>> values, size_t index);
     static Value queue_value();
     static Value map_value();
     static Value set_value();
@@ -757,6 +761,13 @@ class FastInterpreter {
           }
         return out + "]";
       }
+      case Value::Kind::BorrowedElement:
+        if (!value.borrowed_elements ||
+            value.borrowed_element_index >= value.borrowed_elements->size())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked Echo borrowed element is unavailable");
+        return echo_text(
+            value.borrowed_elements->at(value.borrowed_element_index), line);
       default:
         throw RuntimeError(line, "[ECHO_DISPLAY_UNSUPPORTED] echo cannot display this "
                                  "value; echo supports Int, Float, Bool, Char, String, "
@@ -909,6 +920,7 @@ class FastInterpreter {
   const TypedCollectionViewFactV1* active_collection_view_fact_ = nullptr;
   const TypedProjectedCollectionReadFactV1*
       active_projected_collection_read_fact_ = nullptr;
+  const TypedEchoArgumentFactV1* active_echo_argument_fact_ = nullptr;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
   const RaiseSet* active_checked_exceptional_alternatives_ = nullptr;
   Options options_;
@@ -2462,6 +2474,15 @@ class FastInterpreter {
         if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
             static_cast<std::uint64_t>(index.integer) >= values->size())
           throw RuntimeError(line, "vector index out of bounds");
+        if (active_echo_argument_fact_ &&
+            active_echo_argument_fact_->mode ==
+                TypedEchoArgumentModeV1::BorrowedVectorElement &&
+            tree->arena_index == active_echo_argument_fact_->est_arena_index &&
+            current_root == active_echo_argument_fact_->indexed_expression_occurrence_id &&
+            index_node->base == active_echo_argument_fact_->receiver_occurrence_id &&
+            index_node->index == active_echo_argument_fact_->selector_occurrence_id)
+          return Value::borrowed_element_value(
+              values, static_cast<size_t>(index.integer));
         return values->at(static_cast<size_t>(index.integer));
       }
     }
@@ -3332,6 +3353,8 @@ class FastInterpreter {
             return false;
         }
         return true;
+      case Value::Kind::BorrowedElement:
+        return false;
       case Value::Kind::Queue:
         if (!left.queue || !right.queue || left.queue->size() != right.queue->size()) return !left.queue && !right.queue;
         for (size_t i = 0; i < left.queue->size(); ++i) if (!equal((*left.queue)[i], (*right.queue)[i])) return false;
@@ -4115,7 +4138,8 @@ class FastInterpreter {
 
   const TypedReturnValueFactV1* resolve_return_value_fact(
       const Stmt& statement, const Frame& frame, int line) const {
-    if (!program_.typed_semantics || statement.a.empty() ||
+    if (!program_.typed_semantics || statement.kind != Stmt::Kind::Return ||
+        statement.a.empty() ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked return-value authority unavailable");
@@ -4131,31 +4155,81 @@ class FastInterpreter {
     if (!handle || handle->arena_index >= program_.expression_arenas.size() ||
         !program_.expression_arenas[handle->arena_index])
       throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT missing checked return-value EST handle");
+          "MOSS_INTERNAL_INVARIANT missing exact checked return-value EST handle");
     const std::string context = frame.functional_context.empty()
         ? "main" : frame.functional_context;
+    std::string query_context = context;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT"))
+      query_context += ":wrong-context";
+#endif
+    std::string callable_context = context;
+    const auto callable_suffix = callable_context.find('<');
+    if (callable_suffix != std::string::npos)
+      callable_context.resize(callable_suffix);
+    std::string query_specialization = frame.specialization_key;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
+      query_specialization += ":wrong-specialization";
+#endif
+    auto fact_is_from_exact_imported_owner =
+        [&](const TypedReturnValueFactV1& candidate) {
+      std::string callable = callable_context;
+      if (callable.rfind("fn:", 0) == 0) callable.erase(0, 3);
+      const Function* owner = nullptr;
+      std::size_t owner_count = 0;
+      for (const auto& function : program_.functions)
+        if (function.name == callable) {
+          owner = &function;
+          ++owner_count;
+        }
+      if (owner_count != 1 || !owner) return false;
+      const std::string module = module_name_from_symbol(owner->name);
+      if (module.empty() || !program_.external_modules.count(module))
+        return false;
+      const auto module_identity = program_.module_identities.find(module);
+      return module_identity != program_.module_identities.end() &&
+          !module_identity->second.empty() &&
+          candidate.provenance.defining_module_id == module_identity->second &&
+          candidate.provenance.enclosing_callable_id == callable_context &&
+          !statement.source_file.empty() &&
+          candidate.provenance.source_file == statement.source_file;
+    };
     const TypedReturnValueRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
-    for (const auto& candidate :
-         program_.typed_semantics->required_return_value_occurrences) {
-      if (candidate.statement_occurrence_id ==
-              statement.checked_statement_occurrence_id &&
+    const auto occurrence_span =
+        program_.expression_arenas[handle->arena_index]->span(handle->expr);
+    auto matches_return_identity = [&](const TypedReturnValueFactV1& candidate) {
+      return candidate.statement_occurrence_id ==
+                  statement.checked_statement_occurrence_id &&
           candidate.est_arena_index == handle->arena_index &&
           candidate.expression_occurrence_id == handle->expr &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key) {
+          candidate.expression_occurrence_span.source_begin ==
+              occurrence_span.source_begin &&
+          candidate.expression_occurrence_span.source_end ==
+              occurrence_span.source_end &&
+          candidate.expression_occurrence_span.line == occurrence_span.line &&
+          candidate.expression_occurrence_span.column == occurrence_span.column &&
+          candidate.expression_occurrence_span.origin_id == occurrence_span.origin_id &&
+          candidate.provenance.line == statement.line &&
+          candidate.provenance.enclosing_callable_id == callable_context &&
+          (statement.source_file.empty() ||
+           candidate.provenance.source_file == statement.source_file) &&
+          candidate.specialization_context == query_context &&
+          candidate.specialization_identity == query_specialization &&
+          (!handle || (candidate.est_arena_index == handle->arena_index &&
+                       candidate.expression_occurrence_id == handle->expr));
+    };
+    for (const auto& candidate :
+         program_.typed_semantics->required_return_value_occurrences) {
+      if (matches_return_identity(candidate)) {
         requirement = &candidate;
         ++requirement_count;
       }
     }
     for (const auto& candidate : program_.typed_semantics->return_value_facts)
-      if (candidate.statement_occurrence_id ==
-              statement.checked_statement_occurrence_id &&
-          candidate.est_arena_index == handle->arena_index &&
-          candidate.expression_occurrence_id == handle->expr &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key)
+      if (matches_return_identity(candidate))
         ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT"))
@@ -4178,23 +4252,192 @@ class FastInterpreter {
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed return-value authority unexpectedly passed");
       }
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
+        auto corrupted = *requirement;
+        corrupted.provenance.defining_module_id += ":wrong-module";
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed imported ReturnValue module authority unexpectedly passed");
+      }
 #endif
       const auto* fact =
           program_.typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
-      const auto* arena = program_.expression_arenas[handle->arena_index].get();
-      const auto* expression_facts = arena->facts(handle->expr, context);
-      if (!expression_facts || !expression_facts->type || !fact->expression_type ||
-          !expression_facts->type->structurally_equal(*fact->expression_type))
+      if (fact->est_arena_index >= program_.expression_arenas.size() ||
+          !program_.expression_arenas[fact->est_arena_index] ||
+          !fact->expression_type ||
+          !fact->expression_type->is_closed())
         throw std::invalid_argument(
-            "return-value type does not match exact EST occurrence");
+            "return-value fact lacks a closed type for exact specialized EST occurrence");
+      const auto* arena = program_.expression_arenas[fact->est_arena_index].get();
+      if (fact->expression_occurrence_id >= arena->size())
+        throw std::invalid_argument("return-value EST occurrence is out of range");
+      const auto* occurrence = arena->facts(handle->expr,
+                                             fact->est_fact_context);
+      if (!occurrence || !occurrence->type) {
+        if (!fact_is_from_exact_imported_owner(*fact))
+          throw std::invalid_argument(
+              "return-value EST type fact missing outside exact imported owner");
+      } else if (occurrence->type->is_closed()
+              ? !occurrence->type->structurally_equal(*fact->expression_type)
+              : occurrence->type->kind != TypeKind::InferenceVar) {
+        throw std::invalid_argument(
+            "ReturnValue fact does not bind a concrete or generic EST type at checked context");
+      }
       return fact;
     } catch (const RuntimeError&) {
       throw;
     } catch (const std::exception& error) {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+  }
+
+  const TypedEchoArgumentFactV1* resolve_echo_argument_fact(
+      const Stmt& statement, std::uint32_t argument_index,
+      const Frame& frame, int line) const {
+    if (statement.kind != Stmt::Kind::Echo)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked Echo argument identity unavailable");
+    std::string context = frame.functional_context.empty()
+        ? "main" : frame.functional_context;
+    if (!statement.echo_types_by_context.count(context)) {
+      if (!statement.echo_types_by_context.count(std::string()))
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
+      context.clear();
+    }
+    const auto& checked_types = statement.echo_types_by_context.at(context);
+    if (argument_index >= checked_types.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked Echo argument type missing");
+    const auto checked_type = moss::Type::parse_canonical(
+        checked_types[argument_index]);
+    const bool primitive_value = checked_type && *checked_type &&
+        ( (*checked_type)->kind == TypeKind::Primitive ) &&
+        ((*checked_type)->name == "Int" || (*checked_type)->name == "int" ||
+         (*checked_type)->name == "Float" || (*checked_type)->name == "float" ||
+         (*checked_type)->name == "Bool" || (*checked_type)->name == "bool" ||
+         (*checked_type)->name == "Char" || (*checked_type)->name == "char" ||
+         (*checked_type)->name == "Byte" || (*checked_type)->name == "byte" ||
+         (*checked_type)->name == "i64" || (*checked_type)->name == "f64" ||
+         (*checked_type)->name == "u8");
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::Argument ||
+          candidate.argument_index != argument_index) continue;
+      if (handle)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT duplicate checked Echo argument handle");
+      handle = &candidate;
+    }
+    if ((!handle || statement.checked_statement_occurrence_id == UINT32_MAX) &&
+        primitive_value)
+      return nullptr;
+    if (!program_.typed_semantics ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked Echo argument identity unavailable");
+    if (!handle || handle->arena_index >= program_.expression_arenas.size() ||
+        !program_.expression_arenas[handle->arena_index])
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked Echo argument EST handle missing");
+    try {
+#ifdef MOSS_TEST_BUILD
+      auto& requirements = program_.typed_semantics->required_echo_argument_occurrences;
+      auto req = std::find_if(requirements.begin(), requirements.end(),
+          [&](const TypedEchoArgumentRequirementV1& item) {
+            return item.est_arena_index == handle->arena_index &&
+                item.argument_expression_occurrence_id == handle->expr &&
+                item.argument_index == argument_index &&
+                item.specialization_context == context;
+          });
+      const bool borrowed_requirement = req != requirements.end() &&
+          req->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_requirement && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_REQUIREMENT"))
+        requirements.erase(req);
+      else if (borrowed_requirement && std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_REQUIREMENT"))
+        requirements.push_back(*req);
+      auto& facts = program_.typed_semantics->echo_argument_facts;
+      auto fact_it = std::find_if(facts.begin(), facts.end(),
+          [&](const TypedEchoArgumentFactV1& item) {
+            return item.est_arena_index == handle->arena_index &&
+                item.argument_expression_occurrence_id == handle->expr &&
+                item.argument_index == argument_index &&
+                item.specialization_context == context;
+          });
+      const bool borrowed_fact = fact_it != facts.end() &&
+          fact_it->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
+      if (borrowed_fact && std::getenv(
+              "MOSS_TEST_CONSUMER_DROP_ECHO_ARGUMENT_FACT"))
+        facts.erase(fact_it);
+      else if (borrowed_fact && std::getenv(
+                   "MOSS_TEST_CONSUMER_DUPLICATE_ECHO_ARGUMENT_FACT"))
+        facts.push_back(*fact_it);
+      else if (borrowed_fact && std::getenv(
+                   "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT"))
+        fact_it->required_access = Effect::Consume;
+#endif
+      std::string query_context = context;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
+        query_context += ":wrong-context";
+#endif
+      const auto& requirement = program_.typed_semantics->find_echo_argument_requirement(
+          handle->arena_index, handle->expr, argument_index, query_context);
+      auto exact_requirement = requirement;
+#ifdef MOSS_TEST_BUILD
+      if (requirement.mode == TypedEchoArgumentModeV1::BorrowedVectorElement &&
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
+        exact_requirement.est_fact_context += ":consumer-perturbed";
+#endif
+      const auto& fact = program_.typed_semantics->find_echo_argument_fact(
+          exact_requirement);
+      if (fact.echo_statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          fact.specialization_identity != frame.specialization_key ||
+          !fact.is_authoritative() || fact.required_access != Effect::Read ||
+          !fact.display_result_non_escaping || fact.permits_copy)
+        throw std::invalid_argument(
+            "checked Echo argument fact is not authoritative for exact display");
+      if (fact.mode == TypedEchoArgumentModeV1::BorrowedVectorElement) {
+        const auto& arena = *program_.expression_arenas[handle->arena_index];
+        est::ExprId root = handle->expr;
+        while (root < arena.size()) {
+          const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(root));
+          if (!grouped) break;
+          root = grouped->inner;
+        }
+        const auto* index = root < arena.size()
+            ? std::get_if<est::Index>(&arena.at(root)) : nullptr;
+        if (root != fact.indexed_expression_occurrence_id || !index ||
+            index->base != fact.receiver_occurrence_id ||
+            index->index != fact.selector_occurrence_id)
+          throw std::invalid_argument(
+              "borrowed Echo argument receiver/selector identity mismatch");
+      }
+      return &fact;
+    } catch (const RuntimeError&) {
+      throw;
+    } catch (const std::exception& error) {
+      std::string rows;
+      for (const auto& candidate :
+           program_.typed_semantics->required_echo_argument_occurrences) {
+        if (!rows.empty()) rows += ",";
+        rows += "a=" + std::to_string(candidate.est_arena_index) +
+            "/e=" + std::to_string(candidate.argument_expression_occurrence_id) +
+            "/i=" + std::to_string(candidate.argument_index) +
+            "/c=" + candidate.specialization_context;
+      }
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()) +
+          " [query=" + std::to_string(handle->arena_index) + "/" +
+          std::to_string(handle->expr) + "/" +
+          std::to_string(argument_index) + "/" + context +
+          ", requirements=" + rows + "]");
     }
   }
 
@@ -5412,6 +5655,8 @@ class FastInterpreter {
           std::vector<std::string> rendered_args;
           rendered_args.reserve(statement.args.size());
           for (size_t i = 0; i < statement.args.size(); ++i) {
+            const auto* echo_fact = resolve_echo_argument_fact(
+                statement, static_cast<std::uint32_t>(i), frame, statement.line);
             auto argument_tree = expression_tree(statement.args[i],
                 "collection_view_echo", std::pair{est::ExprSlot::Argument,
                     static_cast<std::uint32_t>(i)});
@@ -5426,8 +5671,10 @@ class FastInterpreter {
             const auto* previous_collection_view = active_collection_view_fact_;
             const auto* previous_projected_read =
                 active_projected_collection_read_fact_;
+            const auto* previous_echo_argument = active_echo_argument_fact_;
             active_collection_view_fact_ = collection_view;
             active_projected_collection_read_fact_ = projected_read;
+            active_echo_argument_fact_ = echo_fact;
             try {
               rendered_args.push_back(echo_text(evaluate_expression_source(
                   statement.args[i], frame, statement.line, output,
@@ -5435,9 +5682,11 @@ class FastInterpreter {
                             static_cast<std::uint32_t>(i)}), statement.line));
               active_collection_view_fact_ = previous_collection_view;
               active_projected_collection_read_fact_ = previous_projected_read;
+              active_echo_argument_fact_ = previous_echo_argument;
             } catch (...) {
               active_collection_view_fact_ = previous_collection_view;
               active_projected_collection_read_fact_ = previous_projected_read;
+              active_echo_argument_fact_ = previous_echo_argument;
               throw;
             }
           }
@@ -5653,6 +5902,14 @@ inline FastInterpreter::Value FastInterpreter::Value::borrowed_map_view_value(
   result.element_type = std::move(element_type);
   return result;
 }
+inline FastInterpreter::Value FastInterpreter::Value::borrowed_element_value(
+    std::shared_ptr<std::vector<Value>> values, size_t index) {
+  Value result;
+  result.kind = Kind::BorrowedElement;
+  result.borrowed_elements = std::move(values);
+  result.borrowed_element_index = index;
+  return result;
+}
 inline FastInterpreter::Value FastInterpreter::Value::queue_value() {
   Value result; result.kind = Kind::Queue;
   result.queue = std::make_shared<std::vector<Value>>();
@@ -5767,6 +6024,9 @@ inline std::string FastInterpreter::Value::display() const {
         }
       out << "]";
       return out.str();
+    case Kind::BorrowedElement:
+      return borrowed_elements && borrowed_element_index < borrowed_elements->size()
+          ? borrowed_elements->at(borrowed_element_index).display() : "<borrowed>";
     case Kind::Queue:
       out << "Queue(" << (queue ? std::to_string(queue->size()) : "0") << ")";
       return out.str();

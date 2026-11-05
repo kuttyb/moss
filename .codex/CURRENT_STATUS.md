@@ -16251,3 +16251,26 @@ untouched.
   facts now retain the rebuilt EST span (the wire DTO still preserves original
   source span/fingerprint); this aligns exact remapped identity without
   relaxing consumer span checks. The build passes after this correction.
+
+## Team B ReturnValue/Echo consumer follow-up (2026-11-05)
+
+- Consumer WIP includes exact imported ReturnValue fact consumption in Native
+  and Fast Debug. Missing EST type facts are accepted only for a uniquely
+  identified external callable with matching module ID, source file, callable,
+  specialization and context; local missing facts and present type mismatches
+  remain fail-closed.
+- Imported ORACLE-54 Margo Debug parity passes with output
+  `imported_missing_key`; 8 consumer requirement/fact/context/module corruption
+  cases fail closed, and dropped/perturbed `.mossi` artifact facts are rejected
+  before execution (2/2).
+- Focused gates pass on the transport-integrated source: ORACLE-13 parity and
+  six corruption cases; ORACLE-58 Native Debug/Optimized/Fast Debug parity and
+  seven corruption cases; ORACLE-39/42 Echo parity and seven corruption cases;
+  projected Echo provider fact lookup and seven corruption cases; conditional
+  Map direct-read/write-through parity and 20 corruption combinations. A clean
+  ORACLE-54 provider Margo native build reports `native_checked`.
+- The exact provider-source span had a parser-column offset in the imported
+  EST; L7 validates original wire span/fingerprint and remaps the in-memory
+  fact to the rebuilt span. The consumer retains exact span matching.
+- Current consumer changes are uncommitted and awaiting Team B freeze/review.
+  Broader clone provenance remains NO-GO; no runtime clone authority is added.
