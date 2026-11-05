@@ -218,4 +218,9 @@ These mappings document concrete types and callsites only. They do not grant a
 runtime-mechanical exception or semantic authorization; all six runtime sites
 remain unclassified pending L7-approved provenance. The bounded regression
 `tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py` pins the artifact
-and source hashes and asserts the evidence rows remain unclassified.
+and source hashes, generates the fixture through the supplied compiler, checks
+all seven raw clone spans and six runtime expression mappings, verifies the
+sidecar result (`1` checked copy, `6` unauthorized/unclassified runtime clones),
+and asserts the evidence rows remain unclassified. From the repository root,
+run `python3 tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py
+./moss`.
