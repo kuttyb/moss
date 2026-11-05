@@ -1,13 +1,13 @@
 {
   "format": "moss-phase28-oracle-expectations",
   "version": 2,
-  "approval_status": "DRAFT_PENDING_L7_APPROVAL",
+  "approval_status": "CERTIFIED_FROZEN",
   "fixtures": [
     {
       "fixture_id": "ORACLE-01-VEC-WRITE-THROUGH",
       "defect_id": "DEFECT-ORACLE-01-VEC-WRITE-THROUGH",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = v[0]; b.cost = 9', \u00a71.2 ('One owner, temporary borrows'), \u00a75.3",
+      "specification_basis": "Proposal §10 row 'b = v[0]; b.cost = 9', §1.2 ('One owner, temporary borrows'), §5.3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -41,7 +41,7 @@
       "fixture_id": "ORACLE-02-INDEXED-FIELD-READ-NO-CLONE",
       "defect_id": "DEFECT-ORACLE-02-INDEXED-FIELD-READ-NO-CLONE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a71.2, \u00a71.3 ('Layout cannot change ownership'), \u00a710, \u00a712 ('Zero hidden clones')",
+      "specification_basis": "Proposal §1.2, §1.3 ('Layout cannot change ownership'), §10, §12 ('Zero hidden clones')",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -69,7 +69,7 @@
       "fixture_id": "ORACLE-03-COLL-ELEM-CONSUME-REJECT",
       "defect_id": "DEFECT-ORACLE-03-COLL-ELEM-CONSUME-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'nxt.push(head[0])', \u00a75.3, \u00a712",
+      "specification_basis": "Proposal §10 row 'nxt.push(head[0])', §5.3, §12",
       "expected": {
         "checker": "reject"
       },
@@ -79,7 +79,7 @@
       "fixture_id": "ORACLE-04-MAP-WRITE-THROUGH",
       "defect_id": "DEFECT-ORACLE-04-MAP-WRITE-THROUGH",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710, \u00a75.3 ('Collection ownership APIs'), \u00a712",
+      "specification_basis": "Proposal §10, §5.3 ('Collection ownership APIs'), §12",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -141,7 +141,7 @@
       "fixture_id": "ORACLE-06-MATCH-CONSUME-OPT-NATIVE",
       "defect_id": "DEFECT-ORACLE-06-MATCH-CONSUME-OPT-NATIVE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a76.2 ('match consume: transfer payloads from an owned enum'), \u00a710, \u00a712",
+      "specification_basis": "Proposal §6.2 ('match consume: transfer payloads from an owned enum'), §10, §12",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -213,7 +213,7 @@
       "fixture_id": "ORACLE-09-USER-ENUM-SOME-NONE",
       "defect_id": "DEFECT-ORACLE-09-USER-ENUM-SOME-NONE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a76 ('Applying Rule 4 to enums'), \u00a710, \u00a712",
+      "specification_basis": "Proposal §6 ('Applying Rule 4 to enums'), §10, §12",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -241,7 +241,7 @@
       "fixture_id": "ORACLE-10A-EXPLICIT-COPY-ONLY",
       "defect_id": "DEFECT-ORACLE-10A-EXPLICIT-COPY-ONLY",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'copy(v[0]) for an eligible value', \u00a711 Phase D",
+      "specification_basis": "Proposal §10 row 'copy(v[0]) for an eligible value', §11 Phase D",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -275,7 +275,7 @@
       "fixture_id": "ORACLE-10B-CLONE-ALIAS-REJECTED",
       "defect_id": "DEFECT-ORACLE-10B-CLONE-ALIAS-REJECTED",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'v[0].clone() as a source-language duplication alias', \u00a711 Phase D",
+      "specification_basis": "Proposal §10 row 'v[0].clone() as a source-language duplication alias', §11 Phase D",
       "expected": {
         "checker": "reject"
       },
@@ -285,7 +285,7 @@
       "fixture_id": "ORACLE-11-ASSIGN-READ-BORROW",
       "defect_id": "DEFECT-ORACLE-11-ASSIGN-READ-BORROW",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = a; echo b; echo a', \u00a73",
+      "specification_basis": "Proposal §10 row 'b = a; echo b; echo a', §3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -313,7 +313,7 @@
       "fixture_id": "ORACLE-12-ASSIGN-WRITE-BORROW",
       "defect_id": "DEFECT-ORACLE-12-ASSIGN-WRITE-BORROW",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = a; b.field = 1', \u00a73",
+      "specification_basis": "Proposal §10 row 'b = a; b.field = 1', §3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -341,7 +341,7 @@
       "fixture_id": "ORACLE-13-ASSIGN-CONSUME-RETURN",
       "defect_id": "DEFECT-ORACLE-13-ASSIGN-CONSUME-RETURN",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = a; return b', \u00a73",
+      "specification_basis": "Proposal §10 row 'b = a; return b', §3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -369,7 +369,7 @@
       "fixture_id": "ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT",
       "defect_id": "DEFECT-ORACLE-14-ASSIGN-CONSUME-BORROW-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'b = a; return b' (reject borrowed non-movable place), \u00a73",
+      "specification_basis": "Proposal §10 row 'b = a; return b' (reject borrowed non-movable place), §3",
       "expected": {
         "checker": "reject"
       },
@@ -379,7 +379,7 @@
       "fixture_id": "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
       "defect_id": "DEFECT-ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'b = state.frontier; archive(b)', \u00a75.2",
+      "specification_basis": "Proposal §10 row 'b = state.frontier; archive(b)', §5.2",
       "expected": {
         "checker": "reject"
       },
@@ -389,7 +389,7 @@
       "fixture_id": "ORACLE-16-TAKE-FRONTIER-ARCHIVE",
       "defect_id": "DEFECT-ORACLE-16-TAKE-FRONTIER-ARCHIVE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = take(state.frontier); archive(b)', \u00a75.1, \u00a75.2",
+      "specification_basis": "Proposal §10 row 'b = take(state.frontier); archive(b)', §5.1, §5.2",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -417,7 +417,7 @@
       "fixture_id": "ORACLE-17-TAKE-OPTION-FIELD",
       "defect_id": "DEFECT-ORACLE-17-TAKE-OPTION-FIELD",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = take(job.pending)', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'b = take(job.pending)', §5.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -445,7 +445,7 @@
       "fixture_id": "ORACLE-18-TAKE-QUEUE-FIELD",
       "defect_id": "DEFECT-ORACLE-18-TAKE-QUEUE-FIELD",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'take(state.queue)', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'take(state.queue)', §5.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -473,7 +473,7 @@
       "fixture_id": "ORACLE-19-TAKE-NESTED-VEC-OPTION",
       "defect_id": "DEFECT-ORACLE-19-TAKE-NESTED-VEC-OPTION",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'take(v[i].pending)', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'take(v[i].pending)', §5.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -501,7 +501,7 @@
       "fixture_id": "ORACLE-20-TAKE-NESTED-MAP-VECTOR",
       "defect_id": "DEFECT-ORACLE-20-TAKE-NESTED-MAP-VECTOR",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'take(m[k].items)', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'take(m[k].items)', §5.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -529,7 +529,7 @@
       "fixture_id": "ORACLE-21-TAKE-LOCAL-REJECTED",
       "defect_id": "DEFECT-ORACLE-21-TAKE-LOCAL-REJECTED",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'take(local)', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'take(local)', §5.1",
       "expected": {
         "checker": "reject"
       },
@@ -539,7 +539,7 @@
       "fixture_id": "ORACLE-22-TAKE-UNIFIED-FIELD-REJECT",
       "defect_id": "DEFECT-ORACLE-22-TAKE-UNIFIED-FIELD-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'take(job.report)', \u00a75.1, \u00a79",
+      "specification_basis": "Proposal §10 row 'take(job.report)', §5.1, §9",
       "expected": {
         "checker": "reject"
       },
@@ -549,7 +549,7 @@
       "fixture_id": "ORACLE-23-TAKE-VEC-ELEM-REJECTED",
       "defect_id": "DEFECT-ORACLE-23-TAKE-VEC-ELEM-REJECTED",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'take(v[0])', \u00a75.1",
+      "specification_basis": "Proposal §10 row 'take(v[0])', §5.1",
       "expected": {
         "checker": "reject"
       },
@@ -559,7 +559,7 @@
       "fixture_id": "ORACLE-24-TAKE-CUSTOM-SLOT-REJECT",
       "defect_id": "DEFECT-ORACLE-24-TAKE-CUSTOM-SLOT-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'take(my_array.slots[i])', \u00a79",
+      "specification_basis": "Proposal §10 row 'take(my_array.slots[i])', §9",
       "expected": {
         "checker": "reject"
       },
@@ -569,7 +569,7 @@
       "fixture_id": "ORACLE-25-TAKE-BEFORE-RAISE-MUTATION",
       "defect_id": "DEFECT-ORACLE-25-TAKE-BEFORE-RAISE-MUTATION",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = take(state.frontier); may_raise(); use(b)', \u00a78, \u00a79",
+      "specification_basis": "Proposal §10 row 'b = take(state.frontier); may_raise(); use(b)', §8, §9",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -597,7 +597,7 @@
       "fixture_id": "ORACLE-26-VEC-REMOVE-API",
       "defect_id": "DEFECT-ORACLE-26-VEC-REMOVE-API",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'nxt.push(head.remove(0))', \u00a75.3",
+      "specification_basis": "Proposal §10 row 'nxt.push(head.remove(0))', §5.3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -636,7 +636,7 @@
       "fixture_id": "ORACLE-27-REBIND-AFTER-BORROWS",
       "defect_id": "DEFECT-ORACLE-27-REBIND-AFTER-BORROWS",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'b = a; b = new_value', \u00a73.1",
+      "specification_basis": "Proposal §10 row 'b = a; b = new_value', §3.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -664,7 +664,7 @@
       "fixture_id": "ORACLE-28-REBIND-WHILE-BORROWED-REJECT",
       "defect_id": "DEFECT-ORACLE-28-REBIND-WHILE-BORROWED-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'c = b; b = make2(); echo c', \u00a73.2",
+      "specification_basis": "Proposal §10 row 'c = b; b = make2(); echo c', §3.2",
       "expected": {
         "checker": "reject"
       },
@@ -674,7 +674,7 @@
       "fixture_id": "ORACLE-29-LOOP-CARRIED-OWNERSHIP",
       "defect_id": "DEFECT-ORACLE-29-LOOP-CARRIED-OWNERSHIP",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'frontier = expand(frontier) in a loop', \u00a74.2, \u00a77.1",
+      "specification_basis": "Proposal §10 row 'frontier = expand(frontier) in a loop', §4.2, §7.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -702,7 +702,7 @@
       "fixture_id": "ORACLE-30-JOIN-BORROW-FRESH-REJECT",
       "defect_id": "DEFECT-ORACLE-30-JOIN-BORROW-FRESH-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'if c: b = left[0] else: b = Fresh(); echo b', \u00a74",
+      "specification_basis": "Proposal §10 row 'if c: b = left[0] else: b = Fresh(); echo b', §4",
       "expected": {
         "checker": "reject"
       },
@@ -712,7 +712,7 @@
       "fixture_id": "ORACLE-31-JOIN-PROMOTED-CONSUME",
       "defect_id": "DEFECT-ORACLE-31-JOIN-PROMOTED-CONSUME",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'if c: b = left else: b = Fresh(); echo b', \u00a74",
+      "specification_basis": "Proposal §10 row 'if c: b = left else: b = Fresh(); echo b', §4",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -740,7 +740,7 @@
       "fixture_id": "ORACLE-32-MATCH-PAYLOAD-WRITE",
       "defect_id": "DEFECT-ORACLE-32-MATCH-PAYLOAD-WRITE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'match job.state and mutate a payload', \u00a76.1",
+      "specification_basis": "Proposal §10 row 'match job.state and mutate a payload', §6.1",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -768,7 +768,7 @@
       "fixture_id": "ORACLE-33-MATCH-LAST-USE-OVERWRITE",
       "defect_id": "DEFECT-ORACLE-33-MATCH-LAST-USE-OVERWRITE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'match job.state then overwrite state after last pattern use', \u00a76.1, \u00a78",
+      "specification_basis": "Proposal §10 row 'match job.state then overwrite state after last pattern use', §6.1, §8",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -796,7 +796,7 @@
       "fixture_id": "ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT",
       "defect_id": "DEFECT-ORACLE-34-MATCH-OVERWRITE-WHILE-BORROWED-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'Overwrite matched state while its payload is still borrowed', \u00a76.1",
+      "specification_basis": "Proposal §10 row 'Overwrite matched state while its payload is still borrowed', §6.1",
       "expected": {
         "checker": "reject"
       },
@@ -806,7 +806,7 @@
       "fixture_id": "ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT",
       "defect_id": "DEFECT-ORACLE-35-MATCH-ORDINARY-CONSUME-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'match job.state and transfer payload', \u00a76.1",
+      "specification_basis": "Proposal §10 row 'match job.state and transfer payload', §6.1",
       "expected": {
         "checker": "reject"
       },
@@ -816,7 +816,7 @@
       "fixture_id": "ORACLE-36-MATCH-CONSUME-QUEUE-POP",
       "defect_id": "DEFECT-ORACLE-36-MATCH-CONSUME-QUEUE-POP",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'match consume queue.pop()', \u00a76.2",
+      "specification_basis": "Proposal §10 row 'match consume queue.pop()', §6.2",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -844,7 +844,7 @@
       "fixture_id": "ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT",
       "defect_id": "DEFECT-ORACLE-37-MATCH-CONSUME-UNIFIED-FIELD-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'match consume job.state', \u00a76.2, \u00a79",
+      "specification_basis": "Proposal §10 row 'match consume job.state', §6.2, §9",
       "expected": {
         "checker": "reject"
       },
@@ -854,7 +854,7 @@
       "fixture_id": "ORACLE-38-MAP-VALUES-BORROWED-VIEW",
       "defect_id": "DEFECT-ORACLE-38-MAP-VALUES-BORROWED-VIEW",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'Map.values() bound temporarily then source mutated after last use', \u00a75.3",
+      "specification_basis": "Proposal §10 row 'Map.values() bound temporarily then source mutated after last use', §5.3",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -882,7 +882,7 @@
       "fixture_id": "ORACLE-39-VEC-FOR-READ",
       "defect_id": "DEFECT-ORACLE-39-VEC-FOR-READ",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'for item in items: echo item for a Vector', \u00a75.3, \u00a712",
+      "specification_basis": "Proposal §10 row 'for item in items: echo item for a Vector', §5.3, §12",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -910,7 +910,7 @@
       "fixture_id": "ORACLE-40-VEC-FOR-WRITE",
       "defect_id": "DEFECT-ORACLE-40-VEC-FOR-WRITE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'for item in items: item.bump() for writable Vector elements', \u00a75.3, \u00a712",
+      "specification_basis": "Proposal §10 row 'for item in items: item.bump() for writable Vector elements', §5.3, §12",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -949,7 +949,7 @@
       "fixture_id": "ORACLE-41-VEC-FOR-CONSUME-REJECT",
       "defect_id": "DEFECT-ORACLE-41-VEC-FOR-CONSUME-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'for item in items: consume(item)', \u00a75.3, \u00a712",
+      "specification_basis": "Proposal §10 row 'for item in items: consume(item)', §5.3, §12",
       "expected": {
         "checker": "reject"
       },
@@ -959,7 +959,7 @@
       "fixture_id": "ORACLE-42-CUSTOM-WRAPPER-REMOVE",
       "defect_id": "DEFECT-ORACLE-42-CUSTOM-WRAPPER-REMOVE",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'User-defined wrapper fn remove_at(a, i): return a.elements.remove(i)', \u00a79",
+      "specification_basis": "Proposal §10 row 'User-defined wrapper fn remove_at(a, i): return a.elements.remove(i)', §9",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -987,7 +987,7 @@
       "fixture_id": "ORACLE-43-HANDLER-PRIMITIVE-REPLY",
       "defect_id": "DEFECT-ORACLE-43-HANDLER-PRIMITIVE-REPLY",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'reply n where n: Int', \u00a77.5",
+      "specification_basis": "Proposal §10 row 'reply n where n: Int', §7.5",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -1015,7 +1015,7 @@
       "fixture_id": "ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT",
       "defect_id": "DEFECT-ORACLE-44-HANDLER-PRIMITIVE-MUTATE-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'n = n + 1 where n: Int', \u00a77.5",
+      "specification_basis": "Proposal §10 row 'n = n + 1 where n: Int', §7.5",
       "expected": {
         "checker": "reject"
       },
@@ -1025,7 +1025,7 @@
       "fixture_id": "ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL",
       "defect_id": "DEFECT-ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL",
       "expectation": "ACCEPT",
-      "specification_basis": "Proposal \u00a710 row 'result = n; result = result + 1; reply result', \u00a77.5",
+      "specification_basis": "Proposal §10 row 'result = n; result = result + 1; reply result', §7.5",
       "expected": {
         "checker": "accept",
         "fast_debug": {
@@ -1053,7 +1053,7 @@
       "fixture_id": "ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT",
       "defect_id": "DEFECT-ORACLE-46-HANDLER-NONPRIM-REPLY-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal \u00a710 row 'reply payload where payload: Report', \u00a77.5",
+      "specification_basis": "Proposal §10 row 'reply payload where payload: Report', §7.5",
       "expected": {
         "checker": "reject"
       },

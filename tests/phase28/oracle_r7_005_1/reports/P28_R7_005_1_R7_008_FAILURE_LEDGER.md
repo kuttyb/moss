@@ -386,20 +386,20 @@ Specification Baseline: P28-R7-005 expectation table (DRAFT_PENDING_L7_APPROVAL)
 - **Observed Failures:**
   - `Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9
+    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9
      |
 3425 |     let mut b = &(a);
      |                 ---- expected due to this value
 ...
-3429 |     b = Box { num: 2_i`
+3429 |     b = Box { num: 2_`
   - `Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc -O compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9
+    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9
      |
 3425 |     let mut b = &(a);
      |                 ---- expected due to this value
 ...
-3429 |     b = Box { num:`
+3429 |     b = Box { num`
 
 ### ORACLE-28-REBIND-WHILE-BORROWED-REJECT: ORACLE-28-REBIND-WHILE-BORROWED-REJECT (❌ FAIL)
 - **Category:** oracle
@@ -729,16 +729,16 @@ Specification Baseline: P28-R7-005 expectation table (DRAFT_PENDING_L7_APPROVAL)
 - **Observed Failures:**
   - `Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23
+    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23
      |
 3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);
-     |         -----------   ^^^^^^^^^^^^^^^`
+     |         -----------   ^^^^^^^^^^^^^^`
   - `Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=`
   - `rustc -O compilation failed: error[E0308]: mismatched types
-    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23
+    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23
      |
 3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);
-     |         -----------   ^^^^^^^^^^^`
+     |         -----------   ^^^^^^^^^^`
 
 ### ORACLE-52-MUTATE-DURING-ITERATION-REJECTED: ORACLE-52-MUTATE-DURING-ITERATION-REJECTED (✅ PASS)
 - **Category:** oracle
@@ -785,7 +785,7 @@ Specification Baseline: P28-R7-005 expectation table (DRAFT_PENDING_L7_APPROVAL)
   "compiler_version": "0.1.0",
   "command": "check",
   "ok": false,
-  "error": {"code": "UNKNOWN_ERROR_TYPE", "severity": "error", "message": "unknown error enum 'CollectionError'", "source_file": "/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss", "line": 8, "column": 1, "span": {"start_line": 8, "start_column": 1, "end_line": 8, "end_column": 1}, "source": {"file": "/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss", "line": 8, "column": 1, "span": {"start_line": 8, "start_column": 1, "end_line": 8, "end_column": 1}}, "semantic_identity": "main@4", "symbol": null, "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": null}, "fixes": [], "legal_alternatives": []}
+  "error": {"code": "UNKNOWN_ERROR_TYPE", "severity": "error", "message": "unknown error enum 'CollectionError'", "source_file": "/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss", "line": 8, "column": 1, "span": {"start_line": 8, "start_column": 1, "end_line": 8, "end_column": 1}, "source": {"file": "/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss", "line": 8, "column": 1, "span": {"start_line": 8, "start_column": 1, "end_line": 8, "end_column": 1}}, "semantic_identity": "main@4", "symbol": null, "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": null}, "fixes": [], "legal_alternatives": []}
 }
 `
 

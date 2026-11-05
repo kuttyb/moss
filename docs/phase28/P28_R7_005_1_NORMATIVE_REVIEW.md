@@ -1,6 +1,6 @@
 # P28-R7-005.1 — Normative Review Package (Draft)
 
-**Status:** Awaiting independent normative approval. No implementation comparison has run.
+**Status:** Normative approval GO on `c808e9fab5187e25703cac42e4be15162516d39d`; final implementation comparison and certification evidence are recorded in `tests/phase28/oracle_r7_005_1/reports/`.
 
 ## Frozen parent preservation
 
@@ -63,5 +63,15 @@ Please re-review the revised ORACLE-10B fixture/mapping along with the five acce
   ORACLE-10B's mapping was tightened further: it now requires the exact
   clone-specific diagnostic message and the executable clone assignment line.
   Its fixture and expected verdict remain byte-identical to certified v1. This
-  completes the sixth mapping correction requested; independent review of this
-  tighter mapping is pending before a new implementation comparison.
+  completes the sixth mapping correction requested. Independent normative
+  review of the exact `c808e9fab5187e25703cac42e4be15162516d39d` package returned
+  **GO**. The full v2 comparison was then rerun against frozen R7-008
+  `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc`; see the durable results and
+  failure ledger for mismatch-preserving outcomes. Final adversarial review of
+  the completed successor remains a closeout gate.
+
+## Holdout and final successor review
+
+Independent reviewer-controlled holdouts were fixed before execution and received **oracle-spec GO / integrity PASS**. The two failed execution cases are recorded as R7-008 implementation findings in `reports/holdouts/FINAL_REPORT.md`; their expected results were retained. The exact full comparison was rerun after the final mapping change and is recorded in `reports/P28_R7_005_1_R7_008_RESULTS.json` and `P28_R7_005_1_R7_008_FAILURE_LEDGER.md`.
+
+The v2 expectations and corrected mapping are now marked `CERTIFIED_FROZEN`. Certification pins the v2 expectation document digest and the unchanged v1 parent digests; it does not claim that R7-008 conforms. A final independent adversarial review of the completed successor is required before push.

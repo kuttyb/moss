@@ -255,14 +255,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0051045419968431816,
-      "fast_debug": 0.0058831750066019595,
-      "native_emit": 0.007655381006770767,
-      "rustc_debug": 0.16303659199911635,
-      "native_exec": 0.0005001859972253442,
-      "native_opt_emit": 0.0069002389936940745,
-      "rustc_opt": 0.2855180329934228,
-      "native_opt_exec": 0.0005306100065354258
+      "checker": 0.01212918700184673,
+      "fast_debug": 0.004766419006045908,
+      "native_emit": 0.007231534997117706,
+      "rustc_debug": 0.1718750559957698,
+      "native_exec": 0.0004932349984301254,
+      "native_opt_emit": 0.007475093996617943,
+      "rustc_opt": 0.2872156449884642,
+      "native_opt_exec": 0.0005992700025672093
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -517,14 +517,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004199125993181951,
-      "fast_debug": 0.004075245000422001,
-      "native_emit": 0.006293551006820053,
-      "rustc_debug": 0.1641729240072891,
-      "native_exec": 0.000483602998428978,
-      "native_opt_emit": 0.006850507008493878,
-      "rustc_opt": 0.2724872510007117,
-      "native_opt_exec": 0.00048798200441524386
+      "checker": 0.004769721010234207,
+      "fast_debug": 0.0050498749915277585,
+      "native_emit": 0.007529490001616068,
+      "rustc_debug": 0.17189464399416465,
+      "native_exec": 0.0005376850022003055,
+      "native_opt_emit": 0.007235051991301589,
+      "rustc_opt": 0.28542900999309495,
+      "native_opt_exec": 0.0005572049994952977
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -556,7 +556,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005235435994109139
+      "checker": 0.00513757299631834
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -818,14 +818,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.00553058399236761,
-      "fast_debug": 0.005331421009032056,
-      "native_emit": 0.007185604001278989,
-      "rustc_debug": 0.16783542500343174,
-      "native_exec": 0.0005081220006104559,
-      "native_opt_emit": 0.007739762993878685,
-      "rustc_opt": 0.27739646000554785,
-      "native_opt_exec": 0.0005330099957063794
+      "checker": 0.005900450996705331,
+      "fast_debug": 0.005531615010113455,
+      "native_emit": 0.007320799006265588,
+      "rustc_debug": 0.1641722269996535,
+      "native_exec": 0.0004970340087311342,
+      "native_opt_emit": 0.007758685009321198,
+      "rustc_opt": 0.29479981800250243,
+      "native_opt_exec": 0.0006140559999039397
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -1060,14 +1060,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005647580997901969,
-      "fast_debug": 0.0052636170003097504,
-      "native_emit": 0.006735596005455591,
-      "rustc_debug": 0.16198513499693945,
-      "native_exec": 0.0004891450080322102,
-      "native_opt_emit": 0.007481148990336806,
-      "rustc_opt": 0.2744798870116938,
-      "native_opt_exec": 0.0004862649948336184
+      "checker": 0.006396489989128895,
+      "fast_debug": 0.005869023996638134,
+      "native_emit": 0.00713050999911502,
+      "rustc_debug": 0.1753063719952479,
+      "native_exec": 0.0005183660105103627,
+      "native_opt_emit": 0.007717622997006401,
+      "rustc_opt": 0.2971339720097603,
+      "native_opt_exec": 0.0005182070017326623
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -1302,14 +1302,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003906067999196239,
-      "fast_debug": 0.0037473310076165944,
-      "native_emit": 0.005218869002419524,
-      "rustc_debug": 0.1633977429883089,
-      "native_exec": 0.0005779289931524545,
-      "native_opt_emit": 0.005647630998282693,
-      "rustc_opt": 0.2705905119946692,
-      "native_opt_exec": 0.0005017189978389069
+      "checker": 0.00445245199080091,
+      "fast_debug": 0.0040097110031638294,
+      "native_emit": 0.0055433369998354465,
+      "rustc_debug": 0.17927587799204048,
+      "native_exec": 0.0005156660045031458,
+      "native_opt_emit": 0.005763187000411563,
+      "rustc_opt": 0.30445502800284885,
+      "native_opt_exec": 0.0004840239998884499
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -1382,10 +1382,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004138199990848079,
-      "fast_debug": 0.003910594008630142,
-      "native_emit": 0.0037113040016265586,
-      "native_opt_emit": 0.003744467001524754
+      "checker": 0.004386876011267304,
+      "fast_debug": 0.004278882988728583,
+      "native_emit": 0.004147006009588949,
+      "native_opt_emit": 0.004623889995855279
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_INTERNAL_OR_IO_ERROR\", \"severity\": \"error\", \"message\": \"unknown type variable\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_07_catchable_collection_errors.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_07_catchable_collection_errors.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -1423,7 +1423,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0009814310033107176
+      "checker": 0.0014027370052644983
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -1638,14 +1638,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003316952002933249,
-      "fast_debug": 0.0032605029991827905,
-      "native_emit": 0.004527752011199482,
-      "rustc_debug": 0.16421991799143143,
-      "native_exec": 0.0004992249887436628,
-      "native_opt_emit": 0.004958705001627095,
-      "rustc_opt": 0.2728614459920209,
-      "native_opt_exec": 0.000598163009271957
+      "checker": 0.003682581998873502,
+      "fast_debug": 0.003760402003536001,
+      "native_emit": 0.0046989759866846725,
+      "rustc_debug": 0.17663155400077812,
+      "native_exec": 0.0005394460022216663,
+      "native_opt_emit": 0.005127410011482425,
+      "rustc_opt": 0.2874537409952609,
+      "native_opt_exec": 0.0005507080059032887
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -1971,14 +1971,14 @@
     },
     "explicit_copies": 1,
     "timings": {
-      "checker": 0.0051389089931035414,
-      "fast_debug": 0.004884213994955644,
-      "native_emit": 0.006775943998945877,
-      "rustc_debug": 0.16421272000297904,
-      "native_exec": 0.0005219040031079203,
-      "native_opt_emit": 0.0074653420015238225,
-      "rustc_opt": 0.277676005003741,
-      "native_opt_exec": 0.0006666239933110774
+      "checker": 0.005538814002647996,
+      "fast_debug": 0.0054094430088298395,
+      "native_emit": 0.008181734010577202,
+      "rustc_debug": 0.16787064498930704,
+      "native_exec": 0.000536715000635013,
+      "native_opt_emit": 0.008451064000837505,
+      "rustc_opt": 0.29144550100318156,
+      "native_opt_exec": 0.000502223992953077
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2010,7 +2010,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003644053009338677
+      "checker": 0.0039015670045046136
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2265,14 +2265,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0033818860101746395,
-      "fast_debug": 0.0033853189961519092,
-      "native_emit": 0.00454324200109113,
-      "rustc_debug": 0.16452226099499967,
-      "native_exec": 0.0005053839995525777,
-      "native_opt_emit": 0.005080415998236276,
-      "rustc_opt": 0.27176783500181045,
-      "native_opt_exec": 0.0004945440014125779
+      "checker": 0.0037739070103270933,
+      "fast_debug": 0.004247387012583204,
+      "native_emit": 0.0048697910096962005,
+      "rustc_debug": 0.1641460660030134,
+      "native_exec": 0.0005191149975871667,
+      "native_opt_emit": 0.005315287009580061,
+      "rustc_opt": 0.28650782800104935,
+      "native_opt_exec": 0.0004916699981549755
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2507,14 +2507,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0037220590020297095,
-      "fast_debug": 0.003787681009271182,
-      "native_emit": 0.004922196996631101,
-      "rustc_debug": 0.16019910600152798,
-      "native_exec": 0.0005052799970144406,
-      "native_opt_emit": 0.005208700997172855,
-      "rustc_opt": 0.27446944199618883,
-      "native_opt_exec": 0.00049591000424698
+      "checker": 0.003981664005550556,
+      "fast_debug": 0.003819135992671363,
+      "native_emit": 0.004920621999190189,
+      "rustc_debug": 0.16666182200424373,
+      "native_exec": 0.0005593289970420301,
+      "native_opt_emit": 0.005832517999806441,
+      "rustc_opt": 0.27744009700836614,
+      "native_opt_exec": 0.0004849980032304302
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2769,14 +2769,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005058053997345269,
-      "fast_debug": 0.005459273990709335,
-      "native_emit": 0.006108197005232796,
-      "rustc_debug": 0.16277437898679636,
-      "native_exec": 0.000501820002682507,
-      "native_opt_emit": 0.006699204008327797,
-      "rustc_opt": 0.28451002899964806,
-      "native_opt_exec": 0.0006028589996276423
+      "checker": 0.005264796011033468,
+      "fast_debug": 0.004999980999855325,
+      "native_emit": 0.006363325999700464,
+      "rustc_debug": 0.16987997699470725,
+      "native_exec": 0.0005536869866773486,
+      "native_opt_emit": 0.006980624995776452,
+      "rustc_opt": 0.29896745800215285,
+      "native_opt_exec": 0.0005291180132189766
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2808,7 +2808,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005074920001788996
+      "checker": 0.0050450669950805604
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -2836,7 +2836,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005039616997237317
+      "checker": 0.005119796987855807
     },
     "semantic_failures": [
       "Checker unexpectedly ACCEPTED invalid program; expected the oracle-mapped structured rejection"
@@ -3073,14 +3073,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0055646380060352385,
-      "fast_debug": 0.005708006996428594,
-      "native_emit": 0.007777045000693761,
-      "rustc_debug": 0.16398047900293022,
-      "native_exec": 0.00050049000128638,
-      "native_opt_emit": 0.008392322008148767,
-      "rustc_opt": 0.2806627270038007,
-      "native_opt_exec": 0.000498321998747997
+      "checker": 0.006141584992292337,
+      "fast_debug": 0.006481293996330351,
+      "native_emit": 0.009010990004753694,
+      "rustc_debug": 0.1697487649944378,
+      "native_exec": 0.0005214069969952106,
+      "native_opt_emit": 0.008573361003072932,
+      "rustc_opt": 0.2894148300110828,
+      "native_opt_exec": 0.0004970300069544464
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -3315,14 +3315,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.00530992700078059,
-      "fast_debug": 0.005154775004484691,
-      "native_emit": 0.006794996006647125,
-      "rustc_debug": 0.16024478900362737,
-      "native_exec": 0.0005014170019421726,
-      "native_opt_emit": 0.006964693006011657,
-      "rustc_opt": 0.2628441289998591,
-      "native_opt_exec": 0.000756776993512176
+      "checker": 0.005620683994493447,
+      "fast_debug": 0.005514389995369129,
+      "native_emit": 0.00804847400286235,
+      "rustc_debug": 0.17078983600367792,
+      "native_exec": 0.0005339130002539605,
+      "native_opt_emit": 0.007350913001573645,
+      "rustc_opt": 0.28178758699505124,
+      "native_opt_exec": 0.0005589969950960949
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -3557,14 +3557,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.00744094600668177,
-      "fast_debug": 0.007308340995223261,
-      "native_emit": 0.00906905900046695,
-      "rustc_debug": 0.17514880299859215,
-      "native_exec": 0.0004914320015814155,
-      "native_opt_emit": 0.009380317002069205,
-      "rustc_opt": 0.2635849039943423,
-      "native_opt_exec": 0.0005697289889212698
+      "checker": 0.008135851006954908,
+      "fast_debug": 0.00799020699923858,
+      "native_emit": 0.009058263996848837,
+      "rustc_debug": 0.17458826799702365,
+      "native_exec": 0.0005436190112959594,
+      "native_opt_emit": 0.009650722000515088,
+      "rustc_opt": 0.2799048029992264,
+      "native_opt_exec": 0.0005038660019636154
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -3839,14 +3839,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007438724001985975,
-      "fast_debug": 0.006993850998696871,
-      "native_emit": 0.009392646999913268,
-      "rustc_debug": 0.16848966300312895,
-      "native_exec": 0.0004990320012439042,
-      "native_opt_emit": 0.01026157099113334,
-      "rustc_opt": 0.28123705100733787,
-      "native_opt_exec": 0.0004909169947495684
+      "checker": 0.007862824000767432,
+      "fast_debug": 0.007521137988078408,
+      "native_emit": 0.011001529986970127,
+      "rustc_debug": 0.18050089999451302,
+      "native_exec": 0.0005172899982426316,
+      "native_opt_emit": 0.011010552989318967,
+      "rustc_opt": 0.2891933070059167,
+      "native_opt_exec": 0.000544994996744208
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4121,14 +4121,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.006973038995056413,
-      "fast_debug": 0.006700178011669777,
-      "native_emit": 0.009854953008471057,
-      "rustc_debug": 0.16431794900563546,
-      "native_exec": 0.0005494070064742118,
-      "native_opt_emit": 0.010151801005122252,
-      "rustc_opt": 0.29150507801386993,
-      "native_opt_exec": 0.0005134029925102368
+      "checker": 0.008168952001142316,
+      "fast_debug": 0.0072417830087943,
+      "native_emit": 0.009993473009672016,
+      "rustc_debug": 0.17101006500888616,
+      "native_exec": 0.0005202429892960936,
+      "native_opt_emit": 0.010629941010847688,
+      "rustc_opt": 0.2920342739962507,
+      "native_opt_exec": 0.0005190360097913072
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4160,7 +4160,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0029315410065464675
+      "checker": 0.003037489004782401
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4192,7 +4192,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0026864899991778657
+      "checker": 0.00293872099427972
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4224,7 +4224,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004184022996923886
+      "checker": 0.004367474990431219
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4256,7 +4256,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003246973006753251
+      "checker": 0.003364550997503102
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4531,14 +4531,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.011892409005668014,
-      "fast_debug": 0.012138438993133605,
-      "native_emit": 0.015380258002551273,
-      "rustc_debug": 0.1634678830014309,
-      "native_exec": 0.000490081001771614,
-      "native_opt_emit": 0.014836095011560246,
-      "rustc_opt": 0.2774016589974053,
-      "native_opt_exec": 0.0004921000072499737
+      "checker": 0.012688294998952188,
+      "fast_debug": 0.012473480004700832,
+      "native_emit": 0.014774783005123027,
+      "rustc_debug": 0.1812692870007595,
+      "native_exec": 0.0005878890078747645,
+      "native_opt_emit": 0.015638778000720777,
+      "rustc_opt": 0.2950769059971208,
+      "native_opt_exec": 0.0005232129915384576
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4823,14 +4823,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.008009490004042163,
-      "fast_debug": 0.007724073002464138,
-      "native_emit": 0.010503997997147962,
-      "rustc_debug": 0.16454515200166497,
-      "native_exec": 0.0005478429957292974,
-      "native_opt_emit": 0.010935841011814773,
-      "rustc_opt": 0.2705072099925019,
-      "native_opt_exec": 0.00048072999925352633
+      "checker": 0.00821074801206123,
+      "fast_debug": 0.008838989000651054,
+      "native_emit": 0.011743494003894739,
+      "rustc_debug": 0.17236729100113735,
+      "native_exec": 0.0005280229961499572,
+      "native_opt_emit": 0.011436458007665351,
+      "rustc_opt": 0.28944765200139955,
+      "native_opt_exec": 0.0004989660083083436
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -4887,9 +4887,9 @@
     },
     "failures": [
       "Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=",
-      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num: 2_i",
+      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num: 2_",
       "Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=",
-      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num:"
+      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num"
     ],
     "clone_audit": {
       "native_debug": {
@@ -5053,16 +5053,16 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003908410013536923,
-      "fast_debug": 0.003642832991317846,
-      "native_emit": 0.004961052996804938,
-      "rustc_debug": 0.08613763000175823,
-      "native_opt_emit": 0.006070919000194408,
-      "rustc_opt": 0.08948414398764726
+      "checker": 0.00430425199738238,
+      "fast_debug": 0.004040426007122733,
+      "native_emit": 0.005150279001099989,
+      "rustc_debug": 0.09270528399792966,
+      "native_opt_emit": 0.00682600200525485,
+      "rustc_opt": 0.09130826999899
     },
     "semantic_failures": [
-      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num: 2_i",
-      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num:"
+      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num: 2_",
+      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-27-REBIND-AFTER-BORROWS_opt.rs:3429:9\n     |\n3425 |     let mut b = &(a);\n     |                 ---- expected due to this value\n...\n3429 |     b = Box { num"
     ],
     "semantic_status": "FAIL",
     "clone_provenance_status": "BLOCKED_MISSING_OR_INVALID"
@@ -5089,7 +5089,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004495705012232065
+      "checker": 0.004817285996978171
     },
     "semantic_failures": [
       "Checker rejection was unrelated or malformed (diagnostic message does not match 'borrow|rebind|ownership'); output: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_SOURCE_BORROWED\", \"severity\": \"error\", \"message\": \"cannot overwrite or consume 'b' while READ alias 'c' remains live\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_28_rebind_while_borrowed_rejected.moss\", \"line\": 11, \"column\": 1, \"span\": {\"start_line\": 11, \"start_column\": 1, \"end_line\": 11, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_28_rebind_while_borrowed_rejected.moss\", \"line\": 11, \"column\": 1, \"span\": {\"start_line\": 11, \"start_column\": 1, \"end_line\": 11, \"end_column\": 1}}, \"semantic_identity\": \"main@8\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
@@ -5346,14 +5346,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.010709100009989925,
-      "fast_debug": 0.01113275799434632,
-      "native_emit": 0.012685021996730939,
-      "rustc_debug": 0.1673767879983643,
-      "native_exec": 0.0005740289925597608,
-      "native_opt_emit": 0.013742588998866268,
-      "rustc_opt": 0.2855505280022044,
-      "native_opt_exec": 0.0005011929897591472
+      "checker": 0.012710841998341493,
+      "fast_debug": 0.01159533100144472,
+      "native_emit": 0.01315402598993387,
+      "rustc_debug": 0.17351612700440455,
+      "native_exec": 0.0005236220022197813,
+      "native_opt_emit": 0.01396891800686717,
+      "rustc_opt": 0.2877304800058482,
+      "native_opt_exec": 0.0005111229984322563
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -5381,7 +5381,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.006726595995132811
+      "checker": 0.007418891997076571
     },
     "semantic_failures": [
       "Checker rejection was unrelated or malformed (diagnostic line 13 does not identify the rejected construct); output: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_INCOMPATIBLE_JOIN\", \"severity\": \"error\", \"message\": \"cannot merge owned and borrowed values for 'b' at control flow join\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_30_join_borrowed_and_fresh_rejected.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_30_join_borrowed_and_fresh_rejected.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}}, \"semantic_identity\": \"fn:test@8\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
@@ -5442,10 +5442,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007081529009155929,
-      "fast_debug": 0.0074052510026376694,
-      "native_emit": 0.006765213009202853,
-      "native_opt_emit": 0.006681994011159986
+      "checker": 0.007412309991195798,
+      "fast_debug": 0.007590690001961775,
+      "native_emit": 0.007679261005250737,
+      "native_opt_emit": 0.007500196996261366
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_INCOMPATIBLE_JOIN\", \"severity\": \"error\", \"message\": \"cannot merge owned and borrowed values for 'b' at control flow join\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_31_join_promoted_consume.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_31_join_promoted_consume.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}}, \"semantic_identity\": \"fn:test@8\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -5509,10 +5509,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0038129900058265775,
-      "fast_debug": 0.0033342090027872473,
-      "native_emit": 0.0033895200031111017,
-      "native_opt_emit": 0.0033128130016848445
+      "checker": 0.0036914889933541417,
+      "fast_debug": 0.0035057509958278388,
+      "native_emit": 0.004003832000307739,
+      "native_opt_emit": 0.0036678300093626603
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"BORROWED_ENUM_PAYLOAD_ACCESS\", \"severity\": \"error\", \"message\": \"payload 'buf' is a READ view of 's' and cannot be written or transferred\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_32_match_payload_write_borrow.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_32_match_payload_write_borrow.moss\", \"line\": 13, \"column\": 1, \"span\": {\"start_line\": 13, \"start_column\": 1, \"end_line\": 13, \"end_column\": 1}}, \"semantic_identity\": \"main@9\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -5576,10 +5576,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0036336569901322946,
-      "fast_debug": 0.004002276007668115,
-      "native_emit": 0.0038167250022524968,
-      "native_opt_emit": 0.0036992750101489946
+      "checker": 0.005206817993894219,
+      "fast_debug": 0.004141882003750652,
+      "native_emit": 0.003925857003196143,
+      "native_opt_emit": 0.004060327002662234
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MATCH_READ_BORROW_ACTIVE\", \"severity\": \"error\", \"message\": \"cannot write 's' while 's' is READ-borrowed by a match or traversal\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_33_match_payload_last_use_overwrite.moss\", \"line\": 14, \"column\": 1, \"span\": {\"start_line\": 14, \"start_column\": 1, \"end_line\": 14, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_33_match_payload_last_use_overwrite.moss\", \"line\": 14, \"column\": 1, \"span\": {\"start_line\": 14, \"start_column\": 1, \"end_line\": 14, \"end_column\": 1}}, \"semantic_identity\": \"main@9\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -5616,7 +5616,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003197549012838863
+      "checker": 0.004399896002723835
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -5644,7 +5644,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004075087999808602
+      "checker": 0.004814779007574543
     },
     "semantic_failures": [
       "Checker rejection was unrelated or malformed (diagnostic message does not match 'borrow|consum|match'); output: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"BORROWED_ENUM_PAYLOAD_ACCESS\", \"severity\": \"error\", \"message\": \"payload 'buf' is a READ view of 's' and cannot be written or transferred\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_35_match_ordinary_consume_rejected.moss\", \"line\": 16, \"column\": 1, \"span\": {\"start_line\": 16, \"start_column\": 1, \"end_line\": 16, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_35_match_ordinary_consume_rejected.moss\", \"line\": 16, \"column\": 1, \"span\": {\"start_line\": 16, \"start_column\": 1, \"end_line\": 16, \"end_column\": 1}}, \"semantic_identity\": \"main@12\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
@@ -5881,14 +5881,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005274497001664713,
-      "fast_debug": 0.005281090998323634,
-      "native_emit": 0.006901780012412928,
-      "rustc_debug": 0.16650348200346343,
-      "native_exec": 0.0005042379925725982,
-      "native_opt_emit": 0.007543526997324079,
-      "rustc_opt": 0.287951845995849,
-      "native_opt_exec": 0.0005280930054141209
+      "checker": 0.006295747007243335,
+      "fast_debug": 0.006045821006409824,
+      "native_emit": 0.007471225006156601,
+      "rustc_debug": 0.17670709900266957,
+      "native_exec": 0.0005217379948589951,
+      "native_opt_emit": 0.007978316993103363,
+      "rustc_opt": 0.2918181029963307,
+      "native_opt_exec": 0.0005379820067901164
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -5920,7 +5920,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0041483249951852486
+      "checker": 0.004067519010277465
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -6135,14 +6135,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007412363003822975,
-      "fast_debug": 0.007238277001306415,
-      "native_emit": 0.009304613005951978,
-      "rustc_debug": 0.16733824700349942,
-      "native_exec": 0.000508919998537749,
-      "native_opt_emit": 0.01036912300332915,
-      "rustc_opt": 0.27842116499959957,
-      "native_opt_exec": 0.0005260959878796712
+      "checker": 0.007723707996774465,
+      "fast_debug": 0.007994657004019246,
+      "native_emit": 0.010357751001720317,
+      "rustc_debug": 0.1817710920004174,
+      "native_exec": 0.000521584996022284,
+      "native_opt_emit": 0.010478727999725379,
+      "rustc_opt": 0.29947397799696773,
+      "native_opt_exec": 0.0005912060005357489
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -6377,14 +6377,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004526470002019778,
-      "fast_debug": 0.0041645540040917695,
-      "native_emit": 0.006161030993098393,
-      "rustc_debug": 0.16501243400853127,
-      "native_exec": 0.0005840179946972057,
-      "native_opt_emit": 0.006626716000027955,
-      "rustc_opt": 0.26691706899146084,
-      "native_opt_exec": 0.0004960770020261407
+      "checker": 0.004714302995125763,
+      "fast_debug": 0.004545379008050077,
+      "native_emit": 0.006870356999570504,
+      "rustc_debug": 0.17433856199204456,
+      "native_exec": 0.0005003729893360287,
+      "native_opt_emit": 0.006728999986080453,
+      "rustc_opt": 0.284312821997446,
+      "native_opt_exec": 0.0005873030022485182
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -6669,14 +6669,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.008403946994803846,
-      "fast_debug": 0.007997666994924657,
-      "native_emit": 0.011008600005879998,
-      "rustc_debug": 0.16861528001027182,
-      "native_exec": 0.0005638540023937821,
-      "native_opt_emit": 0.011940153999603353,
-      "rustc_opt": 0.27813820900337305,
-      "native_opt_exec": 0.0005601699958788231
+      "checker": 0.00941686199803371,
+      "fast_debug": 0.009247673995560035,
+      "native_emit": 0.011799199011875317,
+      "rustc_debug": 0.17168688599485904,
+      "native_exec": 0.0005711950070690364,
+      "native_opt_emit": 0.012204509999719448,
+      "rustc_opt": 0.28853748299297877,
+      "native_opt_exec": 0.0005029960011597723
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -6708,7 +6708,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005417427004431374
+      "checker": 0.0055651430011494085
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -6963,14 +6963,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007063983997795731,
-      "fast_debug": 0.007619443989824504,
-      "native_emit": 0.009871906993794255,
-      "rustc_debug": 0.172185774994432,
-      "native_exec": 0.0005020679964218289,
-      "native_opt_emit": 0.010556783992797136,
-      "rustc_opt": 0.28620702199987136,
-      "native_opt_exec": 0.0005190099909668788
+      "checker": 0.007501863001380116,
+      "fast_debug": 0.009386292993440293,
+      "native_emit": 0.01125403298647143,
+      "rustc_debug": 0.17253757901198696,
+      "native_exec": 0.0004921949876006693,
+      "native_opt_emit": 0.011734476996934973,
+      "rustc_opt": 0.2985713520029094,
+      "native_opt_exec": 0.0005184019973967224
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -7205,14 +7205,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.003067413010285236,
-      "fast_debug": 0.0027955410041613504,
-      "native_emit": 0.0035851530119543895,
-      "rustc_debug": 0.16866631199081894,
-      "native_exec": 0.0005565609899349511,
-      "native_opt_emit": 0.004119467004784383,
-      "rustc_opt": 0.32244781499321107,
-      "native_opt_exec": 0.0005703120114048943
+      "checker": 0.0029875659965910017,
+      "fast_debug": 0.0027732509915949777,
+      "native_emit": 0.0038438749907072634,
+      "rustc_debug": 0.1823309149913257,
+      "native_exec": 0.0005153109959792346,
+      "native_opt_emit": 0.004472389002330601,
+      "rustc_opt": 0.3304214819945628,
+      "native_opt_exec": 0.0005016810027882457
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -7244,7 +7244,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.002890162999392487
+      "checker": 0.003876265007420443
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -7479,14 +7479,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.004414640003233217,
-      "fast_debug": 0.004389779001940042,
-      "native_emit": 0.005738467007176951,
-      "rustc_debug": 0.16567291000683326,
-      "native_exec": 0.0004952820017933846,
-      "native_opt_emit": 0.006140229001175612,
-      "rustc_opt": 0.32081050299166236,
-      "native_opt_exec": 0.0005248350062174723
+      "checker": 0.0046482130128424615,
+      "fast_debug": 0.004829266996239312,
+      "native_emit": 0.006717247000779025,
+      "rustc_debug": 0.17401519199484028,
+      "native_exec": 0.0005235779972281307,
+      "native_opt_emit": 0.007132350001484156,
+      "rustc_opt": 0.3226075410057092,
+      "native_opt_exec": 0.0005201960011618212
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -7514,7 +7514,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0020391580037539825
+      "checker": 0.0023085960128810257
     },
     "semantic_failures": [
       "Checker unexpectedly ACCEPTED invalid program; expected the oracle-mapped structured rejection"
@@ -7760,14 +7760,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0028090150008210912,
-      "fast_debug": 0.002925927998148836,
-      "native_emit": 0.003981398011092097,
-      "rustc_debug": 0.15796372000477277,
-      "native_exec": 0.0005134639941388741,
-      "native_opt_emit": 0.004519338996033184,
-      "rustc_opt": 0.2896471370040672,
-      "native_opt_exec": 0.0004912620061077178
+      "checker": 0.0031240730022545904,
+      "fast_debug": 0.003012902001501061,
+      "native_emit": 0.004575551996822469,
+      "rustc_debug": 0.1794927010050742,
+      "native_exec": 0.0005349669954739511,
+      "native_opt_emit": 0.004910126008326188,
+      "rustc_opt": 0.2807969370041974,
+      "native_opt_exec": 0.0005605520127573982
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -7795,7 +7795,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005722114990931004
+      "checker": 0.0059386099892435595
     },
     "semantic_failures": [
       "Checker unexpectedly ACCEPTED invalid program; expected the oracle-mapped structured rejection"
@@ -7881,10 +7881,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0072533290076535195,
-      "fast_debug": 0.007561218997579999,
-      "native_emit": 0.007827452995115891,
-      "native_opt_emit": 0.007410162012092769
+      "checker": 0.008061966000241227,
+      "fast_debug": 0.008195914007956162,
+      "native_emit": 0.008333956997375935,
+      "native_opt_emit": 0.00794065700029023
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_49_recover_ownership_state.moss\", \"line\": 10, \"column\": 1, \"span\": {\"start_line\": 10, \"start_column\": 1, \"end_line\": 10, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_49_recover_ownership_state.moss\", \"line\": 10, \"column\": 1, \"span\": {\"start_line\": 10, \"start_column\": 1, \"end_line\": 10, \"end_column\": 1}}, \"semantic_identity\": \"fn:risky@5\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -8145,14 +8145,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007537112003774382,
-      "fast_debug": 0.00795220299914945,
-      "native_emit": 0.009902713005430996,
-      "rustc_debug": 0.16165113600436598,
-      "native_exec": 0.000493799991090782,
-      "native_opt_emit": 0.010992736992193386,
-      "rustc_opt": 0.2675139310013037,
-      "native_opt_exec": 0.000496528999065049
+      "checker": 0.007966521006892435,
+      "fast_debug": 0.008284188006655313,
+      "native_emit": 0.011488275005831383,
+      "rustc_debug": 0.1737443869933486,
+      "native_exec": 0.0007068260019877926,
+      "native_opt_emit": 0.010915619001025334,
+      "rustc_opt": 0.28352775500388816,
+      "native_opt_exec": 0.0005021450051572174
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -8255,9 +8255,9 @@
     },
     "failures": [
       "Native debug clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=",
-      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^^^^^",
+      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^^^^",
       "Native optimized clone provenance audit: status=PROVENANCE_MISSING, unclassified=7, unauthorized=0, error=",
-      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^"
+      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^"
     ],
     "clone_audit": {
       "native_debug": {
@@ -8421,16 +8421,16 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.01627120201010257,
-      "fast_debug": 0.016028127996833064,
-      "native_emit": 0.019005534995812923,
-      "rustc_debug": 0.09180117299547419,
-      "native_opt_emit": 0.01874884800054133,
-      "rustc_opt": 0.08610371399845462
+      "checker": 0.0173700919986004,
+      "fast_debug": 0.01659519899112638,
+      "native_emit": 0.020241648991941474,
+      "rustc_debug": 0.10267256401129998,
+      "native_opt_emit": 0.01940013600687962,
+      "rustc_opt": 0.09102333399641793
     },
     "semantic_failures": [
-      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^^^^^",
-      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^"
+      "rustc compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^^^^^",
+      "rustc -O compilation failed: error[E0308]: mismatched types\n    --> /home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/ORACLE-51-JOIN-BORROWED-PROVENANCE-SETS_opt.rs:3434:23\n     |\n3434 |         (*borrowed) = &mut ((right)[(0_i64) as usize]);\n     |         -----------   ^^^^^^^^^^"
     ],
     "semantic_status": "FAIL",
     "clone_provenance_status": "BLOCKED_MISSING_OR_INVALID"
@@ -8461,7 +8461,7 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.005623595992801711
+      "checker": 0.005819079000502825
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -8520,10 +8520,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0024452049983665347,
-      "fast_debug": 0.00241528800688684,
-      "native_emit": 0.0023092420015018433,
-      "native_opt_emit": 0.0023552329948870465
+      "checker": 0.0026416629989398643,
+      "fast_debug": 0.0025947149988496676,
+      "native_emit": 0.00237187699531205,
+      "native_opt_emit": 0.002671409005415626
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_53_map_remove_missing.moss\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_53_map_remove_missing.moss\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}}, \"semantic_identity\": \"main@2\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -8549,7 +8549,7 @@
     "engine_results": {
       "checker": {
         "exit_code": 1,
-        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
         "stderr": ""
       }
     },
@@ -8580,16 +8580,16 @@
       }
     },
     "failures": [
-      "Consumer checker rejected imported effect fixture: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+      "Consumer checker rejected imported effect fixture: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
     ],
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "provider_build": 0.44054185198911,
-      "checker": 0.0029058130021439865
+      "provider_build": 0.4935416429943871,
+      "checker": 0.0033558610011823475
     },
     "semantic_failures": [
-      "Consumer checker rejected imported effect fixture: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+      "Consumer checker rejected imported effect fixture: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tmp/phase28_oracle_r7_005_1-r7008-final2/projects/ORACLE-54-IMPORTED-MOSSI-EFFECTS/consumer/src/main.moss\", \"line\": 8, \"column\": 1, \"span\": {\"start_line\": 8, \"start_column\": 1, \"end_line\": 8, \"end_column\": 1}}, \"semantic_identity\": \"main@4\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
     ],
     "semantic_status": "FAIL",
     "clone_provenance_status": "NOT_APPLICABLE"
@@ -8653,10 +8653,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.0035485880071064457,
-      "fast_debug": 0.003496976991300471,
-      "native_emit": 0.0035544860002119094,
-      "native_opt_emit": 0.003897621005307883
+      "checker": 0.003815313000814058,
+      "fast_debug": 0.0036638550081988797,
+      "native_emit": 0.0035746259964071214,
+      "native_opt_emit": 0.0036463260039454326
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"UNKNOWN_ERROR_TYPE\", \"severity\": \"error\", \"message\": \"unknown error enum 'CollectionError'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_55_collection_error_inferred_raise.moss\", \"line\": 10, \"column\": 1, \"span\": {\"start_line\": 10, \"start_column\": 1, \"end_line\": 10, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_55_collection_error_inferred_raise.moss\", \"line\": 10, \"column\": 1, \"span\": {\"start_line\": 10, \"start_column\": 1, \"end_line\": 10, \"end_column\": 1}}, \"semantic_identity\": \"main@7\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -8720,10 +8720,10 @@
     "clone_audit": {},
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007430119003402069,
-      "fast_debug": 0.007562931001302786,
-      "native_emit": 0.007360720002907328,
-      "native_opt_emit": 0.0073717970080906525
+      "checker": 0.007612952002091333,
+      "fast_debug": 0.007657627007574774,
+      "native_emit": 0.008400578997679986,
+      "native_opt_emit": 0.007307746011065319
     },
     "semantic_failures": [
       "Checker unexpectedly REJECTED valid program: {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_VECTOR_ELEMENT_CONSUME\", \"severity\": \"error\", \"message\": \"Vector iteration elements cannot be consumed; use an explicit owned collection operation for element transfer\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_56_primitive_vector_element_read.moss\", \"line\": 11, \"column\": 1, \"span\": {\"start_line\": 11, \"start_column\": 1, \"end_line\": 11, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase28-worktrees/team-b/tests/phase28/oracle_r7_005_1/fixtures/oracle_56_primitive_vector_element_read.moss\", \"line\": 11, \"column\": 1, \"span\": {\"start_line\": 11, \"start_column\": 1, \"end_line\": 11, \"end_column\": 1}}, \"semantic_identity\": \"main@5\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
@@ -8993,14 +8993,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.007143713999539614,
-      "fast_debug": 0.006885889990371652,
-      "native_emit": 0.008671534989844076,
-      "rustc_debug": 0.16543725600058679,
-      "native_exec": 0.0005087360041216016,
-      "native_opt_emit": 0.009585138002876192,
-      "rustc_opt": 0.2844788910006173,
-      "native_opt_exec": 0.0005601639859378338
+      "checker": 0.008573327999329194,
+      "fast_debug": 0.006969431997276843,
+      "native_emit": 0.01006582600530237,
+      "rustc_debug": 0.16866199800278991,
+      "native_exec": 0.0004922380030620843,
+      "native_opt_emit": 0.010023868002463132,
+      "rustc_opt": 0.28905536299862433,
+      "native_opt_exec": 0.0005273069982649758
     },
     "semantic_failures": [
       "Fast Debug observable mutation expectation failed",
@@ -9302,14 +9302,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.009994129999540746,
-      "fast_debug": 0.009810189003474079,
-      "native_emit": 0.012327317002927884,
-      "rustc_debug": 0.16444082900125068,
-      "native_exec": 0.0005583219899563119,
-      "native_opt_emit": 0.012058589010848664,
-      "rustc_opt": 0.2788918979931623,
-      "native_opt_exec": 0.0005923119897488505
+      "checker": 0.010430326001369394,
+      "fast_debug": 0.010194225993473083,
+      "native_emit": 0.012294220010517165,
+      "rustc_debug": 0.17118563600524794,
+      "native_exec": 0.0005028209998272359,
+      "native_opt_emit": 0.012590697006089613,
+      "rustc_opt": 0.27286470000399277,
+      "native_opt_exec": 0.0004794380074599758
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
@@ -9524,14 +9524,14 @@
     },
     "explicit_copies": 0,
     "timings": {
-      "checker": 0.008020035005756654,
-      "fast_debug": 0.007554807001724839,
-      "native_emit": 0.01008284899580758,
-      "rustc_debug": 0.1644096389936749,
-      "native_exec": 0.0005106970056658611,
-      "native_opt_emit": 0.010851480008568615,
-      "rustc_opt": 0.2865994300082093,
-      "native_opt_exec": 0.0005197660066187382
+      "checker": 0.008913954996387474,
+      "fast_debug": 0.00860842400288675,
+      "native_emit": 0.010544653996475972,
+      "rustc_debug": 0.16774735400395002,
+      "native_exec": 0.0005397280037868768,
+      "native_opt_emit": 0.010731018002843484,
+      "rustc_opt": 0.2857689009979367,
+      "native_opt_exec": 0.0005103589937789366
     },
     "semantic_failures": [],
     "semantic_status": "PASS",
