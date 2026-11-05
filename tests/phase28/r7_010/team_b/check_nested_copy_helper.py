@@ -29,7 +29,7 @@ for mode, flags in (("debug", []), ("optimized", ["-O"])):
     assert emitted.returncode == 0, (emitted.stdout, emitted.stderr)
     generated = rust.read_text()
     marker = re.search(
-        r"/\* Moss copy fact call: (typed-copy-fact-v1:[0-9a-f]{64}) \*/ "
+        r"/\* Moss copy fact call: (typed-copy-fact-v1:[0-9a-f]{64}) \*/\s*"
         r"(__moss_copy_value_([0-9a-f]{16}))\(", generated)
     assert marker, "exact fact marker is not adjacent to a per-fact helper call"
     helper = marker.group(2)

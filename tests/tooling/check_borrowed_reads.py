@@ -123,7 +123,14 @@ assert 'value: &impl MossAccess_Record' in text
 # Phase 15.1 lends the decomposed state view to the internal synchronous
 # handler instead of reconstructing an owned Record at this message boundary.
 assert 'Accept_shared(&(state.record))' in text
-assert 'Some((state.record).__moss_value())' in text
+copy_call = re.search(
+    r'/\* Moss copy fact call: typed-copy-fact-v1:([0-9a-f]{64}) \*/\s*'
+    r'(__moss_copy_value_([0-9a-f]{16}))\(&\(state\.record\)\)', text)
+assert copy_call, 'reply copy(record) lacks its exact fact marker and materializer call'
+assert copy_call.group(1).startswith(copy_call.group(3))
+assert len(re.findall(r'fn __moss_copy_value_[0-9a-f]{16}\(', text)) == 1
+assert 'state.record).__moss_value()' not in text
+assert 'value.__moss_field_profile().__moss_field_name().clone()' in text
 lowered = strip_executor_runtime(text)
 assert 'unsafe' not in lowered and 'dyn ' not in lowered
 repeat = out / 'repeat.rs'

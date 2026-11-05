@@ -3815,6 +3815,46 @@ class FastInterpreter {
     if (requirement_count != 1 || !requirement)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT required checked match requirement missing or ambiguous");
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_MATCH_ARM_ACCESS")) {
+      auto corrupted = *requirement;
+      if (corrupted.arms.empty())
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT cannot perturb empty checked match arms");
+      auto& arm = corrupted.arms.front();
+      arm.payload_access = arm.payload_access == Effect::Write
+          ? Effect::Read : Effect::Write;
+      try {
+        (void)program_.typed_semantics->find_match_ownership_fact(corrupted);
+      } catch (const std::exception& e) {
+        throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT perturbed match access was accepted");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_FACT")) {
+      auto corrupted = *program_.typed_semantics;
+      auto fact = std::find_if(corrupted.match_ownership_facts.begin(),
+          corrupted.match_ownership_facts.end(), [&](const auto& candidate) {
+            return candidate.est_arena_index == requirement->est_arena_index &&
+                candidate.scrutinee_occurrence_id == requirement->scrutinee_occurrence_id &&
+                candidate.statement_occurrence_id == requirement->statement_occurrence_id &&
+                candidate.specialization_identity == requirement->specialization_identity &&
+                candidate.specialization_context == requirement->specialization_context;
+          });
+      if (fact == corrupted.match_ownership_facts.end())
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT cannot drop absent checked match fact");
+      corrupted.match_ownership_facts.erase(fact);
+      try {
+        (void)corrupted.find_match_ownership_fact(*requirement);
+      } catch (const std::exception& e) {
+        throw RuntimeError(line, "MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing checked match fact was accepted");
+    }
+#endif
     try {
       return program_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
@@ -4181,7 +4221,8 @@ class FastInterpreter {
               if (field == selected.object->fields.end())
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||
-                  copy_type_name(item->fields[field_index].type))
+                  (checked_arm->payload_access != Effect::Write &&
+                   copy_type_name(item->fields[field_index].type)))
                 frame.locals[binding] = field->second;
               else
                 frame.aliases[binding] = Place{&field->second, nullptr, {}};

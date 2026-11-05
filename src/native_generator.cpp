@@ -6672,61 +6672,20 @@ class Generator {
 
   std::pair<NativeCheckedCopyFactV1, string> native_copy_provenance_identity(
       const TypedCopyFactV1& fact) const {
-    NativeCheckedCopyFactV1 row;
     std::error_code error;
     const auto source_path = std::filesystem::absolute(
         std::filesystem::path(fact.provenance.source_file), error).lexically_normal();
     if (error)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT cannot normalize explicit-copy source path");
-    row.source_file = source_path.string();
     std::ifstream source(source_path, std::ios::binary);
     if (!source)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT cannot read exact explicit-copy source bytes");
-    row.source_bytes.assign(std::istreambuf_iterator<char>(source),
-                            std::istreambuf_iterator<char>());
-    auto span = [&](const est::SourceSpan& value) {
-      std::uint32_t end_line = value.line;
-      std::uint32_t end_column = value.column;
-      const auto begin = std::min<std::size_t>(value.source_begin,
-                                               row.source_bytes.size());
-      const auto end = std::min<std::size_t>(value.source_end,
-                                             row.source_bytes.size());
-      for (std::size_t index = begin; index < end; ++index) {
-        const unsigned char ch = static_cast<unsigned char>(row.source_bytes[index]);
-        if (ch == '\n') { ++end_line; end_column = 1; }
-        else if ((ch & 0xc0) != 0x80) ++end_column;
-      }
-      return NativeCloneSpanV2{
-          static_cast<std::uint32_t>(value.line),
-          static_cast<std::uint32_t>(value.column),
-          end_line, end_column,
-          value.source_begin, value.source_end};
-    };
-    row.est_arena_index = fact.est_arena_index;
-    row.copy_expression_id = fact.copy_occurrence_id;
-    row.source_expression_id = fact.source_occurrence_id;
-    row.copy_occurrence_span = span(fact.copy_occurrence_span);
-    row.source_occurrence_span = span(fact.source_occurrence_span);
-    row.statement_occurrence_id = fact.statement_occurrence_id;
-    row.specialization_identity = fact.specialization_identity;
-    row.specialization_context = fact.specialization_context;
-    row.est_fact_context = fact.est_fact_context;
-    if (!fact.source_type || !fact.result_type)
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT explicit-copy fact lacks closed types");
-    row.source_type_key = fact.source_type->stable_type_key();
-    row.result_type_key = fact.result_type->stable_type_key();
-    row.required_source_access = fact.required_source_access == Effect::Read
-        ? "READ" : "UNSUPPORTED";
-    row.creates_independent_owner = fact.creates_independent_owner;
-    row.availability = fact.availability == TypedCopyFactV1::Availability::Present
-        ? "Present" : "Missing";
-    row.provenance_source_file = fact.provenance.source_file;
-    row.provenance_line = static_cast<std::uint32_t>(fact.provenance.line);
-    row.defining_module_id = fact.provenance.defining_module_id;
-    row.enclosing_callable_id = fact.provenance.enclosing_callable_id;
+    const string source_bytes{std::istreambuf_iterator<char>(source),
+                              std::istreambuf_iterator<char>()};
+    NativeCheckedCopyFactV1 row = native_checked_copy_fact_from_typed(
+        fact, source_bytes);
     const string identity = native_checked_copy_identity(row);
     return {std::move(row), identity};
   }
@@ -6794,9 +6753,9 @@ class Generator {
       definition << "fn " << helper << "(value: &" << result_type << ") -> "
           << result_type << " { (*value).clone() } ";
     }
-    return "({ " + definition.str() + "(/* Moss copy fact call: " +
+    return "{ " + definition.str() + "/* Moss copy fact call: " +
         identity + " */ " + helper + "(&(" +
-        expr(source_expression, domain, locals, types) + "))) })";
+        expr(source_expression, domain, locals, types) + ")) }";
   }
 
   std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
@@ -7020,6 +6979,42 @@ class Generator {
     if (requirement_count != 1 || !requirement)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT required checked match requirement missing or ambiguous");
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_MATCH_ARM_ACCESS")) {
+      auto corrupted = *requirement;
+      if (corrupted.arms.empty())
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT cannot perturb empty checked match arms");
+      auto& arm = corrupted.arms.front();
+      arm.payload_access = arm.payload_access == Effect::Write
+          ? Effect::Read : Effect::Write;
+      try {
+        (void)p_.typed_semantics->find_match_ownership_fact(corrupted);
+      } catch (const std::exception& e) {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT perturbed match access was accepted");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_FACT")) {
+      auto corrupted = *p_.typed_semantics;
+      auto fact = std::find_if(corrupted.match_ownership_facts.begin(),
+          corrupted.match_ownership_facts.end(), [&](const auto& candidate) {
+            return candidate.est_arena_index == requirement->est_arena_index &&
+                candidate.scrutinee_occurrence_id == requirement->scrutinee_occurrence_id &&
+                candidate.statement_occurrence_id == requirement->statement_occurrence_id &&
+                candidate.specialization_identity == requirement->specialization_identity &&
+                candidate.specialization_context == requirement->specialization_context;
+          });
+      if (fact == corrupted.match_ownership_facts.end())
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT cannot drop absent checked match fact");
+      corrupted.match_ownership_facts.erase(fact);
+      try {
+        (void)corrupted.find_match_ownership_fact(*requirement);
+      } catch (const std::exception& e) {
+        throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + std::string(e.what()));
+      }
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT missing checked match fact was accepted");
+    }
+#endif
     try {
       return p_.typed_semantics->find_match_ownership_fact(*requirement);
     } catch (const std::exception& e) {
@@ -7998,7 +7993,13 @@ class Generator {
           }
           o << indent(level) << "match ";
           const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
-          if (s.b != "consume" && !recovery_slot) o << "&";
+          const bool mutable_match_payload = std::any_of(
+              match_fact->arms.begin(), match_fact->arms.end(),
+              [](const TypedMatchArmFactV1& arm) {
+                return arm.payload_access == Effect::Write;
+              });
+          if (s.b != "consume" && !recovery_slot)
+            o << (mutable_match_payload ? "&mut " : "&");
           if (struct_literal) o << "(";
           if (recovery_slot && s.b == "consume")
             o << "__moss_recovery_slot_" << s.a
@@ -8076,7 +8077,9 @@ class Generator {
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
-                if (copy_type_name(type))
+                if (checked_arm->payload_access == Effect::Write) {
+                  borrowed_function_parameters_.insert(name);
+                } else if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
               }
