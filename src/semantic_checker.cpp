@@ -2246,6 +2246,21 @@ class Checker {
           !p_.typed_semantics->collection_view_facts.empty())
         p_.typed_semantics->collection_view_facts.front()
             .bounded_non_escaping_lifetime = false;
+      if (std::getenv("MOSS_TEST_PERTURB_COLLECTION_VIEW_BASE_BINDING") &&
+          !p_.typed_semantics->collection_view_facts.empty())
+        p_.typed_semantics->collection_view_facts.front()
+            .receiver_binding_identity += ":perturbed";
+      if (std::getenv("MOSS_TEST_PERTURB_COLLECTION_VIEW_MEMBER_PATH") &&
+          !p_.typed_semantics->collection_view_facts.empty())
+        p_.typed_semantics->collection_view_facts.front()
+            .receiver_definition_identity += ":perturbed";
+      if (std::getenv("MOSS_TEST_PERTURB_COLLECTION_VIEW_RECEIVER_TYPE") &&
+          !p_.typed_semantics->collection_view_facts.empty()) {
+        auto invented = moss::Type::parse_canonical("map[Int, Int]");
+        if (invented)
+          p_.typed_semantics->collection_view_facts.front().receiver_type =
+              *invented;
+      }
       if (std::getenv("MOSS_TEST_DROP_PROJECTED_COLLECTION_READ_FACT") &&
           !p_.typed_semantics->projected_collection_read_facts.empty())
         p_.typed_semantics->projected_collection_read_facts.pop_back();
@@ -28730,9 +28745,54 @@ class Checker {
               receiver_facts->type->type_args.size() != 2)
             continue;
           std::optional<string> receiver_name;
-          if (const auto* identifier =
-                  std::get_if<est::Identifier>(&arena->at(member->base)))
-            receiver_name = identifier->name;
+          std::vector<std::pair<est::ExprId, string>> receiver_fields;
+          est::ExprId receiver_root = member->base;
+          // Resolve every receiver projection through closed EST types and the
+          // declaring Record Field; preserve those exact occurrences in the
+          // definition identity instead of accepting a source-shaped fallback.
+          while (receiver_root < arena->size()) {
+            if (const auto* grouped = std::get_if<est::Parenthesized>(
+                    &arena->at(receiver_root))) {
+              receiver_root = grouped->inner;
+              continue;
+            }
+            const auto* projection = std::get_if<est::Member>(
+                &arena->at(receiver_root));
+            if (!projection) break;
+            const auto* input_facts = arena->facts(projection->base, context);
+            if (!input_facts || !input_facts->type ||
+                !input_facts->type->is_closed()) {
+              receiver_root = UINT32_MAX;
+              break;
+            }
+            const auto owner = objects_.find(
+                canonical_type_name(input_facts->type));
+            if (owner == objects_.end()) {
+              receiver_root = UINT32_MAX;
+              break;
+            }
+            const auto field = std::find_if(owner->second->fields.begin(),
+                owner->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == projection->name;
+                });
+            if (field == owner->second->fields.end()) {
+              receiver_root = UINT32_MAX;
+              break;
+            }
+            const auto field_identity = moss::declaration_identity(
+                moss::DeclarationKind::Record,
+                program_module_identity(p_, owner->second->defining_module),
+                owner->second->declaration_name.empty()
+                    ? owner->second->name : owner->second->declaration_name) +
+                ":field:" + field->name + "@" + std::to_string(field->line);
+            receiver_fields.push_back({receiver_root, field_identity});
+            receiver_root = projection->base;
+          }
+          if (receiver_root < arena->size()) {
+            if (const auto* identifier =
+                    std::get_if<est::Identifier>(&arena->at(receiver_root)))
+              receiver_name = identifier->name;
+          }
           if (!receiver_name) continue;
           auto receiver_binding = env.binding_identities.find(*receiver_name);
           auto receiver_definition = env.definition_identities.find(*receiver_name);
@@ -28749,6 +28809,10 @@ class Checker {
           fact.statement_occurrence_id = statement_id->second;
           fact.receiver_binding_identity = receiver_binding->second;
           fact.receiver_definition_identity = receiver_definition->second;
+          std::reverse(receiver_fields.begin(), receiver_fields.end());
+          for (const auto& [field_occurrence, field_identity] : receiver_fields)
+            fact.receiver_definition_identity += ":projection:" + field_identity +
+                "#est:" + std::to_string(field_occurrence);
           fact.receiver_type = receiver_facts->type;
           fact.result_type = result_facts->type;
           fact.required_access = Effect::Read;
@@ -28770,17 +28834,55 @@ class Checker {
                 break;
               }
               if (!statement_used_identifiers(candidate).count(statement.a)) continue;
-              if (candidate.kind != Stmt::Kind::Echo || use_index != SIZE_MAX) {
+              // A local Map view may feed exactly one adjacent count binding.
+              // This consumes only its cardinality and cannot retain elements.
+              bool bounded_count_read = false;
+              if (candidate.kind == Stmt::Kind::Let ||
+                  candidate.kind == Stmt::Kind::Var) {
+                std::size_t exact_count_pipelines = 0;
+                for (const auto& use_handle : candidate.expression_handles) {
+                  if (use_handle.slot != est::ExprSlot::Initializer ||
+                      use_handle.argument_index != 0 ||
+                      use_handle.arena_index != handle.arena_index ||
+                      use_handle.expr >= arena->size())
+                    continue;
+                  est::ExprId use_root = use_handle.expr;
+                  while (use_root < arena->size()) {
+                    const auto* grouped = std::get_if<est::Parenthesized>(
+                        &arena->at(use_root));
+                    if (!grouped) break;
+                    use_root = grouped->inner;
+                  }
+                  const auto* pipeline = use_root < arena->size()
+                      ? std::get_if<est::Pipeline>(&arena->at(use_root))
+                      : nullptr;
+                  const auto* input = pipeline
+                      ? std::get_if<est::Identifier>(&arena->at(pipeline->input))
+                      : nullptr;
+                  const auto* stage = pipeline && pipeline->stages.size() == 1
+                      ? std::get_if<est::Identifier>(
+                            &arena->at(pipeline->stages.front()))
+                      : nullptr;
+                  const auto* pipeline_facts = arena->facts(use_root, context);
+                  const bool exact_count_pipeline = input &&
+                      input->name == statement.a &&
+                      stage && stage->name == "count" && pipeline_facts &&
+                      pipeline_facts->type &&
+                      pipeline_facts->type->kind == TypeKind::Primitive &&
+                      pipeline_facts->type->is_closed() &&
+                      (pipeline_facts->type->name == "Int" ||
+                       pipeline_facts->type->name == "int");
+                  exact_count_pipelines += exact_count_pipeline;
+                }
+                bounded_count_read = exact_count_pipelines == 1;
+              }
+              if ((candidate.kind != Stmt::Kind::Echo && !bounded_count_read) ||
+                  use_index != SIZE_MAX || i != statement_index + 1) {
                 escaped = true;
                 break;
               }
               use_index = i;
-              auto use_id = current_body_types_->statement_occurrence_ids.find(&candidate);
-              if (use_id == current_body_types_->statement_occurrence_ids.end()) {
-                escaped = true;
-                break;
-              }
-              uses.push_back(use_id->second);
+              uses.push_back(current_body_types_->statement_occurrence_id(candidate));
             }
             if (escaped || uses.size() != 1) continue;
             fact.bounded_read_use_statement_occurrences = std::move(uses);
