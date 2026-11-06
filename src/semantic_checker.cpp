@@ -2216,6 +2216,12 @@ class Checker {
           !p_.typed_semantics->return_value_facts.empty())
         p_.typed_semantics->return_value_facts.front().action =
             TypedReturnValueActionV1::ReadCopyPrimitive;
+      if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_TYPE_ORIGIN") &&
+          !p_.typed_semantics->return_value_facts.empty())
+        p_.typed_semantics->return_value_facts.front()
+            .result_type_from_declared_callable_contract =
+                !p_.typed_semantics->return_value_facts.front()
+                     .result_type_from_declared_callable_contract;
       if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_EST_FACT_CONTEXT") &&
           !p_.typed_semantics->return_value_facts.empty())
         p_.typed_semantics->return_value_facts.front().est_fact_context +=
@@ -26214,10 +26220,10 @@ class Checker {
     req.inference_status = fact.inference_status;
     req.unsupported_reason = fact.unsupported_reason;
     req.availability = fact.availability;
+#ifdef MOSS_TEST_BUILD
     const bool local_transfer =
         fact.source_kind == TypedLocalOwnershipFactV1::SourceKind::LocalBinding &&
         fact.disposition != TypedLocalOwnershipFactV1::Disposition::NotApplicable;
-#ifdef MOSS_TEST_BUILD
     if (local_transfer &&
         std::getenv("MOSS_TEST_PERTURB_LOCAL_TRANSFER_REQUIREMENT_DISPOSITION"))
       req.disposition = req.disposition ==
@@ -30615,12 +30621,28 @@ class Checker {
           if (!s.a.empty()) {
             check_ownership_expression(s.line, s.a, env, Effect::Consume);
             const auto inferred_return_type = inferred_expr_type(s.a, env.types);
+            bool unshadowed_none_return = false;
+            if (!env.binding_identities.count("None")) {
+              for (const auto& handle : s.expression_handles) {
+                if (handle.slot != est::ExprSlot::ReturnValue ||
+                    handle.argument_index != 0) continue;
+                const auto* arena = expression_arena(handle.arena_index);
+                if (!arena || handle.expr >= arena->size()) break;
+                const auto root = est::unparenthesized(*arena, handle.expr);
+                const auto* identifier = std::get_if<est::Identifier>(
+                    &arena->at(root));
+                unshadowed_none_return =
+                    identifier && identifier->name == "None";
+                break;
+              }
+            }
             const Function* return_owner = nullptr;
             if (starts_with(current_semantic_context_, "fn:")) {
               auto owner = functions_.find(current_semantic_context_.substr(3));
               if (owner != functions_.end()) return_owner = owner->second;
             }
             auto checked_return_type = inferred_return_type;
+            bool return_type_from_declared_callable_contract = false;
             if ((!checked_return_type ||
                  contains_internal_placeholder(*checked_return_type)) &&
                 checking_specialization_ &&
@@ -30628,6 +30650,32 @@ class Checker {
                 checking_specialization_->return_type_ref->is_closed()) {
               checked_return_type = checking_specialization_->return_type_ref
                   ->to_canonical_string();
+            }
+            if ((!checked_return_type ||
+                 contains_internal_placeholder(*checked_return_type)) &&
+                unshadowed_none_return &&
+                starts_with(current_semantic_context_, "method:")) {
+              const string identity = current_semantic_context_.substr(7);
+              const auto separator = identity.find('.');
+              const auto object = separator == string::npos
+                  ? objects_.end() : objects_.find(identity.substr(0, separator));
+              if (object != objects_.end()) {
+                const string method_name = identity.substr(separator + 1);
+                const auto method = std::find_if(
+                    object->second->methods.begin(), object->second->methods.end(),
+                    [&](const Method& candidate) {
+                      return candidate.name == method_name &&
+                          candidate.return_type.has_value();
+                    });
+                if (method != object->second->methods.end()) {
+                  auto declared = moss::Type::parse_canonical(
+                      canonical_type_name(*method->return_type));
+                  if (declared && (*declared)->is_closed()) {
+                    checked_return_type = (*declared)->to_canonical_string();
+                    return_type_from_declared_callable_contract = true;
+                  }
+                }
+              }
             }
             const bool defer_unresolved_return_fact = return_owner &&
                 (return_owner->generic || return_owner->static_dispatch) &&
@@ -30690,6 +30738,9 @@ class Checker {
             }
             fact.provenance.defining_module_id =
                 program_module_identity(p_, defining_module);
+            fact.result_type_from_declared_callable_contract =
+                return_type_from_declared_callable_contract &&
+                unshadowed_none_return;
             if (fact.expression_occurrence_id != UINT32_MAX) {
               auto* arena = expression_arena(fact.est_arena_index);
               const string source_context = "source:" +
@@ -30741,7 +30792,8 @@ class Checker {
               fact.required_access = Effect::Consume;
               const string source = tree_strip_expression_parens(
                   tree_normalize_pipeline(trim(s.a)));
-              if (tree_simple_identifier(source)) {
+              if (tree_simple_identifier(source) &&
+                  !tree_identifier_named(source, "None")) {
                 auto binding = env.binding_identities.find(source);
                 auto definition = env.definition_identities.find(source);
                 if (binding == env.binding_identities.end())

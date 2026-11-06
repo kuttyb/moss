@@ -769,6 +769,7 @@ struct TypedReturnValueFactV1 {
   Effect required_access{Effect::Consume};
   TypedReturnValueActionV1 action{TypedReturnValueActionV1::TransferOwnedValue};
   bool checker_proved_owned_rvalue{false};
+  bool result_type_from_declared_callable_contract{false};
 
   bool is_authoritative() const noexcept {
     if (availability != Availability::Present ||
@@ -789,6 +790,12 @@ struct TypedReturnValueFactV1 {
            expression_type->name == "bool" || expression_type->name == "char");
     if (action != TypedReturnValueActionV1::TransferOwnedValue ||
         required_access != Effect::Consume) return false;
+    if (result_type_from_declared_callable_contract &&
+        (!checker_proved_owned_rvalue || !source_binding_identity.empty() ||
+         !source_definition_identity.empty() ||
+         expression_type->kind != TypeKind::Builtin ||
+         expression_type->name != "option" ||
+         expression_type->type_args.size() != 1)) return false;
     const bool binding = !source_binding_identity.empty() &&
         !source_definition_identity.empty();
     return binding != checker_proved_owned_rvalue;
@@ -2797,7 +2804,9 @@ struct TypedSemanticModuleV1 {
         found->source_definition_identity == requirement.source_definition_identity &&
         found->required_access == requirement.required_access &&
         found->action == requirement.action &&
-        found->checker_proved_owned_rvalue == requirement.checker_proved_owned_rvalue;
+        found->checker_proved_owned_rvalue == requirement.checker_proved_owned_rvalue &&
+        found->result_type_from_declared_callable_contract ==
+            requirement.result_type_from_declared_callable_contract;
     if (req_count != 1 || fact_count != 1 || !same || !found->is_authoritative()) {
       throw std::invalid_argument("return-value checker fact is missing, duplicate, or contradictory");
     }
