@@ -25,18 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ect_common as C  # noqa: E402
 
 
-class Generator:
-    """One family of fixtures. `generate()` must be a pure function of rng."""
-    name = "base"
-    version = "1.0.0"
-    category = "base"
-
-    def generate(self, rng: random.Random, out_dir: Path) -> list[dict]:
-        """Write fixture directories under out_dir; return manifest rows
-        (without sha256/generator fields; those are added by the framework).
-        Row keys: id, path (relative to out_dir), kind (file|package),
-        entry (relative to path), expected_status, metadata."""
-        raise NotImplementedError
+Generator = C.Generator
 
 
 class TrivialGenerator(Generator):
@@ -150,8 +139,10 @@ class TrivialGenerator(Generator):
         return rows
 
 
-# Later teams: append generator instances here.
-GENERATORS: list[Generator] = [TrivialGenerator()]
+# Later teams: append generator instances here (generic-DAG and torture-extension
+# generators live in dag_generators.py to keep this module small).
+from dag_generators import DAG_GENERATORS  # noqa: E402
+GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS]
 
 
 def reject_reserved_names(root: Path) -> None:
@@ -230,7 +221,10 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
             work = C.TMP_ROOT / "validate" / fx["id"]
             values = C.stage_fixture(fx, work)
             argv = C.command_for(fx, {**tc.values(), **values}, None)
-            res = C.run_measured(argv, cwd=work, env=tc.env())
+            if fx.get("provider"):
+                C.build_provider(fx, tc, work)
+            res = C.run_measured(argv, cwd=work, env=tc.env(),
+                                 timeout=C.fixture_timeout(fx))
             verdict = C.extract_verdict(res, C.path_replacements(work, tc))
             status = C.status_of(verdict)
             line += f", status {status} (expected {fx['expected_status']})"

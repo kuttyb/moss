@@ -19,7 +19,7 @@ import tempfile
 import time
 
 SUITE_NAME = "moss_ect_check"
-SUITE_VERSION = "0.1.0"
+SUITE_VERSION = "0.2.0"
 SUITE_SEED = 20261105
 
 SUITE_DIR = Path(__file__).resolve().parent
@@ -77,6 +77,20 @@ VOLATILE_KEYS = {"duration_ms", "elapsed_ms", "time_ms", "timings", "pid",
                  "scheduling_events", "compiler_version"}
 
 
+class Generator:
+    """One family of fixtures. `generate()` must be a pure function of rng."""
+    name = "base"
+    version = "1.0.0"
+    category = "base"
+
+    def generate(self, rng: "random.Random", out_dir: Path) -> list[dict]:
+        """Write fixture directories under out_dir; return manifest rows
+        (without sha256/generator fields; those are added by the framework).
+        Row keys: id, path (relative to out_dir), kind (file|package),
+        entry (relative to path), expected_status, metadata."""
+        raise NotImplementedError
+
+
 # --------------------------------------------------------------------------
 # Hashing / manifest
 # --------------------------------------------------------------------------
@@ -127,6 +141,36 @@ def stage_fixture(fixture: dict, dest: Path) -> dict[str, str]:
                     ignore=copy_ignore)
     return {"root": str(dest), "path": str(dest / fixture["entry"]),
             "id": fixture["id"], "kind": fixture["kind"]}
+
+
+DEFAULT_TIMEOUT_S = 600.0
+# A provider package (generic-DAG fixtures with a package boundary) is built
+# before the consumer is measured, so the consumer check sees an up-to-date
+# provider `.mossi` and checks only its own package. `margo --check` writes the
+# interface without rustc, same stage the consumer series uses.
+PROVIDER_COMMAND = "{margo} --root {provider_root} --check --json build"
+
+
+def fixture_timeout(fixture: dict) -> float:
+    """Per-fixture timeout (manifest `timeout_s`); large generated fixtures set it."""
+    return float(fixture.get("timeout_s") or DEFAULT_TIMEOUT_S)
+
+
+def build_provider(fixture: dict, tc: "Toolchain", work: Path,
+                   extra_env: dict | None = None) -> dict:
+    """Build the fixture's provider package (manifest `provider`, a directory
+    relative to the staged fixture root). Returns the measured result; raises
+    ToolError if it fails, since the consumer series would be meaningless."""
+    root = Path(work) / fixture["provider"]
+    values = {**tc.values(), "provider_root": str(root)}
+    env = tc.env()
+    env.update(extra_env or {})
+    res = run_measured(expand_command(PROVIDER_COMMAND, values), cwd=root, env=env,
+                       timeout=fixture_timeout(fixture))
+    if res["rc"] != 0:
+        raise ToolError(f"provider build of {fixture['id']} failed: "
+                        f"{(res['stdout'] or res['stderr'])[:300]}")
+    return res
 
 
 def expand_command(template: str, values: dict[str, str]) -> list[str]:
@@ -221,12 +265,14 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
         except OSError as exc:
             raise ToolError(f"cannot run {argv[0]!r}: {exc.strerror or exc}")
         deadline = start + timeout
+        timed_out = False
         while True:
             pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
             if pid:
                 break
             if time.perf_counter() > deadline:
                 proc.kill()
+                timed_out = True
                 pid, status, usage = os.wait4(proc.pid, 0)
                 break
             time.sleep(0.0005)
@@ -248,7 +294,7 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
         return {"rc": rc, "stdout": out.read().decode(errors="replace"),
                 "stderr": stderr, "wall_ms": wall * 1000.0,
                 "cpu_ms": (usage.ru_utime + usage.ru_stime) * 1000.0,
-                "rss_kib": rss}
+                "rss_kib": rss, "timed_out": timed_out}
 
 
 def median(values):

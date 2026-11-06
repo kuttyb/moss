@@ -26,6 +26,7 @@ import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ect_common as C  # noqa: E402
+import report_dag  # noqa: E402
 
 MIN_REPS = 3
 WARM_ENV = "ECT_WARM_CLIENT_CMD"
@@ -45,36 +46,54 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
           resident client keeps whatever state it keeps between requests.
     """
     work = run_dir / "work" / f"{mode}-{fx['id']}"
-    samples, verdict = [], None
+    samples, provider_samples, verdict = [], [], None
     repl = C.path_replacements(work, tc)
+    timeout = C.fixture_timeout(fx)
+    provider = bool(fx.get("provider"))
 
-    def one(stage: bool, extra_env: dict | None = None):
+    def one(stage: bool, extra_env: dict | None = None, provider_sink: Path | None = None,
+            record_provider: bool = False):
+        """Optionally stage; for fixtures with a package boundary build the
+        provider first (its own measured series, never part of the consumer
+        sample), then run the measured consumer command."""
         values = C.stage_fixture(fx, work) if stage else \
             {"root": str(work), "path": str(work / fx["entry"]), "id": fx["id"],
              "kind": fx["kind"]}
+        if stage and provider:
+            pres = C.build_provider(
+                fx, tc, work, C.counter_env(provider_sink) if provider_sink else None)
+            if record_provider:
+                provider_samples.append(pres)
         argv = C.command_for(fx, {**tc.values(), **values}, template)
         env = tc.env()
         env.update(extra_env or {})
-        return C.run_measured(argv, cwd=work, env=env)
+        return C.run_measured(argv, cwd=work, env=env, timeout=timeout)
 
     if mode == "warm":
         C.stage_fixture(fx, work)
+        if provider:
+            C.build_provider(fx, tc, work)
         for _ in range(primes):
             one(stage=False)
     if mode == "cold" and warmup:
         one(stage=True)  # discarded: first run pays binary/page-cache page-in
     for _ in range(reps):
-        res = one(stage=(mode == "cold"))
+        res = one(stage=(mode == "cold"), record_provider=True)
         samples.append(res)
         verdict = C.extract_verdict(res, repl)
 
     counters = None
+    provider_counters = None
     if mode == "cold":
         sink = run_dir / "counters" / f"{fx['id']}.jsonl"
+        psink = run_dir / "counters" / f"{fx['id']}.provider.jsonl"
         sink.parent.mkdir(parents=True, exist_ok=True)
         sink.unlink(missing_ok=True)
-        one(stage=True, extra_env=C.counter_env(sink))
+        psink.unlink(missing_ok=True)
+        one(stage=True, extra_env=C.counter_env(sink), provider_sink=psink)
         counters = C.summarize_counters(C.read_counter_records(sink))
+        if provider:
+            provider_counters = C.summarize_counters(C.read_counter_records(psink))
     shutil.rmtree(work, ignore_errors=True)
 
     status = C.status_of(verdict)
@@ -88,6 +107,15 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
         "cpu_ms_median": C.median([s["cpu_ms"] for s in samples]),
         "rss_kib_median": C.median([s["rss_kib"] for s in samples]),
         "wall_ms_samples": [round(s["wall_ms"], 3) for s in samples],
+        "category": fx.get("category"), "metadata": fx.get("metadata"),
+        "exit_code": verdict.get("exit_code"),
+        "timed_out": any(s.get("timed_out") for s in samples),
+        "has_provider": provider,
+        "provider_wall_ms_median": C.median([s["wall_ms"] for s in provider_samples]),
+        "provider_cpu_ms_median": C.median([s["cpu_ms"] for s in provider_samples]),
+        "provider_rss_kib_median": C.median([s["rss_kib"] for s in provider_samples]),
+        "provider_functions_analyzed": (provider_counters or {}).get("functions_analyzed"),
+        "provider_checker_runs": (provider_counters or {}).get("checker_runs"),
     }
     row.update(counters or {"checker_runs": None,
                             **{name: None for name, _ in C.WORK_COUNTERS}})
@@ -108,12 +136,17 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
                                    ("candidate", candidate, candidate_template)):
             work = run_dir / "work" / f"gate-{side}-{fx['id']}"
             values = C.stage_fixture(fx, work)
+            if fx.get("provider"):
+                C.build_provider(fx, tc, work)
             argv = C.command_for(fx, {**tc.values(), **values}, template)
-            res = C.run_measured(argv, cwd=work, env=tc.env())
+            res = C.run_measured(argv, cwd=work, env=tc.env(),
+                                 timeout=C.fixture_timeout(fx))
             verdicts[side] = C.extract_verdict(res, C.path_replacements(work, tc))
             shutil.rmtree(work, ignore_errors=True)
         identical = verdicts["reference"] == verdicts["candidate"]
-        expected = verdicts["reference"]["ok"] == (fx["expected_status"] == "pass")
+        # `ok` is None for non-JSON output (e.g. a compiler crash with empty
+        # stdout), which counts as a failure, never as "matches expected pass".
+        expected = bool(verdicts["reference"]["ok"]) == (fx["expected_status"] == "pass")
         results.append({"fixture": fx["id"], "identical": identical,
                         "reference_matches_expected": expected,
                         "status": C.status_of(verdicts["reference"]),
@@ -269,6 +302,8 @@ def pct(share):
 CSV_FIELDS = ["compiler_path", "compiler_sha256", "compiler_flavor", "fixture", "kind", "mode", "reps", "expected_status", "status",
               "status_ok", "wall_ms_median", "wall_ms_min", "wall_ms_max",
               "cpu_ms_median", "rss_kib_median", "checker_runs",
+              "exit_code", "timed_out", "provider_wall_ms_median", "provider_cpu_ms_median",
+              "provider_rss_kib_median", "provider_functions_analyzed", "provider_checker_runs",
               *[name for name, _ in C.WORK_COUNTERS]]
 
 
@@ -283,7 +318,8 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
         writer.writeheader()
         writer.writerows(rows)
     (out / "results.json").write_text(json.dumps(
-        {"meta": meta, "rows": rows, "gate": gate, "metrics": metrics}, indent=2) + "\n")
+        {"meta": meta, "rows": rows, "gate": gate, "metrics": metrics,
+         "dag_analysis": report_dag.analysis(rows)}, indent=2) + "\n")
 
     lines = ["# ECT Check Benchmark - Local Report", "",
              f"**Suite:** `{meta['suite']}` {meta['suite_version']} "
@@ -325,6 +361,8 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
               "`reused_specialization_results`, keys = `distinct_specialization_keys` "
               "(the compiler's own `MOSS_PROFILE` names; today's memo is in-process, so "
               "hits are intra-run reuse only).", ""]
+
+    lines += report_dag.sections(rows)
 
     lines += ["## 2. Correctness gate (reference vs candidate)", ""]
     if gate is None:

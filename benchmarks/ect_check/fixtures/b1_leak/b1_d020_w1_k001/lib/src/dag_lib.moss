@@ -1,0 +1,64 @@
+module dag_lib
+
+fn n019_0(x):
+  return x.score()
+
+fn n018_0(x):
+  return n019_0(x) + 1
+
+fn n017_0(x):
+  return n018_0(x) + 1
+
+fn n016_0(x):
+  return n017_0(x) + 1
+
+fn n015_0(x):
+  return n016_0(x) + 1
+
+fn n014_0(x):
+  return n015_0(x) + 1
+
+fn n013_0(x):
+  return n014_0(x) + 1
+
+fn n012_0(x):
+  return n013_0(x) + 1
+
+fn n011_0(x):
+  return n012_0(x) + 1
+
+fn n010_0(x):
+  return n011_0(x) + 1
+
+fn n009_0(x):
+  return n010_0(x) + 1
+
+fn n008_0(x):
+  return n009_0(x) + 1
+
+fn n007_0(x):
+  return n008_0(x) + 1
+
+fn n006_0(x):
+  return n007_0(x) + 1
+
+fn n005_0(x):
+  return n006_0(x) + 1
+
+fn n004_0(x):
+  return n005_0(x) + 1
+
+fn n003_0(x):
+  return n004_0(x) + 1
+
+fn n002_0(x):
+  return n003_0(x) + 1
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+export fn root(x):
+  return n000_0(x)

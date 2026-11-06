@@ -71,7 +71,10 @@ def run(moss: Path, margo: Path) -> int:
     scratch.mkdir(parents=True, exist_ok=True)
     wrapper = scratch / "client.py"
     wrapper.write_text(WRAPPER)
-    fixtures = manifest["fixtures"]
+    # Gate self-tests need a representative cheap subset (smoke fixtures plus one
+    # package-with-provider and one file DAG fixture), not the multi-minute set.
+    cheap = {"b1_d005_w1_k001", "b2_k01", "diamond_d006_w4"}
+    fixtures = [f for f in manifest["fixtures"] if f["category"] == "smoke" or f["id"] in cheap]
 
     def template(mode):
         return (f"python3 {shlex.quote(str(wrapper))} {{kind}} {{path}} {{moss}} {{margo}} {mode}")

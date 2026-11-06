@@ -1,0 +1,604 @@
+module dag_lib
+
+fn n049_0(x):
+  return x.score()
+
+fn n049_1(x):
+  return x.score()
+
+fn n049_2(x):
+  return x.score()
+
+fn n049_3(x):
+  return x.score()
+
+fn n048_0(x):
+  return n049_0(x) + 1
+
+fn n048_1(x):
+  return n049_1(x) + 1
+
+fn n048_2(x):
+  return n049_2(x) + 1
+
+fn n048_3(x):
+  return n049_3(x) + 1
+
+fn n047_0(x):
+  return n048_0(x) + 1
+
+fn n047_1(x):
+  return n048_1(x) + 1
+
+fn n047_2(x):
+  return n048_2(x) + 1
+
+fn n047_3(x):
+  return n048_3(x) + 1
+
+fn n046_0(x):
+  return n047_0(x) + 1
+
+fn n046_1(x):
+  return n047_1(x) + 1
+
+fn n046_2(x):
+  return n047_2(x) + 1
+
+fn n046_3(x):
+  return n047_3(x) + 1
+
+fn n045_0(x):
+  return n046_0(x) + 1
+
+fn n045_1(x):
+  return n046_1(x) + 1
+
+fn n045_2(x):
+  return n046_2(x) + 1
+
+fn n045_3(x):
+  return n046_3(x) + 1
+
+fn n044_0(x):
+  return n045_0(x) + 1
+
+fn n044_1(x):
+  return n045_1(x) + 1
+
+fn n044_2(x):
+  return n045_2(x) + 1
+
+fn n044_3(x):
+  return n045_3(x) + 1
+
+fn n043_0(x):
+  return n044_0(x) + 1
+
+fn n043_1(x):
+  return n044_1(x) + 1
+
+fn n043_2(x):
+  return n044_2(x) + 1
+
+fn n043_3(x):
+  return n044_3(x) + 1
+
+fn n042_0(x):
+  return n043_0(x) + 1
+
+fn n042_1(x):
+  return n043_1(x) + 1
+
+fn n042_2(x):
+  return n043_2(x) + 1
+
+fn n042_3(x):
+  return n043_3(x) + 1
+
+fn n041_0(x):
+  return n042_0(x) + 1
+
+fn n041_1(x):
+  return n042_1(x) + 1
+
+fn n041_2(x):
+  return n042_2(x) + 1
+
+fn n041_3(x):
+  return n042_3(x) + 1
+
+fn n040_0(x):
+  return n041_0(x) + 1
+
+fn n040_1(x):
+  return n041_1(x) + 1
+
+fn n040_2(x):
+  return n041_2(x) + 1
+
+fn n040_3(x):
+  return n041_3(x) + 1
+
+fn n039_0(x):
+  return n040_0(x) + 1
+
+fn n039_1(x):
+  return n040_1(x) + 1
+
+fn n039_2(x):
+  return n040_2(x) + 1
+
+fn n039_3(x):
+  return n040_3(x) + 1
+
+fn n038_0(x):
+  return n039_0(x) + 1
+
+fn n038_1(x):
+  return n039_1(x) + 1
+
+fn n038_2(x):
+  return n039_2(x) + 1
+
+fn n038_3(x):
+  return n039_3(x) + 1
+
+fn n037_0(x):
+  return n038_0(x) + 1
+
+fn n037_1(x):
+  return n038_1(x) + 1
+
+fn n037_2(x):
+  return n038_2(x) + 1
+
+fn n037_3(x):
+  return n038_3(x) + 1
+
+fn n036_0(x):
+  return n037_0(x) + 1
+
+fn n036_1(x):
+  return n037_1(x) + 1
+
+fn n036_2(x):
+  return n037_2(x) + 1
+
+fn n036_3(x):
+  return n037_3(x) + 1
+
+fn n035_0(x):
+  return n036_0(x) + 1
+
+fn n035_1(x):
+  return n036_1(x) + 1
+
+fn n035_2(x):
+  return n036_2(x) + 1
+
+fn n035_3(x):
+  return n036_3(x) + 1
+
+fn n034_0(x):
+  return n035_0(x) + 1
+
+fn n034_1(x):
+  return n035_1(x) + 1
+
+fn n034_2(x):
+  return n035_2(x) + 1
+
+fn n034_3(x):
+  return n035_3(x) + 1
+
+fn n033_0(x):
+  return n034_0(x) + 1
+
+fn n033_1(x):
+  return n034_1(x) + 1
+
+fn n033_2(x):
+  return n034_2(x) + 1
+
+fn n033_3(x):
+  return n034_3(x) + 1
+
+fn n032_0(x):
+  return n033_0(x) + 1
+
+fn n032_1(x):
+  return n033_1(x) + 1
+
+fn n032_2(x):
+  return n033_2(x) + 1
+
+fn n032_3(x):
+  return n033_3(x) + 1
+
+fn n031_0(x):
+  return n032_0(x) + 1
+
+fn n031_1(x):
+  return n032_1(x) + 1
+
+fn n031_2(x):
+  return n032_2(x) + 1
+
+fn n031_3(x):
+  return n032_3(x) + 1
+
+fn n030_0(x):
+  return n031_0(x) + 1
+
+fn n030_1(x):
+  return n031_1(x) + 1
+
+fn n030_2(x):
+  return n031_2(x) + 1
+
+fn n030_3(x):
+  return n031_3(x) + 1
+
+fn n029_0(x):
+  return n030_0(x) + 1
+
+fn n029_1(x):
+  return n030_1(x) + 1
+
+fn n029_2(x):
+  return n030_2(x) + 1
+
+fn n029_3(x):
+  return n030_3(x) + 1
+
+fn n028_0(x):
+  return n029_0(x) + 1
+
+fn n028_1(x):
+  return n029_1(x) + 1
+
+fn n028_2(x):
+  return n029_2(x) + 1
+
+fn n028_3(x):
+  return n029_3(x) + 1
+
+fn n027_0(x):
+  return n028_0(x) + 1
+
+fn n027_1(x):
+  return n028_1(x) + 1
+
+fn n027_2(x):
+  return n028_2(x) + 1
+
+fn n027_3(x):
+  return n028_3(x) + 1
+
+fn n026_0(x):
+  return n027_0(x) + 1
+
+fn n026_1(x):
+  return n027_1(x) + 1
+
+fn n026_2(x):
+  return n027_2(x) + 1
+
+fn n026_3(x):
+  return n027_3(x) + 1
+
+fn n025_0(x):
+  return n026_0(x) + 1
+
+fn n025_1(x):
+  return n026_1(x) + 1
+
+fn n025_2(x):
+  return n026_2(x) + 1
+
+fn n025_3(x):
+  return n026_3(x) + 1
+
+fn n024_0(x):
+  return n025_0(x) + 1
+
+fn n024_1(x):
+  return n025_1(x) + 1
+
+fn n024_2(x):
+  return n025_2(x) + 1
+
+fn n024_3(x):
+  return n025_3(x) + 1
+
+fn n023_0(x):
+  return n024_0(x) + 1
+
+fn n023_1(x):
+  return n024_1(x) + 1
+
+fn n023_2(x):
+  return n024_2(x) + 1
+
+fn n023_3(x):
+  return n024_3(x) + 1
+
+fn n022_0(x):
+  return n023_0(x) + 1
+
+fn n022_1(x):
+  return n023_1(x) + 1
+
+fn n022_2(x):
+  return n023_2(x) + 1
+
+fn n022_3(x):
+  return n023_3(x) + 1
+
+fn n021_0(x):
+  return n022_0(x) + 1
+
+fn n021_1(x):
+  return n022_1(x) + 1
+
+fn n021_2(x):
+  return n022_2(x) + 1
+
+fn n021_3(x):
+  return n022_3(x) + 1
+
+fn n020_0(x):
+  return n021_0(x) + 1
+
+fn n020_1(x):
+  return n021_1(x) + 1
+
+fn n020_2(x):
+  return n021_2(x) + 1
+
+fn n020_3(x):
+  return n021_3(x) + 1
+
+fn n019_0(x):
+  return n020_0(x) + 1
+
+fn n019_1(x):
+  return n020_1(x) + 1
+
+fn n019_2(x):
+  return n020_2(x) + 1
+
+fn n019_3(x):
+  return n020_3(x) + 1
+
+fn n018_0(x):
+  return n019_0(x) + 1
+
+fn n018_1(x):
+  return n019_1(x) + 1
+
+fn n018_2(x):
+  return n019_2(x) + 1
+
+fn n018_3(x):
+  return n019_3(x) + 1
+
+fn n017_0(x):
+  return n018_0(x) + 1
+
+fn n017_1(x):
+  return n018_1(x) + 1
+
+fn n017_2(x):
+  return n018_2(x) + 1
+
+fn n017_3(x):
+  return n018_3(x) + 1
+
+fn n016_0(x):
+  return n017_0(x) + 1
+
+fn n016_1(x):
+  return n017_1(x) + 1
+
+fn n016_2(x):
+  return n017_2(x) + 1
+
+fn n016_3(x):
+  return n017_3(x) + 1
+
+fn n015_0(x):
+  return n016_0(x) + 1
+
+fn n015_1(x):
+  return n016_1(x) + 1
+
+fn n015_2(x):
+  return n016_2(x) + 1
+
+fn n015_3(x):
+  return n016_3(x) + 1
+
+fn n014_0(x):
+  return n015_0(x) + 1
+
+fn n014_1(x):
+  return n015_1(x) + 1
+
+fn n014_2(x):
+  return n015_2(x) + 1
+
+fn n014_3(x):
+  return n015_3(x) + 1
+
+fn n013_0(x):
+  return n014_0(x) + 1
+
+fn n013_1(x):
+  return n014_1(x) + 1
+
+fn n013_2(x):
+  return n014_2(x) + 1
+
+fn n013_3(x):
+  return n014_3(x) + 1
+
+fn n012_0(x):
+  return n013_0(x) + 1
+
+fn n012_1(x):
+  return n013_1(x) + 1
+
+fn n012_2(x):
+  return n013_2(x) + 1
+
+fn n012_3(x):
+  return n013_3(x) + 1
+
+fn n011_0(x):
+  return n012_0(x) + 1
+
+fn n011_1(x):
+  return n012_1(x) + 1
+
+fn n011_2(x):
+  return n012_2(x) + 1
+
+fn n011_3(x):
+  return n012_3(x) + 1
+
+fn n010_0(x):
+  return n011_0(x) + 1
+
+fn n010_1(x):
+  return n011_1(x) + 1
+
+fn n010_2(x):
+  return n011_2(x) + 1
+
+fn n010_3(x):
+  return n011_3(x) + 1
+
+fn n009_0(x):
+  return n010_0(x) + 1
+
+fn n009_1(x):
+  return n010_1(x) + 1
+
+fn n009_2(x):
+  return n010_2(x) + 1
+
+fn n009_3(x):
+  return n010_3(x) + 1
+
+fn n008_0(x):
+  return n009_0(x) + 1
+
+fn n008_1(x):
+  return n009_1(x) + 1
+
+fn n008_2(x):
+  return n009_2(x) + 1
+
+fn n008_3(x):
+  return n009_3(x) + 1
+
+fn n007_0(x):
+  return n008_0(x) + 1
+
+fn n007_1(x):
+  return n008_1(x) + 1
+
+fn n007_2(x):
+  return n008_2(x) + 1
+
+fn n007_3(x):
+  return n008_3(x) + 1
+
+fn n006_0(x):
+  return n007_0(x) + 1
+
+fn n006_1(x):
+  return n007_1(x) + 1
+
+fn n006_2(x):
+  return n007_2(x) + 1
+
+fn n006_3(x):
+  return n007_3(x) + 1
+
+fn n005_0(x):
+  return n006_0(x) + 1
+
+fn n005_1(x):
+  return n006_1(x) + 1
+
+fn n005_2(x):
+  return n006_2(x) + 1
+
+fn n005_3(x):
+  return n006_3(x) + 1
+
+fn n004_0(x):
+  return n005_0(x) + 1
+
+fn n004_1(x):
+  return n005_1(x) + 1
+
+fn n004_2(x):
+  return n005_2(x) + 1
+
+fn n004_3(x):
+  return n005_3(x) + 1
+
+fn n003_0(x):
+  return n004_0(x) + 1
+
+fn n003_1(x):
+  return n004_1(x) + 1
+
+fn n003_2(x):
+  return n004_2(x) + 1
+
+fn n003_3(x):
+  return n004_3(x) + 1
+
+fn n002_0(x):
+  return n003_0(x) + 1
+
+fn n002_1(x):
+  return n003_1(x) + 1
+
+fn n002_2(x):
+  return n003_2(x) + 1
+
+fn n002_3(x):
+  return n003_3(x) + 1
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n001_1(x):
+  return n002_1(x) + 1
+
+fn n001_2(x):
+  return n002_2(x) + 1
+
+fn n001_3(x):
+  return n002_3(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+fn n000_1(x):
+  return n001_1(x) + 1
+
+fn n000_2(x):
+  return n001_2(x) + 1
+
+fn n000_3(x):
+  return n001_3(x) + 1
+
+export fn root(x):
+  return n000_0(x) + n000_1(x) + n000_2(x) + n000_3(x)
