@@ -135,9 +135,17 @@ def churn_stats(churn: list[dict]) -> dict:
                        "own": count(lambda c: cat in c["categories_own"]),
                        "other": count(lambda c: cat in c["categories_other"])}
     per_commit_changed = [c["n_changed"] for c in edits]
+    ed = [c for c in edits if c["edited"]]
+    edited_cond = {"commits": len(ed), "any": sum(1 for c in ed if c["any_change"]),
+                   "own": sum(1 for c in ed if c["own_change"]),
+                   "other": sum(1 for c in ed if c["other_change"]),
+                   "functions_edited": sum(len(c["edited"]) for c in ed),
+                   "edited_changed": sum(c["n_changed_own"] for c in ed),
+                   "unedited_changed": sum(c["n_changed_other"] for c in ed),
+                   "wilson_other": wilson(sum(1 for c in ed if c["other_change"]), len(ed))}
     return {"total": len(churn), "available": len(avail), "unavailable": len(unavailable),
             "new_package_commits": len(newpkg), "edit_commits": n,
-            "headline": headline, "by_category": by_cat,
+            "headline": headline, "by_category": by_cat, "edited_cond": edited_cond,
             "changed_per_commit": dist(per_commit_changed),
             "wilson": {k: wilson(v, n) for k, v in headline.items() if k in ("any", "own", "other")},
             "unavailable_list": [{"scenario": c["scenario"], "reason": c["unavailable_reason"]} for c in unavailable],
@@ -248,6 +256,18 @@ def sections(stats: dict | None, meta: dict) -> list[str]:
                   "| Category | any function | edited function | other function (ripple) |", "|---|---:|---:|---:|"]
         for cat, v in ch["by_category"].items():
             lines.append(f"| {cat} | {v['any']} / {n} | {v['own']} / {n} | {v['other']} / {n} |")
+        e = ch["edited_cond"]
+        wl = e["wilson_other"]
+        lines += ["", f"Restricted to edit commits that changed the text of at least one EXISTING function "
+                  f"({e['commits']} of {n}; the other {n - e['commits']} only added functions, or changed "
+                  "files/regions no existing function's text covers): "
+                  f"any summary changed {e['any']} / {e['commits']}, an edited function's own summary changed "
+                  f"{e['own']} / {e['commits']}, another function's summary changed (ripple) "
+                  f"{e['other']} / {e['commits']}"
+                  + (f" (95% Wilson interval {wl[0] * 100:.0f}-{wl[1] * 100:.0f}%)" if wl else "") + ". "
+                  f"Function level over those commits: {e['functions_edited']} functions edited, "
+                  f"{e['edited_changed']} of them changed summary; {e['unedited_changed']} functions that were "
+                  "NOT edited changed summary.", ""]
         d = ch["changed_per_commit"]
         lines += ["", f"Functions whose summary changed per edit commit: p50 {f(d['p50'])}, p95 {f(d['p95'])}, "
                   f"max {f(d['max'], 0)}, mean {f(d['mean'])}.", ""]
