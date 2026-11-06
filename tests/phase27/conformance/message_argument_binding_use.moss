@@ -10,4 +10,4 @@ proc main():
   sink = Sink()
   values = [1, 2, 3]
   total = values |> map(bump)
-  message sink.Accept(total)
+  message sink.Accept(copy(total))

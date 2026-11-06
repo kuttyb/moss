@@ -203,6 +203,16 @@ string root_ingress_message(const string& receiver, const string& handler,
   vector<string> argument_locals;
   for (size_t index = 0; index < arguments.size(); ++index) {
     string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
+    const auto* explicit_copy_fact = resolve_root_ingress_copy_fact(
+        occurrence, static_cast<std::uint32_t>(index));
+    struct RootIngressCopyFactScope {
+      const TypedCopyFactV1*& slot;
+      const TypedCopyFactV1* prior;
+      RootIngressCopyFactScope(const TypedCopyFactV1*& target,
+                               const TypedCopyFactV1* current)
+          : slot(target), prior(target) { slot = current; }
+      ~RootIngressCopyFactScope() { slot = prior; }
+    } copy_fact_scope(root_ingress_copy_fact_, explicit_copy_fact);
     const TypedRootIngressPayloadFactV1* payload_fact = nullptr;
     if (index < occurrence.argument_expressions.size() &&
         p_.typed_semantics) {

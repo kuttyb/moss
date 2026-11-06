@@ -11,6 +11,6 @@ domain Worker:
 fn main():
   worker = Worker()
   data = Payload(value = 7)
-  result = message worker.Process(data)
+  result = message worker.Process(copy(data))
   data.value = 8
   echo result, data.value

@@ -1,0 +1,11 @@
+type Payload:
+  value: Int
+
+domain Sink:
+  fn Accept(payload: Payload):
+    echo "accepted"
+
+fn main():
+  sink = Sink()
+  payload = Payload(value = 9)
+  message sink.Accept(payload)

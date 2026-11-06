@@ -8,4 +8,4 @@ domain Reader:
 fn main():
   reader = Reader()
   p = _Payload(value = 9)
-  echo message reader.Read(p)
+  echo message reader.Read(copy(p))
