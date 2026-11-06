@@ -17396,3 +17396,64 @@ untouched.
   on top of staging `6dae29cb` plus Team A API commit `3092243e`. Full Regex
   package acceptance and the 60-fixture oracle remain pending. Oracle
   expectations remain unchanged.
+
+### R7-010 L7 checkpoint after baseline regression comparison (2026-11-05)
+
+- Isolated staging branch `phase28-r7-010-l7-copy-authority` is pushed at
+  `162192931b0ec04a82b7d3590ae25fd8882b2c94`. It contains the reviewed
+  implementation source `3417bedcd523dbeff187014de18d4a699ab53b10`, the
+  reviewed string-debt registration (`d4aa5111`), and L7's `check-shadow`
+  target addition. No merge to `phase28-work` or `main`.
+- `make check` passed all preceding Default/Shadow gates through clone-provenance
+  builder checks, then stopped at `verify_take_fixtures.py` (17/18):
+  `take_map_field` fails closed in Fast Debug because the checker emits no
+  bounded CollectionView authority for a single-use pipeline `count`. Team B
+  traced this to the checker producer's current Echo-only use proof; it is
+  inherited on the `phase28-work` baseline. No consumer fallback was added.
+- Direct Default regression run on `d4aa5111`: 90 PASS / 76 FAIL / 1 SKIP.
+  Baseline `150ab36b41e45504aaa400aa717da241be7542fb`: 166 / 1 / 0.
+  Team C's independently reviewed saved-log report finds 75 new failure IDs,
+  zero removed; the known `check_phase21_borrowed_view_write` remains, and
+  `shard_phase5_tooling` is skipped after its failed dependency.
+- Direct EST-shadow run on `d4aa5111`: 90 / 76 / 1. Baseline: 165 / 2 / 0.
+  Team C's independently reviewed report finds 74 added failure IDs, zero
+  removed; the two known baseline failures remain, and the same dependent skip
+  is new. Candidate logs use 16 jobs and baseline logs use 4; both reports
+  preserve this limitation and exact log digests.
+- The repository Makefile initially lacked the documented `check-shadow`
+  target. L7 added it in commit `16219293`; `make -n check-shadow` resolves to
+  the shadow runner. Final validation must execute this target against the
+  repaired source. The direct shadow runner above was run before adding the
+  alias target.
+- Team A checker checkpoint `phase28-r7-010-team-a-default-triage`
+  `84465ac4c18c88d1e0c5842e5347e7d1f49526c8` passes the focused unshadowed
+  `None` authority/drop/perturb gate and the isolated `-Werror` compile check.
+  Agent 2 review returned NO-GO because legal local `None = Some(...)` is
+  misclassified as an owned rvalue; the follow-up must bind only when the exact
+  unshadowed EST `None` predicate is true. The source-free proof-edge test also
+  remains pending exact `.mossi` serialization and Team B consumption of the
+  declared-callable-type origin bit. No checker patch is integrated yet.
+- Team B clone report is independently reviewed GO: branch
+  `phase28-r7-010-team-b-clone-correctness` at `921f70d75fde31ce8197289ffba6e60409e8e565`.
+  Its separate runtime-borrow NO-FIX report is reviewed GO at branch
+  `phase28-r7-010-team-b-runtime-borrow` `0afc9cda6120ce266477c430481c3076bd0dec69`.
+  The reports map 252 direct clone rows to 3 runtime templates and 588
+  `Arc::clone` rows to 7 sites. They grant no clone authorization. Nested
+  Root-ingress consumer work awaits exact checker facts; the `take_map_field`
+  gap is also checker-owned.
+- Team C's Default/Shadow delta reports and successor-feasibility report are
+  independently reviewed GO on branch
+  `phase28-r7-010-team-c-combined-conformance`, final SHA
+  `1c88d1b68f8fe60792b6c58c52f43918cd287fde`. The feasibility report finds
+  the v3 prototype lacks an explicit ABI contract identity/digest and requires
+  evidence for the 7 Arc sites and alternative duplication scanner limits.
+  It grants no authorization. Frozen v1/v2 oracle inputs and digests remain
+  unchanged; the prior reviewed oracle on source `3417bedc` is still
+  19/60 all-gate pass, 60/60 semantic pass, 41 provenance-only failures.
+- Current disposition is NO-GO. Remaining work includes the Team A shadowed
+  `None` repair; checker facts for nested messages and single-use CollectionView
+  pipeline calls; L7 source-free transport; Team B fail-closed consumption;
+  repair and re-triage of added regression failures; full oracle and clone
+  inventory on final source; explicit versioned ABI-bound clone provenance;
+  final Default/Shadow runs and independent final implementation review.
+  No runtime clone is authorized.
