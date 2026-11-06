@@ -27,10 +27,12 @@ import ect_common as C
 def select_scenarios(manifest: dict, ids: list[str] | None, fixture_ids: set[str] | None = None) -> list[dict]:
     scenarios = manifest.get("scenarios", [])
     if ids:
-        families = {s["family"] for s in scenarios}
+        # an id may also name a whole family ("b6_replay") or its prefix ("b6")
+        def in_family(s, w):
+            return s["family"] == w or s["family"].startswith(w + "_")
         wanted = set(ids)
-        chosen = [s for s in scenarios if s["id"] in wanted or s["family"] in wanted]
-        missing = wanted - {s["id"] for s in chosen} - families
+        chosen = [s for s in scenarios if s["id"] in wanted or any(in_family(s, w) for w in wanted)]
+        missing = {w for w in wanted if not any(s["id"] == w or in_family(s, w) for s in scenarios)}
         if missing:
             raise SystemExit(f"unknown scenario id(s): {sorted(missing)}")
         return chosen
