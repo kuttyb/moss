@@ -38,6 +38,7 @@ RAW_NAME_COUNTS = {
     ("checker", "FileIO"): 1,
     ("checker", "pop"): 3, ("checker", "pop_front"): 3,
     ("checker", "assert"): 2, ("checker", "sort"): 1,
+    ("checker", "assertEqual"): 1,
     ("checker", "pass"): 1,
     ("emitter", "consume"): 1, ("emitter", "_"): 1,
     ("emitter", "delete"): 1, ("emitter", "assert"): 1,
