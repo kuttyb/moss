@@ -2630,6 +2630,116 @@ class Generator {
     }
   }
 
+  const TypedIndexedExpressionReadFactV1*
+  resolve_indexed_expression_read_fact(const Stmt& statement,
+                                       const string& expression,
+                                       const string& context) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto* semantics = checked_program.typed_semantics.get();
+    if (!semantics || statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed expression-read authority context unavailable");
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles)
+      if (candidate.slot == est::ExprSlot::Condition &&
+          candidate.argument_index == 0) {
+        if (handle) throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate indexed expression-read condition handle");
+        handle = &candidate;
+      }
+    if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[handle->arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed expression-read EST handle unavailable");
+    const auto& arena = *checked_program.expression_arenas[handle->arena_index];
+    std::vector<est::ExprId> pending{handle->expr};
+    std::set<est::ExprId> reachable;
+    while (!pending.empty()) {
+      const auto id = pending.back(); pending.pop_back();
+      if (id >= arena.size() || !reachable.insert(id).second) continue;
+      const auto& node = arena.at(id);
+      std::visit([&](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, est::Index>) {
+          pending.push_back(value.base); pending.push_back(value.index);
+        } else if constexpr (std::is_same_v<T, est::Call>) {
+          pending.push_back(value.callee);
+          pending.insert(pending.end(), value.arguments.begin(), value.arguments.end());
+        } else if constexpr (std::is_same_v<T, est::Binary>) {
+          pending.push_back(value.left); pending.push_back(value.right);
+        } else if constexpr (std::is_same_v<T, est::Unary>) pending.push_back(value.operand);
+        else if constexpr (std::is_same_v<T, est::Parenthesized>) pending.push_back(value.inner);
+        else if constexpr (std::is_same_v<T, est::Member>) pending.push_back(value.base);
+      }, node);
+    }
+    const auto exact_context = context.empty() ? string("main") : context;
+    const auto specialization = codegen_active_specialization_key_;
+    const TypedIndexedExpressionReadRequirementV1* requirement = nullptr;
+    std::size_t matches = 0;
+    for (const auto& row : semantics->required_indexed_expression_read_occurrences) {
+      if (row.statement_occurrence_id != statement.checked_statement_occurrence_id ||
+          row.est_arena_index != handle->arena_index ||
+          row.specialization_context != exact_context ||
+          row.specialization_identity != specialization ||
+          !reachable.count(row.index_expression_occurrence_id)) continue;
+      const auto span = arena.span(row.index_expression_occurrence_id);
+      if (span.source_begin > span.source_end || span.source_end > statement.a.size() ||
+          trim(statement.a.substr(span.source_begin, span.source_end - span.source_begin)) !=
+              trim(expression)) continue;
+      requirement = &row; ++matches;
+    }
+    if (matches != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed expression-read fact missing or ambiguous");
+    const auto selected = *requirement;
+#ifdef MOSS_TEST_BUILD
+    auto& requirements = checked_program.typed_semantics
+        ->required_indexed_expression_read_occurrences;
+    auto& facts = checked_program.typed_semantics->indexed_expression_read_facts;
+    const auto same = [&](const auto& row) {
+      return row.statement_occurrence_id == selected.statement_occurrence_id &&
+          row.est_arena_index == selected.est_arena_index &&
+          row.index_expression_occurrence_id == selected.index_expression_occurrence_id &&
+          row.specialization_context == selected.specialization_context &&
+          row.specialization_identity == selected.specialization_identity;
+    };
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(), same);
+      if (it != requirements.end()) requirements.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT"))
+      requirements.push_back(selected);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(), same);
+      if (it != requirements.end()) it->required_access = Effect::Consume;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(), same);
+      if (it != facts.end()) facts.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_FACT"))
+      facts.push_back(selected);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(), same);
+      if (it != facts.end()) it->permits_copy = true;
+    }
+#endif
+    try {
+      const auto& fact = semantics->find_indexed_expression_read_fact(selected);
+      const auto* index = std::get_if<est::Index>(&arena.at(fact.index_expression_occurrence_id));
+      if (!index || index->base != fact.receiver_expression_occurrence_id ||
+          index->index != fact.selector_expression_occurrence_id ||
+          fact.required_access != Effect::Read || fact.permits_copy ||
+          !fact.temporary_nonescaping_borrow ||
+          fact.specialization_context != exact_context ||
+          fact.specialization_identity != specialization)
+        throw std::invalid_argument("indexed expression-read fact does not match exact checked READ occurrence");
+      return &fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
   const TypedProjectedCollectionReadFactV1*
   resolve_projected_collection_read_fact(
       const string& projection_expression) const {
@@ -6638,6 +6748,21 @@ class Generator {
         if (ownership && (ownership->access == Effect::Read ||
                           ownership->access == Effect::Write))
           return indexed;
+        if (phase21_codegen_statement_ &&
+            (phase21_codegen_statement_->kind == Stmt::Kind::If ||
+             phase21_codegen_statement_->kind == Stmt::Kind::While)) {
+          const auto* authority = resolve_indexed_expression_read_fact(
+              *phase21_codegen_statement_, e, codegen_body_context_);
+          const auto checked_receiver_type = generated_expr_type(ib, types);
+          if (!authority || !checked_receiver_type ||
+              canonical_type_name(authority->result_type) !=
+                  canonical_type_name(*indexed_type) ||
+              canonical_type_name(authority->receiver_type) !=
+                  canonical_type_name(*checked_receiver_type))
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT indexed expression-read TypeRef contradicts exact checked lowering type");
+          return indexed;
+        }
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked READ/WRITE, Copy, or projected-borrow authority");
       }

@@ -1205,6 +1205,62 @@ struct TypedIndexedCallArgumentReadFactV1 {
 struct TypedIndexedCallArgumentReadRequirementV1
     : TypedIndexedCallArgumentReadFactV1 {};
 
+// Checker proof that one exact nonprimitive Vector[index] expression is read
+// as part of a synchronous expression (for example, a conditional). This is
+// a bounded read of the indexed place; it never authorizes a value copy.
+struct TypedIndexedExpressionReadFactV1 {
+  enum class Availability { Present, Contradictory };
+  Availability availability{Availability::Contradictory};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId index_expression_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_expression_occurrence_id{UINT32_MAX};
+  est::ExprId selector_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  est::ExprSlot statement_slot{est::ExprSlot::Condition};
+  est::SourceSpan occurrence_span;
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  TypeRef receiver_type;
+  TypeRef selector_type;
+  TypeRef result_type;
+  Effect required_access{Effect::Read};
+  bool temporary_nonescaping_borrow{false};
+  bool permits_copy{false};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool is_authoritative() const noexcept {
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    return availability == Availability::Present &&
+        est_arena_index != UINT32_MAX &&
+        index_expression_occurrence_id != UINT32_MAX &&
+        receiver_expression_occurrence_id != UINT32_MAX &&
+        selector_expression_occurrence_id != UINT32_MAX &&
+        statement_occurrence_id != UINT32_MAX && occurrence_span.line > 0 &&
+        occurrence_span.source_end >= occurrence_span.source_begin &&
+        !receiver_binding_identity.empty() &&
+        !receiver_definition_identity.empty() && receiver_type &&
+        receiver_type->is_closed() && receiver_type->kind == TypeKind::Builtin &&
+        receiver_type->name == "vector" && receiver_type->type_args.size() == 1 &&
+        selector_type && selector_type->is_closed() &&
+        selector_type->kind == TypeKind::Primitive && selector_type->name == "int" &&
+        result_type && result_type->is_closed() &&
+        same_type(receiver_type->type_args.front(), result_type) &&
+        required_access == Effect::Read && temporary_nonescaping_borrow &&
+        !permits_copy && !specialization_identity.empty() &&
+        !specialization_context.empty() &&
+        !est_fact_context.empty() && !provenance.source_file.empty() &&
+        provenance.line > 0 && !provenance.enclosing_callable_id.empty() &&
+        !provenance.defining_module_id.empty();
+  }
+};
+struct TypedIndexedExpressionReadRequirementV1
+    : TypedIndexedExpressionReadFactV1 {};
+
 enum class TypedEchoArgumentModeV1 {
   ExpressionValue, BorrowedVectorElement
 };
@@ -1828,6 +1884,10 @@ struct TypedSemanticModuleV1 {
       indexed_call_argument_read_facts;
   std::vector<TypedIndexedCallArgumentReadRequirementV1>
       required_indexed_call_argument_read_occurrences;
+  std::vector<TypedIndexedExpressionReadFactV1>
+      indexed_expression_read_facts;
+  std::vector<TypedIndexedExpressionReadRequirementV1>
+      required_indexed_expression_read_occurrences;
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
@@ -3236,6 +3296,75 @@ struct TypedSemanticModuleV1 {
     for (const auto& requirement :
          required_indexed_call_argument_read_occurrences)
       (void)find_indexed_call_argument_read_fact(requirement);
+    if (indexed_expression_read_facts.size() !=
+        required_indexed_expression_read_occurrences.size())
+      throw std::invalid_argument(
+          "indexed expression-read fact/requirement set is incomplete");
+    for (const auto& requirement : required_indexed_expression_read_occurrences)
+      (void)find_indexed_expression_read_fact(requirement);
+  }
+
+  const TypedIndexedExpressionReadFactV1& find_indexed_expression_read_fact(
+      const TypedIndexedExpressionReadRequirementV1& requirement) const {
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left == right || (left && right && left->structurally_equal(*right));
+    };
+    const auto same_span = [](const est::SourceSpan& left,
+                              const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    const auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                                    const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file && left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    const auto same = [](const auto& left, const auto& right) {
+      return left.est_arena_index == right.est_arena_index &&
+          left.index_expression_occurrence_id ==
+              right.index_expression_occurrence_id &&
+          left.receiver_expression_occurrence_id ==
+              right.receiver_expression_occurrence_id &&
+          left.selector_expression_occurrence_id ==
+              right.selector_expression_occurrence_id &&
+          left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.statement_slot == right.statement_slot &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context;
+    };
+    const TypedIndexedExpressionReadRequirementV1* selected = nullptr;
+    std::size_t requirements = 0;
+    for (const auto& candidate : required_indexed_expression_read_occurrences)
+      if (same(candidate, requirement)) { selected = &candidate; ++requirements; }
+    if (requirements != 1 || !selected)
+      throw std::invalid_argument("indexed expression-read requirement missing or duplicate");
+    const TypedIndexedExpressionReadFactV1* fact = nullptr;
+    std::size_t facts = 0;
+    for (const auto& candidate : indexed_expression_read_facts)
+      if (same(candidate, requirement)) { fact = &candidate; ++facts; }
+    if (facts != 1 || !fact || !fact->is_authoritative() ||
+        !requirement.is_authoritative())
+      throw std::invalid_argument("indexed expression-read fact missing, duplicate, or contradictory");
+    if (fact->availability != requirement.availability ||
+        !same_span(fact->occurrence_span, requirement.occurrence_span) ||
+        fact->receiver_binding_identity != requirement.receiver_binding_identity ||
+        fact->receiver_definition_identity != requirement.receiver_definition_identity ||
+        !same_type(fact->receiver_type, requirement.receiver_type) ||
+        !same_type(fact->selector_type, requirement.selector_type) ||
+        !same_type(fact->result_type, requirement.result_type) ||
+        fact->required_access != requirement.required_access ||
+        fact->temporary_nonescaping_borrow !=
+            requirement.temporary_nonescaping_borrow ||
+        fact->permits_copy != requirement.permits_copy ||
+        fact->est_fact_context != requirement.est_fact_context ||
+        !same_provenance(fact->provenance, requirement.provenance))
+      throw std::invalid_argument(
+          "indexed expression-read fact contradicts its checker requirement");
+    return *fact;
   }
 
   const TypedMatchOwnershipFactV1* find_match_ownership_fact(

@@ -99,4 +99,30 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
                                     env=source_free_env, capture_output=True, text=True)
             assert output.returncode == 0 and output.stdout == "-1\n7\n3\n1\n1\n", output
 
+    # Source-free generic bodies must carry checker-issued indexed READ
+    # authority into native lowering. Exercise checker and consumer failures
+    # against the imported specialization, without source fallback.
+    corruption_hooks = (
+        "MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT",
+    )
+    for hook in (() if os.environ.get("MOSS_SKIP_TEST_HOOKS") == "1"
+                 else corruption_hooks):
+        corrupted_env = source_free_env | {hook: "1"}
+        result = subprocess.run([str(MOSS), "build", "--json"], cwd=source_free,
+                                env=corrupted_env, capture_output=True, text=True)
+        combined = result.stdout + result.stderr
+        if result.returncode == 0 or "MOSS_INTERNAL" not in combined:
+            raise AssertionError(f"{hook} did not fail closed on imported indexed READ:\n{combined}")
+
 print("Phase 24 imported generic expression specializations passed (source-backed and source-free)")

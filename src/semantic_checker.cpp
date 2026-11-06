@@ -2074,6 +2074,30 @@ class Checker {
           indexed_call_argument_read_facts_;
       p_.typed_semantics->required_indexed_call_argument_read_occurrences =
           required_indexed_call_argument_read_occurrences_;
+      p_.typed_semantics->indexed_expression_read_facts =
+          indexed_expression_read_facts_;
+      p_.typed_semantics->required_indexed_expression_read_occurrences =
+          required_indexed_expression_read_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      auto& indexed_read_facts =
+          p_.typed_semantics->indexed_expression_read_facts;
+      auto& indexed_read_requirements =
+          p_.typed_semantics->required_indexed_expression_read_occurrences;
+      if (std::getenv("MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_FACT") &&
+          !indexed_read_facts.empty()) indexed_read_facts.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_FACT") &&
+          !indexed_read_facts.empty()) indexed_read_facts.push_back(indexed_read_facts.front());
+      if (std::getenv("MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_FACT") &&
+          !indexed_read_facts.empty()) indexed_read_facts.front().permits_copy = true;
+      if (std::getenv("MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT") &&
+          !indexed_read_requirements.empty()) indexed_read_requirements.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT") &&
+          !indexed_read_requirements.empty())
+        indexed_read_requirements.push_back(indexed_read_requirements.front());
+      if (std::getenv("MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT") &&
+          !indexed_read_requirements.empty())
+        indexed_read_requirements.front().specialization_context += ":forged";
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS")) {
         std::array<std::size_t, 4> conditional_operation_counts{};
@@ -3191,6 +3215,9 @@ class Checker {
       indexed_call_argument_read_facts_;
   vector<TypedIndexedCallArgumentReadRequirementV1>
       required_indexed_call_argument_read_occurrences_;
+  vector<TypedIndexedExpressionReadFactV1> indexed_expression_read_facts_;
+  vector<TypedIndexedExpressionReadRequirementV1>
+      required_indexed_expression_read_occurrences_;
   vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
   vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
   vector<TypedEchoArgumentFactV1> echo_argument_facts_;
@@ -29112,6 +29139,117 @@ class Checker {
     }
   }
 
+  void retain_indexed_expression_read_facts(
+      const Stmt& statement, const OwnershipEnv& env) {
+    if ((statement.kind != Stmt::Kind::If &&
+         statement.kind != Stmt::Kind::While) ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      return;
+    const auto handle_it = std::find_if(statement.expression_handles.begin(),
+        statement.expression_handles.end(), [](const est::Handle& handle) {
+          return handle.slot == est::ExprSlot::Condition &&
+              handle.argument_index == 0;
+        });
+    if (handle_it == statement.expression_handles.end()) return;
+    const auto* arena = expression_arena(handle_it->arena_index);
+    if (!arena || handle_it->expr >= arena->size()) return;
+    const string fact_context = expression_fact_context();
+    const string consumer_context = local_ownership_consumer_context();
+    const auto specialization = local_ownership_specialization_identity();
+    std::vector<est::ExprId> pending{handle_it->expr};
+    std::set<est::ExprId> visited;
+    while (!pending.empty()) {
+      const auto id = pending.back();
+      pending.pop_back();
+      if (id >= arena->size() || !visited.insert(id).second) continue;
+      if (const auto* index = std::get_if<est::Index>(&arena->at(id))) {
+        const auto* receiver = index->base < arena->size()
+            ? std::get_if<est::Identifier>(&arena->at(index->base)) : nullptr;
+        const auto receiver_type = receiver
+            ? inferred_expr_term(receiver->name, env.types) : nullptr;
+        const auto occurrence_span = arena->span(id);
+        const auto receiver_source = occurrence_span.source_begin <= occurrence_span.source_end &&
+                occurrence_span.source_end <= statement.a.size()
+            ? statement.a.substr(occurrence_span.source_begin,
+                occurrence_span.source_end - occurrence_span.source_begin)
+            : string();
+        const auto selector_span = arena->span(index->index);
+        const auto selector_source = selector_span.source_begin <= selector_span.source_end &&
+                selector_span.source_end <= statement.a.size()
+            ? statement.a.substr(selector_span.source_begin,
+                selector_span.source_end - selector_span.source_begin)
+            : string();
+        const auto selector_type = inferred_expr_term(selector_source, env.types);
+        const auto result_type = inferred_expr_term(receiver_source, env.types);
+        if (!receiver || !receiver_type || !selector_type || !result_type ||
+            receiver_type->kind != TypeKind::Builtin ||
+            receiver_type->name != "vector" ||
+            receiver_type->type_args.size() != 1 ||
+            copy_type(receiver_type->type_args.front())) {
+          auto children = syntax_children(*arena, id);
+          pending.insert(pending.end(), children.begin(), children.end());
+          continue;
+        }
+        // Generic template checking can visit this body before the selected
+        // closed specialization is available. Only the specialized pass may
+        // publish authority; consumers never close these terms themselves.
+        if (!receiver_type->is_closed() || !selector_type->is_closed() ||
+            !result_type->is_closed()) {
+          auto children = syntax_children(*arena, id);
+          pending.insert(pending.end(), children.begin(), children.end());
+          continue;
+        }
+        TypedIndexedExpressionReadFactV1 fact;
+        fact.availability = TypedIndexedExpressionReadFactV1::Availability::Present;
+        fact.est_arena_index = handle_it->arena_index;
+        fact.index_expression_occurrence_id = id;
+        fact.receiver_expression_occurrence_id = index->base;
+        fact.selector_expression_occurrence_id = index->index;
+        fact.statement_occurrence_id = statement.checked_statement_occurrence_id;
+        fact.statement_slot = est::ExprSlot::Condition;
+        fact.occurrence_span = occurrence_span;
+        if (env.binding_identities.count(receiver->name))
+          fact.receiver_binding_identity = env.binding_identities.at(receiver->name);
+        if (env.definition_identities.count(receiver->name))
+          fact.receiver_definition_identity = env.definition_identities.at(receiver->name);
+        else if (!fact.receiver_binding_identity.empty())
+          fact.receiver_definition_identity = "parameter-definition:" +
+              fact.receiver_binding_identity;
+        fact.receiver_type = receiver_type;
+        fact.selector_type = selector_type;
+        fact.result_type = result_type;
+        fact.required_access = Effect::Read;
+        fact.temporary_nonescaping_borrow = true;
+        fact.permits_copy = false;
+        fact.specialization_identity = specialization;
+        fact.specialization_context = consumer_context;
+        fact.est_fact_context = fact_context;
+        fact.provenance.source_file = statement.source_file.empty()
+            ? current_source_file_ : statement.source_file;
+        fact.provenance.line = statement.line;
+        fact.provenance.enclosing_callable_id = current_semantic_context_;
+        string defining_module = p_.module_name;
+        if (starts_with(current_semantic_context_, "fn:")) {
+          const auto function = functions_.find(current_semantic_context_.substr(3));
+          if (function != functions_.end() &&
+              !function->second->defining_module.empty())
+            defining_module = function->second->defining_module;
+        }
+        fact.provenance.defining_module_id =
+            program_module_identity(p_, defining_module);
+        if (!fact.is_authoritative())
+          throw std::invalid_argument(
+              "checker indexed expression-read authority is incomplete");
+        TypedIndexedExpressionReadRequirementV1 requirement;
+        static_cast<TypedIndexedExpressionReadFactV1&>(requirement) = fact;
+        indexed_expression_read_facts_.push_back(fact);
+        required_indexed_expression_read_occurrences_.push_back(requirement);
+      }
+      auto children = syntax_children(*arena, id);
+      pending.insert(pending.end(), children.begin(), children.end());
+    }
+  }
+
   void retain_projected_call_argument_read_facts(
       const Stmt& statement, const OwnershipEnv& env) {
     if (statement.kind != Stmt::Kind::Call || !current_body_types_ ||
@@ -29591,6 +29729,7 @@ class Checker {
       retain_map_collection_view_facts(statements, index, env);
       retain_projected_collection_read_facts(s, env);
       retain_projected_call_argument_read_facts(s, env);
+      retain_indexed_expression_read_facts(s, env);
 
       const RaiseSet direct_raises = exceptional
           ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
