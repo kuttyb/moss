@@ -18205,3 +18205,21 @@ untouched.
   separate checker argument-TypeRef dependency, intentionally outside this
   candidate. Full suites remain unrun; independent Team C and Agent 2 exact-SHA
   reviews are pending after freeze. No `.mossi` change or clone exception.
+
+### Nested Root-ingress Message argument follow-up — new candidate
+
+- Team C returned NO-GO on `80028dbf27101f2e4017107450f08b3fc469ba7c`: accepted
+  `message worker.Accept(message worker.Fetch())` had a child Message source
+  span contained by its parent, and Native's prior span-overlap check rejected
+  that valid tree. Fast Debug accepted and executed the source; this was a
+  Native-only occurrence-order defect.
+- The follow-up keeps each Message ExprId and queues in EST preorder, matching
+  Native's entry into the parent node followed by recursive argument lowering.
+  It rejects duplicate arena/ExprId identities; source spans remain only a
+  consistency guard. Added exact parent/child Default/Shadow Native parity and
+  child ExprId perturb coverage.
+- Follow-up evidence: candidate `make --jobs="$(nproc)" moss-dev`; Phase 21
+  nested-ingress gate Default and Shadow; Phase 28 capture-authority gate 278
+  scenarios Default and Shadow; feedback validation and `git diff --check`.
+  Full suites/oracle were not run. New exact-SHA Team C and Agent 2 reviews are
+  pending; do not integrate or push.

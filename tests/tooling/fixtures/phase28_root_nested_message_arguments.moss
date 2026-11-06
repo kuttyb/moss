@@ -1,0 +1,10 @@
+domain Worker:
+  fn Fetch() -> Int:
+    reply 7
+
+  fn Accept(value: Int) -> Int:
+    reply value
+
+fn main():
+  worker = Worker()
+  echo message worker.Accept(message worker.Fetch())

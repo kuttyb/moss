@@ -1986,18 +1986,16 @@ class Generator {
       }, node);
     };
     visit(expression.expression);
-    std::stable_sort(queue.messages.begin(), queue.messages.end(),
-        [](const auto& left, const auto& right) {
-          return std::tie(left.source_begin, left.source_end) <
-              std::tie(right.source_begin, right.source_end);
-        });
-    for (std::size_t index = 1; index < queue.messages.size(); ++index)
-      if (queue.messages[index - 1].source_begin ==
-              queue.messages[index].source_begin ||
-          queue.messages[index - 1].source_end >
-              queue.messages[index].source_begin)
+    // Preserve EST preorder: Native consumes a Message occurrence when it
+    // enters that node, then recursively lowers its arguments. Parent and
+    // child Message spans intentionally overlap, so source-span sorting is
+    // not an occurrence order.
+    std::set<std::pair<std::uint32_t, est::ExprId>> seen_occurrences;
+    for (const auto& queued : queue.messages)
+      if (!seen_occurrences.emplace(queued.occurrence.arena_index,
+                                    queued.occurrence.message_expression).second)
         throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT Root-ingress message source ordering is ambiguous");
+            "MOSS_INTERNAL_INVARIANT duplicate Root-ingress Message ExprId in checked EST tree");
     return queue;
   }
 
@@ -2013,7 +2011,14 @@ class Generator {
     if (trim(source) != trim(queued.source))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress Native traversal disagrees with checked EST source order");
-    return queued.occurrence;
+    auto occurrence = queued.occurrence;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv(
+            "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_NESTED_MESSAGE_EXPR_ID") &&
+        active_root_ingress_message_queue_->next == 2)
+      ++occurrence.message_expression;
+#endif
+    return occurrence;
   }
 
   const TypedCopyFactV1* resolve_root_ingress_copy_fact(
