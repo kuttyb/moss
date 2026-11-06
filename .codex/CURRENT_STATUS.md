@@ -1,3 +1,31 @@
+### Phase 28 R7-010 L7 continuation checkpoint (2026-11-05)
+
+- Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
+  worktree `tmp/phase28-r7-010-l7-query`, HEAD
+  `d1bb2303c0cfa8a9020b34a5a302da0f934385f9` (two reviewed Team A commits
+  ahead of the previously recorded `43e03980`; not yet pushed at this note).
+  No merge to `phase28-work` or `main`.
+- Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
+  integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
+  builds pass. On this exact HEAD, projected-call argument authority,
+  local-transfer authority (23 Default/Shadow scenarios), oracle authority
+  facts, specialized ownership contract, all 17 primitive-index cases, and
+  local ownership facts pass.
+- The intact Regex package now resolves module provenance correctly and
+  reaches the known fail-closed native indexed-read invariant. Team B resumed
+  in isolated worktree `tmp/phase28-r7-010-team-b-projected-read-consumer-d1bb`,
+  branch `phase28-r7-010-team-b-projected-read-consumer-d1bb`, based exactly
+  on `d1bb2303`. Its scope is native consumption of the exact checked
+  `TypedProjectedCallArgumentReadFactV1`, with drop/duplicate/perturb tests;
+  no implementation edits had been made at this checkpoint.
+- Current disposition remains NO-GO. Remaining: Team B native consumer repair
+  and independent review; rerun Team C's frozen oracle, clone provenance and
+  corruption/parity audits against the combined SHA; resolve semantic failures
+  and unapproved runtime duplication; then compare the full default and
+  EST-shadow suites to their recorded baselines and obtain final independent
+  review. Oracle expectations/digests remain frozen. No unverified clone is
+  authorized. Full suites have not been run on this integrated SHA.
+
 ### Phase 28 R7-010 current L7 checkpoint (2026-11-05)
 
 - Isolated worktree/branch: `tmp/phase28-r7-010-l7-query`,
