@@ -2064,8 +2064,7 @@ class Checker {
         for (const auto& fact : p_.typed_semantics->conditional_collection_error_facts)
           ++conditional_operation_counts.at(static_cast<std::size_t>(fact.operation));
         for (const auto& fact : p_.typed_semantics->return_value_facts)
-          if (!fact.specialization_identity.empty() && fact.expression_type &&
-              fact.expression_type->is_closed()) {
+          if (fact.expression_type && fact.expression_type->is_closed()) {
             return_specialization_identities.insert(fact.specialization_identity);
             return_specialization_types.insert(
                 fact.expression_type->to_canonical_string());
@@ -2078,7 +2077,11 @@ class Checker {
                       << " expr=" << fact.expression_occurrence_id
                       << " statement=" << fact.statement_occurrence_id
                       << " access=" << static_cast<int>(fact.required_access)
-                      << " action=" << static_cast<int>(fact.action) << '\n';
+                      << " action=" << static_cast<int>(fact.action)
+                      << " binding=" << fact.source_binding_identity
+                      << " type_origin="
+                      << fact.result_type_from_declared_callable_contract
+                      << '\n';
           }
         std::cerr << "PHASE28_AUTHORITY_FACTS conditional="
                   << p_.typed_semantics->conditional_collection_error_facts.size()
@@ -30793,7 +30796,7 @@ class Checker {
               const string source = tree_strip_expression_parens(
                   tree_normalize_pipeline(trim(s.a)));
               if (tree_simple_identifier(source) &&
-                  !tree_identifier_named(source, "None")) {
+                  !unshadowed_none_return) {
                 auto binding = env.binding_identities.find(source);
                 auto definition = env.definition_identities.find(source);
                 if (binding == env.binding_identities.end())
