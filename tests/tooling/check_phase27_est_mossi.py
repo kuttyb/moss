@@ -95,18 +95,22 @@ def main():
     if not generic_dumps or not any("binary#" in line for line in generic_dumps):
         raise SystemExit("ABI-v9 generic_stmt body did not build with the EST grammar")
 
-    corrupted_env = dict(env)
-    corrupted_env["MOSS_TEST_DROP_RETURN_VALUE_SOURCE_EST_FACT"] = "1"
-    corrupted = subprocess.run(
-        [str(MOSS), "check", str(APP / "src" / "main.moss"), "--json"],
-        cwd=APP, env=corrupted_env, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
-    if corrupted.returncode == 0 or \
-            "specialized return fact does not reference its checked EST occurrence" \
-            not in corrupted.stdout:
-        raise SystemExit(
-            "dropping the exact provider source-context fact did not fail closed:\n"
-            f"{corrupted.stdout}\n{corrupted.stderr}")
+    for hook in ("MOSS_TEST_DROP_LOCAL_SPECIALIZED_RETURN_EST_FACT",
+                 "MOSS_TEST_PERTURB_LOCAL_SPECIALIZED_RETURN_EST_FACT"):
+        corrupted_env = dict(env)
+        corrupted_env["MOSS_TEST_SELECT_LOCAL_SPECIALIZED_RETURN_EST_FACT"] = \
+            "est_est_library__generic"
+        corrupted_env[hook] = "1"
+        corrupted = subprocess.run(
+            [str(MOSS), "check", str(APP / "src" / "main.moss"), "--json"],
+            cwd=APP, env=corrupted_env, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        if corrupted.returncode == 0 or \
+                "exact local specialized ReturnValue EST type fact is missing or contradictory" \
+                not in corrupted.stdout:
+            raise SystemExit(
+                f"{hook} did not invalidate the exact ABI-v9 specialization-scoped "
+                f"ReturnValue fact:\n{corrupted.stdout}\n{corrupted.stderr}")
 
     dump_path.write_text("", encoding="utf-8")
     debug = run_moss(["debug", str(APP / "src" / "main.moss")], env)

@@ -263,6 +263,7 @@ def build_manifest() -> list[Job]:
         "check_phase26_1_1_x1_v9",
         "check_phase26_1_1_x1_v10",
         "check_phase27_est_mossi",
+        "check_phase25_r2_wp1_call_chain",
         "check_phase21_unary_not_effects",
         "check_phase21_field_projection_effects",
         "check_phase21_raising_iterators",

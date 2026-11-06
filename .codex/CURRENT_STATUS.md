@@ -1,5 +1,20 @@
 ## Phase 28 R7-010 recovery correction (2026-11-05)
 
+### Reviewed validation fixes integrated — `f0d22c13`
+
+- Exact candidate `f0d22c1315f70450d23953224932795b433b75cd`, based on
+  `56ffc1cb`, received Agent 2 scoped GO and Team C scoped PASS. Its two test
+  fixes are integrated into this isolated staging branch: route WP1 to
+  moss-dev for MOSS_TEST_BUILD hooks, and update the Phase 27 `.mossi` gate to
+  drop/perturb the exact local specialization ReturnValue EST fact. Review
+  reports: `docs/phase28/agent2-reviews/R7-010-validation-regressions-f0d22c.md`
+  and `docs/phase28/team-c/TEAM_C_R7_010_VALIDATION_FIX_F0D22C13.md`.
+- Focused WP1 Default/Shadow gates and Phase 27 `.mossi` parity/drop/perturb
+  tests pass on exact candidate SHA. ABI-v9 source-backed controls, imported
+  Section 1 and Section 2 checks, and default/shadow raw `.mossi` equality pass.
+  Full matrices have not yet been rerun after this test-only integration; the
+  latest full Default remains 110/167 PASS, 56 FAIL, 1 SKIP on `ce2e2116`.
+
 ### Reviewed source-free multi-hop ReturnValue slice integrated — `d8727687`
 
 - Frozen implementation candidate `d8727687f6fcf9e38607dfd88978db26720db544`
