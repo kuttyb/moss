@@ -66,7 +66,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -146,6 +146,10 @@ $(foreach object,$(COMPILER_OBJECTS_OPT),$(eval $(object): $(object:.o=.d)))
 -include $(COMPILER_DEPFILES_DEV) $(COMPILER_DEPFILES_OPT) $(COMPILER_PCH_DEPFILES)
 
 check: check-parallel
+
+# Run the EST-shadow regression matrix separately from the default suite.
+check-shadow: moss-dev moss-opt
+	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-parallel: moss-dev moss-opt
 	python3 tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py $(MOSS_DEV)
