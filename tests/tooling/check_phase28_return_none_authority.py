@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -44,6 +45,18 @@ def main() -> int:
         result = json.loads(failed.stdout)
         if result.get("ok") or result.get("error", {}).get("code") != \
                 "MOSS_INTERNAL_OR_IO_ERROR":
+            raise AssertionError(f"{hook} did not fail closed: {result!r}\n"
+                                 f"{failed.stderr}")
+
+    for hook in ("MOSS_TEST_DROP_DECLARED_NONE_METHOD_RETURN_EST_FACT",
+                 "MOSS_TEST_PERTURB_DECLARED_NONE_METHOD_RETURN_EST_FACT"):
+        failed = run([compiler, "check", "--json", str(FIXTURE)],
+                     {**env, hook: "1",
+                      "MOSS_TEST_SELECT_DECLARED_NONE_METHOD_RETURN":
+                          "Counter.next"})
+        result = json.loads(failed.stdout)
+        if result.get("ok") or result.get("error", {}).get("code") not in {
+                "MOSS_INTERNAL_INVARIANT", "MOSS_INTERNAL_OR_IO_ERROR"}:
             raise AssertionError(f"{hook} did not fail closed: {result!r}\n"
                                  f"{failed.stderr}")
 
@@ -108,6 +121,40 @@ def main() -> int:
                              f"{interpreted_shadow.returncode}, "
                              f"{interpreted_shadow.stdout!r}, "
                              f"{interpreted_shadow.stderr!r}")
+
+    native_project = ROOT / "tmp" / "phase28-return-none-native"
+    shutil.rmtree(native_project, ignore_errors=True)
+    (native_project / "src").mkdir(parents=True)
+    (native_project / "Moss.toml").write_text(
+        '[package]\nname = "phase28_return_none_native"\nversion = "0.1.0"\n'
+        '\n[build]\nsource = "src"\n', encoding="utf-8")
+    (native_project / "src" / "main.moss").write_text(
+        FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    native_env = {**base_env, "MOSS": compiler}
+    native = subprocess.run([str(ROOT / "margo"), "run", "--json"],
+                            cwd=native_project, env=native_env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            check=False)
+    if native.returncode or native.stdout != "empty\n":
+        raise AssertionError("declared None native method output mismatch: "
+                             f"{native.returncode}, {native.stdout!r}, "
+                             f"{native.stderr!r}")
+    shutil.rmtree(native_project / "build", ignore_errors=True)
+    wrong_context_env = {
+        **native_env,
+        "MOSS_TEST_PERTURB_DECLARED_NONE_METHOD_RETURN_EST_CONTEXT":
+            "Counter.next",
+    }
+    wrong_context = subprocess.run(
+        [str(ROOT / "margo"), "run", "--json"], cwd=native_project,
+        env=wrong_context_env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False)
+    wrong_context_output = wrong_context.stdout + wrong_context.stderr
+    if wrong_context.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in \
+            wrong_context_output:
+        raise AssertionError("native method ReturnValue wrong-context mutation did not fail closed: "
+                             f"{wrong_context.returncode}, {wrong_context.stdout!r}, "
+                             f"{wrong_context.stderr!r}")
     print("Phase 28 None return-value authority: PASS")
     return 0
 

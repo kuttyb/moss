@@ -30945,6 +30945,95 @@ class Checker {
                   "MOSS_INTERNAL_INVARIANT");
             fact.est_fact_context = overload_context
                 ? exact_method_est_context : expression_fact_context();
+            if (!overload_context &&
+                return_type_from_declared_callable_contract &&
+                unshadowed_none_return) {
+              if (!current_method_ || !current_object_ ||
+                  current_method_->owner != current_object_->name ||
+                  current_semantic_context_ !=
+                      "method:" + current_method_->owner + "." +
+                          current_method_->name || checking_specialization_)
+                err(s.line,
+                    "declared None ReturnValue lacks exact method declaration context",
+                    "MOSS_INTERNAL_INVARIANT");
+              std::size_t selected_method_count = 0;
+              for (const auto& method : current_object_->methods)
+                if (&method == current_method_ &&
+                    method.owner == current_object_->name &&
+                    method.name == current_method_->name)
+                  ++selected_method_count;
+              TypeRef declared_method_result = current_method_->return_type_ref;
+              if (!declared_method_result && current_method_->return_type) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(*current_method_->return_type));
+                if (parsed) declared_method_result = *parsed;
+              }
+              if (selected_method_count != 1 || !declared_method_result ||
+                  !declared_method_result->is_closed() ||
+                  !fact.expression_type ||
+                  !declared_method_result->structurally_equal(
+                      *fact.expression_type) ||
+                  declared_method_result->kind != TypeKind::Builtin ||
+                  declared_method_result->name != "option" ||
+                  declared_method_result->type_args.size() != 1)
+                err(s.line,
+                    "None ReturnValue TypeRef disagrees with exact checked method declaration",
+                    "MOSS_INTERNAL_INVARIANT");
+              auto* method_return_arena =
+                  expression_arena(fact.est_arena_index);
+              if (!method_return_arena ||
+                  fact.expression_occurrence_id == UINT32_MAX)
+                err(s.line,
+                    "declared None ReturnValue lacks exact checked EST occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              const string exact_method_context = functional_method_context(
+                  *current_object_, *current_method_);
+              if (const auto* existing = method_return_arena->facts(
+                      fact.expression_occurrence_id, exact_method_context);
+                  existing && existing->type &&
+                  existing->type->is_closed() &&
+                  !existing->type->structurally_equal(
+                      *declared_method_result))
+                err(s.line,
+                    "declared None ReturnValue EST context contradicts exact method TypeRef",
+                    "MOSS_INTERNAL_INVARIANT");
+#ifdef MOSS_TEST_BUILD
+              const bool drop_declared_none_fact = std::getenv(
+                  "MOSS_TEST_DROP_DECLARED_NONE_METHOD_RETURN_EST_FACT") &&
+                  (!std::getenv("MOSS_TEST_SELECT_DECLARED_NONE_METHOD_RETURN") ||
+                   current_method_->owner + "." + current_method_->name ==
+                       std::getenv(
+                           "MOSS_TEST_SELECT_DECLARED_NONE_METHOD_RETURN"));
+              const bool perturb_declared_none_fact = std::getenv(
+                  "MOSS_TEST_PERTURB_DECLARED_NONE_METHOD_RETURN_EST_FACT") &&
+                  (!std::getenv("MOSS_TEST_SELECT_DECLARED_NONE_METHOD_RETURN") ||
+                   current_method_->owner + "." + current_method_->name ==
+                       std::getenv(
+                           "MOSS_TEST_SELECT_DECLARED_NONE_METHOD_RETURN"));
+#else
+              const bool drop_declared_none_fact = false;
+              const bool perturb_declared_none_fact = false;
+#endif
+              if (!drop_declared_none_fact) {
+                est::SemanticFacts method_return_facts;
+                method_return_facts.type = perturb_declared_none_fact
+                    ? moss::Type::primitive("Int") : declared_method_result;
+                method_return_arena->record_facts(
+                    fact.expression_occurrence_id, exact_method_context,
+                    std::move(method_return_facts));
+              }
+              fact.est_fact_context = exact_method_context;
+              const auto* retained_method_return = drop_declared_none_fact
+                  ? nullptr : method_return_arena->facts(
+                        fact.expression_occurrence_id, exact_method_context);
+              if (!retained_method_return || !retained_method_return->type ||
+                  !retained_method_return->type->is_closed() ||
+                  !retained_method_return->type->structurally_equal(
+                      *declared_method_result))
+                err(s.line,
+                    "exact declared None method ReturnValue EST fact is missing or contradictory",
+                    "MOSS_INTERNAL_INVARIANT");
+            }
               // A Section 1 checked body is projected before a generic
               // specialization is known. Materialize its ReturnValue EST type
               // only from the checker's exact closed specialization contract,
@@ -31114,6 +31203,17 @@ class Checker {
                   current_check_result_function_->name ==
                       perturb_imported_context)
                 fact.est_fact_context += ":perturbed";
+              const char* perturb_declared_method_context = std::getenv(
+                  "MOSS_TEST_PERTURB_DECLARED_NONE_METHOD_RETURN_EST_CONTEXT");
+              if (!overload_context &&
+                  return_type_from_declared_callable_contract &&
+                  unshadowed_none_return && current_method_ &&
+                  perturb_declared_method_context &&
+                  current_method_->owner + "." + current_method_->name ==
+                      perturb_declared_method_context)
+                fact.est_fact_context =
+                    functional_method_context(*current_method_) +
+                    ":forged-owner-context";
 #endif
               }
             }
