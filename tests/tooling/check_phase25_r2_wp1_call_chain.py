@@ -181,4 +181,113 @@ export fn relay():
             mutation, target, rejected.stdout, rejected.stderr)
         print(f"PASS hostile call-chain {mutation}: {diagnostic['code']}", flush=True)
 
+    # The importing checker must retain the exact ReturnValue type and context
+    # for each selected specialization. Corrupt the checker authority in the
+    # consumer build itself, in both EST modes, so neither native lowering nor
+    # Fast Debug can reconstruct or silently accept it.
+    checker_corruptions = (
+        ("MOSS_TEST_DROP_IMPORTED_GENERIC_RETURN_EST_FACT", "Service__relay"),
+        ("MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_TYPE", "1"),
+        ("MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT", "Service__relay"),
+        ("MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_SPECIALIZATION", "vector[int]"),
+        ("MOSS_TEST_DUPLICATE_IMPORTED_GENERIC_RETURN_EST_FACT", "1"),
+    )
+    consumer_corruptions = (
+        ("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT", "1"),
+        ("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT", "1"),
+        ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_BODY_HASH", "1"),
+        ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_STATEMENT", "1"),
+        ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_FINGERPRINT", "1"),
+        ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_EST_CONTEXT", "1"),
+    )
+    for est_mode in ("default", "shadow"):
+        for hook, value in checker_corruptions:
+            consumer = scratch / f"consumer-authority-{est_mode}-{hook.lower()}"
+            package(consumer, f"r2_chain_authority_{est_mode}_{hook.lower()}",
+                    consumer_source)
+            env = fresh_env(scratch / f"home-authority-{est_mode}-{hook.lower()}",
+                            MOSS_MODULE_PATH=str(base / "build" / "debug"),
+                            MOSS_STAGED_ABI="v10")
+            if est_mode == "shadow":
+                env["MOSS_EST"] = "shadow"
+            env[hook] = value
+            rejected = run([MARGO, "build", "--moss-json"], cwd=consumer,
+                           env=env, ok=False)
+            payload = json.loads(rejected.stdout)
+            assert rejected.returncode != 0 and "error" in payload, (
+                est_mode, hook, rejected.returncode, payload, rejected.stderr)
+            diagnostic = payload["error"]
+            assert rejected.returncode != 0 and (
+                diagnostic["code"].startswith("SOURCE_FREE_") or
+                diagnostic["code"] == "MOSS_INTERNAL_INVARIANT" or
+                "MOSS_INTERNAL_INVARIANT" in diagnostic.get("message", "")), (
+                    est_mode, hook, diagnostic, rejected.stderr)
+            print(f"PASS imported ReturnValue {est_mode} {hook}: "
+                  f"{diagnostic['code']}", flush=True)
+        for hook, value in consumer_corruptions:
+            consumer = scratch / f"consumer-native-{est_mode}-{hook.lower()}"
+            package(consumer, f"r2_chain_native_{est_mode}_{hook.lower()}",
+                    consumer_source)
+            env = fresh_env(scratch / f"home-native-{est_mode}-{hook.lower()}",
+                            MOSS_MODULE_PATH=str(base / "build" / "debug"),
+                            MOSS_STAGED_ABI="v10")
+            if est_mode == "shadow":
+                env["MOSS_EST"] = "shadow"
+            env[hook] = value
+            rejected = run([MARGO, "build", "--moss-json"], cwd=consumer,
+                           env=env, ok=False)
+            diagnostic = json.loads(rejected.stdout)["error"]
+            assert rejected.returncode != 0 and (
+                diagnostic["code"].startswith("SOURCE_FREE_") or
+                diagnostic["code"] == "MOSS_INTERNAL_INVARIANT" or
+                "MOSS_INTERNAL_INVARIANT" in diagnostic.get("message", "")), (
+                    est_mode, hook, diagnostic, rejected.stderr)
+            print(f"PASS native imported ReturnValue {est_mode} {hook}: "
+                  f"{diagnostic['code']}", flush=True)
+
+        for hook, value in (
+                ("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT", "1"),
+                ("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT", "1"),
+                ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_BODY_HASH", "1"),
+                ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_STATEMENT", "1"),
+                ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_FINGERPRINT", "1"),
+                ("MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_EST_CONTEXT", "1")):
+            consumer = scratch / f"consumer-fastdebug-{est_mode}-{hook.lower()}"
+            package(consumer, f"r2_chain_fastdebug_{est_mode}_{hook.lower()}",
+                    consumer_source)
+            env = fresh_env(scratch / f"home-fastdebug-{est_mode}-{hook.lower()}",
+                            MOSS_MODULE_PATH=str(base / "build" / "debug"),
+                            MOSS_STAGED_ABI="v10")
+            if est_mode == "shadow":
+                env["MOSS_EST"] = "shadow"
+            env[hook] = value
+            rejected = run([MARGO, "debug"], cwd=consumer, env=env, ok=False)
+            assert rejected.returncode != 0 and (
+                "MOSS_INTERNAL_INVARIANT" in rejected.stderr or
+                "MOSS_INTERNAL_INVARIANT" in rejected.stdout), (
+                    est_mode, hook, rejected.stdout, rejected.stderr)
+            print(f"PASS Fast Debug imported ReturnValue {est_mode} {hook}",
+                  flush=True)
+
+    # Cross only the Int specialization's context/key. A Bool-only consumer
+    # must still build and run with that corruption hook active.
+    bool_consumer = scratch / "consumer-bool-sibling"
+    package(bool_consumer, "r2_chain_bool_sibling", """module Main
+import Service
+fn main():
+  flags = Service.relay()
+  flags.push(true)
+  echo flags
+""")
+    bool_env = fresh_env(scratch / "home-bool-sibling",
+                         MOSS_MODULE_PATH=str(base / "build" / "debug"),
+                         MOSS_STAGED_ABI="v10",
+                         MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_SPECIALIZATION=
+                             "vector[int]")
+    run([MARGO, "build"], cwd=bool_consumer, env=bool_env)
+    sibling = run([MARGO, "run"], cwd=bool_consumer, env=bool_env)
+    assert sibling.stdout == "[true]\n", (sibling.stdout, sibling.stderr)
+    print("PASS crossed Vector[Int] ReturnValue authority leaves Vector[Bool] sibling intact",
+          flush=True)
+
 print("R2 WP1 three-hop generic result chain, source-backed Debug/Release interfaces, ABI-v9 controls, poisoned legacy bodies, and hostile closure: PASS")

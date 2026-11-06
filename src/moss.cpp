@@ -18867,6 +18867,8 @@ static ParsedModuleUnit load_module_interface(
       }
       function.imported_checked_summary_payload = summary_payload;
       function.imported_checked_body_payload = body_payload;
+      function.imported_checked_body_semantic_hash =
+          body_entry.first.semantic_hash;
       for (const auto& requirement : decoded_summary.requirements) {
         auto provenance = std::find_if(sealed.value.provenance.begin(),
             sealed.value.provenance.end(), [&](const abi_v10::Record& record) {

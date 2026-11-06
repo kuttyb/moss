@@ -770,13 +770,29 @@ struct TypedReturnValueFactV1 {
   TypedReturnValueActionV1 action{TypedReturnValueActionV1::TransferOwnedValue};
   bool checker_proved_owned_rvalue{false};
   bool result_type_from_declared_callable_contract{false};
+  // Source-free checked-body projections do not carry byte spans. This form
+  // is valid only when the checker binds the fact to the loader-validated
+  // body hash, exact imported EST handle fingerprint, statement ordinal and
+  // selected specialization.
+  bool source_free_checked_body_occurrence{false};
+  std::string checked_body_semantic_hash;
+  std::uint32_t checked_body_statement_ordinal{UINT32_MAX};
+  std::uint64_t expression_source_fingerprint{0};
 
   bool is_authoritative() const noexcept {
+    const bool source_span_valid = expression_occurrence_span.source_end >
+        expression_occurrence_span.source_begin;
     if (availability != Availability::Present ||
         statement_occurrence_id == UINT32_MAX ||
         est_arena_index == UINT32_MAX || expression_occurrence_id == UINT32_MAX ||
-        expression_occurrence_span.source_end <=
-            expression_occurrence_span.source_begin ||
+        (source_free_checked_body_occurrence
+            ? (source_span_valid || checked_body_semantic_hash.empty() ||
+               checked_body_statement_ordinal == UINT32_MAX ||
+               expression_source_fingerprint == 0 ||
+               specialization_identity.empty())
+            : (!source_span_valid || !checked_body_semantic_hash.empty() ||
+               checked_body_statement_ordinal != UINT32_MAX ||
+               expression_source_fingerprint != 0)) ||
         specialization_context.empty() || est_fact_context.empty() ||
         provenance.source_file.empty() || provenance.line <= 0 ||
         provenance.defining_module_id.empty() ||
@@ -802,6 +818,48 @@ struct TypedReturnValueFactV1 {
   }
 };
 struct TypedReturnValueRequirementV1 : TypedReturnValueFactV1 {};
+
+inline bool typed_return_value_source_free_occurrence_matches(
+    const TypedReturnValueFactV1& fact, const Function& owner,
+    const Stmt& statement, const est::Handle& handle) noexcept {
+  bool matches = true;
+  if (!fact.source_free_checked_body_occurrence ||
+      fact.checked_body_semantic_hash.empty() ||
+      fact.checked_body_semantic_hash !=
+          owner.imported_checked_body_semantic_hash) matches = false;
+  if (fact.provenance.enclosing_callable_id != "fn:" + owner.name)
+    matches = false;
+  if (fact.statement_occurrence_id !=
+      statement.checked_statement_occurrence_id ||
+      fact.est_arena_index != handle.arena_index ||
+      fact.expression_occurrence_id != handle.expr ||
+      fact.expression_source_fingerprint == 0 ||
+      fact.expression_source_fingerprint != handle.source_fingerprint ||
+      fact.expression_occurrence_span.source_end >
+          fact.expression_occurrence_span.source_begin)
+    matches = false;
+  std::uint32_t ordinal = UINT32_MAX;
+  std::size_t occurrence_matches = 0;
+  for (std::size_t index = 0; index < owner.body.size(); ++index)
+    if (owner.body[index].checked_statement_occurrence_id ==
+        fact.statement_occurrence_id) {
+      const auto& owner_statement = owner.body[index];
+      std::size_t matching_handles = 0;
+      for (const auto& owner_handle : owner_statement.expression_handles)
+        if (owner_handle.slot == est::ExprSlot::ReturnValue &&
+            owner_handle.argument_index == 0 &&
+            owner_handle.arena_index == handle.arena_index &&
+            owner_handle.expr == handle.expr &&
+            owner_handle.source_fingerprint == handle.source_fingerprint)
+          ++matching_handles;
+      if (owner_statement.kind != Stmt::Kind::Return ||
+          matching_handles != 1) continue;
+      ordinal = static_cast<std::uint32_t>(index);
+      ++occurrence_matches;
+    }
+  return matches && occurrence_matches == 1 &&
+      ordinal == fact.checked_body_statement_ordinal;
+}
 
 // Stable source-free transport record for a checker ReturnValue fact.
 // Process-local arena, ExprId, and statement occurrence IDs are deliberately
@@ -2990,7 +3048,15 @@ struct TypedSemanticModuleV1 {
         found->action == requirement.action &&
         found->checker_proved_owned_rvalue == requirement.checker_proved_owned_rvalue &&
         found->result_type_from_declared_callable_contract ==
-            requirement.result_type_from_declared_callable_contract;
+            requirement.result_type_from_declared_callable_contract &&
+        found->source_free_checked_body_occurrence ==
+            requirement.source_free_checked_body_occurrence &&
+        found->checked_body_semantic_hash ==
+            requirement.checked_body_semantic_hash &&
+        found->checked_body_statement_ordinal ==
+            requirement.checked_body_statement_ordinal &&
+        found->expression_source_fingerprint ==
+            requirement.expression_source_fingerprint;
     if (req_count != 1 || fact_count != 1 || !same || !found->is_authoritative()) {
       throw std::invalid_argument("return-value checker fact is missing, duplicate, or contradictory");
     }

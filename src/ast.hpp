@@ -730,6 +730,8 @@ struct Function {
   // decodes these before inference and replaces any legacy generic_stmt body.
   string imported_checked_summary_payload;
   string imported_checked_body_payload;
+  // Semantic hash from the loader-validated ABI-v10 checked-body record.
+  string imported_checked_body_semantic_hash;
   vector<std::pair<string, string>> imported_checked_provenance_records;
   // Callable provenance records retained for staged ABI-v10 admission when
   // the callable has no typed checked summary yet. They are validated only

@@ -1,5 +1,31 @@
 ## Phase 28 R7-010 recovery correction (2026-11-05)
 
+### Reviewed source-free multi-hop ReturnValue slice integrated — `d8727687`
+
+- Frozen implementation candidate `d8727687f6fcf9e38607dfd88978db26720db544`
+  is based on exact prior code SHA `1d5feb1e` and received scoped GO from Agent 2
+  plus independent Team C scoped PASS. It is integrated into this isolated
+  vertical staging branch only; source, tests, and feedback were applied from
+  the reviewed candidate. Reports are archived at
+  `docs/phase28/agent2-reviews/imported-generic-return-chain-d8727687.md` and
+  `docs/phase28/team-c/TEAM_C_IMPORTED_RETURN_D8727687.md`.
+- Exact scope: source-free ABI-v10 multi-hop imported generic ReturnValue
+  authority, specialization-specific EST context/type, source-free body hash,
+  statement ordinal, handle fingerprint and external-module binding, with
+  Native/Fast Debug fail-closed consumers; ABI-v9 source-backed controls remain
+  covered. No wire-format change, copy permission or runtime clone permission.
+- Exact candidate focused WP1 gate passed Default and EST-shadow, including
+  provider/consumer Debug/Release output parity, poisoned legacy-body and
+  hostile artifact controls, checker/native/Fast Debug drop/duplicate/type/
+  context/specialization/body/statement/fingerprint corruption hooks, and
+  Vector[Int]/Vector[Bool] cross-specialization isolation. Dev and optimized
+  candidate builds, feedback validation, and diff checks passed. Full suites and
+  oracle were not run on the candidate.
+- Integrated source is now under full regression/oracle revalidation. This
+  slice does not address independent Root-ingress, CollectionView, indexed-read,
+  transfer, or runtime clone-provenance failures. Whole Phase 28 remains NO-GO;
+  no merge to `phase28-work` or `main` is authorized or performed.
+
 ### Fresh integrated matrix checkpoint — `1d5feb1e` (2026-11-06)
 
 - Active isolated staging source remains at

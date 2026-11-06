@@ -31146,7 +31146,17 @@ class Checker {
             if (return_type)
               fact.expression_type = moss::Type::parse_canonical(
                   canonical_type_name(*return_type)).value_or(nullptr);
-            fact.specialization_context = local_ownership_consumer_context();
+            const bool exact_function_specialization =
+                checking_specialization_ && current_check_result_function_ &&
+                current_semantic_context_ ==
+                    "fn:" + current_check_result_function_->name;
+            const bool imported_generic_specialization =
+                exact_function_specialization &&
+                current_check_result_function_->imported_checked_body_projected;
+            fact.specialization_context = exact_function_specialization
+                ? functional_function_context(*current_check_result_function_,
+                                              checking_specialization_)
+                : local_ownership_consumer_context();
             fact.specialization_identity = local_ownership_specialization_identity();
             // Point the fact at an exact retained EST context. Specialized
             // bodies share source occurrences with their generic declaration;
@@ -31281,22 +31291,99 @@ class Checker {
                   current_check_result_function_->imported_checked_body_projected &&
                   current_semantic_context_ ==
                       "fn:" + current_check_result_function_->name) {
+                const Function& imported_owner =
+                    *current_check_result_function_;
                 const auto& specialization_type =
                     checking_specialization_->return_type_ref;
                 auto* imported_return_arena =
                     expression_arena(fact.est_arena_index);
-                if (!specialization_type || !specialization_type->is_closed() ||
-                    !fact.expression_type ||
-                    !specialization_type->structurally_equal(
-                        *fact.expression_type) || !imported_return_arena ||
+                const auto owner_entry = functions_.find(imported_owner.name);
+                const size_t owner_count = std::count_if(
+                    p_.functions.begin(), p_.functions.end(),
+                    [&](const Function& candidate) {
+                      return &candidate == &imported_owner &&
+                          candidate.name == imported_owner.name;
+                    });
+                const size_t specialization_count = std::count_if(
+                    imported_owner.specializations.begin(),
+                    imported_owner.specializations.end(),
+                    [&](const FunctionSpecialization& candidate) {
+                      return &candidate == checking_specialization_ &&
+                          candidate.stable_type_key ==
+                              checking_specialization_->stable_type_key;
+                    });
+                const string exact_specialization_context =
+                    functional_function_context(
+                        imported_owner, checking_specialization_);
+                const string exact_import_context =
+                    exact_specialization_context + ":return-value-est:" +
+                    checking_specialization_->stable_type_key;
+                size_t body_statement_matches = 0;
+                std::uint32_t body_statement_ordinal = UINT32_MAX;
+                for (size_t index = 0; index < imported_owner.body.size(); ++index)
+                  if (&imported_owner.body[index] == &s) {
+                    body_statement_ordinal = static_cast<std::uint32_t>(index);
+                    ++body_statement_matches;
+                  }
+                const est::Handle* exact_return_handle = nullptr;
+                size_t return_handle_count = 0;
+                for (const auto& handle : s.expression_handles)
+                  if (handle.slot == est::ExprSlot::ReturnValue &&
+                      handle.argument_index == 0) {
+                    exact_return_handle = &handle;
+                    ++return_handle_count;
+                  }
+                if (owner_entry == functions_.end() ||
+                    owner_entry->second != &imported_owner || owner_count != 1 ||
+                    specialization_count != 1 ||
+                    body_statement_matches != 1 ||
+                    return_handle_count != 1 || !exact_return_handle ||
+                    exact_return_handle->arena_index != fact.est_arena_index ||
+                    exact_return_handle->expr != fact.expression_occurrence_id ||
+                    exact_return_handle->source_fingerprint == 0 ||
+                    exact_return_handle->source_fingerprint !=
+                        est::fingerprint(s.a) ||
+                    imported_owner.imported_checked_body_semantic_hash.empty() ||
+                    !specialization_type || !specialization_type->is_closed() ||
+                    !fact.expression_type || !imported_return_arena ||
                     fact.expression_occurrence_id == UINT32_MAX)
                   err(s.line,
                       "imported generic ReturnValue lacks exact checked specialization identity/type",
                       "MOSS_INTERNAL_INVARIANT");
-                const string imported_context = functional_function_context(
-                    *current_check_result_function_, checking_specialization_);
+                // The projected ABI-v10 checked body does not preserve a
+                // source byte span for this EST node. Keep that absence
+                // explicit; exact body hash, ordinal, handle fingerprint and
+                // specialization identity form the source-free occurrence.
+                fact.expression_occurrence_span = {};
+                fact.source_free_checked_body_occurrence = true;
+                fact.checked_body_semantic_hash =
+                    imported_owner.imported_checked_body_semantic_hash;
+                fact.checked_body_statement_ordinal = body_statement_ordinal;
+                fact.expression_source_fingerprint =
+                    exact_return_handle->source_fingerprint;
+                if (fact.specialization_identity !=
+                        checking_specialization_->stable_type_key ||
+                    fact.specialization_context !=
+                        exact_specialization_context)
+                  err(s.line,
+                      "imported generic ReturnValue has crossed specialization identity/context",
+                      "MOSS_INTERNAL_INVARIANT");
+                // The checked body can retain an open generic result at this
+                // EST root (for example `return middle()` where the imported
+                // callable result is specialized through several source-free
+                // hops). The specialized body check has already validated the
+                // expression against its concrete callable result contract.
+                // Retain that exact checker-selected closed TypeRef when the
+                // root remains open; a closed disagreement is contradictory.
+                if (fact.expression_type->is_closed() &&
+                    !specialization_type->structurally_equal(
+                        *fact.expression_type))
+                  err(s.line,
+                      "imported generic ReturnValue EST type contradicts exact checked specialization",
+                      "MOSS_INTERNAL_INVARIANT");
+                fact.expression_type = specialization_type;
                 const auto* existing = imported_return_arena->facts(
-                    fact.expression_occurrence_id, imported_context);
+                    fact.expression_occurrence_id, exact_import_context);
                 if (existing && existing->type &&
                     existing->type->is_closed() &&
                     !existing->type->structurally_equal(
@@ -31307,6 +31394,10 @@ class Checker {
 #ifdef MOSS_TEST_BUILD
                 const char* drop = std::getenv(
                     "MOSS_TEST_DROP_IMPORTED_GENERIC_RETURN_EST_FACT");
+                const char* perturb_type = std::getenv(
+                    "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_TYPE");
+                const char* perturb_specialization = std::getenv(
+                    "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_SPECIALIZATION");
                 const bool selected = !std::getenv(
                     "MOSS_TEST_SELECT_IMPORTED_GENERIC_RETURN_EST_FACT") ||
                     current_check_result_function_->name ==
@@ -31319,12 +31410,39 @@ class Checker {
 #endif
                 if (!drop_selected) {
                   est::SemanticFacts imported_facts;
-                  imported_facts.type = specialization_type;
+                  TypeRef retained_type = specialization_type;
+#ifdef MOSS_TEST_BUILD
+                  if (selected && perturb_type) {
+                    auto wrong_type = moss::Type::parse_canonical(
+                        "vector[string]");
+                    if (!wrong_type || !(*wrong_type)->is_closed())
+                      err(s.line,
+                          "test could not create perturbed imported ReturnValue TypeRef",
+                          "MOSS_INTERNAL_INVARIANT");
+                    retained_type = *wrong_type;
+                  }
+#endif
+                  imported_facts.type = retained_type;
                   imported_return_arena->record_facts(fact.expression_occurrence_id,
-                                      imported_context,
+                                      exact_import_context,
                                       std::move(imported_facts));
-                  fact.est_fact_context = imported_context;
+                  fact.est_fact_context = exact_import_context;
+#ifdef MOSS_TEST_BUILD
+                  if (std::getenv(
+                          "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT"))
+                    fact.est_fact_context += ":perturbed";
+#endif
                 }
+#ifdef MOSS_TEST_BUILD
+                const bool perturb_selected_specialization =
+                    selected && perturb_specialization &&
+                    specialization_type->to_canonical_string() ==
+                        perturb_specialization;
+                if (perturb_selected_specialization) {
+                  fact.specialization_identity += ":perturbed";
+                  fact.specialization_context += ":perturbed";
+                }
+#endif
               }
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
@@ -31403,6 +31521,17 @@ class Checker {
                   err(s.line,
                       "exact overloaded method return EST authority is missing or contradictory",
                       "MOSS_INTERNAL_INVARIANT");
+              } else if (imported_generic_specialization) {
+                const auto* retained = arena
+                    ? arena->facts(fact.expression_occurrence_id,
+                                   fact.est_fact_context)
+                    : nullptr;
+                if (!retained || !retained->type ||
+                    !retained->type->is_closed() ||
+                    !retained->type->structurally_equal(*fact.expression_type))
+                  err(s.line,
+                      "source-free imported ReturnValue EST fact is missing or contradictory",
+                      "MOSS_INTERNAL_INVARIANT");
               } else {
               const string source_context = "source:" +
                   fact.provenance.source_file + ":" +
@@ -31440,8 +31569,6 @@ class Checker {
               if (checking_specialization_ && current_check_result_function_ &&
                   !current_check_result_function_->imported_checked_body_projected &&
                   return_owner == current_check_result_function_ &&
-                  current_check_result_function_->defining_module ==
-                      p_.main_module &&
                   current_semantic_context_ ==
                       "fn:" + current_check_result_function_->name) {
                 const Function& owner = *current_check_result_function_;
@@ -31468,9 +31595,7 @@ class Checker {
                     specialization_count != 1 ||
                     !checking_specialization_->return_type_ref ||
                     !checking_specialization_->return_type_ref->is_closed() ||
-                    !fact.expression_type || !fact.expression_type->is_closed() ||
-                    !checking_specialization_->return_type_ref->structurally_equal(
-                        *fact.expression_type) || !arena ||
+                    !fact.expression_type || !arena ||
                     fact.expression_occurrence_id == UINT32_MAX ||
                     fact.specialization_context != functional_function_context(
                         owner, checking_specialization_) ||
@@ -31479,8 +31604,17 @@ class Checker {
                   err(s.line,
                       "local specialized ReturnValue lacks exact checked owner/type identity",
                       "MOSS_INTERNAL_INVARIANT");
+                if (fact.expression_type->is_closed() &&
+                    !checking_specialization_->return_type_ref->structurally_equal(
+                        *fact.expression_type))
+                  err(s.line,
+                      "local specialized ReturnValue TypeRef contradicts checked callable result",
+                      "MOSS_INTERNAL_INVARIANT");
+                fact.expression_type =
+                    checking_specialization_->return_type_ref;
                 const string local_context = functional_function_context(
-                    owner, checking_specialization_);
+                    owner, checking_specialization_) + ":return-value-est:" +
+                    checking_specialization_->stable_type_key;
 #ifdef MOSS_TEST_BUILD
                 if (std::getenv(
                         "MOSS_TEST_CONTRADICT_EXISTING_LOCAL_SPECIALIZED_RETURN_EST_FACT")) {
@@ -31548,14 +31682,6 @@ class Checker {
                 fact.est_fact_context = local_context;
               }
 #ifdef MOSS_TEST_BUILD
-              const char* perturb_imported_context = std::getenv(
-                  "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT");
-              if (checking_specialization_ && current_check_result_function_ &&
-                  current_check_result_function_->imported_checked_body_projected &&
-                  perturb_imported_context &&
-                  current_check_result_function_->name ==
-                      perturb_imported_context)
-                fact.est_fact_context += ":perturbed";
               const char* perturb_declared_method_context = std::getenv(
                   "MOSS_TEST_PERTURB_DECLARED_NONE_METHOD_RETURN_EST_CONTEXT");
               if (!overload_context &&
@@ -31617,6 +31743,13 @@ class Checker {
 #ifdef MOSS_TEST_BUILD
             if (!std::getenv("MOSS_TEST_DROP_RETURN_VALUE_FACT"))
               return_value_facts_.push_back(fact);
+            if (checking_specialization_ && current_check_result_function_ &&
+                current_check_result_function_->imported_checked_body_projected &&
+                std::getenv(
+                    "MOSS_TEST_DUPLICATE_IMPORTED_GENERIC_RETURN_EST_FACT")) {
+              return_value_facts_.push_back(fact);
+              required_return_value_occurrences_.push_back(requirement);
+            }
 #else
             return_value_facts_.push_back(fact);
 #endif

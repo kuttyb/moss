@@ -4505,13 +4505,15 @@ class FastInterpreter {
                   statement.checked_statement_occurrence_id &&
           candidate.est_arena_index == handle->arena_index &&
           candidate.expression_occurrence_id == handle->expr &&
-          candidate.expression_occurrence_span.source_begin ==
-              occurrence_span.source_begin &&
-          candidate.expression_occurrence_span.source_end ==
-              occurrence_span.source_end &&
-          candidate.expression_occurrence_span.line == occurrence_span.line &&
-          candidate.expression_occurrence_span.column == occurrence_span.column &&
-          candidate.expression_occurrence_span.origin_id == occurrence_span.origin_id &&
+          (candidate.source_free_checked_body_occurrence ||
+           (candidate.expression_occurrence_span.source_begin ==
+                occurrence_span.source_begin &&
+            candidate.expression_occurrence_span.source_end ==
+                occurrence_span.source_end &&
+            candidate.expression_occurrence_span.line == occurrence_span.line &&
+            candidate.expression_occurrence_span.column == occurrence_span.column &&
+            candidate.expression_occurrence_span.origin_id ==
+                occurrence_span.origin_id)) &&
           candidate.provenance.line == statement.line &&
           candidate.provenance.enclosing_callable_id == callable_context &&
           (statement.source_file.empty() ||
@@ -4563,6 +4565,38 @@ class FastInterpreter {
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed return-value authority unexpectedly passed");
       }
+      if (std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_BODY_HASH")) {
+        auto corrupted = *requirement;
+        corrupted.checked_body_semantic_hash += ":wrong-body";
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue body identity unexpectedly passed");
+      }
+      if (std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_STATEMENT")) {
+        auto corrupted = *requirement;
+        ++corrupted.checked_body_statement_ordinal;
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue statement ordinal unexpectedly passed");
+      }
+      if (std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_FINGERPRINT")) {
+        auto corrupted = *requirement;
+        ++corrupted.expression_source_fingerprint;
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue fingerprint unexpectedly passed");
+      }
+      if (requirement->source_free_checked_body_occurrence && std::getenv(
+              "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_EST_CONTEXT")) {
+        auto corrupted = *requirement;
+        corrupted.est_fact_context += ":wrong-context";
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue EST context unexpectedly passed");
+      }
       if (callable_context.rfind("handler:", 0) == 0 &&
           std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT")) {
         auto corrupted = *requirement;
@@ -4584,6 +4618,35 @@ class FastInterpreter {
           program_.typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
+      if (fact->source_free_checked_body_occurrence) {
+        const Function* owner = nullptr;
+        std::size_t owner_count = 0;
+        if (callable_context.rfind("fn:", 0) == 0)
+          for (const auto& candidate : program_.functions)
+            if (candidate.name == callable_context.substr(3)) {
+              owner = &candidate;
+              ++owner_count;
+            }
+        const bool source_free_occurrence_matches = owner && handle
+            ? typed_return_value_source_free_occurrence_matches(
+                  *fact, *owner, statement, *handle)
+            : false;
+        const std::string source_free_module = owner
+            ? module_name_from_symbol(owner->name) : std::string();
+        const auto source_free_module_identity =
+            program_.module_identities.find(source_free_module);
+        if (owner_count != 1 || !owner || !owner->imported_checked_body_projected ||
+            !handle || source_free_module.empty() ||
+            !program_.external_modules.count(source_free_module) ||
+            source_free_module_identity == program_.module_identities.end() ||
+            source_free_module_identity->second.empty() ||
+            fact->provenance.defining_module_id !=
+                source_free_module_identity->second ||
+            fact->provenance.enclosing_callable_id != callable_context ||
+            !source_free_occurrence_matches)
+          throw std::invalid_argument(
+              "source-free ReturnValue fact does not bind its exact checked body occurrence");
+      }
       if (fact->est_arena_index >= program_.expression_arenas.size() ||
           !program_.expression_arenas[fact->est_arena_index] ||
           !fact->expression_type ||
