@@ -17351,3 +17351,19 @@ untouched.
 - Checker gate: `python3 tests/tooling/check_phase28_projected_call_argument_read.py build/compiler/moss-dev` passes.
 - Full Regex `margo test` still fails closed at direct `parts[0]` String indexing in `tests/regex_test.moss:109`. This is not the Vector[index].member fact shape; Team A is designing a separate direct indexed-call READ authority. No Team B lowering is authorized for it yet.
 - This sub-slice is locally checkpointed for review only. The Team B gate is not registered in shared `tests/run.sh`; L7 owns runner registration. Do not treat this as final Regex package acceptance. Next: wait for the exact reviewed Team A direct-index fact API, then resume on its frozen base; obtain Agent 2 review after L7 registers this gate.
+## Team A direct Vector-index call READ authority (in progress)
+
+Team A is adding a separate checker-owned authority contract for direct
+`Vector[index]` passed to a statically resolved READ call parameter. The
+scoped changes add `TypedIndexedCallArgumentReadFactV1` and its requirement,
+exact producer/lookup checks, a Moss regression fixture, and C++/Python
+corruption gates. Unsupported or ambiguous target/access/source cases remain
+non-authoritative; the existing projected-member fact stays separate.
+
+Validation completed on branch `phase28-r7-010-team-a-next-checker` at base
+`636a5a06439fe8ed447500341f8cc71620a9c724`: build, indexed call argument,
+projected call argument, local ownership, specialized ownership contract, and
+R7-009 primitive-index gates all pass. `git diff --check` and
+`python3 tests/tooling/check_agent_feedback.py` pass. Shared runner registration
+and native consumer integration remain with L7/Team B. No oracle expectations
+were changed. Independent review is pending after freezing the candidate.
