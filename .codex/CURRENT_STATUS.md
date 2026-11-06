@@ -17257,8 +17257,12 @@ untouched.
   authority passes in the direct, default, and shadow runs; local ownership
   default/shadow, specialized ownership, and R7-009 (17/17) pass; feedback
   validation and diff checks pass. Agent 2 gave a provisional NO-GO on the
-  unregistered Team A SHA and is re-reviewing this exact registered staging
-  SHA before Team B starts its native consumer. R7-006 still fails at ORACLE-48
+  unregistered Team A SHA, then returned scoped **GO** on exact registered
+  staging SHA `120eef8a8c63108cf397962c1a6823022e7f5fea`. The review reran the
+  projected-call gate in default/shadow, local transfer (23 scenarios), and
+  Fast Debug corruption gates in default/shadow; oracle directories are
+  unchanged from base `032f9645`. Team B is now starting its native consumer
+  from this reviewed base. R7-006 still fails at ORACLE-48
   with expected `MOSS_COMPILE_ERROR` vs actual `ROOT_UNHANDLED_RAISE`; I
   reproduced the identical result on both staging base and Team A candidate,
   so this is inherited, and no oracle expectation was changed.
