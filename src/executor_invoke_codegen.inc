@@ -189,7 +189,8 @@ string root_ingress_message(const string& receiver, const string& handler,
                             const Domain* d, const std::set<string>& locals,
                             const std::unordered_map<string,string>* types,
                             const vector<size_t>* message_argument_plans,
-                            const string& capture_identity) const {
+                            const string& capture_identity,
+                            const RootIngressMessageOccurrence& occurrence) const {
   if (capture_identity.rfind(
           "root-ingress-domain-capture-fact-v1:", 0) != 0)
     throw std::runtime_error(
@@ -202,10 +203,38 @@ string root_ingress_message(const string& receiver, const string& handler,
   vector<string> argument_locals;
   for (size_t index = 0; index < arguments.size(); ++index) {
     string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
+    const TypedRootIngressPayloadFactV1* payload_fact = nullptr;
+    if (index < occurrence.argument_expressions.size() &&
+        p_.typed_semantics) {
+      const auto argument_id = occurrence.argument_expressions[index];
+      const auto context = codegen_body_context_.empty()
+          ? string("main") : codegen_body_context_;
+      const auto statement_id = phase21_codegen_statement_
+          ? phase21_codegen_statement_->checked_statement_occurrence_id
+          : UINT32_MAX;
+      const bool checker_requires_transfer = std::any_of(
+          p_.typed_semantics->required_root_ingress_payload_occurrences.begin(),
+          p_.typed_semantics->required_root_ingress_payload_occurrences.end(),
+          [&](const auto& requirement) {
+            return requirement.statement_occurrence_id == statement_id &&
+                requirement.est_arena_index == occurrence.arena_index &&
+                requirement.message_expression_occurrence_id ==
+                    occurrence.message_expression &&
+                requirement.argument_index == index &&
+                requirement.argument_expression_occurrence_id == argument_id &&
+                requirement.source_fingerprint == occurrence.source_fingerprint &&
+                requirement.specialization_context == context;
+          });
+      if (checker_requires_transfer)
+        payload_fact = &resolve_root_ingress_payload_fact(
+            occurrence, static_cast<std::uint32_t>(index), target_domain,
+            target_handler, target_handler.params.at(index).type);
+    }
     rendered << "let " << temp << " = "
              << message_arg(arguments[index], target_handler.params.at(index).type, d,
                             locals, types,
-                            message_argument_plans ? message_argument_plans->at(index) : 0)
+                            message_argument_plans ? message_argument_plans->at(index) : 0,
+                            nullptr, payload_fact)
              << "; ";
     argument_locals.push_back(temp);
   }

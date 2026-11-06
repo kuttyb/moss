@@ -3,8 +3,10 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -17,6 +19,8 @@ FIXTURES = [
 ]
 ALIAS_REJECTED = "tests/tooling/fixtures/phase28_root_domain_handle_alias_rejected.moss"
 UNKNOWN_HANDLER = "tests/tooling/fixtures/phase28_root_unknown_handler.moss"
+FRESH_PAYLOAD = "tests/fresh_message_payload.moss"
+TMP_ROOT = ROOT / "tmp"
 
 
 def check(source, extra_env=None):
@@ -39,8 +43,116 @@ def parse_result(result):
             f"checker returned malformed JSON: {result.stdout}\n{result.stderr}") from error
 
 
+def payload_authority_cases(mode, source, rust_value, expected_output):
+    env_mode = os.environ.copy()
+    for key in list(env_mode):
+        if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+            env_mode.pop(key)
+    if mode == "shadow":
+        env_mode["MOSS_EST"] = "shadow"
+
+    def run(args, extra_env=None):
+        env = dict(env_mode)
+        env.update(extra_env or {})
+        return subprocess.run(
+            args, cwd=ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    checked = run([COMPILER, "check", source, "--json"], {
+        "MOSS_TEST_DUMP_ROOT_INGRESS_PAYLOAD_FACT": "1"})
+    response = parse_result(checked)
+    assert checked.returncode == 0 and response.get("ok"), (
+        mode, checked.stdout, checked.stderr)
+    facts = [line for line in checked.stderr.splitlines()
+             if line.startswith("ROOT_INGRESS_PAYLOAD_FACT ")]
+    assert len(facts) == 1, (mode, facts)
+    for field in ("stmt=", "arena=", "message=", "arg=0", "arg_expr=",
+                  "owner=handler:", "action=0", "context=main"):
+        assert field in facts[0], (mode, field, facts[0])
+
+    for env in (
+        {"MOSS_TEST_DROP_ROOT_INGRESS_PAYLOAD_FACT": "1"},
+        {"MOSS_TEST_DUPLICATE_ROOT_INGRESS_PAYLOAD_FACT": "1"},
+    ):
+        result = run([COMPILER, "check", source, "--json"], env)
+        assert result.returncode != 0 and "Root-ingress payload checker fact/requirement set is incomplete" in (
+            result.stdout + result.stderr), (mode, env, result.stdout, result.stderr)
+
+    for field in ("owner", "argument", "type", "action", "context", "occurrence"):
+        result = run([COMPILER, "check", source, "--json"], {
+            "MOSS_TEST_PERTURB_ROOT_INGRESS_PAYLOAD_FACT": field})
+        assert result.returncode != 0 and "Root-ingress payload" in (
+            result.stdout + result.stderr), (mode, field, result.stdout, result.stderr)
+
+    TMP_ROOT.mkdir(exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="root-ingress-payload-", dir=TMP_ROOT))
+    try:
+        rust_path = temp_dir / "fresh_message_payload.rs"
+        generated = run([COMPILER, source, "-o", str(rust_path)])
+        assert generated.returncode == 0, (mode, generated.stdout, generated.stderr)
+        rust = rust_path.read_text()
+        payload_line = next((line for line in rust.splitlines()
+                             if "__moss_root_arg_" in line), "")
+        payload_value = payload_line.split("__moss_root_arg_", 1)[-1].split(" = ", 1)[-1]
+        payload_value = payload_value.split("; runtime_invoke", 1)[0]
+        assert rust_value in payload_value and ".clone()" not in payload_value, (
+            mode, payload_line)
+
+        for env in (
+            {"MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_PAYLOAD_REQUIREMENT": "1"},
+            {"MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_PAYLOAD_REQUIREMENT": "1"},
+            {"MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_PAYLOAD_FACT": "1"},
+            {"MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_PAYLOAD_FACT": "1"},
+        ):
+            result = run([COMPILER, source, "-o", str(rust_path)], env)
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (mode, env, result.stdout, result.stderr)
+        for field in ("owner", "argument", "type", "action", "context", "occurrence"):
+            result = run([COMPILER, source, "-o", str(rust_path)], {
+                "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_PAYLOAD_FACT": field})
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (mode, field, result.stdout, result.stderr)
+    finally:
+        shutil.rmtree(temp_dir)
+
+    fast_debug = run([COMPILER, "run", "--interp", source])
+    assert fast_debug.returncode == 0 and fast_debug.stdout.strip() == expected_output, (
+        mode, fast_debug.stdout, fast_debug.stderr)
+    unsupported = (
+        "tests/phase26_direct_payload.moss",
+        "tests/phase27/conformance/message_argument_binding_use.moss",
+    )
+    unsupported_dir = Path(tempfile.mkdtemp(
+        prefix="root-ingress-payload-unsupported-", dir=TMP_ROOT))
+    try:
+        for unsupported_source in unsupported:
+            checked = run([COMPILER, "check", unsupported_source, "--json"], {
+                "MOSS_TEST_DUMP_ROOT_INGRESS_PAYLOAD_FACT": "1"})
+            response = parse_result(checked)
+            assert checked.returncode == 0 and response.get("ok"), (
+                mode, unsupported_source, checked.stdout, checked.stderr)
+            assert "ROOT_INGRESS_PAYLOAD_FACT " not in checked.stderr, (
+                mode, unsupported_source, checked.stderr)
+            failed_closed = run([COMPILER, unsupported_source, "-o",
+                                 str(unsupported_dir / "unsupported.rs")])
+            assert failed_closed.returncode != 0 and (
+                "MOSS_INTERNAL_INVARIANT root message payload needs" in
+                failed_closed.stdout + failed_closed.stderr), (
+                    mode, unsupported_source, failed_closed.stdout,
+                    failed_closed.stderr)
+    finally:
+        shutil.rmtree(unsupported_dir)
+    return 1 + 2 + 6 + 1 + 4 + 6 + 1 + len(unsupported) * 2
+
+
 def main():
-    scenario_count = 0
+    payload_cases = (
+        (FRESH_PAYLOAD, "Payload { value: 7_i64 }", "fresh: 7"),
+        ("tests/string_payload_snapshot.moss", 'MossStr::from("fresh")', "fresh"),
+    )
+    scenario_count = sum(payload_authority_cases(mode, *fixture)
+                         for mode in ("default", "shadow")
+                         for fixture in payload_cases)
     for source, expected_fact_count in FIXTURES:
         baseline = check(source, {"MOSS_TEST_DUMP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT": "1"})
         response = parse_result(baseline)

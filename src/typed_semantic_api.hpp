@@ -1381,6 +1381,57 @@ struct TypedRootIngressDomainCaptureFactV1 {
 using TypedRootIngressDomainCaptureRequirementV1 =
     TypedRootIngressDomainCaptureFactV1;
 
+// Checker proof that an exact fresh, nonprimitive Root-ingress payload
+// expression transfers its already-owned value into the synchronous thunk.
+// This authorizes no Moss-level copy and deliberately excludes identifiers,
+// materialized locals, and nested forwarding.
+enum class TypedRootIngressPayloadActionV1 { TransferOwnedFreshRvalue };
+struct TypedRootIngressPayloadFactV1 {
+  enum class Availability { Present, MissingOccurrence, MissingType,
+                            Contradictory };
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId message_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  std::uint64_t source_fingerprint{0};
+  std::string selected_handler_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef payload_type;
+  Effect required_access{Effect::Consume};
+  TypedRootIngressPayloadActionV1 action{
+      TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue};
+  bool checker_proved_fresh_rvalue{false};
+  bool permits_moss_value_copy{false};
+  Availability availability{Availability::MissingOccurrence};
+
+  bool is_authoritative() const noexcept {
+    const bool primitive_copy = payload_type &&
+        payload_type->kind == TypeKind::Primitive &&
+        (payload_type->name == "Int" || payload_type->name == "int" ||
+         payload_type->name == "Float" || payload_type->name == "float" ||
+         payload_type->name == "Bool" || payload_type->name == "bool" ||
+         payload_type->name == "Char" || payload_type->name == "char" ||
+         payload_type->name == "Byte" || payload_type->name == "byte" ||
+         payload_type->name == "i64" || payload_type->name == "f64" ||
+         payload_type->name == "u8");
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        message_expression_occurrence_id != UINT32_MAX &&
+        argument_index != UINT32_MAX &&
+        argument_expression_occurrence_id != UINT32_MAX &&
+        source_fingerprint != 0 && !selected_handler_identity.empty() &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        payload_type && payload_type->is_closed() && !primitive_copy &&
+        required_access == Effect::Consume &&
+        checker_proved_fresh_rvalue && !permits_moss_value_copy &&
+        action == TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue;
+  }
+};
+using TypedRootIngressPayloadRequirementV1 = TypedRootIngressPayloadFactV1;
+
 enum class TypedMatchScrutineeKindV1 { Enum, Option };
 
 struct TypedMatchArmFactV1 {
@@ -1786,6 +1837,9 @@ struct TypedSemanticModuleV1 {
       root_ingress_domain_capture_facts;
   std::vector<TypedRootIngressDomainCaptureRequirementV1>
       required_root_ingress_domain_capture_occurrences;
+  std::vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts;
+  std::vector<TypedRootIngressPayloadRequirementV1>
+      required_root_ingress_payload_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -1967,6 +2021,67 @@ struct TypedSemanticModuleV1 {
       throw std::invalid_argument(fact_matches
           ? "duplicate or contradictory Root-ingress domain capture facts"
           : "required Root-ingress domain capture fact missing");
+    return *result;
+  }
+
+  const TypedRootIngressPayloadFactV1& find_root_ingress_payload_fact(
+      const TypedRootIngressPayloadRequirementV1& requirement) const {
+    const auto same = [](const TypedRootIngressPayloadFactV1& left,
+                         const TypedRootIngressPayloadFactV1& right) {
+      return left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.est_arena_index == right.est_arena_index &&
+          left.message_expression_occurrence_id ==
+              right.message_expression_occurrence_id &&
+          left.argument_index == right.argument_index &&
+          left.argument_expression_occurrence_id ==
+              right.argument_expression_occurrence_id &&
+          left.source_fingerprint == right.source_fingerprint &&
+          left.selected_handler_identity == right.selected_handler_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          left.payload_type && right.payload_type &&
+          left.payload_type->structurally_equal(*right.payload_type) &&
+          left.required_access == right.required_access &&
+          left.action == right.action &&
+          left.checker_proved_fresh_rvalue ==
+              right.checker_proved_fresh_rvalue &&
+          left.permits_moss_value_copy == right.permits_moss_value_copy &&
+          left.availability == right.availability;
+    };
+    const auto matches_identity = [&](const auto& candidate) {
+      return candidate.statement_occurrence_id ==
+                  requirement.statement_occurrence_id &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.message_expression_occurrence_id ==
+              requirement.message_expression_occurrence_id &&
+          candidate.argument_index == requirement.argument_index &&
+          candidate.argument_expression_occurrence_id ==
+              requirement.argument_expression_occurrence_id &&
+          candidate.specialization_context == requirement.specialization_context;
+    };
+    const TypedRootIngressPayloadRequirementV1* retained = nullptr;
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate : required_root_ingress_payload_occurrences)
+      if (matches_identity(candidate)) {
+        retained = &candidate;
+        ++requirement_matches;
+      }
+    if (requirement_matches != 1 || !retained || !same(*retained, requirement) ||
+        !retained->is_authoritative())
+      throw std::invalid_argument(
+          "unknown or contradictory required Root-ingress payload authority");
+    const TypedRootIngressPayloadFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : root_ingress_payload_facts)
+      if (matches_identity(candidate)) {
+        result = &candidate;
+        ++fact_matches;
+      }
+    if (fact_matches != 1 || !result || !same(*result, requirement) ||
+        !result->is_authoritative())
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory Root-ingress payload facts"
+          : "required Root-ingress payload fact missing");
     return *result;
   }
 

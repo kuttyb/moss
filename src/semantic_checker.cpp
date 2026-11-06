@@ -2441,6 +2441,54 @@ class Checker {
           root_ingress_domain_capture_facts_;
       p_.typed_semantics->required_root_ingress_domain_capture_occurrences =
           required_root_ingress_domain_capture_occurrences_;
+      p_.typed_semantics->root_ingress_payload_facts =
+          root_ingress_payload_facts_;
+      p_.typed_semantics->required_root_ingress_payload_occurrences =
+          required_root_ingress_payload_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_PAYLOAD_FACT") &&
+          !p_.typed_semantics->root_ingress_payload_facts.empty())
+        p_.typed_semantics->root_ingress_payload_facts.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_ROOT_INGRESS_PAYLOAD_FACT") &&
+          !p_.typed_semantics->root_ingress_payload_facts.empty())
+        p_.typed_semantics->root_ingress_payload_facts.push_back(
+            p_.typed_semantics->root_ingress_payload_facts.back());
+      if (std::getenv("MOSS_TEST_PERTURB_ROOT_INGRESS_PAYLOAD_FACT") &&
+          !p_.typed_semantics->root_ingress_payload_facts.empty()) {
+        auto& fact = p_.typed_semantics->root_ingress_payload_facts.back();
+        const string field = std::getenv(
+            "MOSS_TEST_PERTURB_ROOT_INGRESS_PAYLOAD_FACT");
+        if (field == "owner") fact.selected_handler_identity += ":wrong-owner";
+        else if (field == "argument") ++fact.argument_index;
+        else if (field == "type") fact.payload_type.reset();
+        else if (field == "action")
+          fact.action = static_cast<TypedRootIngressPayloadActionV1>(99);
+        else if (field == "context") fact.specialization_context += ":wrong-context";
+        else if (field == "occurrence") ++fact.argument_expression_occurrence_id;
+        else fact.selected_handler_identity += ":perturbed";
+      }
+#endif
+      if (p_.typed_semantics->root_ingress_payload_facts.size() !=
+          p_.typed_semantics->required_root_ingress_payload_occurrences.size())
+        throw std::invalid_argument(
+            "Root-ingress payload checker fact/requirement set is incomplete");
+      for (const auto& requirement :
+           p_.typed_semantics->required_root_ingress_payload_occurrences)
+        (void)p_.typed_semantics->find_root_ingress_payload_fact(requirement);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DUMP_ROOT_INGRESS_PAYLOAD_FACT"))
+        for (const auto& fact : p_.typed_semantics->root_ingress_payload_facts)
+          std::cerr << "ROOT_INGRESS_PAYLOAD_FACT stmt="
+                    << fact.statement_occurrence_id << " arena="
+                    << fact.est_arena_index << " message="
+                    << fact.message_expression_occurrence_id << " arg="
+                    << fact.argument_index << " arg_expr="
+                    << fact.argument_expression_occurrence_id << " owner="
+                    << fact.selected_handler_identity << " type="
+                    << fact.payload_type->to_canonical_string() << " action="
+                    << static_cast<int>(fact.action) << " context="
+                    << fact.specialization_context << '\n';
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT") &&
           !p_.typed_semantics->root_ingress_domain_capture_facts.empty())
@@ -3152,6 +3200,9 @@ class Checker {
       root_ingress_domain_capture_facts_;
   vector<TypedRootIngressDomainCaptureRequirementV1>
       required_root_ingress_domain_capture_occurrences_;
+  vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts_;
+  vector<TypedRootIngressPayloadRequirementV1>
+      required_root_ingress_payload_occurrences_;
   std::unordered_map<std::string, EnumType> option_enums_cache_;
   std::set<std::string> taken_places_in_current_stmt_;
   std::set<std::pair<std::uint32_t, est::ExprId>> visited_takes_in_current_stmt_;
@@ -36827,8 +36878,113 @@ class Checker {
               "duplicate synchronous Root-ingress domain capture occurrence",
               "MOSS_INTERNAL_INVARIANT");
         root_ingress_domain_capture_facts_.push_back(fact);
+        const string selected_handler_identity = fact.selected_handler_identity;
         required_root_ingress_domain_capture_occurrences_.push_back(
             std::move(fact));
+
+        // A Root thunk is 'static, so a fresh nonprimitive constructor or
+        // literal argument must transfer its existing owner into the thunk.
+        // This is not a Moss copy. Keep the proof syntactic and exact: names,
+        // calls, projections, pipelines and nested forwarding are unsupported.
+        const string payload_context = expression_fact_context();
+        for (std::size_t argument_index = 0;
+             argument_index < message.arguments.size(); ++argument_index) {
+          const auto argument_id = est::unparenthesized(
+              *arena, message.arguments[argument_index]);
+          // Statement-form messages are checked argument by argument against
+          // the already selected handler above. Reuse that checked source
+          // argument only to materialize its TypeRef on this exact retained
+          // EST child; do not let a consumer re-infer it.
+          if (statement.kind != Stmt::Kind::Message ||
+              argument_index >= statement.args.size())
+            continue;
+          const auto actual = inferred_expr_type(
+              statement.args[argument_index], current_env);
+          const auto parsed_type = actual
+              ? moss::Type::parse_canonical(canonical_type_name(*actual))
+              : std::nullopt;
+          if (!parsed_type || !*parsed_type || !(*parsed_type)->is_closed() ||
+              !same_type(handler->params[argument_index].type, *actual))
+            continue;
+          auto checked_type = *parsed_type;
+          const bool primitive = checked_type->kind == TypeKind::Primitive &&
+              (checked_type->name == "Int" || checked_type->name == "int" ||
+               checked_type->name == "Float" || checked_type->name == "float" ||
+               checked_type->name == "Bool" || checked_type->name == "bool" ||
+               checked_type->name == "Char" || checked_type->name == "char" ||
+               checked_type->name == "Byte" || checked_type->name == "byte" ||
+               checked_type->name == "i64" || checked_type->name == "f64" ||
+               checked_type->name == "u8");
+          if (primitive ||
+              (!std::holds_alternative<est::Constructor>(arena->at(argument_id)) &&
+               !std::holds_alternative<est::Literal>(arena->at(argument_id))))
+            continue;
+          const auto has_copy = std::any_of(
+              copy_facts_.begin(), copy_facts_.end(), [&](const auto& candidate) {
+                return candidate.est_arena_index == handle.arena_index &&
+                    candidate.source_occurrence_id == argument_id;
+              });
+          const auto has_return = std::any_of(
+              return_value_facts_.begin(), return_value_facts_.end(),
+              [&](const auto& candidate) {
+                return candidate.est_arena_index == handle.arena_index &&
+                    candidate.expression_occurrence_id == argument_id;
+              });
+          if (has_copy || has_return) continue;
+          auto* mutable_arena = const_cast<est::Arena*>(arena);
+          if (const auto* existing = arena->facts(argument_id, payload_context);
+              existing && existing->type &&
+              !existing->type->structurally_equal(*checked_type))
+            err(statement.source_file, statement.line,
+                "contradictory checked Root-ingress payload TypeRef",
+                "MOSS_INTERNAL_INVARIANT");
+          est::SemanticFacts checked_argument_facts;
+          if (const auto* existing = arena->facts(argument_id, payload_context))
+            checked_argument_facts = *existing;
+          checked_argument_facts.type = checked_type;
+          mutable_arena->record_facts(argument_id, payload_context,
+                                      std::move(checked_argument_facts));
+          TypedRootIngressPayloadFactV1 payload;
+          payload.statement_occurrence_id = fact.statement_occurrence_id;
+          payload.est_arena_index = handle.arena_index;
+          payload.message_expression_occurrence_id = message_id;
+          payload.argument_index = static_cast<std::uint32_t>(argument_index);
+          payload.argument_expression_occurrence_id = argument_id;
+          payload.source_fingerprint = handle.source_fingerprint;
+          payload.selected_handler_identity = selected_handler_identity;
+          payload.specialization_context = "main";
+          payload.est_fact_context = payload_context;
+          payload.payload_type = checked_type;
+          payload.checker_proved_fresh_rvalue = true;
+          payload.permits_moss_value_copy = false;
+          payload.availability =
+              TypedRootIngressPayloadFactV1::Availability::Present;
+          if (!payload.is_authoritative()) {
+            err(statement.source_file, statement.line,
+                "checker could not retain exact fresh Root-ingress payload authority",
+                "MOSS_INTERNAL_INVARIANT");
+          }
+          const auto duplicate_payload = std::find_if(
+              required_root_ingress_payload_occurrences_.begin(),
+              required_root_ingress_payload_occurrences_.end(),
+              [&](const auto& existing) {
+                return existing.statement_occurrence_id ==
+                        payload.statement_occurrence_id &&
+                    existing.est_arena_index == payload.est_arena_index &&
+                    existing.message_expression_occurrence_id == message_id &&
+                    existing.argument_index == payload.argument_index &&
+                    existing.specialization_context ==
+                        payload.specialization_context;
+              });
+          if (duplicate_payload !=
+              required_root_ingress_payload_occurrences_.end())
+            err(statement.source_file, statement.line,
+                "duplicate fresh Root-ingress payload authority occurrence",
+                "MOSS_INTERNAL_INVARIANT");
+          root_ingress_payload_facts_.push_back(payload);
+          required_root_ingress_payload_occurrences_.push_back(
+              std::move(payload));
+        }
       };
       if (check_executor_or_fileio_statement(statement, current_env, current,
                                              current_function, &statements))

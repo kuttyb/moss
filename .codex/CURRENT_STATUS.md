@@ -17714,3 +17714,25 @@ untouched.
   with the same broad failure set as Default. Baseline Default/Shadow matrix
   comparisons and the broader qualified `Arc::clone` inventory are still
   pending.
+
+### Root-ingress fresh payload authority candidate (2026-11-05)
+
+- Isolated implementation branch `phase28-r7-010-root-ingress-payload-authority`
+  is based on reviewed intake `9b440e9376873d8480a52d87b2bc43b1fdd5d7c7`.
+  It adds checker-issued `TransferOwnedFreshRvalue` authority only for direct
+  main-body Root messages whose top-level nonprimitive payload is a fresh
+  constructor or literal. Identifier payloads, reused locals, embedded
+  messages, and nested forwarding remain unsupported and fail closed; no
+  Moss-value copy is authorized.
+- `make --jobs="$(nproc)"` passes. The registered Root-ingress focused gate
+  passes 138 scenarios, including Default and EST-shadow fact identity,
+  checker and consumer drop/duplicate/corruption cases, and Fast Debug output.
+  Identifier and materialized-pipeline locals receive no fresh-rvalue fact and
+  still fail closed at native root-payload lowering.
+  Constructor and string-literal native outputs compile with `rustc -D warnings`
+  and execute with expected output in both EST modes. Feedback validation and
+  `git diff --check` pass.
+- No full Default/EST-shadow suite, frozen oracle, X1 suite, or clone audit was
+  run on this candidate. The source-free `.mossi` transport path is outside
+  this main-body occurrence authority slice. Exact SHA and independent review
+  remain pending; do not integrate before Agent 2 and Team C reviews.
