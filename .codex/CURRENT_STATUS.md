@@ -17961,3 +17961,24 @@ untouched.
   and must remain explicitly reconciled. No fresh oracle or clone-provenance
   audit exists for the newly integrated source. No merge to `phase28-work` or
   `main`; no runtime clone authorization.
+
+### Integrated Fast Debug indexed-read regression discovered
+
+- After integrating reviewed `a4cb6fb4` + `1d64e51f` as `74ed2060` and
+  `7f14c298`, the integrated build and earlier targeted imported-generic/X1/
+  `.mossi` gates passed. `make check` then stopped before the full 167-job suite
+  at `tests/phase28/verify_take_fixtures.py`: 16/18 passed, while
+  `take_specialized_effects` and `take_multi_selector` failed in Fast Debug with
+  `MOSS_INTERNAL_INVARIANT conditional indexed READ lacks checker
+  classification`.
+- This is a real integration regression: Fast Debug now requires the new exact
+  classification for conditional indexed reads, but the checker producer does
+  not emit it for these existing specialized selector/take paths. No complete
+  Default matrix ran and no Shadow matrix ran at this checkpoint.
+- Next: repair the checker producer on a new isolated follow-up branch based on
+  this integrated source, preserving the frozen reviewed branches. The fix must
+  provide exact context/type/disposition for these conditional reads or keep the
+  interpreter fail-closed only where the checked fact requires borrowing, while
+  retaining no-copy behavior for nonprimitive reads. Then rerun the full take
+  harness, imported generic gate, builds, Default/Shadow preflight, and obtain new
+  exact-SHA independent reviews before further integration.
