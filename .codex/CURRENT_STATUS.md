@@ -2,21 +2,16 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, pushed HEAD
-  `43e88664dd7efc5c00e11f7058a887f1c5b0caa4`; local HEAD
-  `bb77c16e976645a5d507138e5c855e706954e1bd` integrates Team A's reviewed
-  direct-index checker fact and feedback follow-up. L7 runner registration
-  for that checker gate is currently uncommitted. No merge to `phase28-work`
-  or `main`.
+  `7ba77e06dd100afd852d9eb72fa829566137a312`. It integrates Team A's reviewed
+  direct-index checker fact and feedback follow-up, plus L7 registration of
+  the checker gate in both Default and EST-shadow runners. No merge to
+  `phase28-work` or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
   builds pass. On this exact HEAD, projected-call argument authority,
   local-transfer authority (23 Default/Shadow scenarios), oracle authority
   facts, specialized ownership contract, all 17 primitive-index cases, and
   local ownership facts pass.
-- On the intact Regex package, `./margo test` fails closed at the known
-  `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
-  READ/WRITE, Copy, or projected-borrow authority`; this was the pre-consumer
-  result on the exact staging source.
 - Team B's native consumer path consumes the exact checked
   `TypedProjectedCallArgumentReadFactV1` for `Vector[index].member` call
   arguments. Debug/Optimized/Fast Debug parity and six corruption cases pass;
@@ -24,20 +19,28 @@
   review is GO on exact staging SHA `6dae29cb`; an isolated review build and
   registered consumer gate pass. L7's initial stale-binary run was discarded;
   the integrated compiler was rebuilt before validation.
-  The full Regex package's direct `parts[0]` String read now has a checker fact;
-  native consumption and package acceptance remain pending Team B. Team A's
-  fact and feedback are integrated from reviewed commits `3092243e` and
-  `3ef3cd23`.
+  The direct `parts[0]` String read now has a checker fact. Team B's separate
+  bare-index consumer branch is `phase28-r7-010-team-b-indexed-call-read`,
+  based on staging `6dae29cb` plus Team A commit `3092243e` as `fd857b2c`.
+  Its minimized direct consumer gate passes six corruption cases and
+  Native Debug/Optimized/Fast Debug parity; the copied Regex package reports
+  19/19 Debug and 19/19 Release. Final freeze/review and L7 integration are
+  pending. The frozen/pushed Team B candidate is
+  `9acb331117ba12ca6ccaf94c30e30b44d2ad88ac`; L7 registration and combined
+  validation/review are next.
 - Team C refreshed exact-source audit is frozen/pushed on
   `phase28-r7-010-team-c-refreshed-audit` at
   `1f69ed92599180974ef15ed41689c0e5db6f9ff7`; independent Agent 2 review is
   GO for the limited evidence scope. It verifies frozen oracle digests and the ORACLE-10A clone evidence
   gate, but carries forward the previous 252-row full inventory rather than
   claiming a new full-oracle run. The stale 524 count is explicitly retired.
-- On integrated source `bb77c16e`, `moss-dev` and `moss-opt` rebuilds pass; the
-  direct-index checker gate passes Default and EST-shadow. `make -n
+- On integrated source `7ba77e06`, `moss-dev` and `moss-opt` rebuilds pass; the
+  indexed-call checker gate passes Default and EST-shadow. `make -n
   check-parallel` confirms both registrations; feedback validation and
-  `git diff --check` pass. Native direct-index consumption remains pending.
+  `git diff --check` pass. Team A also checked all 14 cases listed as semantic
+  failures in the older post-Map.get ledger against the unchanged v2 checker
+  expectations; all 14 now match on `7ba77e06`. This is targeted checker
+  triage, not a fresh full oracle run or native/Fast Debug/provenance result.
 - Current disposition remains NO-GO. Remaining: Team B native consumer repair
   and independent review; rerun Team C's frozen oracle, clone provenance and
   corruption/parity audits against the combined SHA; resolve semantic failures
