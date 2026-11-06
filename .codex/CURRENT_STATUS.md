@@ -17367,3 +17367,17 @@ R7-009 primitive-index gates all pass. `git diff --check` and
 `python3 tests/tooling/check_agent_feedback.py` pass. Shared runner registration
 and native consumer integration remain with L7/Team B. No oracle expectations
 were changed. Independent review is pending after freezing the candidate.
+
+## Team B direct indexed call-argument READ consumer
+## Team B direct indexed call-argument READ consumer
+
+- Isolated worktree: `tmp/phase28-r7-010-team-b-indexed-call-read`
+- Branch: `phase28-r7-010-team-b-indexed-call-read`
+- Integration base: staging `6dae29cb5bc85030665c02ed853a9b9ea325dead` plus Team A checker API `3092243e8b2b5d290a87d553205eb27e44f6b334`, integrated locally as `fd857b2c02afb8de80789426cbd76947bc92bdb2`. Only `.codex/CURRENT_STATUS.md` conflicted; both status sections were retained.
+- Scope: consume `TypedIndexedCallArgumentReadFactV1` for exact direct `Vector[index]` call arguments to `assertEqual`. Native borrows the place only after exact requirement/fact lookup and validation of statement, argument, arena/ExprIds, context, specialization, target READ effect, source spans, receiver/selector and no-copy nonescaping fields. Missing authority for a nonprimitive Vector argument fails closed. The preceding projected-member consumer remains intact.
+- Build: `make --jobs="$(nproc)"` and `make --jobs="$(nproc)" moss-opt` both complete successfully (existing unrelated initializer/unused-variable warnings remain).
+- Native Debug/Optimized/Fast Debug: `tests/phase28/r7_010/team_b/check_indexed_call_argument_read_consumer.py build/compiler/moss-dev` passes; generated Rust borrows `parts[0]` as `&((parts)[(0_i64) as usize])` without cloning. Six consumer drop/duplicate/perturb cases fail closed.
+- Prior projected-member consumer: `tests/phase28/r7_010/team_b/check_projected_call_argument_read_consumer.py build/compiler/moss-dev` passes.
+- Checker authority: `tests/tooling/check_phase28_indexed_call_argument_read.py build/compiler/moss-dev` and `tests/tooling/check_phase28_projected_call_argument_read.py build/compiler/moss-dev` pass.
+- Full Regex package in the intact metadata copy at `tmp/team-b/regex-copy-final`: `margo test` and `margo test --release` each pass 19/19. `margo build` reports `ok` with `native_skipped` for this library package; test targets compile and execute Native artifacts.
+- `git diff --check` and `python3 tests/tooling/check_agent_feedback.py` pass. The new Team B consumer gate is not registered in shared `tests/run.sh`; L7 owns runner registration. No oracle/checker edits were made by Team B. Freeze/review is pending the L7 registration commit; no push yet.

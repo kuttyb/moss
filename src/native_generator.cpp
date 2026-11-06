@@ -2191,6 +2191,161 @@ class Generator {
     }
   }
 
+  const TypedIndexedCallArgumentReadFactV1*
+  resolve_indexed_call_argument_read_fact(
+      const Stmt& statement, std::uint32_t argument_index,
+      const string& functional_context) const {
+    if (argument_index >= statement.args.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument index is invalid");
+    string receiver_text, index_text, member_base, member_name;
+    if (!tree_parse_index(statement.args[argument_index], receiver_text,
+                          index_text) ||
+        tree_parse_member_access(statement.args[argument_index], member_base,
+                                 member_name))
+      return nullptr;
+    if (statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument statement identity unavailable");
+
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto* typed_semantics = checked_program.typed_semantics.get();
+    if (!typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument facts unavailable");
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::Argument ||
+          candidate.argument_index != argument_index)
+        continue;
+      if (handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate indexed call argument handle");
+      handle = &candidate;
+    }
+    if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[handle->arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument EST handle unavailable");
+    const auto& arena = *checked_program.expression_arenas[handle->arena_index];
+    if (handle->expr >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument EST ExprId is invalid");
+    est::ExprId index_id = handle->expr;
+    while (index_id < arena.size()) {
+      const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(index_id));
+      if (!grouped) break;
+      index_id = grouped->inner;
+    }
+    const auto* index = index_id < arena.size()
+        ? std::get_if<est::Index>(&arena.at(index_id)) : nullptr;
+    if (!index) return nullptr;
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const auto* receiver_facts = arena.facts(index->base, context);
+    if (!receiver_facts || !receiver_facts->type)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument receiver type unavailable");
+    if (receiver_facts->type->kind != TypeKind::Builtin ||
+        receiver_facts->type->name != "vector" ||
+        receiver_facts->type->type_args.size() != 1)
+      return nullptr;
+    const bool primitive_element = is_primitive_copy_type(
+        receiver_facts->type->type_args.front());
+    const auto* receiver = index->base < arena.size()
+        ? std::get_if<est::Identifier>(&arena.at(index->base)) : nullptr;
+    if ((!receiver || index_id != handle->expr) && !primitive_element)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT nonprimitive indexed call argument lacks supported exact receiver identity");
+    if (!receiver || index_id != handle->expr)
+      return nullptr;
+
+    const string specialization = codegen_active_specialization_key_;
+    const TypedIndexedCallArgumentReadRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    for (const auto& candidate :
+         typed_semantics->required_indexed_call_argument_read_occurrences) {
+      if (candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.argument_index != argument_index ||
+          candidate.est_arena_index != handle->arena_index ||
+          candidate.call_argument_expression_occurrence_id != handle->expr ||
+          candidate.specialization_context != context ||
+          candidate.specialization_identity != specialization)
+        continue;
+      requirement = &candidate;
+      ++requirement_count;
+    }
+    if (requirement_count == 0 && !primitive_element)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required indexed call argument READ fact missing");
+    if (requirement_count == 0) return nullptr;
+    if (requirement_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT indexed call argument requirement is duplicate or ambiguous");
+    const auto exact_requirement = *requirement;
+
+#ifdef MOSS_TEST_BUILD
+    auto& requirements = checked_program.typed_semantics
+        ->required_indexed_call_argument_read_occurrences;
+    auto& facts = checked_program.typed_semantics->indexed_call_argument_read_facts;
+    const auto same_query = [&](const auto& row) {
+      return row.statement_occurrence_id ==
+                 exact_requirement.statement_occurrence_id &&
+          row.est_arena_index == exact_requirement.est_arena_index &&
+          row.call_argument_expression_occurrence_id ==
+              exact_requirement.call_argument_expression_occurrence_id &&
+          row.argument_index == exact_requirement.argument_index &&
+          row.specialization_context == exact_requirement.specialization_context &&
+          row.specialization_identity == exact_requirement.specialization_identity;
+    };
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(), same_query);
+      if (it != requirements.end()) requirements.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT"))
+      requirements.push_back(exact_requirement);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(), same_query);
+      if (it != requirements.end()) it->required_access = Effect::Consume;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_CALL_ARGUMENT_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(), same_query);
+      if (it != facts.end()) facts.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_CALL_ARGUMENT_READ_FACT"))
+      facts.push_back(exact_requirement);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_CALL_ARGUMENT_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(), same_query);
+      if (it != facts.end()) it->permits_copy = true;
+    }
+#endif
+
+    try {
+      const auto& fact = typed_semantics->find_indexed_call_argument_read_fact(
+          exact_requirement);
+      const auto argument_span = arena.span(handle->expr);
+      const auto index_span = arena.span(handle->expr);
+      if (!fact.is_authoritative() || fact.required_access != Effect::Read ||
+          fact.permits_copy || !fact.temporary_nonescaping_borrow ||
+          fact.target_callable_identity != "builtin:assertEqual-v1" ||
+          fact.target_parameter_access != Effect::Read ||
+          fact.call_argument_expression_occurrence_id != handle->expr ||
+          fact.collection_index_expression_occurrence_id != handle->expr ||
+          fact.receiver_expression_occurrence_id != index->base ||
+          fact.index_expression_occurrence_id != index->index ||
+          fact.argument_occurrence_span.source_begin != argument_span.source_begin ||
+          fact.argument_occurrence_span.source_end != argument_span.source_end ||
+          fact.index_occurrence_span.source_begin != index_span.source_begin ||
+          fact.index_occurrence_span.source_end != index_span.source_end)
+        throw std::invalid_argument(
+            "indexed call argument fact does not match exact checked READ index");
+      return &fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
   const TypedProjectedCollectionReadFactV1*
   resolve_projected_collection_read_fact(
       const string& projection_expression) const {
@@ -10795,22 +10950,29 @@ class Generator {
             size_t id = assertion_temp_++;
             string actual = "__moss_assert_actual_" + std::to_string(id);
             string expected = "__moss_assert_expected_" + std::to_string(id);
+            const auto* actual_indexed_read =
+                resolve_indexed_call_argument_read_fact(
+                    s, 0, functional_context);
             const auto* actual_projected_read =
                 resolve_projected_call_argument_read_fact(
                     s, 0, functional_context);
+            const auto* expected_indexed_read = s.args.size() > 1
+                ? resolve_indexed_call_argument_read_fact(
+                      s, 1, functional_context)
+                : nullptr;
             const auto* expected_projected_read = s.args.size() > 1
                 ? resolve_projected_call_argument_read_fact(
                       s, 1, functional_context)
                 : nullptr;
             o << indent(level) << "let " << actual << " = &("
-              << (actual_projected_read
+              << (actual_indexed_read || actual_projected_read
                       ? read_call_place(s.args[0], d, locals, &types)
                       : expr(s.args[0], d, locals, &types,
                              statement_functional_pipeline_id(
                                  s, functional_context, 0)))
               << ");\n";
             o << indent(level) << "let " << expected << " = &("
-              << (expected_projected_read
+              << (expected_indexed_read || expected_projected_read
                       ? read_call_place(s.args[1], d, locals, &types)
                       : expr(s.args[1], d, locals, &types,
                              statement_functional_pipeline_id(
