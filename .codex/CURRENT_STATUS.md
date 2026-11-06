@@ -21,14 +21,16 @@
   19/60 all-gate, and 41 provenance-only result remains historical, not
   evidence for this checkpoint. The clone inventory and zero-approved-site
   policy also remain as previously recorded; no clone exception is authorized.
-- Next repair dependency: materialize and serialize checker-owned ReturnValue
-  authority for imported Section 1 generic bodies, then remap it to the exact
-  caller specialization/occurrence in `.mossi` consumers. Current evidence:
-  X1 v10 focused fails at source-free `identity(7)` because the imported
-  generic `identity` body has no ReturnValue artifact; provider checking defers
-  the unresolved generic return fact. The source-free consumer must remain
-  fail-closed with no fallback. This repair is in the single vertical team and
-  has not yet been frozen or independently reviewed.
+- Next repair dependency: retain and serialize the exact EST context on
+  checker-owned ReturnValue authority for imported Section 1 generic bodies,
+  then remap it to the exact caller specialization/occurrence in `.mossi`
+  consumers. Worker tracing on X1 v10's source-free `identity(7)` shows one
+  requirement and one fact for the exact `identity<int>` specialization hash,
+  but the fact's EST context is empty. Imported generic checked-body EST facts
+  use the specialized function context while the ReturnValue producer selects
+  base-callable/source context, leaving a non-authoritative fact. Keep the
+  source-free consumer fail-closed with no fallback. The focused repair is
+  isolated and has not yet been frozen or independently reviewed.
 - Independent Team C is re-verifying exact `bf5fc461`, including fresh oracle
   and baseline Shadow provenance reconciliation. Overall Phase 28 status stays
   **NO-GO**. No merge to `phase28-work` or `main` has occurred.
