@@ -1376,6 +1376,59 @@ class Generator {
             candidate.provenance.source_file == statement.source_file;
       }
 
+      if (starts_with(callable_context, "handler:")) {
+        const string identity = callable_context.substr(8);
+        const auto separator = identity.rfind('.');
+        if (separator == string::npos || separator == 0 ||
+            separator + 1 >= identity.size()) return false;
+        string domain_identity = identity.substr(0, separator);
+        const string handler_name = identity.substr(separator + 1);
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_OWNER"))
+          domain_identity += ":wrong-owner";
+#endif
+        const Domain* owner_domain = nullptr;
+        size_t domain_count = 0;
+        for (const auto& domain : checked_program.domains)
+          if (domain.name == domain_identity) {
+            owner_domain = &domain;
+            ++domain_count;
+          }
+        if (domain_count != 1 || !owner_domain) return false;
+        const Handler* owner_handler = nullptr;
+        size_t handler_count = 0;
+        for (const auto& handler : owner_domain->handlers)
+          if (handler.name == handler_name) {
+            owner_handler = &handler;
+            ++handler_count;
+          }
+        if (handler_count != 1 || !owner_handler ||
+            !owner_handler->reply_type || !candidate.expression_type ||
+            candidate.expression_type->to_canonical_string() !=
+                *owner_handler->reply_type) return false;
+        const string module = module_name_from_symbol(owner_domain->name);
+        if (module.empty() || !checked_program.external_modules.count(module))
+          return false;
+        const auto module_identity = checked_program.module_identities.find(module);
+        if (module_identity == checked_program.module_identities.end() ||
+            module_identity->second.empty() ||
+            candidate.provenance.defining_module_id != module_identity->second)
+          return false;
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_MODULE") ||
+            std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_HANDLER_TYPE"))
+          return false;
+        string source_file = statement.source_file;
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_SOURCE"))
+          source_file += ":wrong-source";
+#else
+        const string& source_file = statement.source_file;
+#endif
+        return !source_file.empty() &&
+            candidate.provenance.enclosing_callable_id == callable_context &&
+            candidate.provenance.source_file == source_file;
+      }
+
       const string method_prefix = "method:";
       if (!starts_with(callable_context, method_prefix)) return false;
       const string method_identity = callable_context.substr(method_prefix.size());
@@ -1485,6 +1538,16 @@ class Generator {
       ++requirement_count;
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT")) fact_count = 0;
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT")) ++fact_count;
+    if (callable_context.rfind("handler:", 0) == 0) {
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT"))
+        --requirement_count;
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_REQUIREMENT"))
+        ++requirement_count;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT"))
+        fact_count = 0;
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT"))
+        ++fact_count;
+    }
 #endif
     if (requirement_count != 1 || fact_count != 1 || !requirement)
       throw std::runtime_error(
@@ -1497,6 +1560,15 @@ class Generator {
             ? Effect::Read : Effect::Consume;
         (void)typed_semantics->find_return_value_fact(corrupted);
         throw std::runtime_error("perturbed return-value fact unexpectedly passed");
+      }
+      if (callable_context.rfind("handler:", 0) == 0 &&
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.required_access = corrupted.required_access == Effect::Consume
+            ? Effect::Read : Effect::Consume;
+        (void)typed_semantics->find_return_value_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed imported handler Reply fact unexpectedly passed");
       }
       if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
         auto corrupted = *requirement;

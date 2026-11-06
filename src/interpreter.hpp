@@ -4250,6 +4250,11 @@ class FastInterpreter {
       query_context += ":wrong-context";
 #endif
     std::string callable_context = context;
+    const auto failure_context = callable_context.find(":on_fail:");
+    if (failure_context != std::string::npos) {
+      callable_context.resize(failure_context);
+      query_context = callable_context;
+    }
     const auto callable_suffix = callable_context.find('<');
     if (callable_suffix != std::string::npos)
       callable_context.resize(callable_suffix);
@@ -4282,6 +4287,62 @@ class FastInterpreter {
             candidate.provenance.enclosing_callable_id == callable_context &&
             !statement.source_file.empty() &&
             candidate.provenance.source_file == statement.source_file;
+      }
+
+      if (callable_context.rfind("handler:", 0) == 0) {
+        const std::string identity = callable_context.substr(8);
+        const auto separator = identity.rfind('.');
+        if (separator == std::string::npos || separator == 0 ||
+            separator + 1 >= identity.size()) return false;
+        std::string domain_identity = identity.substr(0, separator);
+        const std::string handler_name = identity.substr(separator + 1);
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_OWNER"))
+          domain_identity += ":wrong-owner";
+#endif
+        const Domain* owner_domain = nullptr;
+        std::size_t domain_count = 0;
+        for (const auto& domain : program_.domains)
+          if (domain.name == domain_identity) {
+            owner_domain = &domain;
+            ++domain_count;
+          }
+        if (domain_count != 1 || !owner_domain) return false;
+        const Handler* owner_handler = nullptr;
+        std::size_t handler_count = 0;
+        for (const auto& handler : owner_domain->handlers)
+          if (handler.name == handler_name) {
+            owner_handler = &handler;
+            ++handler_count;
+          }
+        if (handler_count != 1 || !owner_handler ||
+            !owner_handler->reply_type || !candidate.expression_type ||
+            candidate.expression_type->to_canonical_string() !=
+                *owner_handler->reply_type) return false;
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_HANDLER_TYPE"))
+          return false;
+#endif
+        const std::string module = module_name_from_symbol(owner_domain->name);
+        if (module.empty() || !program_.external_modules.count(module))
+          return false;
+        const auto module_identity = program_.module_identities.find(module);
+        if (module_identity == program_.module_identities.end() ||
+            module_identity->second.empty() ||
+            candidate.provenance.defining_module_id != module_identity->second)
+          return false;
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_MODULE"))
+          return false;
+        std::string source_file = statement.source_file;
+        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_SOURCE"))
+          source_file += ":wrong-source";
+#else
+        const std::string& source_file = statement.source_file;
+#endif
+        return !source_file.empty() &&
+            candidate.provenance.enclosing_callable_id == callable_context &&
+            candidate.provenance.source_file == source_file;
       }
 
       // Method bodies are imported under `method:<qualified object>.<name>`.
@@ -4383,10 +4444,21 @@ class FastInterpreter {
       ++requirement_count;
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT")) fact_count = 0;
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT")) ++fact_count;
+    if (callable_context.rfind("handler:", 0) == 0) {
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT"))
+        --requirement_count;
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_REQUIREMENT"))
+        ++requirement_count;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT"))
+        fact_count = 0;
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT"))
+        ++fact_count;
+    }
 #endif
-    if (requirement_count != 1 || fact_count != 1 || !requirement)
+    if (requirement_count != 1 || fact_count != 1 || !requirement) {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT return-value requirement/fact missing or ambiguous");
+    }
     try {
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_FACT")) {
@@ -4396,6 +4468,15 @@ class FastInterpreter {
         (void)program_.typed_semantics->find_return_value_fact(corrupted);
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed return-value authority unexpectedly passed");
+      }
+      if (callable_context.rfind("handler:", 0) == 0 &&
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT")) {
+        auto corrupted = *requirement;
+        corrupted.required_access = corrupted.required_access == Effect::Consume
+            ? Effect::Read : Effect::Consume;
+        (void)program_.typed_semantics->find_return_value_fact(corrupted);
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT perturbed imported handler Reply fact unexpectedly passed");
       }
       if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
         auto corrupted = *requirement;

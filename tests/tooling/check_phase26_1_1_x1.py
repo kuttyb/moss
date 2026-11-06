@@ -174,8 +174,25 @@ def main() -> int:
         "MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_ARTIFACT_FACT":
             "ReturnValue artifact record is not authoritative",
     }
+    handler_artifact_corruptions = {
+        "MOSS_TEST_DROP_RETURN_VALUE_HANDLER_ARTIFACT_FACT":
+            "source-free failure arm has missing or duplicate Reply authority",
+        "MOSS_TEST_DUPLICATE_RETURN_VALUE_HANDLER_ARTIFACT_FACT":
+            "Reply artifact callable, body, or ordinal mismatch",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_FACT":
+            "ReturnValue artifact record is not authoritative",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_OWNER":
+            "failure-arm Reply artifact callable, body, or ordinal mismatch",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_MODULE":
+            "ReturnValue artifact module identity mismatch",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_SOURCE":
+            "Reply artifact source provenance disagrees with handler source",
+        "MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_TYPE":
+            "Reply artifact type contradicts handler reply TypeRef",
+    }
     check_only_dir = library / "build" / "check-debug"
-    for hook, expected in method_artifact_corruptions.items():
+    for hook, expected in {**method_artifact_corruptions,
+                           **handler_artifact_corruptions}.items():
         corruption_env = env.copy()
         corruption_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
         corruption_env["MOSS_MODULE_PATH"] = str(check_only_dir)
@@ -188,7 +205,25 @@ def main() -> int:
         output = corrupted_method.stdout + corrupted_method.stderr
         if corrupted_method.returncode == 0 or expected not in output:
             raise AssertionError(
-                f"method ReturnValue artifact corruption {hook} did not fail closed:\n"
+                f"ReturnValue artifact corruption {hook} did not fail closed:\n"
+                f"{output}")
+
+    native_consumer_corruptions = (
+        "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT",
+        "MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT",
+    )
+    for hook in native_consumer_corruptions:
+        corruption_env = env.copy()
+        corruption_env[hook] = "1"
+        corrupted_native = subprocess.run(
+            [str(MARGO), "build", "--json"], cwd=app, env=corruption_env,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = corrupted_native.stdout + corrupted_native.stderr
+        if corrupted_native.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in output:
+            raise AssertionError(
+                f"native ReturnValue consumer corruption {hook} did not fail closed:\n"
                 f"{output}")
 
     native = subprocess.run([str(MARGO), "build", "--json"], cwd=app,
@@ -196,6 +231,14 @@ def main() -> int:
                             stderr=subprocess.PIPE)
     if native.returncode:
         raise RuntimeError(f"margo build failed:\n{native.stdout}\n{native.stderr}")
+    native_execution = subprocess.run(
+        [str(MARGO), "run", "--json"], cwd=app, env=env, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if native_execution.returncode or native_execution.stdout != "4\n7\n9\n":
+        raise AssertionError(
+            "generated native Rust execution mismatch: "
+            f"{native_execution.returncode}, {native_execution.stdout!r}, "
+            f"{native_execution.stderr!r}")
     def interpret(profile: str) -> tuple[subprocess.CompletedProcess[str], list[dict]]:
         execution_env = env.copy()
         execution_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
@@ -258,6 +301,33 @@ def main() -> int:
                 "return-value" not in output.lower():
             raise AssertionError(
                 f"method ReturnValue consumer corruption {hook} did not fail closed:\n"
+                f"{output}")
+    handler_consumer_corruptions = (
+        "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT",
+        "MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT",
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_OWNER",
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_MODULE",
+        "MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_SOURCE",
+        "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_HANDLER_TYPE",
+    )
+    for hook in handler_consumer_corruptions:
+        corruption_env = env.copy()
+        corruption_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+        corruption_env["MOSS_MODULE_PATH"] = str(check_only_dir)
+        corruption_env[hook] = "1"
+        corrupted_handler = subprocess.run(
+            [str(MOSS), "run", "--interp", str(app / "src" / "main.moss")],
+            cwd=app, env=corruption_env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = corrupted_handler.stdout + corrupted_handler.stderr
+        if corrupted_handler.returncode == 0 or \
+                "MOSS_INTERNAL_INVARIANT" not in output or \
+                "return-value" not in output.lower():
+            raise AssertionError(
+                f"handler ReturnValue consumer corruption {hook} did not fail closed:\n"
                 f"{output}")
     # Section 2 is not semantic input or part of the interface fingerprint.
     # A damaged execution payload must leave `moss check`'s verdict alone but
@@ -335,6 +405,12 @@ def main() -> int:
                       "generic_body_edit": sorted(checked(generic)),
                       "method_return_value_corruptions":
                           sorted(method_artifact_corruptions),
+                      "handler_return_value_artifact_corruptions":
+                          sorted(handler_artifact_corruptions),
+                      "handler_return_value_consumer_corruptions":
+                          sorted(handler_consumer_corruptions),
+                      "native_handler_return_value_corruptions":
+                          sorted(native_consumer_corruptions),
                       "fast_debug_trace_events": len(trace), "ok": True},
                      sort_keys=True))
     return 0

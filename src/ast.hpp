@@ -373,6 +373,11 @@ struct FailureArm {
   // fresh Root failure interval. This is distinct from the normal handler.
   std::optional<StateLeafEffects> state_effects;
   vector<Stmt> body;
+  // Source-free ReturnValue authority records for valued replies in this
+  // continuation body. Wire rows are remapped after imported EST rebuild.
+  vector<string> execution_return_value_artifact_records;
+  string execution_return_value_body_hash;
+  unsigned execution_body_section_version{0};
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
   string execution_source_file;
@@ -537,6 +542,10 @@ struct Handler {
   vector<Stmt> body;
   // Source-free Fast Debug executable body from ABI-v9 Section 2.
   std::optional<vector<Stmt>> execution_body;
+  // Checker-issued reply facts transported with the source-free handler.
+  vector<string> execution_return_value_artifact_records;
+  string execution_return_value_body_hash;
+  unsigned execution_body_section_version{0};
   std::optional<string> execution_result_expression;
   std::optional<vector<FailureArm>> execution_failure_arms;
   string execution_source_file;

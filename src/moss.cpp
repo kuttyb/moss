@@ -14812,9 +14812,16 @@ static void rewrite_module_program(
           arm.line = handler.line;
           arm.source_file = handler.source_file;
           if (handler.execution_failure_arms &&
-              arm_index < handler.execution_failure_arms->size())
-            arm.execution_body = std::move(
-                (*handler.execution_failure_arms)[arm_index].body);
+              arm_index < handler.execution_failure_arms->size()) {
+            auto& imported_arm = (*handler.execution_failure_arms)[arm_index];
+            arm.execution_body = std::move(imported_arm.body);
+            arm.execution_return_value_artifact_records =
+                std::move(imported_arm.execution_return_value_artifact_records);
+            arm.execution_return_value_body_hash =
+                std::move(imported_arm.execution_return_value_body_hash);
+            arm.execution_body_section_version =
+                imported_arm.execution_body_section_version;
+          }
           if (record.pattern.kind == FailurePatternKind::CatchAll) {
             arm.exceptional_alternatives = remaining;
             remaining.clear();
@@ -15998,10 +16005,106 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         statement.source_file = handler->execution_source_file;
         handler_execution_statements.push_back(std::move(statement));
       }
+      vector<string> handler_return_value_artifact_records;
+      while (std::getline(input, line) &&
+             starts_with(line, "return_value_fact_v1 ")) {
+        if (section.version < 2)
+          throw CompileError(std::max(declaration_line, 0),
+              "handler ReturnValue authority requires execution-body section v2",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        handler_return_value_artifact_records.push_back(line.substr(
+            string("return_value_fact_v1 ").size()));
+      }
+#ifdef MOSS_TEST_BUILD
+      if (!handler_return_value_artifact_records.empty() &&
+          std::getenv("MOSS_TEST_DUPLICATE_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+        handler_return_value_artifact_records.push_back(
+            handler_return_value_artifact_records.front());
+#endif
+      if (line.empty())
+        throw CompileError(std::max(declaration_line, 0),
+            "truncated handler body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      const string handler_callable = "handler:" + owner + "." + name;
+      const string handler_body_hash =
+          execution_body_statements_hash(handler_execution_statements);
+      std::set<std::uint32_t> handler_artifact_ordinals;
+      vector<string> normalized_handler_artifacts;
+      for (const auto& encoded : handler_return_value_artifact_records) {
+        try {
+          auto artifact = decode_return_value_artifact_record(encoded);
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_OWNER"))
+            artifact.callable_identity += ":wrong-owner";
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_MODULE"))
+            artifact.provenance.defining_module_id += ":wrong-module";
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_SOURCE"))
+            artifact.provenance.source_file += ".wrong-source";
+#endif
+          if (artifact.callable_identity != handler_callable ||
+              artifact.execution_body_hash != handler_body_hash ||
+              artifact.statement_preorder_ordinal >=
+                  handler_execution_statements.size() ||
+              !handler_artifact_ordinals.insert(
+                  artifact.statement_preorder_ordinal).second)
+            throw std::invalid_argument(
+                "Reply artifact callable, body, or ordinal mismatch");
+          const auto& statement = handler_execution_statements[
+              artifact.statement_preorder_ordinal];
+          if (statement.kind != Stmt::Kind::Reply || statement.a.empty() ||
+              statement.line != artifact.source_line)
+            throw std::invalid_argument(
+                "Reply artifact does not identify a valued Reply statement");
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_TYPE")) {
+            auto alternate = moss::Type::parse_canonical("string");
+            if (alternate) artifact.expression_type = *alternate;
+          }
+#endif
+          if (!handler->reply_type || !artifact.expression_type ||
+              artifact.expression_type->to_canonical_string() !=
+                  canonical_type_name(*handler->reply_type))
+            throw std::invalid_argument(
+                "Reply artifact type contradicts the declared handler reply TypeRef");
+          artifact.provenance.source_file = execution_body_resolve_source_path(
+              file, artifact.provenance.source_file);
+          if (std::filesystem::path(artifact.provenance.source_file).lexically_normal() !=
+              std::filesystem::path(handler->execution_source_file).lexically_normal())
+            throw std::invalid_argument(
+                "Reply artifact source provenance disagrees with handler source");
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+            artifact.required_access = artifact.required_access == Effect::Consume
+                ? Effect::Read : Effect::Consume;
+          if (std::getenv("MOSS_TEST_DROP_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+            continue;
+#endif
+          const string normalized = encode_return_value_artifact_record(artifact);
+          normalized_handler_artifacts.push_back(normalized.substr(
+              string("return_value_fact_v1 ").size()));
+        } catch (const std::exception& error) {
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid source-free handler Reply authority: " + string(error.what()),
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        }
+      }
+      size_t handler_reply_count = 0;
+      for (const auto& statement : handler_execution_statements)
+        if (statement.kind == Stmt::Kind::Reply && !statement.a.empty())
+          ++handler_reply_count;
+      if (section.version >= 2 &&
+          normalized_handler_artifacts.size() != handler_reply_count)
+        throw CompileError(std::max(declaration_line, 0),
+            "source-free handler body has missing or duplicate Reply authority",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
       handler->execution_body = std::move(handler_execution_statements);
+      handler->execution_return_value_artifact_records =
+          std::move(normalized_handler_artifacts);
+      handler->execution_return_value_body_hash = handler_body_hash;
+      handler->execution_body_section_version = section.version;
       vector<FailureArm> execution_arms(failure_arm_count);
       for (size_t arm_index = 0; arm_index < failure_arm_count; ++arm_index) {
-        if (!std::getline(input, line) || !starts_with(line, "failure_arm "))
+        if (!starts_with(line, "failure_arm "))
           throw CompileError(std::max(declaration_line, 0),
               "missing execution-body handler failure arm",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -16029,12 +16132,104 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
           statement.source_file = handler->execution_source_file;
           arm.body.push_back(std::move(statement));
         }
-        if (!std::getline(input, line) || line != "failure_arm_end")
+        vector<string> arm_artifact_records;
+        while (std::getline(input, line) &&
+               starts_with(line, "return_value_fact_v1 ")) {
+          if (section.version < 2)
+            throw CompileError(std::max(arm_line, 0),
+                "handler Reply authority requires execution-body section v2",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          arm_artifact_records.push_back(line.substr(
+              string("return_value_fact_v1 ").size()));
+        }
+#ifdef MOSS_TEST_BUILD
+        if (!arm_artifact_records.empty() &&
+            std::getenv("MOSS_TEST_DUPLICATE_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+          arm_artifact_records.push_back(arm_artifact_records.front());
+#endif
+        if (line != "failure_arm_end")
           throw CompileError(std::max(arm_line, 0),
               "unterminated handler failure-arm body",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        arm.execution_return_value_body_hash =
+            execution_body_statements_hash(arm.body);
+        arm.execution_body_section_version = section.version;
+        std::set<std::uint32_t> arm_artifact_ordinals;
+        for (const auto& encoded : arm_artifact_records) {
+          try {
+            auto artifact = decode_return_value_artifact_record(encoded);
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_OWNER"))
+              artifact.callable_identity += ":wrong-owner";
+            if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_MODULE"))
+              artifact.provenance.defining_module_id += ":wrong-module";
+            if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_SOURCE"))
+              artifact.provenance.source_file += ".wrong-source";
+#endif
+            if (artifact.callable_identity != handler_callable ||
+                artifact.execution_body_hash !=
+                    arm.execution_return_value_body_hash ||
+                artifact.statement_preorder_ordinal >= arm.body.size() ||
+                !arm_artifact_ordinals.insert(
+                    artifact.statement_preorder_ordinal).second)
+              throw std::invalid_argument(
+                  "failure-arm Reply artifact callable, body, or ordinal mismatch");
+            const auto& statement = arm.body[artifact.statement_preorder_ordinal];
+            if (statement.kind != Stmt::Kind::Reply || statement.a.empty() ||
+                statement.line != artifact.source_line)
+              throw std::invalid_argument(
+                  "failure-arm artifact does not identify a valued Reply statement");
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_TYPE")) {
+              auto alternate = moss::Type::parse_canonical("string");
+              if (alternate) artifact.expression_type = *alternate;
+            }
+#endif
+            if (!handler->reply_type || !artifact.expression_type ||
+                artifact.expression_type->to_canonical_string() !=
+                    canonical_type_name(*handler->reply_type))
+              throw std::invalid_argument(
+                  "failure-arm Reply artifact type contradicts handler reply TypeRef");
+            artifact.provenance.source_file = execution_body_resolve_source_path(
+                file, artifact.provenance.source_file);
+            if (std::filesystem::path(artifact.provenance.source_file).lexically_normal() !=
+                std::filesystem::path(handler->execution_source_file).lexically_normal())
+              throw std::invalid_argument(
+                  "failure-arm Reply artifact source provenance disagrees with handler source");
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+              artifact.required_access = artifact.required_access == Effect::Consume
+                  ? Effect::Read : Effect::Consume;
+            if (std::getenv("MOSS_TEST_DROP_RETURN_VALUE_HANDLER_ARTIFACT_FACT"))
+              continue;
+#endif
+            const string normalized = encode_return_value_artifact_record(artifact);
+            arm.execution_return_value_artifact_records.push_back(
+                normalized.substr(string("return_value_fact_v1 ").size()));
+          } catch (const std::exception& error) {
+            throw CompileError(std::max(arm_line, 0),
+                "invalid source-free failure-arm Reply authority: " +
+                    string(error.what()),
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          }
+        }
+        size_t arm_reply_count = 0;
+        for (const auto& statement : arm.body)
+          if (statement.kind == Stmt::Kind::Reply && !statement.a.empty())
+            ++arm_reply_count;
+        if (section.version >= 2 &&
+            arm.execution_return_value_artifact_records.size() != arm_reply_count)
+          throw CompileError(std::max(arm_line, 0),
+              "source-free failure arm has missing or duplicate Reply authority",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (arm_index + 1 < failure_arm_count &&
+            !std::getline(input, line))
+          line.clear();
       }
-      if (!std::getline(input, line) || line != "handler_end")
+      if (failure_arm_count != 0) {
+        if (!std::getline(input, line)) line.clear();
+      }
+      if (line != "handler_end")
         throw CompileError(std::max(declaration_line, 0),
             "unterminated handler body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -16071,35 +16266,31 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
 
 static void bind_imported_return_value_artifact_handles(Program& provider) {
-  auto bind_callable = [&](auto& callable) {
-    if (callable.execution_body_section_version < 2 ||
-        callable.execution_return_value_artifact_records.empty()) return;
-    if (!callable.execution_body)
-      throw CompileError(std::max(callable.line, 0),
-          "ReturnValue artifact has no imported execution body",
-          "SOURCE_FREE_EXECUTION_BODY_INVALID");
-    for (size_t ordinal = 0; ordinal < callable.execution_body->size(); ++ordinal) {
+  auto bind_body = [&](vector<Stmt>& body, const vector<string>& records,
+                       unsigned section_version, int line) {
+    if (section_version < 2 || records.empty()) return;
+    for (size_t ordinal = 0; ordinal < body.size(); ++ordinal) {
       if (ordinal >= 0x7ffffffeu)
-        throw CompileError(std::max(callable.line, 0),
+        throw CompileError(std::max(line, 0),
             "imported execution body has too many statements",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
-      auto& statement = (*callable.execution_body)[ordinal];
-      if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+      auto& statement = body[ordinal];
+      if ((statement.kind == Stmt::Kind::Return ||
+           statement.kind == Stmt::Kind::Reply) && !statement.a.empty())
         statement.checked_statement_occurrence_id =
             0x80000000u + static_cast<std::uint32_t>(ordinal);
     }
     std::set<std::uint32_t> seen;
-    for (const auto& encoded : callable.execution_return_value_artifact_records) {
+    for (const auto& encoded : records) {
       try {
         const auto artifact = decode_return_value_artifact_record(encoded);
-        if (artifact.statement_preorder_ordinal >= callable.execution_body->size() ||
+        if (artifact.statement_preorder_ordinal >= body.size() ||
             !seen.insert(artifact.statement_preorder_ordinal).second)
           throw std::invalid_argument("duplicate or out-of-range ReturnValue ordinal");
-        const auto& statement =
-            (*callable.execution_body)[artifact.statement_preorder_ordinal];
+        const auto& statement = body[artifact.statement_preorder_ordinal];
         if (statement.checked_statement_occurrence_id == UINT32_MAX ||
             statement.line != artifact.source_line)
-          throw std::invalid_argument("ReturnValue ordinal does not identify a valued Return");
+          throw std::invalid_argument("ReturnValue ordinal does not identify a valued Return or Reply");
         const est::Handle* handle = nullptr;
         for (const auto& candidate : statement.expression_handles) {
           if (candidate.slot != est::ExprSlot::ReturnValue ||
@@ -16115,23 +16306,48 @@ static void bind_imported_return_value_artifact_handles(Program& provider) {
           throw std::invalid_argument(
               "ReturnValue artifact fingerprint or imported EST handle mismatch");
       } catch (const std::exception& error) {
-        throw CompileError(std::max(callable.line, 0),
+        throw CompileError(std::max(line, 0),
             "invalid imported ReturnValue EST mapping: " + string(error.what()),
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       }
     }
     size_t valued_returns = 0;
-    for (const auto& statement : *callable.execution_body)
-      if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+    for (const auto& statement : body)
+      if ((statement.kind == Stmt::Kind::Return ||
+           statement.kind == Stmt::Kind::Reply) && !statement.a.empty())
         ++valued_returns;
     if (seen.size() != valued_returns)
-      throw CompileError(std::max(callable.line, 0),
+      throw CompileError(std::max(line, 0),
           "imported execution body has incomplete ReturnValue authority coverage",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  };
+  auto bind_callable = [&](auto& callable) {
+    if (callable.execution_body_section_version < 2) return;
+    if (!callable.execution_body &&
+        !callable.execution_return_value_artifact_records.empty())
+      throw CompileError(std::max(callable.line, 0),
+          "ReturnValue artifact has no imported execution body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (callable.execution_body)
+      bind_body(*callable.execution_body,
+          callable.execution_return_value_artifact_records,
+          callable.execution_body_section_version, callable.line);
   };
   for (auto& function : provider.functions) bind_callable(function);
   for (auto& object : provider.objects)
     for (auto& method : object.methods) bind_callable(method);
+  for (auto& domain : provider.domains)
+    for (auto& handler : domain.handlers) {
+      if (handler.execution_body_section_version < 2) continue;
+      if (handler.execution_body)
+        bind_body(*handler.execution_body,
+            handler.execution_return_value_artifact_records,
+            handler.execution_body_section_version, handler.line);
+      if (handler.execution_failure_arms)
+        for (auto& arm : *handler.execution_failure_arms)
+          bind_body(arm.body, arm.execution_return_value_artifact_records,
+              arm.execution_body_section_version, arm.line);
+    }
 }
 
 static ResolvedTypeAbi resolve_phase21_owned_type(
@@ -18925,17 +19141,27 @@ static void project_imported_return_value_artifact_facts(Program& program) {
   for (const auto& object : program.objects)
     for (const auto& method : object.methods)
       has_artifacts |= !method.execution_return_value_artifact_records.empty();
+  for (const auto& domain : program.domains)
+    for (const auto& handler : domain.handlers) {
+      has_artifacts |= !handler.execution_return_value_artifact_records.empty();
+      if (handler.execution_failure_arms)
+        for (const auto& arm : *handler.execution_failure_arms)
+          has_artifacts |= !arm.execution_return_value_artifact_records.empty();
+      for (const auto& arm : handler.failure_arms)
+        has_artifacts |= !arm.execution_return_value_artifact_records.empty();
+    }
   if (!has_artifacts) return;
   if (!program.typed_semantics)
     throw CompileError(0,
         "imported ReturnValue authority cannot attach without checked semantics",
         "SOURCE_FREE_EXECUTION_BODY_INVALID");
   auto project_callable = [&](const vector<string>& records,
-                              const std::optional<vector<Stmt>>& body,
+                              vector<Stmt>* body,
                               unsigned section_version,
                               const string& execution_body_hash,
                               const string& callable_identity,
-                              const string& module, int declaration_line) {
+                              const string& module, int declaration_line,
+                              bool replies_only = false) {
     if (records.empty()) return;
     if (!body || section_version < 2)
       throw CompileError(std::max(declaration_line, 0),
@@ -18951,17 +19177,27 @@ static void project_imported_return_value_artifact_facts(Program& program) {
     for (const auto& encoded : records) {
       try {
         const auto artifact = decode_return_value_artifact_record(encoded);
-        if (artifact.callable_identity != callable_identity ||
-            artifact.execution_body_hash != execution_body_hash ||
-            artifact.provenance.defining_module_id != module_identity->second ||
-            !seen_ordinals.insert(
-                artifact.statement_preorder_ordinal).second ||
-            artifact.statement_preorder_ordinal >= body->size())
+        if (artifact.callable_identity != callable_identity)
           throw std::invalid_argument(
-              "ReturnValue artifact callable, module, body, or ordinal mismatch");
+              "ReturnValue artifact callable identity mismatch (expected '" +
+              callable_identity + "', got '" + artifact.callable_identity + "')");
+        if (artifact.execution_body_hash != execution_body_hash)
+          throw std::invalid_argument("ReturnValue artifact body hash mismatch");
+        if (artifact.provenance.defining_module_id != module_identity->second)
+          throw std::invalid_argument("ReturnValue artifact module identity mismatch");
+        if (!seen_ordinals.insert(
+                artifact.statement_preorder_ordinal).second)
+          throw std::invalid_argument("duplicate ReturnValue artifact ordinal");
+        if (artifact.statement_preorder_ordinal >= body->size())
+          throw std::invalid_argument(
+              "ReturnValue artifact ordinal " +
+              std::to_string(artifact.statement_preorder_ordinal) +
+              " is outside body size " + std::to_string(body->size()));
         auto& statement =
             (*body)[artifact.statement_preorder_ordinal];
-        if (statement.kind != Stmt::Kind::Return || statement.a.empty() ||
+        const auto expected_kind = replies_only
+            ? Stmt::Kind::Reply : Stmt::Kind::Return;
+        if (statement.kind != expected_kind || statement.a.empty() ||
             statement.line != artifact.source_line ||
             statement.checked_statement_occurrence_id == UINT32_MAX)
           throw std::invalid_argument(
@@ -19019,7 +19255,9 @@ static void project_imported_return_value_artifact_facts(Program& program) {
     }
     size_t valued_returns = 0;
     for (const auto& statement : *body)
-      if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+      if ((replies_only ? statement.kind == Stmt::Kind::Reply
+                        : statement.kind == Stmt::Kind::Return) &&
+          !statement.a.empty())
         ++valued_returns;
     if (seen_ordinals.size() != valued_returns)
       throw CompileError(std::max(declaration_line, 0),
@@ -19028,16 +19266,35 @@ static void project_imported_return_value_artifact_facts(Program& program) {
   };
   for (auto& function : program.functions)
     project_callable(function.execution_return_value_artifact_records,
-        function.execution_body, function.execution_body_section_version,
+        function.execution_body ? &*function.execution_body : nullptr,
+        function.execution_body_section_version,
         function.execution_return_value_body_hash, "fn:" + function.name,
         module_name_from_symbol(function.name), function.line);
   for (auto& object : program.objects)
     for (auto& method : object.methods)
       project_callable(method.execution_return_value_artifact_records,
-          method.execution_body, method.execution_body_section_version,
+          method.execution_body ? &*method.execution_body : nullptr,
+          method.execution_body_section_version,
           method.execution_return_value_body_hash,
           "method:" + method.owner + "." + method.name,
           module_name_from_symbol(method.owner), method.line);
+  for (auto& domain : program.domains)
+    for (auto& handler : domain.handlers) {
+      const string callable_identity =
+          "handler:" + domain.name + "." + handler.name;
+      const string module = module_name_from_symbol(domain.name);
+      project_callable(handler.execution_return_value_artifact_records,
+          handler.execution_body ? &*handler.execution_body : nullptr,
+          handler.execution_body_section_version,
+          handler.execution_return_value_body_hash, callable_identity,
+          module, handler.line, true);
+      for (auto& arm : handler.failure_arms)
+        project_callable(arm.execution_return_value_artifact_records,
+            arm.execution_body ? &*arm.execution_body : nullptr,
+            arm.execution_body_section_version,
+            arm.execution_return_value_body_hash, callable_identity,
+            module, arm.line, true);
+    }
 }
 
 static CheckedProjectUnit check_project_sources(
@@ -22329,7 +22586,8 @@ static vector<string> execution_return_value_artifact_records(
   const string body_hash = execution_body_statements_hash(body);
   for (size_t ordinal = 0; ordinal < body.size(); ++ordinal) {
     const auto& statement = body[ordinal];
-    if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+    if ((statement.kind != Stmt::Kind::Return &&
+         statement.kind != Stmt::Kind::Reply) || statement.a.empty()) continue;
     if (!program.typed_semantics ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw CompileError(statement.line,
@@ -22432,6 +22690,14 @@ static vector<string> execution_return_value_artifact_records(
   return execution_return_value_artifact_records(
       manifest, program, method.body,
       "method:" + method.owner + "." + method.name);
+}
+
+static vector<string> execution_return_value_artifact_records(
+    const ProjectManifest& manifest, const Program& program,
+    const Handler& handler, const string& owner) {
+  return execution_return_value_artifact_records(
+      manifest, program, handler.body,
+      "handler:" + owner + "." + handler.name);
 }
 
 static string execution_body_package_fingerprint(
@@ -22853,12 +23119,24 @@ static string encode_execution_body_payload(
               << handler->failure_arms.size() << "\n";
       for (const auto& statement : handler->body)
         write_execution_body_statement(payload, statement);
+      const string handler_callable =
+          "handler:" + domain->name + "." + handler->name;
+      const auto handler_return_value_records =
+          execution_return_value_artifact_records(
+              manifest, program, *handler, domain->name);
+      for (const auto& record : handler_return_value_records)
+        payload << "return_value_fact_v1 " << record << "\n";
       for (size_t index = 0; index < handler->failure_arms.size(); ++index) {
         const auto& arm = handler->failure_arms[index];
         payload << "failure_arm " << index << " " << arm.line << " "
                 << arm.body.size() << "\n";
         for (const auto& statement : arm.body)
           write_execution_body_statement(payload, statement);
+        const auto arm_return_value_records =
+            execution_return_value_artifact_records(
+                manifest, program, arm.body, handler_callable);
+        for (const auto& record : arm_return_value_records)
+          payload << "return_value_fact_v1 " << record << "\n";
         payload << "failure_arm_end\n";
       }
       payload << "handler_end\n";
