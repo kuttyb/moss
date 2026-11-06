@@ -63,11 +63,17 @@
   `d81296e3c55cc6ce18621a1860bda5c409f777cb54e9fe613787a78c9cead80b`) and
   `.md` (SHA-256
   `97da0235adc978f0672ee812d1ee048ff1150da3186b8c4b39995eacfcb5f77d`).
-  Next repair dependency is the remaining checker → `.mossi` → native
-  ReturnValue EST authority path reproduced by the source-free proof-edge
-  fixture. The one vertical team is tracing this path in a new isolated branch;
-  no implementation is integrated until it has a frozen SHA and independent
-  Agent 2 review. Phase 28 remains NO-GO.
+  The next vertical candidate is frozen at
+  `9a6731276c9dd9705b9034c071a81f5b4cb3ae95` on
+  `phase28-r7-010-native-proof-edge-return-authority`. It materializes the
+  checker's declared closed Option TypeRef at the exact unshadowed `return
+  None` EST occurrence/context in `Counter.next`. Source-free proof-edge
+  Default/Shadow, ReturnValue Default/Shadow with drop/type-perturb/wrong-context
+  checks, X1 v9/v10, Phase 27 `.mossi`, isolated Phase 26 C3 `-Werror`, feedback
+  validation, and diff checks pass per the worker. The exact candidate has not
+  run full suites or the oracle and remains unintegrated. Agent 2 and Team C
+  exact-SHA reviews are in progress; wait for both before integrating it.
+  Phase 28 remains NO-GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
