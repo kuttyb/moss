@@ -26,14 +26,18 @@ produce a new frozen SHA and receive independent review before integration.
 
 The follow-up is frozen at implementation SHA
 `3dc803a241c49bbff7c6976fbdb0c749e3aba56d` on
-`phase28-r7-010-team-a-overload-fix`; independent exact-SHA re-review is
-pending. Focused overload ReturnValue/Fast Debug gates pass in Default and
-EST-shadow, including dropped/crossed/wrong-type authority failures, and the
-isolated Phase 26 C3 `-Werror` gate passes. X1 still fails later in Fast Debug
-return-authority consumption on both this candidate and `735a36c3`; the
-baseline fails earlier. Native duplicate Rust method-name lowering is also
-reproduced on the candidate and baseline and remains a separate finding. These
-are not presented as green end-to-end oracles or full-suite evidence.
+`phase28-r7-010-team-a-overload-fix`. Independent re-review returned scoped
+**GO** for the checker-side overloaded ReturnValue identity repair and
+explicitly closed the overloaded-method issue and isolated Phase 26 C3
+`-Werror` requirement. The detailed exact-SHA report is
+[`agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md`](agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md).
+
+The whole Team A stack remains **NO-GO**. A fresh exact build of baseline
+`150ab36b` passes X1, while `735a36c3` and `3dc803a2` fail later at the same
+check-only Fast Debug ReturnValue consumer. The overload repair did not change
+that stack-level regression. Duplicate native Rust method-name lowering is
+also present on the Team A candidate and baseline and is tracked separately.
+None of these scoped results are full-suite or current-staging oracle evidence.
 
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  

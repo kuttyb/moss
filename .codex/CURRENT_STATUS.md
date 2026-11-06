@@ -41,11 +41,16 @@ current staging HEAD `ff0e6eefcef88ad9fa9b1703ae31f4786db516ab`.
   have distinct signature contexts and TypeRefs, and dropped/crossed/wrong-type
   facts fail closed. Independent exact-SHA review is pending. Do not integrate
   until that review returns scoped GO.
-- X1 remains red after the overload fix at a later Fast Debug return-authority
-  consumer on both `3dc803a2` and `735a36c3`; baseline `150ab36b` fails earlier
-  during Section 2 generation. The native duplicate Rust method-name failure
-  is also reproduced on `735a36c3` and baseline `150ab36b`; it is separate from
-  the checker identity fix. Preserve both as end-to-end follow-up evidence.
+- Independent exact-SHA re-review returned scoped **GO** for the overloaded
+  ReturnValue checker fix at `3dc803a241c49bbff7c6976fbdb0c749e3aba56d` and
+  explicitly closed the overload identity issue and isolated C3 `-Werror`
+  requirement. The whole Team A stack remains **NO-GO**: a fresh exact rebuild
+  of baseline `150ab36b` passes X1, while `735a36c3` and `3dc803a2` both fail
+  later at the same check-only Fast Debug ReturnValue consumer. The overload
+  fix did not change that stack-level regression. The native duplicate Rust
+  method-name failure is reproduced on `735a36c3` and baseline `150ab36b`; it
+  is separate from the checker identity fix. Preserve both as end-to-end
+  follow-up evidence.
 
 ### Phase 28 R7-010 L7 continuation checkpoint (2026-11-05)
 
