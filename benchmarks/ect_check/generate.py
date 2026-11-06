@@ -224,12 +224,13 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
             if fx.get("provider"):
                 C.build_provider(fx, tc, work)
             res = C.run_measured(argv, cwd=work, env=tc.env(),
-                                 timeout=C.fixture_timeout(fx))
+                                 timeout=C.fixture_timeout(fx), stack_kib=C.fixture_stack(fx))
             verdict = C.extract_verdict(res, C.path_replacements(work, tc))
             status = C.status_of(verdict)
+            if not C.fixture_ok(fx, verdict):
+                failures.append(f"{fx['id']}: exit {verdict.get('exit_code')} status {status} "
+                                f"timed_out={verdict.get('timed_out')} does not satisfy the manifest")
             line += f", status {status} (expected {fx['expected_status']})"
-            if status != fx["expected_status"]:
-                failures.append(f"{fx['id']}: status {status} != {fx['expected_status']}")
         print(line)
     if failures:
         print("VALIDATION FAILED:\n  " + "\n  ".join(failures), file=sys.stderr)

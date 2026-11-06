@@ -20,9 +20,10 @@ benchmarks/ect_check/
   README.md
   generate.py      generator framework, frozen manifest, --validate-only
   run.py           runner: bench | gate | metrics | validate | selftest
-  selftest.py      RSS-independence and gate-sensitivity self-tests
+  selftest.py      RSS-independence, gate-sensitivity, timeout-kill, stack tests
   ect_common.py    hashing, command templates, measured execution, verdicts
-  dag_generators.py  Team 2 generators: b1_leak, b2_equiv, torture_ext, dag_diamond
+  dag_generators.py  Team 2 generators: b1_leak, b2_equiv, torture_ext, dag_diamond, dag_fanin
+  probes/          minimal compiler-behavior reproducers (gen_probe.py + samples)
   report_dag.py    report sections + slope fits for those families
   manifest.json    frozen: id, kind, entry, expected_status, SHA-256 per fixture
   fixtures/        generated, committed, never regenerated implicitly
@@ -123,7 +124,13 @@ gate only). Warm mode reports no compiler counters.
   (`ect_common.VOLATILE_KEYS`). A margo failure embeds the compiler's JSON in
   its `error` string; it is parsed and compared structurally
   (`trivial_pkg_fail` exercises this). The reference must also agree with the
-  manifest's `expected_status`. A broken template (unknown placeholder, missing
+  manifest: `expected_status`, the optional `expected_exit_code` (so a crash,
+  abort or clean diagnostic cannot stand in for each other) and no timeout
+  (`ect_common.fixture_ok`). The gate passes only when candidate verdict ==
+  reference verdict; a candidate that no longer matches the manifest is
+  annotated IMPROVED (passes a fixture expected to fail) or REGRESSED in the
+  report, and a warm-mode row that differs from the manifest is a note, not a
+  `bench` failure (only cold/reference rows are). A broken template (unknown placeholder, missing
   binary) fails with a one-line error. `selftest` checks that an identity client
   passes and a mutating client fails. Today both sides are the same compiler, so a pass proves
   only that the gate is wired and deterministic.
@@ -160,7 +167,11 @@ Flavor comes from the binary name (`moss-opt` = `-O2`, `moss-dev` = `-O0` with
 `-DMOSS_TEST_BUILD=1`; override with `$ECT_COMPILER_FLAVOR`). `bench` refuses to
 time a non-`opt` binary unless `--allow-non-opt`, which puts a warning in the
 report header. Path, SHA-256 and flavor are in the report header and in every
-CSV row. `validate` and `gate` accept either flavor.
+CSV row. `validate` and `gate` accept either flavor for the Team 1 fixtures and
+the DAG families. The `torture_ext` deep chains run with a 4 GiB stack limit
+(`stack_kib`), which removes the stack dependence of the checker on moss-opt;
+they were validated on moss-opt only (moss-dev -O0 has much larger frames and
+is far slower, so it is not claimed to work for them).
 
 ## Frozen contract and extending
 
@@ -177,12 +188,21 @@ generators reject fixture paths named `build`, `target` or `__pycache__`) and fr
 
 ## Generic-DAG fixtures (Team 2)
 
-63 fixtures in four generators (`dag_generators.py`), all deterministic,
-all in the manifest, all run through `run.py bench`, the gate and
-`generate.py --validate-only`. Manifest rows may carry two extra fields:
-`timeout_s` (per-fixture timeout applied to every run of it, including gate and
-validate) and `provider` (a package directory inside the fixture that is built
-first, see B1).
+75 fixtures in total, 70 of them in five generators in `dag_generators.py`
+(plus the 5 Team 1 smoke fixtures), all deterministic, all in the manifest, all
+run through `run.py bench`, the gate and `generate.py --validate-only`.
+Manifest rows may carry these optional fields:
+
+- `timeout_s`: per-fixture timeout for every run of it (bench, gate, validate).
+  On timeout the whole process group is killed (no orphaned compiler), the rep is
+  flagged `timed_out`, excluded from the medians and the row's `status_ok` is
+  false (`selftest` checks the kill).
+- `expected_exit_code`: exact exit code required (e.g. 139 for a SIGSEGV), so a
+  crash, an abort, an OOM kill or a clean diagnostic cannot satisfy each other.
+- `stack_kib`: RLIMIT_STACK applied to the child before exec in bench, gate,
+  validate and the counter run. **A warm client/daemon being benchmarked against
+  the `torture_ext` fixtures must provide an equally large stack.**
+- `provider`: a package directory inside the fixture that is built first (B1).
 
 ### DAG node shape
 
@@ -198,20 +218,51 @@ root   fn root(x):       return n0_0(x) + n0_1(x) + ... + n0_<W-1>(x)
 ```
 
 That is **W parallel chains of depth D under one root** (D*W+1 callables; the
-root's argument type flows through every one; no shared callees), called with K
-user types `T000..` that each define `score()`. Two things were found while
-building this and shaped the fixtures (both are pre-existing compiler behavior,
-recorded in `agent-feedback/phase28-5/ect-bench/generic-dag/`):
+root's argument type flows through every one), called with K user types
+`T000..` that each define `score()`.
 
-- Binding a child result with `var c = child(x)` makes today's checker
-  exponential in depth (a 6-node chain: 0.3 s at D=6, 5 s at D=8). The
-  fixtures use `child(x) + 1` instead.
-- A **shared-callee** DAG (node (l,i) calls (l+1,i) and (l+1,(i+1) % W)) is also
-  super-linear in depth even though the specialization memo hits and distinct
-  keys stay linear (D=12, W=4, K=1: tens of seconds). Such a DAG at the B1
-  grid sizes (D=20/50) does not finish in minutes, so the B1/B2 grids use the
-  spine shape above, and the shared-callee shape is kept as its own small
-  `dag_diamond` series (D=6..12) so that behavior is tracked too.
+**The spine has no shared callees, so B1 and B2 cannot measure shared-callee
+leaks or re-walks** (a firewall that helps shared helpers would not show here).
+Shared-callee shapes are covered by two separate families:
+
+- `dag_fanin` (feasible, linear today): W=4 entry nodes `e_i(x) = c000(x) + i`
+  all call one shared D=50 chain; per type the chain head is requested W times
+  (1 miss, W-1 memo hits). 6 fixtures: a package-boundary variant (`fanin_pkg_k*`,
+  like B1) and a single-file variant (`fanin_file_k*`, like B2), K = 1, 8, 32.
+- `dag_diamond` (exponential today, kept on purpose): node (l,i) calls (l+1,i)
+  and (l+1,(i+1) % W). Wall time doubles per level (D=6/8/10/12/14 =
+  0.16/0.67/2.3/9.1/36 s) although keys and functions analyzed stay linear and
+  the memo reports hits.
+
+Two shape rules were found while building this (pre-existing compiler
+behavior, recorded with reproducers in `probes/` and in
+`agent-feedback/phase28-5/ect-bench/generic-dag/`): binding a child result
+(`var c = child(x)`) makes the checker exponential in depth (x4 per level;
+`probes/gen_probe.py`), so fixtures write `child(x) + 1`.
+
+### Shape check (counters prove the fixture is what it says)
+
+Section 1b of the report recomputes, from each fixture's SOURCE (not the
+generator), the callables (top-level `fn` except `main`) and types (top-level
+`type`), predicts functions analyzed = callables and distinct keys =
+callables x K, and prints measured vs predicted with **both the functions and
+the keys delta**, flags any disagreement with the manifest metadata, and (fan-in)
+checks specialization requests and hits too. It also prints `Local complete`:
+how many of the package's own internal functions have a `complete` local summary
+(`ect_m2_internal_complete`). **That number is small: 4 of 80 internal callables
+in `b1_d020_w4_*`, 1 of 101 in a 100-deep chain, 1 of 54 in the fan-in provider.**
+A fact store or firewall that trusts only `complete` summaries may therefore
+show little improvement on these fixtures; one that can reuse open or inferred
+summaries should. `functions_analyzed` does not count `main`.
+
+### Noise probe
+
+`bench` times a small calibration fixture (`b2_k04`, 5 cold runs) before and
+after the timed loop and records both plus the 1/5/15-minute load averages in
+`results.json` (`meta.noise`) and the report header. The report prints a visible
+**WARNING** if the calibration drifts by more than 10% or the 1-minute load
+average at start exceeds 1.0. Run nothing else while `bench` runs, and let the
+load average settle first.
 
 ### B1 - Mossi Leak (`b1_leak`, 18 fixtures: D {5,20,50} x W {1,4} x K {1,8,32})
 
@@ -221,110 +272,115 @@ other nodes are internal); package `app` (`dag_app`) depends on it via
 each. Two series per fixture, never mixed:
 
 - **Consumer** (the result): `margo --check build` of `app`, with `lib` already
-  built (the runner builds it first, unmeasured for the consumer sample), so
-  the consumer's checker run is the only one measured. Counters come from a
-  separate counter run.
+  built (the runner builds it first), so the consumer's checker run is the only
+  one measured. Counters come from a separate counter run.
 - **Provider**: `margo --check build` of `lib` alone, its own wall/CPU/RSS
   medians and counters (`provider_*` columns).
 
-The runner also reports boundary evidence: `app` defines **zero** DAG
-functions, yet the consumer's checker analyzes D*W+1 functions and creates
-(D*W+1)*K specializations, i.e. bodies in `lib` are walked through its
-`.mossi`. `functions_analyzed` and `source_function_checks` in `lib`'s own run
-match the same D*W+1.
+Boundary evidence: `app` defines **zero** DAG functions, yet the consumer's
+single checker run analyzes D*W+1 functions and creates (D*W+1)*K
+specializations, i.e. bodies in `lib` are walked through its `.mossi`.
 
 *What an improvement looks like*: with a `.mossi` firewall (instantiation
 answered from the exported summary, bodies not re-walked), consumer
 `functions_analyzed` and spec evaluations stop depending on D (and W), and
-consumer wall/CPU stop growing with D and become nearly independent of K (a
-per-type cost of one summary lookup). The provider series absorbs the cost: it
-must stay about equal to today's provider build (possibly slightly higher, since
-it now produces the firewall facts). The honest reading is the pair: consumer
-down, provider not up by more than it saved, summed over the workflow.
+consumer wall/CPU stop growing with D and become nearly independent of K (about
+one summary lookup per type, independent of D). The provider series absorbs the
+cost: it may grow modestly (it now produces the firewall facts) but must not grow
+by more than the consumer saves, summed over the workflow.
 
 ### B2 - equivalence inside one package (`b2_equiv`, 32 fixtures, K = 1..32)
 
 The same DAG with D=20, W=4 (81 callables) in one file, no package boundary,
-one fixture per K (one more type per step). `run.py` computes the **marginal
-cost per new type** as the least-squares slope (with intercept and R2) of wall,
-CPU, functions analyzed, spec keys and spec evaluations against K (also
-stored as `dag_analysis` in `results.json`; the same fit over K = 1, 8, 32 is
-reported per B1 cell).
+one fixture per K. `run.py` computes the **marginal cost per new type** as the
+least-squares slope (with intercept and R2) of wall, CPU, functions analyzed,
+spec keys and spec evaluations against K (also stored as `dag_analysis` in
+`results.json`; the same fit over K = 1, 8, 32 is reported per B1 cell).
 
 *What an improvement looks like*: today every new type re-walks all 81 nodes
-(slope ~ 81 spec keys per type and a proportional wall slope). With stored
-facts keyed by content, a type whose facts are already stored should cost about
-one cache hit: spec evaluations per type approaching 1 (not 81), and wall/CPU
-slope per type collapsing toward the cost of one lookup, with the intercept
-(first-type cost) unchanged or lower. Equivalence with B1: B1's
-per-type slope should converge to B2's once the boundary stops adding cost.
+(81 spec keys/evals per type and a wall slope proportional to that). With
+stored facts keyed by content, a type whose facts are already stored should cost
+about one cache hit: spec evaluations per type approaching 1 (not 81), wall/CPU
+slope per type collapsing toward one lookup, intercept (first-type cost)
+unchanged or lower. Comparing B1 with B2 at the same D, W, K shows what the
+package boundary itself adds today (a small per-type cost and no large constant);
+a firewall should make B1's slope fall toward one lookup per type independent of
+D, below B2's slope while B2 has no fact store.
 
-### Torture extension 1.1.0-ext (`torture_ext`)
+### Torture extension 1.1.0-ext (`torture_ext`, 10 fixtures)
 
 Extends but **never alters** the frozen `benchmarks/compiler_torture` (generator
 1.0.0): its generator, manifest and fixtures are untouched and nothing is
 imported from it; the W4 chain pattern is copied. The extension has its own
 version string `1.1.0-ext` in this manifest.
 
-- `tx_w4_d0100`, `tx_w4_d0200` (pass), `tx_w4_d0500`, `tx_w4_d1000` (expected
-  `fail`): long dependent chain `step_i(x) = step_{i-1}(x) + 1` from W4,
-  instantiated once with Int.
+- `tx_w4_d0100`, `_d0200`, `_d0500`, `_d1000`: W4 chain
+  `step_i(x) = step_{i-1}(x) + 1`, one Int instantiation.
 - `tx_cross_d*_k*` (W4 x W2): the same chain with leaf `x.score() + 1`, the root
-  instantiated with K distinct user types (d100 with K=2/8/32, d200 K=4, and
-  d500 K=4 expected `fail`).
+  instantiated with K distinct user types (d100 with K=2/8/32, d200 K=4, d500 K=4).
+- `tx_w4_d0300_default_stack_crash`: the documented crash.
 
-**Infeasible sizes are kept, not dropped.** On today's compiler, depth >= ~275
-crashes the checker with SIGSEGV (exit 139; stack exhaustion with the default
-8 MiB stack; threshold between depth 250 and 275, for Int and user-type
-arguments). `tx_w4_d0500`, `tx_w4_d1000` and `tx_cross_d0500_k04` therefore have
-`expected_status: "fail"` and `metadata.expected_failure_reason`. The gate
-compares exit code 139 reference vs candidate; the validate/status check
-treats `fail` as expected. A fixed compiler flips them to `pass` and the
-manifest must then be re-frozen deliberately (the unexpected-status flag in the
-report is the signal). Per-fixture timeouts are generous (1800 s).
+**Stack.** The checker recurses natively, so deep chains exhaust the default
+8 MiB stack: on moss-opt the cliff is about depth 258 (Int) / 250 (user type),
+and moss-dev (-O0) crashes near depth 40. With no compiler change, a 4 GiB
+`stack_kib` makes depth 500 and 1000 pass. Every `torture_ext` fixture therefore
+carries `stack_kib` (independent of the machine's default stack and build
+flavor) except the crash fixture, which pins 8 MiB and
+`expected_exit_code: 139`. That crash is environment dependent by nature (flavor
+and stack size); if a compiler change moves the cliff, re-freeze that one
+fixture deliberately. A resident client must provide an equally large stack.
 
 *What an improvement looks like*: these chains grow superlinearly with depth
-today (Int chain: ~0.9 s at D=100, ~3 s at D=200). With stored per-callable
-facts, re-checking an unchanged chain should be near-constant in depth, and
-the crash fixtures should pass (a completed depth-1000 check is itself an
-improvement). The cross fixtures should show wall/CPU per extra type falling
+today (Int chain: 0.7 s at D=100, 2.9 s at D=200, 19.9 s at D=500, 90.6 s at
+D=1000, RSS up to 543 MB). With stored per-callable facts, re-checking an
+unchanged chain should be close to constant in depth and RSS should not scale
+with depth. The cross fixtures should show wall/CPU per extra type falling
 toward one cache hit per type, as for B2, instead of a full chain re-walk per
-type. Functions analyzed for a chain should equal the nodes actually invalidated,
-not all of them.
+type. (How many functions an *edit* re-analyzes cannot be measured here; that
+needs the Team 3 edit sequences.)
 
-### Shared-callee DAG (`dag_diamond`, 4 fixtures, D 6..12)
+### Shared-callee DAGs (`dag_fanin`, 6 fixtures; `dag_diamond`, 4 fixtures)
 
-Small, K = 1. Distinct keys stay equal to node count (memo hits grow), while
-wall time grows super-linearly with D. *Improvement*: wall linear in nodes.
+See above. *Improvement*: fan-in wall and spec evaluations per type fall toward
+one lookup; diamond wall becomes linear in nodes (today it doubles per level).
 
-### Baseline recorded on today's compiler (moss-opt, 16-CPU WSL2, median of 3)
+### Baseline recorded on today's compiler (moss-opt, 16-CPU WSL2, median of 3, quiet machine)
 
-Local, disposable numbers (`tmp/ect_check/<run-id>/`); rerun for your machine.
+Run `tmp/ect_check/t2r2` of 2026-11-06: loadavg 0.39 at start, calibration
+fixture 521 ms at start and 514 ms at the end (drift 1.4%, no warning). Local,
+disposable numbers; rerun on your machine and check the noise probe.
 
-- **Shape**: for the 60 of the 63 Team 2 fixtures that complete, `functions_analyzed` ==
-  nodes and distinct specialization keys == nodes x K exactly (delta 0), e.g.
-  B1 D=50 W=4 K=32: 201 fns, 6432 keys; B2 K=32: 81 fns, 2592 keys.
-- **B1 crosses the boundary**: `app` defines zero DAG functions yet the
-  consumer's single checker run analyzes all `D*W+1` functions of `lib` and
-  creates all `(D*W+1)*K` specializations.
-- **B1 consumer vs provider (W=4, K=32)**: consumer 830 ms (D=5), 5.5 s (D=20),
-  25.7 s (D=50); provider (K-independent) 83 ms, 196 ms, ~0.6-0.8 s.
-  Consumer cost per type: ~24 ms (D=5), ~167 ms (D=20), ~790 ms (D=50), so it
-  grows with both node count and, per key, with depth (about 1.2 ms/key at D=5,
-  about 4 ms/key at D=50).
-- **B2 (D=20, W=4)**: 81 keys per additional type exactly; wall slope ~176 ms
-  per type (R2 0.95: per-type cost rises with K, 225 ms at K=1, 5.3 s at K=32).
-  B1's per-type slope for the same D, W is ~167 ms, so the package boundary adds
-  a constant (~50 ms at K=1: margo startup and `.mossi` load) but no per-type cost.
-- **Torture extension**: W4 depth 100 1.0 s, 200 3.9 s (superlinear in depth);
-  depth 500 and 1000 and cross depth 500 crash with exit 139 (expected `fail`).
+- **Shape**: for the 69 DAG/torture fixtures that have a prediction (all but the crash fixture), functions analyzed == callables and
+  distinct keys == callables x K exactly (delta 0), e.g. B1 D=50 W=4 K=32: 201
+  fns, 6432 keys; B2 K=32: 81 fns, 2592 keys; fan-in K=8: 55 fns, 440 keys, 464
+  requests, 24 hits, as predicted.
+- **B1 crosses the boundary**: see above (0 DAG functions in `app`).
+- **B1 growth (wall ms; consumer, K=1 / 8 / 32)**:
 
-### Shape check (counters prove the fixture is what it says)
+| D, W | K=1 | K=8 | K=32 | ms per type | provider ms |
+|---|---:|---:|---:|---:|---:|
+| 5, 1 | 53 | 81 | 183 | 4.2 | ~50 |
+| 5, 4 | 68 | 187 | 590 | 16.8 | ~61 |
+| 20, 1 | 82 | 291 | 1017 | 30.2 | ~70 |
+| 20, 4 | 195 | 1078 | 4293 | 132.6 | ~149 |
+| 50, 1 | 218 | 1317 | 5233 | 162.1 | ~163 |
+| 50, 4 | 763 | 5490 | 22646 | 708.2 | ~577 |
 
-Every DAG fixture records `predicted_functions_analyzed` and
-`predicted_spec_keys` (nodes x K) in its manifest metadata; the report prints
-measured vs predicted per fixture with the delta (section 1b).
-`functions_analyzed` does not count `main`.
+  Provider cost is independent of K. Per key, consumer cost rises with depth
+  (about 0.9 ms/key at D=5, W=4, K=32 up to about 3.5 ms/key at D=50).
+- **B2 (D=20, W=4)**: slope 117.9 ms/type (intercept 45 ms, R2 0.9998), exactly
+  81 spec keys/evals per type: linear in K on a quiet machine (K=1 190 ms, K=8
+  974 ms, K=32 3852 ms). The same cell through a package boundary (B1) has
+  slope 132.6 ms/type (K=1 195, K=8 1078, K=32 4293 ms), so the boundary adds
+  about 15 ms per type (~12%) and no large constant.
+- **Fan-in (D=50, W=4), K=1 / 8 / 32**: package consumer 296 / 1968 / 7921 ms
+  (provider ~189 ms), single file 317 / 1836 / 7176 ms; 55 fns, 55 / 440 / 1760
+  keys, 58 / 464 / 1856 requests, 3 / 24 / 96 hits: linear.
+- **Torture extension (4 GiB stack)**: W4 depth 100 / 200 / 500 / 1000 =
+  0.72 s / 2.9 s / 19.9 s / 90.6 s (RSS 22 / 43 / 161 / 543 MB); cross d500 K=4
+  70.0 s (385 MB); cross d100 K=2/8/32 = 1.4 / 4.9 / 19.9 s. The default-stack
+  crash fixture (depth 300, 8 MiB) exits 139 after 4.2 s.
+- **Diamond (K=1)**: D=6/8/10/12 = 0.16/0.61/2.35/9.36 s.
 
 ## What improvement looks like (other stubs for later teams)
 

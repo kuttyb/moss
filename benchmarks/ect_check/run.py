@@ -67,7 +67,8 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
         argv = C.command_for(fx, {**tc.values(), **values}, template)
         env = tc.env()
         env.update(extra_env or {})
-        return C.run_measured(argv, cwd=work, env=env, timeout=timeout)
+        return C.run_measured(argv, cwd=work, env=env, timeout=timeout,
+                              stack_kib=C.fixture_stack(fx))
 
     if mode == "warm":
         C.stage_fixture(fx, work)
@@ -97,25 +98,36 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
     shutil.rmtree(work, ignore_errors=True)
 
     status = C.status_of(verdict)
+    # A timed-out rep carries its timeout as wall time; it must not feed a median.
+    good = [s for s in samples if not s.get("timed_out")]
+    n_timeout = len(samples) - len(good)
     row = {
         "fixture": fx["id"], "kind": fx["kind"], "mode": mode, "reps": reps,
         "expected_status": fx["expected_status"], "status": status,
-        "status_ok": status == fx["expected_status"],
-        "wall_ms_median": C.median([s["wall_ms"] for s in samples]),
-        "wall_ms_min": min(s["wall_ms"] for s in samples),
-        "wall_ms_max": max(s["wall_ms"] for s in samples),
-        "cpu_ms_median": C.median([s["cpu_ms"] for s in samples]),
-        "rss_kib_median": C.median([s["rss_kib"] for s in samples]),
+        "expected_exit_code": fx.get("expected_exit_code"),
+        # status_ok: manifest status AND (when set) exit code, and no rep timed out.
+        "status_ok": n_timeout == 0 and all(
+            C.fixture_ok(fx, C.extract_verdict(s, repl)) for s in samples),
+        "timed_out_reps": n_timeout,
+        "wall_ms_median": C.median([s["wall_ms"] for s in good]),
+        "wall_ms_min": min((s["wall_ms"] for s in good), default=None),
+        "wall_ms_max": max((s["wall_ms"] for s in good), default=None),
+        "cpu_ms_median": C.median([s["cpu_ms"] for s in good]),
+        "rss_kib_median": C.median([s["rss_kib"] for s in good]),
         "wall_ms_samples": [round(s["wall_ms"], 3) for s in samples],
         "category": fx.get("category"), "metadata": fx.get("metadata"),
+        "fixture_path": fx["path"], "stack_kib": fx.get("stack_kib"),
         "exit_code": verdict.get("exit_code"),
-        "timed_out": any(s.get("timed_out") for s in samples),
+        "timed_out": n_timeout > 0,
         "has_provider": provider,
         "provider_wall_ms_median": C.median([s["wall_ms"] for s in provider_samples]),
         "provider_cpu_ms_median": C.median([s["cpu_ms"] for s in provider_samples]),
         "provider_rss_kib_median": C.median([s["rss_kib"] for s in provider_samples]),
         "provider_functions_analyzed": (provider_counters or {}).get("functions_analyzed"),
         "provider_checker_runs": (provider_counters or {}).get("checker_runs"),
+        # M2 facts of the package's own source (provider for B1/fan-in packages).
+        "local_internal_functions": ((provider_counters or counters or {}).get("internal_functions")),
+        "local_complete_summaries": ((provider_counters or counters or {}).get("internal_complete")),
     }
     row.update(counters or {"checker_runs": None,
                             **{name: None for name, _ in C.WORK_COUNTERS}})
@@ -140,18 +152,29 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
                 C.build_provider(fx, tc, work)
             argv = C.command_for(fx, {**tc.values(), **values}, template)
             res = C.run_measured(argv, cwd=work, env=tc.env(),
-                                 timeout=C.fixture_timeout(fx))
+                                 timeout=C.fixture_timeout(fx), stack_kib=C.fixture_stack(fx))
             verdicts[side] = C.extract_verdict(res, C.path_replacements(work, tc))
             shutil.rmtree(work, ignore_errors=True)
         identical = verdicts["reference"] == verdicts["candidate"]
         # `ok` is None for non-JSON output (e.g. a compiler crash with empty
-        # stdout), which counts as a failure, never as "matches expected pass".
-        expected = bool(verdicts["reference"]["ok"]) == (fx["expected_status"] == "pass")
+        # stdout); fixture_ok also rejects timeouts and a wrong exit code.
+        expected = C.fixture_ok(fx, verdicts["reference"])
+        cand_ok = C.fixture_ok(fx, verdicts["candidate"])
+        note = None
+        if not cand_ok and not verdicts["candidate"].get("timed_out") and \
+                verdicts["candidate"].get("ok") and fx["expected_status"] == "fail":
+            note = "IMPROVED: candidate passes a fixture the manifest expects to fail"
+        elif not cand_ok and expected:
+            note = "REGRESSED: candidate no longer satisfies the manifest"
         results.append({"fixture": fx["id"], "identical": identical,
                         "reference_matches_expected": expected,
+                        "candidate_matches_expected": cand_ok,
+                        "candidate_note": note,
                         "status": C.status_of(verdicts["reference"]),
                         "reference": verdicts["reference"],
                         "candidate": verdicts["candidate"]})
+    # The gate is an equivalence check (candidate verdict == reference verdict)
+    # plus reference-vs-manifest; manifest drift on the candidate is a note.
     passed = all(r["identical"] and r["reference_matches_expected"] for r in results)
     return {"passed": passed, "fixtures": len(results),
             "candidate_command": candidate_template or "built-in cold command",
@@ -334,7 +357,22 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
              f"**Platform:** `{meta['platform']}` ({meta['cpus']} CPUs)  ",
              f"**Reps:** {meta['reps']} timed runs per fixture/mode (median reported), "
              "plus one separate counter run (counters are not collected during timed runs)  ",
-             f"**Warm client:** {meta['warm_client'] or 'not configured'}  ", "",
+             f"**Warm client:** {meta['warm_client'] or 'not configured'}  ", ""]
+    nz = meta.get("noise")
+    if nz:
+        lines += [f"**Noise probe:** loadavg start {nz['start']['loadavg']}, end {nz['end']['loadavg']}; "
+                  f"calibration `{nz['start']['calibration_fixture']}` median wall "
+                  f"{nz['start']['calibration_wall_ms_median']:.1f} ms at start, "
+                  f"{nz['end']['calibration_wall_ms_median']:.1f} ms after the timed loop "
+                  f"(drift {nz['drift_pct']}%).  "]
+        if not nz["quiet"]:
+            lines += ["", f"**WARNING: NOT a quiet run (calibration drift {nz['drift_pct']}%, limit "
+                      f"{NOISE_WARN_PCT:.0f}%; 1-min loadavg at start "
+                      f"{nz['start']['loadavg'][0]:.2f}, limit {LOAD_WARN}). Other work or "
+                      "throttling was present, so the wall/CPU figures below are not "
+                      "trustworthy baselines.**"]
+        lines.append("")
+    lines += [
              "## 1. Timing, memory and compiler counters", "",
              "Wall, CPU and RSS are medians over the timed reps. CPU is user+system "
              "of the whole process tree. RSS is the largest single process in the tree "
@@ -348,7 +386,10 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                   "Fns analyzed | Spec evals | Spec hits | Spec keys |",
                   "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
         for r in mode_rows:
-            status = r["status"] + ("" if r["status_ok"] else " **(UNEXPECTED)**")
+            status = r["status"] + ("" if r["status_ok"] else (
+                " **(UNEXPECTED)**" if mode == "cold" else " **(candidate differs from manifest: see gate notes)**"))
+            if r.get("timed_out_reps"):
+                status += f" **TIMED OUT x{r['timed_out_reps']} (excluded from medians)**"
             lines.append(
                 f"| `{r['fixture']}` | {r['kind']} | {status} | "
                 f"{fmt(r['wall_ms_median'])} ({fmt(r['wall_ms_min'], 1)}-{fmt(r['wall_ms_max'], 1)}) | "
@@ -371,12 +412,16 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
         lines += [f"**Result: {'PASS' if gate['passed'] else 'FAIL'}** over "
                   f"{gate['fixtures']} fixtures. Reference: `{gate['reference_moss']}`. "
                   f"Candidate: `{gate['candidate_moss']}` via {gate['candidate_command']}.", ""]
-        lines += ["| Fixture | Status | Verdicts identical | Reference matches manifest |",
-                  "|---|---|---|---|"]
+        lines += ["The gate requires candidate verdict == reference verdict and reference == "
+                  "manifest (status, expected exit code, no timeout). A candidate that "
+                  "differs from the manifest is annotated IMPROVED/REGRESSED.", "",
+                  "| Fixture | Status | Verdicts identical | Reference matches manifest | Candidate note |",
+                  "|---|---|---|---|---|"]
         for r in gate["results"]:
             lines.append(f"| `{r['fixture']}` | {r['status']} | "
                          f"{'yes' if r['identical'] else '**NO**'} | "
-                         f"{'yes' if r['reference_matches_expected'] else '**NO**'} |")
+                         f"{'yes' if r['reference_matches_expected'] else '**NO**'} | "
+                         f"{r.get('candidate_note') or ''} |")
         same = gate["reference_moss"] == gate["candidate_moss"] and \
             gate["candidate_command"] == "built-in cold command"
         if same:
@@ -471,6 +516,38 @@ def print_metrics(metrics: dict) -> None:
               f"{m['packages_measured']} packages, {len(m['packages_failed'])} failed")
 
 
+CALIBRATION_FIXTURE = "b2_k04"   # ~0.5 s, single file, no provider
+NOISE_WARN_PCT = 10.0
+LOAD_WARN = 1.0   # 1-minute loadavg at start above this = other work was running
+
+
+def noise_probe(tc: C.Toolchain, manifest: dict, run_dir: Path, label: str) -> dict:
+    """Machine-noise probe: 1/5/15-minute loadavg plus the median wall of a
+    small calibration fixture (5 cold reps). Taken before and after the timed
+    loop; a drift above ~10% means the run was not on a quiet machine."""
+    fx = next(f for f in manifest["fixtures"] if f["id"] == CALIBRATION_FIXTURE)
+    work = run_dir / "work" / f"calib-{label}"
+    walls = []
+    for _ in range(5):
+        values = C.stage_fixture(fx, work)
+        argv = C.command_for(fx, {**tc.values(), **values}, None)
+        walls.append(C.run_measured(argv, cwd=work, env=tc.env(),
+                                    timeout=C.fixture_timeout(fx))["wall_ms"])
+    shutil.rmtree(work, ignore_errors=True)
+    return {"loadavg": list(os.getloadavg()), "calibration_fixture": fx["id"],
+            "calibration_wall_ms_median": C.median(walls),
+            "calibration_wall_ms_samples": [round(w, 2) for w in walls]}
+
+
+def noise_summary(start: dict, end: dict) -> dict:
+    a, b = start["calibration_wall_ms_median"], end["calibration_wall_ms_median"]
+    drift = abs(b - a) / min(a, b) * 100.0
+    busy_start = start["loadavg"][0] > LOAD_WARN
+    return {"start": start, "end": end, "drift_pct": round(drift, 1),
+            "busy_at_start": busy_start,
+            "quiet": drift <= NOISE_WARN_PCT and not busy_start}
+
+
 def make_run_dir(args) -> tuple[str, Path]:
     run_id = C.time.strftime("%Y%m%d-%H%M%S")
     return run_id, (Path(args.out) if args.out else C.TMP_ROOT / run_id).resolve()
@@ -559,6 +636,9 @@ def main() -> int:
     if args.reps < MIN_REPS:
         raise SystemExit(f"--reps must be >= {MIN_REPS}")
     rows = []
+    manifest_all = C.load_manifest()
+    noise_start = noise_probe(tc, manifest_all, run_dir, "start") \
+        if any(f["id"] == CALIBRATION_FIXTURE for f in manifest_all["fixtures"]) else None
     modes = ["cold"] + (["warm"] if args.warm_client_cmd else [])
     for fx in fixtures:
         for mode in modes:
@@ -568,6 +648,8 @@ def main() -> int:
             rows.append(row)
             print(f"{mode:4} {fx['id']}: wall {row['wall_ms_median']:.2f} ms, "
                   f"status {row['status']}", flush=True)
+    noise = noise_summary(noise_start, noise_probe(tc, manifest_all, run_dir, "end")) \
+        if noise_start else None
     gate = None
     if not args.no_gate:
         ref, cand = gate_toolchains(args)
@@ -582,9 +664,12 @@ def main() -> int:
             "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
-            "reps": args.reps, "warm_client": args.warm_client_cmd}
+            "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise}
     write_outputs(run_dir, meta, rows, gate, metrics)
-    ok = all(r["status_ok"] for r in rows) and (gate is None or gate["passed"])
+    # Cold rows are the reference compiler: manifest mismatch is a hard failure.
+    # Warm rows (a candidate client) only produce IMPROVED/REGRESSED notes.
+    ok = all(r["status_ok"] for r in rows if r["mode"] == "cold") and \
+        (gate is None or gate["passed"])
     print(f"report: {run_dir / 'LOCAL_REPORT.md'}")
     if metrics:
         print_metrics(metrics)

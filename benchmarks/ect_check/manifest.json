@@ -2,13 +2,14 @@
   "suite_name": "moss_ect_check",
   "version": "0.2.0",
   "seed": 20261105,
-  "total_fixtures": 68,
+  "total_fixtures": 75,
   "generators": {
     "trivial": "1.0.0",
     "b1_leak": "1.0.0",
     "b2_equiv": "1.0.0",
     "torture_ext": "1.1.0-ext",
-    "dag_diamond": "1.0.0"
+    "dag_diamond": "1.0.0",
+    "dag_fanin": "1.0.0"
   },
   "fixtures": [
     {
@@ -1286,6 +1287,7 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_w4",
@@ -1309,6 +1311,7 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_w4",
@@ -1332,7 +1335,8 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
-      "expected_status": "fail",
+      "stack_kib": 4194304,
+      "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_w4",
         "workload": "W4",
@@ -1341,8 +1345,7 @@
         "nodes": 501,
         "extends": "compiler_torture 1.0.0",
         "predicted_functions_analyzed": 501,
-        "predicted_spec_keys": 501,
-        "expected_failure_reason": "compiler SIGSEGV (exit 139, stack exhaustion in the checker) on a deep dependent chain with the default 8 MiB stack; threshold today is between depth 250 (passes) and 275 (crashes), for Int and user-type arguments alike"
+        "predicted_spec_keys": 501
       },
       "category": "torture_ext",
       "generator": "torture_ext",
@@ -1356,7 +1359,8 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
-      "expected_status": "fail",
+      "stack_kib": 4194304,
+      "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_w4",
         "workload": "W4",
@@ -1365,8 +1369,7 @@
         "nodes": 1001,
         "extends": "compiler_torture 1.0.0",
         "predicted_functions_analyzed": 1001,
-        "predicted_spec_keys": 1001,
-        "expected_failure_reason": "compiler SIGSEGV (exit 139, stack exhaustion in the checker) on a deep dependent chain with the default 8 MiB stack; threshold today is between depth 250 (passes) and 275 (crashes), for Int and user-type arguments alike"
+        "predicted_spec_keys": 1001
       },
       "category": "torture_ext",
       "generator": "torture_ext",
@@ -1375,11 +1378,36 @@
       "sha256": "6cd110cc17a8262be23af9d3829fec1011e742f47f0bdbdb96690e2626ec6aec"
     },
     {
+      "id": "tx_w4_d0300_default_stack_crash",
+      "path": "torture_ext/tx_w4_d0300_default_stack_crash",
+      "kind": "file",
+      "entry": "main.moss",
+      "timeout_s": 600,
+      "stack_kib": 8192,
+      "expected_status": "fail",
+      "expected_exit_code": 139,
+      "metadata": {
+        "family": "torture_ext_crash",
+        "workload": "W4",
+        "depth": 300,
+        "types": 0,
+        "nodes": 301,
+        "environment_dependent": true,
+        "expected_failure_reason": "checker SIGSEGV (stack exhaustion) with an 8 MiB stack; cliff on moss-opt ~258 (Int) / ~250 (user type); depends on build flavor (moss-dev -O0 crashes near depth 40) and stack size. A warm client/daemon must provide an equally large stack for the other torture_ext fixtures."
+      },
+      "category": "torture_ext",
+      "generator": "torture_ext",
+      "generator_version": "1.1.0-ext",
+      "generator_seed": 20261105,
+      "sha256": "498b2a3a2062fcea8add8b6a75f6431db15f2d0494010ffd2a43518a67b4dbbc"
+    },
+    {
       "id": "tx_cross_d0100_k02",
       "path": "torture_ext/tx_cross_d0100_k02",
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_cross",
@@ -1403,6 +1431,7 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_cross",
@@ -1426,6 +1455,7 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_cross",
@@ -1449,6 +1479,7 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
+      "stack_kib": 4194304,
       "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_cross",
@@ -1472,7 +1503,8 @@
       "kind": "file",
       "entry": "main.moss",
       "timeout_s": 1800,
-      "expected_status": "fail",
+      "stack_kib": 4194304,
+      "expected_status": "pass",
       "metadata": {
         "family": "torture_ext_cross",
         "workload": "W4xW2",
@@ -1481,8 +1513,7 @@
         "nodes": 501,
         "extends": "compiler_torture 1.0.0",
         "predicted_functions_analyzed": 501,
-        "predicted_spec_keys": 2004,
-        "expected_failure_reason": "compiler SIGSEGV (exit 139, stack exhaustion in the checker) on a deep dependent chain with the default 8 MiB stack; threshold today is between depth 250 (passes) and 275 (crashes), for Int and user-type arguments alike"
+        "predicted_spec_keys": 2004
       },
       "category": "torture_ext",
       "generator": "torture_ext",
@@ -1577,6 +1608,162 @@
       "generator_version": "1.0.0",
       "generator_seed": 20261105,
       "sha256": "92a226aeb4dfbb8dd05e205ddae45aa75418ebed243d7148eabd6d7443e02b53"
+    },
+    {
+      "id": "fanin_pkg_k001",
+      "path": "dag_fanin/fanin_pkg_k001",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_pkg",
+        "depth": 50,
+        "width": 4,
+        "types": 1,
+        "nodes": 55,
+        "packages": 2,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 55,
+        "predicted_spec_requests": 58,
+        "predicted_spec_hits": 3,
+        "dag_functions_in_consumer": 0
+      },
+      "kind": "package",
+      "entry": "app",
+      "provider": "lib",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "58fda0a6822e0c063f4b2996b1dab0e457fceecb06e05a31939537a29442af24"
+    },
+    {
+      "id": "fanin_pkg_k008",
+      "path": "dag_fanin/fanin_pkg_k008",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_pkg",
+        "depth": 50,
+        "width": 4,
+        "types": 8,
+        "nodes": 55,
+        "packages": 2,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 440,
+        "predicted_spec_requests": 464,
+        "predicted_spec_hits": 24,
+        "dag_functions_in_consumer": 0
+      },
+      "kind": "package",
+      "entry": "app",
+      "provider": "lib",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "1d2ebcfabf99885ad7f7db76b16a331faff2da4331e209fb188c230f9d724dd1"
+    },
+    {
+      "id": "fanin_pkg_k032",
+      "path": "dag_fanin/fanin_pkg_k032",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_pkg",
+        "depth": 50,
+        "width": 4,
+        "types": 32,
+        "nodes": 55,
+        "packages": 2,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 1760,
+        "predicted_spec_requests": 1856,
+        "predicted_spec_hits": 96,
+        "dag_functions_in_consumer": 0
+      },
+      "kind": "package",
+      "entry": "app",
+      "provider": "lib",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "491f1a9b288bcbe5e12e229839768defcf823d10bd1479356cd2dca01c48474c"
+    },
+    {
+      "id": "fanin_file_k001",
+      "path": "dag_fanin/fanin_file_k001",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_file",
+        "depth": 50,
+        "width": 4,
+        "types": 1,
+        "nodes": 55,
+        "packages": 1,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 55,
+        "predicted_spec_requests": 58,
+        "predicted_spec_hits": 3
+      },
+      "kind": "file",
+      "entry": "main.moss",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "510d276d625c6f3ae6fd1b34f6ce560b5f1c268e9fb8eb6667fdb2052d7332db"
+    },
+    {
+      "id": "fanin_file_k008",
+      "path": "dag_fanin/fanin_file_k008",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_file",
+        "depth": 50,
+        "width": 4,
+        "types": 8,
+        "nodes": 55,
+        "packages": 1,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 440,
+        "predicted_spec_requests": 464,
+        "predicted_spec_hits": 24
+      },
+      "kind": "file",
+      "entry": "main.moss",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "29c88fcfc6f3a6c784c3267687e3704566f643b4c016e5d90338dc21fc4cd094"
+    },
+    {
+      "id": "fanin_file_k032",
+      "path": "dag_fanin/fanin_file_k032",
+      "timeout_s": 900,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "dag_fanin_file",
+        "depth": 50,
+        "width": 4,
+        "types": 32,
+        "nodes": 55,
+        "packages": 1,
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 1760,
+        "predicted_spec_requests": 1856,
+        "predicted_spec_hits": 96
+      },
+      "kind": "file",
+      "entry": "main.moss",
+      "category": "dag_fanin",
+      "generator": "dag_fanin",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "adde009b5ddc168f53d6c1201f0e0d70b4ab2ec00830dcf8b904374078f58845"
     }
   ]
 }

@@ -1,0 +1,62 @@
+module main
+import dag_lib
+
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+type T001:
+  v: Int
+
+  fn score() -> Int:
+    return v + 2
+
+type T002:
+  v: Int
+
+  fn score() -> Int:
+    return v + 3
+
+type T003:
+  v: Int
+
+  fn score() -> Int:
+    return v + 4
+
+type T004:
+  v: Int
+
+  fn score() -> Int:
+    return v + 5
+
+type T005:
+  v: Int
+
+  fn score() -> Int:
+    return v + 6
+
+type T006:
+  v: Int
+
+  fn score() -> Int:
+    return v + 7
+
+type T007:
+  v: Int
+
+  fn score() -> Int:
+    return v + 8
+
+fn main():
+  var total = 0
+  total = total + dag_lib.root(T000(v: 1))
+  total = total + dag_lib.root(T001(v: 2))
+  total = total + dag_lib.root(T002(v: 3))
+  total = total + dag_lib.root(T003(v: 4))
+  total = total + dag_lib.root(T004(v: 5))
+  total = total + dag_lib.root(T005(v: 6))
+  total = total + dag_lib.root(T006(v: 7))
+  total = total + dag_lib.root(T007(v: 8))
+  echo total

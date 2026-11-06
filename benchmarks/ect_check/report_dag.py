@@ -5,6 +5,11 @@ Pure functions over runner result rows (cold mode only); no compiler access.
 """
 from __future__ import annotations
 
+from pathlib import Path
+import re
+
+import ect_common as C
+
 
 def _cold(rows, family):
     return sorted((r for r in rows if r.get("mode") == "cold" and
@@ -36,6 +41,24 @@ METRICS = (("wall_ms_median", "wall ms"), ("cpu_ms_median", "CPU ms"),
            ("functions_analyzed", "functions analyzed"),
            ("specialization_keys", "spec keys"),
            ("specialization_evaluations", "spec evals"))
+
+
+def source_shape(row) -> tuple[int, int] | None:
+    """(DAG callables, distinct user types) counted from the fixture's own
+    source text, independent of the generator's metadata. Callables are
+    top-level `fn`/`export fn` lines other than `main`; types are top-level
+    `type` lines (methods are indented, so they never count)."""
+    rel = row.get("fixture_path")
+    if not rel:
+        return None
+    fns = types = 0
+    for src in sorted((C.FIXTURES_DIR / rel).rglob("*.moss")):
+        for line in src.read_text().splitlines():
+            if re.match(r"(export )?fn (?!main\()", line):
+                fns += 1
+            elif line.startswith("type "):
+                types += 1
+    return fns, types
 
 
 def analysis(rows) -> dict:
@@ -75,23 +98,45 @@ def sections(rows) -> list[str]:
         return lines
     lines += ["## 1b. Generic-DAG families (Phase 28.5 Team 2)", "",
               "Cold mode only. Counters come from the separate counter run. "
-              "For package fixtures (B1) the provider `lib` is built first "
+              "For package fixtures (B1, fan-in pkg) the provider `lib` is built first "
               "(`margo --check build`, its own series below) and the consumer is then "
               "measured with an up-to-date provider `.mossi`, so consumer numbers "
               "exclude provider build work.", "",
               "### Shape check: measured vs predicted", "",
-              "Prediction: nodes = callables in the DAG (D*W+1 for DAG fixtures, "
-              "depth+1 for chains); functions analyzed = nodes; distinct specialization "
-              "keys = nodes x K (K = distinct concrete types; K=0 chain = nodes).", "",
-              "| Fixture | Status | Nodes | K | Fns pred | Fns meas | Keys pred | Keys meas | Keys delta |",
-              "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+              "Predictions are recomputed here from the fixture SOURCE (callables = "
+              "top-level `fn` lines except `main`; K = top-level `type` lines), not taken "
+              "from the generator: functions analyzed = callables; distinct specialization "
+              "keys = callables x max(K,1). `Meta` flags a disagreement with the generator's "
+              "manifest metadata. Reqs/hits predictions (fan-in only) come from the manifest. "
+              "`Local complete` = internal functions of the package's own source whose local "
+              "summary is `complete` (checker fact `ect_m2_internal_complete`), out of all "
+              "internal functions: a fact store that trusts only complete summaries can skip "
+              "no more than this.", "",
+              "| Fixture | Status | Callables (src) | K (src) | Fns pred | Fns meas | Fns delta | "
+              "Keys pred | Keys meas | Keys delta | Reqs pred/meas | Hits pred/meas | "
+              "Local complete | Meta |",
+              "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|"]
     for r in dag_rows:
         m = r["metadata"]
-        keys, pred = r.get("specialization_keys"), m["predicted_spec_keys"]
-        delta = "n/a" if keys is None else f"{keys - pred:+d}"
+        shape = source_shape(r)
+        nodes, k = shape if shape else (m["nodes"], m["types"])
+        pred_fns, pred_keys = nodes, nodes * max(k, 1)
+        fns, keys = r.get("functions_analyzed"), r.get("specialization_keys")
+        fdelta = "n/a" if fns is None else f"{fns - pred_fns:+d}"
+        kdelta = "n/a" if keys is None else f"{keys - pred_keys:+d}"
+        reqs = hits = "-"
+        if "predicted_spec_requests" in m:
+            reqs = f"{m['predicted_spec_requests']}/{_f(r.get('specialization_evaluations'))}"
+            hits = f"{m['predicted_spec_hits']}/{_f(r.get('specialization_hits'))}"
+        local = "n/a"
+        if r.get("local_internal_functions") is not None:
+            local = f"{r['local_complete_summaries']}/{r['local_internal_functions']}"
+        meta_ok = (nodes, k) == (m["nodes"], m["types"]) and pred_keys == m["predicted_spec_keys"] \
+            or (k == 0 and nodes == m["nodes"])
         lines.append(f"| `{r['fixture']}` | {r['status']}{'' if r['status_ok'] else ' **(UNEXPECTED)**'} | "
-                     f"{m['nodes']} | {m['types']} | {m['predicted_functions_analyzed']} | "
-                     f"{_f(r.get('functions_analyzed'))} | {pred} | {_f(keys)} | {delta} |")
+                     f"{nodes} | {k} | {pred_fns} | {_f(fns)} | {fdelta} | {pred_keys} | "
+                     f"{_f(keys)} | {kdelta} | {reqs} | {hits} | {local} | "
+                     f"{'ok' if meta_ok else '**MISMATCH**'} |")
     lines.append("")
 
     b1 = _cold(rows, "b1_leak")
@@ -164,12 +209,33 @@ def sections(rows) -> list[str]:
                          f"{_f(r.get('specialization_hits'))} | {_f(r.get('specialization_keys'))} |")
         lines.append("")
 
+    for variant, title in (("dag_fanin_pkg", "Fan-in DAG, package boundary (shared callee, feasible)"),
+                           ("dag_fanin_file", "Fan-in DAG, single file (shared callee, feasible)")):
+        fam = _cold(rows, variant)
+        if not fam:
+            continue
+        lines += [f"### {title}", "",
+                  "W=4 entry nodes `e_i(x) = c000(x) + i` all call ONE shared deep chain "
+                  "(D=50). Unlike the spine, callees are shared: spec hits = (W-1) x K.", "",
+                  "| K | Wall ms | CPU ms | RSS KiB | Fns | Spec keys | Spec evals | Spec hits | "
+                  "Prov wall ms |", "|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for r in fam:
+            lines.append(f"| {r['metadata']['types']} | {_f(r['wall_ms_median'])} | "
+                         f"{_f(r['cpu_ms_median'])} | {_f(r['rss_kib_median'], 0)} | "
+                         f"{_f(r.get('functions_analyzed'))} | {_f(r.get('specialization_keys'))} | "
+                         f"{_f(r.get('specialization_evaluations'))} | {_f(r.get('specialization_hits'))} | "
+                         f"{_f(r.get('provider_wall_ms_median'))} |")
+        lines.append("")
+
     for family, title, note in (
+            ("torture_ext_crash", "Torture extension: documented default-stack crash",
+             "Depth-300 chain with an explicit 8 MiB stack; expected exit 139. Environment "
+             "dependent (flavor and stack size); every other torture_ext fixture runs with "
+             "a 4 GiB stack limit."),
             ("torture_ext_w4", "Torture extension 1.1.0-ext: W4 deep chains",
-             "Untyped chain `step_i(x) = step_{i-1}(x) + 1` instantiated once with Int."),
+             "Untyped chain `step_i(x) = step_{i-1}(x) + 1` instantiated once with Int (4 GiB stack)."),
             ("torture_ext_cross", "Torture extension 1.1.0-ext: W4 x W2 cross",
-             "Deep chain whose root is instantiated with K distinct user types. A fixture "
-             "with expected status `fail` is a documented compiler defect, not a pass."),
+             "Deep chain whose root is instantiated with K distinct user types (4 GiB stack)."),
             ("dag_diamond", "Shared-callee (diamond) DAG, K = 1",
              "Node (l,i) calls (l+1,i) and (l+1,(i+1)%W). Keys stay linear in nodes, but "
              "wall time grows super-linearly with D despite memo hits.")):

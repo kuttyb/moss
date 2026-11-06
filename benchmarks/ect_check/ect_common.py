@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
+import signal
 import shlex
 import shutil
 import statistics
@@ -166,7 +168,7 @@ def build_provider(fixture: dict, tc: "Toolchain", work: Path,
     env = tc.env()
     env.update(extra_env or {})
     res = run_measured(expand_command(PROVIDER_COMMAND, values), cwd=root, env=env,
-                       timeout=fixture_timeout(fixture))
+                       timeout=fixture_timeout(fixture), stack_kib=fixture_stack(fixture))
     if res["rc"] != 0:
         raise ToolError(f"provider build of {fixture['id']} failed: "
                         f"{(res['stdout'] or res['stderr'])[:300]}")
@@ -241,8 +243,38 @@ class Toolchain:
 TIME_BIN = "/usr/bin/time"
 
 
+def _stack_preexec(stack_kib):
+    if not stack_kib:
+        return None
+
+    def apply():
+        _, hard = resource.getrlimit(resource.RLIMIT_STACK)
+        want = int(stack_kib) * 1024
+        if hard != resource.RLIM_INFINITY:
+            want = min(want, hard)
+        resource.setrlimit(resource.RLIMIT_STACK, (want, hard))
+    return apply
+
+
+def fixture_stack(fixture: dict):
+    """Per-fixture stack limit in KiB (manifest `stack_kib`), or None."""
+    return fixture.get("stack_kib")
+
+
+def fixture_ok(fixture: dict, verdict: dict, timed_out: bool = False) -> bool:
+    """Does a run satisfy the manifest? Status must match, a timeout never
+    counts, and `expected_exit_code` (when set) must match exactly, so a crash,
+    abort or hang cannot stand in for a clean diagnostic."""
+    if timed_out or verdict.get("timed_out"):
+        return False
+    if status_of(verdict) != fixture["expected_status"]:
+        return False
+    want = fixture.get("expected_exit_code")
+    return want is None or verdict.get("exit_code") == want
+
+
 def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
-                 timeout: float = 600.0) -> dict:
+                 timeout: float = 600.0, stack_kib: int | None = None) -> dict:
     """Run argv once; return rc, stdout, stderr, wall/CPU ms and peak RSS (KiB).
 
     Peak RSS is read from a /usr/bin/time wrapper (-f %M), NOT from this
@@ -252,6 +284,11 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
     reports that command's tree maximum (largest single process). Wall is the
     runner's monotonic clock around the whole wrapped command (adds ~1 ms of
     `time` startup); CPU is user+system from wait4 (unaffected by mm history).
+
+    `stack_kib` sets RLIMIT_STACK (soft, clamped to the hard limit) in the child
+    before exec, so a deep-recursion checker does not depend on the machine's
+    default 8 MiB. On timeout the whole process group is killed (the command
+    runs in its own session) so no compiler is left burning CPU.
     """
     if not Path(TIME_BIN).exists():
         raise ToolError(f"{TIME_BIN} is required for peak-RSS measurement")
@@ -261,7 +298,9 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
         start = time.perf_counter()
         try:
             proc = subprocess.Popen(wrapped, cwd=cwd, env=env, stdout=out,
-                                    stderr=err, stdin=subprocess.DEVNULL)
+                                    stderr=err, stdin=subprocess.DEVNULL,
+                                    start_new_session=True,
+                                    preexec_fn=_stack_preexec(stack_kib))
         except OSError as exc:
             raise ToolError(f"cannot run {argv[0]!r}: {exc.strerror or exc}")
         deadline = start + timeout
@@ -271,7 +310,10 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
             if pid:
                 break
             if time.perf_counter() > deadline:
-                proc.kill()
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except OSError:
+                    proc.kill()
                 timed_out = True
                 pid, status, usage = os.wait4(proc.pid, 0)
                 break
@@ -346,6 +388,7 @@ def extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
         doc = json.loads(text)
     except ValueError:
         return {"exit_code": result["rc"], "ok": None, "diagnostics": None,
+                "timed_out": bool(result.get("timed_out")),
                 "raw": _scrub(text, replacements)}
     ok = doc.get("ok")
     if ok:
@@ -362,6 +405,7 @@ def extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
         if inner is not None:
             document["error"] = {"prefix": doc["error"][:prefix_end], "embedded": inner}
     return {"exit_code": result["rc"], "ok": bool(ok),
+            "timed_out": bool(result.get("timed_out")),
             "diagnostics": _scrub(diagnostics, replacements),
             "document": _scrub(document, replacements)}
 
@@ -389,10 +433,15 @@ def read_counter_records(sink: Path) -> list[dict]:
 def summarize_counters(records: list[dict]) -> dict:
     """Sum work counters across checker runs; None when the compiler is silent."""
     if not records:
-        return {"checker_runs": 0, **{name: None for name, _ in WORK_COUNTERS}}
+        return {"checker_runs": 0, **{name: None for name, _ in WORK_COUNTERS},
+                "internal_functions": None, "internal_complete": None}
     summary = {"checker_runs": len(records)}
     for name, source in WORK_COUNTERS:
         summary[name] = sum(int(r.get(source, 0)) for r in records)
+    # Checked-summary facts (M2): internal functions of the package's own source
+    # and how many carry a `complete` local summary.
+    summary["internal_functions"] = sum(int(r.get("ect_m2_internal_functions", 0)) for r in records)
+    summary["internal_complete"] = sum(int(r.get("ect_m2_internal_complete", 0)) for r in records)
     return summary
 
 

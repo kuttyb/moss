@@ -66,6 +66,40 @@ def run(moss: Path, margo: Path) -> int:
           f"{before_moss:.0f} -> {after_moss:.0f} KiB", results)
     del ballast
 
+    # --- timeout kills the whole process group --------------------------
+    import subprocess
+    marker = "4711"
+    res = C.run_measured(["/bin/sh", "-c", f"sleep {marker} & wait"], cwd=work,
+                         env=tc.env(), timeout=1.0)
+    import time as _t
+    _t.sleep(0.3)
+    left = subprocess.run(["pgrep", "-f", f"sleep {marker}"], capture_output=True, text=True).stdout.split()
+    check("timeout: flagged and no orphan child survives", res["timed_out"] and not left,
+          f"timed_out={res['timed_out']} survivors={left}", results)
+    if left:
+        subprocess.run(["kill", *left])
+
+    # --- manifest enforcement: timeout / exit code ------------------------
+    fx_fail = {"expected_status": "fail", "expected_exit_code": 139}
+    check("fixture_ok: timeout never satisfies expected fail",
+          not C.fixture_ok({"expected_status": "fail"}, {"ok": None, "exit_code": -9, "timed_out": True}),
+          "timed_out verdict rejected", results)
+    check("fixture_ok: clean diagnostic does not satisfy expected crash",
+          not C.fixture_ok(fx_fail, {"ok": False, "exit_code": 1}) and
+          C.fixture_ok(fx_fail, {"ok": None, "exit_code": 139}), "exit code enforced", results)
+
+    # --- stack_kib: same input crashes at 8 MiB, passes with a large stack -
+    manifest0 = C.load_manifest()
+    crash = next(f for f in manifest0["fixtures"] if f["id"].endswith("default_stack_crash"))
+    values_c = C.stage_fixture(crash, scratch_stack := C.TMP_ROOT / "selftest" / "stack")
+    argv_c = C.command_for(crash, {**tc.values(), **values_c}, None)
+    small = C.run_measured(argv_c, cwd=scratch_stack, env=tc.env(), timeout=300, stack_kib=8192)
+    large = C.run_measured(argv_c, cwd=scratch_stack, env=tc.env(), timeout=300, stack_kib=C.fixture_stack(
+        next(f for f in manifest0["fixtures"] if f["id"] == "tx_w4_d0500")))
+    check("stack_kib: depth-300 chain crashes at 8 MiB, passes with the torture stack",
+          small["rc"] == 139 and large["rc"] == 0, f"rc {small['rc']} -> {large['rc']}", results)
+    shutil.rmtree(scratch_stack, ignore_errors=True)
+
     # --- gate sensitivity ------------------------------------------------
     scratch = C.TMP_ROOT / "selftest"
     scratch.mkdir(parents=True, exist_ok=True)
