@@ -1,0 +1,7 @@
+test "direct Vector index is a checked call READ borrow":
+  var parts = Vector[String]()
+  parts.push("alpha")
+  assertEqual(parts[0], "alpha")
+
+fn main():
+  pass

@@ -2052,6 +2052,10 @@ class Checker {
           projected_call_argument_read_facts_;
       p_.typed_semantics->required_projected_call_argument_read_occurrences =
           required_projected_call_argument_read_occurrences_;
+      p_.typed_semantics->indexed_call_argument_read_facts =
+          indexed_call_argument_read_facts_;
+      p_.typed_semantics->required_indexed_call_argument_read_occurrences =
+          required_indexed_call_argument_read_occurrences_;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS")) {
         std::array<std::size_t, 4> conditional_operation_counts{};
@@ -2097,6 +2101,8 @@ class Checker {
                   << p_.typed_semantics->projected_collection_read_facts.size()
                   << " projected_call_argument_read="
                   << p_.typed_semantics->projected_call_argument_read_facts.size()
+                  << " indexed_call_argument_read="
+                  << p_.typed_semantics->indexed_call_argument_read_facts.size()
                   << '\n';
         for (const auto& fact :
              p_.typed_semantics->projected_call_argument_read_facts)
@@ -2135,6 +2141,53 @@ class Checker {
                     << " member_type="
                     << std::quoted(fact.projected_member_type
                         ? fact.projected_member_type->to_canonical_string() : string())
+                    << " copy=" << fact.permits_copy
+                    << " nonescaping=" << fact.temporary_nonescaping_borrow
+                    << " context=" << std::quoted(fact.specialization_context)
+                    << " est_context=" << std::quoted(fact.est_fact_context)
+                    << " source_module="
+                    << std::quoted(fact.provenance.defining_module_id)
+                    << '\n';
+        for (const auto& fact :
+             p_.typed_semantics->indexed_call_argument_read_facts)
+          std::cerr << "PHASE28_INDEXED_CALL_READ availability="
+                    << static_cast<int>(fact.availability)
+                    << " arena=" << fact.est_arena_index
+                    << " argument=" << fact.call_argument_expression_occurrence_id
+                    << " index_node=" << fact.collection_index_expression_occurrence_id
+                    << " receiver=" << fact.receiver_expression_occurrence_id
+                    << " selector=" << fact.index_expression_occurrence_id
+                    << " statement=" << fact.statement_occurrence_id
+                    << " argument_index=" << fact.argument_index
+                    << " parameter_index=" << fact.target_parameter_index
+                    << " target=" << std::quoted(fact.target_callable_identity)
+                    << " target_spec="
+                    << std::quoted(fact.target_specialization_identity)
+                    << " target_resolution="
+                    << static_cast<int>(fact.target_resolution)
+                    << " parameter_access="
+                    << static_cast<int>(fact.target_parameter_access)
+                    << " receiver_binding="
+                    << std::quoted(fact.receiver_binding_identity)
+                    << " receiver_definition="
+                    << std::quoted(fact.receiver_definition_identity)
+                    << " receiver_type="
+                    << std::quoted(fact.receiver_type
+                        ? fact.receiver_type->to_canonical_string() : string())
+                    << " index_type="
+                    << std::quoted(fact.index_type
+                        ? fact.index_type->to_canonical_string() : string())
+                    << " arg_span_line=" << fact.argument_occurrence_span.line
+                    << " arg_span_col=" << fact.argument_occurrence_span.column
+                    << " arg_span_start=" << fact.argument_occurrence_span.source_begin
+                    << " arg_span_end=" << fact.argument_occurrence_span.source_end
+                    << " index_span_line=" << fact.index_occurrence_span.line
+                    << " index_span_col=" << fact.index_occurrence_span.column
+                    << " index_span_start=" << fact.index_occurrence_span.source_begin
+                    << " index_span_end=" << fact.index_occurrence_span.source_end
+                    << " element_type="
+                    << std::quoted(fact.indexed_element_type
+                        ? fact.indexed_element_type->to_canonical_string() : string())
                     << " copy=" << fact.permits_copy
                     << " nonescaping=" << fact.temporary_nonescaping_borrow
                     << " context=" << std::quoted(fact.specialization_context)
@@ -2272,6 +2325,40 @@ class Checker {
       if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT") &&
           !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty())
         p_.typed_semantics->required_projected_call_argument_read_occurrences.front()
+            .target_callable_identity += ":perturbed";
+      if (std::getenv("MOSS_TEST_DROP_INDEXED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->indexed_call_argument_read_facts.empty())
+        p_.typed_semantics->indexed_call_argument_read_facts.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->indexed_call_argument_read_facts.empty())
+        p_.typed_semantics->indexed_call_argument_read_facts.push_back(
+            p_.typed_semantics->indexed_call_argument_read_facts.front());
+      if (std::getenv("MOSS_TEST_PERTURB_INDEXED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->indexed_call_argument_read_facts.empty())
+        p_.typed_semantics->indexed_call_argument_read_facts.front()
+            .temporary_nonescaping_borrow = false;
+      if (std::getenv("MOSS_TEST_PERTURB_INDEXED_CALL_READ_MODULE") &&
+          !p_.typed_semantics->indexed_call_argument_read_facts.empty())
+        p_.typed_semantics->indexed_call_argument_read_facts.front()
+            .provenance.defining_module_id += ":perturbed";
+      if (std::getenv("MOSS_TEST_CLEAR_INDEXED_CALL_READ_MODULE_BOTH") &&
+          !p_.typed_semantics->indexed_call_argument_read_facts.empty() &&
+          !p_.typed_semantics->required_indexed_call_argument_read_occurrences.empty()) {
+        p_.typed_semantics->indexed_call_argument_read_facts.front().provenance
+            .defining_module_id.clear();
+        p_.typed_semantics->required_indexed_call_argument_read_occurrences.front()
+            .provenance.defining_module_id.clear();
+      }
+      if (std::getenv("MOSS_TEST_DROP_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_indexed_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_indexed_call_argument_read_occurrences.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_indexed_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_indexed_call_argument_read_occurrences.push_back(
+            p_.typed_semantics->required_indexed_call_argument_read_occurrences.front());
+      if (std::getenv("MOSS_TEST_PERTURB_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_indexed_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_indexed_call_argument_read_occurrences.front()
             .target_callable_identity += ":perturbed";
       if (std::getenv("MOSS_TEST_VALIDATE_PHASE28_AUTHORITY_FACTS"))
         p_.typed_semantics->require_all_phase28_authority_facts();
@@ -3004,6 +3091,10 @@ class Checker {
       projected_call_argument_read_facts_;
   vector<TypedProjectedCallArgumentReadRequirementV1>
       required_projected_call_argument_read_occurrences_;
+  vector<TypedIndexedCallArgumentReadFactV1>
+      indexed_call_argument_read_facts_;
+  vector<TypedIndexedCallArgumentReadRequirementV1>
+      required_indexed_call_argument_read_occurrences_;
   vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
   vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
   vector<TypedEchoArgumentFactV1> echo_argument_facts_;
@@ -29008,6 +29099,165 @@ class Checker {
       static_cast<TypedProjectedCallArgumentReadFactV1&>(requirement) = fact;
       projected_call_argument_read_facts_.push_back(fact);
       required_projected_call_argument_read_occurrences_.push_back(requirement);
+    }
+
+    auto source_module_identity = [&](const string& source_file,
+                                      const string& semantic_context)
+        -> std::optional<string> {
+      string defining_module = p_.main_module.empty()
+          ? p_.module_name : p_.main_module;
+      if (starts_with(semantic_context, "test:") ||
+          starts_with(semantic_context, "bench:")) {
+        std::set<string> owners;
+        for (const auto& import : p_.imports)
+          if (import.source_file == source_file && !import.owner_module.empty())
+            owners.insert(import.owner_module);
+        auto add_source_owner = [&](const auto& declarations) {
+          for (const auto& declaration : declarations)
+            if (declaration.source_file == source_file &&
+                !declaration.defining_module.empty())
+              owners.insert(declaration.defining_module);
+        };
+        add_source_owner(p_.functions);
+        add_source_owner(p_.objects);
+        add_source_owner(p_.enums);
+        add_source_owner(p_.domains);
+        if (owners.size() == 1) {
+          defining_module = *owners.begin();
+        } else if (owners.empty() && !p_.explicit_module &&
+                   (!p_.package_identities ||
+                    (p_.module_identities.size() == 1 &&
+                     p_.module_identities.count("")))) {
+          defining_module.clear();
+        } else {
+          return std::nullopt;
+        }
+      } else if (starts_with(semantic_context, "fn:")) {
+        auto function = functions_.find(semantic_context.substr(3));
+        if (function != functions_.end())
+          defining_module = function->second->defining_module;
+      }
+      if (p_.package_identities) {
+        auto found = p_.module_identities.find(defining_module);
+        if (found == p_.module_identities.end()) return std::nullopt;
+        return found->second;
+      }
+      return program_module_identity(p_, defining_module);
+    };
+
+    for (const auto& argument_handle : statement.expression_handles) {
+      if (argument_handle.slot != est::ExprSlot::Argument ||
+          argument_handle.argument_index >= statement.args.size())
+        continue;
+      const auto* arena = expression_arena(argument_handle.arena_index);
+      if (!arena || argument_handle.expr >= arena->size()) continue;
+      const size_t arg_index = argument_handle.argument_index;
+      const est::ExprId argument_id = ungroup(*arena, argument_handle.expr);
+      if (argument_id != argument_handle.expr) continue;
+      const auto* index = std::get_if<est::Index>(&arena->at(argument_id));
+      if (!index) continue;
+      const est::ExprId receiver_id = ungroup(*arena, index->base);
+      const est::ExprId index_value_id = ungroup(*arena, index->index);
+      if (receiver_id != index->base || index_value_id != index->index) continue;
+      const auto* receiver_identifier = receiver_id < arena->size()
+          ? std::get_if<est::Identifier>(&arena->at(receiver_id)) : nullptr;
+      if (!receiver_identifier) continue;
+      const auto* receiver_facts = arena->facts(receiver_id, context);
+      if (!receiver_facts || !receiver_facts->type ||
+          receiver_facts->type->kind != TypeKind::Builtin ||
+          receiver_facts->type->name != "vector" ||
+          receiver_facts->type->type_args.size() != 1)
+        continue;
+
+      TypedIndexedCallArgumentReadFactV1 fact;
+      fact.availability = TypedIndexedCallArgumentReadFactV1::Availability::Present;
+      fact.est_arena_index = argument_handle.arena_index;
+      fact.call_argument_expression_occurrence_id = argument_handle.expr;
+      fact.collection_index_expression_occurrence_id = argument_id;
+      fact.receiver_expression_occurrence_id = index->base;
+      fact.index_expression_occurrence_id = index->index;
+      fact.statement_occurrence_id = statement_id->second;
+      fact.argument_index = static_cast<std::uint32_t>(arg_index);
+      fact.target_parameter_index = parameter_indices[arg_index] == SIZE_MAX
+          ? UINT32_MAX : static_cast<std::uint32_t>(parameter_indices[arg_index]);
+      fact.argument_occurrence_span = arena->span(argument_handle.expr);
+      fact.index_occurrence_span = arena->span(argument_id);
+      fact.target_callable_identity = target_identity;
+      fact.target_specialization_identity = target_specialization_identity;
+      switch (target_resolution) {
+        case TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved:
+          fact.target_resolution =
+              TypedIndexedCallArgumentReadFactV1::TargetResolution::Resolved;
+          break;
+        case TypedProjectedCallArgumentReadFactV1::TargetResolution::Ambiguous:
+          fact.target_resolution =
+              TypedIndexedCallArgumentReadFactV1::TargetResolution::Ambiguous;
+          break;
+        case TypedProjectedCallArgumentReadFactV1::TargetResolution::Contradictory:
+          fact.target_resolution =
+              TypedIndexedCallArgumentReadFactV1::TargetResolution::Contradictory;
+          break;
+        case TypedProjectedCallArgumentReadFactV1::TargetResolution::Unresolved:
+          fact.target_resolution =
+              TypedIndexedCallArgumentReadFactV1::TargetResolution::Unresolved;
+          break;
+      }
+      fact.receiver_binding_identity = env.binding_identities.count(
+          receiver_identifier->name)
+              ? env.binding_identities.at(receiver_identifier->name) : string();
+      fact.receiver_definition_identity = env.definition_identities.count(
+          receiver_identifier->name)
+              ? env.definition_identities.at(receiver_identifier->name) : string();
+      fact.receiver_type = receiver_facts->type;
+      if (const auto* index_facts = arena->facts(index_value_id, context))
+        fact.index_type = index_facts->type;
+      if (const auto* element_facts = arena->facts(argument_id, context))
+        fact.indexed_element_type = element_facts->type;
+      if (target_resolution !=
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved ||
+          fact.target_parameter_index == UINT32_MAX ||
+          fact.target_callable_identity.empty()) {
+        fact.availability =
+            TypedIndexedCallArgumentReadFactV1::Availability::UnsupportedTarget;
+      } else if (fact.target_parameter_index >= target_accesses.size()) {
+        fact.availability =
+            TypedIndexedCallArgumentReadFactV1::Availability::UnsupportedTarget;
+      } else {
+        fact.target_parameter_access = target_accesses[fact.target_parameter_index];
+        if (fact.target_parameter_access != Effect::Read)
+          fact.availability = TypedIndexedCallArgumentReadFactV1::Availability::
+              UnsupportedParameterAccess;
+      }
+      if (fact.receiver_binding_identity.empty() ||
+          fact.receiver_definition_identity.empty())
+        fact.availability =
+            TypedIndexedCallArgumentReadFactV1::Availability::
+                UnsupportedReceiverBinding;
+      fact.required_access = Effect::Read;
+      fact.temporary_nonescaping_borrow =
+          fact.target_parameter_access == Effect::Read &&
+          target_resolution ==
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+      fact.permits_copy = false;
+      fact.specialization_identity = local_ownership_specialization_identity();
+      fact.specialization_context = local_ownership_consumer_context();
+      fact.est_fact_context = context;
+      fact.provenance.source_file = statement.source_file.empty()
+          ? current_source_file_ : statement.source_file;
+      fact.provenance.line = statement.line;
+      fact.provenance.enclosing_callable_id = current_semantic_context_;
+      if (auto module = source_module_identity(fact.provenance.source_file,
+                                               current_semantic_context_))
+        fact.provenance.defining_module_id = *module;
+      else
+        fact.availability =
+            TypedIndexedCallArgumentReadFactV1::Availability::
+                UnsupportedSourceModule;
+      if (!fact.has_exact_occurrence()) continue;
+      TypedIndexedCallArgumentReadRequirementV1 requirement;
+      static_cast<TypedIndexedCallArgumentReadFactV1&>(requirement) = fact;
+      indexed_call_argument_read_facts_.push_back(fact);
+      required_indexed_call_argument_read_occurrences_.push_back(requirement);
     }
   }
 

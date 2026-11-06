@@ -17345,13 +17345,24 @@ untouched.
   `3dbf9307` records that review and adds the Phase 28 team-pattern closeout.
   The conformance report remains NO-GO because 41 fixtures fail provenance.
 
-## Team B projected call-argument READ consumer follow-up
+## Team A direct indexed-call READ authority and Team B consumer
 
-- Isolated worktree: `tmp/phase28-r7-010-team-b-projected-read-consumer-d1bb`
-- Branch: `phase28-r7-010-team-b-projected-read-consumer-d1bb`
-- Base: `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`
-- Scope: native lowering consumes the exact checker `TypedProjectedCallArgumentReadFactV1` for `assertEqual(Vector[index].member, ...)` using the exact statement/argument handle, arena/Expr IDs, spans, target, context and specialization. The actual place is borrowed; this does not authorize a clone.
-- Focused gate: `python3 tests/phase28/r7_010/team_b/check_projected_call_argument_read_consumer.py build/compiler/moss-dev` passes Native Debug, Native Optimized, Fast Debug, and six consumer missing/duplicate/perturb cases. Generated Rust uses `&(((spans)[(0_i64) as usize]).text)` with no `.clone()`.
-- Checker gate: `python3 tests/tooling/check_phase28_projected_call_argument_read.py build/compiler/moss-dev` passes.
-- Full Regex `margo test` still fails closed at direct `parts[0]` String indexing in `tests/regex_test.moss:109`. This is not the Vector[index].member fact shape; Team A is designing a separate direct indexed-call READ authority. No Team B lowering is authorized for it yet.
-- This sub-slice is locally checkpointed for review only. The Team B gate is not registered in shared `tests/run.sh`; L7 owns runner registration. Do not treat this as final Regex package acceptance. Next: wait for the exact reviewed Team A direct-index fact API, then resume on its frozen base; obtain Agent 2 review after L7 registers this gate.
+- Team A checker candidate: `phase28-r7-010-team-a-next-checker`, code SHA
+  `3092243e8b2b5d290a87d553205eb27e44f6b334`, feedback follow-up
+  `3ef3cd23b494cae545c66d23a2dc2a9edb57fe82`. The fact is restricted to an
+  exact bare `Vector[index]` passed to a resolved READ parameter; it carries
+  complete statement/argument/EST/context/provenance/type identity, allows a
+  temporary borrow only, and permits no copy. Checker code review and the
+  feedback-record follow-up both returned GO. The API change is integrated in
+  the current L7 cherry-pick; shared registration and Team B consumption remain
+  separate.
+- Team B projected-member consumer remains at integrated L7 source commit
+  `4a5f5171` (original Team B candidate
+  `78de4e67aa718e195f9d11495f3abf4568a192cd`). Its exact fact consumer emits a
+  borrowed place with no clone; Debug/Optimized/Fast Debug and six corruption
+  cases pass. L7 registered the test in `Makefile` and `tests/run.sh`, rebuilt
+  the compiler, and Agent 2 returned GO on staging `6dae29cb`.
+- Team B's next consumer worktree is developing exact bare-index READ lowering
+  on top of staging `6dae29cb` plus Team A API commit `3092243e`. Full Regex
+  package acceptance and the 60-fixture oracle remain pending. Oracle
+  expectations remain unchanged.

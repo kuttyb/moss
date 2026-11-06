@@ -1098,6 +1098,106 @@ struct TypedProjectedCallArgumentReadFactV1 {
 struct TypedProjectedCallArgumentReadRequirementV1
     : TypedProjectedCallArgumentReadFactV1 {};
 
+// Checker proof that one direct Vector[index] value is passed to an exactly
+// resolved READ parameter for the duration of that call. It authorizes a
+// bounded borrow only; it never permits a Moss-value copy or escape.
+struct TypedIndexedCallArgumentReadFactV1 {
+  enum class TargetResolution { Resolved, Unresolved, Ambiguous, Contradictory };
+  enum class Availability {
+    Present, MissingCallOccurrence, MissingIndex, MissingReceiverBinding,
+    UnsupportedTarget, UnsupportedParameterAccess, UnsupportedReceiverBinding,
+    UnsupportedSourceModule, Escaping, Contradictory
+  };
+  Availability availability{Availability::MissingIndex};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId call_argument_expression_occurrence_id{UINT32_MAX};
+  est::ExprId collection_index_expression_occurrence_id{UINT32_MAX};
+  est::ExprId receiver_expression_occurrence_id{UINT32_MAX};
+  est::ExprId index_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  std::uint32_t target_parameter_index{UINT32_MAX};
+  est::SourceSpan argument_occurrence_span;
+  est::SourceSpan index_occurrence_span;
+  std::string target_callable_identity;
+  std::string target_specialization_identity;
+  TargetResolution target_resolution{TargetResolution::Unresolved};
+  Effect target_parameter_access{Effect::Read};
+  std::string receiver_binding_identity;
+  std::string receiver_definition_identity;
+  TypeRef receiver_type;
+  TypeRef index_type;
+  TypeRef indexed_element_type;
+  Effect required_access{Effect::Read};
+  bool temporary_nonescaping_borrow{false};
+  bool permits_copy{false};
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypedSourceProvenanceV1 provenance;
+
+  bool has_exact_occurrence() const noexcept {
+    return est_arena_index != UINT32_MAX &&
+        call_argument_expression_occurrence_id != UINT32_MAX &&
+        collection_index_expression_occurrence_id != UINT32_MAX &&
+        receiver_expression_occurrence_id != UINT32_MAX &&
+        index_expression_occurrence_id != UINT32_MAX &&
+        statement_occurrence_id != UINT32_MAX &&
+        argument_index != UINT32_MAX &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        argument_occurrence_span.line > 0 &&
+        argument_occurrence_span.source_end >=
+            argument_occurrence_span.source_begin &&
+        index_occurrence_span.line > 0 &&
+        index_occurrence_span.source_end >= index_occurrence_span.source_begin &&
+        !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.enclosing_callable_id.empty();
+  }
+
+  bool is_authoritative() const noexcept {
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    const bool same_span =
+        argument_occurrence_span.line == index_occurrence_span.line &&
+        argument_occurrence_span.column == index_occurrence_span.column &&
+        argument_occurrence_span.origin_id == index_occurrence_span.origin_id &&
+        argument_occurrence_span.source_begin == index_occurrence_span.source_begin &&
+        argument_occurrence_span.source_end == index_occurrence_span.source_end;
+    return availability == Availability::Present && has_exact_occurrence() &&
+        call_argument_expression_occurrence_id ==
+            collection_index_expression_occurrence_id &&
+        same_span &&
+        !target_callable_identity.empty() &&
+        target_resolution == TargetResolution::Resolved &&
+        target_parameter_index != UINT32_MAX &&
+        target_parameter_access == Effect::Read &&
+        !receiver_binding_identity.empty() &&
+        !receiver_definition_identity.empty() && receiver_type &&
+        receiver_type->is_closed() &&
+        receiver_type->kind == TypeKind::Builtin &&
+        receiver_type->name == "vector" && receiver_type->type_args.size() == 1 &&
+        index_type && index_type->is_closed() &&
+        index_type->kind == TypeKind::Primitive && index_type->name == "int" &&
+        indexed_element_type && indexed_element_type->is_closed() &&
+        same_type(receiver_type->type_args.front(), indexed_element_type) &&
+        required_access == Effect::Read && temporary_nonescaping_borrow &&
+        !permits_copy && !provenance.defining_module_id.empty();
+  }
+
+  bool is_intentionally_unsupported() const noexcept {
+    return has_exact_occurrence() && availability != Availability::Present &&
+        (availability == Availability::UnsupportedTarget ||
+         availability == Availability::UnsupportedParameterAccess ||
+         availability == Availability::UnsupportedReceiverBinding ||
+         availability == Availability::UnsupportedSourceModule ||
+         availability == Availability::Escaping ||
+         availability == Availability::Contradictory);
+  }
+};
+struct TypedIndexedCallArgumentReadRequirementV1
+    : TypedIndexedCallArgumentReadFactV1 {};
+
 enum class TypedEchoArgumentModeV1 {
   ExpressionValue, BorrowedVectorElement
 };
@@ -1666,6 +1766,10 @@ struct TypedSemanticModuleV1 {
       projected_call_argument_read_facts;
   std::vector<TypedProjectedCallArgumentReadRequirementV1>
       required_projected_call_argument_read_occurrences;
+  std::vector<TypedIndexedCallArgumentReadFactV1>
+      indexed_call_argument_read_facts;
+  std::vector<TypedIndexedCallArgumentReadRequirementV1>
+      required_indexed_call_argument_read_occurrences;
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
@@ -2836,6 +2940,88 @@ struct TypedSemanticModuleV1 {
     return *result;
   }
 
+  const TypedIndexedCallArgumentReadFactV1& find_indexed_call_argument_read_fact(
+      const TypedIndexedCallArgumentReadRequirementV1& requirement) const {
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return (!left && !right) ||
+          (left && right && left->structurally_equal(*right));
+    };
+    const auto same_span = [](const est::SourceSpan& left,
+                              const est::SourceSpan& right) {
+      return left.line == right.line && left.column == right.column &&
+          left.origin_id == right.origin_id &&
+          left.source_begin == right.source_begin &&
+          left.source_end == right.source_end;
+    };
+    const auto same_provenance = [](const TypedSourceProvenanceV1& left,
+                                    const TypedSourceProvenanceV1& right) {
+      return left.source_file == right.source_file && left.line == right.line &&
+          left.defining_module_id == right.defining_module_id &&
+          left.enclosing_callable_id == right.enclosing_callable_id;
+    };
+    const auto same_fields = [&](const auto& left, const auto& right) {
+      return left.availability == right.availability &&
+          left.est_arena_index == right.est_arena_index &&
+          left.call_argument_expression_occurrence_id ==
+              right.call_argument_expression_occurrence_id &&
+          left.collection_index_expression_occurrence_id ==
+              right.collection_index_expression_occurrence_id &&
+          left.receiver_expression_occurrence_id ==
+              right.receiver_expression_occurrence_id &&
+          left.index_expression_occurrence_id ==
+              right.index_expression_occurrence_id &&
+          left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.argument_index == right.argument_index &&
+          left.target_parameter_index == right.target_parameter_index &&
+          same_span(left.argument_occurrence_span,
+                    right.argument_occurrence_span) &&
+          same_span(left.index_occurrence_span, right.index_occurrence_span) &&
+          left.target_callable_identity == right.target_callable_identity &&
+          left.target_specialization_identity ==
+              right.target_specialization_identity &&
+          left.target_resolution == right.target_resolution &&
+          left.target_parameter_access == right.target_parameter_access &&
+          left.receiver_binding_identity == right.receiver_binding_identity &&
+          left.receiver_definition_identity == right.receiver_definition_identity &&
+          same_type(left.receiver_type, right.receiver_type) &&
+          same_type(left.index_type, right.index_type) &&
+          same_type(left.indexed_element_type, right.indexed_element_type) &&
+          left.required_access == right.required_access &&
+          left.temporary_nonescaping_borrow ==
+              right.temporary_nonescaping_borrow &&
+          left.permits_copy == right.permits_copy &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_provenance(left.provenance, right.provenance);
+    };
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate : required_indexed_call_argument_read_occurrences)
+      requirement_matches += same_fields(candidate, requirement);
+    if (requirement_matches != 1)
+      throw std::invalid_argument(requirement_matches
+          ? "duplicate indexed call-argument read requirement"
+          : "unknown indexed call-argument read requirement");
+    const TypedIndexedCallArgumentReadFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : indexed_call_argument_read_facts) {
+      if (!same_fields(candidate, requirement)) continue;
+      result = &candidate;
+      ++fact_matches;
+    }
+    if (fact_matches != 1 || !result)
+      throw std::invalid_argument(fact_matches
+          ? "duplicate indexed call-argument read fact"
+          : "required indexed call-argument read fact missing");
+    if ((!result->is_authoritative() &&
+         !result->is_intentionally_unsupported()) ||
+        (!requirement.is_authoritative() &&
+         !requirement.is_intentionally_unsupported()))
+      throw std::invalid_argument(
+          "required indexed call-argument read fact is incomplete");
+    return *result;
+  }
+
   void require_all_phase28_authority_facts() const {
     if (conditional_collection_error_facts.size() !=
             required_conditional_collection_error_occurrences.size() ||
@@ -2919,6 +3105,13 @@ struct TypedSemanticModuleV1 {
     for (const auto& requirement :
          required_projected_call_argument_read_occurrences)
       (void)find_projected_call_argument_read_fact(requirement);
+    if (indexed_call_argument_read_facts.size() !=
+        required_indexed_call_argument_read_occurrences.size())
+      throw std::invalid_argument(
+          "indexed call-argument read fact/requirement set is incomplete");
+    for (const auto& requirement :
+         required_indexed_call_argument_read_occurrences)
+      (void)find_indexed_call_argument_read_fact(requirement);
   }
 
   const TypedMatchOwnershipFactV1* find_match_ownership_fact(
