@@ -1974,8 +1974,18 @@ class Checker {
           fact.specialization_identity += ":perturbed";
         else if (selected == "provenance")
           fact.provenance.source_file += ":perturbed";
+        else if (selected == "module-provenance")
+          fact.provenance.defining_module_id += ":perturbed";
         else if (selected == "owned")
           fact.source_is_owned = false;
+      }
+      if (std::getenv("MOSS_TEST_CLEAR_LOCAL_TRANSFER_MODULE_BOTH") &&
+          !p_.typed_semantics->local_transfer_facts.empty() &&
+          !p_.typed_semantics->required_local_transfer_occurrences.empty()) {
+        p_.typed_semantics->local_transfer_facts.front().provenance
+            .defining_module_id.clear();
+        p_.typed_semantics->required_local_transfer_occurrences.front().provenance
+            .defining_module_id.clear();
       }
       if (std::getenv("MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT") &&
           !p_.typed_semantics->local_transfer_facts.empty())
@@ -2201,6 +2211,18 @@ class Checker {
           !p_.typed_semantics->projected_collection_read_facts.empty())
         ++p_.typed_semantics->projected_collection_read_facts.front()
               .provenance.line;
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_MODULE") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty())
+        p_.typed_semantics->projected_collection_read_facts.front()
+            .provenance.defining_module_id += ":perturbed";
+      if (std::getenv("MOSS_TEST_CLEAR_PROJECTED_MODULE_BOTH") &&
+          !p_.typed_semantics->projected_collection_read_facts.empty() &&
+          !p_.typed_semantics->required_projected_collection_read_occurrences.empty()) {
+        p_.typed_semantics->projected_collection_read_facts.front().provenance
+            .defining_module_id.clear();
+        p_.typed_semantics->required_projected_collection_read_occurrences.front()
+            .provenance.defining_module_id.clear();
+      }
       if (std::getenv("MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT") &&
           !p_.typed_semantics->return_value_facts.empty())
         p_.typed_semantics->return_value_facts.push_back(
@@ -2228,6 +2250,18 @@ class Checker {
           !p_.typed_semantics->projected_call_argument_read_facts.empty())
         p_.typed_semantics->projected_call_argument_read_facts.front()
             .temporary_nonescaping_borrow = false;
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_CALL_READ_MODULE") &&
+          !p_.typed_semantics->projected_call_argument_read_facts.empty())
+        p_.typed_semantics->projected_call_argument_read_facts.front()
+            .provenance.defining_module_id += ":perturbed";
+      if (std::getenv("MOSS_TEST_CLEAR_PROJECTED_CALL_READ_MODULE_BOTH") &&
+          !p_.typed_semantics->projected_call_argument_read_facts.empty() &&
+          !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty()) {
+        p_.typed_semantics->projected_call_argument_read_facts.front().provenance
+            .defining_module_id.clear();
+        p_.typed_semantics->required_projected_call_argument_read_occurrences.front()
+            .provenance.defining_module_id.clear();
+      }
       if (std::getenv("MOSS_TEST_DROP_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT") &&
           !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty())
         p_.typed_semantics->required_projected_call_argument_read_occurrences.pop_back();
@@ -28927,15 +28961,27 @@ class Checker {
           if (import.source_file == fact.provenance.source_file &&
               !import.owner_module.empty())
             source_modules.insert(import.owner_module);
+        auto add_source_owner = [&](const auto& declarations) {
+          for (const auto& declaration : declarations)
+            if (declaration.source_file == fact.provenance.source_file &&
+                !declaration.defining_module.empty())
+              source_modules.insert(declaration.defining_module);
+        };
+        add_source_owner(p_.functions);
+        add_source_owner(p_.objects);
+        add_source_owner(p_.enums);
+        add_source_owner(p_.domains);
         if (source_modules.size() == 1) {
           defining_module = *source_modules.begin();
-        } else if (!p_.module_identities.count(defining_module) &&
-                   p_.module_identities.count("")) {
-          // Legacy implicit-module packages key their exact package identity
-          // by the empty module spelling, even when main_module names the
-          // manifest package.
+        } else if (source_modules.empty() && !p_.explicit_module &&
+                   (!p_.package_identities ||
+                    (p_.module_identities.size() == 1 &&
+                     p_.module_identities.count("")))) {
+          // Legacy implicit-module packages key their exact source identity
+          // by the empty module spelling. This does not authorize borrowing
+          // the main module's identity for an explicit test source.
           defining_module.clear();
-        } else if (source_modules.size() > 1) {
+        } else {
           source_module_authoritative = false;
         }
       }

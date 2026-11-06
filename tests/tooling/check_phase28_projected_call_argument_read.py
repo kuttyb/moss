@@ -75,6 +75,8 @@ def main() -> int:
         "MOSS_TEST_DROP_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT",
         "MOSS_TEST_DUPLICATE_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT",
         "MOSS_TEST_PERTURB_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT",
+        "MOSS_TEST_PERTURB_PROJECTED_CALL_READ_MODULE",
+        "MOSS_TEST_CLEAR_PROJECTED_CALL_READ_MODULE_BOTH",
     ):
         corrupted = run([compiler, "check", str(FIXTURE), "--json"],
                         {**env, hook: "1"})
@@ -98,9 +100,12 @@ def main() -> int:
         r'source_module="([^"]+)"', package_check.stderr)
     expected_module = (
         "module-v1:moss.projected-call-read-test@0.1.0::projected_read_test")
-    if package_rows != [expected_module]:
+    expected_no_import_module = (
+        "module-v1:moss.projected-call-read-test@0.1.0::projected_read_no_import")
+    if sorted(package_rows) != sorted(
+            [expected_module, expected_no_import_module]):
         raise AssertionError(
-            "package test projected-call fact did not retain the exact test "
+            "package tests projected-call facts did not retain their exact source "
             f"module identity: {package_rows!r}\n{package_check.stderr}")
     print("Phase 28 projected call-argument read authority: PASS")
     return 0
