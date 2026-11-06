@@ -1,3 +1,39 @@
+## Phase 28 R7-010 recovery correction (2026-11-05)
+
+This recovery record supersedes stale summary counts below for status reporting.
+The measurements are from earlier tested revisions and do **not** validate the
+current staging HEAD `ff0e6eefcef88ad9fa9b1703ae31f4786db516ab`.
+
+- Last complete frozen-v2 oracle (tested source SHA
+  `ae57a3e3eccd2fbbc4a85f94228fe86102d4929b`): 60/60 semantic PASS, zero engine
+  disagreements, 19/60 all-gate PASS, and 41 provenance-only failures. The
+  older 13/60 oracle summary is obsolete. Preserve the underlying run artifacts
+  and their tested SHA; do not transfer these results to current staging.
+- Last full suites (candidate tested SHA `d4aa51111d62917c4a1caa180266291862c5b88d`):
+  Default 90/167 and EST-shadow 90/167. The comparison baseline was Default
+  166/167 and EST-shadow 166/167 at `150ab36b41e45504aaa400aa717da241be7542fb`.
+  These are earlier-run results, not current staging evidence.
+- Clone debt (inventory tested against `ae57a3e3eccd2fbbc4a85f94228fe86102d4929b`):
+  252 unclassified direct `.clone()` occurrences and 588 qualified
+  `Arc::clone` occurrences. These inventory counts authorize no runtime clone
+  and are not counts of distinct Moss-level copies.
+- Recovered origin staging was `phase28-r7-010-l7-copy-authority` at
+  `ff0e6eefcef88ad9fa9b1703ae31f4786db516ab`. No oracle or full-suite run is
+  recorded on that staging tree or its status-only recovery update; the
+  historical measurements above do not validate current HEAD. Keep the current
+  disposition NO-GO.
+- Independent Team A review of frozen candidate `735a36c3ac2b1a6501721ca746cb7a6293ce6cd1`
+  is **NO-GO**. The isolated Phase 26 C3 `-Werror` gate passes, but overloaded
+  `Choice.next(Int)`/`Choice.next(String)` ReturnValue facts collide
+  (`option[Int]`, empty specialization identity, same method context); the
+  overload-specific correction is required before approval. Phase 26 X1 also
+  fails on this candidate. The exact-SHA report is
+  `docs/phase28/agent2-reviews/R7-010-team-a-735a-review.md`.
+- A scoped Team A follow-up is implementing the overload identity repair from
+  the frozen candidate on a new branch/SHA. The old candidate and its review
+  worktree remain preserved; no Team A implementation is integrated to
+  staging until a new exact-SHA independent review returns GO.
+
 ### Phase 28 R7-010 L7 continuation checkpoint (2026-11-05)
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,

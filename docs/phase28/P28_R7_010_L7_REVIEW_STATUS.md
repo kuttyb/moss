@@ -1,5 +1,29 @@
 # P28-R7-010 — L7 Review Status
 
+> **Recovery correction (2026-11-05):** The snapshot below is historical and
+> its 13/60 oracle result is obsolete. The last complete oracle and clone
+> inventory are recorded against tested source SHA
+> `ae57a3e3eccd2fbbc4a85f94228fe86102d4929b`: 60/60 semantic PASS, zero engine
+> disagreements, 19/60 all-gate PASS, 41 provenance-only failures, 252
+> unclassified direct `.clone()` occurrences, and 588 qualified `Arc::clone`
+> occurrences. The last full suites were 90/167 Default and 90/167 EST-shadow
+> on `d4aa51111d62917c4a1caa180266291862c5b88d`, versus 166/167 for each
+> baseline at `150ab36b41e45504aaa400aa717da241be7542fb`. These results belong
+> to earlier tested SHAs and do not validate current staging `ff0e6eef`; no
+> current-HEAD oracle or full-suite result is claimed. No clone is authorized
+> by the counts.
+
+## Frozen Team A candidate review
+
+Independent exact-SHA review of `735a36c3ac2b1a6501721ca746cb7a6293ce6cd1`
+returned **NO-GO**. The isolated Phase 26 C3 `-Werror` gate passed. The
+overloaded-method identity issue remains open: Int and String `Choice.next`
+overloads produced colliding ReturnValue facts, and the Phase 26 X1 gate failed.
+The detailed repro, commands, and evidence are in
+[`agent2-reviews/R7-010-team-a-735a-review.md`](agent2-reviews/R7-010-team-a-735a-review.md).
+The frozen candidate remains intact and is not integrated. A follow-up must
+produce a new frozen SHA and receive independent review before integration.
+
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  
 **State:** isolated staging; no merge to `phase28-work` or `main`. The HEAD is
