@@ -24,16 +24,19 @@
   `Arc::clone` occurrences; the runtime allowlist remains empty. These current
   counts have distinct inventory meanings from the earlier 252 direct and 588
   qualified Arc observations recorded against `ae57a3e3`.
-- Next repair dependency: retain and serialize the exact EST context on
-  checker-owned ReturnValue authority for imported Section 1 generic bodies,
-  then remap it to the exact caller specialization/occurrence in `.mossi`
-  consumers. Worker tracing on X1 v10's source-free `identity(7)` shows one
-  requirement and one fact for the exact `identity<int>` specialization hash,
-  but the fact's EST context is empty. Imported generic checked-body EST facts
-  use the specialized function context while the ReturnValue producer selects
-  base-callable/source context, leaving a non-authoritative fact. Keep the
-  source-free consumer fail-closed with no fallback. The focused repair is
-  isolated and has not yet been frozen or independently reviewed.
+- The next vertical slice is frozen separately at
+  `3ead174e42b5954f27e7d24113bc7ec5643a8fe9` on
+  `phase28-r7-010-imported-return-authority`, based on `bf5fc461`. It retains
+  checker-issued closed specialization TypeRefs at exact ReturnValue EST
+  occurrences and the exact function specialization context for imported
+  Section 1 generic bodies. Fast Debug requires that exact fact for a unique
+  imported checked-body owner; there is no consumer type fallback. Focused X1
+  v9/v10, native v10 output (`3\n7\n`), drop/perturb/duplicate/wrong-specialization
+  corruption, Phase 27 `.mossi` EST, ReturnValue Default/Shadow, isolated Phase
+  26 C3 `-Werror`, feedback validation, and diff checks pass per the worker.
+  Full suites and frozen oracle have not run on this SHA. Agent 2 adversarial
+  review and Team C read-only verification are in progress. Do not integrate
+  until both exact-SHA reviews return scoped GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
