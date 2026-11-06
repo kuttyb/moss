@@ -17190,3 +17190,11 @@ untouched.
   both received GitHub `fatal error in commit_refs`; remote refs were not
   advanced, and no force push was attempted. Retry normal pushes when the
   remote accepts updates.
+
+
+### Team A projected-call provenance follow-up (2026-11-05)
+
+- Follow-up to frozen candidate `d2a89e77a4ee3f7d94198464c1b471b18f900283` is in progress on branch `phase28-r7-010-team-a-projected-read-l7`; not yet committed/reviewed.
+- Fixed a package test-context regression: projected-call fact provenance now resolves test/benchmark source module from exact checked imports for that source file, applies the implicit-module empty-key rule when present, and emits explicit `UnsupportedSourceModule` rather than passing an unresolved module to `program_module_identity`.
+- Added package fixture `tests/phase28/team_a_ownership/projected_call_package` and extended the projected-read gate to compile its test target via `moss test --check --json`, assert the exact `module-v1:moss.projected-call-read-test@0.1.0::projected_read_test` provenance, and keep fact corruption tests.
+- Current validation: compiler build and `check_phase28_projected_call_argument_read.py` pass; local ownership, specialized ownership, R7-009 primitive-index, agent-feedback and diff-check passed before the final provenance-output assertion was added. Re-run those before freeze. Exact `margo --root packages/regex test --json` no longer returns `MODULE_IDENTITY_UNRESOLVED`; it returns the prior native projected-read invariant, which remains Team B/L7 consumer work.

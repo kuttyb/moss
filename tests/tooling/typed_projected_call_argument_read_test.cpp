@@ -158,6 +158,14 @@ int main() {
   assert(!unsupported_target.is_authoritative());
   assert(unsupported_target.is_intentionally_unsupported());
 
+  auto unsupported_source_module = fact;
+  unsupported_source_module.availability =
+      TypedProjectedCallArgumentReadFactV1::Availability::
+          UnsupportedSourceModule;
+  unsupported_source_module.provenance.defining_module_id.clear();
+  assert(!unsupported_source_module.is_authoritative());
+  assert(unsupported_source_module.is_intentionally_unsupported());
+
   auto nonread_target = fact;
   nonread_target.availability =
       TypedProjectedCallArgumentReadFactV1::Availability::UnsupportedParameterAccess;

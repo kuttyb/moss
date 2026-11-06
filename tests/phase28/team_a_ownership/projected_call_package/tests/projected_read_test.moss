@@ -1,0 +1,11 @@
+module projected_read_test
+
+import projected_read_app
+
+export type MatchSpan:
+  text: String
+
+test "package test projected argument has an exact module identity":
+  var spans = Vector[MatchSpan]()
+  spans.push(MatchSpan(text = "λ"))
+  assertEqual(spans[0].text, "λ")
