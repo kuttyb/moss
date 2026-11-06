@@ -24,10 +24,9 @@
   based on staging `6dae29cb` plus Team A commit `3092243e` as `fd857b2c`.
   Its minimized direct consumer gate passes six corruption cases and
   Native Debug/Optimized/Fast Debug parity; the copied Regex package reports
-  19/19 Debug and 19/19 Release. Final freeze/review and L7 integration are
-  pending. The frozen/pushed Team B candidate is
-  `9acb331117ba12ca6ccaf94c30e30b44d2ad88ac`; L7 registration and combined
-  validation/review are next.
+  19/19 Debug and 19/19 Release. The frozen/pushed Team B candidate is
+  `9acb331117ba12ca6ccaf94c30e30b44d2ad88ac`; L7 is integrating it and will
+  register its gate in the shared runners before combined validation/review.
 - Team C refreshed exact-source audit is frozen/pushed on
   `phase28-r7-010-team-c-refreshed-audit` at
   `1f69ed92599180974ef15ed41689c0e5db6f9ff7`; independent Agent 2 review is
@@ -41,6 +40,11 @@
   failures in the older post-Map.get ledger against the unchanged v2 checker
   expectations; all 14 now match on `7ba77e06`. This is targeted checker
   triage, not a fresh full oracle run or native/Fast Debug/provenance result.
+- Team A's further triage confirms all 14 old-ledger checker outcomes match
+  frozen v2 expectations on `7ba77e06`: ORACLE-07/31/32/33/49/53/55 accept;
+  ORACLE-15/28/30/35/46/48 reject with their frozen diagnostics; ORACLE-54
+  accepts. This supersedes the old checker-failure labels only, not native,
+  Fast Debug, clone-provenance, or full-oracle results.
 - Current disposition remains NO-GO. Remaining: Team B native consumer repair
   and independent review; rerun Team C's frozen oracle, clone provenance and
   corruption/parity audits against the combined SHA; resolve semantic failures
