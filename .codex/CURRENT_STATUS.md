@@ -17840,3 +17840,25 @@ untouched.
 - Full suites and oracle were not run. Developer feedback validation and
   `git diff --check` pass. Exact freeze SHA and Agent 2 / Team C review are
   pending; no push or integration.
+
+### Local specialized ReturnValue authority — reviewed integration
+
+- Frozen implementation `c4a48668b7a1adee0528efa8e8ff1a7770231e54` received
+  scoped GO from Agent 2 and Team C. Their exact-SHA reports are archived at
+  `docs/phase28/agent2-reviews/local-return-authority-c4a48668.md` and
+  `docs/phase28/team-c/TEAM_C_C4A48668_LOCAL_RETURN_VERIFICATION.md`.
+- The reviewed implementation was cherry-picked unchanged to isolated vertical
+  branch `phase28-r7-010-vertical-integration` as `b11e2a38`. It supplies the
+  exact local generic ReturnValue TypeRef in the specialized EST context. The
+  44-scenario Default/Shadow gate passes in independent review; Phase 27 `.mossi`
+  source-context fact-drop remains fail-closed. No implicit copy or clone
+  authorization was added.
+- This integration has not had full Default/Shadow suites, the frozen oracle,
+  or runtime clone provenance audited. Historical suite and oracle measurements
+  remain tied to their previously recorded SHAs and do not validate `b11e2a38`.
+- Next: rerun the end-to-end Default and Shadow matrix on the integrated source
+  to recover the current failure set, then assign the next exact checker /
+  serialization / consumer gap to the single vertical implementation team.
+  Keep independent Team C verification and Agent 2 adversarial review at frozen
+  checkpoints. Overall Phase 28 remains NO-GO; no runtime clone exception is
+  authorized and no merge to `phase28-work` or `main` has occurred.
