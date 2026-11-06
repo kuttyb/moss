@@ -92,6 +92,7 @@ def analysis(rows: list[dict], scenarios: list[dict], churn: list[dict] | None) 
         pops = {
             "all": [c for c in cs if c["post_ms"] is not None],
             "post_pass": [c for c in cs if c["post_status"] == "pass"],
+            "post_pass_existing": [c for c in cs if c["post_status"] == "pass" and not c["new_package"]],
             "clean": [c for c in cs if c["post_status"] == "pass" and c["pre_status"] == "pass"
                       and not c["new_package"]],
         }
@@ -171,6 +172,7 @@ def sections(stats: dict | None, meta: dict) -> list[str]:
                   "| Population | Commits | post p50 ms | post p95 ms | post max ms | pre p50 ms | pre p95 ms |",
                   "|---|---:|---:|---:|---:|---:|---:|"]
         names = {"all": "all commits (incl. failing checks)", "post_pass": "post-edit check passes",
+                 "post_pass_existing": "post passes, package existed (pre may fail)",
                  "clean": "clean edits: pre and post pass, package existed"}
         for k, label in names.items():
             p = pops[k]
@@ -193,6 +195,11 @@ def sections(stats: dict | None, meta: dict) -> list[str]:
                          f"{f(c['specialization_evaluations'], 0)} | {f(c['specialization_keys'], 0)} | "
                          f"{f(c['checker_runs'], 0)} | {pops[k]['counters_post_sum']['functions_analyzed']} |")
         lines.append("")
+        noop = [c for c in stats["commits"] if c["mode"] == mode and c["post_status"] == "pass"
+                and c["post_checker_runs"] == 0]
+        lines += [f"Passing post-edit checks that started NO checker run (margo answered from its package "
+                  f"fingerprint, the changed files are outside the fingerprinted inputs): {len(noop)} commits "
+                  f"({', '.join('#' + str(c['index']) for c in noop) or 'none'}).", ""]
     cold = [c for c in stats["commits"] if c["mode"] == "cold"]
     lines += ["### Per commit (cold)", "",
               "| # | Commit | Entries | Pre | Post | Pre ms | Post ms | Post fns analyzed | Post checker runs | Subject |",
