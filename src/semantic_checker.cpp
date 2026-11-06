@@ -31262,6 +31262,122 @@ class Checker {
                   break;
                 }
               }
+              // A local generic body may have a closed return TypeRef from the
+              // exact checked specialization while its ReturnValue EST root
+              // has no fact in that specialization context (for example, a
+              // pipeline whose final stage is a primitive count). Materialize
+              // only that checker-selected type at the exact local function,
+              // specialization, statement and ReturnValue occurrence.
+              if (checking_specialization_ && current_check_result_function_ &&
+                  !current_check_result_function_->imported_checked_body_projected &&
+                  return_owner == current_check_result_function_ &&
+                  current_check_result_function_->defining_module ==
+                      p_.main_module &&
+                  current_semantic_context_ ==
+                      "fn:" + current_check_result_function_->name) {
+                const Function& owner = *current_check_result_function_;
+                const auto owner_entry = functions_.find(owner.name);
+                const size_t owner_declaration_count = std::count_if(
+                    p_.functions.begin(), p_.functions.end(),
+                    [&](const Function& candidate) {
+                      return &candidate == &owner &&
+                          candidate.name == owner.name;
+                    });
+                const size_t owner_body_statement_count = std::count_if(
+                    owner.body.begin(), owner.body.end(),
+                    [&](const Stmt& candidate) { return &candidate == &s; });
+                const size_t specialization_count = std::count_if(
+                    owner.specializations.begin(), owner.specializations.end(),
+                    [&](const FunctionSpecialization& candidate) {
+                      return &candidate == checking_specialization_ &&
+                          candidate.stable_type_key ==
+                              checking_specialization_->stable_type_key;
+                    });
+                if (owner_entry == functions_.end() ||
+                    owner_entry->second != &owner || owner_declaration_count != 1 ||
+                    owner_body_statement_count != 1 ||
+                    specialization_count != 1 ||
+                    !checking_specialization_->return_type_ref ||
+                    !checking_specialization_->return_type_ref->is_closed() ||
+                    !fact.expression_type || !fact.expression_type->is_closed() ||
+                    !checking_specialization_->return_type_ref->structurally_equal(
+                        *fact.expression_type) || !arena ||
+                    fact.expression_occurrence_id == UINT32_MAX ||
+                    fact.specialization_context != functional_function_context(
+                        owner, checking_specialization_) ||
+                    fact.specialization_identity !=
+                        checking_specialization_->stable_type_key)
+                  err(s.line,
+                      "local specialized ReturnValue lacks exact checked owner/type identity",
+                      "MOSS_INTERNAL_INVARIANT");
+                const string local_context = functional_function_context(
+                    owner, checking_specialization_);
+#ifdef MOSS_TEST_BUILD
+                if (std::getenv(
+                        "MOSS_TEST_CONTRADICT_EXISTING_LOCAL_SPECIALIZED_RETURN_EST_FACT")) {
+                  auto wrong_type = moss::Type::parse_canonical("string");
+                  if (!wrong_type || !(*wrong_type)->is_closed())
+                    err(s.line,
+                        "test could not create contradictory existing ReturnValue TypeRef",
+                        "MOSS_INTERNAL_INVARIANT");
+                  est::SemanticFacts contradictory_facts;
+                  contradictory_facts.type = *wrong_type;
+                  arena->record_facts(fact.expression_occurrence_id,
+                                      local_context,
+                                      std::move(contradictory_facts));
+                }
+#endif
+                if (const auto* existing = arena->facts(
+                        fact.expression_occurrence_id, local_context);
+                    existing && existing->type) {
+                  if (existing->type->is_closed()
+                          ? !existing->type->structurally_equal(
+                                *checking_specialization_->return_type_ref)
+                          : existing->type->kind != TypeKind::InferenceVar)
+                    err(s.line,
+                        "local specialized ReturnValue EST context contradicts checked TypeRef",
+                        "MOSS_INTERNAL_INVARIANT");
+                }
+#ifdef MOSS_TEST_BUILD
+                const char* selected_function = std::getenv(
+                    "MOSS_TEST_SELECT_LOCAL_SPECIALIZED_RETURN_EST_FACT");
+                const bool selected = !selected_function ||
+                    owner.name == selected_function;
+                const bool drop_local_fact = selected && std::getenv(
+                    "MOSS_TEST_DROP_LOCAL_SPECIALIZED_RETURN_EST_FACT");
+                const bool perturb_local_fact = selected && std::getenv(
+                    "MOSS_TEST_PERTURB_LOCAL_SPECIALIZED_RETURN_EST_FACT");
+#else
+                const bool drop_local_fact = false;
+                const bool perturb_local_fact = false;
+#endif
+                if (!drop_local_fact) {
+                  TypeRef retained_type = checking_specialization_->return_type_ref;
+                  if (perturb_local_fact) {
+                    auto wrong_type = moss::Type::parse_canonical("string");
+                    if (!wrong_type || !(*wrong_type)->is_closed())
+                      err(s.line,
+                          "test could not create contradictory local ReturnValue TypeRef",
+                          "MOSS_INTERNAL_INVARIANT");
+                    retained_type = *wrong_type;
+                  }
+                  est::SemanticFacts local_return_facts;
+                  local_return_facts.type = retained_type;
+                  arena->record_facts(fact.expression_occurrence_id,
+                                      local_context,
+                                      std::move(local_return_facts));
+                }
+                const auto* retained = drop_local_fact ? nullptr : arena->facts(
+                    fact.expression_occurrence_id, local_context);
+                if (!retained || !retained->type ||
+                    !retained->type->is_closed() ||
+                    !retained->type->structurally_equal(
+                        *checking_specialization_->return_type_ref))
+                  err(s.line,
+                      "exact local specialized ReturnValue EST type fact is missing or contradictory",
+                      "MOSS_INTERNAL_INVARIANT");
+                fact.est_fact_context = local_context;
+              }
 #ifdef MOSS_TEST_BUILD
               const char* perturb_imported_context = std::getenv(
                   "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT");

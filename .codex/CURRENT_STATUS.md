@@ -17805,3 +17805,38 @@ untouched.
   Their GO is limited to the Root-ingress slice and does not grant any runtime
   clone exception or close Phase 28. The reviewed slice is integrated only on
   this isolated vertical branch; no push or production merge occurred.
+
+### Local specialized ReturnValue EST authority follow-up
+
+- Isolated worktree `tmp/phase28-r7-010-local-return-authority`, branch
+  `phase28-r7-010-local-return-authority`, is based on exact integrated source
+  `c043ea07eb2e284f69302ea08ebd4a96fa586b35`. On that base,
+  `local_pipeline_tuples.moss` reproduced in native generation and Fast Debug:
+  `MOSS_INTERNAL_INVARIANT return-value EST type fact missing outside exact
+  imported owner`. The source is a local generic function returning
+  `parts |> count` and does not itself cross `.mossi`.
+- The checker now retains the closed TypeRef from the exact selected local
+  function specialization at its ReturnValue EST root, after validating the
+  unique function owner, body statement, specialization identity, and exact
+  TypeRef agreement. Existing contradictory closed TypeRefs fail closed;
+  absent facts are materialized only for the exact current-main-module local
+  function. Imported Section 1/2 paths are excluded and remain governed by
+  their prior checked authority transport.
+- An initial scope predicate using only
+  `imported_checked_body_projected` caused the Phase 27 provider source-fact
+  drop check to pass unexpectedly: that imported generic owner has the flag
+  unset. Narrowing additionally to `owner.defining_module == p_.main_module`
+  restored this import boundary. The Phase 27 gate now passes its source-context
+  drop test, as well as raw Default/Shadow `.mossi` parity.
+- `make --jobs="$(nproc)" COMPILER_DIR=tmp/phase28-local-return-authority/build/compiler moss-dev`
+  passes. The new registered `check_phase28_local_return_authority.py` passes
+  44 scenarios in Default and 44 in EST-shadow: local checker TypeRef/context
+  assertions, native Debug/Optimized compilation and output, Fast Debug parity,
+  checker drop/perturb/contradictory EST fact cases, and consumer requirement/
+  fact drop/duplicate/perturb/context/specialization corruption cases. The
+  ReturnValue None gate passes both modes; the ReturnValue transfer gate passes
+  both modes with Native Debug/Optimized and Fast Debug parity, and X1 passes
+  with 40 Fast Debug trace events. Phase 27 `.mossi` EST passes after narrowing.
+- Full suites and oracle were not run. Developer feedback validation and
+  `git diff --check` pass. Exact freeze SHA and Agent 2 / Team C review are
+  pending; no push or integration.
