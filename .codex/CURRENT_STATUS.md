@@ -44,8 +44,8 @@
   PASS, 41 provenance-only failures; clone totals match intake at 252
   unclassified/unauthorized, with no new authorization. Three provenance
   evidence hashes changed without count/classification changes.
-- Fresh validation on integrated source commit `9772cf31` (current branch HEAD
-  `87a81cef` differs only in status/report documentation): `make check` and
+- Fresh validation on integrated source commit `9772cf31` (subsequent commits
+  on the vertical branch changed only status/report documentation): `make check` and
   `make check-shadow` each report 97/167 PASS, 69 FAIL, 1 SKIP. Both have the
   same three pinned performance corpus SHA mismatches previously recorded.
   Sequential X1 v9/v10 and Phase 27 `.mossi` gates pass on the same compiler
