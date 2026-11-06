@@ -18155,3 +18155,9 @@ and `--validate-only` (80 fixtures, 68 scenarios) pass; `run.py selftest` 51/51;
 `check_agent_feedback.py` passes; `make check`: only the 3 pre-existing failures (check_phase25_conformance,
 check_phase27_accepts_rustc, shard_swarm_cases). No src/ or compiler_torture change. Not done: dependents of a changed
 package are not checked; churn covers 14 analysable edit commits only (29 of 50 trees do not check with today's compiler).
+
+Team 4 review fixes (tag `bench-t4-done-r2`, suite 0.4.1): bench/fixture files are entry points (moss check + MOSS_MODULE_PATH),
+`effectively_new` scaffolds, per-step spread guard (1.3, 3 attempts), mid-run block probes, reference-pin message, churn
+breakdown (4 informative edits), README limits/disclosures. Final run `results/b6-final` (drift 4.8%, 3 blocks and 2 steps
+re-measured). selftest 60/60, validate-only, determinism, gate all, replay-check --with-churn pass; make check: only the
+3 baseline failures. No src/ change.
