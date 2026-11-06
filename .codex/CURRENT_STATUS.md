@@ -63,6 +63,19 @@
   `143f1e8807ebd24f39be867f640d174b208decbe0c21c8b8960de124b44504e6`; its
   report and artifacts are archived at
   `docs/phase28/team-c/TEAM_C_ORACLE_1D5FEB.md`. Independent verdict is NO-GO.
+- The read-only `R7-010 Clone Provenance Root-Cause Audit` Team C pass traced
+  all 258 raw generated `.clone()` rows on `1d5feb1e`: 252 unclassified rows
+  repeat three shared-runtime contexts from `executor_runtime.cpp` (executor
+  handle, affinity configuration Vec, and BranchScope runtime count); 4 rows
+  are Root-ingress Worker handle captures whose checker facts explicitly
+  disallow Moss value copies; 2 rows are checker-backed `copy(v[0])` operations.
+  This evidence suggests the 252 are mechanical runtime clones, but their
+  sidecars still mark them unclassified and no runtime clone is authorized.
+  Separate current source inventory: 9 qualified `Arc::clone` sites and 47
+  literal `.clone()` text lines (the latter includes comments/templates).
+  The audit names lifetime/type evidence still needed to conclude “spurious”
+  and is archived at `docs/phase28/team-c/TEAM_C_CLONE_AUDIT_1D5FEB.md`;
+  Agent 2 adversarial cross-check is still pending.
 
 ### Current integrated checkpoint — `bf5fc4616aa4dadd7ca4ef30a967e80237fef884`
 
