@@ -56,11 +56,13 @@ The previous comparison is Team C's independently reviewed full run at source
 `d82183c4424cc4182a531759a35dbb35d63df9188d92e1b8e76c50fa2f7bbec5`). The
 60-row comparison is in
 [`P28_R7_010_FIXTURE_DELTAS_3417BEDC.md`](P28_R7_010_FIXTURE_DELTAS_3417BEDC.md).
-Every fixture has the same all-gates, semantic and provenance verdict as the
-prior ledger. The sole raw-JSON difference is ORACLE-54's absolute
-`source_file` path in checker stdout, which follows the isolated worktree root;
-diagnostic, checker verdict, semantic result, engine outcomes and provenance
-outcomes are identical.
+Every fixture has identical all-gates, semantic, per-mode and provenance
+verdicts and outcomes compared with the prior ledger. Raw JSON differs in
+nondeterministic timing values in all 60 rows. Path-derived fact/variant IDs
+and Rust context hashes differ in ORACLE-10A, ORACLE-43 and ORACLE-45; ORACLE-54
+also serializes its different absolute `source_file` path in checker stdout.
+These raw-field differences do not change diagnostics, fixture expectations,
+engine outputs or provenance dispositions.
 
 ## Direct `.clone()` occurrences and authority
 
