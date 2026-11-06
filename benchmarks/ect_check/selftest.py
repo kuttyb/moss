@@ -172,6 +172,7 @@ def run(moss: Path, margo: Path) -> int:
             check(f"template error: {label}", "\n" not in str(exc), str(exc)[:100], results)
 
     scenario_tests(R, tc, manifest, scratch, results)
+    replay_tests(R, tc, manifest, scratch, results)
     shutil.rmtree(scratch / "work", ignore_errors=True)
     print(f"selftest: {sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
@@ -336,3 +337,164 @@ def scenario_tests(R, tc, manifest, scratch, results) -> None:
           "rep-salted value", results)
     for d in (d0, d1, scratch / "wt-a", scratch / "wt-b"):
         shutil.rmtree(d, ignore_errors=True)
+
+
+SYN_BASE = """type Box:
+  v: Int
+
+fn leaf(b: Box) -> Int:
+  return b.v
+
+fn mid(b: Box) -> Int:
+  return leaf(b) + 1
+
+fn other(x: Int) -> Int:
+  return x * 2
+
+fn main():
+  var b = Box(v: 1)
+  echo mid(b)
+  echo other(2)
+"""
+
+
+def replay_tests(R, tc, manifest, scratch, results) -> None:
+    """B6 replay and summary churn: classifier on injected/comment-only edits,
+    frozen spec verification, replay rows and determinism, gate plumbing."""
+    import copy
+    import subprocess
+    import churn
+    import replay as RP
+    import scenarios as S
+
+    # --- churn classifier, pure ----------------------------------------------
+    def fn(access="READ", text="x", eff=False):
+        return {"summary": {"types": {"t": 1}, "access": {"p": access}, "raises": {"r": 0},
+                            "effects": {"io": eff}}, "text": text}
+    pre = {"a": fn(), "b": fn(), "c": fn()}
+    r = churn.classify(pre, {**pre, "a": fn(text="y")})
+    check("churn: edited function with an unchanged summary is not a change",
+          r["edited"] == ["a"] and not r["any_change"], str(r["edited"]), results)
+    r = churn.classify(pre, {**pre, "a": fn(access="WRITE", text="y"), "b": fn(access="WRITE")})
+    check("churn: own change and ripple are reported separately, by category",
+          r["changed_own"] == {"a": ["access"]} and r["changed_other"] == {"b": ["access"]}
+          and r["categories_other"] == ["access"], str(r["changed"]), results)
+    r = churn.classify(pre, {"a": fn(), "b": fn(), "d": fn()})
+    check("churn: added/removed functions are membership only, not summary changes",
+          r["added"] == ["d"] and r["removed"] == ["c"] and r["membership_only"] and not r["any_change"],
+          "membership_only", results)
+
+    # --- churn classifier, end to end through the real queries ---------------
+    syn = scratch / "churn-syn"
+    shutil.rmtree(syn, ignore_errors=True)
+    syn.mkdir(parents=True)
+    variants = {"base": SYN_BASE,
+                "comment": SYN_BASE.replace("  return b.v\n", "  # reworded comment\n  return b.v\n"),
+                "inject": SYN_BASE.replace("  return b.v\n", "  b.v = b.v + 1\n  return b.v\n")}
+    funcs = {}
+    for name, src in variants.items():
+        f = syn / f"{name}.moss"
+        f.write_text(src)
+        got = churn.collect_file(tc, syn, f, [])
+        funcs[name] = got["functions"]
+        if not got["ok"]:
+            check(f"churn: queries answer on synthetic '{name}'", False, str(got["error"]), results)
+    if all(len(v) == 3 for v in funcs.values()):
+        c = churn.classify(funcs["base"], funcs["comment"])
+        check("churn: comment-only edit is detected as an edit and ignored as a summary change",
+              c["edited"] == ["entity-v1:function:leaf"] and not c["any_change"], str(c["edited"]), results)
+        i = churn.classify(funcs["base"], funcs["inject"])
+        check("churn: deliberately injected summary change is detected (own) and its caller ripple (other); "
+              "an unrelated function is untouched",
+              list(i["changed_own"]) == ["entity-v1:function:leaf"]
+              and list(i["changed_other"]) == ["entity-v1:function:mid"]
+              and "entity-v1:function:other" not in i["changed"] and "access" in i["categories_own"],
+              str(i["changed"]), results)
+    shutil.rmtree(syn, ignore_errors=True)
+
+    # --- frozen B6 spec ---------------------------------------------------------
+    steps = [s for s in manifest["scenarios"] if s["kind"] == RP.KIND]
+    sc = next(s for s in steps if s["id"].startswith("b6_02_"))
+    S.verify_frozen(manifest, [], [sc])
+    check("replay: genuine step spec, range and git blobs verify", len(steps) == 50 and
+          manifest["replay"]["count"] == 50, f"{len(steps)} steps", results)
+    forged = copy.deepcopy(sc)
+    forged["entries"][0]["expect_post"]["status"] = "fail"
+    forged["sha256"] = C.text_sha256(C.canonical_json({k: v for k, v in forged.items() if k != "sha256"}))
+    forged_manifest = copy.deepcopy(manifest)
+    forged_manifest["scenarios"] = [forged if s["id"] == sc["id"] else s for s in manifest["scenarios"]]
+    try:
+        S.verify_frozen(forged_manifest, [], [forged])
+        check("replay: consistently re-hashed forged expectation is refused by the frozen range", False, "accepted", results)
+    except C.ToolError as exc:
+        check("replay: consistently re-hashed forged expectation is refused by the frozen range",
+              "range" in str(exc), str(exc)[:70], results)
+    forged = copy.deepcopy(sc)
+    forged["changes"][0]["new_blob"] = "1" * 40
+    try:
+        RP.verify_spec_against_git(forged)
+        check("replay: spec naming a wrong blob id is refused", False, "accepted", results)
+    except C.ToolError as exc:
+        check("replay: spec naming a wrong blob id is refused", "blob" in str(exc), str(exc)[:70], results)
+    work = scratch / "replay-apply"
+    RP.materialize(sc["parent"], work)
+    victim = work / sc["changes"][0]["path"]
+    victim.write_text(victim.read_text() + "\n# drift\n")
+    try:
+        RP.apply_changes(sc, work)
+        check("replay: applying onto a drifted pre-image is refused", False, "applied", results)
+    except C.ToolError as exc:
+        check("replay: applying onto a drifted pre-image is refused", "pre-image" in str(exc), str(exc)[:70], results)
+    RP.materialize(sc["parent"], work)
+    RP.apply_changes(sc, work)
+    check("replay: applied tree equals the commit's tracked tree", RP.verify_tree_matches_commit(sc, work),
+          "tracked paths", results)
+    shutil.rmtree(work, ignore_errors=True)
+    check("replay: expectation compares status, exit code and diagnostic",
+          RP.expect_ok({"status": "fail", "exit_code": 1, "diag": "A|x"}, {"ok": False, "exit_code": 1,
+                       "diagnostics": [{"code": "A", "message": "x"}]})
+          and not RP.expect_ok({"status": "fail", "exit_code": 1, "diag": "A|x"}, {"ok": False, "exit_code": 1,
+                               "diagnostics": [{"code": "A", "message": "y"}]})
+          and not RP.expect_ok({"status": "pass", "exit_code": 0, "diag": None}, {"ok": True, "exit_code": 0,
+                               "timed_out": True}), "diagnostic mismatch and timeout rejected", results)
+
+    # --- replay rows, determinism --------------------------------------------
+    worktrees_before = subprocess.run(["git", "worktree", "list"], cwd=C.REPO_ROOT, text=True,
+                                      capture_output=True).stdout
+    rows = RP.measure_step(sc, tc, None, "cold", 3, 1, scratch / "replay-rows")
+    check("replay: cold rows pre and post exist, match the frozen expectation, carry counters",
+          [r["step"] for r in rows] == ["pre", "post"] and all(r["status_ok"] for r in rows)
+          and all(r["checker_runs"] for r in rows) and all(r["functions_analyzed"] is not None for r in rows),
+          str([(r["step"], round(r["wall_ms_median"]), r["functions_analyzed"]) for r in rows]), results)
+    a = RP.fingerprint_step(sc, tc, scratch / "replay-fp")
+    b = RP.fingerprint_step(sc, tc, scratch / "replay-fp")
+    check("replay: classification and counters repeat exactly across runs", a == b and bool(a["counters"]),
+          str(a["counters"].get("post")), results)
+    new_sc = next(s for s in steps if s["new_package"])
+    nrows = RP.measure_step(new_sc, tc, None, "cold", 3, 1, scratch / "replay-new")
+    check("replay: a commit adding a package has a post row only", [r["step"] for r in nrows] == ["post"],
+          new_sc["id"], results)
+
+    # --- gate plumbing for replay steps -----------------------------------------
+    wrapper = scratch / "client.py"
+    wrapper.write_text(WRAPPER)
+
+    def tmpl(mode):
+        return f"python3 {shlex.quote(str(wrapper))} {{kind}} {{path}} {{moss}} {{margo}} {mode}"
+    for mode, expect in (("identity", True), ("mutate", False), ("bookkeeping", True), ("diag", False)):
+        g = R.run_gate([], tc, tc, tmpl(mode), scratch / f"gate-replay-{mode}", [sc])
+        check(f"gate: replay step with a {mode} client {'passes' if expect else 'fails'}",
+              g["passed"] == expect, f"passed={g['passed']}", results)
+    standin = scratch / "standin.py"
+    standin.write_text(STANDIN)
+    cache = scratch / "standin-cache-replay"
+    shutil.rmtree(cache, ignore_errors=True)
+    t = (f"python3 {shlex.quote(str(standin))} {{kind}} {{path}} {{root}} {{moss}} {{margo}} {shlex.quote(str(cache))}")
+    g = R.run_gate([], tc, tc, t, scratch / "gate-replay-standin", [sc])
+    wrows = RP.measure_step(sc, tc, t, "warm", 3, 1, scratch / "replay-warm")
+    check("gate/warm: stand-in client (SELFTEST ONLY) passes the replay gate and yields warm rows",
+          g["passed"] and [r["step"] for r in wrows] == ["pre", "post"] and all(r["mode"] == "warm" for r in wrows),
+          str([(r["step"], round(r["wall_ms_median"], 1)) for r in wrows]), results)
+    after = subprocess.run(["git", "worktree", "list"], cwd=C.REPO_ROOT, text=True, capture_output=True).stdout
+    check("replay: no worktree registered or left behind in the main repository", after == worktrees_before,
+          "git worktree list unchanged", results)

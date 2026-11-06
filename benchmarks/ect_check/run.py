@@ -28,7 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ect_common as C  # noqa: E402
 import edit_evidence  # noqa: E402
 import report_dag  # noqa: E402
+import report_replay  # noqa: E402
 import report_scenarios  # noqa: E402
+import replay as RP  # noqa: E402
+import churn as CH  # noqa: E402
 import scenarios as S  # noqa: E402
 
 MIN_REPS = 3
@@ -185,6 +188,8 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
         sc_results = [S.gate_scenario(sc, S.fixture_of(manifest, sc), reference, candidate,
                                       candidate_template, run_dir)
                       for sc in scenarios if sc["kind"] == "edit_sequence"]
+        sc_results += [RP.gate_step(sc, reference, candidate, candidate_template, run_dir)
+                       for sc in scenarios if sc["kind"] == RP.KIND]
     passed = all(r["identical"] and r["reference_matches_expected"] for r in results) and \
         all(r["passed"] for r in sc_results)
     return {"passed": passed, "fixtures": len(results), "scenarios": sc_results,
@@ -352,7 +357,8 @@ WT_CSV_FIELDS = ["compiler_flavor", "scenario", "base_fixture", "mode", "n", "sc
 
 def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                   metrics: dict | None, scenarios: list[dict] | None = None,
-                  evidence: list[dict] | None = None, wt_rows: list[dict] | None = None) -> None:
+                  evidence: list[dict] | None = None, wt_rows: list[dict] | None = None,
+                  churn_records: list[dict] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     scenarios = scenarios or []
     wt_rows = wt_rows or []
@@ -370,9 +376,12 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+    replay_stats = report_replay.analysis(rows, scenarios, churn_records)
+    if replay_stats:
+        report_replay.write_csv(out / "results_replay.csv", replay_stats)
     (out / "results.json").write_text(json.dumps(
         {"meta": meta, "rows": rows, "worktree_rows": wt_rows, "evidence": evidence,
-         "gate": gate, "metrics": metrics,
+         "gate": gate, "metrics": metrics, "replay": replay_stats, "churn": churn_records,
          "dag_analysis": report_dag.analysis(rows)}, indent=2) + "\n")
 
     lines = ["# ECT Check Benchmark - Local Report", "",
@@ -436,6 +445,7 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
 
     lines += report_dag.sections([r for r in rows if not r.get("scenario")])
     lines += report_scenarios.sections(rows, scenarios, evidence, wt_rows, meta)
+    lines += report_replay.sections(replay_stats, meta)
 
     lines += ["## 2. Correctness gate (reference vs candidate)", ""]
     if gate is None:
@@ -529,6 +539,20 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
               "- Counters are `n/a` for warm mode: a future client is not required to "
               "expose them.", ""]
     (out / "LOCAL_REPORT.md").write_text("\n".join(lines))
+
+
+def run_churn(b6: list[dict], tc: C.Toolchain, run_dir: Path) -> list[dict]:
+    """Summary churn for each replayed commit (untimed; runs after every timed
+    measurement so its many query processes cannot disturb a timing)."""
+    records = []
+    for sc in b6:
+        rec = RP.churn_step(sc, tc, run_dir / "work" / f"churn-{sc['id']}")
+        records.append(rec)
+        print(f"churn {sc['id']}: " + (
+            f"{rec['n_changed']} summaries changed (own {rec['n_changed_own']}, other {rec['n_changed_other']}), "
+            f"+{len(rec['added'])}/-{len(rec['removed'])} functions" if rec["available"]
+            else f"unavailable ({rec['unavailable_reason'][:90]})"), flush=True)
+    return records
 
 
 # --------------------------------------------------------------------------
@@ -660,6 +684,8 @@ def main() -> int:
     b.add_argument("--no-gate", action="store_true")
     b.add_argument("--no-evidence", action="store_true",
                    help="skip the B3 query evidence (CPU heavy, runs after the timed loop)")
+    b.add_argument("--no-churn", action="store_true",
+                   help="skip the B6 summary-churn pass (untimed; many query processes, runs after the timed loop)")
     b.add_argument("--no-metrics", action="store_true")
     b.add_argument("--metrics-modes", default="check,build",
                    help="comma list of margo modes: check (--check) and/or build")
@@ -678,6 +704,15 @@ def main() -> int:
                    "sdk/ and packages/ (e.g. benchmarks/ect_check/fixtures/trivial/pkg_pass)")
     v = sub.add_parser("validate")
     add_common(v)
+    rr = sub.add_parser("replay-record", help="record the reference expectations of every B6 step "
+                        "(writes replay_expectations.json; run before generate.py --regenerate)")
+    add_common(rr)
+    rc = sub.add_parser("replay-check", help="B6 determinism: run every selected step twice; "
+                        "classification and counters must repeat exactly (timing excluded)")
+    add_common(rc)
+    rc.add_argument("--with-churn", action="store_true", help="also repeat the summary-churn pass")
+    ch = sub.add_parser("churn", help="B6 summary churn only (untimed)")
+    add_common(ch)
     s = sub.add_parser("selftest", help="RSS-independence and gate self-tests")
     add_common(s)
 
@@ -694,10 +729,46 @@ def main() -> int:
         return subprocess.call([sys.executable, str(C.SUITE_DIR / "generate.py"),
                                 "--validate-only", "--moss", args.moss, "--margo", args.margo])
 
+    if cmd == "replay-record":
+        tc = C.Toolchain(Path(args.moss), Path(args.margo))
+        run_id, run_dir = make_run_dir(args)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        exp = RP.record_expectations(tc, run_dir)
+        RP.EXPECTATIONS_PATH.write_text(json.dumps(exp, indent=1, sort_keys=True) + "\n")
+        print(f"recorded {len(exp)} steps -> {RP.EXPECTATIONS_PATH}")
+        return 0
+
     S.verify_frozen(manifest, fixtures, pick_scenarios(manifest, args))
     tc = C.Toolchain(Path(args.moss), Path(args.margo))
     run_id, run_dir = make_run_dir(args)
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    if cmd == "replay-check":
+        b6 = [sc for sc in pick_scenarios(manifest, args) if sc["kind"] == RP.KIND]
+        bad = []
+        for sc in b6:
+            a = RP.fingerprint_step(sc, tc, run_dir)
+            b = RP.fingerprint_step(sc, tc, run_dir)
+            exp_ok = all(RP.expect_ok_obs(RP.expectation_for(sc, l), o) for l, o in a["observed"].items())
+            same = a == b
+            print(f"{sc['id']}: repeat {'identical' if same else 'DIFFERS'}; frozen expectations "
+                  f"{'met' if exp_ok else 'NOT MET'}", flush=True)
+            if not (same and exp_ok):
+                bad.append(sc["id"])
+        if args.with_churn:
+            ra, rb = run_churn(b6, tc, run_dir), run_churn(b6, tc, run_dir)
+            for x, y in zip(ra, rb):
+                if x != y:
+                    bad.append(f"churn:{x['scenario']}")
+        print("replay-check:", "PASS" if not bad else f"FAIL {bad}", f"({len(b6)} steps)")
+        return 0 if not bad else 1
+
+    if cmd == "churn":
+        b6 = [sc for sc in pick_scenarios(manifest, args) if sc["kind"] == RP.KIND]
+        recs = run_churn(b6, tc, run_dir)
+        (run_dir / "churn.json").write_text(json.dumps(recs, indent=2, sort_keys=True) + "\n")
+        print(run_dir / "churn.json")
+        return 0
 
     if cmd == "gate":
         ref, cand = gate_toolchains(args)
@@ -755,7 +826,13 @@ def main() -> int:
         fx = S.fixture_of(manifest, sc)
         for mode in modes:
             template = args.warm_client_cmd if mode == "warm" else None
-            if sc["kind"] == "edit_sequence":
+            if sc["kind"] == RP.KIND:
+                new = RP.measure_step(sc, tc, template, mode, args.reps, args.warm_primes, run_dir,
+                                      not args.no_warmup)
+                rows.extend(new)
+                print(f"{mode:4} {sc['id']}: " + ", ".join(
+                    f"{r['step']} {r['wall_ms_median']:.1f} ms ({r['status']})" for r in new), flush=True)
+            elif sc["kind"] == "edit_sequence":
                 new = S.measure_scenario(sc, fx, tc, template, mode, args.reps, args.warm_primes,
                                          run_dir, not args.no_warmup)
                 rows.extend(new)
@@ -780,6 +857,11 @@ def main() -> int:
         evidence = [edit_evidence.evidence_for(sc, S.fixture_of(manifest, sc), tc.moss,
                                                run_dir / "evidence") for sc in b3]
         (run_dir / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+    churn_records = None
+    b6 = [sc for sc in chosen_scenarios if sc["kind"] == RP.KIND]
+    if b6 and not args.no_churn:
+        churn_records = run_churn(b6, tc, run_dir)
+        (run_dir / "churn.json").write_text(json.dumps(churn_records, indent=2, sort_keys=True) + "\n")
     gate = None
     if not args.no_gate:
         ref, cand = gate_toolchains(args)
@@ -797,7 +879,7 @@ def main() -> int:
             "platform": platform.platform(), "cpus": os.cpu_count(),
             "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise,
             "startup": startup}
-    write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows)
+    write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows, churn_records)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.
     # Warm rows (a candidate client) only produce IMPROVED/REGRESSED notes.
     ok = all(r["status_ok"] for r in rows if r["mode"] == "cold") and \

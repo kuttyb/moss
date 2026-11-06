@@ -27,16 +27,19 @@ import ect_common as C
 def select_scenarios(manifest: dict, ids: list[str] | None, fixture_ids: set[str] | None = None) -> list[dict]:
     scenarios = manifest.get("scenarios", [])
     if ids:
+        families = {s["family"] for s in scenarios}
         wanted = set(ids)
-        chosen = [s for s in scenarios if s["id"] in wanted]
-        missing = wanted - {s["id"] for s in chosen}
+        chosen = [s for s in scenarios if s["id"] in wanted or s["family"] in wanted]
+        missing = wanted - {s["id"] for s in chosen} - families
         if missing:
             raise SystemExit(f"unknown scenario id(s): {sorted(missing)}")
         return chosen
     return scenarios
 
 
-def fixture_of(manifest: dict, sc: dict) -> dict:
+def fixture_of(manifest: dict, sc: dict) -> dict | None:
+    if sc.get("fixture") is None:     # B6 replay steps are derived from git history
+        return None
     return next(f for f in manifest["fixtures"] if f["id"] == sc["fixture"])
 
 
@@ -178,7 +181,8 @@ def verify_frozen(manifest: dict, fixtures: list[dict], scenarios: list[dict]) -
     by_id = {f["id"]: f for f in manifest["fixtures"]}
     needed = {f["id"]: f for f in fixtures}
     for sc in scenarios:
-        needed.setdefault(sc["fixture"], by_id[sc["fixture"]])
+        if sc["fixture"] is not None:
+            needed.setdefault(sc["fixture"], by_id[sc["fixture"]])
     for fx in needed.values():
         if C.tree_sha256(C.FIXTURES_DIR / fx["path"]) != fx["sha256"]:
             raise C.ToolError(f"fixture {fx['id']} does not match its frozen SHA-256; "
@@ -187,6 +191,12 @@ def verify_frozen(manifest: dict, fixtures: list[dict], scenarios: list[dict]) -
         body = {k: v for k, v in sc.items() if k != "sha256"}
         if C.text_sha256(C.canonical_json(body)) != sc["sha256"]:
             raise C.ToolError(f"scenario {sc['id']} does not match its frozen SHA-256; refusing to run")
+    replays = [sc for sc in scenarios if sc.get("kind") == "replay_step"]
+    if replays:
+        import replay
+        replay.verify_range(manifest)
+        for sc in replays:
+            replay.verify_spec_against_git(sc)
 
 
 def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolchain,

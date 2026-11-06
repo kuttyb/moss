@@ -1,6 +1,6 @@
 {
   "suite_name": "moss_ect_check",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "seed": 20261105,
   "total_fixtures": 80,
   "generators": {
@@ -12,7 +12,8 @@
     "dag_fanin": "1.0.0",
     "b3_edits": "1.0.0",
     "b4_cold_warm": "1.0.0",
-    "b5_worktrees": "1.0.0"
+    "b5_worktrees": "1.0.0",
+    "b6_replay": "1.0.0"
   },
   "fixtures": [
     {
@@ -2955,6 +2956,4318 @@
         "message": "ect-check base"
       },
       "sha256": "14c12090eed46a8bc3df3615a4b07b3ebf5586a1e2e67dee319bcc0180d6490b"
+    },
+    {
+      "id": "b6_01_a25a6fe1",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 1,
+      "commit": "a25a6fe195a7d30e5eb71aee2766630409816d99",
+      "parent": "1bdb548ad7cb6808b1b9d97eaaabb6a8501a4ebd",
+      "subject": "Phase 24 Team M: Implement L7 closeout repairs and robust benchmark loops",
+      "description": "replay of a25a6fe195a7: Phase 24 Team M: Implement L7 closeout repairs and robust benchmark loops",
+      "changes": [
+        {
+          "path": "packages/math/benches/math_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "81b77267ab24ced490c8f38a6d04d99c2c15fc06",
+          "new_blob": "a2b0ff09000dc208e89bd9aa1a415371ce52e9fa",
+          "role": "aux"
+        },
+        {
+          "path": "packages/math/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "0a797e0ca568c48bc863d2232b4f9a02de437415",
+          "new_blob": "ed2e91ecb9f97dec12933afcce0dcf4ad90f04d5",
+          "role": "source"
+        },
+        {
+          "path": "packages/math/tests/math_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "ee0ed256a0c946503cc0fdfcef1d32eb5cc101d3",
+          "new_blob": "814070d7c89041b1c13da0b8411796c6a4f41fe5",
+          "role": "aux"
+        },
+        {
+          "path": "packages/random/benches/random_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "7cd29ef7799fb1ba6e0235dabd42e9102fcb2b6d",
+          "new_blob": "c6080292b179cfe1153f5bf78b7a68545d3514fe",
+          "role": "aux"
+        },
+        {
+          "path": "packages/random/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8e568fcbff545c270405e6d0614360b65590fe0e",
+          "new_blob": "519a633a83e03957bc54d5b4511be41a5dee1964",
+          "role": "source"
+        },
+        {
+          "path": "packages/random/tests/random_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "b2493df83f7b129fe34156705e2cae2a3f5e6296",
+          "new_blob": "a20e816176d2591fc389e45c4a4ceff0ad85b9f1",
+          "role": "aux"
+        },
+        {
+          "path": "packages/time/benches/time_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "7dfa491f3e51fbe83aa77cf178251d664d39a52c",
+          "new_blob": "18e783a56806439d06d17e7dc6734aa460384378",
+          "role": "aux"
+        },
+        {
+          "path": "packages/time/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6a724a9a255259097150838b8290663cec26b333",
+          "new_blob": "cbabaa2fd03aad9bf65babc29cc61bab6733ff08",
+          "role": "source"
+        },
+        {
+          "path": "packages/time/tests/time_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "4fd667aa39bcb03c088606f7a8315572c463af88",
+          "new_blob": "7adb54ff63849c442a6e03b2fdeeaa62a231e771",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/math",
+          "kind": "package",
+          "path": "packages/math",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/random",
+          "kind": "package",
+          "path": "packages/random",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/time",
+          "kind": "package",
+          "path": "packages/time",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "0580c64d830ba7c6e8df5c0a8e4779eac094e298aca0bd118671823a5d1245bf"
+    },
+    {
+      "id": "b6_02_026db414",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 2,
+      "commit": "026db4140a8d81508c915b0064ff4b769a6e7ed4",
+      "parent": "4a9b9be12fd230dcbd0b176d539937c29248d2f4",
+      "subject": "Optimize UTF-8 codec hot paths",
+      "description": "replay of 026db4140a8d: Optimize UTF-8 codec hot paths",
+      "changes": [
+        {
+          "path": "sdk/encoding/Moss.toml",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "c940e39b95787c689cdc377f1ec231b715135500",
+          "new_blob": "09878cfef72f7ee0d14b0fe1ea6db008f356fe51",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/encoding/src/encoding.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6163baed27057ea655f3a346a341aafb7b04222b",
+          "new_blob": "c61ace15b36739381cd7aee031e14ab0f4f807b2",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/encoding/README.md",
+        "sdk/text-encoding-acceptance/README.md",
+        "sdk/text-encoding-acceptance/measure_codec.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/encoding",
+          "kind": "package",
+          "path": "sdk/encoding",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "044464c62a1076b85cb2459d5dc168dfbce7039c4fbaadd43fb9206019be3d2b"
+    },
+    {
+      "id": "b6_03_4bae0863",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 3,
+      "commit": "4bae08636c5bb8eff5ef804273f0c08bd32ed503",
+      "parent": "0b23663fadbaf13edfa68b9b68f61924c214c9fb",
+      "subject": "Optimize text search and slicing through native primitives",
+      "description": "replay of 4bae08636c5b: Optimize text search and slicing through native primitives",
+      "changes": [
+        {
+          "path": "sdk/text-encoding-acceptance/benches/text_encoding.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "e3803acfe5fc9cb49a74c2cf45e430b3c49c017e",
+          "new_blob": "8736c877e30a35aefa676eef1ae637cf041294fa",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text/src/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "b3cbbebd9320fc6498cd132c040474a15b8b7031",
+          "new_blob": "55a6d503c0b74e28e130ed674544d16b8b0c954c",
+          "role": "source"
+        },
+        {
+          "path": "sdk/text/tests/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "a9b9b945606aa16242ce35a0d747966cff44c465",
+          "new_blob": "889f376672cb25a7b1e1a2479cf3191a31ee64dc",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/bench_baseline.rs"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "b3b9107a4c401f7a1355d9c881477cd106f8b3660c326f188466edab3dc2e147"
+    },
+    {
+      "id": "b6_04_eb09e421",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 4,
+      "commit": "eb09e4214162bbab42d76e432f9eecd9085ef0f6",
+      "parent": "4bae08636c5bb8eff5ef804273f0c08bd32ed503",
+      "subject": "Correct preconstructed text performance workloads",
+      "description": "replay of eb09e4214162: Correct preconstructed text performance workloads",
+      "changes": [
+        {
+          "path": "sdk/text-encoding-acceptance/benches/text_encoding.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8736c877e30a35aefa676eef1ae637cf041294fa",
+          "new_blob": "f8632e95e3d87f475da1e31193956a51c6279b4a",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text/src/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "55a6d503c0b74e28e130ed674544d16b8b0c954c",
+          "new_blob": "8274b8b3d7c114918f61c3e9a3cfa532efb6cf16",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/bench_baseline.rs"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "96d2d68e0626d9b992f543c09bec016ef0bcf89801a121586c22da81feaa10d3"
+    },
+    {
+      "id": "b6_05_a257917e",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 5,
+      "commit": "a257917ee9edb877ce6b793c2b1a2670e6b51dc3",
+      "parent": "890448e47a887b606861ecf36042ecf2fded8ac1",
+      "subject": "Optimize ASCII case and characterize builders",
+      "description": "replay of a257917ee9ed: Optimize ASCII case and characterize builders",
+      "changes": [
+        {
+          "path": "sdk/text-encoding-acceptance/benches/case_builder.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6958094e62e4cd92bc4dc6b5959db0a07bedb019",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text/src/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8274b8b3d7c114918f61c3e9a3cfa532efb6cf16",
+          "new_blob": "cc19fa838b746f3a6cebb424056df0e979262db0",
+          "role": "source"
+        },
+        {
+          "path": "sdk/text/tests/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "889f376672cb25a7b1e1a2479cf3191a31ee64dc",
+          "new_blob": "16139dfd5534f2a61beedc106f542ee70380b02b",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/README.md",
+        "sdk/text-encoding-acceptance/case_builder_allocations.rs",
+        "sdk/text-encoding-acceptance/case_builder_baseline.rs",
+        "sdk/text/README.md",
+        "sdk/text/tests/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "0cae25750c53fb06239bddc04ce338b910fd94483bfb5f3ccc1cf1bfe752e4c1"
+    },
+    {
+      "id": "b6_06_7e049160",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 6,
+      "commit": "7e049160ef46ab847a3621486c28ad5a40e02204",
+      "parent": "85a9138bb1a324f3b0b759f739fb358566854285",
+      "subject": "Add independent Text performance validation",
+      "description": "replay of 7e049160ef46: Add independent Text performance validation",
+      "changes": [
+        {
+          "path": "sdk/encoding/tests/encoding.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "716061e30c9aa516b786507f9d6fa7905489ddb4",
+          "new_blob": "6bb132881f093a26da87c0e9016e6acca36e9342",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text/tests/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "16139dfd5534f2a61beedc106f542ee70380b02b",
+          "new_blob": "2781b3e2e017143f709762297d61aca2a03789ee",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/bench_baseline.rs"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/encoding",
+          "kind": "package",
+          "path": "sdk/encoding",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "b715677e548dde8020042a90c8584ca16588481d9a11f9e1f3b25571e0e94457"
+    },
+    {
+      "id": "b6_07_67b7d9b7",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 7,
+      "commit": "67b7d9b7f0b3cf858862aa167ce024b63981e1cd",
+      "parent": "3999e12b635be2f6d5f74dcbc1cf72bb50b74ffc",
+      "subject": "Phase 24 Team N: Complete numerical computing SDK with architect sign-off",
+      "description": "replay of 67b7d9b7f0b3: Phase 24 Team N: Complete numerical computing SDK with architect sign-off",
+      "changes": [
+        {
+          "path": "packages/linalg/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ca5a68f5a20ae8f5507c91fa5ffc94c566c50eb2",
+          "role": "manifest"
+        },
+        {
+          "path": "packages/linalg/benches/linalg_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b2683f2a4331eae9886515c747de223def83aa6b",
+          "role": "aux"
+        },
+        {
+          "path": "packages/linalg/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6e4e1a85534b75046262aa1a8ef3f7023c6fdc57",
+          "role": "source"
+        },
+        {
+          "path": "packages/linalg/tests/linalg_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3cb5fd1d8f232fc0b6aaefdaf77104e236409e9c",
+          "role": "aux"
+        },
+        {
+          "path": "packages/numerics_integration/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d10d40888f1d1a72ff9ec15670b5c01e14a5db6d",
+          "role": "manifest"
+        },
+        {
+          "path": "packages/numerics_integration/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d7c7f8249043e2735b44a1e12278b6679e417fbc",
+          "role": "source"
+        },
+        {
+          "path": "packages/numerics_integration/tests/integration_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3c7f4fe5c8714f8ebfdd6eae4f33e0f312ac7902",
+          "role": "aux"
+        },
+        {
+          "path": "packages/sparse/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "2115a2c7e5433b686db1d0485c2fa02579ee1501",
+          "role": "manifest"
+        },
+        {
+          "path": "packages/sparse/benches/sparse_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "c62c8d2372a08cfe223ea5cf61ebfe83fb3762cb",
+          "role": "aux"
+        },
+        {
+          "path": "packages/sparse/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "dd701620d3aa9eb32cb6e66b8ef6471d9afbe264",
+          "role": "source"
+        },
+        {
+          "path": "packages/sparse/tests/sparse_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "27eaa7025a6927dbd2b757aab06a8b1f4397a2d4",
+          "role": "aux"
+        },
+        {
+          "path": "packages/statistics/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "cb3493acd1b7735f25705e2ae4c01fb94010915b",
+          "role": "manifest"
+        },
+        {
+          "path": "packages/statistics/benches/statistics_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ff38c81a2703a9bb3cb779d45888f962ac45815d",
+          "role": "aux"
+        },
+        {
+          "path": "packages/statistics/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "faa60ffade72044fa99d8a250b01d92890f10ab5",
+          "role": "source"
+        },
+        {
+          "path": "packages/statistics/tests/statistics_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "31a132343271e0553c64a047c0d127cdf9122b86",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/linalg",
+          "kind": "package",
+          "path": "packages/linalg",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/numerics_integration",
+          "kind": "package",
+          "path": "packages/numerics_integration",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/sparse",
+          "kind": "package",
+          "path": "packages/sparse",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/statistics",
+          "kind": "package",
+          "path": "packages/statistics",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "8119e7c476f3d54f983d014daf9d1e442078362fe70d7f344b2eb0339f059ece"
+    },
+    {
+      "id": "b6_08_7ba41b83",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 8,
+      "commit": "7ba41b83fd15200842ac3585138c0587f78f150f",
+      "parent": "4f46c3c1fc286d991c1380f2f87488ca64435d7f",
+      "subject": "Add capacity-aware Text builder",
+      "description": "replay of 7ba41b83fd15: Add capacity-aware Text builder",
+      "changes": [
+        {
+          "path": "sdk/text-encoding-acceptance/benches/case_builder.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6958094e62e4cd92bc4dc6b5959db0a07bedb019",
+          "new_blob": "36d08a505603733f48b2ed55e05ae3b88090d6d0",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text/src/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "cc19fa838b746f3a6cebb424056df0e979262db0",
+          "new_blob": "5bf8696ddf35b0aa794262dda5a284a0944a4d21",
+          "role": "source"
+        },
+        {
+          "path": "sdk/text/tests/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "2781b3e2e017143f709762297d61aca2a03789ee",
+          "new_blob": "604866c2d93337fea0547e4902da4092342f0b7e",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/README.md",
+        "sdk/text-encoding-acceptance/case_builder_allocations.rs",
+        "sdk/text-encoding-acceptance/case_builder_baseline.rs",
+        "sdk/text/README.md",
+        "sdk/text/tests/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "93e4d37c4edc257a2fd2195c39390920aa4e5efca37bf1788fd605898827ee1b"
+    },
+    {
+      "id": "b6_09_05834f8b",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 9,
+      "commit": "05834f8bfe71dfe1f12ce658c3a3ab006af5d27a",
+      "parent": "242d8d57f759c2514e0b9eb2e4b62eb1275e2b09",
+      "subject": "Correct reusable builder benchmark equivalence",
+      "description": "replay of 05834f8bfe71: Correct reusable builder benchmark equivalence",
+      "changes": [
+        {
+          "path": "sdk/text-encoding-acceptance/benches/case_builder.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "36d08a505603733f48b2ed55e05ae3b88090d6d0",
+          "new_blob": "83222e5cd484572981e99f603c2daaad7165f0f7",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/text-encoding-acceptance/README.md",
+        "sdk/text-encoding-acceptance/case_builder_allocations.rs",
+        "sdk/text-encoding-acceptance/case_builder_baseline.rs"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "5cf5c4e14cc86a45d757ffae92464cfffb08194ae7fc0a962944cea1547174c7"
+    },
+    {
+      "id": "b6_10_47d50f49",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 10,
+      "commit": "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28",
+      "parent": "67b7d9b7f0b3cf858862aa167ce024b63981e1cd",
+      "subject": "phase24(numerics): resolve L7 review defects, expand differential oracles, benchmark Rust parity",
+      "description": "replay of 47d50f49c54e: phase24(numerics): resolve L7 review defects, expand differential oracles, benchmark Rust parity",
+      "changes": [
+        {
+          "path": "packages/linalg/benches/linalg_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "b2683f2a4331eae9886515c747de223def83aa6b",
+          "new_blob": "21008ab8ab3e87bddbeda1a2c843ba7404997eb9",
+          "role": "aux"
+        },
+        {
+          "path": "packages/linalg/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6e4e1a85534b75046262aa1a8ef3f7023c6fdc57",
+          "new_blob": "e319700542d357dcc9308d1bfaa524877a1c3867",
+          "role": "source"
+        },
+        {
+          "path": "packages/linalg/tests/linalg_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "3cb5fd1d8f232fc0b6aaefdaf77104e236409e9c",
+          "new_blob": "f2268082c7d825a33b512dd7b2d9b64545760662",
+          "role": "aux"
+        },
+        {
+          "path": "packages/sparse/benches/sparse_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "c62c8d2372a08cfe223ea5cf61ebfe83fb3762cb",
+          "new_blob": "dadf827469fa328e6a86751338eed548d2236cdd",
+          "role": "aux"
+        },
+        {
+          "path": "packages/sparse/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "dd701620d3aa9eb32cb6e66b8ef6471d9afbe264",
+          "new_blob": "eee6b815bce297fb033bd05a4e7accb09fba8c7c",
+          "role": "source"
+        },
+        {
+          "path": "packages/sparse/tests/sparse_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "27eaa7025a6927dbd2b757aab06a8b1f4397a2d4",
+          "new_blob": "b7baca6456186a4fc2c9c8c67408511dc4c714c3",
+          "role": "aux"
+        },
+        {
+          "path": "packages/statistics/benches/statistics_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "ff38c81a2703a9bb3cb779d45888f962ac45815d",
+          "new_blob": "6391ea338ad04ef1246f4bd3433d97245d26a727",
+          "role": "aux"
+        },
+        {
+          "path": "packages/statistics/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "faa60ffade72044fa99d8a250b01d92890f10ab5",
+          "new_blob": "00896cdd1cdf41d2010a44335d6fa951ac47d6a6",
+          "role": "source"
+        },
+        {
+          "path": "packages/statistics/tests/statistics_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "31a132343271e0553c64a047c0d127cdf9122b86",
+          "new_blob": "c46440cbce5224063d56fe1de4d9107a7a070165",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/linalg",
+          "kind": "package",
+          "path": "packages/linalg",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:packages/sparse",
+          "kind": "package",
+          "path": "packages/sparse",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:packages/statistics",
+          "kind": "package",
+          "path": "packages/statistics",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "43c21718d74ae3d7eb6bba1b64f34031b90b7ad3f0b03fd7f8bab4354e27e422"
+    },
+    {
+      "id": "b6_11_5cc8b17e",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 11,
+      "commit": "5cc8b17e0b16dd16a743b7dd244d0fad583e34b2",
+      "parent": "995d768e3b914dcd088b2d3bea083b75a98a98dc",
+      "subject": "Phase 24 D1: Implement moss.parse cursor primitives and source tracking",
+      "description": "replay of 5cc8b17e0b16: Phase 24 D1: Implement moss.parse cursor primitives and source tracking",
+      "changes": [
+        {
+          "path": "sdk/parse/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "afcde2a7155317ab813cd184271456a71601f7d5",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/parse/src/parse.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1c083bfd0b1981b43b3d669a0b6dd7db019a175b",
+          "role": "source"
+        },
+        {
+          "path": "sdk/parse/tests/parse_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ffe750da687f2dfd3d7396ce9029e95212ede321",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/parse",
+          "kind": "package",
+          "path": "sdk/parse",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "901fcb54ffbcd242b8cdb44923ff2f8dcab401ffc1eb0c9d942d6ec49f92a92d"
+    },
+    {
+      "id": "b6_12_1d58b910",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 12,
+      "commit": "1d58b910b54f89a213b274866283a826d8960eb2",
+      "parent": "7493366f0ed90a5efbd00371d0c12a62230253ff",
+      "subject": "Phase 24 D2: Implement moss.fmt formatting and escaping",
+      "description": "replay of 1d58b910b54f: Phase 24 D2: Implement moss.fmt formatting and escaping",
+      "changes": [
+        {
+          "path": "sdk/fmt/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "06002341c696cae512f077a2e4ad4e3868e92581",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/fmt/src/fmt.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "215d4d42e4e2416e6fbbe85262334972be91d38d",
+          "role": "source"
+        },
+        {
+          "path": "sdk/fmt/tests/fmt_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7111e3a2e2b484cf0e846a9b5c21a512ff665a5e",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/fmt",
+          "kind": "package",
+          "path": "sdk/fmt",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "e342491eb997602019f98b7a46eb5a3d04c34b35c552760b8bb6a2329eb7db82"
+    },
+    {
+      "id": "b6_13_c20ef73c",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 13,
+      "commit": "c20ef73cf5c11c63c0c15c24bc580f57e72a6cf5",
+      "parent": "66c88a186ce744db84765a4e576ea81be1773015",
+      "subject": "Phase 24 D3: Implement moss.json columnar tape representation and iterative parser",
+      "description": "replay of c20ef73cf5c1: Phase 24 D3: Implement moss.json columnar tape representation and iterative parser",
+      "changes": [
+        {
+          "path": "sdk/json/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f61ea182e634f7b6d30fae3c5f8304ad8be117bd",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/json/src/json.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "61044b9e76ab6d9e228f8a95535ac34a230c918d",
+          "role": "source"
+        },
+        {
+          "path": "sdk/json/tests/json_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "7dacc0aab3818dd0bbd2fde27de4f83166e08903",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/json",
+          "kind": "package",
+          "path": "sdk/json",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "cd4eb48ed47e5fcf79add8cfd30937e88802172d70f344e1004189b8da4520b5"
+    },
+    {
+      "id": "b6_14_048b46c1",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 14,
+      "commit": "048b46c1f94dbd3b17a0b04f337740e24cd4fff4",
+      "parent": "cb09ccfba36822f332fb6168fae37c619cfe3478",
+      "subject": "Phase 24 D4: Implement JSON serialization, pretty-printing, and validation",
+      "description": "replay of 048b46c1f94d: Phase 24 D4: Implement JSON serialization, pretty-printing, and validation",
+      "changes": [
+        {
+          "path": "sdk/fmt/src/fmt.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "215d4d42e4e2416e6fbbe85262334972be91d38d",
+          "new_blob": "ee485635c21e96dfde18ac4bb1b16aabe5521079",
+          "role": "source"
+        },
+        {
+          "path": "sdk/json/src/json.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "61044b9e76ab6d9e228f8a95535ac34a230c918d",
+          "new_blob": "0f73046a37e3114c79ff599bec87887b45e4b848",
+          "role": "source"
+        },
+        {
+          "path": "sdk/json/tests/json_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "7dacc0aab3818dd0bbd2fde27de4f83166e08903",
+          "new_blob": "dda1827ee23b7af693c6122da301219f320f2bce",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/fmt",
+          "kind": "package",
+          "path": "sdk/fmt",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/json",
+          "kind": "package",
+          "path": "sdk/json",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "b50e314e4634c63910b1f537b06f9aeb406141387d4ec6529730e8438dcb77df"
+    },
+    {
+      "id": "b6_15_ac328671",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 15,
+      "commit": "ac328671d66d422a4b5067665e769231cafdef10",
+      "parent": "048b46c1f94dbd3b17a0b04f337740e24cd4fff4",
+      "subject": "Phase 24 D5: Implement moss.csv RFC 4180 reader, writer, validation, and table accessors",
+      "description": "replay of ac328671d66d: Phase 24 D5: Implement moss.csv RFC 4180 reader, writer, validation, and table accessors",
+      "changes": [
+        {
+          "path": "sdk/csv/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "cb0012a0a3e7187a7040e226c12a8154bb474026",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/csv/src/csv.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "2095479ce58e06a45ff0d7d10e1a965a38b429e1",
+          "role": "source"
+        },
+        {
+          "path": "sdk/csv/tests/csv_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0f503923a9c0251f210cc10653efd58c13a9b67b",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/csv",
+          "kind": "package",
+          "path": "sdk/csv",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "6c9940262b81c8ea9aa44c4844306ef87b7abf420db1af5f18e55228060a9e3a"
+    },
+    {
+      "id": "b6_16_234ff9e2",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 16,
+      "commit": "234ff9e2e3a1e03de64be4276f2aef64ba8c6d73",
+      "parent": "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28",
+      "subject": "phase24-numerics: final L7 closeout repairs and integration handoff",
+      "description": "replay of 234ff9e2e3a1: phase24-numerics: final L7 closeout repairs and integration handoff",
+      "changes": [
+        {
+          "path": "packages/linalg/benches/linalg_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "21008ab8ab3e87bddbeda1a2c843ba7404997eb9",
+          "new_blob": "3c52d366fc362e132c1ff1e14841452946ac84e0",
+          "role": "aux"
+        },
+        {
+          "path": "packages/linalg/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "e319700542d357dcc9308d1bfaa524877a1c3867",
+          "new_blob": "9a7e034132f01f7addc32ad4cce43aca316911ca",
+          "role": "source"
+        },
+        {
+          "path": "packages/linalg/tests/linalg_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "f2268082c7d825a33b512dd7b2d9b64545760662",
+          "new_blob": "4a54e1e05c427a597576202eef0cfc65779c0dc8",
+          "role": "aux"
+        },
+        {
+          "path": "packages/sparse/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "eee6b815bce297fb033bd05a4e7accb09fba8c7c",
+          "new_blob": "f864b53eaf82d678b84f3ce0908986b20412d936",
+          "role": "source"
+        },
+        {
+          "path": "packages/sparse/tests/sparse_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "b7baca6456186a4fc2c9c8c67408511dc4c714c3",
+          "new_blob": "f01c5d32a37b9170df84b592cfe82f1b670f67de",
+          "role": "aux"
+        },
+        {
+          "path": "packages/statistics/benches/statistics_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6391ea338ad04ef1246f4bd3433d97245d26a727",
+          "new_blob": "dabe07f5d7c17be0bd9aab45cae47ae0f8421708",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/linalg",
+          "kind": "package",
+          "path": "packages/linalg",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:packages/sparse",
+          "kind": "package",
+          "path": "packages/sparse",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:packages/statistics",
+          "kind": "package",
+          "path": "packages/statistics",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "98fb9f4f7cdc5ed81275438fc05da399e538330694c659539cbf56bd8911ad6e"
+    },
+    {
+      "id": "b6_17_6ce098af",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 17,
+      "commit": "6ce098afe2d7546c2775236c56b7ff973666016b",
+      "parent": "ac328671d66d422a4b5067665e769231cafdef10",
+      "subject": "Phase 24 D6: Add cross-package data-acceptance suite, differential tests, and benchmarks",
+      "description": "replay of 6ce098afe2d7: Phase 24 D6: Add cross-package data-acceptance suite, differential tests, and benchmarks",
+      "changes": [
+        {
+          "path": "sdk/data-acceptance/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b1cc5fb75b35185c9786dac16c548dcb6832370c",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/data-acceptance/benches/data_benchmarks.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4e4c25a0736d60f5f776580fbef850cf92ccd246",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/data-acceptance/src/data_bench_support.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9728b6e6b4383568f06216b8f690dbff9922d45d",
+          "role": "source"
+        },
+        {
+          "path": "sdk/data-acceptance/tests/acceptance_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5d1c2ba2882555193e1c0287026fafce45884196",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/data-acceptance/run_all.py",
+        "sdk/data-acceptance/tests/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/data-acceptance",
+          "kind": "package",
+          "path": "sdk/data-acceptance",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "28aaa11e6fa8673e4e810ebd07781da897bad2be60dc8103cfedfb8e699f5878"
+    },
+    {
+      "id": "b6_18_bff4f72a",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 18,
+      "commit": "bff4f72a8a578a4ea575921ee92480741597e550",
+      "parent": "d19ab4439ec77a9430ee0eee50eb35f5a6f0ec10",
+      "subject": "Add Team H path and bounded filesystem SDKs",
+      "description": "replay of bff4f72a8a57: Add Team H path and bounded filesystem SDKs",
+      "changes": [
+        {
+          "path": "sdk/fs/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "cf90e6090b8b62eb4dff56ae15320b516b1f55c5",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/fs/examples/basic/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d45cbcbf77c6dc6c459ff50bf4a79e764bfc0daf",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/fs/examples/basic/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "94f16d0b1ef7f685fa50dfded464e6a217e9b377",
+          "role": "source"
+        },
+        {
+          "path": "sdk/fs/src/fs.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "92b13e3c8e6c8e7ffcc3d6167b41ed2c1a45299c",
+          "role": "source"
+        },
+        {
+          "path": "sdk/path/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8a481a0ba185b3a0fccbab00e50ff104fa4d739a",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/path/examples/basic/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "52948afb180a5970549bc0337bd1a2283f6fc26f",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/path/examples/basic/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "227be1ee016df13095ec9be15800d4ee5d27e62c",
+          "role": "source"
+        },
+        {
+          "path": "sdk/path/src/path.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "dc07591ade4a51a89559e18d865797b52537d2e3",
+          "role": "source"
+        },
+        {
+          "path": "sdk/path/tests/path.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "3d672ee64f8d2bb84aa8beeb163d2d2c4c6d1cb2",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/fs/README.md",
+        "sdk/fs/tests/check_native.py",
+        "sdk/fs/tests/check_negative.py",
+        "sdk/fs/tests/check_source_free.py",
+        "sdk/path/README.md",
+        "sdk/path/tests/check_differential.py",
+        "sdk/path/tests/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/fs",
+          "kind": "package",
+          "path": "sdk/fs",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/fs/examples/basic",
+          "kind": "package",
+          "path": "sdk/fs/examples/basic",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/path",
+          "kind": "package",
+          "path": "sdk/path",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/path/examples/basic",
+          "kind": "package",
+          "path": "sdk/path/examples/basic",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "d801b5f43c2be72dc4c99f9ca2932e5399814bd01c0c9de60db5ed0e13277887"
+    },
+    {
+      "id": "b6_19_f8c14cfc",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 19,
+      "commit": "f8c14cfce48d2ec384450a68d3e2f6bce93336d2",
+      "parent": "bff4f72a8a578a4ea575921ee92480741597e550",
+      "subject": "Document host I/O service feasibility",
+      "description": "replay of f8c14cfce48d: Document host I/O service feasibility",
+      "changes": [
+        {
+          "path": "sdk/host/io/feasibility/capability_consumer/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d4e1c22e9890ee6d01771425218fd222081cc606",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/host/io/feasibility/capability_consumer/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "334a3122df1db5061b63786a8d3a45312784422e",
+          "role": "source"
+        },
+        {
+          "path": "sdk/host/io/feasibility/capability_provider/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5a760de3715f250e6900c30c9e1879cf888a17cb",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/host/io/feasibility/capability_provider/src/hostcap.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8bc52e8202879cab2d54d190ab1aa92881ca7fb5",
+          "role": "source"
+        },
+        {
+          "path": "sdk/host/io/feasibility/consumer/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9104b68ee179d5d48f014d126156e604b930dc65",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/host/io/feasibility/consumer/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d49c9005115f97783c7a72bb963ba2153816d2f3",
+          "role": "source"
+        },
+        {
+          "path": "sdk/host/io/feasibility/env_probe.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ac5b66b4844fbbc07ef47d13d387f8cad4311dd1",
+          "role": "standalone"
+        },
+        {
+          "path": "sdk/host/io/feasibility/process_probe.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "36ec2ba5ef6da50decac633d03509d6f6291cc5b",
+          "role": "standalone"
+        },
+        {
+          "path": "sdk/host/io/feasibility/provider/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1033f1f5ba8c38b2ba0145e2647b2cfc20a9fdd6",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/host/io/feasibility/provider/src/hostio.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "bd5e69ee3b5dde79d4efe8b3737f857b64139b99",
+          "role": "source"
+        },
+        {
+          "path": "sdk/host/io/feasibility/same_package.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ce62287144523aabcbb086acab0043fb769b55f5",
+          "role": "standalone"
+        },
+        {
+          "path": "sdk/host/io/feasibility/unbounded_range_write.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "62b771b3d8d8ecb0da07990dd5830d798a13f46a",
+          "role": "standalone"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/host/io/README.md",
+        "sdk/host/io/check_feasibility.py"
+      ],
+      "entries": [
+        {
+          "id": "file:sdk/host/io/feasibility/env_probe.moss",
+          "kind": "file",
+          "path": "sdk/host/io/feasibility/env_probe.moss",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'Env'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "file:sdk/host/io/feasibility/process_probe.moss",
+          "kind": "file",
+          "path": "sdk/host/io/feasibility/process_probe.moss",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'Process'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "file:sdk/host/io/feasibility/same_package.moss",
+          "kind": "file",
+          "path": "sdk/host/io/feasibility/same_package.moss",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "file:sdk/host/io/feasibility/unbounded_range_write.moss",
+          "kind": "file",
+          "path": "sdk/host/io/feasibility/unbounded_range_write.moss",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "FILEIO_UNBOUNDED_REQUEST|FileIO write payload must have a statically provable finite bound",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/host/io/feasibility/capability_consumer",
+          "kind": "package",
+          "path": "sdk/host/io/feasibility/capability_consumer",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/host/io/feasibility/capability_provider",
+          "kind": "package",
+          "path": "sdk/host/io/feasibility/capability_provider",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/host/io/feasibility/consumer",
+          "kind": "package",
+          "path": "sdk/host/io/feasibility/consumer",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/host/io/feasibility/provider",
+          "kind": "package",
+          "path": "sdk/host/io/feasibility/provider",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "63d8d4402988c5cd0277d40becc08d2ae1ce05458e457eecc2f5b217bed6b4a7"
+    },
+    {
+      "id": "b6_20_4d04481f",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 20,
+      "commit": "4d04481fceb5c258670c566ed27de879fa0cddfe",
+      "parent": "1a864a6c4e4c208a010d3fccdb4997ae90a220a8",
+      "subject": "Bound Team H filesystem reads",
+      "description": "replay of 4d04481fceb5: Bound Team H filesystem reads",
+      "changes": [
+        {
+          "path": "sdk/fs/src/fs.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "92b13e3c8e6c8e7ffcc3d6167b41ed2c1a45299c",
+          "new_blob": "44298a26ca8eee8e1c3cd6b5d3c5379a08b9904c",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/fs/README.md",
+        "sdk/fs/tests/check_adversarial.py",
+        "sdk/fs/tests/check_native.py",
+        "sdk/fs/tests/check_negative.py",
+        "sdk/fs/tests/check_source_free.py",
+        "sdk/host/io/check_feasibility.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/fs",
+          "kind": "package",
+          "path": "sdk/fs",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "a44053078c949cb7a1be4b40d0830f102ed66e193142fe32356f50f652982254"
+    },
+    {
+      "id": "b6_21_31429002",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 21,
+      "commit": "314290020e748d9aa0380701c1e975e99a0de129",
+      "parent": "21cdd20aeb7d27a8530fed6ee4eb8193c432e4cb",
+      "subject": "Implement moss.ndarray core",
+      "description": "replay of 314290020e74: Implement moss.ndarray core",
+      "changes": [
+        {
+          "path": "sdk/ndarray/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6c06df306d879db67f991cc5b126bc81d495b02a",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/ndarray/src/ndarray.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "f5932de580c985e102101ab2c17e546850af8028",
+          "role": "source"
+        },
+        {
+          "path": "sdk/ndarray/tests/ndarray.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8fe99178c2d9a3be7a12a1d7c0a95a00fc9253d2",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/ndarray/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/ndarray",
+          "kind": "package",
+          "path": "sdk/ndarray",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "bbb851cd2038659fa099fcff3ab9c7701b4fd0a54c8e7080a0dcd5ff08a9924e"
+    },
+    {
+      "id": "b6_22_2dfdd86c",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 22,
+      "commit": "2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf",
+      "parent": "314290020e748d9aa0380701c1e975e99a0de129",
+      "subject": "Implement Phase 24 priority structures",
+      "description": "replay of 2dfdd86ced6c: Implement Phase 24 priority structures",
+      "changes": [
+        {
+          "path": "sdk/datastructures/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "cdbadf3aaeb2ad5be182550eb5f4ee9f6da62e5a",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/datastructures/src/datastructures.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "30216115842835a78dee981d1d0a1bc1c4641774",
+          "role": "source"
+        },
+        {
+          "path": "sdk/datastructures/tests/datastructures.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ed6c268d5843346f4d40a953257210a3d9ab997a",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/datastructures/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/datastructures",
+          "kind": "package",
+          "path": "sdk/datastructures",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "61b57ab6922abd8c1fd0419ea5c4fe3b1d833879c2bce8d9d0b50f7d580f1f4b"
+    },
+    {
+      "id": "b6_23_dbb3bec5",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 23,
+      "commit": "dbb3bec5b05b3255a69f420f0a4d30040fac919d",
+      "parent": "2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf",
+      "subject": "feat(tables): add typed columnar table core",
+      "description": "replay of dbb3bec5b05b: feat(tables): add typed columnar table core",
+      "changes": [
+        {
+          "path": "sdk/tables/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5c20a61c90f42d1bb8048791e97bcaf38ca2c9f7",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/tables/src/tables.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "b3787af9508fc2ad136470b860d59bc090186e3c",
+          "role": "source"
+        },
+        {
+          "path": "sdk/tables/tests/tables_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "67d8aca7c5c279ca19f5de7fff2c1bd9678f4966",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/tables/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/tables",
+          "kind": "package",
+          "path": "sdk/tables",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "2cef3f817a8a3be4003337d075605574d639464089939a57c124acb6d4ff5270"
+    },
+    {
+      "id": "b6_24_0dfbcd79",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 24,
+      "commit": "0dfbcd79c02439e90ee5a51c1370c181104aa626",
+      "parent": "dbb3bec5b05b3255a69f420f0a4d30040fac919d",
+      "subject": "Implement moss.binary primitives",
+      "description": "replay of 0dfbcd79c024: Implement moss.binary primitives",
+      "changes": [
+        {
+          "path": "sdk/binary/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "fde5e802eb83166b0a6518615af1c089e64f636c",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/binary/src/binary.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a794c6f2bf294d5d6e1af7429e8a36cd35188edb",
+          "role": "source"
+        },
+        {
+          "path": "sdk/binary/tests/binary_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "bf944ce5d0755bfece314e91aca560fefb215716",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/binary/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/binary",
+          "kind": "package",
+          "path": "sdk/binary",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "4bfd4a945583887767d7de2f4132c9fa1fe020ce36c752ec9bfe44e2f8a61c44"
+    },
+    {
+      "id": "b6_25_99fc7fc8",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 25,
+      "commit": "99fc7fc8b260629c60a4c455b292a4365f716d8f",
+      "parent": "0dfbcd79c02439e90ee5a51c1370c181104aa626",
+      "subject": "Implement Phase 24 search structures",
+      "description": "replay of 99fc7fc8b260: Implement Phase 24 search structures",
+      "changes": [
+        {
+          "path": "sdk/datastructures/src/datastructures.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "30216115842835a78dee981d1d0a1bc1c4641774",
+          "new_blob": "b47ddbc1f5ecda25c307f355caf5d7833dc6fcfd",
+          "role": "source"
+        },
+        {
+          "path": "sdk/datastructures/tests/datastructures.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "ed6c268d5843346f4d40a953257210a3d9ab997a",
+          "new_blob": "b0aa1d5bba28bf507ebb750456d84ea72d0478ed",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/datastructures/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/datastructures",
+          "kind": "package",
+          "path": "sdk/datastructures",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "53936c4424c82bc7951c15bc8b7b1db5f238331cd8d8de25cd8bd2c3176caec5"
+    },
+    {
+      "id": "b6_26_0d578424",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 26,
+      "commit": "0d5784241a43caba87e8f024d4b10e20b4a996ea",
+      "parent": "99fc7fc8b260629c60a4c455b292a4365f716d8f",
+      "subject": "Implement ndarray broadcasting slicing and reductions",
+      "description": "replay of 0d5784241a43: Implement ndarray broadcasting slicing and reductions",
+      "changes": [
+        {
+          "path": "sdk/ndarray/src/ndarray.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "f5932de580c985e102101ab2c17e546850af8028",
+          "new_blob": "e22539fc31899e86b28fe2b600c3f98dd93c8507",
+          "role": "source"
+        },
+        {
+          "path": "sdk/ndarray/tests/ndarray.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8fe99178c2d9a3be7a12a1d7c0a95a00fc9253d2",
+          "new_blob": "cce6700ac1b76bef43abfb8bfd5e51ac12c7081c",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/ndarray/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/ndarray",
+          "kind": "package",
+          "path": "sdk/ndarray",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "46e911eff1ee04a166432e7606c32d9b7e83b79dd089b2aa71fccecb1d815aa5"
+    },
+    {
+      "id": "b6_27_0fe2e6ef",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 27,
+      "commit": "0fe2e6ef79933db607ab2e426bafe6974d2b3d42",
+      "parent": "c8a2203b06aa18b9cc8214536070381a4c67cff6",
+      "subject": "feat(hash): implement moss.hash with Adler-32, CRC-32, FNV-1a, and SHA-256",
+      "description": "replay of 0fe2e6ef7993: feat(hash): implement moss.hash with Adler-32, CRC-32, FNV-1a, and SHA-256",
+      "changes": [
+        {
+          "path": "packages/hash/benches/hash_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "941d4c34a70e6997834149ed512a70221f39bd19",
+          "role": "aux"
+        },
+        {
+          "path": "packages/hash/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "36f2751625815a173e37876b3d2b27530ebc08b0",
+          "role": "source"
+        },
+        {
+          "path": "packages/hash/tests/hash_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "8b7d0f71ab8f4c650325c11360bed419dab98de8",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/hash",
+          "kind": "package",
+          "path": "packages/hash",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "package moss.hash has no Moss sources under <FIXTURE>/packages/hash/src",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "416f96096732440fb6466b28266cb7a4bc7ab70509329ae9382ad4fecef7bf4a"
+    },
+    {
+      "id": "b6_28_7f6cd553",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 28,
+      "commit": "7f6cd553e708664e891673705f935bf684a984fb",
+      "parent": "ffcd2d9615626d9567bcd812a2b5d9811dcf1985",
+      "subject": "feat(compress): implement moss.compress with raw LZ4 blocks and RFC 1951 DEFLATE",
+      "description": "replay of 7f6cd553e708: feat(compress): implement moss.compress with raw LZ4 blocks and RFC 1951 DEFLATE",
+      "changes": [
+        {
+          "path": "packages/compress/benches/compress_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4acd096e5bd684dd4251f5604471e263b772ce19",
+          "role": "aux"
+        },
+        {
+          "path": "packages/compress/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6c4030f8e101cc78cf799e8c368ce07cfa30a004",
+          "role": "source"
+        },
+        {
+          "path": "packages/compress/tests/compress_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "de53e3e222476d8bee9503005445640a28ee652e",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/compress",
+          "kind": "package",
+          "path": "packages/compress",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "package moss.compress has no Moss sources under <FIXTURE>/packages/compress/src",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "b07b1bcfaf51dbd4ac3c99762fc52a507ed55a8eeca1780535d0c185efec6a4a"
+    },
+    {
+      "id": "b6_29_b9c6ea40",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 29,
+      "commit": "b9c6ea4049530abd503c97c0d32c444efc45c3a7",
+      "parent": "0d5784241a43caba87e8f024d4b10e20b4a996ea",
+      "subject": "Implement moss.cbor arena and encoder",
+      "description": "replay of b9c6ea404953: Implement moss.cbor arena and encoder",
+      "changes": [
+        {
+          "path": "sdk/cbor/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "9118b9e7788b56cc12385ecf246f158775123fda",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/cbor/src/cbor.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1706a9e25b2869d0443b2ed09d8759256e887519",
+          "role": "source"
+        },
+        {
+          "path": "sdk/cbor/tests/cbor_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "a896221445d322580537e475a8ea99268e2a1384",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/cbor/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "844f7673629340ea5d18a0a815da0058de829f901ed39b29d322214da19b4731"
+    },
+    {
+      "id": "b6_30_7773a300",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 30,
+      "commit": "7773a3006faf6b247fe808de54f6a8ec01ea95ba",
+      "parent": "b115ee0cb749ba28f6ad33ede08f2db993cbca2a",
+      "subject": "feat(tables): add relational operations",
+      "description": "replay of 7773a3006faf: feat(tables): add relational operations",
+      "changes": [
+        {
+          "path": "sdk/tables/src/tables.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "b3787af9508fc2ad136470b860d59bc090186e3c",
+          "new_blob": "8cc7ac8bf813e027429c62d3c1a3ff0b2412d975",
+          "role": "source"
+        },
+        {
+          "path": "sdk/tables/tests/tables_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "67d8aca7c5c279ca19f5de7fff2c1bd9678f4966",
+          "new_blob": "2fb336428df3ba11f5d5be57fa8361c2265ec776",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/tables/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/tables",
+          "kind": "package",
+          "path": "sdk/tables",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "9a14f158ab170a97e948209cdd03e22e60fe91892c856199e6914ff62b73aa0e"
+    },
+    {
+      "id": "b6_31_b4271cdc",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 31,
+      "commit": "b4271cdc3b86f543b8add199af49983903d9ddd5",
+      "parent": "7773a3006faf6b247fe808de54f6a8ec01ea95ba",
+      "subject": "Add higher-level ndarray examples",
+      "description": "replay of b4271cdc3b86: Add higher-level ndarray examples",
+      "changes": [
+        {
+          "path": "sdk/ndarray/examples/batched_normalization/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d8e6af09cdc8d1ce7fd1e5fde89767e624ccf3dd",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/ndarray/examples/batched_normalization/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "355184728178c586a4b21ec144b32a39eb26c43d",
+          "role": "source"
+        },
+        {
+          "path": "sdk/ndarray/examples/tensor_transforms/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "5b2bf96007b04c706e0ca818f87cba27e81508d3",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/ndarray/examples/tensor_transforms/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "4b25ba623b9481c6b2f470eef33310832670567a",
+          "role": "source"
+        },
+        {
+          "path": "sdk/ndarray/tests/workflows.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "781c407b8a315265bef463c7cadfd903a549c1c1",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/ndarray/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/ndarray",
+          "kind": "package",
+          "path": "sdk/ndarray",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/ndarray/examples/batched_normalization",
+          "kind": "package",
+          "path": "sdk/ndarray/examples/batched_normalization",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/ndarray/examples/tensor_transforms",
+          "kind": "package",
+          "path": "sdk/ndarray/examples/tensor_transforms",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "c4d9cfabf343942cb75f71516b080ad15f3cc9b9d2675df475880bf21c5bffb9"
+    },
+    {
+      "id": "b6_32_8d8712a8",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 32,
+      "commit": "8d8712a8f80c7063801f06cf69c5cb2935fd6dd6",
+      "parent": "b4271cdc3b86f543b8add199af49983903d9ddd5",
+      "subject": "Add iterative CBOR decoder",
+      "description": "replay of 8d8712a8f80c: Add iterative CBOR decoder",
+      "changes": [
+        {
+          "path": "sdk/cbor/src/cbor.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "1706a9e25b2869d0443b2ed09d8759256e887519",
+          "new_blob": "abc37c96de1ada7c7ab7efb35932a88174ee9cc0",
+          "role": "source"
+        },
+        {
+          "path": "sdk/cbor/tests/cbor_decoder_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "1f9c30c4ded81d399526982761010782bc865417",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/cbor/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "09c109f948ad5ed140a1e13a057be290868d4dd4e31aad2d3cfb1e47375307c5"
+    },
+    {
+      "id": "b6_33_48e36944",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 33,
+      "commit": "48e369446671cd1d44152e140ad0d5250ec518fa",
+      "parent": "8d8712a8f80c7063801f06cf69c5cb2935fd6dd6",
+      "subject": "Add typed CSV adapters for tables",
+      "description": "replay of 48e369446671: Add typed CSV adapters for tables",
+      "changes": [
+        {
+          "path": "sdk/tables/Moss.toml",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "5c20a61c90f42d1bb8048791e97bcaf38ca2c9f7",
+          "new_blob": "33285dede2bde985b519f2edd112dd38011b667b",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/tables/src/csv_adapter.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "baf50d1fe91e11b1626c0e34a7a10e214dc0c54d",
+          "role": "source"
+        },
+        {
+          "path": "sdk/tables/tests/tables_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "2fb336428df3ba11f5d5be57fa8361c2265ec776",
+          "new_blob": "06ffaa15b8f41497be24abb5098bff7ac8b7e373",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/tables/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/tables",
+          "kind": "package",
+          "path": "sdk/tables",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "3c6ef65a30c52df5a438171d96e5933cb231f9bbd13faad5f51c0816ce6e9ad8"
+    },
+    {
+      "id": "b6_34_b2f09d61",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 34,
+      "commit": "b2f09d61407b0d6344223a6d108733a27b63f6a5",
+      "parent": "7f6cd553e708664e891673705f935bf684a984fb",
+      "subject": "feat(regex): implement moss.regex with non-backtracking Thompson NFA engine",
+      "description": "replay of b2f09d61407b: feat(regex): implement moss.regex with non-backtracking Thompson NFA engine",
+      "changes": [
+        {
+          "path": "packages/regex/benches/regex_bench.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "97b586b68eda40480e99f25c36427af62f4b0bd3",
+          "role": "aux"
+        },
+        {
+          "path": "packages/regex/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "272e761bd9982859ed73c1157ede9f39136a48ec",
+          "role": "source"
+        },
+        {
+          "path": "packages/regex/tests/regex_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "d7e3b86251a525dc13e52037845f0fab32bd2c59",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/regex",
+          "kind": "package",
+          "path": "packages/regex",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "package moss.regex has no Moss sources under <FIXTURE>/packages/regex/src",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "f2fb2aeeb4ba62da62b2a4be1e1c592c32a10f7daba66a66a7f4dee86138a7d4"
+    },
+    {
+      "id": "b6_35_40d4ae20",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 35,
+      "commit": "40d4ae20ab4a4fbe776decab2400ad444e134803",
+      "parent": "b2f09d61407b0d6344223a6d108733a27b63f6a5",
+      "subject": "feat(data_utils_integration): implement cross-package pipeline with regex, compression, and hashing",
+      "description": "replay of 40d4ae20ab4a: feat(data_utils_integration): implement cross-package pipeline with regex, compression, and hashing",
+      "changes": [
+        {
+          "path": "packages/data_utils_integration/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "ac8f53fbd6df0e99b59a4902bd8e4c394ae703d0",
+          "role": "source"
+        },
+        {
+          "path": "packages/data_utils_integration/tests/integration_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6043973a232a4730a3c5ff3ebf3116771430afdc",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/data_utils_integration",
+          "kind": "package",
+          "path": "packages/data_utils_integration",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "930cfc362c2737e52fdcbfafbf94b995e9f27c51c88db6d32f2096d214182d6c"
+    },
+    {
+      "id": "b6_36_cdcadb26",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 36,
+      "commit": "cdcadb26b9b46d332f5f577886c359d44ce839c0",
+      "parent": "48e369446671cd1d44152e140ad0d5250ec518fa",
+      "subject": "Add cross-package advanced-data acceptance",
+      "description": "replay of cdcadb26b9b4: Add cross-package advanced-data acceptance",
+      "changes": [
+        {
+          "path": "sdk/advanced-data-acceptance/Moss.toml",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "eaba34bcc0d97287401d7ad578578874314dcfb0",
+          "role": "manifest"
+        },
+        {
+          "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0b4b8bdbb0133fe064c5352c41c639ebbfa8c03a",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/advanced-data-acceptance/src/main.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "fa82eef016dd9bdc9e47cc2c7f56b9cdc704ff5f",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/advanced-data-acceptance/README.md",
+        "sdk/advanced-data-acceptance/cbor2_oracle.py",
+        "sdk/advanced-data-acceptance/check_source_free.py",
+        "sdk/advanced-data-acceptance/fixtures/cbor_rfc8949.json",
+        "sdk/advanced-data-acceptance/run_all.py",
+        "sdk/advanced-data-acceptance/validate_cbor_fixtures.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/advanced-data-acceptance",
+          "kind": "package",
+          "path": "sdk/advanced-data-acceptance",
+          "in_pre": false,
+          "in_post": true,
+          "expect_pre": null,
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": true,
+      "touches_source": true,
+      "touches_manifest": true,
+      "sha256": "29626a10d2dca4f5a121461f20f77791c9b202a45b939c0ceb25af5e86492480"
+    },
+    {
+      "id": "b6_37_6ef17f1c",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 37,
+      "commit": "6ef17f1c2edc1022f00f77a35bec051b1b9cdab3",
+      "parent": "8b4b2cff7ce062992cdbfdfbf57ab407093d904e",
+      "subject": "fix(json,fmt,diff): address L7 adversarial review findings with semantic testing",
+      "description": "replay of 6ef17f1c2edc: fix(json,fmt,diff): address L7 adversarial review findings with semantic testing",
+      "changes": [
+        {
+          "path": "sdk/data-acceptance/tests/acceptance_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "5d1c2ba2882555193e1c0287026fafce45884196",
+          "new_blob": "9e8dc7de308f19a8682bd81cf94e4ffee66f292e",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/fmt/src/fmt.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "ee485635c21e96dfde18ac4bb1b16aabe5521079",
+          "new_blob": "29b360d10e3df7c5827d35566254f6330027bfb7",
+          "role": "source"
+        },
+        {
+          "path": "sdk/fmt/tests/fmt_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "7111e3a2e2b484cf0e846a9b5c21a512ff665a5e",
+          "new_blob": "6e195e00bec3bfda3a5b8a4a77afa354cb23f7bc",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/json/src/json.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "0f73046a37e3114c79ff599bec87887b45e4b848",
+          "new_blob": "9cbc6a2856f88bc514b932fab8f17d7ea2fe62dd",
+          "role": "source"
+        },
+        {
+          "path": "sdk/json/tests/json_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "dda1827ee23b7af693c6122da301219f320f2bce",
+          "new_blob": "4398d72f3e258be607747ab970f782cf74f8583e",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/data-acceptance/run_all.py",
+        "sdk/data-acceptance/tests/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/data-acceptance",
+          "kind": "package",
+          "path": "sdk/data-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/fmt",
+          "kind": "package",
+          "path": "sdk/fmt",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/json",
+          "kind": "package",
+          "path": "sdk/json",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "73840b46e5df1fc66e5f924e5a2a415c17ad02101336de1173e15ec8c87cead4"
+    },
+    {
+      "id": "b6_38_a50a8342",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 38,
+      "commit": "a50a8342cbb33067dd21a7e3f502497c22929203",
+      "parent": "bc192bcda5d8db77676c9da1a960e7cb51d979d6",
+      "subject": "fix(team-r): resolve L7 corrective review across validation, packages, and contracts",
+      "description": "replay of a50a8342cbb3: fix(team-r): resolve L7 corrective review across validation, packages, and contracts",
+      "changes": [
+        {
+          "path": "packages/compress/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "6c4030f8e101cc78cf799e8c368ce07cfa30a004",
+          "new_blob": "2c07d1bb1a6367c493055077f7a1a364aba03854",
+          "role": "source"
+        },
+        {
+          "path": "packages/compress/tests/compress_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "de53e3e222476d8bee9503005445640a28ee652e",
+          "new_blob": "ea25872e963c3e077c3f709b9d05393ef768d4c0",
+          "role": "aux"
+        },
+        {
+          "path": "packages/hash/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "36f2751625815a173e37876b3d2b27530ebc08b0",
+          "new_blob": "1c67e9b3260ff9fe757939d9cd991c5bc2907516",
+          "role": "source"
+        },
+        {
+          "path": "packages/hash/tests/hash_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8b7d0f71ab8f4c650325c11360bed419dab98de8",
+          "new_blob": "ea52a0e17e78be5b750ff4bb28d45076fd2d2697",
+          "role": "aux"
+        },
+        {
+          "path": "packages/regex/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "272e761bd9982859ed73c1157ede9f39136a48ec",
+          "new_blob": "2fbc0ec07fb2743bff1f6d88eb18a7ddbc075925",
+          "role": "source"
+        },
+        {
+          "path": "packages/regex/tests/regex_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "d7e3b86251a525dc13e52037845f0fab32bd2c59",
+          "new_blob": "e9e3115d56dc7bf2ddc2ff565d393e1dbe9e80e8",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/compress",
+          "kind": "package",
+          "path": "packages/compress",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/hash",
+          "kind": "package",
+          "path": "packages/hash",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:packages/regex",
+          "kind": "package",
+          "path": "packages/regex",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "2159a548bb9e148d4739bb8186178ce7b54b2170e2d2769c4d857baf4cea92a2"
+    },
+    {
+      "id": "b6_39_3ea10923",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 39,
+      "commit": "3ea1092359cb82b537bbf33595b3d75836df8e79",
+      "parent": "6359a1ae7098e6dec56fc99ddadcd580ce6644ef",
+      "subject": "Repair Team A Architect acceptance gaps",
+      "description": "replay of 3ea1092359cb: Repair Team A Architect acceptance gaps",
+      "changes": [
+        {
+          "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "0b4b8bdbb0133fe064c5352c41c639ebbfa8c03a",
+          "new_blob": "cc769477e66b5fc8c6f2da4c39c1678e1bfdbfc5",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/advanced-data-acceptance/README.md",
+        "sdk/advanced-data-acceptance/run_all.py",
+        "sdk/advanced-data-acceptance/validate_ndarray_tables_oracle.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/advanced-data-acceptance",
+          "kind": "package",
+          "path": "sdk/advanced-data-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "ad270f88521b72215ce572ad6a6cbe4a96e46a0d946b9afc6600a529c60bc36f"
+    },
+    {
+      "id": "b6_40_4068976a",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 40,
+      "commit": "4068976a9a4d1bb046b69fbc35708d8b51f831e4",
+      "parent": "a50a8342cbb33067dd21a7e3f502497c22929203",
+      "subject": "fix(regex): repair NFA split origin propagation asymmetry and add linear runtime-scaling verification",
+      "description": "replay of 4068976a9a4d: fix(regex): repair NFA split origin propagation asymmetry and add linear runtime-scaling verification",
+      "changes": [
+        {
+          "path": "packages/regex/benches/regex_bench.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "97b586b68eda40480e99f25c36427af62f4b0bd3",
+          "new_blob": "ff265e98b3819b4225c37066906651c461286612",
+          "role": "aux"
+        },
+        {
+          "path": "packages/regex/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "2fbc0ec07fb2743bff1f6d88eb18a7ddbc075925",
+          "new_blob": "7ba128c71f006109ae814f5d5acbcb4feea9c890",
+          "role": "source"
+        },
+        {
+          "path": "packages/regex/tests/regex_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "e9e3115d56dc7bf2ddc2ff565d393e1dbe9e80e8",
+          "new_blob": "9603d8f9fcdcd0c1e74df25063adef12fbc8c4d9",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/regex",
+          "kind": "package",
+          "path": "packages/regex",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "fe475e439b923afea348080ec9b471fc780c3bf4d15c8b39ff3ff338e5c3a118"
+    },
+    {
+      "id": "b6_41_debf99f0",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 41,
+      "commit": "debf99f068735630ca28a7d5ee4fc343832ac094",
+      "parent": "b3ebec62dc12d9a195f5de4abc04ab08673b61a6",
+      "subject": "Fix CBOR edge ownership validation",
+      "description": "replay of debf99f06873: Fix CBOR edge ownership validation",
+      "changes": [
+        {
+          "path": "sdk/cbor/src/cbor.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "abc37c96de1ada7c7ab7efb35932a88174ee9cc0",
+          "new_blob": "d5b9896ab73c58c82613ab4226fe4991cb93565a",
+          "role": "source"
+        },
+        {
+          "path": "sdk/cbor/tests/cbor_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "a896221445d322580537e475a8ea99268e2a1384",
+          "new_blob": "8a0a979b400cc0040e35bb3813e6477632eef517",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/cbor/README.md"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "39db00c198c907ececbdedc31aec89534400243d7c3392098217bbf0c7a03012"
+    },
+    {
+      "id": "b6_42_a6ecc79f",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 42,
+      "commit": "a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783",
+      "parent": "debf99f068735630ca28a7d5ee4fc343832ac094",
+      "subject": "Add CBOR L7 adversarial verification",
+      "description": "replay of a6ecc79f6d0f: Add CBOR L7 adversarial verification",
+      "changes": [
+        {
+          "path": "sdk/cbor/tests/cbor_l7_adversarial_test.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "0d1dd234fb9df163da65e121833aa547e0743c65",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "b296491f9c506f91e5778c7a89ec9f1a000f298083f1f8f3e1d5fe46929baaa1"
+    },
+    {
+      "id": "b6_43_76baf873",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 43,
+      "commit": "76baf8739276a5e451baa18ae13cde9970b0ac08",
+      "parent": "a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783",
+      "subject": "Repair CBOR parent-cycle verifier",
+      "description": "replay of 76baf8739276: Repair CBOR parent-cycle verifier",
+      "changes": [
+        {
+          "path": "sdk/cbor/tests/cbor_l7_adversarial_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "0d1dd234fb9df163da65e121833aa547e0743c65",
+          "new_blob": "59b4ba75ad1e296ac9f2e383e44a5e73bb943d91",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "df16d95d543486c023beafb34a66c326246dd5751beacddc5eae9aac2b69f35c"
+    },
+    {
+      "id": "b6_44_58340e63",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 44,
+      "commit": "58340e636738331b84c5be1e42556ee612a73449",
+      "parent": "76baf8739276a5e451baa18ae13cde9970b0ac08",
+      "subject": "Exercise corrected CBOR error through ABI-v9",
+      "description": "replay of 58340e636738: Exercise corrected CBOR error through ABI-v9",
+      "changes": [
+        {
+          "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "cc769477e66b5fc8c6f2da4c39c1678e1bfdbfc5",
+          "new_blob": "01062986eb60645eef1a6d2ef74580c9e14e1b5e",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/advanced-data-acceptance",
+          "kind": "package",
+          "path": "sdk/advanced-data-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "d3b9109fd006f4864fa9edf763120e790df74aaa048742c04bf40bdeae45294a"
+    },
+    {
+      "id": "b6_45_7bf962d2",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 45,
+      "commit": "7bf962d287a4ce341c2b7015f4c7032d9f395031",
+      "parent": "7a679b598835bfc53c42b7d84082ba166845fa90",
+      "subject": "refactor(phase25): route Moss String lowering through MossStr; migrate SDK char_at users",
+      "description": "replay of 7bf962d287a4: refactor(phase25): route Moss String lowering through MossStr; migrate SDK char_at users",
+      "changes": [
+        {
+          "path": "sdk/data-acceptance/src/data_bench_support.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "9728b6e6b4383568f06216b8f690dbff9922d45d",
+          "new_blob": "cd58c45812b33debb7fd240312705663312f2d2a",
+          "role": "source"
+        },
+        {
+          "path": "sdk/fmt/src/fmt.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "29b360d10e3df7c5827d35566254f6330027bfb7",
+          "new_blob": "9398cdf08c767b1517070df6352facb26d7e6d81",
+          "role": "source"
+        },
+        {
+          "path": "sdk/json/src/json.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "9cbc6a2856f88bc514b932fab8f17d7ea2fe62dd",
+          "new_blob": "18072a2d9cfd0bc3050fd67a472833eabc37c59b",
+          "role": "source"
+        },
+        {
+          "path": "sdk/parse/src/parse.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "1c083bfd0b1981b43b3d669a0b6dd7db019a175b",
+          "new_blob": "5efffc77970bec35702c939bc01513ebe26365a8",
+          "role": "source"
+        },
+        {
+          "path": "sdk/path/src/path.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "dc07591ade4a51a89559e18d865797b52537d2e3",
+          "new_blob": "dd32b3205c0e7df5bbb2a62ba60ead82ca3f4fb0",
+          "role": "source"
+        },
+        {
+          "path": "sdk/text/src/text.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "5bf8696ddf35b0aa794262dda5a284a0944a4d21",
+          "new_blob": "f70cb886e574ae0d3df5ccf5f5d68670f77e003b",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/data-acceptance",
+          "kind": "package",
+          "path": "sdk/data-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/fmt",
+          "kind": "package",
+          "path": "sdk/fmt",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/json",
+          "kind": "package",
+          "path": "sdk/json",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/parse",
+          "kind": "package",
+          "path": "sdk/parse",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/path",
+          "kind": "package",
+          "path": "sdk/path",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text",
+          "kind": "package",
+          "path": "sdk/text",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "aedfec35023984cb537221d51d36692127adc3f8cbae127b152bbb4bd50bd169"
+    },
+    {
+      "id": "b6_46_f272af9c",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 46,
+      "commit": "f272af9ca5e7d82b90716aae0494feceddc3d2b7",
+      "parent": "ee8dceaa4851fb61a7b726cee05354da6917e38d",
+      "subject": "fix(phase25): reject record ==, Char/String mixing, and juxtaposed operands in the checker",
+      "description": "replay of f272af9ca5e7: fix(phase25): reject record ==, Char/String mixing, and juxtaposed operands in the checker",
+      "changes": [
+        {
+          "path": "sdk/path/src/path.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "dd32b3205c0e7df5bbb2a62ba60ead82ca3f4fb0",
+          "new_blob": "8d15b6fb2aa7b6ad9b8618230a752b3450c9e6fc",
+          "role": "source"
+        },
+        {
+          "path": "sdk/tables/src/csv_adapter.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "baf50d1fe91e11b1626c0e34a7a10e214dc0c54d",
+          "new_blob": "d4b0540bf3fd130d13a262dd7d30c09ec7ede46f",
+          "role": "source"
+        },
+        {
+          "path": "sdk/text-encoding-acceptance/benches/case_builder.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "83222e5cd484572981e99f603c2daaad7165f0f7",
+          "new_blob": "f94964b1cf5b8d7b8381d4d6a62cd5ce78f5101e",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/text-encoding-acceptance/benches/text_encoding.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "f8632e95e3d87f475da1e31193956a51c6279b4a",
+          "new_blob": "9cdf6c8d58f64a34ecc642b49d3b87c2c8084ec2",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/path",
+          "kind": "package",
+          "path": "sdk/path",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:sdk/tables",
+          "kind": "package",
+          "path": "sdk/tables",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+            "exit_code": 1,
+            "status": "fail"
+          }
+        },
+        {
+          "id": "pkg:sdk/text-encoding-acceptance",
+          "kind": "package",
+          "path": "sdk/text-encoding-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "0ca1b21873bc0042797fa126611961a3483186b603f7b34df09c7062fbd68467"
+    },
+    {
+      "id": "b6_47_dd45e307",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 47,
+      "commit": "dd45e30722bcc2d62d4bb46ba184d426cbaea066",
+      "parent": "48d4d0d20d07c413f870b269d7e51bbc2c6beed1",
+      "subject": "Fix SDK Char and String boundaries",
+      "description": "replay of dd45e30722bc: Fix SDK Char and String boundaries",
+      "changes": [
+        {
+          "path": "packages/hash/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "1c67e9b3260ff9fe757939d9cd991c5bc2907516",
+          "new_blob": "7eac0d7b18d02cc47ff057ab5de6660a1941a875",
+          "role": "source"
+        },
+        {
+          "path": "packages/regex/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "7ba128c71f006109ae814f5d5acbcb4feea9c890",
+          "new_blob": "67f9a938e2d54e6c5b14888294554ae35884e583",
+          "role": "source"
+        },
+        {
+          "path": "packages/regex/tests/regex_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "9603d8f9fcdcd0c1e74df25063adef12fbc8c4d9",
+          "new_blob": "123bff34618599d055e4cc6ef30f3b6fd30c0946",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/hash",
+          "kind": "package",
+          "path": "packages/hash",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|String find expects string",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        },
+        {
+          "id": "pkg:packages/regex",
+          "kind": "package",
+          "path": "packages/regex",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "478bd4446a013de349ebed33a8335fe605df0380b356c267d19f6b2b3017c4bf"
+    },
+    {
+      "id": "b6_48_bb4b3409",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 48,
+      "commit": "bb4b340981207a2d988227ca30d3d5b4bd1d3a20",
+      "parent": "46386c9e3415f66be24346fc2200eba14a129c78",
+      "subject": "phase25.1 R4A: repair time package inventory blocker",
+      "description": "replay of bb4b34098120: phase25.1 R4A: repair time package inventory blocker",
+      "changes": [
+        {
+          "path": "packages/time/src/main.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "cbabaa2fd03aad9bf65babc29cc61bab6733ff08",
+          "new_blob": "2148c677589597d784e4bda3c73f430b5fb723cc",
+          "role": "source"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:packages/time",
+          "kind": "package",
+          "path": "packages/time",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": true,
+      "touches_manifest": false,
+      "sha256": "1f9876fff22a0cd7736303ead50786730da553715470f59eefa807496fb3d588"
+    },
+    {
+      "id": "b6_49_c0ff87fd",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 49,
+      "commit": "c0ff87fd2c361a5ccac668778dfff779bce82017",
+      "parent": "a854c9011d8bbeb66ef8137020363555f30f021f",
+      "subject": "phase25.1 R4B: validate advanced-data ABI-v10",
+      "description": "replay of c0ff87fd2c36: phase25.1 R4B: validate advanced-data ABI-v10",
+      "changes": [
+        {
+          "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "01062986eb60645eef1a6d2ef74580c9e14e1b5e",
+          "new_blob": "2a9063d7e9a40be4b950ce452e40a0176831ff27",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [
+        "sdk/advanced-data-acceptance/README.md",
+        "sdk/advanced-data-acceptance/check_source_free.py"
+      ],
+      "entries": [
+        {
+          "id": "pkg:sdk/advanced-data-acceptance",
+          "kind": "package",
+          "path": "sdk/advanced-data-acceptance",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "61573861970fa2201347b6fd057da773c6e06800424ae87ed8ab2f18f4d2299f"
+    },
+    {
+      "id": "b6_50_4601a468",
+      "family": "b6_replay",
+      "kind": "replay_step",
+      "fixture": null,
+      "index": 50,
+      "commit": "4601a468f89b889a58f45639cde0a8e7aba9cc00",
+      "parent": "d8d1823251b9ecc1ebb7f93341a407447ac9f8ec",
+      "subject": "Start Phase 26.3 file-scoped test support",
+      "description": "replay of 4601a468f89b: Start Phase 26.3 file-scoped test support",
+      "changes": [
+        {
+          "path": "sdk/cbor/tests/cbor_decoder_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "1f9c30c4ded81d399526982761010782bc865417",
+          "new_blob": "5518d0db9d1279516a009b1e0474ac4e55d45476",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/cbor/tests/cbor_test.moss",
+          "status": "M",
+          "old_mode": "100644",
+          "new_mode": "100644",
+          "old_blob": "8a0a979b400cc0040e35bb3813e6477632eef517",
+          "new_blob": "434cefb862a990563a4de5fc863a7141ddd56f87",
+          "role": "aux"
+        },
+        {
+          "path": "sdk/cbor/tests/support/support.moss",
+          "status": "A",
+          "old_mode": "000000",
+          "new_mode": "100644",
+          "old_blob": "0000000000000000000000000000000000000000",
+          "new_blob": "6b763008a074d9cabfa99bec9064e9984f3bdaf8",
+          "role": "aux"
+        }
+      ],
+      "untracked_changes": [],
+      "entries": [
+        {
+          "id": "pkg:sdk/cbor",
+          "kind": "package",
+          "path": "sdk/cbor",
+          "in_pre": true,
+          "in_post": true,
+          "expect_pre": {
+            "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+            "exit_code": 1,
+            "status": "fail"
+          },
+          "expect_post": {
+            "diag": null,
+            "exit_code": 0,
+            "status": "pass"
+          }
+        }
+      ],
+      "timeout_s": 300,
+      "new_package": false,
+      "touches_source": false,
+      "touches_manifest": false,
+      "sha256": "07e5d1f99d77db2d2f525224952e5c58f2e67c0615ee3bd591aaaf276e3b1880"
     }
-  ]
+  ],
+  "replay": {
+    "anchor": "9b840e8ae8cc99e37915fb15367ca31c47b160f8",
+    "count": 50,
+    "pathspecs": [
+      ":(glob)sdk/**/*.moss",
+      ":(glob)packages/**/*.moss"
+    ],
+    "selection": "git log --no-merges -n COUNT ANCHOR -- PATHSPECS, replayed oldest first",
+    "commits": [
+      "a25a6fe195a7d30e5eb71aee2766630409816d99",
+      "026db4140a8d81508c915b0064ff4b769a6e7ed4",
+      "4bae08636c5bb8eff5ef804273f0c08bd32ed503",
+      "eb09e4214162bbab42d76e432f9eecd9085ef0f6",
+      "a257917ee9edb877ce6b793c2b1a2670e6b51dc3",
+      "7e049160ef46ab847a3621486c28ad5a40e02204",
+      "67b7d9b7f0b3cf858862aa167ce024b63981e1cd",
+      "7ba41b83fd15200842ac3585138c0587f78f150f",
+      "05834f8bfe71dfe1f12ce658c3a3ab006af5d27a",
+      "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28",
+      "5cc8b17e0b16dd16a743b7dd244d0fad583e34b2",
+      "1d58b910b54f89a213b274866283a826d8960eb2",
+      "c20ef73cf5c11c63c0c15c24bc580f57e72a6cf5",
+      "048b46c1f94dbd3b17a0b04f337740e24cd4fff4",
+      "ac328671d66d422a4b5067665e769231cafdef10",
+      "234ff9e2e3a1e03de64be4276f2aef64ba8c6d73",
+      "6ce098afe2d7546c2775236c56b7ff973666016b",
+      "bff4f72a8a578a4ea575921ee92480741597e550",
+      "f8c14cfce48d2ec384450a68d3e2f6bce93336d2",
+      "4d04481fceb5c258670c566ed27de879fa0cddfe",
+      "314290020e748d9aa0380701c1e975e99a0de129",
+      "2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf",
+      "dbb3bec5b05b3255a69f420f0a4d30040fac919d",
+      "0dfbcd79c02439e90ee5a51c1370c181104aa626",
+      "99fc7fc8b260629c60a4c455b292a4365f716d8f",
+      "0d5784241a43caba87e8f024d4b10e20b4a996ea",
+      "0fe2e6ef79933db607ab2e426bafe6974d2b3d42",
+      "7f6cd553e708664e891673705f935bf684a984fb",
+      "b9c6ea4049530abd503c97c0d32c444efc45c3a7",
+      "7773a3006faf6b247fe808de54f6a8ec01ea95ba",
+      "b4271cdc3b86f543b8add199af49983903d9ddd5",
+      "8d8712a8f80c7063801f06cf69c5cb2935fd6dd6",
+      "48e369446671cd1d44152e140ad0d5250ec518fa",
+      "b2f09d61407b0d6344223a6d108733a27b63f6a5",
+      "40d4ae20ab4a4fbe776decab2400ad444e134803",
+      "cdcadb26b9b46d332f5f577886c359d44ce839c0",
+      "6ef17f1c2edc1022f00f77a35bec051b1b9cdab3",
+      "a50a8342cbb33067dd21a7e3f502497c22929203",
+      "3ea1092359cb82b537bbf33595b3d75836df8e79",
+      "4068976a9a4d1bb046b69fbc35708d8b51f831e4",
+      "debf99f068735630ca28a7d5ee4fc343832ac094",
+      "a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783",
+      "76baf8739276a5e451baa18ae13cde9970b0ac08",
+      "58340e636738331b84c5be1e42556ee612a73449",
+      "7bf962d287a4ce341c2b7015f4c7032d9f395031",
+      "f272af9ca5e7d82b90716aae0494feceddc3d2b7",
+      "dd45e30722bcc2d62d4bb46ba184d426cbaea066",
+      "bb4b340981207a2d988227ca30d3d5b4bd1d3a20",
+      "c0ff87fd2c361a5ccac668778dfff779bce82017",
+      "4601a468f89b889a58f45639cde0a8e7aba9cc00"
+    ],
+    "scenario_ids": [
+      "b6_01_a25a6fe1",
+      "b6_02_026db414",
+      "b6_03_4bae0863",
+      "b6_04_eb09e421",
+      "b6_05_a257917e",
+      "b6_06_7e049160",
+      "b6_07_67b7d9b7",
+      "b6_08_7ba41b83",
+      "b6_09_05834f8b",
+      "b6_10_47d50f49",
+      "b6_11_5cc8b17e",
+      "b6_12_1d58b910",
+      "b6_13_c20ef73c",
+      "b6_14_048b46c1",
+      "b6_15_ac328671",
+      "b6_16_234ff9e2",
+      "b6_17_6ce098af",
+      "b6_18_bff4f72a",
+      "b6_19_f8c14cfc",
+      "b6_20_4d04481f",
+      "b6_21_31429002",
+      "b6_22_2dfdd86c",
+      "b6_23_dbb3bec5",
+      "b6_24_0dfbcd79",
+      "b6_25_99fc7fc8",
+      "b6_26_0d578424",
+      "b6_27_0fe2e6ef",
+      "b6_28_7f6cd553",
+      "b6_29_b9c6ea40",
+      "b6_30_7773a300",
+      "b6_31_b4271cdc",
+      "b6_32_8d8712a8",
+      "b6_33_48e36944",
+      "b6_34_b2f09d61",
+      "b6_35_40d4ae20",
+      "b6_36_cdcadb26",
+      "b6_37_6ef17f1c",
+      "b6_38_a50a8342",
+      "b6_39_3ea10923",
+      "b6_40_4068976a",
+      "b6_41_debf99f0",
+      "b6_42_a6ecc79f",
+      "b6_43_76baf873",
+      "b6_44_58340e63",
+      "b6_45_7bf962d2",
+      "b6_46_f272af9c",
+      "b6_47_dd45e307",
+      "b6_48_bb4b3409",
+      "b6_49_c0ff87fd",
+      "b6_50_4601a468"
+    ],
+    "scenario_sha256": [
+      "0580c64d830ba7c6e8df5c0a8e4779eac094e298aca0bd118671823a5d1245bf",
+      "044464c62a1076b85cb2459d5dc168dfbce7039c4fbaadd43fb9206019be3d2b",
+      "b3b9107a4c401f7a1355d9c881477cd106f8b3660c326f188466edab3dc2e147",
+      "96d2d68e0626d9b992f543c09bec016ef0bcf89801a121586c22da81feaa10d3",
+      "0cae25750c53fb06239bddc04ce338b910fd94483bfb5f3ccc1cf1bfe752e4c1",
+      "b715677e548dde8020042a90c8584ca16588481d9a11f9e1f3b25571e0e94457",
+      "8119e7c476f3d54f983d014daf9d1e442078362fe70d7f344b2eb0339f059ece",
+      "93e4d37c4edc257a2fd2195c39390920aa4e5efca37bf1788fd605898827ee1b",
+      "5cf5c4e14cc86a45d757ffae92464cfffb08194ae7fc0a962944cea1547174c7",
+      "43c21718d74ae3d7eb6bba1b64f34031b90b7ad3f0b03fd7f8bab4354e27e422",
+      "901fcb54ffbcd242b8cdb44923ff2f8dcab401ffc1eb0c9d942d6ec49f92a92d",
+      "e342491eb997602019f98b7a46eb5a3d04c34b35c552760b8bb6a2329eb7db82",
+      "cd4eb48ed47e5fcf79add8cfd30937e88802172d70f344e1004189b8da4520b5",
+      "b50e314e4634c63910b1f537b06f9aeb406141387d4ec6529730e8438dcb77df",
+      "6c9940262b81c8ea9aa44c4844306ef87b7abf420db1af5f18e55228060a9e3a",
+      "98fb9f4f7cdc5ed81275438fc05da399e538330694c659539cbf56bd8911ad6e",
+      "28aaa11e6fa8673e4e810ebd07781da897bad2be60dc8103cfedfb8e699f5878",
+      "d801b5f43c2be72dc4c99f9ca2932e5399814bd01c0c9de60db5ed0e13277887",
+      "63d8d4402988c5cd0277d40becc08d2ae1ce05458e457eecc2f5b217bed6b4a7",
+      "a44053078c949cb7a1be4b40d0830f102ed66e193142fe32356f50f652982254",
+      "bbb851cd2038659fa099fcff3ab9c7701b4fd0a54c8e7080a0dcd5ff08a9924e",
+      "61b57ab6922abd8c1fd0419ea5c4fe3b1d833879c2bce8d9d0b50f7d580f1f4b",
+      "2cef3f817a8a3be4003337d075605574d639464089939a57c124acb6d4ff5270",
+      "4bfd4a945583887767d7de2f4132c9fa1fe020ce36c752ec9bfe44e2f8a61c44",
+      "53936c4424c82bc7951c15bc8b7b1db5f238331cd8d8de25cd8bd2c3176caec5",
+      "46e911eff1ee04a166432e7606c32d9b7e83b79dd089b2aa71fccecb1d815aa5",
+      "416f96096732440fb6466b28266cb7a4bc7ab70509329ae9382ad4fecef7bf4a",
+      "b07b1bcfaf51dbd4ac3c99762fc52a507ed55a8eeca1780535d0c185efec6a4a",
+      "844f7673629340ea5d18a0a815da0058de829f901ed39b29d322214da19b4731",
+      "9a14f158ab170a97e948209cdd03e22e60fe91892c856199e6914ff62b73aa0e",
+      "c4d9cfabf343942cb75f71516b080ad15f3cc9b9d2675df475880bf21c5bffb9",
+      "09c109f948ad5ed140a1e13a057be290868d4dd4e31aad2d3cfb1e47375307c5",
+      "3c6ef65a30c52df5a438171d96e5933cb231f9bbd13faad5f51c0816ce6e9ad8",
+      "f2fb2aeeb4ba62da62b2a4be1e1c592c32a10f7daba66a66a7f4dee86138a7d4",
+      "930cfc362c2737e52fdcbfafbf94b995e9f27c51c88db6d32f2096d214182d6c",
+      "29626a10d2dca4f5a121461f20f77791c9b202a45b939c0ceb25af5e86492480",
+      "73840b46e5df1fc66e5f924e5a2a415c17ad02101336de1173e15ec8c87cead4",
+      "2159a548bb9e148d4739bb8186178ce7b54b2170e2d2769c4d857baf4cea92a2",
+      "ad270f88521b72215ce572ad6a6cbe4a96e46a0d946b9afc6600a529c60bc36f",
+      "fe475e439b923afea348080ec9b471fc780c3bf4d15c8b39ff3ff338e5c3a118",
+      "39db00c198c907ececbdedc31aec89534400243d7c3392098217bbf0c7a03012",
+      "b296491f9c506f91e5778c7a89ec9f1a000f298083f1f8f3e1d5fe46929baaa1",
+      "df16d95d543486c023beafb34a66c326246dd5751beacddc5eae9aac2b69f35c",
+      "d3b9109fd006f4864fa9edf763120e790df74aaa048742c04bf40bdeae45294a",
+      "aedfec35023984cb537221d51d36692127adc3f8cbae127b152bbb4bd50bd169",
+      "0ca1b21873bc0042797fa126611961a3483186b603f7b34df09c7062fbd68467",
+      "478bd4446a013de349ebed33a8335fe605df0380b356c267d19f6b2b3017c4bf",
+      "1f9876fff22a0cd7736303ead50786730da553715470f59eefa807496fb3d588",
+      "61573861970fa2201347b6fd057da773c6e06800424ae87ed8ab2f18f4d2299f",
+      "07e5d1f99d77db2d2f525224952e5c58f2e67c0615ee3bd591aaaf276e3b1880"
+    ],
+    "sha256": "f0f3b6bc362bcac28a27cdda6511979f10f2095b31de4de235486a6282d1ed29"
+  }
 }

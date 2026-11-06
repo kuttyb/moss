@@ -1,0 +1,1025 @@
+{
+ "026db4140a8d81508c915b0064ff4b769a6e7ed4": {
+  "pkg:sdk/encoding": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "048b46c1f94dbd3b17a0b04f337740e24cd4fff4": {
+  "pkg:sdk/fmt": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/json": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "05834f8bfe71dfe1f12ce658c3a3ab006af5d27a": {
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "0d5784241a43caba87e8f024d4b10e20b4a996ea": {
+  "pkg:sdk/ndarray": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "0dfbcd79c02439e90ee5a51c1370c181104aa626": {
+  "pkg:sdk/binary": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "0fe2e6ef79933db607ab2e426bafe6974d2b3d42": {
+  "pkg:packages/hash": {
+   "post": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "package moss.hash has no Moss sources under <FIXTURE>/packages/hash/src",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "1d58b910b54f89a213b274866283a826d8960eb2": {
+  "pkg:sdk/fmt": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "234ff9e2e3a1e03de64be4276f2aef64ba8c6d73": {
+  "pkg:packages/linalg": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:packages/sparse": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:packages/statistics": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf": {
+  "pkg:sdk/datastructures": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "314290020e748d9aa0380701c1e975e99a0de129": {
+  "pkg:sdk/ndarray": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "3ea1092359cb82b537bbf33595b3d75836df8e79": {
+  "pkg:sdk/advanced-data-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "4068976a9a4d1bb046b69fbc35708d8b51f831e4": {
+  "pkg:packages/regex": {
+   "post": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "40d4ae20ab4a4fbe776decab2400ad444e134803": {
+  "pkg:packages/data_utils_integration": {
+   "post": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "4601a468f89b889a58f45639cde0a8e7aba9cc00": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28": {
+  "pkg:packages/linalg": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/sparse": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/statistics": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "48e369446671cd1d44152e140ad0d5250ec518fa": {
+  "pkg:sdk/tables": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "4bae08636c5bb8eff5ef804273f0c08bd32ed503": {
+  "pkg:sdk/text": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "4d04481fceb5c258670c566ed27de879fa0cddfe": {
+  "pkg:sdk/fs": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "58340e636738331b84c5be1e42556ee612a73449": {
+  "pkg:sdk/advanced-data-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "5cc8b17e0b16dd16a743b7dd244d0fad583e34b2": {
+  "pkg:sdk/parse": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "67b7d9b7f0b3cf858862aa167ce024b63981e1cd": {
+  "pkg:packages/linalg": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/numerics_integration": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/sparse": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/statistics": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "6ce098afe2d7546c2775236c56b7ff973666016b": {
+  "pkg:sdk/data-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "6ef17f1c2edc1022f00f77a35bec051b1b9cdab3": {
+  "pkg:sdk/data-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/fmt": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/json": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "76baf8739276a5e451baa18ae13cde9970b0ac08": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "7773a3006faf6b247fe808de54f6a8ec01ea95ba": {
+  "pkg:sdk/tables": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "7ba41b83fd15200842ac3585138c0587f78f150f": {
+  "pkg:sdk/text": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "7bf962d287a4ce341c2b7015f4c7032d9f395031": {
+  "pkg:sdk/data-acceptance": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/fmt": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/json": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/parse": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/path": {
+   "post": {
+    "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "7e049160ef46ab847a3621486c28ad5a40e02204": {
+  "pkg:sdk/encoding": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/text": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "7f6cd553e708664e891673705f935bf684a984fb": {
+  "pkg:packages/compress": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "package moss.compress has no Moss sources under <FIXTURE>/packages/compress/src",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "8d8712a8f80c7063801f06cf69c5cb2935fd6dd6": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "99fc7fc8b260629c60a4c455b292a4365f716d8f": {
+  "pkg:sdk/datastructures": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "a257917ee9edb877ce6b793c2b1a2670e6b51dc3": {
+  "pkg:sdk/text": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "a25a6fe195a7d30e5eb71aee2766630409816d99": {
+  "pkg:packages/math": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/random": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/time": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "a50a8342cbb33067dd21a7e3f502497c22929203": {
+  "pkg:packages/compress": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:packages/hash": {
+   "post": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:packages/regex": {
+   "post": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "ac328671d66d422a4b5067665e769231cafdef10": {
+  "pkg:sdk/csv": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "b2f09d61407b0d6344223a6d108733a27b63f6a5": {
+  "pkg:packages/regex": {
+   "post": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "package moss.regex has no Moss sources under <FIXTURE>/packages/regex/src",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "b4271cdc3b86f543b8add199af49983903d9ddd5": {
+  "pkg:sdk/ndarray": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/ndarray/examples/batched_normalization": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/ndarray/examples/tensor_transforms": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "b9c6ea4049530abd503c97c0d32c444efc45c3a7": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "bb4b340981207a2d988227ca30d3d5b4bd1d3a20": {
+  "pkg:packages/time": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "bff4f72a8a578a4ea575921ee92480741597e550": {
+  "pkg:sdk/fs": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/fs/examples/basic": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/path": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/path/examples/basic": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'pieces'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "c0ff87fd2c361a5ccac668778dfff779bce82017": {
+  "pkg:sdk/advanced-data-acceptance": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "c20ef73cf5c11c63c0c15c24bc580f57e72a6cf5": {
+  "pkg:sdk/json": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "cdcadb26b9b46d332f5f577886c359d44ce839c0": {
+  "pkg:sdk/advanced-data-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "dbb3bec5b05b3255a69f420f0a4d30040fac919d": {
+  "pkg:sdk/tables": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "dd45e30722bcc2d62d4bb46ba184d426cbaea066": {
+  "pkg:packages/hash": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:packages/regex": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "debf99f068735630ca28a7d5ee4fc343832ac094": {
+  "pkg:sdk/cbor": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown local function 'cbor_test__same_ints'; hint: declared in tests/cbor_test.moss; move it into a test module and import it",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "eb09e4214162bbab42d76e432f9eecd9085ef0f6": {
+  "pkg:sdk/text": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  }
+ },
+ "f272af9ca5e7d82b90716aae0494feceddc3d2b7": {
+  "pkg:sdk/path": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/tables": {
+   "post": {
+    "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/text-encoding-acceptance": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ },
+ "f8c14cfce48d2ec384450a68d3e2f6bce93336d2": {
+  "file:sdk/host/io/feasibility/env_probe.moss": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'Env'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "file:sdk/host/io/feasibility/process_probe.moss": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'Process'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "file:sdk/host/io/feasibility/same_package.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "file:sdk/host/io/feasibility/unbounded_range_write.moss": {
+   "post": {
+    "diag": "FILEIO_UNBOUNDED_REQUEST|FileIO write payload must have a statically provable finite bound",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "pkg:sdk/host/io/feasibility/capability_consumer": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/host/io/feasibility/capability_provider": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/host/io/feasibility/consumer": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "pkg:sdk/host/io/feasibility/provider": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  }
+ }
+}

@@ -143,7 +143,8 @@ class TrivialGenerator(Generator):
 # generators live in dag_generators.py to keep this module small).
 from dag_generators import DAG_GENERATORS  # noqa: E402
 from edit_generators import EDIT_GENERATORS  # noqa: E402
-GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS, *EDIT_GENERATORS]
+from replay_generators import REPLAY_GENERATORS  # noqa: E402
+GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS, *EDIT_GENERATORS, *REPLAY_GENERATORS]
 
 
 def reject_reserved_names(root: Path) -> None:
@@ -166,6 +167,8 @@ def check_scenarios(out_dir: Path, rows: list[dict], scenarios: list[dict]) -> N
     assert len(ids) == len(set(ids)), "duplicate scenario ids"
     scratch = C.TMP_ROOT / "scenario_check"
     for sc in scenarios:
+        if sc["kind"] == "replay_step":     # B6: derived from git, no fixture
+            continue
         fx = by_id.get(sc["fixture"])
         if fx is None:
             raise SystemExit(f"scenario {sc['id']}: unknown fixture {sc['fixture']}")
@@ -208,6 +211,9 @@ def write_manifest(rows: list[dict], scenarios: list[dict]) -> None:
                 "seed": C.SUITE_SEED, "total_fixtures": len(rows),
                 "generators": {g.name: g.version for g in GENERATORS},
                 "fixtures": rows, "scenarios": scenarios}
+    if any(sc["kind"] == "replay_step" for sc in scenarios):
+        import replay
+        manifest["replay"] = replay.replay_range(scenarios)
     C.MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
@@ -239,6 +245,10 @@ def cmd_verify_determinism() -> int:
     frozen_sc = {sc["id"]: sc for sc in manifest.get("scenarios", [])}
     bad += [f"scenario:{sc['id']}" for sc in scenarios if frozen_sc.get(sc["id"]) != sc]
     bad += [f"scenario:{i}" for i in sorted(set(frozen_sc) - {sc["id"] for sc in scenarios})]
+    if any(sc["kind"] == "replay_step" for sc in scenarios):
+        import replay
+        if manifest.get("replay") != replay.replay_range(scenarios):
+            bad.append("replay range")
     if bad:
         print(f"NON-DETERMINISTIC or drifted: {bad}", file=sys.stderr)
         return 1
@@ -273,6 +283,12 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
     scenarios = manifest.get("scenarios", [])
     if scenarios:
         import scenarios as S
+        import replay
+        try:
+            replay.verify_range(manifest)
+            print("replay range: sha256 ok")
+        except C.ToolError as exc:
+            failures.append(str(exc))
         by_id = {f["id"]: f for f in manifest["fixtures"]}
         for sc in scenarios:
             body = {k: v for k, v in sc.items() if k != "sha256"}
@@ -280,7 +296,17 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
             line = f"scenario {sc['id']}: spec sha256 {'ok' if ok else 'MISMATCH'}"
             if not ok:
                 failures.append(f"scenario {sc['id']}: spec sha256 mismatch")
-            if compile_check:
+            if sc["kind"] == "replay_step":
+                import replay
+                found = replay.validate_step(sc, tc, C.TMP_ROOT / "validate") if compile_check else []
+                if not compile_check:
+                    try:
+                        replay.verify_spec_against_git(sc)
+                    except C.ToolError as exc:
+                        found = [str(exc)]
+                failures += found
+                line += ", replay ok" if not found else ", FAILED"
+            elif compile_check:
                 fx = by_id[sc["fixture"]]
                 found = (S.validate_scenario(sc, fx, tc, C.TMP_ROOT / "validate")
                          if sc["kind"] == "edit_sequence"
