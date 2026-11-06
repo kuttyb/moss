@@ -17905,3 +17905,23 @@ untouched.
   If it does not, obtain an explicit independent classification backed by
   evidence before integration. The Agent 2 review report and Team C caveat are
   held in the candidate worktree pending archive after disposition.
+
+### Fast Debug indexed READ follow-up frozen for review
+
+- On exact a4 base, follow-up implementation `1d64e51fc3ef3243aea29f4125ededa8cb6905e2`
+  is frozen on isolated branch `phase28-r7-010-imported-index-read-fastdebug`.
+  It adds checked per-occurrence primitive-value vs nonprimitive-borrowed
+  classification for conditional Vector indices and makes Fast Debug consume a
+  nonescaping borrowed element for the tested `Vector[String]` path. The checker
+  fact requirement/disposition and consumer corruption hooks fail closed.
+- Dev and optimized builds pass. The registered imported-generic source-backed
+  and source-free gate passes Default/Shadow on dev with positive Fast Debug
+  borrow observation and checker/native/interpreter corruption tests; opt passes
+  functional Default/Shadow with test-only hooks skipped. Feedback validation and
+  diff checks pass. No full suite or oracle ran on this candidate.
+- Evidence is deliberately limited to direct `Vector[String]` conditions: the
+  attempt to exercise an aggregate projected field (`items[i].value`) fails in
+  Fast Debug earlier at `conditional Map read authority unavailable`. That path
+  remains unverified and must not be generalized as covered. Agent 2 and Team C
+  review of exact SHA `1d64e51f` is pending. Neither `a4cb6fb4` nor `1d64e51f` is
+  integrated pending independent closure of the no-copy boundary.
