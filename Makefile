@@ -159,6 +159,8 @@ check-parallel: moss-dev moss-opt
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_local_ownership.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_projected_call_argument_read.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_projected_call_argument_read.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase28_indexed_call_argument_read.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_indexed_call_argument_read.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/phase28/r7_010/team_b/check_projected_call_argument_read_consumer.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)

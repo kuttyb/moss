@@ -2,10 +2,10 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, pushed HEAD
-  `6dae29cb5bc85030665c02ed853a9b9ea325dead`. It integrates Team B's frozen
-  projected-member consumer slice (`78de4e67aa718e195f9d11495f3abf4568a192cd`)
-  based on `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`, with L7 runner
-  registration in `Makefile` and `tests/run.sh`. No merge to `phase28-work`
+  `43e88664dd7efc5c00e11f7058a887f1c5b0caa4`; local HEAD
+  `bb77c16e976645a5d507138e5c855e706954e1bd` integrates Team A's reviewed
+  direct-index checker fact and feedback follow-up. L7 runner registration
+  for that checker gate is currently uncommitted. No merge to `phase28-work`
   or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
@@ -24,20 +24,20 @@
   review is GO on exact staging SHA `6dae29cb`; an isolated review build and
   registered consumer gate pass. L7's initial stale-binary run was discarded;
   the integrated compiler was rebuilt before validation.
-  The full Regex package still fails at direct
-  `parts[0]` String indexing because the checker has no exact fact for bare
-  `Vector[index]`. Team A's separate checker fact candidate is pushed on
-  `phase28-r7-010-team-a-next-checker` at
-  `3092243e8b2b5d290a87d553205eb27e44f6b334`; independent code review is GO,
-  with delivery pending one task-specific developer-experience feedback record.
-  Team B has started its exact bare-index consumer in a separate worktree based
-  on `6dae29cb` plus that checker commit.
+  The full Regex package's direct `parts[0]` String read now has a checker fact;
+  native consumption and package acceptance remain pending Team B. Team A's
+  fact and feedback are integrated from reviewed commits `3092243e` and
+  `3ef3cd23`.
 - Team C refreshed exact-source audit is frozen/pushed on
   `phase28-r7-010-team-c-refreshed-audit` at
   `1f69ed92599180974ef15ed41689c0e5db6f9ff7`; independent Agent 2 review is
   GO for the limited evidence scope. It verifies frozen oracle digests and the ORACLE-10A clone evidence
   gate, but carries forward the previous 252-row full inventory rather than
   claiming a new full-oracle run. The stale 524 count is explicitly retired.
+- On integrated source `bb77c16e`, `moss-dev` and `moss-opt` rebuilds pass; the
+  direct-index checker gate passes Default and EST-shadow. `make -n
+  check-parallel` confirms both registrations; feedback validation and
+  `git diff --check` pass. Native direct-index consumption remains pending.
 - Current disposition remains NO-GO. Remaining: Team B native consumer repair
   and independent review; rerun Team C's frozen oracle, clone provenance and
   corruption/parity audits against the combined SHA; resolve semantic failures

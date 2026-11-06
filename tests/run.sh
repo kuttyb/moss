@@ -101,6 +101,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adve
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_r7_009_primitive_index.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_projected_call_argument_read.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_projected_call_argument_read.py "$compiler"
+env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_indexed_call_argument_read.py "$compiler"
+MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_indexed_call_argument_read.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_projected_call_argument_read_consumer.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
