@@ -50,6 +50,27 @@
 
 ### Fresh integrated matrix checkpoint — `1d5feb1e` (2026-11-06)
 
+### Focused test-routing follow-up reviewed — `f0d22c13`
+
+- Frozen validation-fix candidate `f0d22c1315f70450d23953224932795b433b75cd`,
+  based on integrated `56ffc1cb`, received scoped GO from Agent 2 and scoped
+  PASS from Team C. Reports are archived at
+  `docs/phase28/agent2-reviews/R7-010-validation-regressions-f0d22c.md` and
+  `docs/phase28/team-c/TEAM_C_R7_010_VALIDATION_FIX_F0D22C13.md`.
+- The candidate changes only validation wiring: WP1 is routed to `moss-dev` in
+  the isolated parallel runner because its perturb/drop hooks require
+  `MOSS_TEST_BUILD`; the Phase 27 `.mossi` test now drops and perturbs the exact
+  local specialization-scoped ReturnValue EST fact, rather than relying on an
+  obsolete source-context fact. ABI-v9 generic-body/Section 2 and
+  Default/Shadow artifact parity controls remain.
+- Agent 2 and Team C independently passed the WP1 and Phase 27 focused gates on
+  exact SHA `f0d22c13`; Default/Shadow corruption matrices, ABI-v9 controls,
+  `.mossi` parity, and debug output all pass. No authority check was weakened.
+- This fix is not yet integrated. Next integrate the reviewed test-only files
+  into isolated staging, then rerun full Default and Shadow matrices
+  sequentially. The latest full integrated Default result on `ce2e2116` remains
+  110/167 PASS, 56 FAIL, 1 SKIP; the complete gates remain below acceptance.
+
 - Active isolated staging source remains at
   `1d5feb1ea237e1d57297d38af0734cb65722c348`; current-session status/audit
   records are uncommitted in this worktree.
