@@ -189,9 +189,23 @@ def main() -> None:
 
         marker_stripped = re.sub(
             rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
-        # Updated after removing the redundant worker-context Arc increment.
+        # The explicit-copy helper and fact IDs include source provenance, so
+        # the same fixture under two isolated worktree roots has different
+        # identifiers. Normalize only this fixture's one copy fact/helper;
+        # the exact source-to-fact and sidecar authority checks below remain
+        # active and are not normalized.
+        helper_ids = re.findall(rb"__moss_copy_value_([0-9a-f]{16})", marker_stripped)
+        fact_ids = re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", marker_stripped)
+        assert len(helper_ids) == 2 and len(set(helper_ids)) == 1, helper_ids
+        assert len(fact_ids) == 1, fact_ids
+        marker_stripped = re.sub(
+            rb"__moss_copy_value_[0-9a-f]{16}",
+            b"__moss_copy_value_<source-fact-id>", marker_stripped)
+        marker_stripped = re.sub(
+            rb"typed-copy-fact-v1:[0-9a-f]{64}",
+            b"typed-copy-fact-v1:<source-fact-id>", marker_stripped)
         assert hashlib.sha256(marker_stripped).hexdigest() == (
-            "113847626e46a1ec7e92107fa9c45d207f35664b27eccafcb6c5315f844e45e6")
+            "5038578ee5995567c7ea9d273c4ba63be94aa7a4a58e975d045c4ea905b22717")
 
         # Generated runtime lines remain byte-identical to the reviewed
         # implementation after removing marker comments; markers are locators,
