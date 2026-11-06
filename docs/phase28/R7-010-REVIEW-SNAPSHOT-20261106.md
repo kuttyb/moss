@@ -1,10 +1,11 @@
 # Phase 28 R7-010 review snapshot — 2026-11-06
 
 Branch: `phase28-r7-010-review-snapshot-20261106`  
-Snapshot implementation tip before this index update: `b61614cd`
+Latest implementation included: `7e4a56b3461ffd949f89542ad50bc7ccd4557241`
 Vertical integration base: `54eeb2c188ec3bc030a9e26a05e8a5ef52811dc0`
 Fresh Root-ingress implementation: `97c2573d8e11e1e5ac4d7a58cd28242bccf66c8d`
-Explicit-copy Root-ingress implementation: `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`
+Explicit-copy native Root-ingress implementation: `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`
+Fast Debug Root-ingress authority follow-up: `7e4a56b3461ffd949f89542ad50bc7ccd4557241`
 
 This branch gathers the current isolated vertical integration and the newly reviewed Root-ingress fresh-payload repair in one place for review. It is a review snapshot, not authorization to merge to `phase28-work` or `main`. Full Phase 28 remains NO-GO.
 
@@ -14,7 +15,9 @@ The vertical integration contains the previously reviewed CollectionView repair,
 
 The added Root-ingress repair issues checker authority only for a fresh direct constructor or literal argument to a main-body Root message. It transfers the already-owned value and grants no Moss copy permission. Exact checker and consumer corruption checks are registered in `tests/tooling/check_phase28_root_ingress_capture_authority.py`.
 
-The next frozen slice, `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`, retains the existing checker `TypedCopyFact` through an Echo-wrapped message expression and resolves it at the exact Root message argument in native lowering. The legacy generic payload, Phase 26 snapshot, and materialized Vector fixtures now request `copy(...)` explicitly. This adds no message-argument Consume rule. The 190-scenario Root gate and optimizer parity gate pass in Default/Shadow, but **both independent reviews returned NO-GO**: Fast Debug still deep-copies every Root message argument through `independent(...)` without consuming the exact checker fact. It duplicates explicit copies and lets a non-copy local pass Fast Debug while native fails closed. Reports: [Agent 2](agent2-reviews/R7-010-root-local-transfer-3f79d7f0.md), [Team C](team-c/R7-010-root-local-transfer-3f79d7f.md). A follow-up is underway; no full suite or oracle ran on `3f79d7f0`.
+The explicit-copy native slice, `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`, retains checker `TypedCopyFact` through Echo-wrapped messages and resolves it at the exact Root argument. It migrated three legacy silent-copy fixtures to explicit `copy(...)` and passed its 190-scenario Default/Shadow gate, but **both independent reviews returned NO-GO** because Fast Debug still deep-copied all Root arguments without checked authority and accepted a no-copy local. Reports: [Agent 2](agent2-reviews/R7-010-root-local-transfer-3f79d7f0.md), [Team C](team-c/R7-010-root-local-transfer-3f79d7f.md).
+
+The follow-up at `7e4a56b3461ffd949f89542ad50bc7ccd4557241` adds exact Fast Debug Copy/Fresh/primitive authority checks, rejects unsupported nonprimitive locals, and moves values into the handler without an extra Root `independent()` copy. Its registered gate passes 214 scenarios in Default and EST-shadow; the explicit-copy trace records one authorized copy and zero boundary copies, while fresh and primitive cases record zero copies. Exact-SHA Agent 2 and Team C reviews are underway. No full suite or oracle ran on `7e4a56b3`.
 
 ## Root-ingress scoped review evidence
 
@@ -27,7 +30,7 @@ The registered gate passed 138 scenarios in Default and EST-shadow. Constructor 
 
 These are focused results. No full suite, frozen ownership oracle, or clone-provenance audit ran on the Root-ingress candidate or this snapshot.
 
-The explicit-copy slice is main-only and has no `.mossi` transport path. Fast Debug's existing Root handler preparation still calls `independent(...)`; this slice does not change or authorize that runtime copy path. Runtime clone provenance remains independently unverified.
+These Root message facts are main-only and have no `.mossi` transport path. Candidate `7e4a56b3` removes the extra Fast Debug Root-boundary deep copy and checks exact Copy/Fresh/primitive authority before dispatch. Runtime clone provenance for other interpreter/native sites remains independently unverified; no runtime clone exception is approved.
 
 ## Phase-wide status and measurement boundaries
 
