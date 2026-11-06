@@ -1,9 +1,10 @@
 # Phase 28 R7-010 review snapshot — 2026-11-06
 
 Branch: `phase28-r7-010-review-snapshot-20261106`  
-Snapshot commit before this index was added: `ec6b28d498a15387ede215c5286f1afacc4d96a7`  
-Vertical integration base: `54eeb2c188ec3bc030a9e26a05e8a5ef52811dc0`  
-Root-ingress implementation: `97c2573d8e11e1e5ac4d7a58cd28242bccf66c8d`
+Snapshot implementation tip before this index update: `b61614cd`
+Vertical integration base: `54eeb2c188ec3bc030a9e26a05e8a5ef52811dc0`
+Fresh Root-ingress implementation: `97c2573d8e11e1e5ac4d7a58cd28242bccf66c8d`
+Explicit-copy Root-ingress implementation: `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`
 
 This branch gathers the current isolated vertical integration and the newly reviewed Root-ingress fresh-payload repair in one place for review. It is a review snapshot, not authorization to merge to `phase28-work` or `main`. Full Phase 28 remains NO-GO.
 
@@ -12,6 +13,8 @@ This branch gathers the current isolated vertical integration and the newly revi
 The vertical integration contains the previously reviewed CollectionView repair, imported generic ReturnValue authority, and declared-`None` method ReturnValue authority. The overloaded-method identity implementation is also present in the integrated source tree; its original scoped review explicitly closed the overload identity issue and isolated Phase 26 `-Werror` requirement. Its review is [R7-010-team-a-overload-fix-3dc803a2.md](agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md).
 
 The added Root-ingress repair issues checker authority only for a fresh direct constructor or literal argument to a main-body Root message. It transfers the already-owned value and grants no Moss copy permission. Exact checker and consumer corruption checks are registered in `tests/tooling/check_phase28_root_ingress_capture_authority.py`.
+
+The next frozen slice retains the existing checker `TypedCopyFact` through an Echo-wrapped message expression and resolves it at the exact Root message argument in native lowering. The legacy generic payload, Phase 26 snapshot, and materialized Vector fixtures now request `copy(...)` explicitly. A separate local-without-copy fixture remains fail-closed. This adds no message-argument Consume rule and no implicit clone authority. Exact-SHA Agent 2 and Team C reviews for `3f79d7f0` are in progress; the implementation worker's focused Default/Shadow gates pass, but no full suite or oracle ran on it.
 
 ## Root-ingress scoped review evidence
 
@@ -23,6 +26,8 @@ Both independent reviewers returned scoped PASS for exact candidate `97c2573d8e1
 The registered gate passed 138 scenarios in Default and EST-shadow. Constructor and string-literal native sources compiled with warnings denied and ran with expected output in both modes. Identifier and materialized-local payloads remain unsupported and fail closed. No payload copy/clone authorization was introduced.
 
 These are focused results. No full suite, frozen ownership oracle, or clone-provenance audit ran on the Root-ingress candidate or this snapshot.
+
+The explicit-copy slice is main-only and has no `.mossi` transport path. Fast Debug's existing Root handler preparation still calls `independent(...)`; this slice does not change or authorize that runtime copy path. Runtime clone provenance remains independently unverified.
 
 ## Phase-wide status and measurement boundaries
 
