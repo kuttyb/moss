@@ -1,0 +1,6 @@
+[project]
+name = "ect_trivial_app"
+version = "0.1.0"
+
+[dependencies]
+ect_trivial_lib = { path = "../lib" }

@@ -68,7 +68,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf ect-check-bench ect-check-validate c1-corpus-gates examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -189,6 +189,12 @@ package-perf: moss-opt
 
 c1-corpus-gates: moss-dev
 	python3 tests/tooling/check_phase26_1_c1_corpus_scope_gates.py $(MOSS_DEV)
+
+ect-check-bench: moss-opt
+	python3 benchmarks/ect_check/run.py bench --moss $(MOSS_OPT)
+
+ect-check-validate: moss-opt
+	python3 benchmarks/ect_check/generate.py --validate-only --moss $(MOSS_OPT)
 
 bench-torture: moss-opt
 	python3 benchmarks/phase25_4/cpp_baseline/run.py --moss $(MOSS_OPT)

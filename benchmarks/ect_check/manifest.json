@@ -1,0 +1,60 @@
+{
+  "suite_name": "moss_ect_check",
+  "version": "0.1.0",
+  "seed": 20261105,
+  "total_fixtures": 3,
+  "generators": {
+    "trivial": "1.0.0"
+  },
+  "fixtures": [
+    {
+      "id": "trivial_file_pass",
+      "path": "trivial/file_pass",
+      "kind": "file",
+      "entry": "main.moss",
+      "expected_status": "pass",
+      "metadata": {
+        "shape": "file",
+        "constant": 3
+      },
+      "category": "smoke",
+      "generator": "trivial",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "cf902962282a0e79bd7d20c7f0ed9becfba80b50a20d91caa6948129d5b85442"
+    },
+    {
+      "id": "trivial_file_fail",
+      "path": "trivial/file_fail",
+      "kind": "file",
+      "entry": "main.moss",
+      "expected_status": "fail",
+      "metadata": {
+        "shape": "file",
+        "reason": "unknown symbol"
+      },
+      "category": "smoke",
+      "generator": "trivial",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "cda65c9639788bbab5b558c6913009565059d59efd940bbe61ed9e406558cc93"
+    },
+    {
+      "id": "trivial_pkg_pass",
+      "path": "trivial/pkg_pass",
+      "kind": "package",
+      "entry": "app",
+      "expected_status": "pass",
+      "metadata": {
+        "shape": "package_graph",
+        "packages": 2,
+        "constant": 3
+      },
+      "category": "smoke",
+      "generator": "trivial",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "012c821900953705919a2acf3b77367be85b7bdfed00b69be403762e71b38cff"
+    }
+  ]
+}

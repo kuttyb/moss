@@ -18112,3 +18112,13 @@ future optimizer-isolated proof and must remain explicit in final review.
   documented C1 failures; all other phase acceptance gates passed as recorded
   in `docs/phase27/27_5_5_REPORT.md`.
 - No unfinished Phase 27.5.5 work remains.
+
+# Phase 28.5 Team 1 bench harness (branch phase28-5-bench)
+
+- Added `benchmarks/ect_check/` (generator framework, frozen manifest, runner,
+  gate, M1/M2) and read-only env-gated counters in `src/semantic_checker.cpp`
+  (`MOSS_ECT_COUNTERS`, `ect_m1_*`, `ect_m2_*`). Targets `ect-check-bench`,
+  `ect-check-validate`.
+- `make check`: 3 failures identical to the documented baseline
+  (`check_phase25_conformance` gate 10, `check_phase27_accepts_rustc`,
+  `shard_swarm_cases`); no new failures.
