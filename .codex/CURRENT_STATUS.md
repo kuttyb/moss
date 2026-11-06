@@ -17249,3 +17249,16 @@ untouched.
   broader operator counts. Runtime evidence, Root-ingress provenance (42
   checks), and v3 builder corruption gates passed. The report authorizes no
   runtime clone exception and identifies no safe runtime repair yet.
+- Team A's checker successor `d2a89e77a4ee3f7d94198464c1b471b18f900283`
+  was integrated with its transfer-disposition parent as L7 commits `5bce0f5c`
+  and `1d742242`. L7 registered the projected call-argument authority gate in
+  both `Makefile` and `tests/run.sh`, default and EST-shadow, at commit
+  `120eef8a` (pushed). Rebuilt `moss-dev` and `moss-opt`; projected-read
+  authority passes in the direct, default, and shadow runs; local ownership
+  default/shadow, specialized ownership, and R7-009 (17/17) pass; feedback
+  validation and diff checks pass. Agent 2 gave a provisional NO-GO on the
+  unregistered Team A SHA and is re-reviewing this exact registered staging
+  SHA before Team B starts its native consumer. R7-006 still fails at ORACLE-48
+  with expected `MOSS_COMPILE_ERROR` vs actual `ROOT_UNHANDLED_RAISE`; I
+  reproduced the identical result on both staging base and Team A candidate,
+  so this is inherited, and no oracle expectation was changed.
