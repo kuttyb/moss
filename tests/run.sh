@@ -104,6 +104,8 @@ MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_pr
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_indexed_call_argument_read.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_indexed_call_argument_read.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_projected_call_argument_read_consumer.py "$compiler"
+env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_indexed_call_argument_read_consumer.py "$compiler"
+MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/phase28/r7_010/team_b/check_indexed_call_argument_read_consumer.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_match_arm_authority.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_copy_index_authority.py "$compiler"
