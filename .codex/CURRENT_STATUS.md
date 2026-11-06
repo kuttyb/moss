@@ -17542,6 +17542,15 @@ untouched.
   PASS; frozen Team A `735a36c3` and its overload follow-up `3dc803a2` fail at
   the same later stage. This remains a Team A stack regression and the next
   checker/`.mossi`/consumer dependency.
-- No full Default/EST-shadow suite or full frozen oracle has run on this
-  combined tree. Runtime clone authorization remains NONE. Do not use the
-  historical measurements above as validation for this branch.
+- No full Default suite or full frozen oracle has run on this combined tree.
+  Runtime clone authorization remains NONE. Do not use the historical
+  measurements above as validation for this branch.
+- Current combined-tree EST-shadow run completed at code SHA `12b9407c`
+  (`make --jobs="$(nproc)" check-shadow`): 92/167 PASS, 74 FAIL, 1 SKIP.
+  Among the failures are X1 v9/v10, source-free proof-edge/import consumers,
+  and other compiler-contract regressions; `shard_phase5_tooling` skipped after
+  `shard_phase4_diff` failed. The phase25.4 performance gate also reported
+  three pinned real-world fixture hash mismatches. Full job detail is retained
+  under `build/tests/parallel/`. This result does not meet the 166/167 baseline
+  and is not an acceptance pass. The default full suite has not run on this
+  tree yet.
