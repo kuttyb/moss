@@ -25,6 +25,28 @@
   slice does not address independent Root-ingress, CollectionView, indexed-read,
   transfer, or runtime clone-provenance failures. Whole Phase 28 remains NO-GO;
   no merge to `phase28-work` or `main` is authorized or performed.
+- Fresh integrated Default run on `ce2e2116` completed at 110/167 PASS,
+  56 FAIL, 1 SKIP (wall 454.16s). This improves two jobs versus exact
+  `1d5feb1e` (108/167, 58 FAIL, 1 SKIP): R2 WP2 and several ReturnValue
+  consumers now pass, along with Phase 25 typed API and nominal identity.
+  However, the newly registered WP1 gate failed because parallel routing chose
+  `moss-opt`, which lacks `MOSS_TEST_BUILD` corruption hooks; its isolated
+  dev-build gate and both independent reviews passed. The prior Phase 27
+  `.mossi` gate also now fails because it drops the old generic source-context
+  fact, while the reviewed checker correctly materializes a specialization-
+  scoped ReturnValue EST fact. Its test must perturb/drop that new exact fact
+  and keep the source-backed compatibility contract explicit. These two
+  targeted test integration failures need a fresh reviewed follow-up. Shadow
+  has not been run on `ce2e2116`; rerun both full suites sequentially after the
+  follow-up is independently approved. The full Default remains substantially
+  below baseline; Phase 28 remains NO-GO.
+- Agent 2's independent `R7-010 Clone Provenance Root-Cause Audit` is archived
+  at `docs/phase28/agent2-reviews/R7-010-CLONE-PROVENANCE-ROOT-CAUSE-AUDIT.md`.
+  Its exact-source 84-sidecar scan and Team C's match report 258 rows: 252
+  repeated unclassified runtime-context observations, 4 capture-only tags and
+  2 explicit-copy rows. Nine qualified `Arc::clone` sites are separately
+  inventoried. No runtime clone is approved; the 252 rows are not 252 distinct
+  Moss value-copy operations.
 
 ### Fresh integrated matrix checkpoint — `1d5feb1e` (2026-11-06)
 
