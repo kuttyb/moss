@@ -2041,6 +2041,24 @@ class Checker {
       p_.typed_semantics->return_value_facts = return_value_facts_;
       p_.typed_semantics->required_return_value_occurrences =
           required_return_value_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (const char* duplicate = std::getenv(
+              "MOSS_TEST_DUPLICATE_IMPORTED_GENERIC_RETURN_FACT")) {
+        const auto fact = std::find_if(
+            p_.typed_semantics->return_value_facts.begin(),
+            p_.typed_semantics->return_value_facts.end(),
+            [&](const auto& candidate) {
+          return candidate.provenance.enclosing_callable_id ==
+              std::string("fn:") + duplicate &&
+              candidate.specialization_context.find(
+                  std::string("fn:") + duplicate + "<") == 0;
+        });
+        if (fact != p_.typed_semantics->return_value_facts.end()) {
+          const auto copied = *fact;
+          p_.typed_semantics->return_value_facts.push_back(copied);
+        }
+      }
+#endif
       p_.typed_semantics->collection_view_facts = collection_view_facts_;
       p_.typed_semantics->required_collection_view_occurrences =
           required_collection_view_occurrences_;
@@ -30927,6 +30945,61 @@ class Checker {
                   "MOSS_INTERNAL_INVARIANT");
             fact.est_fact_context = overload_context
                 ? exact_method_est_context : expression_fact_context();
+              // A Section 1 checked body is projected before a generic
+              // specialization is known. Materialize its ReturnValue EST type
+              // only from the checker's exact closed specialization contract,
+              // at the imported body's exact ReturnValue occurrence/context.
+              // Consumers then read this fact; they never specialize it.
+              if (!overload_context && checking_specialization_ &&
+                  current_check_result_function_ &&
+                  current_check_result_function_->imported_checked_body_projected &&
+                  current_semantic_context_ ==
+                      "fn:" + current_check_result_function_->name) {
+                const auto& specialization_type =
+                    checking_specialization_->return_type_ref;
+                auto* imported_return_arena =
+                    expression_arena(fact.est_arena_index);
+                if (!specialization_type || !specialization_type->is_closed() ||
+                    !fact.expression_type ||
+                    !specialization_type->structurally_equal(
+                        *fact.expression_type) || !imported_return_arena ||
+                    fact.expression_occurrence_id == UINT32_MAX)
+                  err(s.line,
+                      "imported generic ReturnValue lacks exact checked specialization identity/type",
+                      "MOSS_INTERNAL_INVARIANT");
+                const string imported_context = functional_function_context(
+                    *current_check_result_function_, checking_specialization_);
+                const auto* existing = imported_return_arena->facts(
+                    fact.expression_occurrence_id, imported_context);
+                if (existing && existing->type &&
+                    existing->type->is_closed() &&
+                    !existing->type->structurally_equal(
+                        *specialization_type))
+                  err(s.line,
+                      "imported generic ReturnValue EST context contradicts checked specialization",
+                      "MOSS_INTERNAL_INVARIANT");
+#ifdef MOSS_TEST_BUILD
+                const char* drop = std::getenv(
+                    "MOSS_TEST_DROP_IMPORTED_GENERIC_RETURN_EST_FACT");
+                const bool selected = !std::getenv(
+                    "MOSS_TEST_SELECT_IMPORTED_GENERIC_RETURN_EST_FACT") ||
+                    current_check_result_function_->name ==
+                        std::getenv(
+                            "MOSS_TEST_SELECT_IMPORTED_GENERIC_RETURN_EST_FACT");
+                const bool drop_selected = selected && drop &&
+                    current_check_result_function_->name == drop;
+#else
+                const bool drop_selected = false;
+#endif
+                if (!drop_selected) {
+                  est::SemanticFacts imported_facts;
+                  imported_facts.type = specialization_type;
+                  imported_return_arena->record_facts(fact.expression_occurrence_id,
+                                      imported_context,
+                                      std::move(imported_facts));
+                  fact.est_fact_context = imported_context;
+                }
+              }
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
             fact.provenance.line = s.line;
@@ -31014,10 +31087,16 @@ class Checker {
                 arena->test_drop_occurrence_fact(
                     fact.expression_occurrence_id, source_context);
 #endif
-              const std::array<string, 2> candidate_contexts{
-                  current_semantic_context_, source_context};
+              std::array<string, 3> candidate_contexts{
+                  current_semantic_context_, source_context, string()};
+              if (checking_specialization_ &&
+                  current_check_result_function_) {
+                candidate_contexts[2] = functional_function_context(
+                    *current_check_result_function_, checking_specialization_);
+              }
               fact.est_fact_context.clear();
               for (const auto& context : candidate_contexts) {
+                if (context.empty()) continue;
                 const auto* source_occurrence = arena
                     ? arena->facts(fact.expression_occurrence_id, context)
                     : nullptr;
@@ -31026,6 +31105,16 @@ class Checker {
                   break;
                 }
               }
+#ifdef MOSS_TEST_BUILD
+              const char* perturb_imported_context = std::getenv(
+                  "MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT");
+              if (checking_specialization_ && current_check_result_function_ &&
+                  current_check_result_function_->imported_checked_body_projected &&
+                  perturb_imported_context &&
+                  current_check_result_function_->name ==
+                      perturb_imported_context)
+                fact.est_fact_context += ":perturbed";
+#endif
               }
             }
             if (!fact.expression_type ||

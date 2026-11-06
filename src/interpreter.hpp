@@ -4502,7 +4502,24 @@ class FastInterpreter {
       const auto* occurrence = arena->facts(handle->expr,
                                              fact->est_fact_context);
       if (!occurrence || !occurrence->type) {
-        if (!fact_is_from_exact_imported_owner(*fact))
+        const Function* imported_checked_owner = nullptr;
+        std::size_t imported_checked_owner_count = 0;
+        if (callable_context.rfind("fn:", 0) == 0)
+          for (const auto& function : program_.functions)
+            if (function.name == callable_context.substr(3) &&
+                function.imported_checked_body_projected) {
+              imported_checked_owner = &function;
+              ++imported_checked_owner_count;
+            }
+        if (imported_checked_owner_count > 1 ||
+            (imported_checked_owner &&
+             imported_checked_owner->semantic_callable_id.empty()))
+          throw std::invalid_argument(
+              "imported checked ReturnValue owner identity is ambiguous");
+        const bool imported_checked_body_owner =
+            imported_checked_owner_count == 1 && imported_checked_owner;
+        if (imported_checked_body_owner ||
+            !fact_is_from_exact_imported_owner(*fact))
           throw std::invalid_argument(
               "return-value EST type fact missing outside exact imported owner");
       } else if (occurrence->type->is_closed()

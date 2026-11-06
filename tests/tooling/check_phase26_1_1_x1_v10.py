@@ -175,6 +175,25 @@ def main() -> int:
                    cwd=app, env=execution_env)
     if executed.stdout != "3\n7\n":
         raise AssertionError(f"ABI-v10 Section 2/generic execution mismatch: {executed.stdout!r}")
+    native = run([str(MARGO), "run", "--json"], cwd=app, env=env)
+    if native.stdout != "3\n7\n":
+        raise AssertionError(
+            f"ABI-v10 generated native execution mismatch: "
+            f"{native.returncode}, {native.stdout!r}, {native.stderr!r}")
+    for hook, value in (
+            ("MOSS_TEST_DROP_IMPORTED_GENERIC_RETURN_EST_FACT", "x1_v10_library__identity"),
+            ("MOSS_TEST_PERTURB_IMPORTED_GENERIC_RETURN_EST_CONTEXT", "x1_v10_library__identity"),
+            ("MOSS_TEST_DUPLICATE_IMPORTED_GENERIC_RETURN_FACT", "x1_v10_library__identity"),
+            ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION", "1")):
+        corrupted_env = execution_env.copy()
+        corrupted_env[hook] = value
+        corrupted = run([str(COMPILER), "run", "--interp",
+                         str(app / "src" / "main.moss")],
+                        cwd=app, env=corrupted_env, ok=False)
+        if corrupted.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in corrupted.stderr:
+            raise AssertionError(
+                f"generic imported ReturnValue corruption did not fail closed: "
+                f"{hook}={value}\nstdout:\n{corrupted.stdout}\nstderr:\n{corrupted.stderr}")
     print("ABI-v10 Section 2 binding, private helper execution, generic Section 1, and E1 provider-only recheck passed")
     return 0
 
