@@ -17,10 +17,13 @@
   performance-corpus SHA mismatches (`rw_packages_regex`,
   `rw_phase106d1_borrowed_reads`, `rw_phase106d1_read_projection`); retain these
   as separate fixture-integrity failures.
-- The frozen oracle has **not** been rerun on `bf5fc461`; the 60/60 semantic,
-  19/60 all-gate, and 41 provenance-only result remains historical, not
-  evidence for this checkpoint. The clone inventory and zero-approved-site
-  policy also remain as previously recorded; no clone exception is authorized.
+- Independent Team C reran the frozen oracle on exact `bf5fc461`: 60/60 semantic
+  PASS, zero engine disagreements, 19/60 all-gate PASS, and 41 provenance-only
+  failures. The 252 generated Rust clone observations are all unverified and
+  unauthorized. Current source-text inventory is 43 literal `.clone()` and 8
+  `Arc::clone` occurrences; the runtime allowlist remains empty. These current
+  counts have distinct inventory meanings from the earlier 252 direct and 588
+  qualified Arc observations recorded against `ae57a3e3`.
 - Next repair dependency: retain and serialize the exact EST context on
   checker-owned ReturnValue authority for imported Section 1 generic bodies,
   then remap it to the exact caller specialization/occurrence in `.mossi`
@@ -31,9 +34,13 @@
   base-callable/source context, leaving a non-authoritative fact. Keep the
   source-free consumer fail-closed with no fallback. The focused repair is
   isolated and has not yet been frozen or independently reviewed.
-- Independent Team C is re-verifying exact `bf5fc461`, including fresh oracle
-  and baseline Shadow provenance reconciliation. Overall Phase 28 status stays
-  **NO-GO**. No merge to `phase28-work` or `main` has occurred.
+- Independent Team C's exact-SHA report is archived at
+  `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
+  PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
+  historical baseline of 166/167 in both modes; separately, exact `150ab36b`
+  metadata and fresh baseline logs report 166/167 Default and 165/167 Shadow,
+  with `shard_swarm_cases` the additional known Shadow failure. Overall Phase 28
+  status stays **NO-GO**. No merge to `phase28-work` or `main` has occurred.
 - The prior intake verification and scoped implementation review are archived
   at `docs/phase28/team-c/R7-010-993fbd54-verification.md` and
   `docs/phase28/agent2-reviews/R7-010-CollectionView-342f2258.md`.
