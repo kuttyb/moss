@@ -17277,7 +17277,12 @@ untouched.
   key needs the exact test module identity. Team A froze the checker fix at
   `7c8d4dceba69b2e5aa5bc5c0bbcd7d07aa1d3025`, with a package-context fixture;
   its targeted gates pass and the Regex test reaches the previous indexed-read
-  invariant. Independent review is pending; Team B is holding native edits.
+  invariant. Independent Agent 2 returned NO-GO: a no-import test declaring
+  `module projected_read_test` was incorrectly attributed to package main
+  `projected_read_app`, and the fix also removed required nonempty module
+  provenance checks from local-transfer and projected-collection-read fact
+  validators. Team A is fixing both exact issues; Team B is holding native
+  edits.
   The standalone `main()` probe can emit the call by legacy place
   rendering, which does not prove the new fact is consumed. The Regex package
   is not accepted until package tests pass after the exact native consumer is
