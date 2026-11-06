@@ -11,6 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/phase28/team_a_ownership/projected_call_argument_read.moss"
+PACKAGE_FIXTURE = ROOT / "tests/phase28/team_a_ownership/projected_call_package"
 TMP = ROOT / "tmp/team-a/projected-call-argument-read"
 TMP.mkdir(parents=True, exist_ok=True)
 
@@ -25,6 +26,9 @@ def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_phase28_projected_call_argument_read.py COMPILER")
     compiler = sys.argv[1]
+    compiler_path = Path(compiler)
+    if not compiler_path.is_absolute():
+        compiler_path = (ROOT / compiler_path).resolve()
     api_executable = TMP / "typed_projected_call_argument_read_test"
     api_compile = run([
         os.environ.get("CXX", "c++"), "-std=c++17", "-Isrc",
@@ -79,6 +83,25 @@ def main() -> int:
                 "MOSS_INTERNAL_OR_IO_ERROR":
             raise AssertionError(
                 f"{hook} did not fail closed: {response!r}\n{corrupted.stderr}")
+    package_check = subprocess.run(
+        [str(compiler_path), "test", "--check", "--json"], cwd=PACKAGE_FIXTURE,
+        env={**os.environ, "MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS": "1"},
+        text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False)
+    package_result = json.loads(package_check.stdout)
+    if not package_result.get("ok"):
+        raise AssertionError(
+            "package test projected-call provenance check failed: "
+            f"{package_result!r}\n{package_check.stderr}")
+    package_rows = re.findall(
+        r'PHASE28_PROJECTED_CALL_READ availability=0 .*?'
+        r'source_module="([^"]+)"', package_check.stderr)
+    expected_module = (
+        "module-v1:moss.projected-call-read-test@0.1.0::projected_read_test")
+    if package_rows != [expected_module]:
+        raise AssertionError(
+            "package test projected-call fact did not retain the exact test "
+            f"module identity: {package_rows!r}\n{package_check.stderr}")
     print("Phase 28 projected call-argument read authority: PASS")
     return 0
 

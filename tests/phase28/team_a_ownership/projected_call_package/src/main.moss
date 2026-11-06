@@ -1,0 +1,4 @@
+module projected_read_app
+
+fn main():
+  pass

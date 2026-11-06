@@ -248,7 +248,6 @@ struct TypedLocalTransferFactV1 {
         source_type->structurally_equal(*target_type) &&
         !specialization_context.empty() && !est_fact_context.empty() &&
         !provenance.source_file.empty() && provenance.line > 0 &&
-        !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
 };
@@ -983,7 +982,6 @@ struct TypedProjectedCollectionReadFactV1 {
         required_access == Effect::Read && temporary_non_escaping_query_borrow &&
         !specialization_context.empty() && !est_fact_context.empty() &&
         !provenance.source_file.empty() && provenance.line > 0 &&
-        !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
 };
@@ -998,7 +996,7 @@ struct TypedProjectedCallArgumentReadFactV1 {
   enum class Availability {
     Present, MissingCallOccurrence, MissingProjection, MissingReceiverBinding,
     UnsupportedTarget, UnsupportedParameterAccess, UnsupportedReceiverBinding,
-    Escaping, Contradictory
+    UnsupportedSourceModule, Escaping, Contradictory
   };
   Availability availability{Availability::MissingProjection};
   std::uint32_t est_arena_index{UINT32_MAX};
@@ -1050,7 +1048,6 @@ struct TypedProjectedCallArgumentReadFactV1 {
         projection_occurrence_span.source_end >=
             projection_occurrence_span.source_begin &&
         !provenance.source_file.empty() && provenance.line > 0 &&
-        !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
 
@@ -1082,7 +1079,8 @@ struct TypedProjectedCallArgumentReadFactV1 {
         projection_occurrence_span.line > 0 &&
         projection_occurrence_span.source_end >=
             projection_occurrence_span.source_begin &&
-        !provenance.source_file.empty() && provenance.line > 0;
+        !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty();
   }
 
   bool is_intentionally_unsupported() const noexcept {
@@ -1090,6 +1088,7 @@ struct TypedProjectedCallArgumentReadFactV1 {
         (availability == Availability::UnsupportedTarget ||
          availability == Availability::UnsupportedParameterAccess ||
          availability == Availability::UnsupportedReceiverBinding ||
+         availability == Availability::UnsupportedSourceModule ||
          availability == Availability::Escaping ||
          availability == Availability::Contradictory);
   }

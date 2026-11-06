@@ -2129,6 +2129,8 @@ class Checker {
                     << " nonescaping=" << fact.temporary_nonescaping_borrow
                     << " context=" << std::quoted(fact.specialization_context)
                     << " est_context=" << std::quoted(fact.est_fact_context)
+                    << " source_module="
+                    << std::quoted(fact.provenance.defining_module_id)
                     << '\n';
         if (std::getenv("MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS"))
           for (const auto& function : p_.functions)
@@ -28912,13 +28914,49 @@ class Checker {
           ? current_source_file_ : statement.source_file;
       fact.provenance.line = statement.line;
       fact.provenance.enclosing_callable_id = current_semantic_context_;
-      string defining_module = p_.main_module;
+      string defining_module = p_.main_module.empty()
+          ? p_.module_name : p_.main_module;
+      bool source_module_authoritative = true;
+      if (starts_with(current_semantic_context_, "test:") ||
+          starts_with(current_semantic_context_, "bench:")) {
+        // Test/benchmark declarations are not callables and carry no
+        // defining_module field. In explicit-module package test targets, the
+        // checked imports retain the exact owner module for their source file.
+        std::set<string> source_modules;
+        for (const auto& import : p_.imports)
+          if (import.source_file == fact.provenance.source_file &&
+              !import.owner_module.empty())
+            source_modules.insert(import.owner_module);
+        if (source_modules.size() == 1) {
+          defining_module = *source_modules.begin();
+        } else if (!p_.module_identities.count(defining_module) &&
+                   p_.module_identities.count("")) {
+          // Legacy implicit-module packages key their exact package identity
+          // by the empty module spelling, even when main_module names the
+          // manifest package.
+          defining_module.clear();
+        } else if (source_modules.size() > 1) {
+          source_module_authoritative = false;
+        }
+      }
       if (starts_with(current_semantic_context_, "fn:")) {
         auto function = functions_.find(current_semantic_context_.substr(3));
         if (function != functions_.end())
           defining_module = function->second->defining_module;
       }
-      fact.provenance.defining_module_id = program_module_identity(p_, defining_module);
+      if (p_.package_identities) {
+        const auto identity = p_.module_identities.find(defining_module);
+        if (identity != p_.module_identities.end())
+          fact.provenance.defining_module_id = identity->second;
+        else
+          source_module_authoritative = false;
+      } else {
+        fact.provenance.defining_module_id =
+            program_module_identity(p_, defining_module);
+      }
+      if (!source_module_authoritative)
+        fact.availability = TypedProjectedCallArgumentReadFactV1::Availability::
+            UnsupportedSourceModule;
       if (!fact.has_exact_occurrence()) continue;
       TypedProjectedCallArgumentReadRequirementV1 requirement;
       static_cast<TypedProjectedCallArgumentReadFactV1&>(requirement) = fact;
