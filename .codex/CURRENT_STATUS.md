@@ -29,10 +29,23 @@ current staging HEAD `ff0e6eefcef88ad9fa9b1703ae31f4786db516ab`.
   overload-specific correction is required before approval. Phase 26 X1 also
   fails on this candidate. The exact-SHA report is
   `docs/phase28/agent2-reviews/R7-010-team-a-735a-review.md`.
-- A scoped Team A follow-up is implementing the overload identity repair from
-  the frozen candidate on a new branch/SHA. The old candidate and its review
-  worktree remain preserved; no Team A implementation is integrated to
-  staging until a new exact-SHA independent review returns GO.
+- The old candidate and its review worktree remain preserved. No Team A
+  implementation is integrated to staging until a new exact-SHA independent
+  review returns GO.
+- The Team A follow-up is now frozen at implementation SHA
+  `3dc803a241c49bbff7c6976fbdb0c749e3aba56d` on branch
+  `phase28-r7-010-team-a-overload-fix`; branch HEAD
+  `c60507f31ce72edfeaee1e711208da0b9b09e14d` adds only the session note.
+  Its focused ReturnValue/Fast Debug gates pass in Default and EST-shadow;
+  the isolated Phase 26 C3 `-Werror` gate passes. Int and String overload facts
+  have distinct signature contexts and TypeRefs, and dropped/crossed/wrong-type
+  facts fail closed. Independent exact-SHA review is pending. Do not integrate
+  until that review returns scoped GO.
+- X1 remains red after the overload fix at a later Fast Debug return-authority
+  consumer on both `3dc803a2` and `735a36c3`; baseline `150ab36b` fails earlier
+  during Section 2 generation. The native duplicate Rust method-name failure
+  is also reproduced on `735a36c3` and baseline `150ab36b`; it is separate from
+  the checker identity fix. Preserve both as end-to-end follow-up evidence.
 
 ### Phase 28 R7-010 L7 continuation checkpoint (2026-11-05)
 

@@ -24,6 +24,17 @@ The detailed repro, commands, and evidence are in
 The frozen candidate remains intact and is not integrated. A follow-up must
 produce a new frozen SHA and receive independent review before integration.
 
+The follow-up is frozen at implementation SHA
+`3dc803a241c49bbff7c6976fbdb0c749e3aba56d` on
+`phase28-r7-010-team-a-overload-fix`; independent exact-SHA re-review is
+pending. Focused overload ReturnValue/Fast Debug gates pass in Default and
+EST-shadow, including dropped/crossed/wrong-type authority failures, and the
+isolated Phase 26 C3 `-Werror` gate passes. X1 still fails later in Fast Debug
+return-authority consumption on both this candidate and `735a36c3`; the
+baseline fails earlier. Native duplicate Rust method-name lowering is also
+reproduced on the candidate and baseline and remains a separate finding. These
+are not presented as green end-to-end oracles or full-suite evidence.
+
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  
 **State:** isolated staging; no merge to `phase28-work` or `main`. The HEAD is
