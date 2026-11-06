@@ -17885,3 +17885,23 @@ untouched.
   exact run conditions rather than silently replacing either. The user-provided
   166/167 remains the acceptance target pending reconciliation of this runner
   difference.
+
+### Imported indexed READ checkpoint review disposition
+
+- Frozen candidate `a4cb6fb4a1fda8ea27c71c5908a06ef1ae9360f0` received Agent 2
+  scoped GO for exact checker/native authority, `.mossi` source-free specialization,
+  and fail-closed corruption cases. Team C independently passed the native,
+  source-backed/source-free, Default/Shadow and optimized functional gates, but
+  did not establish Fast Debug no-copy behavior.
+- Team C found the ordinary Fast Debug EST Index path returns
+  `values->at(index)` by `Value` value; only a separate borrowed Echo path uses
+  `borrowed_element_value`. The candidate leaves this interpreter path unchanged.
+  Because no implicit nonprimitive Moss copies are allowed, do not integrate
+  `a4cb6fb4` until a focused follow-up establishes and closes this boundary.
+- Current next dependency: on an isolated follow-up based on `a4cb6fb4`, prove
+  whether the `Value` materialization copies Moss payloads for indexed String
+  and aggregate reads. If it does, make Fast Debug consume the checked READ
+  authority and use a safe nonescaping borrow, with parity and corruption tests.
+  If it does not, obtain an explicit independent classification backed by
+  evidence before integration. The Agent 2 review report and Team C caveat are
+  held in the candidate worktree pending archive after disposition.
