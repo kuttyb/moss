@@ -59,9 +59,11 @@ runtime clone exception is authorized.
 
 On `1990dd82`, a fresh focused take harness is 17/18; only `take_map_field`
 fails closed for missing bounded, nonescaping Map-view authority. The checker
-producer/remap path is under scoped follow-up. Independent Team C verification
-of intake SHA `993fbd54a5000d184dae5db7228da5fd63bffe4f` is also in progress in
-an isolated worktree; no final Team C verdict is recorded yet.
+producer/remap/use-context path is under scoped follow-up. A same-harness-SHA
+comparison confirms baseline `150ab36b` passes 18/18 with native/optimized
+parity, so this is a candidate regression. Independent Team C verification of
+intake SHA `993fbd54a5000d184dae5db7228da5fd63bffe4f` is in progress in an
+isolated worktree; no final Team C verdict is recorded yet.
 
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  

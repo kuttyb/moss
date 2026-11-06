@@ -17582,9 +17582,10 @@ untouched.
 - On integrated source SHA `1990dd82`, the focused
   `python3 tests/phase28/verify_take_fixtures.py` rerun is 17/18: only
   `take_map_field` fails closed with `nonprimitive Map view lacks checked
-  nonescaping CollectionView authority`. The existing baseline notes attribute
-  this to a checker producer gap; a fresh scoped follow-up is tracing and
-  validating that fact path. No Fast Debug/native fallback is being added.
+  nonescaping CollectionView authority`. A same-harness-SHA comparison confirms
+  this is a candidate regression: exact baseline `150ab36b` passes 18/18 with
+  native/optimized parity. The checker producer/remap/use-context path is under
+  scoped follow-up. No Fast Debug/native fallback is being added.
 - Team C has started independent verification of exact intake commit
   `993fbd54a5000d184dae5db7228da5fd63bffe4f` in a separate worktree; its
   current-suite deltas, frozen oracle, clone inventory, and X1 evidence remain
