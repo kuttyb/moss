@@ -17345,3 +17345,19 @@ R7-009 primitive-index gates all pass. `git diff --check` and
 `python3 tests/tooling/check_agent_feedback.py` pass. Shared runner registration
 and native consumer integration remain with L7/Team B. No oracle expectations
 were changed. Independent review is pending after freezing the candidate.
+## Team A audited assertEqual name-field comparison follow-up
+
+- The combined Phase 28 check gate flagged the checker-owned exact
+  `Stmt::Call` callee-name comparison for the reserved `assertEqual` test
+  intrinsic in `retain_projected_call_argument_read_facts`.
+- Added one exact checker `assertEqual` entry to the audited raw `Stmt` NAME
+  comparison counts in `tests/tooling/check_phase27_string_debt.py`. This
+  records the call-name slot as a name comparison; it does not alter semantic
+  resolution, fact production, or consumer behavior.
+- Targeted validation passes: string-debt gate, indexed-call authority gate,
+  projected-call authority gate, local ownership, specialized ownership,
+  R7-009 primitive-index, feedback validation, and `git diff --check`.
+  The full `make check` suite has not been run on this follow-up.
+- Candidate branch `phase28-r7-010-team-a-assertEqual-identity` is based on
+  Team A delivered commit `3ef3cd23b494cae545c66d23a2dc2a9edb57fe82`; commit,
+  push, and independent review remain pending.
