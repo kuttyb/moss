@@ -197,8 +197,8 @@ def sections(stats: dict | None, meta: dict) -> list[str]:
         lines.append("")
         noop = [c for c in stats["commits"] if c["mode"] == mode and c["post_status"] == "pass"
                 and c["post_checker_runs"] == 0]
-        lines += [f"Passing post-edit checks that started NO checker run (margo answered from its package "
-                  f"fingerprint, the changed files are outside the fingerprinted inputs): {len(noop)} commits "
+        lines += [f"Passing post-edit checks in which no checker ran (margo reported every package as skipped; "
+                  f"the changed files were not package sources or tests): {len(noop)} commits "
                   f"({', '.join('#' + str(c['index']) for c in noop) or 'none'}).", ""]
     cold = [c for c in stats["commits"] if c["mode"] == "cold"]
     lines += ["### Per commit (cold)", "",
