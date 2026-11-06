@@ -2000,6 +2000,197 @@ class Generator {
     }
   }
 
+  const TypedProjectedCallArgumentReadFactV1*
+  resolve_projected_call_argument_read_fact(
+      const Stmt& statement, std::uint32_t argument_index,
+      const string& functional_context) const {
+    if (argument_index >= statement.args.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument index is invalid");
+
+    // This contract covers one exact argument shape: Vector[index].member,
+    // passed to a checked READ parameter. Other expressions continue through
+    // their existing lowering paths.
+    string projection_base, projection_field, receiver_text, index_text;
+    if (!tree_parse_member_access(statement.args[argument_index],
+                                  projection_base, projection_field) ||
+        !tree_parse_index(projection_base, receiver_text, index_text))
+      return nullptr;
+
+    if (statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument statement identity unavailable");
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto* typed_semantics = checked_program.typed_semantics.get();
+    if (!typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument facts unavailable");
+
+    const est::Handle* handle = nullptr;
+    for (const auto& candidate : statement.expression_handles) {
+      if (candidate.slot != est::ExprSlot::Argument ||
+          candidate.argument_index != argument_index)
+        continue;
+      if (handle)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate projected call argument handle");
+      handle = &candidate;
+    }
+    if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[handle->arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument EST handle unavailable");
+    const auto& arena = *checked_program.expression_arenas[handle->arena_index];
+    if (handle->expr >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument EST ExprId is invalid");
+
+    est::ExprId root = handle->expr;
+    while (root < arena.size()) {
+      const auto* grouped = std::get_if<est::Parenthesized>(&arena.at(root));
+      if (!grouped) break;
+      root = grouped->inner;
+    }
+    const auto* member = root < arena.size()
+        ? std::get_if<est::Member>(&arena.at(root)) : nullptr;
+    const auto* index = member && member->base < arena.size()
+        ? std::get_if<est::Index>(&arena.at(member->base)) : nullptr;
+    const auto* receiver = index && index->base < arena.size()
+        ? std::get_if<est::Identifier>(&arena.at(index->base)) : nullptr;
+    if (!member || !index || !receiver || root != handle->expr ||
+        member->name != projection_field)
+      return nullptr;
+
+    const string context = functional_context.empty() ? "main" : functional_context;
+    const auto* receiver_facts = arena.facts(index->base, context);
+    if (!receiver_facts || !receiver_facts->type)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument receiver type unavailable");
+    if (receiver_facts->type->kind != TypeKind::Builtin ||
+        receiver_facts->type->name != "vector")
+      return nullptr;
+    const string specialization = codegen_active_specialization_key_;
+    const TypedProjectedCallArgumentReadRequirementV1* requirement = nullptr;
+    size_t requirement_count = 0;
+    for (const auto& candidate :
+         typed_semantics->required_projected_call_argument_read_occurrences) {
+      if (candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.argument_index != argument_index ||
+          candidate.est_arena_index != handle->arena_index ||
+          candidate.call_argument_expression_occurrence_id != handle->expr ||
+          candidate.specialization_context != context ||
+          candidate.specialization_identity != specialization)
+        continue;
+      requirement = &candidate;
+      ++requirement_count;
+    }
+    // A source-level Vector projection may have a different checker-owned
+    // contract (for example, an unsupported target). Leave that path to its
+    // own consumer; if a requirement exists, however, it must validate here.
+    if (requirement_count == 0)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required projected call argument READ fact missing");
+    if (requirement_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT projected call argument requirement is duplicate or ambiguous");
+    const auto exact_requirement = *requirement;
+
+#ifdef MOSS_TEST_BUILD
+    auto& requirements = checked_program.typed_semantics
+        ->required_projected_call_argument_read_occurrences;
+    auto& facts = checked_program.typed_semantics
+        ->projected_call_argument_read_facts;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(),
+          [&](const auto& row) {
+            return row.statement_occurrence_id ==
+                       exact_requirement.statement_occurrence_id &&
+                row.est_arena_index == exact_requirement.est_arena_index &&
+                row.call_argument_expression_occurrence_id ==
+                    exact_requirement.call_argument_expression_occurrence_id &&
+                row.argument_index == exact_requirement.argument_index &&
+                row.specialization_context == exact_requirement.specialization_context &&
+                row.specialization_identity == exact_requirement.specialization_identity;
+          });
+      if (it != requirements.end()) requirements.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT"))
+      requirements.push_back(exact_requirement);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT")) {
+      auto it = std::find_if(requirements.begin(), requirements.end(),
+          [&](const auto& row) {
+            return row.statement_occurrence_id ==
+                       exact_requirement.statement_occurrence_id &&
+                row.est_arena_index == exact_requirement.est_arena_index &&
+                row.call_argument_expression_occurrence_id ==
+                    exact_requirement.call_argument_expression_occurrence_id &&
+                row.argument_index == exact_requirement.argument_index &&
+                row.specialization_context == exact_requirement.specialization_context &&
+                row.specialization_identity == exact_requirement.specialization_identity;
+          });
+      if (it != requirements.end()) it->required_access = Effect::Consume;
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_CALL_ARGUMENT_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(),
+          [&](const auto& row) {
+            return row.statement_occurrence_id ==
+                       exact_requirement.statement_occurrence_id &&
+                row.est_arena_index == exact_requirement.est_arena_index &&
+                row.call_argument_expression_occurrence_id ==
+                    exact_requirement.call_argument_expression_occurrence_id &&
+                row.argument_index == exact_requirement.argument_index &&
+                row.specialization_context == exact_requirement.specialization_context &&
+                row.specialization_identity == exact_requirement.specialization_identity;
+          });
+      if (it != facts.end()) facts.erase(it);
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_PROJECTED_CALL_ARGUMENT_READ_FACT"))
+      facts.push_back(exact_requirement);
+    if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_PROJECTED_CALL_ARGUMENT_READ_FACT")) {
+      auto it = std::find_if(facts.begin(), facts.end(),
+          [&](const auto& row) {
+            return row.statement_occurrence_id ==
+                       exact_requirement.statement_occurrence_id &&
+                row.est_arena_index == exact_requirement.est_arena_index &&
+                row.call_argument_expression_occurrence_id ==
+                    exact_requirement.call_argument_expression_occurrence_id &&
+                row.argument_index == exact_requirement.argument_index &&
+                row.specialization_context == exact_requirement.specialization_context &&
+                row.specialization_identity == exact_requirement.specialization_identity;
+          });
+      if (it != facts.end()) it->permits_copy = true;
+    }
+#endif
+
+    try {
+      const auto& fact = typed_semantics->find_projected_call_argument_read_fact(
+          exact_requirement);
+      const auto argument_span = arena.span(handle->expr);
+      const auto projection_span = arena.span(root);
+      if (!fact.is_authoritative() ||
+          fact.required_access != Effect::Read || fact.permits_copy ||
+          !fact.temporary_nonescaping_borrow ||
+          fact.target_callable_identity != "builtin:assertEqual-v1" ||
+          fact.target_parameter_access != Effect::Read ||
+          fact.receiver_expression_occurrence_id != index->base ||
+          fact.collection_index_expression_occurrence_id != member->base ||
+          fact.index_expression_occurrence_id != index->index ||
+          fact.member_projection_expression_occurrence_id != root ||
+          fact.member_name != member->name ||
+          fact.argument_occurrence_span.source_begin != argument_span.source_begin ||
+          fact.argument_occurrence_span.source_end != argument_span.source_end ||
+          fact.projection_occurrence_span.source_begin != projection_span.source_begin ||
+          fact.projection_occurrence_span.source_end != projection_span.source_end)
+        throw std::invalid_argument(
+            "projected call argument fact does not match exact checked READ projection");
+      return &fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
   const TypedProjectedCollectionReadFactV1*
   resolve_projected_collection_read_fact(
       const string& projection_expression) const {
@@ -10604,15 +10795,26 @@ class Generator {
             size_t id = assertion_temp_++;
             string actual = "__moss_assert_actual_" + std::to_string(id);
             string expected = "__moss_assert_expected_" + std::to_string(id);
+            const auto* actual_projected_read =
+                resolve_projected_call_argument_read_fact(
+                    s, 0, functional_context);
+            const auto* expected_projected_read = s.args.size() > 1
+                ? resolve_projected_call_argument_read_fact(
+                      s, 1, functional_context)
+                : nullptr;
             o << indent(level) << "let " << actual << " = &("
-              << expr(s.args[0], d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0))
+              << (actual_projected_read
+                      ? read_call_place(s.args[0], d, locals, &types)
+                      : expr(s.args[0], d, locals, &types,
+                             statement_functional_pipeline_id(
+                                 s, functional_context, 0)))
               << ");\n";
             o << indent(level) << "let " << expected << " = &("
-              << expr(s.args[1], d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 1))
+              << (expected_projected_read
+                      ? read_call_place(s.args[1], d, locals, &types)
+                      : expr(s.args[1], d, locals, &types,
+                             statement_functional_pipeline_id(
+                                 s, functional_context, 1)))
               << ");\n";
             string escaped_text;
             for (char ch : s.text) {
