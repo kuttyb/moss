@@ -17266,3 +17266,25 @@ untouched.
   with expected `MOSS_COMPILE_ERROR` vs actual `ROOT_UNHANDLED_RAISE`; I
   reproduced the identical result on both staging base and Team A candidate,
   so this is inherited, and no oracle expectation was changed.
+- Post-integration Regex test comparison exposed a new checker regression.
+  On the current checker integration (`120eef8a`), the intact isolated Regex
+  package test exits before native lowering with `MODULE_IDENTITY_UNRESOLVED`
+  at `src/main.moss:0`. I built the exact pre-projected-read staging parent
+  `c056c290` in a separate worktree and ran the same `./margo test --root`
+  against the same package; it reaches the previous fail-closed nonprimitive
+  indexed-read invariant instead. The new projected-call fact producer sets
+  provenance from `p_.main_module` in package test context, where the empty
+  key needs the exact test module identity. Team A owns this checker fix and
+  is preparing a reviewed successor; Team B is holding native edits until it
+  lands. The standalone `main()` probe can emit the call by legacy place
+  rendering, which does not prove the new fact is consumed. The Regex package
+  is not accepted until package tests pass after the exact native consumer is
+  integrated.
+- Team C reran the frozen v2 oracle at exact staging source `1d3be42d`:
+  19/60 all-gates PASS, 60/60 semantic PASS, 41 clone-provenance-only failures,
+  zero engine disagreements, and the same 84-artifact/1,876-operation
+  inventory. Its reviewer confirmed v1/v2 expectation digests unchanged. A
+  worktree-root-dependent runtime evidence digest difference is under
+  investigation; L7-root gate passes. Team C will report the path-derived
+  identity distinction and use a narrowly normalized proof only if it leaves
+  the runtime markers, operators, and sidecar authority checks exact.
