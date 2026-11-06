@@ -88,6 +88,42 @@ These are candidate operations from the same 84-artifact scan, grouped by source
 
 The scanner separately reports 408 generated `#[derive(Clone)]` declarations as capabilities, not invocations. It associates two helper-body clone calls with the explicit-copy helper above. Static scanning does not expand macros or inspect Rust MIR/Copy loads.
 
+### Nine `.to_string()` sites
+
+The following exact spans come from representative ORACLE-01 Debug output, SHA-256 `ee6ebfbbe15d928ff312be7218ab1935fe91e51d1b657977d7d39fc433ba8be1`; every template repeats in all 84 artifacts. Source/artifact columns are 1-based byte columns, end-exclusive.
+
+| Runtime group and source span | Generated Rust span | Source and semantics |
+|---|---|---|
+| `display_runtime.cpp:8:24–36` | `1422:24–36` | `out.push_str(&value.to_string())`; formats an `i64` to a temporary Rust String for display. Source SHA `e5df9f89684ec03181a7296d12f0bbdb7fb5a1114b24a0bc300cd79752522158`. |
+| `char_string_ordering_runtime.cpp:115:74–86` | `1393:74–86` | ASCII branch of `__moss_string_slice`; creates an owned substring result. |
+| `char_string_ordering_runtime.cpp:128:46–58` | `1406:46–58` | UTF-8-boundary branch of the same slice result construction. |
+| `float_format_runtime.cpp:1187:37–49` | `1242:37–49` | Formats NaN text for canonical float output. |
+| `float_format_runtime.cpp:1188:45–57` | `1243:45–57` | Formats positive infinity text. |
+| `float_format_runtime.cpp:1189:50–62` | `1244:50–62` | Formats negative infinity text. |
+| `float_format_runtime.cpp:1191:69–81` | `1246:69–81` | Formats signed zero text. |
+| `float_format_runtime.cpp:1198:34–46` | `1253:34–46` | Formats the decimal mantissa before assembling canonical float output. |
+| `float_format_runtime.cpp:1225:34–46` | `1280:34–46` | Formats the decimal exponent before appending canonical float output. |
+
+Source hashes: `char_string_ordering_runtime.cpp` `8b68c96fd117294d4146ceb3a2fd020edf34b7a21d7e2a5daa45c4c3467e0c0a` and `float_format_runtime.cpp` `a488de64270c396542b4bcb2a250df0d4e38463922b610b993616a59ac2eaa11`. Seven rows are rendering/formatting. The two slice rows are different: the native emitter maps a checked string `.slice` call to `__moss_string_slice` at `src/native_generator.cpp:6662`; that helper returns `MossStr` (plain runtime ABI: `String`) from the selected UTF-8 substring. [Phase 24 text architecture](../PHASE_24_TEXT_ENCODING_ARCHITECTURE.md#confirmed-string-and-encoding-surface) specifies that `String.slice(start, length)` makes one result copy. This is owned substring construction, not a comparison/rendering buffer and not general authorization for `.to_string()` or a Moss value clone. The helper body is emitted unconditionally in these artifacts, but has no callsite in this corpus; therefore there is no per-occurrence checker fact to join here and no slice operation is exercised by these 84 fixtures. The documented String.slice result contract is the semantic basis for the helper when used; it does not authorize general materialization.
+
+### Six `.copied()` rows and primitive type evidence
+
+Each of the three source loops appears in Debug and Optimized Rust. Type-query outputs below come from the 3417 worktree compiler. `Int` is a scalar primitive with implicit Copy behavior under the frozen ownership contract. These facts establish only these primitive loop items; no nonprimitive copy authority is inferred.
+
+| Fixture/source span | Generated `.copied()` span; Debug artifact SHA-256 | Checked type evidence |
+|---|---|---|
+| ORACLE-29 `oracle_29_loop_carried_ownership_rebind.moss:4:3–20`, `for x in frontier:` | Debug `ORACLE-29-LOOP-CARRIED-OWNERSHIP.rs:3437:31–40` (SHA `e6fa0b91d18ad2794f6e8d2750c1cd4c2eced49fc7c53a4e9dd4242d0f7c4284`); Optimized has same Rust SHA. Sidecars: Debug `6004b1381d80841f7ba32e2edbb70a66107d545850f6e1ecb33d7872a035670a`, Optimized `53bd92d0bd6789850af5eb95dde6e85875c2b0be998b466444e607b0111fda2f`. | `./moss inspect expand --source <fixture> --json` reports checked parameter `frontier: vector[int]`, effect READ; iteration item `x: Int`. Fixture SHA `f2afa5348afec5917b781c3dcf68a38155cf560a34a6898e87ecd3649c611b9f`. |
+| ORACLE-56 `oracle_56_primitive_vector_element_read.moss:10:3–22`, `for value in values:` | Debug `ORACLE-56-PRIMITIVE-VECTOR-ELEMENT-READ.rs:3458:33–42` (SHA `771dc71e6554bd789a5dab1ecc5f9a52ae56e23b78fcb1f6e50b357353ce9460`); Optimized has same Rust SHA. Sidecars: Debug `cf0af98b204bef3bd0bb407fff52833295d7fdd10cd76c11523f772a4ac387aa`, Optimized `a361621551f3e1f1e19a904e40bfa3cc3d33bcf779b49bfc80ec5a9843e4102c`. | `./moss type values --source <fixture> --json` resolves `vector[int]` (inferred); iteration item `value: Int`. Fixture SHA `fa78608fa7ca2c638541fce0b8be3fddbd17626f7790d1368834efade9844e05`. |
+| ORACLE-59 `oracle_59_shadowed_binding_identity.moss:11:3–26`, `for double_val in [101]:` | Debug `ORACLE-59-SHADOWED-BINDING-IDENTITY.rs:3464:45–54` (SHA `7af49587435bc635a2a13b6cca190e16c8568fcbcad643384531ff4eecd756b4`); Optimized has same Rust SHA. Sidecars: Debug `46ae3552a9c5f7adf202b193df0837076e6bb2d08cf3b616c2ae3376ff0d28a9`, Optimized `978ae96e41f93ca1d067be40f87f56cc4be2c41cba880704f83f55614a7f71b0`. | `./moss type double_val --source <fixture> --enclosing main --json` resolves the line-11 binding as `int` (inferred); collection element is the literal `101`. Fixture SHA `382d35151bc9ea60a49fdf03716739d63189b34f0e7501e036639f776be5f0fa`. |
+
+### Other scanned alternatives
+
+A recursive scan of all 84 generated `*.rs` files found zero `.cloned()`, `.to_vec()`, `.to_owned()`, and `Clone::clone` occurrences. This is limited to these emitted artifacts.
+
+The two `String::from` occurrences are Debug/Optimized outputs for ORACLE-20. Source `oracle_20_take_nested_map_vector.moss:9:13–23` uses the literal key in `it = take(m["first"].items)`; generated `ORACLE-20-TAKE-NESTED-MAP-VECTOR.rs:3493:52–73` materializes `String::from("first")` for `.get_mut(...)`. `./moss type m --source <fixture> --json` resolves `map[string,Bucket]`. Debug artifact SHA-256: `0b66dfa556f6456974ca27f3a7a73998b58f05ad4be99ef5f26fb1eb0e122c3a`; Optimized has the same Rust SHA. Sidecars: Debug `54ccafce628d0f71ab8870c33fe5cadc832fc325821740b0d6162de5a46a0956`, Optimized `47f66693b350c7f5616783bf06665e0c19e2ea0a13d5711b2fd14534f3de40ab`. Fixture SHA `5d54e3f0afc85d57c0d0f66813ca77f38a9a476f67f68bfa086f8915926652ac`. This constructs a temporary lookup key from a literal, not a stored Moss key/value clone; no `TypedCopyFactV1` row applies.
+
+The `mem::replace` and `mem::take` totals remain as listed above: runtime `replace` sites reset scalar state or transfer a pointer; source Moss `take(...)` sites lower only after `resolve_take_fact` finds a checked `TypedTakeFactV1` (see `src/native_generator.cpp:8852–8904, 9279+`), so those are transfers.
+
 ## Result and limits
 
 - The two semantic-copy rows have exact checked `TypedCopyFactV1` provenance.
@@ -97,3 +133,5 @@ The scanner separately reports 408 generated `#[derive(Clone)]` declarations as 
 - The audit is based on generated source and sidecars, not Rust MIR; macros and unobserved call paths are outside its proof. Candidate operation classifications are limited to the exact 84 artifacts and source SHA above.
 
 No oracle expectation, compiler source, shared runner, or clone registry was modified for this audit.
+
+Team-efficiency metrics are not duplicated for this continuation; see the existing [Team B closeout record](agent-patterns/team-b-w08-w11.md). This audit report adds source/artifact evidence only and does not infer new team headcount, review, or usage metrics.
