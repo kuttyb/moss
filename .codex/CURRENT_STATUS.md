@@ -17274,17 +17274,20 @@ untouched.
   against the same package; it reaches the previous fail-closed nonprimitive
   indexed-read invariant instead. The new projected-call fact producer sets
   provenance from `p_.main_module` in package test context, where the empty
-  key needs the exact test module identity. Team A owns this checker fix and
-  is preparing a reviewed successor; Team B is holding native edits until it
-  lands. The standalone `main()` probe can emit the call by legacy place
+  key needs the exact test module identity. Team A froze the checker fix at
+  `7c8d4dceba69b2e5aa5bc5c0bbcd7d07aa1d3025`, with a package-context fixture;
+  its targeted gates pass and the Regex test reaches the previous indexed-read
+  invariant. Independent review is pending; Team B is holding native edits.
+  The standalone `main()` probe can emit the call by legacy place
   rendering, which does not prove the new fact is consumed. The Regex package
   is not accepted until package tests pass after the exact native consumer is
   integrated.
 - Team C reran the frozen v2 oracle at exact staging source `1d3be42d`:
   19/60 all-gates PASS, 60/60 semantic PASS, 41 clone-provenance-only failures,
   zero engine disagreements, and the same 84-artifact/1,876-operation
-  inventory. Its reviewer confirmed v1/v2 expectation digests unchanged. A
-  worktree-root-dependent runtime evidence digest difference is under
-  investigation; L7-root gate passes. Team C will report the path-derived
-  identity distinction and use a narrowly normalized proof only if it leaves
-  the runtime markers, operators, and sidecar authority checks exact.
+  inventory. The report is frozen at
+  `phase28-r7-010-team-c-current-conformance` `bbe0c6bd`; independent Agent 2
+  returned GO after verifying v1/v2 expectation digests, source-root hash
+  normalization, and the 84-artifact inventory. Docs-only follow-up
+  `3dbf9307` records that review and adds the Phase 28 team-pattern closeout.
+  The conformance report remains NO-GO because 41 fixtures fail provenance.
