@@ -17870,3 +17870,18 @@ untouched.
 - Failure signatures requiring triage: imported generic expression build fails closed because nonprimitive indexed READ lacks exact authority; Phase 26 W2 ReturnValue is missing/ambiguous; X1 and Phase 27 `.mossi` corruption subtests pass unexpectedly when run by the parallel suite's optimized non-`MOSS_TEST_BUILD` compiler. The standalone `.mossi` hook gate passes with `moss-dev` and fails with `moss-opt`, so this is a test-build routing/coverage issue to correct or explicitly classify, not evidence that the consumer hook was verified. Multiple other legacy jobs fail and require exact baseline comparison before assigning ownership. The performance gate still reports three pinned corpus SHA mismatches (Regex, Phase106d1 borrowed reads, and read projection); `shard_phase5_tooling` is skipped after `shard_phase4_diff` fails.
 - No fresh frozen ownership oracle or clone-provenance audit was run on this source. The historical oracle and clone inventories remain tied to their recorded earlier SHAs. Overall Phase 28 remains NO-GO, with no runtime clone exception or production merge.
 - Next dependency: classify the imported generic indexed-READ failure from checker producer through `.mossi` serialization to native consumption, then repair it as one vertical slice with Default/Shadow perturb/drop coverage and independent review. In parallel, use the exact baseline to distinguish introduced failures from pre-existing failures; do not infer delta from historical suite numbers alone.
+
+### Exact baseline comparison follow-up
+
+- Fresh Default run on clean baseline `150ab36b41e45504aaa400aa717da241be7542fb`
+  reported 166/167 PASS, 1 FAIL, 0 SKIP; sole failure is the established
+  `check_phase21_borrowed_view_write` case. This independently confirms the
+  stated Default baseline. X1 v9/v10, Phase 27 `.mossi`, W2, and imported generic
+  expression jobs all pass there but fail on integrated `2baeda7e`.
+- Fresh Shadow runner on the same baseline SHA reported 165/167 PASS, 2 FAIL,
+  0 SKIP: the same borrowed-view failure plus `shard_swarm_cases` on a shadow
+  structural divergence (`put(take())`). This conflicts with the user-provided
+  established Shadow baseline of 166/167; retain both measurements and their
+  exact run conditions rather than silently replacing either. The user-provided
+  166/167 remains the acceptance target pending reconciliation of this runner
+  difference.
