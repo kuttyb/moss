@@ -1,13 +1,12 @@
 ### Phase 28 R7-010 L7 continuation checkpoint (2026-11-05)
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
-  worktree `tmp/phase28-r7-010-l7-query`, HEAD
-  `4a5f5171` integrates Team B's frozen projected-member consumer slice
-  (`78de4e67aa718e195f9d11495f3abf4568a192cd`) on source base
-  `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`; L7 runner registration is
-  in the current uncommitted L7 diff. The branch remains isolated from
-  `phase28-work` and `main`.
-  No merge to `phase28-work` or `main`.
+  worktree `tmp/phase28-r7-010-l7-query`, pushed HEAD
+  `6dae29cb5bc85030665c02ed853a9b9ea325dead`. It integrates Team B's frozen
+  projected-member consumer slice (`78de4e67aa718e195f9d11495f3abf4568a192cd`)
+  based on `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`, with L7 runner
+  registration in `Makefile` and `tests/run.sh`. No merge to `phase28-work`
+  or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
   builds pass. On this exact HEAD, projected-call argument authority,
@@ -16,22 +15,27 @@
   local ownership facts pass.
 - On the intact Regex package, `./margo test` fails closed at the known
   `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
-  READ/WRITE, Copy, or projected-borrow authority`; this confirms the native
-  consumer defect Team B owns.
+  READ/WRITE, Copy, or projected-borrow authority`; this was the pre-consumer
+  result on the exact staging source.
 - Team B's native consumer path consumes the exact checked
   `TypedProjectedCallArgumentReadFactV1` for `Vector[index].member` call
   arguments. Debug/Optimized/Fast Debug parity and six corruption cases pass;
-  its test is now registered in `Makefile` and `tests/run.sh`. Independent
-  review is pending. The stale-binary first run did not exercise Team B's
-  source; after rebuilding the integrated compiler, the registered consumer
-  gate, projected-call checker gate, feedback validator, and diff check pass.
+  its test is registered in `Makefile` and `tests/run.sh`. Independent Agent 2
+  review is GO on exact staging SHA `6dae29cb`; an isolated review build and
+  registered consumer gate pass. L7's initial stale-binary run was discarded;
+  the integrated compiler was rebuilt before validation.
   The full Regex package still fails at direct
   `parts[0]` String indexing because the checker has no exact fact for bare
-  `Vector[index]`; Team A is developing that separate checker authority.
+  `Vector[index]`. Team A's separate checker fact candidate is pushed on
+  `phase28-r7-010-team-a-next-checker` at
+  `3092243e8b2b5d290a87d553205eb27e44f6b334`; independent code review is GO,
+  with delivery pending one task-specific developer-experience feedback record.
+  Team B has started its exact bare-index consumer in a separate worktree based
+  on `6dae29cb` plus that checker commit.
 - Team C refreshed exact-source audit is frozen/pushed on
   `phase28-r7-010-team-c-refreshed-audit` at
   `1f69ed92599180974ef15ed41689c0e5db6f9ff7`; independent Agent 2 review is
-  pending. It verifies frozen oracle digests and the ORACLE-10A clone evidence
+  GO for the limited evidence scope. It verifies frozen oracle digests and the ORACLE-10A clone evidence
   gate, but carries forward the previous 252-row full inventory rather than
   claiming a new full-oracle run. The stale 524 count is explicitly retired.
 - Current disposition remains NO-GO. Remaining: Team B native consumer repair
