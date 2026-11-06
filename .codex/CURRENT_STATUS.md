@@ -17559,3 +17559,12 @@ untouched.
   `take_map_field` failed closed because nonprimitive Map view access lacks
   checked nonescaping CollectionView authority. The Default parallel regression
   suite did not start, so no Default suite count is available for this SHA.
+- A separate vertical X1 follow-up is frozen at
+  `46ff31314cc6000e9543a7459e07a19a7119c703` on branch
+  `phase28-r7-010-x1-authority`, based on this branch before the follow-up
+  source edit (`b2c6198a`). It serializes/imports exact handler and failure-arm
+  Reply ReturnValue authority with normalized module provenance. X1, handler
+  artifact and Fast Debug/native consumer corruption gates, generated native
+  execution (`4\n7\n9\n`), overload authority Default/Shadow, and C3 isolated
+  `-Werror` pass. Independent Agent 2 exact-SHA review is pending. No full suite
+  or oracle has run on this follow-up. It is not integrated into this branch.
