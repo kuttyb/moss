@@ -24,19 +24,23 @@
   `Arc::clone` occurrences; the runtime allowlist remains empty. These current
   counts have distinct inventory meanings from the earlier 252 direct and 588
   qualified Arc observations recorded against `ae57a3e3`.
-- The next vertical slice is frozen separately at
-  `3ead174e42b5954f27e7d24113bc7ec5643a8fe9` on
-  `phase28-r7-010-imported-return-authority`, based on `bf5fc461`. It retains
-  checker-issued closed specialization TypeRefs at exact ReturnValue EST
-  occurrences and the exact function specialization context for imported
-  Section 1 generic bodies. Fast Debug requires that exact fact for a unique
-  imported checked-body owner; there is no consumer type fallback. Focused X1
-  v9/v10, native v10 output (`3\n7\n`), drop/perturb/duplicate/wrong-specialization
-  corruption, Phase 27 `.mossi` EST, ReturnValue Default/Shadow, isolated Phase
-  26 C3 `-Werror`, feedback validation, and diff checks pass per the worker.
-  Full suites and frozen oracle have not run on this SHA. Agent 2 adversarial
-  review and Team C read-only verification are in progress. Do not integrate
-  until both exact-SHA reviews return scoped GO.
+- The next vertical slice was frozen at
+  `3ead174e42b5954f27e7d24113bc7ec5643a8fe9`, based on `bf5fc461`, and received
+  Agent 2 scoped GO for imported generic ReturnValue EST authority. The reviewed
+  implementation commit was cherry-picked unchanged into this isolated branch
+  as `9772cf31`; `git diff 3ead174e..9772cf31` is empty for the implementation,
+  focused tests, and feedback record. The checker retains closed
+  specialization TypeRefs at exact ReturnValue EST occurrences and the exact
+  function specialization context for imported Section 1 generic bodies.
+  Fast Debug requires that fact for the unique imported checked-body owner; no
+  consumer type fallback is added. Focused X1 v9/v10, native v10 output
+  (`3\n7\n`), drop/perturb/duplicate/wrong-specialization corruption, Phase 27
+  `.mossi` EST, ReturnValue Default/Shadow, and isolated Phase 26 C3 `-Werror`
+  pass per independent review. The exact-SHA Agent 2 report is archived at
+  `docs/phase28/agent2-reviews/R7-010-imported-generic-ReturnValue-3ead174e.md`.
+  Team C's independent read-only oracle verification of `3ead174e` remains in
+  progress. Full suites and oracle have not yet been rerun on integrated source
+  checkpoint `9772cf31`; Phase 28 remains NO-GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
