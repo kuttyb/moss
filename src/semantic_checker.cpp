@@ -20888,7 +20888,8 @@ class Checker {
     auto bind_message_est_occurrence = [&](SemanticCallEdge& edge,
                                            const Stmt& statement,
                                            const string* source_expression,
-                                           std::size_t expression_index) {
+                                           std::size_t expression_index,
+                                           est::ExprId message_id) {
       for (const auto& handle : statement.expression_handles) {
         if (!source_expression) {
           if (handle.slot != est::ExprSlot::Receiver) continue;
@@ -20905,16 +20906,14 @@ class Checker {
         }
         const auto* arena = expression_arena(handle.arena_index);
         if (!arena || handle.expr >= arena->size()) continue;
-        const auto root = est::unparenthesized(*arena, handle.expr);
-        const auto* message = std::get_if<est::Message>(&arena->at(root));
-        if (!message || message->handler != edge.target.substr(
-                edge.target.find_last_of('.') + 1))
-          continue;
+        if (message_id >= arena->size()) continue;
+        const auto* message = std::get_if<est::Message>(&arena->at(message_id));
+        if (!message) continue;
         const auto* receiver = std::get_if<est::Identifier>(
             &arena->at(message->target));
         if (!receiver || receiver->name != edge.receiver) continue;
         edge.message_est_arena_index = handle.arena_index;
-        edge.message_expression_occurrence_id = root;
+        edge.message_expression_occurrence_id = message_id;
         edge.receiver_expression_occurrence_id = message->target;
         edge.message_source_fingerprint = handle.source_fingerprint;
         return true;
@@ -20926,35 +20925,93 @@ class Checker {
                                    std::size_t expression_index,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
-      string receiver_name;
-      string handler_name;
-      vector<string> arguments;
-      if (!tree_parse_message(expression, receiver_name,
-                             handler_name, arguments) ||
-          !tree_plain_identifier(receiver_name) ||
-          !tree_plain_identifier(handler_name))
-        return;
-      auto receiver = current_env.find(receiver_name);
-      if (receiver == current_env.end()) return;
-      const string domain = canonical_type_name(receiver->second);
-      auto declared = domains_.find(domain);
-      const Handler* handler = declared == domains_.end()
-          ? nullptr : find_handler(*declared->second, handler_name);
-      if (!handler) return;
-      vector<string> argument_types;
-      for (const auto& argument : arguments)
-        argument_types.push_back(
-            inferred_expr_type(argument, current_env).value_or(""));
-      SemanticCallEdge edge{
-          source, "handler:" + domain + "." + handler_name, line,
-          argument_types, expression_source.empty() ? physical_source
-                                                     : expression_source,
-          "synchronous_message", receiver_name, {}, {}};
-      if (!statement || !bind_message_est_occurrence(
-              edge, *statement, &expression, expression_index)) return;
-      edge.occurrence = call_occurrences[std::make_tuple(
-          edge.source_file, edge.line, edge.target)]++;
-      p_.semantic_call_edges.push_back(std::move(edge));
+      if (!statement) return;
+      for (const auto& handle : statement->expression_handles) {
+        if (handle.source_fingerprint != est::fingerprint(expression)) continue;
+        if (statement->kind == Stmt::Kind::Echo &&
+            (handle.slot != est::ExprSlot::Argument ||
+             handle.argument_index != expression_index)) continue;
+        if (statement->kind == Stmt::Kind::Assign &&
+            ((expression_index == 0 && handle.slot != est::ExprSlot::LhsPlace) ||
+             (expression_index == 1 && handle.slot != est::ExprSlot::RhsValue)))
+          continue;
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena || handle.expr >= arena->size()) continue;
+        std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+          if (id >= arena->size()) return;
+          if (const auto* message = std::get_if<est::Message>(&arena->at(id))) {
+            const auto* target = std::get_if<est::Identifier>(
+                &arena->at(message->target));
+            if (!target) return;
+            auto receiver = current_env.find(target->name);
+            if (receiver == current_env.end()) return;
+            const string domain = canonical_type_name(receiver->second);
+            auto declared = domains_.find(domain);
+            const Handler* handler = declared == domains_.end()
+                ? nullptr : find_handler(*declared->second, message->handler);
+            if (!handler) return;
+            vector<string> argument_types;
+            const auto& source_text = expression;
+            for (const auto argument_id : message->arguments) {
+              const auto& span = arena->span(argument_id);
+              if (span.source_begin > span.source_end ||
+                  span.source_end > source_text.size()) return;
+              const auto argument = source_text.substr(
+                  span.source_begin, span.source_end - span.source_begin);
+              argument_types.push_back(
+                  inferred_expr_type(argument, current_env).value_or(""));
+            }
+            SemanticCallEdge edge{
+                source, "handler:" + domain + "." + message->handler, line,
+                argument_types, expression_source.empty() ? physical_source
+                                                           : expression_source,
+                "synchronous_message", target->name, {}, {}};
+            if (!bind_message_est_occurrence(edge, *statement, &expression,
+                                              expression_index, id)) return;
+            edge.occurrence = call_occurrences[std::make_tuple(
+                edge.source_file, edge.line, edge.target)]++;
+            p_.semantic_call_edges.push_back(std::move(edge));
+            for (const auto argument_id : message->arguments) visit(argument_id);
+            visit(message->target);
+            return;
+          }
+          const auto& node = arena->at(id);
+          std::visit([&](const auto& item) {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, est::Unary>) {
+              visit(item.operand);
+            } else if constexpr (std::is_same_v<T, est::Binary>) {
+              visit(item.left);
+              visit(item.right);
+            } else if constexpr (std::is_same_v<T, est::Call>) {
+              visit(item.callee);
+              for (const auto child : item.arguments) visit(child);
+            } else if constexpr (std::is_same_v<T, est::Take>) {
+              for (const auto child : item.arguments) visit(child);
+            } else if constexpr (std::is_same_v<T, est::Member>) {
+              visit(item.base);
+            } else if constexpr (std::is_same_v<T, est::Index>) {
+              visit(item.base);
+              visit(item.index);
+            } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+              visit(item.inner);
+            } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
+              visit(item.value);
+            } else if constexpr (std::is_same_v<T, est::Collection> ||
+                                 std::is_same_v<T, est::Tuple>) {
+              for (const auto child : item.elements) visit(child);
+            } else if constexpr (std::is_same_v<T, est::Constructor>) {
+              visit(item.type);
+              for (const auto child : item.type_arguments) visit(child);
+              for (const auto child : item.arguments) visit(child);
+            } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+              visit(item.input);
+              for (const auto child : item.stages) visit(child);
+            }
+          }, node);
+        };
+        visit(handle.expr);
+      }
     };
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
@@ -21000,7 +21057,20 @@ class Checker {
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
                 "synchronous_message", statement.a, {}, {}};
-            if (bind_message_est_occurrence(edge, statement, nullptr, 0)) {
+            est::ExprId message_id = UINT32_MAX;
+            for (const auto& handle : statement.expression_handles) {
+              if (handle.slot != est::ExprSlot::Receiver) continue;
+              const auto* arena = expression_arena(handle.arena_index);
+              if (!arena || handle.expr >= arena->size()) continue;
+              const auto root = est::unparenthesized(*arena, handle.expr);
+              if (std::holds_alternative<est::Message>(arena->at(root))) {
+                message_id = root;
+                break;
+              }
+            }
+            if (message_id != UINT32_MAX &&
+                bind_message_est_occurrence(edge, statement, nullptr, 0,
+                                            message_id)) {
               edge.occurrence = call_occurrences[std::make_tuple(
                   edge.source_file, edge.line, edge.target)]++;
               p_.semantic_call_edges.push_back(std::move(edge));
@@ -37430,12 +37500,52 @@ class Checker {
         for (const auto& handle : statement.expression_handles) {
           const auto* arena = expression_arena(handle.arena_index);
           if (!arena || handle.expr >= arena->size()) continue;
-          const auto root = est::unparenthesized(*arena, handle.expr);
-          if (const auto* message =
-                  std::get_if<est::Message>(&arena->at(root))) {
-            if (seen_messages.emplace(handle.arena_index, root).second)
-              retain_root_capture(handle, root, *message);
-          }
+          std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+            if (id >= arena->size())
+              err(statement.source_file, statement.line,
+                  "Root-ingress expression contains an invalid EST child",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto& node = arena->at(id);
+            if (const auto* message = std::get_if<est::Message>(&node)) {
+              if (seen_messages.emplace(handle.arena_index, id).second)
+                retain_root_capture(handle, id, *message);
+            }
+            std::visit([&](const auto& value) {
+              using T = std::decay_t<decltype(value)>;
+              auto child = [&](est::ExprId expression) { visit(expression); };
+              auto children = [&](const auto& expressions) {
+                for (const auto expression : expressions) child(expression);
+              };
+              if constexpr (std::is_same_v<T, est::Unary>) {
+                child(value.operand);
+              } else if constexpr (std::is_same_v<T, est::Binary>) {
+                child(value.left); child(value.right);
+              } else if constexpr (std::is_same_v<T, est::Call>) {
+                child(value.callee); children(value.arguments);
+              } else if constexpr (std::is_same_v<T, est::Take>) {
+                children(value.arguments);
+              } else if constexpr (std::is_same_v<T, est::Member>) {
+                child(value.base);
+              } else if constexpr (std::is_same_v<T, est::Index>) {
+                child(value.base); child(value.index);
+              } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
+                child(value.inner);
+              } else if constexpr (std::is_same_v<T, est::Message>) {
+                child(value.target); children(value.arguments);
+              } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
+                child(value.value);
+              } else if constexpr (std::is_same_v<T, est::Collection> ||
+                                   std::is_same_v<T, est::Tuple>) {
+                children(value.elements);
+              } else if constexpr (std::is_same_v<T, est::Constructor>) {
+                child(value.type); children(value.type_arguments);
+                children(value.arguments);
+              } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+                child(value.input); children(value.stages);
+              }
+            }, node);
+          };
+          visit(handle.expr);
         }
       }
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||

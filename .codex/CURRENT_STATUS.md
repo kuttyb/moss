@@ -18176,3 +18176,32 @@ untouched.
   that source. Preserve the documented direct `Vector[String]` Fast Debug scope
   and Box projected-field limitation. Whole Phase 28 stays NO-GO; no merge or
   clone exception is authorized.
+
+### R7-010 nested Root-ingress message occurrence repair — candidate
+
+- Isolated worktree/branch: `tmp/phase28-r7-010-root-message-occurrence` /
+  `phase28-r7-010-root-message-occurrence`, based on exact source SHA
+  `8d2de3301e5f2dafef079439b0143a7b6675213e`. The vertical staging worktree was
+  not modified. Candidate commit is pending freeze; no integration or push.
+- Root cause: checker capture collection and synchronous message-edge retention
+  covered only a handle whose root itself was `est::Message`. Native lowering
+  also lacked exact occurrence threading for nested messages and omitted
+  Root-ingress Condition handles for `if`/`while`. Checker now captures each
+  nested exact Message ExprId and retains its call edge by exact EST identity;
+  Native transports those IDs through a statement-scoped queue. Source slices
+  are consistency checks only. Unsupported/ambiguous/missing authority remains
+  fail-closed; no ownership inference or copy permission is added.
+- Focused evidence after the last edits: `make --jobs="$(nproc)" moss-dev`;
+  `check_phase21_root_expression_ingress.py` Default and EST-shadow; and
+  `check_phase28_root_ingress_capture_authority.py` Default and EST-shadow all
+  pass. The latter reports 250 scenarios in each mode and includes nested
+  checker drop/duplicate/edge perturb plus Native requirement/fact
+  drop/duplicate/wrong-ExprId checks. A separate repeated-target nested native
+  fixture executes `14` in Default and Shadow. These focused checks do not
+  validate full suites or the oracle.
+- Fast Debug code is unchanged and its established nested fixture passes both
+  modes. ORACLE-45 Fast Debug failure (`Root-ingress argument lacks an exact
+  closed TypeRef` for a primitive literal) was reproduced on the base and is a
+  separate checker argument-TypeRef dependency, intentionally outside this
+  candidate. Full suites remain unrun; independent Team C and Agent 2 exact-SHA
+  reviews are pending after freeze. No `.mossi` change or clone exception.

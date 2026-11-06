@@ -16,6 +16,8 @@ FIXTURES = [
     ("tests/phase28/oracle/fixtures/oracle_43_handler_primitive_reply.moss", 1),
     ("tests/phase28/oracle/fixtures/oracle_45_handler_primitive_rebind_local.moss", 1),
     ("tests/tooling/fixtures/phase28_root_same_line_messages.moss", 2),
+    ("tests/tooling/fixtures/phase21_root_nested_ingress.moss", 5),
+    ("tests/tooling/fixtures/phase28_root_repeated_nested_messages.moss", 2),
 ]
 ALIAS_REJECTED = "tests/tooling/fixtures/phase28_root_domain_handle_alias_rejected.moss"
 UNKNOWN_HANDLER = "tests/tooling/fixtures/phase28_root_unknown_handler.moss"
@@ -33,6 +35,79 @@ def check(source, extra_env=None):
         [COMPILER, "check", source, "--json"], cwd=ROOT, env=env,
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
     )
+
+
+def nested_native_consumer_cases():
+    source = "tests/tooling/fixtures/phase28_root_repeated_nested_messages.moss"
+    count = 0
+    with tempfile.TemporaryDirectory(prefix="root-capture-consumer-",
+                                     dir=TMP_ROOT) as temporary:
+        output = Path(temporary) / "nested.rs"
+        binary = Path(temporary) / "nested"
+        for mode in ("default", "shadow"):
+            env = os.environ.copy()
+            for key in list(env):
+                if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+                    env.pop(key)
+            if mode == "shadow":
+                env["MOSS_EST"] = "shadow"
+            generated = subprocess.run(
+                [COMPILER, source, "-O0", "-o", str(output)], cwd=ROOT,
+                env=env, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            assert generated.returncode == 0, (mode, generated.stdout,
+                                                generated.stderr)
+            compiled = subprocess.run(
+                ["rustc", "--edition=2021", "-Dwarnings", "-C",
+                 "opt-level=0", str(output), "-o", str(binary)], cwd=ROOT,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+            assert compiled.returncode == 0, (mode, compiled.stdout,
+                                               compiled.stderr)
+            executed = subprocess.run(
+                [str(binary)], cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            assert executed.returncode == 0 and executed.stdout == "14\n" and (
+                executed.stderr == ""), (mode, executed.stdout, executed.stderr)
+            count += 1
+            for hook in (
+                "MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_CAPTURE_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_CAPTURE_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_CAPTURE_FACT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_CAPTURE_FACT",
+            ):
+                env = os.environ.copy()
+                for key in list(env):
+                    if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+                        env.pop(key)
+                if mode == "shadow":
+                    env["MOSS_EST"] = "shadow"
+                env[hook] = "1"
+                result = subprocess.run(
+                    [COMPILER, source, "-O0", "-o", str(output)], cwd=ROOT,
+                    env=env, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False)
+                assert result.returncode != 0 and (
+                    "Root-ingress capture requirement/fact" in
+                    result.stdout + result.stderr), (mode, hook, result.stdout,
+                                                     result.stderr)
+                count += 1
+            env = os.environ.copy()
+            for key in list(env):
+                if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+                    env.pop(key)
+            if mode == "shadow":
+                env["MOSS_EST"] = "shadow"
+            env["MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_CAPTURE_FACT"] = "expr-id"
+            result = subprocess.run(
+                [COMPILER, source, "-O0", "-o", str(output)], cwd=ROOT,
+                env=env, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            assert result.returncode != 0 and (
+                "Root-ingress" in result.stdout + result.stderr), (
+                    mode, "expr-id", result.stdout, result.stderr)
+            count += 1
+    return count
 
 
 def parse_result(result):
@@ -313,7 +388,8 @@ def main():
         (FRESH_PAYLOAD, "Payload { value: 7_i64 }", "fresh: 7"),
         ("tests/string_payload_snapshot.moss", 'MossStr::from("fresh")', "fresh"),
     )
-    scenario_count = sum(payload_authority_cases(mode, *fixture)
+    scenario_count = nested_native_consumer_cases()
+    scenario_count += sum(payload_authority_cases(mode, *fixture)
                          for mode in ("default", "shadow")
                          for fixture in payload_cases)
     explicit_copy_cases = (
@@ -339,6 +415,9 @@ def main():
         facts = [line for line in baseline.stderr.splitlines()
                  if line.startswith("ROOT_INGRESS_DOMAIN_CAPTURE_FACT ")]
         assert len(facts) == expected_fact_count, (source, facts)
+        if source.endswith("phase21_root_nested_ingress.moss"):
+            expr_ids = [fact.split("expr=", 1)[1].split()[0] for fact in facts]
+            assert len(set(expr_ids)) == expected_fact_count, facts
         for fact in facts:
             for field in ("stmt=", "arena=", "expr=", "receiver=", "context=main",
                           "est_context=main", "instance=main::w", "handler=handler:Worker.",
