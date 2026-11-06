@@ -173,6 +173,7 @@ def run(moss: Path, margo: Path) -> int:
 
     scenario_tests(R, tc, manifest, scratch, results)
     replay_tests(R, tc, manifest, scratch, results)
+    guard_tests(R, tc, manifest, scratch, results)
     shutil.rmtree(scratch / "work", ignore_errors=True)
     print(f"selftest: {sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
@@ -498,3 +499,78 @@ def replay_tests(R, tc, manifest, scratch, results) -> None:
     after = subprocess.run(["git", "worktree", "list"], cwd=C.REPO_ROOT, text=True, capture_output=True).stdout
     check("replay: no worktree registered or left behind in the main repository", after == worktrees_before,
           "git worktree list unchanged", results)
+
+
+def guard_tests(R, tc, manifest, scratch, results) -> None:
+    """Spread guard, mid-run noise blocks, reference pin, effectively_new, bench-file entry points."""
+    import json
+    import replay as RP
+
+    # --- per-step spread guard (pure) -------------------------------------------
+    seq = iter([[{"spread": 1.9}], [{"spread": 1.5}], [{"spread": 1.4}]])
+    rows = RP.guarded_measure(lambda: next(seq))
+    check("spread guard: three disturbed attempts, kept the lowest-spread one, flagged",
+          rows[0]["attempts"] == 3 and rows[0]["spread"] == 1.4 and rows[0]["spread_flagged"]
+          and rows[0]["attempt_spreads"] == [1.9, 1.5, 1.4], str(rows[0]), results)
+    seq = iter([[{"spread": 1.6, "wall_ms_median": 1.0}], [{"spread": 1.1, "wall_ms_median": 99.0}]])
+    rows = RP.guarded_measure(lambda: next(seq))
+    check("spread guard: stops at the first clean attempt; selection ignores the median",
+          rows[0]["attempts"] == 2 and rows[0]["wall_ms_median"] == 99.0 and not rows[0]["spread_flagged"],
+          str(rows[0]), results)
+    calls = []
+    rows = RP.guarded_measure(lambda: calls.append(1) or [{"spread": 1.05}])
+    check("spread guard: a quiet step is measured exactly once", len(calls) == 1 and rows[0]["attempts"] == 1,
+          "1 attempt", results)
+
+    # --- mid-run noise blocks (pure) --------------------------------------------
+    probes = iter([100.0, 150.0, 101.0])
+    measured = []
+    out, log = RP.run_blocks(list(range(6)), lambda i: (measured.append(i), [{"spread": 1.0}])[1],
+                             lambda: next(probes), 100.0, block=3, retries=2)
+    check("mid-run noise: a drifted block is discarded and re-measured, a clean block kept",
+          measured == [0, 1, 2, 3, 4, 5, 3, 4, 5] and [p["noisy"] for p in log] == [False, True, False]
+          and out[3][0]["block_attempts"] == 2 and not out[3][0]["block_noisy"] and out[0][0]["block_attempts"] == 1,
+          str([(p["first_step"], p["attempt"], p["noisy"]) for p in log]), results)
+    measured = []
+    out, log = RP.run_blocks([0, 1], lambda i: (measured.append(i), [{"spread": 1.0}])[1],
+                             lambda: 300.0, 100.0, block=2, retries=2)
+    check("mid-run noise: retries are bounded (3 tries) and the block is flagged noisy",
+          measured == [0, 1] * 3 and out[0][0]["block_noisy"] and out[0][0]["block_attempts"] == 3,
+          f"{len(log)} probes", results)
+
+    # --- reference pin ------------------------------------------------------------
+    same = scratch / "pin" / "moss-opt"
+    same.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(tc.moss, same)
+    pin_same = RP.reference_pin(C.Toolchain(same, tc.margo))
+    other = scratch / "pin" / "moss-other"
+    other.write_bytes(tc.moss.read_bytes() + b"\0")
+    pin_other = RP.reference_pin(C.Toolchain(other, tc.margo))
+    check("reference pin: pinned binary recognised, a different binary gets a plain re-freeze message",
+          pin_same["matches"] == (C.sha256_file(tc.moss) == RP.PINNED_REFERENCE_SHA256) and not pin_other["matches"]
+          and "re-frozen deliberately" in pin_other["note"] and "not that anything regressed" in pin_other["note"],
+          pin_other["note"][:80], results)
+    shutil.rmtree(scratch / "pin", ignore_errors=True)
+
+    # --- effectively_new and bench-file entry points ---------------------------------
+    steps = {s["index"]: s for s in manifest["scenarios"] if s["kind"] == RP.KIND}
+    check("effectively_new: scaffold-without-source commits #27 #28 #34 and new packages flagged, a plain edit not",
+          all(steps[i]["effectively_new"] and not steps[i]["new_package"] for i in (27, 28, 34))
+          and steps[7]["new_package"] and not steps[2]["effectively_new"], "flags", results)
+    sc = steps[1]
+    aux = [e for e in sc["entries"] if e["kind"] == "auxfile"]
+    check("bench files are entry points (checked after their package)",
+          len(aux) == 3 and [e["kind"] for e in sc["entries"]][-3:] == ["auxfile"] * 3, str([e["id"] for e in aux]), results)
+    work = scratch / "aux-inject"
+    RP.materialize(sc["parent"], work)
+    env = tc.env()
+    pk = next(e for e in sc["entries"] if e["id"] == "pkg:packages/math")
+    C.run_measured(RP.entry_argv(sc, pk, tc, None, work), cwd=work, env=env)
+    ae = next(e for e in aux if e["path"].endswith("math_bench.moss"))
+    clean = C.extract_verdict(C.run_measured(RP.entry_argv(sc, ae, tc, None, work), cwd=work, env=env), [])
+    f = work / ae["path"]
+    f.write_text(f.read_text() + '\nfn zz_inject() -> Int:\n  return "x"\n')
+    bad = C.extract_verdict(C.run_measured(RP.entry_argv(sc, ae, tc, None, work), cwd=work, env=env), [])
+    check("bench-file entry point detects an injected type error that margo --check does not see",
+          clean["ok"] and not bad["ok"] and "zz_inject" in json.dumps(bad["diagnostics"]), str(RP.diag_of(bad))[:80], results)
+    shutil.rmtree(work, ignore_errors=True)

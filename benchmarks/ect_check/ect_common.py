@@ -62,6 +62,10 @@ def copy_ignore(directory, names):
 DEFAULT_COMMANDS = {
     "file": "{moss} check {path} --json",
     "package": "{margo} --root {path} --check --json build",
+    # B6: a changed benches/fixtures file inside a package. margo --check never
+    # type-checks these, so they are checked as a file against the package's own
+    # and its dependencies' check interfaces ({modpath}, set by the replay).
+    "auxfile": "env MOSS_MODULE_PATH={modpath} {moss} check {path} --json",
 }
 
 # Counters summed across checker runs (a package check may start several

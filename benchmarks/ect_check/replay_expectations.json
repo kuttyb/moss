@@ -40,6 +40,18 @@
   }
  },
  "05834f8bfe71dfe1f12ce658c3a3ab006af5d27a": {
+  "aux:sdk/text-encoding-acceptance/benches/case_builder.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/text-encoding-acceptance": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -77,6 +89,13 @@
   }
  },
  "0fe2e6ef79933db607ab2e426bafe6974d2b3d42": {
+  "aux:packages/hash/benches/hash_bench.moss": {
+   "post": {
+    "diag": "TYPE_MISMATCH|String find expects string",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:packages/hash": {
    "post": {
     "diag": "TYPE_MISMATCH|String find expects string",
@@ -100,6 +119,30 @@
   }
  },
  "234ff9e2e3a1e03de64be4276f2aef64ba8c6d73": {
+  "aux:packages/linalg/benches/linalg_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/statistics/benches/statistics_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
   "pkg:packages/linalg": {
    "post": {
     "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
@@ -156,6 +199,18 @@
   }
  },
  "3ea1092359cb82b537bbf33595b3d75836df8e79": {
+  "aux:sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss": {
+   "post": {
+    "diag": "UNKNOWN_ERROR_TYPE|unknown error enum 'ndarray.NdArrayError'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'ndarray'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/advanced-data-acceptance": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -170,6 +225,18 @@
   }
  },
  "4068976a9a4d1bb046b69fbc35708d8b51f831e4": {
+  "aux:packages/regex/benches/regex_bench.moss": {
+   "post": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:packages/regex": {
    "post": {
     "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
@@ -212,6 +279,42 @@
   }
  },
  "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28": {
+  "aux:packages/linalg/benches/linalg_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/sparse/benches/sparse_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/statistics/benches/statistics_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
   "pkg:packages/linalg": {
    "post": {
     "diag": "TYPE_MISMATCH|assignment type mismatch for binding 'ignored'",
@@ -264,6 +367,18 @@
   }
  },
  "4bae08636c5bb8eff5ef804273f0c08bd32ed503": {
+  "aux:sdk/text-encoding-acceptance/benches/text_encoding.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/text": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -304,6 +419,18 @@
   }
  },
  "58340e636738331b84c5be1e42556ee612a73449": {
+  "aux:sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss": {
+   "post": {
+    "diag": "UNKNOWN_ERROR_TYPE|unknown error enum 'ndarray.NdArrayError'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_ERROR_TYPE|unknown error enum 'ndarray.NdArrayError'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/advanced-data-acceptance": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -327,6 +454,27 @@
   }
  },
  "67b7d9b7f0b3cf858862aa167ce024b63981e1cd": {
+  "aux:packages/linalg/benches/linalg_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/sparse/benches/sparse_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/statistics/benches/statistics_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
   "pkg:packages/linalg": {
    "post": {
     "diag": null,
@@ -357,6 +505,13 @@
   }
  },
  "6ce098afe2d7546c2775236c56b7ff973666016b": {
+  "aux:sdk/data-acceptance/benches/data_benchmarks.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for csv is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/data-acceptance": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -432,6 +587,18 @@
   }
  },
  "7ba41b83fd15200842ac3585138c0587f78f150f": {
+  "aux:sdk/text-encoding-acceptance/benches/case_builder.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/text": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -558,6 +725,13 @@
   }
  },
  "7f6cd553e708664e891673705f935bf684a984fb": {
+  "aux:packages/compress/benches/compress_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
   "pkg:packages/compress": {
    "post": {
     "diag": null,
@@ -600,6 +774,13 @@
   }
  },
  "a257917ee9edb877ce6b793c2b1a2670e6b51dc3": {
+  "aux:sdk/text-encoding-acceptance/benches/case_builder.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/text": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -626,6 +807,42 @@
   }
  },
  "a25a6fe195a7d30e5eb71aee2766630409816d99": {
+  "aux:packages/math/benches/math_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/random/benches/random_bench.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   }
+  },
+  "aux:packages/time/benches/time_bench.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:packages/math": {
    "post": {
     "diag": null,
@@ -725,6 +942,13 @@
   }
  },
  "b2f09d61407b0d6344223a6d108733a27b63f6a5": {
+  "aux:packages/regex/benches/regex_bench.moss": {
+   "post": {
+    "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:packages/regex": {
    "post": {
     "diag": "TYPE_MISMATCH|argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
@@ -820,6 +1044,18 @@
   }
  },
  "c0ff87fd2c361a5ccac668778dfff779bce82017": {
+  "aux:sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss": {
+   "post": {
+    "diag": "UNKNOWN_ERROR_TYPE|unknown error enum 'ndarray.NdArrayError'",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "UNKNOWN_ERROR_TYPE|unknown error enum 'ndarray.NdArrayError'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/advanced-data-acceptance": {
    "post": {
     "diag": null,
@@ -843,6 +1079,13 @@
   }
  },
  "cdcadb26b9b46d332f5f577886c359d44ce839c0": {
+  "aux:sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss": {
+   "post": {
+    "diag": "UNKNOWN_SYMBOL_OR_TYPE|unknown identifier 'ndarray'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/advanced-data-acceptance": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -901,6 +1144,18 @@
   }
  },
  "eb09e4214162bbab42d76e432f9eecd9085ef0f6": {
+  "aux:sdk/text-encoding-acceptance/benches/text_encoding.moss": {
+   "post": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   },
+   "pre": {
+    "diag": "MOSS_COMPILE_ERROR|interface for text is missing or stale; run `margo build`",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/text": {
    "post": {
     "diag": "TYPE_MISMATCH|push argument conflicts with the element type of 'parts'",
@@ -927,6 +1182,30 @@
   }
  },
  "f272af9ca5e7d82b90716aae0494feceddc3d2b7": {
+  "aux:sdk/text-encoding-acceptance/benches/case_builder.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TEST_ASSERTION_CONFIGURATION_ERROR|assertEqual operands have types 'char' and 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
+  "aux:sdk/text-encoding-acceptance/benches/text_encoding.moss": {
+   "post": {
+    "diag": null,
+    "exit_code": 0,
+    "status": "pass"
+   },
+   "pre": {
+    "diag": "TEST_ASSERTION_CONFIGURATION_ERROR|assertEqual operands have types 'char' and 'string'",
+    "exit_code": 1,
+    "status": "fail"
+   }
+  },
   "pkg:sdk/path": {
    "post": {
     "diag": null,

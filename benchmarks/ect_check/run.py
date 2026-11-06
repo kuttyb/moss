@@ -476,6 +476,13 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                              f"{'yes' if all(x['identical'] for x in sg['steps']) else '**NO**'} | "
                              f"{'yes' if all(x['reference_matches_expected'] for x in sg['steps']) else '**NO**'} | "
                              f"{'yes' if any(x['bookkeeping_reference'] != x['bookkeeping_candidate'] for x in sg['steps']) else 'no'} |")
+        for sg in gate["scenarios"]:
+            pin = sg.get("reference_pin")
+            if pin:
+                lines += ["", f"B6 reference compiler sha256 `{pin['sha256'][:12]}`: " +
+                          ("the pinned binary the expectations were recorded with." if pin["matches"]
+                           else "**NOT the pinned binary** - " + str(pin["note"]))]
+                break
         same = gate["reference_moss"] == gate["candidate_moss"] and \
             gate["candidate_command"] == "built-in cold command"
         if same:
@@ -608,6 +615,29 @@ def noise_probe(tc: C.Toolchain, manifest: dict, run_dir: Path, label: str) -> d
     return {"loadavg": list(os.getloadavg()), "calibration_fixture": fx["id"],
             "calibration_wall_ms_median": C.median(walls),
             "calibration_wall_ms_samples": [round(w, 2) for w in walls]}
+
+
+def f_(v):
+    return "n/a" if v is None else f"{v:.2f}"
+
+
+def block_probe(tc: C.Toolchain, manifest: dict, run_dir: Path) -> float:
+    """Mid-run probe: one number combining a single-process calibration
+    (b2_k04, 3 cold reps) and a multi-process one (b4_floor_pkg through margo,
+    5 reps; interference in process trees shows there): k04 median + 10 x
+    floor_pkg median, in ms. Compared with the same probe taken before the loop."""
+    total = 0.0
+    for fid, reps, weight in (("b2_k04", 3, 1.0), ("b4_floor_pkg", 5, 10.0)):
+        fx = next(f for f in manifest["fixtures"] if f["id"] == fid)
+        work = run_dir / "work" / f"blockprobe-{fid}"
+        walls = []
+        for _ in range(reps):
+            values = C.stage_fixture(fx, work)
+            walls.append(C.run_measured(C.command_for(fx, {**tc.values(), **values}, None), cwd=work,
+                                        env=tc.env(), timeout=C.fixture_timeout(fx))["wall_ms"])
+        shutil.rmtree(work, ignore_errors=True)
+        total += weight * C.median(walls)
+    return total
 
 
 def noise_summary(start: dict, end: dict) -> dict:
@@ -775,6 +805,10 @@ def main() -> int:
         gate = run_gate(fixtures, ref, cand, args.candidate_cmd, run_dir,
                         pick_scenarios(manifest, args))
         (run_dir / "gate.json").write_text(json.dumps(gate, indent=2) + "\n")
+        for sg in gate["scenarios"]:
+            if sg.get("reference_note"):
+                print(f"NOTE {sg['scenario']}: {sg['reference_note']}")
+                break
         print(f"gate: {'PASS' if gate['passed'] else 'FAIL'} ({gate['fixtures']} fixtures); {run_dir / 'gate.json'}")
         return 0 if gate["passed"] else 1
 
@@ -822,17 +856,35 @@ def main() -> int:
                   f"status {row['status']}", flush=True)
     chosen_scenarios = pick_scenarios(manifest, args)
     wt_rows: list[dict] = []
+    block_probes: list[dict] = []
+    b6_steps = [sc for sc in chosen_scenarios if sc["kind"] == RP.KIND]
+    for mode in modes:
+        if not b6_steps:
+            break
+        template = args.warm_client_cmd if mode == "warm" else None
+        base_probe = C.median([block_probe(tc, manifest_all, run_dir) for _ in range(3)])
+
+        def log_probe(p, mode=mode):
+            print(f"  probe {mode} block@{p['first_step']} try {p['attempt']}: drift {p['drift_pct']}%"
+                  f"{' NOISY: block re-measured' if p['noisy'] else ''}", flush=True)
+        step_rows, probes = RP.run_blocks(
+            b6_steps,
+            lambda sc: RP.measure_step(sc, tc, template, mode, args.reps, args.warm_primes, run_dir,
+                                       not args.no_warmup),
+            lambda: block_probe(tc, manifest_all, run_dir), base_probe, log=log_probe)
+        block_probes += [{**p, "mode": mode, "baseline_probe_ms": base_probe} for p in probes]
+        for sc, new in zip(b6_steps, step_rows):
+            rows.extend(new)
+            print(f"{mode:4} {sc['id']}: " + ", ".join(
+                f"{r['step']} {r['wall_ms_median']:.1f} ms ({r['status']}, spread {f_(r['spread'])}, "
+                f"attempts {r['attempts']})" for r in new), flush=True)
     for sc in chosen_scenarios:
+        if sc["kind"] == RP.KIND:
+            continue
         fx = S.fixture_of(manifest, sc)
         for mode in modes:
             template = args.warm_client_cmd if mode == "warm" else None
-            if sc["kind"] == RP.KIND:
-                new = RP.measure_step(sc, tc, template, mode, args.reps, args.warm_primes, run_dir,
-                                      not args.no_warmup)
-                rows.extend(new)
-                print(f"{mode:4} {sc['id']}: " + ", ".join(
-                    f"{r['step']} {r['wall_ms_median']:.1f} ms ({r['status']})" for r in new), flush=True)
-            elif sc["kind"] == "edit_sequence":
+            if sc["kind"] == "edit_sequence":
                 new = S.measure_scenario(sc, fx, tc, template, mode, args.reps, args.warm_primes,
                                          run_dir, not args.no_warmup)
                 rows.extend(new)
@@ -878,6 +930,7 @@ def main() -> int:
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
             "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise,
+            "block_probes": block_probes, "reference_pin": RP.reference_pin(tc) if b6_steps else None,
             "startup": startup}
     write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows, churn_records)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.

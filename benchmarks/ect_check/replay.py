@@ -31,6 +31,7 @@ a resident client or a future compiler is swapped in from the command line.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 from pathlib import Path
 import shutil
@@ -47,6 +48,7 @@ PATHSPECS = [":(glob)sdk/**/*.moss", ":(glob)packages/**/*.moss"]
 ROOTS = ("sdk", "packages")
 EXPECTATIONS_PATH = C.SUITE_DIR / "replay_expectations.json"
 STEP_TIMEOUT_S = 300
+PINNED_REFERENCE_SHA256 = "e9a22cf0a6029d31b617baf863c5c1e866a3641a22c38bb1cd1e78c31bfe4d36"   # moss-opt the expectations were recorded with
 FAMILY = "b6_replay"
 KIND = "replay_step"
 
@@ -146,12 +148,25 @@ def build_specs(expectations: dict | None = None) -> tuple[list[dict], dict]:
             if pkg is not None:
                 eid, ekind, epath = f"pkg:{pkg}", "package", pkg
                 src_commit = commit if pkg in post_pkgs else parent
+                srcdir = package_source_dir(src_commit, pkg)
                 if c["path"].rsplit("/", 1)[-1] == "Moss.toml" and c["path"] == f"{pkg}/Moss.toml":
                     role = "manifest"
+                elif c["path"].startswith(f"{pkg}/{srcdir}/"):
+                    role = "source"
+                elif c["path"].startswith(f"{pkg}/tests/"):
+                    role = "tests"      # covered by margo's `moss test --check` of the root package
                 else:
-                    role = "source" if c["path"].startswith(f"{pkg}/{package_source_dir(src_commit, pkg)}/") else "aux"
+                    role = "aux"        # benches/, fixtures/, ...: never checked by margo --check
                 entries.setdefault(eid, {"id": eid, "kind": ekind, "path": epath,
-                                         "in_pre": pkg in pre_pkgs, "in_post": pkg in post_pkgs})
+                                         "in_pre": pkg in pre_pkgs, "in_post": pkg in post_pkgs,
+                                         "pre_has_sources": any(
+                                             q.startswith(f"{pkg}/{srcdir}/") and q.endswith(".moss")
+                                             for q in pre_paths) if pkg in pre_pkgs else False})
+                if role == "aux" and c["path"].endswith(".moss"):
+                    aid = f"aux:{c['path']}"
+                    entries.setdefault(aid, {"id": aid, "kind": "auxfile", "path": c["path"], "pkg": pkg,
+                                             "in_pre": c["status"] != "A" and pkg in pre_pkgs,
+                                             "in_post": alive and pkg in post_pkgs})
             else:
                 role = "standalone"
                 eid = f"file:{c['path']}"
@@ -160,7 +175,8 @@ def build_specs(expectations: dict | None = None) -> tuple[list[dict], dict]:
                                              "in_pre": c["status"] != "A", "in_post": True})
             changes.append({**{k: c[k] for k in ("path", "status", "old_mode", "new_mode", "old_blob", "new_blob")},
                             "role": role})
-        ordered = [entries[k] for k in sorted(entries)]
+        rank = {"file": 0, "package": 1, "auxfile": 2}   # an aux file is checked after its package
+        ordered = [entries[k] for k in sorted(entries, key=lambda k: (rank[entries[k]["kind"]], k))]
         exp = expectations.get(commit, {})
         for e in ordered:
             ee = exp.get(e["id"], {})
@@ -175,6 +191,10 @@ def build_specs(expectations: dict | None = None) -> tuple[list[dict], dict]:
             "changes": changes, "untracked_changes": ignored, "entries": ordered,
             "timeout_s": STEP_TIMEOUT_S,
             "new_package": any(not e["in_pre"] for e in ordered if e["kind"] == "package"),
+            # a package whose Moss.toml existed but had no source file yet: its first
+            # post check is a first-source check, not an edit
+            "effectively_new": any(not e["in_pre"] or not e["pre_has_sources"]
+                                   for e in ordered if e["kind"] == "package"),
             "touches_source": "source" in roles,
             "touches_manifest": "manifest" in roles,
         })
@@ -275,6 +295,10 @@ def labels(sc: dict) -> list[tuple[str, str]]:
 def entry_argv(sc: dict, entry: dict, tc: C.Toolchain, template: str | None, work: Path) -> list[str]:
     fx = {"id": f"{sc['id']}:{entry['id']}", "kind": entry["kind"], "entry": entry["path"]}
     values = {"root": str(work), "path": str(work / entry["path"]), "id": fx["id"], "kind": entry["kind"]}
+    if entry["kind"] == "auxfile":
+        import churn
+        pkg = work / entry["pkg"]
+        values["modpath"] = os.pathsep.join([str(pkg / "build" / "check-debug"), *churn.module_path_for(pkg)])
     return C.command_for(fx, {**tc.values(), **values}, template)
 
 
@@ -377,7 +401,7 @@ def phase_summary(phase: str, labels_: list[str], samples: dict[str, list[dict]]
             "exit_code": max((e["exit_code"] or 0) for e in entries)}
 
 
-def measure_step(sc: dict, tc: C.Toolchain, template: str | None, mode: str, reps: int, primes: int,
+def measure_step_once(sc: dict, tc: C.Toolchain, template: str | None, mode: str, reps: int, primes: int,
                  run_dir: Path, warmup: bool = True) -> list[dict]:
     """Rows `pre` and `post` for one commit: per rep the wall of a phase is the
     sum over its entry points; medians over reps. cold: fresh tree every rep
@@ -416,15 +440,23 @@ def measure_step(sc: dict, tc: C.Toolchain, template: str | None, mode: str, rep
             "wall_ms_max": max(s["wall"], default=None), "wall_ms_first": s["wall"][0] if s["wall"] else None,
             "cpu_ms_median": C.median(s["cpu"]), "rss_kib_median": C.median(s["rss"]),
             "wall_ms_samples": [round(w, 3) for w in s["wall"]],
+            "spread": (max(s["wall"]) / min(s["wall"])) if s["wall"] and min(s["wall"]) > 0 else None,
             "exit_code": s["exit_code"], "category": sc["family"],
             "metadata": {"commit": sc["commit"], "index": sc["index"], "entries": s["entries"],
-                         "new_package": sc["new_package"], "touches_source": sc["touches_source"]},
+                         "new_package": sc["new_package"], "effectively_new": sc["effectively_new"],
+                         "touches_source": sc["touches_source"]},
             "fixture_path": None, "stack_kib": None,
         }
         row.update(counters.get(phase) or {"checker_runs": None, **{n: None for n, _ in C.WORK_COUNTERS}})
         rows.append(row)
     shutil.rmtree(work, ignore_errors=True)
     return rows
+
+
+def measure_step(sc: dict, tc: C.Toolchain, template: str | None, mode: str, reps: int, primes: int,
+                 run_dir: Path, warmup: bool = True) -> list[dict]:
+    """measure_step_once under the per-step spread guard (see guarded_measure)."""
+    return guarded_measure(lambda: measure_step_once(sc, tc, template, mode, reps, primes, run_dir, warmup))
 
 
 def observe_step(sc: dict, tc: C.Toolchain, work: Path) -> dict[str, dict]:
@@ -465,8 +497,10 @@ def gate_step(sc: dict, reference: C.Toolchain, candidate: C.Toolchain, candidat
                       "reference_matches_expected": expect_ok(exp, ref),
                       "candidate_matches_expected": expect_ok(exp, cand),
                       "status": C.status_of(ref), "reference": ref, "candidate": cand})
-    return {"scenario": sc["id"], "fixture": None, "steps": steps,
-            "passed": all(s["identical"] and s["reference_matches_expected"] for s in steps)}
+    pin = reference_pin(reference)
+    return {"scenario": sc["id"], "fixture": None, "steps": steps, "reference_pin": pin,
+            "reference_note": pin["note"] if not all(x["reference_matches_expected"] for x in steps) else None,
+            "passed": all(x["identical"] and x["reference_matches_expected"] for x in steps)}
 
 
 def validate_step(sc: dict, tc: C.Toolchain, run_dir: Path) -> list[str]:
@@ -536,9 +570,11 @@ def _side_units(sc: dict, phase: str, tc: C.Toolchain, work: Path) -> dict:
             for f in files:
                 units[f.relative_to(work).as_posix()] = {"entry": e["id"], "check": check_status,
                                                          **churn.collect_file(tc, root, f, mp)}
-        else:
+        elif e["kind"] == "file":
             f = work / e["path"]
             units[e["path"]] = {"entry": e["id"], "check": None, **churn.collect_file(tc, f.parent, f, [])}
+        # auxfile entries (benches/fixtures) are latency entry points only: the churn
+        # pass reads package source files, so it is vacuous for tests/benches-only commits
     return units
 
 
@@ -564,7 +600,8 @@ def churn_step(sc: dict, tc: C.Toolchain, work: Path) -> dict:
     bad = [(side, rel, u["error"]) for side, units in (("pre", pre_units), ("post", post_units))
            for rel, u in sorted(units.items()) if not u["ok"]]
     rec = {"scenario": sc["id"], "commit": sc["commit"], "index": sc["index"],
-           "new_package": sc["new_package"], "touches_source": sc["touches_source"],
+           "new_package": sc["new_package"], "effectively_new": sc["effectively_new"],
+           "edits_existing_source": any(c["role"] == "source" and c["status"] == "M" for c in sc["changes"]), "touches_source": sc["touches_source"],
            "units": {side: {rel: {"entry": u["entry"], "check": u["check"], "ok": u["ok"], "error": u["error"],
                                   "functions": len(u["functions"])}
                             for rel, u in sorted(units.items())}
@@ -617,3 +654,77 @@ def fingerprint_step(sc: dict, tc: C.Toolchain, run_dir: Path) -> dict:
             counters[phase] = C.summarize_counters(recs)
     shutil.rmtree(work, ignore_errors=True)
     return {"observed": obs, "counters": counters}
+
+
+# --------------------------------------------------------------------------
+# measurement guards (Team 4 review): per-step spread, mid-run noise, reference pin
+# --------------------------------------------------------------------------
+
+SPREAD_LIMIT = 1.3       # a phase whose rep max/min exceeds this was disturbed
+SPREAD_ATTEMPTS = 3
+BLOCK_STEPS = 5          # the calibration fixture is re-timed after every block
+BLOCK_DRIFT_PCT = 10.0
+BLOCK_RETRIES = 2
+
+
+def guarded_measure(measure_once, limit: float = SPREAD_LIMIT, attempts: int = SPREAD_ATTEMPTS) -> list[dict]:
+    """Run `measure_once()` (rows with a `spread` = max/min rep wall) until every
+    phase's spread is within `limit`, at most `attempts` times. Documented
+    selection rule: the attempt with the LOWEST WORST-PHASE SPREAD is kept (ties:
+    the earliest); the median is never looked at. Rows record the attempts."""
+    tried = []
+    for _ in range(attempts):
+        rows = measure_once()
+        worst = max((r["spread"] for r in rows if r.get("spread") is not None), default=1.0)
+        tried.append((worst, rows))
+        if worst <= limit:
+            break
+    best_worst, best_rows = min(tried, key=lambda t: t[0])   # min() keeps the earliest on ties
+    for r in best_rows:
+        r["attempts"] = len(tried)
+        r["attempt_spreads"] = [round(w, 3) for w, _ in tried]
+        r["spread_flagged"] = best_worst > limit
+    return best_rows
+
+
+def run_blocks(items: list, measure_fn, probe_fn, baseline_ms: float, block: int = BLOCK_STEPS,
+               drift_pct: float = BLOCK_DRIFT_PCT, retries: int = BLOCK_RETRIES, log=None) -> tuple[list[list[dict]], list[dict]]:
+    """Measure `items` in blocks; after each block `probe_fn()` re-times the
+    calibration fixture (median wall ms). A block whose probe drifted more than
+    `drift_pct` from `baseline_ms` is discarded and measured again (up to
+    `retries` times, then kept and flagged `block_noisy`). Returns (rows per
+    item, probe log)."""
+    out: list[list[dict]] = []
+    probes: list[dict] = []
+    for start in range(0, len(items), block):
+        chunk = items[start:start + block]
+        for attempt in range(retries + 1):
+            rows = [measure_fn(it) for it in chunk]
+            probe = probe_fn()
+            drift = abs(probe - baseline_ms) / min(probe, baseline_ms) * 100.0
+            noisy = drift > drift_pct
+            probes.append({"first_step": start + 1, "attempt": attempt + 1, "probe_ms": probe,
+                           "drift_pct": round(drift, 1), "noisy": noisy})
+            if log:
+                log(probes[-1])
+            if not noisy:
+                break
+        for step_rows in rows:
+            for r in step_rows:
+                r["block_attempts"] = attempt + 1
+                r["block_noisy"] = noisy
+        out.extend(rows)
+    return out, probes
+
+
+def reference_pin(tc: C.Toolchain) -> dict:
+    """The frozen expectations were recorded with one specific optimized
+    compiler. State plainly whether the reference is that binary."""
+    sha = C.sha256_file(tc.moss)
+    ok = sha == PINNED_REFERENCE_SHA256
+    note = None if ok else (
+        f"reference compiler {tc.moss.name} (sha256 {sha[:12]}) is NOT the binary the B6 expectations were "
+        f"recorded with (moss-opt sha256 {PINNED_REFERENCE_SHA256[:12]}). A step whose verdict differs from "
+        "the frozen expectation then means the expectations must be re-frozen deliberately "
+        "(`run.py replay-record`, then `generate.py --regenerate`), not that anything regressed.")
+    return {"sha256": sha, "pinned_sha256": PINNED_REFERENCE_SHA256, "matches": ok, "note": note}
