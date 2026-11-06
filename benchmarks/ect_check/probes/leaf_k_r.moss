@@ -1,0 +1,34 @@
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 3
+
+fn n002_0(x):
+  # leaf body
+  k = 1
+  r = x.score()
+  return r + k
+
+fn n002_1(x):
+  return x.score()
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n001_1(x):
+  return n002_1(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+fn n000_1(x):
+  return n001_1(x) + 1
+
+fn root(x):
+  return n000_0(x) + n000_1(x)
+
+fn main():
+  var total = 0.0
+  total = total + root(T000(v: 1))
+  echo total

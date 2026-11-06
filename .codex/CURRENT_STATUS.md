@@ -18128,3 +18128,12 @@ future optimizer-isolated proof and must remain explicit in final review.
   over eligible functions, `metrics --root`, whole-document gate with selftests,
   clean env for timed/gate runs, build-dir ignore rule, warm-up rep, two more
   trivial fixtures. `make check`: same 3 baseline failures by name.
+
+## Phase 28.5 Team 3 (benchmarks: edits B3, cold/warm B4, worktrees B5) - done on `phase28-5-bench`
+
+Suite 0.3.0 (`benchmarks/ect_check`): edit_generators.py / scenarios.py / edit_evidence.py /
+report_scenarios.py; 5 new fixtures + 16 frozen scenarios in manifest.json. Validation: `generate.py
+--validate-only` (80 fixtures, 16 scenarios) and `--verify-determinism` pass; `run.py gate --scenario-ids
+all` PASS (80 fixtures, 14 edit sequences); `run.py selftest` 24/24; quiet `bench --reps 5` baseline
+(tmp/ect_check/t3final, drift 2.7%) numbers are in the README; `make check` shows only the 3 pre-existing
+failures (check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases). No src/ change.

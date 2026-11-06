@@ -21,7 +21,7 @@ import tempfile
 import time
 
 SUITE_NAME = "moss_ect_check"
-SUITE_VERSION = "0.2.0"
+SUITE_VERSION = "0.3.0"
 SUITE_SEED = 20261105
 
 SUITE_DIR = Path(__file__).resolve().parent
@@ -67,6 +67,7 @@ DEFAULT_COMMANDS = {
 # checker processes). Names are the compiler's own MOSS_PROFILE counter names.
 WORK_COUNTERS = (
     ("functions_analyzed", "functions_analyzed"),
+    ("source_function_checks", "source_function_checks"),
     ("specialization_evaluations", "specialization_requests"),
     ("specialization_hits", "reused_specialization_results"),
     ("specialization_keys", "distinct_specialization_keys"),
@@ -273,6 +274,65 @@ def fixture_ok(fixture: dict, verdict: dict, timed_out: bool = False) -> bool:
     return want is None or verdict.get("exit_code") == want
 
 
+class _Launch:
+    """One launched `/usr/bin/time`-wrapped command (see run_measured)."""
+
+    def __init__(self, argv, cwd, env, stack_kib):
+        if not Path(TIME_BIN).exists():
+            raise ToolError(f"{TIME_BIN} is required for peak-RSS measurement")
+        self.argv = argv
+        self.out = tempfile.TemporaryFile()
+        self.err = tempfile.TemporaryFile()
+        self.rss_file = tempfile.NamedTemporaryFile("r")
+        wrapped = [TIME_BIN, "-f", "%M", "-o", self.rss_file.name, *argv]
+        self.start = time.perf_counter()
+        try:
+            self.proc = subprocess.Popen(wrapped, cwd=cwd, env=env, stdout=self.out,
+                                         stderr=self.err, stdin=subprocess.DEVNULL,
+                                         start_new_session=True,
+                                         preexec_fn=_stack_preexec(stack_kib))
+        except OSError as exc:
+            self.close()
+            raise ToolError(f"cannot run {argv[0]!r}: {exc.strerror or exc}")
+        self.end = None
+
+    def close(self):
+        for f in (self.out, self.err, self.rss_file):
+            try:
+                f.close()
+            except OSError:
+                pass
+
+    def kill(self):
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except OSError:
+            self.proc.kill()
+
+    def result(self, status, usage, timed_out, end=None) -> dict:
+        wall = (end or time.perf_counter()) - self.start
+        rc = os.waitstatus_to_exitcode(status)
+        self.out.seek(0)
+        self.err.seek(0)
+        rss_text = self.rss_file.read()
+        # `time` writes "Command exited with non-zero status N" before %M when
+        # the command fails; the last line is always the %M value.
+        lines = [l for l in rss_text.splitlines() if l.strip()]
+        try:
+            rss = int(lines[-1])
+        except (IndexError, ValueError):
+            rss = None
+        stderr = self.err.read().decode(errors="replace")
+        if rc in (126, 127) and "cannot run" in stderr.splitlines()[:1].__str__():
+            raise ToolError(f"cannot run {self.argv[0]!r}: {stderr.strip().splitlines()[0].split(': ', 2)[-1]}")
+        res = {"rc": rc, "stdout": self.out.read().decode(errors="replace"),
+               "stderr": stderr, "wall_ms": wall * 1000.0,
+               "cpu_ms": (usage.ru_utime + usage.ru_stime) * 1000.0,
+               "rss_kib": rss, "timed_out": timed_out}
+        self.close()
+        return res
+
+
 def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
                  timeout: float = 600.0, stack_kib: int | None = None) -> dict:
     """Run argv once; return rc, stdout, stderr, wall/CPU ms and peak RSS (KiB).
@@ -290,53 +350,71 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
     default 8 MiB. On timeout the whole process group is killed (the command
     runs in its own session) so no compiler is left burning CPU.
     """
-    if not Path(TIME_BIN).exists():
-        raise ToolError(f"{TIME_BIN} is required for peak-RSS measurement")
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, \
-            tempfile.NamedTemporaryFile("r") as rss_file:
-        wrapped = [TIME_BIN, "-f", "%M", "-o", rss_file.name, *argv]
-        start = time.perf_counter()
-        try:
-            proc = subprocess.Popen(wrapped, cwd=cwd, env=env, stdout=out,
-                                    stderr=err, stdin=subprocess.DEVNULL,
-                                    start_new_session=True,
-                                    preexec_fn=_stack_preexec(stack_kib))
-        except OSError as exc:
-            raise ToolError(f"cannot run {argv[0]!r}: {exc.strerror or exc}")
-        deadline = start + timeout
-        timed_out = False
-        while True:
-            pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
+    launch = _Launch(argv, cwd, env, stack_kib)
+    deadline = launch.start + timeout
+    timed_out = False
+    while True:
+        pid, status, usage = os.wait4(launch.proc.pid, os.WNOHANG)
+        if pid:
+            break
+        if time.perf_counter() > deadline:
+            launch.kill()
+            timed_out = True
+            pid, status, usage = os.wait4(launch.proc.pid, 0)
+            break
+        time.sleep(0.0005)
+    return launch.result(status, usage, timed_out)
+
+
+def run_measured_group(jobs: list[tuple[list[str], Path]], *, env: dict[str, str],
+                       timeout: float = 600.0) -> dict:
+    """Launch every job at (nearly) the same time and wait for all of them.
+
+    jobs: (argv, cwd) pairs. Every process is wrapped exactly like run_measured,
+    so per-process peak RSS comes from /usr/bin/time and CPU from wait4. Returns
+    the per-job results (each with its own wall, measured from the group start
+    to the moment the runner reaped it) and the group totals: group wall (first
+    launch to last reap), total CPU (sum), summed peak RSS (sum of per-process
+    peaks, an upper bound on the simultaneous footprint). Timeouts kill every
+    unfinished process group.
+    """
+    launches = []
+    try:
+        for argv, cwd in jobs:
+            launches.append(_Launch(argv, cwd, env, None))
+    except Exception:
+        for l in launches:
+            l.kill()
+            os.wait4(l.proc.pid, 0)
+            l.close()
+        raise
+    start = min(l.start for l in launches)
+    deadline = start + timeout
+    pending = dict(enumerate(launches))
+    results: dict[int, dict] = {}
+    timed_out = False
+    while pending:
+        for i, l in list(pending.items()):
+            pid, status, usage = os.wait4(l.proc.pid, os.WNOHANG)
             if pid:
-                break
-            if time.perf_counter() > deadline:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except OSError:
-                    proc.kill()
-                timed_out = True
-                pid, status, usage = os.wait4(proc.pid, 0)
-                break
+                results[i] = l.result(status, usage, False, time.perf_counter())
+                del pending[i]
+        if pending and time.perf_counter() > deadline:
+            timed_out = True
+            for i, l in list(pending.items()):
+                l.kill()
+                pid, status, usage = os.wait4(l.proc.pid, 0)
+                results[i] = l.result(status, usage, True, time.perf_counter())
+                del pending[i]
+        elif pending:
             time.sleep(0.0005)
-        wall = time.perf_counter() - start
-        rc = os.waitstatus_to_exitcode(status)
-        out.seek(0)
-        err.seek(0)
-        rss_text = rss_file.read()
-        # `time` writes "Command exited with non-zero status N" before %M when
-        # the command fails; the last line is always the %M value.
-        lines = [l for l in rss_text.splitlines() if l.strip()]
-        try:
-            rss = int(lines[-1])
-        except (IndexError, ValueError):
-            rss = None
-        stderr = err.read().decode(errors="replace")
-        if rc in (126, 127) and "cannot run" in stderr.splitlines()[:1].__str__():
-            raise ToolError(f"cannot run {argv[0]!r}: {stderr.strip().splitlines()[0].split(': ', 2)[-1]}")
-        return {"rc": rc, "stdout": out.read().decode(errors="replace"),
-                "stderr": stderr, "wall_ms": wall * 1000.0,
-                "cpu_ms": (usage.ru_utime + usage.ru_stime) * 1000.0,
-                "rss_kib": rss, "timed_out": timed_out}
+    end = time.perf_counter()
+    ordered = [results[i] for i in range(len(launches))]
+    return {"results": ordered, "timed_out": timed_out,
+            "group_wall_ms": (end - start) * 1000.0,
+            "total_cpu_ms": sum(r["cpu_ms"] for r in ordered),
+            "sum_rss_kib": sum((r["rss_kib"] or 0) for r in ordered),
+            "max_rss_kib": max(((r["rss_kib"] or 0) for r in ordered), default=0)}
 
 
 def median(values):
@@ -467,3 +545,67 @@ def counter_env(sink: Path) -> dict[str, str]:
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+# --------------------------------------------------------------------------
+# Frozen patch specs (edit scenarios)
+# --------------------------------------------------------------------------
+
+def text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def canonical_json(obj) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+def apply_patch(root: Path, patch: dict, direction: str = "forward") -> None:
+    """Apply a frozen patch (`edits`: [{file, old, new}] plus `before_sha256` /
+    `after_sha256` maps of file -> SHA-256 of the whole file) under `root`.
+
+    forward: replace `old` by `new`; backward (revert): replace `new` by `old`.
+    Every replacement must match EXACTLY once, and the file hash before and
+    after must equal the frozen value; otherwise ToolError (never a silent
+    no-op, never an ad-hoc edit)."""
+    if direction not in ("forward", "backward"):
+        raise ToolError(f"bad patch direction {direction!r}")
+    pre, post = (("before_sha256", "after_sha256") if direction == "forward"
+                 else ("after_sha256", "before_sha256"))
+    by_file: dict[str, list[dict]] = {}
+    for edit in patch["edits"]:
+        by_file.setdefault(edit["file"], []).append(edit)
+    for rel, edits in by_file.items():
+        path = Path(root) / rel
+        if not path.is_file():
+            raise ToolError(f"patch {patch['id']}: {rel} is missing under {root}")
+        text = path.read_text()
+        if text_sha256(text) != patch[pre][rel]:
+            raise ToolError(f"patch {patch['id']} ({direction}): {rel} does not have the "
+                            "frozen pre-image hash")
+        for edit in edits:
+            old, new = (edit["old"], edit["new"]) if direction == "forward" \
+                else (edit["new"], edit["old"])
+            if text.count(old) != 1:
+                raise ToolError(f"patch {patch['id']} ({direction}): expected exactly one "
+                                f"match in {rel}, found {text.count(old)}")
+            text = text.replace(old, new)
+        if text_sha256(text) != patch[post][rel]:
+            raise ToolError(f"patch {patch['id']} ({direction}): {rel} does not match the "
+                            "frozen post-image hash")
+        path.write_text(text)
+
+
+def make_patch(patch_id: str, fixture_dir: Path, edits: list[dict]) -> dict:
+    """Generator side: build a frozen patch spec from the freshly generated
+    fixture, computing the pre/post file hashes by applying the edits."""
+    files = sorted({e["file"] for e in edits})
+    before, after = {}, {}
+    for rel in files:
+        text = (Path(fixture_dir) / rel).read_text()
+        before[rel] = text_sha256(text)
+        for e in [e for e in edits if e["file"] == rel]:
+            if text.count(e["old"]) != 1:
+                raise ToolError(f"patch {patch_id}: old text must occur exactly once in {rel}")
+            text = text.replace(e["old"], e["new"])
+        after[rel] = text_sha256(text)
+    return {"id": patch_id, "edits": edits, "before_sha256": before, "after_sha256": after}

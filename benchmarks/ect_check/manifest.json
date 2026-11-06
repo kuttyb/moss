@@ -1,15 +1,18 @@
 {
   "suite_name": "moss_ect_check",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "seed": 20261105,
-  "total_fixtures": 75,
+  "total_fixtures": 80,
   "generators": {
     "trivial": "1.0.0",
     "b1_leak": "1.0.0",
     "b2_equiv": "1.0.0",
     "torture_ext": "1.1.0-ext",
     "dag_diamond": "1.0.0",
-    "dag_fanin": "1.0.0"
+    "dag_fanin": "1.0.0",
+    "b3_edits": "1.0.0",
+    "b4_cold_warm": "1.0.0",
+    "b5_worktrees": "1.0.0"
   },
   "fixtures": [
     {
@@ -1764,6 +1767,1088 @@
       "generator_version": "1.0.0",
       "generator_seed": 20261105,
       "sha256": "adde009b5ddc168f53d6c1201f0e0d70b4ab2ec00830dcf8b904374078f58845"
+    },
+    {
+      "id": "b3_dag_d20_w4_k02",
+      "path": "b3_edits/b3_dag_d20_w4_k02",
+      "kind": "package",
+      "entry": "pkg",
+      "timeout_s": 600,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "b3_dag",
+        "depth": 20,
+        "width": 4,
+        "types": 2,
+        "nodes": 81,
+        "packages": 1,
+        "edit_leaf": "n019_0",
+        "predicted_functions_analyzed": 81,
+        "predicted_spec_keys": 162,
+        "shape": "spine DAG: W parallel chains under one root, no shared callees"
+      },
+      "category": "b3_edits",
+      "generator": "b3_edits",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "1a6aad6be02376ad151a5ab0ca38f60487db5d89e654551124014f1890ebce60"
+    },
+    {
+      "id": "b3_fanin_d50_w4_k02",
+      "path": "b3_edits/b3_fanin_d50_w4_k02",
+      "kind": "package",
+      "entry": "pkg",
+      "timeout_s": 600,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "b3_fanin",
+        "depth": 50,
+        "width": 4,
+        "types": 2,
+        "nodes": 55,
+        "packages": 1,
+        "edit_leaf": "c049",
+        "predicted_functions_analyzed": 55,
+        "predicted_spec_keys": 110,
+        "shape": "fan-in: W entries into one shared chain"
+      },
+      "category": "b3_edits",
+      "generator": "b3_edits",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "9ba78e438cccec7bfb03939764cfd57800b05796b9f69456985a4b1a2c225378"
+    },
+    {
+      "id": "b4_floor_file",
+      "path": "b4_cold_warm/floor_file",
+      "kind": "file",
+      "entry": "main.moss",
+      "expected_status": "pass",
+      "metadata": {
+        "family": "b4_floor",
+        "shape": "file",
+        "nodes": 0,
+        "note": "startup floor: an `main` that only echoes a literal"
+      },
+      "category": "b4_cold_warm",
+      "generator": "b4_cold_warm",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "e89da3b53d8b3dd0bf0efe9d8ebdccab3aa0dd0abfeac3be3dda877767254655"
+    },
+    {
+      "id": "b4_floor_pkg",
+      "path": "b4_cold_warm/floor_pkg",
+      "kind": "package",
+      "entry": "pkg",
+      "expected_status": "pass",
+      "metadata": {
+        "family": "b4_floor",
+        "shape": "package",
+        "nodes": 0
+      },
+      "category": "b4_cold_warm",
+      "generator": "b4_cold_warm",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "c582508e173321212498cc1ab8de746014ceb517f0776daebf43218d33e09a5d"
+    },
+    {
+      "id": "b4_pkgset_p12",
+      "path": "b4_cold_warm/pkgset",
+      "kind": "package",
+      "entry": "app",
+      "timeout_s": 600,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "b4_pkgset",
+        "packages": 13,
+        "functions": 492,
+        "note": "12 provider packages x 40 typed exports + 1 exported generic each; the app imports all and calls 2 per package"
+      },
+      "category": "b4_cold_warm",
+      "generator": "b4_cold_warm",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "4ff8eb5f4304c9dc89d915a053f720ccbe40a9fa6ad82c6250e4ea0e279d0dbb"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "b3_dag_a",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "summary-unchanged body edit at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "patches": {
+        "a": {
+          "id": "a",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body\n  k = 2\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "a5c6326ede4a85dd1246ca0d92cb3be983805664ec12f9db8bc7fa8e4445dc8b"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "856c893782f0d5fd705028ae705127b703a52f094805e14ad1f26b57938d23d1"
+    },
+    {
+      "id": "b3_dag_b",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "consumed fact: return type Int -> Float at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "cone",
+      "patches": {
+        "b": {
+          "id": "b",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body\n  k = 0.5\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "729b8912ef7aeeee38c12c13313be261231f03126bb49cf32708f6c7d3372035"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "49c47ce72cf27512d70e6b9f9e0755780551b656cb0b27a69d1b6657d9326c00"
+    },
+    {
+      "id": "b3_dag_b2",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "consumed fact: may_panic propagates at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "cone",
+      "patches": {
+        "b2": {
+          "id": "b2",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r / k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "dacfffc8593dc0cfaa31cb22c1ed20240150ce759b69f7fcdece867ab5bff994"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b2"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b2"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "9535748b9ae8317cef5639cee30cfbba3fde1f60b00912a12b674fa125f69355"
+    },
+    {
+      "id": "b3_dag_c",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "provenance-only: statement swap moves call line at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "patches": {
+        "c": {
+          "id": "c",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body\n  r = x.score()\n  k = 1\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "bd771ef1211a466595dee1d2dc5e2080b9f0e791c05e45f0070f0d6e889a8f25"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "666ddd3cbe5e66a8d321285987cedcbedd619c7a6104a528cc2254643b03e998"
+    },
+    {
+      "id": "b3_dag_d",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "comment-only at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "none",
+      "patches": {
+        "d": {
+          "id": "d",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body (reworded)\n  k = 1\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "ab342c1202df08c60d6297f5d35cd576b14f9a40d623ab95367623b1dc968182"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "3b86f1cf3ae3b7f5429e8386fffc5dc9fd01f25c2fe76ba49406dc89e8dc1f51"
+    },
+    {
+      "id": "b3_fanin_a",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "summary-unchanged body edit at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "local",
+      "patches": {
+        "a": {
+          "id": "a",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn c049(x):\n  # leaf body\n  k = 2\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "3d92910cff1b0b9e3c5ccef0df30dca6bd9615f5357cb9e10049895acccfd98d"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "b8122bfe5eec5b2848d958cbe7b85461200ca5e6c9bbbdb5f9d5b3b1a423e0bb"
+    },
+    {
+      "id": "b3_fanin_b",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "consumed fact: return type Int -> Float at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "cone",
+      "patches": {
+        "b": {
+          "id": "b",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn c049(x):\n  # leaf body\n  k = 0.5\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "a579401d5a76c8c1f6dbc4be2784f053407559210405b1de9eb6bf275b0f3910"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "b4009578cd2f48c548ee66e4711af671e8e62e428507eef831b2e07a315159b6"
+    },
+    {
+      "id": "b3_fanin_b2",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "consumed fact: may_panic propagates at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "cone",
+      "patches": {
+        "b2": {
+          "id": "b2",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r / k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "f7df29c33a690d20f5dc7bbbf77cc04eed8abfb52ba16159ef3931258fff4705"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b2"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b2"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "d266fb11b3542aa08aa4374bd42c91ecb67fcaf2450fb08c1ee301e5f87c4d63"
+    },
+    {
+      "id": "b3_fanin_c",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "provenance-only: statement swap moves call line at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "local",
+      "patches": {
+        "c": {
+          "id": "c",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn c049(x):\n  # leaf body\n  r = x.score()\n  k = 1\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "ad9bfe0350681a10c1bc3f0358fc45897c48666c680a30002a74f46870c3026d"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "2bc8fbb5f2c55263b921afef8ef41034b108d34044d0dafa49d7782434098c7a"
+    },
+    {
+      "id": "b3_fanin_d",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "comment-only at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "none",
+      "patches": {
+        "d": {
+          "id": "d",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn c049(x):\n  # leaf body (reworded)\n  k = 1\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "32ba8a4c1ccb65966fb3cfc21cc964f40649f918251ef147df6e1403d289ca5b"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "adad10f70769778e7a0a3f5fbaa4258ee1f5cf178a154a71263851d960fa754c"
+    },
+    {
+      "id": "b4_seq_floor_file",
+      "family": "b4_cold_warm",
+      "fixture": "b4_floor_file",
+      "kind": "edit_sequence",
+      "description": "check, check again with no edit, one-line edit, check, revert",
+      "classification": "local",
+      "patches": {
+        "edit": {
+          "id": "edit",
+          "edits": [
+            {
+              "file": "main.moss",
+              "old": "  echo 0\n",
+              "new": "  echo 1\n"
+            }
+          ],
+          "before_sha256": {
+            "main.moss": "47097650394d2216d790625c1dcea31191cbc7a8bfae4b56283ada79b34f22a3"
+          },
+          "after_sha256": {
+            "main.moss": "5282688c7e6249d41a036394ebc81c67136ae2985654196c34feac806ffd0208"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "edit"
+        }
+      ],
+      "sha256": "d0b2c47b8d244650c927b9918ddf4c1a559b7c79c69b73d27975ab022cc91d14"
+    },
+    {
+      "id": "b4_seq_floor_pkg",
+      "family": "b4_cold_warm",
+      "fixture": "b4_floor_pkg",
+      "kind": "edit_sequence",
+      "description": "check, check again with no edit, one-line edit, check, revert",
+      "classification": "local",
+      "patches": {
+        "edit": {
+          "id": "edit",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "  echo 0\n",
+              "new": "  echo 1\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "cf28efaf3dcb64be6f9425d9873938ad31f82fbb35adabfec3744e7e302a2580"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "72e3a5dbde80c4dcbdd0abbda6375149b87056b3f57683c9ef802f9376a006da"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "edit"
+        }
+      ],
+      "sha256": "fcd82fd2670c24891d1a2a3d427a96bcabf4a7a9862158a3809288e9aff6f55c"
+    },
+    {
+      "id": "b4_seq_pkgset_p12",
+      "family": "b4_cold_warm",
+      "fixture": "b4_pkgset_p12",
+      "kind": "edit_sequence",
+      "description": "check, check again with no edit, one-line edit, check, revert",
+      "classification": "local",
+      "patches": {
+        "edit": {
+          "id": "edit",
+          "edits": [
+            {
+              "file": "app/src/main.moss",
+              "old": "  seed = 7\n",
+              "new": "  seed = 8\n"
+            }
+          ],
+          "before_sha256": {
+            "app/src/main.moss": "6c42a268cc7554a47caf62198c0691601388afa9e89e5ea7a639dfac7379241b"
+          },
+          "after_sha256": {
+            "app/src/main.moss": "6fdb3a380f110f1055a5475a82866ae8112c2fb5beda4b7994674195b360823e"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "edit"
+        }
+      ],
+      "sha256": "5b9a9f465f30d3eadb517aea6af75de9364ec49c504db7b915ce26174cb53054"
+    },
+    {
+      "id": "b4_seq_dag_d20_w4_k02",
+      "family": "b4_cold_warm",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "check, check again with no edit, one-line edit, check, revert",
+      "classification": "local",
+      "patches": {
+        "edit": {
+          "id": "edit",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "fn n019_0(x):\n  # leaf body\n  k = 2\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "a5c6326ede4a85dd1246ca0d92cb3be983805664ec12f9db8bc7fa8e4445dc8b"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "edit"
+        }
+      ],
+      "sha256": "b636bcfc5e1e5cd068d458fad2fe7e10ae74b52ad14a9d2cc00cf6dc8db52e57"
+    },
+    {
+      "id": "b5_wt_dag",
+      "family": "b5_worktrees",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "worktrees",
+      "description": "N real git worktrees of one commit, each with a distinct leaf constant edit",
+      "counts": [
+        1,
+        4,
+        16
+      ],
+      "slots": [
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_0(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_1(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_1(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_2(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_2(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_3(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_3(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_0(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_1(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_1(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_2(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_2(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_3(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_3(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_0(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_1(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_1(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_2(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_2(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_3(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_3(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_0(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_1(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_1(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_2(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_2(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        },
+        {
+          "file": "pkg/src/main.moss",
+          "old": "fn n019_3(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+          "new_fmt": "fn n019_3(x):\n  # leaf body\n  k = {v}\n  r = x.score()\n  return r + k\n"
+        }
+      ],
+      "values": [
+        30,
+        39,
+        26,
+        10,
+        31,
+        59,
+        6,
+        28,
+        24,
+        3,
+        54,
+        43,
+        57,
+        18,
+        53,
+        36
+      ],
+      "rep_stride": 100,
+      "commit": {
+        "author": "ect-bench <ect-bench@example.invalid>",
+        "date": "2026-01-01T00:00:00+0000",
+        "message": "ect-check base"
+      },
+      "sha256": "536f4f8f427d42f263540a027f181717ae710aff925c5856bb2f16a5a800c1aa"
+    },
+    {
+      "id": "b5_wt_pkgset",
+      "family": "b5_worktrees",
+      "fixture": "b4_pkgset_p12",
+      "kind": "worktrees",
+      "description": "N real git worktrees of one commit, each with a distinct app `seed` constant edit",
+      "counts": [
+        1,
+        4,
+        16
+      ],
+      "slots": [
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        },
+        {
+          "file": "app/src/main.moss",
+          "old": "  seed = 7\n",
+          "new_fmt": "  seed = {v}\n"
+        }
+      ],
+      "values": [
+        30,
+        39,
+        26,
+        10,
+        31,
+        59,
+        6,
+        28,
+        24,
+        3,
+        54,
+        43,
+        57,
+        18,
+        53,
+        36
+      ],
+      "rep_stride": 100,
+      "commit": {
+        "author": "ect-bench <ect-bench@example.invalid>",
+        "date": "2026-01-01T00:00:00+0000",
+        "message": "ect-check base"
+      },
+      "sha256": "14c12090eed46a8bc3df3615a4b07b3ebf5586a1e2e67dee319bcc0180d6490b"
     }
   ]
 }

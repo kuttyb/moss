@@ -1,8 +1,9 @@
 # ECT Check Benchmark Suite
 
-**Phase 28.5, Team 1 (harness and measurement plumbing) and Team 2 (generic-DAG
-fixtures).** Suite version 0.2.0 (0.1.0 plus the Team 2 generators; the five
-Team 1 `trivial_*` fixtures are byte-identical).
+**Phase 28.5, Team 1 (harness and measurement plumbing), Team 2 (generic-DAG
+fixtures) and Team 3 (edit sequences B3, cold/warm B4, worktrees B5).** Suite
+version 0.3.0 (0.2.0 plus the Team 3 generators; every earlier fixture is
+byte-identical, hashes unchanged).
 
 Records today's cost of the *check* part of edit-compile-test and is built to
 prove or disprove the Phase 28.5 fixes (`.mossi` firewall, content-addressed
@@ -23,6 +24,10 @@ benchmarks/ect_check/
   selftest.py      RSS-independence, gate-sensitivity, timeout-kill, stack tests
   ect_common.py    hashing, command templates, measured execution, verdicts
   dag_generators.py  Team 2 generators: b1_leak, b2_equiv, torture_ext, dag_diamond, dag_fanin
+  edit_generators.py Team 3 generators: b3_edits, b4_cold_warm, b5_worktrees (+ frozen scenario specs)
+  scenarios.py     scenario engine: edit sequences, frozen-patch application, worktree groups
+  edit_evidence.py B3 query evidence (`moss inspect` before/after each edit)
+  report_scenarios.py  report sections for B3/B4/B5
   probes/          minimal compiler-behavior reproducers (gen_probe.py + samples)
   report_dag.py    report sections + slope fits for those families
   manifest.json    frozen: id, kind, entry, expected_status, SHA-256 per fixture
@@ -336,8 +341,8 @@ D=1000, RSS up to 543 MB). With stored per-callable facts, re-checking an
 unchanged chain should be close to constant in depth and RSS should not scale
 with depth. The cross fixtures should show wall/CPU per extra type falling
 toward one cache hit per type, as for B2, instead of a full chain re-walk per
-type. (How many functions an *edit* re-analyzes cannot be measured here; that
-needs the Team 3 edit sequences.)
+type. (How many functions an *edit* re-analyzes is measured by the B3 edit
+sequences below.)
 
 ### Shared-callee DAGs (`dag_fanin`, 6 fixtures; `dag_diamond`, 4 fixtures)
 
@@ -382,17 +387,285 @@ disposable numbers; rerun on your machine and check the noise probe.
   crash fixture (depth 300, 8 MiB) exits 139 after 4.2 s.
 - **Diamond (K=1)**: D=6/8/10/12 = 0.16/0.61/2.35/9.36 s.
 
-## What improvement looks like (other stubs for later teams)
+## Team 3 benchmarks: edits (B3), cold vs warm (B4), worktrees (B5)
 
-- **Inference Ripple (edit sequences)**: TBD. Expect functions re-inferred per
-  body edit to drop from "callers up to roots" to the first consistent level.
-- **Cold Tax (warm client)**: TBD. Expect warm wall time to approach checker
-  work only, with startup/parse/.mossi loading amortized.
-- **Worktrees**: TBD. Expect N worktrees to cost base plus divergence in
-  CPU and RSS.
-- **M1 / M2**: TBD. M1 should stay at 100% (hardening must not lose schemes);
-  M2 is the reference for how much of the internal graph a fact store could
-  skip.
+Everything below is generated deterministically by `edit_generators.py`, frozen
+in `manifest.json` (key `scenarios`, plus five ordinary fixtures), run by
+`run.py bench`/`gate`/`generate.py --validate-only`, and replayable against a
+future compiler or warm client **without any fixture or spec change**: a request is
+always the fixture's command template (`{moss} check` for files, `margo --check
+build` for packages, or `--warm-client-cmd`).
+
+```bash
+# the Team 3 pass (quiet machine, moss-opt): fixtures + all scenarios + gate + query evidence
+python3 benchmarks/ect_check/run.py bench --reps 5 --no-metrics \
+  --ids b3_dag_d20_w4_k02 b3_fanin_d50_w4_k02 b4_floor_file b4_floor_pkg b4_pkgset_p12 \
+  --scenario-ids all
+python3 benchmarks/ect_check/run.py gate --scenario-ids all      # whole suite + every edit sequence
+python3 benchmarks/ect_check/run.py evidence                     # B3 `moss inspect` evidence only
+```
+
+`--ids` restricts fixtures; scenarios then run only with `--scenario-ids`
+(`all` or a list). With neither flag everything runs. Outputs additionally
+include `results_worktrees.csv` (B5) and `evidence.json` (B3).
+
+### Scenario specs (frozen)
+
+An `edit_sequence` is a list of steps over one staged fixture: `check <label>`
+(with the expected status), `apply <patch>`, `revert <patch>`. Patches are frozen
+`{file, old, new}` edits with the SHA-256 of the whole file before and after.
+`scenarios.py` applies them: each `old` must match **exactly once**, the pre- and
+post-image hashes must equal the frozen ones, and after `revert` the whole staged
+tree hash must equal the fixture's frozen hash (byte-identical or the run aborts).
+Edits are never applied by ad-hoc scripts. A scenario row carries the SHA-256 of its
+canonical JSON; `generate.py --validate-only` rechecks it, replays every sequence
+on the reference compiler and requires each step's expected status, and
+`--verify-determinism` regenerates fixtures and scenarios and compares them.
+
+Cold mode runs one discarded full sequence, then `--reps` sequences, each on a
+freshly staged tree and an empty build dir; a step sees the state the earlier steps
+left (a real edit loop). Warm mode stages once, runs `--warm-primes` full
+sequences unmeasured, then the timed ones in place (the tree is back to the base
+after every `revert`). **Warm reps repeat the same edits**, so a content-addressed
+client may answer reps 2+ from its store; rows therefore also carry
+`wall_ms_first` (the first timed sequence). B5 salts its edits per rep for the same
+reason (below).
+
+### Stand-in warm client (selftest only)
+
+`selftest.py` contains a tiny memoizing client (`STANDIN`, a verdict cache keyed by
+the project tree hash, header "SELFTEST-ONLY STAND-IN") used only to prove that warm
+mode, template plumbing, edit invalidation and the sequence gate work (it makes the
+warm `base/edit/revert` rows about 20x faster and passes the gate; a mutating client
+fails it). It is never used for a baseline claim: **today no daemon exists, the
+baseline output says `Warm client: not configured`, and there are no warm rows.**
+
+### B3. Inference Ripple (`b3_edits`, 2 fixtures, 10 sequences)
+
+*Fixtures* (one package each, Moss.toml + `src/main.moss`, K=2 user types,
+`main` sums into a `Float` so both an `Int` and a `Float` root result are legal):
+
+- `b3_dag_d20_w4_k02`: the Team 2 spine DAG, D=20, W=4 (81 callables), single package.
+- `b3_fanin_d50_w4_k02`: the Team 2 fan-in shape, D=50, W=4 (55 callables); every entry
+  reaches one shared chain, so a leaf edit reaches **every** callable.
+
+Leaves have a three-statement body (all other nodes are the Team 2 shapes):
+
+```text
+fn n019_0(x):
+  # leaf body
+  k = 1
+  r = x.score()
+  return r + k
+```
+
+Five frozen patches at leaf `n019_0` (fan-in: `c049`):
+
+| Edit | Change | Class (ideal recheck from the source call graph) |
+|---|---|---|
+| `a` | `k = 1` -> `k = 2` | local: the leaf only (1) |
+| `b` | `k = 1` -> `k = 0.5`: the return type becomes `Float` | cone: the leaf and all transitive callers (DAG 21, fan-in 55) |
+| `b2` | `return r + k` -> `return r / k`: `may_panic` now propagates | cone (21 / 55) |
+| `c` | the two first statements swapped: only the call's source line moves | local (1) |
+| `d` | comment text only | none (0) |
+
+*Counters are a proxy for nodes rechecked*: `functions_analyzed`,
+`source_function_checks`, specialization evals/keys, `checker_runs`. **Today every
+edit rechecks the whole package** (`margo` skips only a package whose sources are
+unchanged; there is no per-callable incrementality), so every edit step shows all
+81 (55) callables and 162 (110) specialization keys, exactly like the unedited
+baseline. The "Ideal" column is the size of the set a perfect incremental checker
+would recheck; it is computed by `edit_evidence.py` from the **source** call graph
+(reverse reachability from the edited callable) and the declared edit class, never from
+generator metadata. "Observed" is what the compiler itself says moved.
+
+*Query evidence* (`run.py evidence`, also part of `bench`): for each edit the fixture
+source before and after the patch is queried with `moss inspect fn:<name>` for every
+callable (type, ownership, transitive effects, `implementation_hash`,
+`semantic_interface_hash`, and the typed specialization records: result/parameter
+type keys, observable effects, leaf effects). Result of the final run:
+
+| Edit | Callables whose own body hash changed | Callables whose queried summary facts changed | Provenance (source lines) only |
+|---|---|---|---|
+| `a` | leaf | none | none |
+| `b` (Int -> Float) | leaf | the leaf and all callers (DAG 21 = source cone; fan-in 55 = every callable) | none |
+| `b2` (`may_panic`) | the whole cone (see below) | the whole cone (21 / 55): `may_panic` false -> true in `moss effects` of every caller, new `semantic_interface_hash` | none |
+| `c` | leaf | none | leaf only |
+| `d` | none | none | none |
+
+Observed summary-change sets equal the source cone exactly for `b`/`b2`
+(`summary_changed_matches_cone`), so (b) is a consumed fact by every caller up to
+the root, demonstrated with the queries, not assumed. Two things surfaced here:
+`implementation_hash` of a *caller* changes when a callee's effect set changes (`b2`:
+21 body hashes move although only the leaf's source changed), so it is not a pure
+function of the callable's own text; and for `b` the callers' `semantic_interface_hash`
+and `moss type` do not move (the untyped generic's result is symbolic) while the
+**specialization** result type keys do. A store keyed on either hash alone would
+miss one of these.
+
+**Edit (c): a fact no caller consumes.** Precisely: *no semantic fact in a leaf's
+inferred summary (`OpenCallableSummaryFacts`: parameter and result types,
+requirements, member requirements, parameter access, `ObservableEffects`) is
+unread by callers.* Types are substituted into the caller's summary and member requirements are
+forwarded (`src/semantic_checker.cpp`, the call-forwarding code that builds
+`forwarded_member_requirements`); parameter access and effect flags were observed with
+the queries to reach callers (`b2`, and the probe below). The nearest candidate, a parameter that every call
+site binds to a literal, does not escape either: `probes/literal_param_write.moss`
+makes the leaf write that parameter; its `ownership` becomes `WRITE` (visible only in
+the leaf's own query) **but** `local_mutation` still propagates to every caller. What
+remains is **provenance**: the source line of the leaf's call and of its member
+requirement origin (`OpenCallableSummaryFacts.origin`, `RequirementOrigin.line`, the
+ABI-v10 `provenance_id`, the `direct_calls[].line` of `moss calls`). Edit `c` swaps two
+independent statements (same line count, so no other callable's line moves), which
+changes exactly those lines and the body hash of the leaf and **nothing else in any
+caller's `type`, `ownership`, `effects` or specialization record** (evidence row `c`:
+"provenance only: leaf"). This is the closest honest design and it is flagged: the line
+numbers are *carried* (not dropped) into derived ids such as `provenance_id`, so a store
+that keys on them would see the swap as a change; the principles document's rule "strip
+caller-local data (source file and line in requirement origins) from shared entries"
+is what makes `c` a leaf-only recheck. Together with `a` (nothing in the summary
+moves at all) it brackets the unconsumed case; `moss effects++` per-edge records should
+make both recheck only the leaf. Edit `d` (comment text) is an extra control: ideal 0,
+and no query-visible fact moves.
+
+*What an improvement should look like.* `a`: recheck about the edited node only
+(functions analyzed ~1 of 81, not 81). `b`/`b2`: exactly the consumers' cone (21 of 81
+in the DAG; in the fan-in every node, 55 of 55, so no gain is possible there and it
+bounds the cost of the slow path). `c`: the leaf only, which is what per-edge records
+(or stripping provenance from keys) enable. `d`: nothing rechecked, wall near the
+no-op request. The Analyzed/ideal column should fall from 81x/3.9x/81x/n.a. toward
+1.0x on the DAG. The `revert` check returns to the baseline cost (or to a hit).
+
+### B4. Cold vs warm (`b4_cold_warm`, 3 fixtures + the B3 DAG, 4 sequences)
+
+- `b4_floor_file` (`moss check`) and `b4_floor_pkg` (`margo --check build`): `main` that
+  only echoes a literal. The startup floor. `margo` is a Python script, so the package
+  floor includes interpreter startup and a `.mossi` write.
+- `b4_pkgset_p12`: sdk-style set: 12 provider packages x (40 typed exports + 1 exported
+  generic) and an app that imports all 12 and calls 2 functions from each (13 packages).
+- `b3_dag_d20_w4_k02`: the work-dominated contrast.
+
+Sequence: `first` (empty build dir), `second` (identical tree), one-line edit
+(`echo 0` -> `echo 1`, `seed = 7` -> `seed = 8`, leaf `k = 1` -> `k = 2`), `edit`, revert.
+
+*What an improvement should look like* (warm client): startup, parsing and `.mossi`
+loading vanish, so the floors approach the cost of a socket round trip; `second`
+approaches zero for every project (today `moss check <file>` has no cache at all, and
+`margo` already skips an unchanged package, but still pays Python startup and hashing:
+46 ms for one package, 115 ms for 13); `edit` becomes proportional to the edit (the
+one-line edit in the package set re-walks nothing from the 12 providers; for the DAG,
+the edited node only).
+
+### B5. Many worktrees (`b5_worktrees`, 2 scenarios)
+
+One deterministic fixture repository per scenario is built under `tmp/` (never inside
+the Moss repository): the fixture tree plus `.gitignore`, one commit with fixed
+author, date and message (so the commit id is deterministic: `b5_wt_dag` `11817bbe3d43`,
+`b5_wt_pkgset` `177f2f3ccd37`). For N = 1, 4, 16 the runner runs `git worktree add --detach`
+N times (real checkouts of that one commit), applies a distinct small uncommitted edit
+per worktree from the frozen slot specs (DAG: leaf constant `k` of leaf `n019_{i mod 4}`;
+package set: the app's `seed`; values distinct, offset by `rep_stride` x rep so every rep
+presents new divergence to a content-addressed client while the base stays shared), then
+checks each worktree from an empty build dir, **concurrently** (all N started together)
+and **sequentially**, `git worktree remove`s them and prunes. Nothing runs in the main
+repository's worktree list or branches (selftest asserts both unchanged, and the repo is
+deleted afterwards). Reported per (N, schedule): group wall, **total CPU** (sum of
+per-process user+system), **summed peak RSS** (sum of per-process `/usr/bin/time` peaks,
+an upper bound on the simultaneous footprint), every worktree's first-check time, and
+counters summed over the N worktrees from a separate sequential pass.
+
+*Contention caveat.* The machine is an i9-13900K exposed to WSL2 as 16 logical CPUs
+(8 cores x 2 SMT threads, `lscpu`). N=16 concurrent compute-bound processes (plus the
+`margo` Python processes and the polling runner) saturate the logical CPUs and share the
+physical cores, so per-worktree wall at N=16 concurrent (~760 ms vs 420 ms alone) and the
+concurrent CPU totals are contention-inflated (the DAG's concurrent total CPU is 12.0 s
+against 6.7 s sequential; the package set's is *lower* concurrent, 10.4 s against 13.7 s
+sequential, so the sign is not stable). Use the **sequential** totals for CPU and the
+first-check column of the sequential rows for per-worktree cost. Nothing else ran during
+the measurements.
+
+*What an improvement should look like.* Total CPU and summed RSS grow with divergence,
+not with N: the sequential N=16 rows should approach (one full check) + 15 x (cost of
+a distinct small edit), not 16 x a full check; the first-check time of worktrees 2..N
+should approach lookup cost; the functions-analyzed sum should stop scaling as N x 81.
+
+### Baseline recorded on today's compiler (moss-opt, 16 logical CPUs, 5 reps, quiet machine)
+
+Run `tmp/ect_check/t3final` of 2026-11-06 (`bench --reps 5`, gate PASS over the five
+fixtures and the 14 edit sequences): loadavg at start 0.20, calibration fixture 516.3 ms
+at start and 530.4 ms at the end (drift 2.7%, no warning). Local, disposable numbers;
+rerun on your machine and read the noise probe. Warm client: **not configured**.
+
+**B3 (cold process per request; wall ms, identical counters on every row of a shape)**
+
+| Shape | base | `a` | `b` | `b2` | `c` | `d` | Fns analyzed / source fn checks / spec keys / checker runs |
+|---|---:|---:|---:|---:|---:|---:|---|
+| DAG D20 W4 K2 edit step | 418.7 | 414.8 | 422.4 | 425.4 | 420.0 | 420.5 | 81 / 81 / 162 / 1 every row |
+| DAG revert step | | 420.6 | 420.2 | 422.6 | 417.9 | 424.6 | same |
+| fan-in D50 W4 K2 edit step | 632.9 | 637.7 | 641.5 | 628.6 | 639.5 | 639.2 | 55 / 55 / 110 / 1 every row |
+| fan-in revert step | | 647.1 | 639.9 | 640.2 | 635.8 | 639.1 | same |
+
+| DAG edit | Ideal recheck (source graph) | Observed summary change (queries) | Counters (fns analyzed) | Analyzed / ideal |
+|---|---:|---:|---:|---:|
+| `a` | 1 | 0 | 81 | 81x |
+| `b` | 21 | 21 | 81 | 3.9x |
+| `b2` | 21 | 21 | 81 | 3.9x |
+| `c` | 1 | 0 (provenance on the leaf) | 81 | 81x |
+| `d` | 0 | 0 | 81 | n/a |
+
+Fan-in: ideal 1 / 55 / 55 / 1 / 0 for `a`/`b`/`b2`/`c`/`d`; analyzed 55 on all (55x, 1.0x,
+1.0x, 55x, n/a). Shape check: functions analyzed == callables and keys == callables x K
+(81 / 162 and 55 / 110, delta 0); fan-in has 6 hits. Local `complete` summaries: 0/81 and
+0/55 (the Team 2 shapes had 4/80 and 1/54). Wall time is flat across
+all edits (the whole package is rechecked every time) and equals the unedited baseline.
+
+**B4 (wall ms, cold process per request)**
+
+| Project | first | second (no edit) | edit | second: checker runs / fns | edit: fns analyzed |
+|---|---:|---:|---:|---|---:|
+| `b4_floor_file` | 1.9 | 1.3 | 1.3 | 1 / 0 (no cache) | 0 |
+| `b4_floor_pkg` | 46.3 | 45.7 | 45.8 | 1 / 0 | 0 |
+| `b4_pkgset_p12` | 274.0 | 114.9 | 159.5 | 0 (margo skips all 13) | 492 |
+| `b3_dag_d20_w4_k02` | 424.6 | 45.3 | 417.7 | 0 (margo skips) | 81 |
+
+The package set's `first` costs 834 ms CPU (13 checker runs, 984 functions) in 274 ms
+wall; its `edit` re-checks only the app but still analyzes 492 functions, exactly the
+provider callable count (12 x 41; the mechanism was not investigated), in 159.5 ms: the one-line
+edit costs 58% of the full build and 3.4x the package floor. For the DAG the
+no-edit second check is 9x cheaper than first only because `margo` skips the package;
+the one-line edit costs the full check again.
+
+**B5 (cold, median of 5; sequential rows give the clean CPU figure)**
+
+| Scenario | N | Schedule | Group wall ms | Total CPU ms | Sum peak RSS MiB | wt0 / later / slowest first-check ms | Fns analyzed (sum) |
+|---|---:|---|---:|---:|---:|---|---:|
+| DAG | 1 | seq | 423.5 | 424.0 | 24.4 | 423.5 / - / 423.5 | 81 |
+| DAG | 4 | seq | 1686.4 | 1685.4 | 97.5 | 422.3 / 420.7 / 422.3 | 324 |
+| DAG | 4 | conc | 632.9 | 2336.6 | 97.1 | 527.6 / 605.7 / 619.9 | 324 |
+| DAG | 16 | seq | 6729.3 | 6724.8 | 389.7 | 417.2 / 419.9 / 425.7 | 1296 |
+| DAG | 16 | conc | 796.6 | 12024.5 | 389.5 | 762.4 / 761.2 / 773.4 | 1296 |
+| pkgset | 1 | seq | 288.8 | 844.2 | 24.8 | 288.8 / - / 288.8 | 984 |
+| pkgset | 4 | seq | 1167.4 | 3344.5 | 98.3 | 295.5 / 295.1 / 298.9 | 3936 |
+| pkgset | 4 | conc | 415.3 | 3255.5 | 97.9 | 412.4 / 405.8 / 412.4 | 3936 |
+| pkgset | 16 | seq | 4719.5 | 13738.8 | 393.7 | 292.2 / 295.6 / 302.6 | 15744 |
+| pkgset | 16 | conc | 677.5 | 10432.1 | 400.2 | 667.2 / 659.9 / 669.5 | 15744 |
+
+Today nothing is shared: total CPU, summed peak RSS and functions analyzed grow linearly
+with N (DAG N=16 sequential = 15.9x one worktree's CPU, 16.0x its RSS, 16x its functions),
+and the first check of worktrees 2..N costs the same as the first. Each process's own peak
+RSS is 24-25 MiB, so the summed figure is N x that. N=1 concurrent and sequential agree
+(no contention).
+
+### Findings recorded while building B3-B5
+
+- `implementation_hash` of a caller depends on callee effects (`b2` above), so it cannot be
+  the only content key for a fact store; and `moss type` of an untyped generic does not show
+  a consumed return-type change (only the specialization records do).
+- Editing a leaf of the spine shape (21 of 81 callables are its cone) gains up to 3.9x
+  in recheck set; the fan-in shape gains nothing for a consumed fact because the shared
+  chain is reached from every entry.
+- The package-level skip in `margo` is the only incrementality today; a no-edit second
+  check of a 13-package set still costs 115 ms (Python startup, hashing, graph walk).
 
 ## Fixture-shape constraints and known quirks
 

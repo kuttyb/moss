@@ -1,0 +1,124 @@
+module ect_p00
+
+export fn f00(a: Int, b: Int) -> Int:
+  return a * 2 + b + 0
+
+export fn f01(a: Int, b: Int) -> Int:
+  return a * 2 + b + 1
+
+export fn f02(a: Int, b: Int) -> Int:
+  return a * 4 + b + 2
+
+export fn f03(a: Int, b: Int) -> Int:
+  return a * 4 + b + 3
+
+export fn f04(a: Int, b: Int) -> Int:
+  return a * 2 + b + 4
+
+export fn f05(a: Int, b: Int) -> Int:
+  return a * 8 + b + 5
+
+export fn f06(a: Int, b: Int) -> Int:
+  return a * 9 + b + 6
+
+export fn f07(a: Int, b: Int) -> Int:
+  return a * 5 + b + 7
+
+export fn f08(a: Int, b: Int) -> Int:
+  return a * 2 + b + 8
+
+export fn f09(a: Int, b: Int) -> Int:
+  return a * 6 + b + 9
+
+export fn f10(a: Int, b: Int) -> Int:
+  return a * 5 + b + 10
+
+export fn f11(a: Int, b: Int) -> Int:
+  return a * 5 + b + 11
+
+export fn f12(a: Int, b: Int) -> Int:
+  return a * 5 + b + 12
+
+export fn f13(a: Int, b: Int) -> Int:
+  return a * 7 + b + 13
+
+export fn f14(a: Int, b: Int) -> Int:
+  return a * 2 + b + 14
+
+export fn f15(a: Int, b: Int) -> Int:
+  return a * 4 + b + 15
+
+export fn f16(a: Int, b: Int) -> Int:
+  return a * 4 + b + 16
+
+export fn f17(a: Int, b: Int) -> Int:
+  return a * 7 + b + 17
+
+export fn f18(a: Int, b: Int) -> Int:
+  return a * 2 + b + 18
+
+export fn f19(a: Int, b: Int) -> Int:
+  return a * 8 + b + 19
+
+export fn f20(a: Int, b: Int) -> Int:
+  return a * 7 + b + 20
+
+export fn f21(a: Int, b: Int) -> Int:
+  return a * 9 + b + 21
+
+export fn f22(a: Int, b: Int) -> Int:
+  return a * 5 + b + 22
+
+export fn f23(a: Int, b: Int) -> Int:
+  return a * 3 + b + 23
+
+export fn f24(a: Int, b: Int) -> Int:
+  return a * 5 + b + 24
+
+export fn f25(a: Int, b: Int) -> Int:
+  return a * 2 + b + 25
+
+export fn f26(a: Int, b: Int) -> Int:
+  return a * 7 + b + 26
+
+export fn f27(a: Int, b: Int) -> Int:
+  return a * 8 + b + 27
+
+export fn f28(a: Int, b: Int) -> Int:
+  return a * 6 + b + 28
+
+export fn f29(a: Int, b: Int) -> Int:
+  return a * 9 + b + 29
+
+export fn f30(a: Int, b: Int) -> Int:
+  return a * 7 + b + 30
+
+export fn f31(a: Int, b: Int) -> Int:
+  return a * 3 + b + 31
+
+export fn f32(a: Int, b: Int) -> Int:
+  return a * 5 + b + 32
+
+export fn f33(a: Int, b: Int) -> Int:
+  return a * 2 + b + 33
+
+export fn f34(a: Int, b: Int) -> Int:
+  return a * 7 + b + 34
+
+export fn f35(a: Int, b: Int) -> Int:
+  return a * 9 + b + 35
+
+export fn f36(a: Int, b: Int) -> Int:
+  return a * 3 + b + 36
+
+export fn f37(a: Int, b: Int) -> Int:
+  return a * 8 + b + 37
+
+export fn f38(a: Int, b: Int) -> Int:
+  return a * 3 + b + 38
+
+export fn f39(a: Int, b: Int) -> Int:
+  return a * 7 + b + 39
+
+export fn show(x):
+  return x.score() + 1

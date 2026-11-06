@@ -26,7 +26,10 @@ import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ect_common as C  # noqa: E402
+import edit_evidence  # noqa: E402
 import report_dag  # noqa: E402
+import report_scenarios  # noqa: E402
+import scenarios as S  # noqa: E402
 
 MIN_REPS = 3
 WARM_ENV = "ECT_WARM_CLIENT_CMD"
@@ -139,7 +142,8 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
 # --------------------------------------------------------------------------
 
 def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchain,
-             candidate_template: str | None, run_dir: Path) -> dict:
+             candidate_template: str | None, run_dir: Path,
+             scenarios: list[dict] | None = None) -> dict:
     """Reference vs candidate: identical verdict and diagnostics on every fixture."""
     results = []
     for fx in fixtures:
@@ -175,8 +179,15 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
                         "candidate": verdicts["candidate"]})
     # The gate is an equivalence check (candidate verdict == reference verdict)
     # plus reference-vs-manifest; manifest drift on the candidate is a note.
-    passed = all(r["identical"] and r["reference_matches_expected"] for r in results)
-    return {"passed": passed, "fixtures": len(results),
+    sc_results = []
+    if scenarios:
+        manifest = C.load_manifest()
+        sc_results = [S.gate_scenario(sc, S.fixture_of(manifest, sc), reference, candidate,
+                                      candidate_template, run_dir)
+                      for sc in scenarios if sc["kind"] == "edit_sequence"]
+    passed = all(r["identical"] and r["reference_matches_expected"] for r in results) and \
+        all(r["passed"] for r in sc_results)
+    return {"passed": passed, "fixtures": len(results), "scenarios": sc_results,
             "candidate_command": candidate_template or "built-in cold command",
             "candidate_moss": str(candidate.moss),
             "reference_moss": str(reference.moss),
@@ -322,17 +333,36 @@ def pct(share):
     return "n/a" if share is None else f"{share * 100:.1f}%"
 
 
-CSV_FIELDS = ["compiler_path", "compiler_sha256", "compiler_flavor", "fixture", "kind", "mode", "reps", "expected_status", "status",
-              "status_ok", "wall_ms_median", "wall_ms_min", "wall_ms_max",
+CSV_FIELDS = ["compiler_path", "compiler_sha256", "compiler_flavor", "fixture", "scenario", "step",
+              "base_fixture", "kind", "mode", "reps", "expected_status", "status",
+              "status_ok", "wall_ms_median", "wall_ms_min", "wall_ms_max", "wall_ms_first",
               "cpu_ms_median", "rss_kib_median", "checker_runs",
               "exit_code", "timed_out", "provider_wall_ms_median", "provider_cpu_ms_median",
               "provider_rss_kib_median", "provider_functions_analyzed", "provider_checker_runs",
               *[name for name, _ in C.WORK_COUNTERS]]
 
 
+WT_CSV_FIELDS = ["compiler_flavor", "scenario", "base_fixture", "mode", "n", "schedule", "reps",
+                 "commit", "status_ok", "group_wall_ms_median", "group_wall_ms_min",
+                 "group_wall_ms_max", "total_cpu_ms_median", "sum_rss_kib_median",
+                 "max_rss_kib_median", "first_check_ms_wt0", "first_check_ms_later_median",
+                 "first_check_ms_max", "first_check_ms_by_worktree", "functions_analyzed",
+                 "source_function_checks", "checker_runs", "loadavg_start", "cpus"]
+
+
 def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
-                  metrics: dict | None) -> None:
+                  metrics: dict | None, scenarios: list[dict] | None = None,
+                  evidence: list[dict] | None = None, wt_rows: list[dict] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
+    scenarios = scenarios or []
+    wt_rows = wt_rows or []
+    for row in wt_rows:
+        row["compiler_flavor"] = meta["moss_flavor"]
+    if wt_rows:
+        with (out / "results_worktrees.csv").open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=WT_CSV_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(wt_rows)
     for row in rows:
         row.update(compiler_path=meta["moss"], compiler_sha256=meta["moss_sha256"],
                    compiler_flavor=meta["moss_flavor"])
@@ -341,7 +371,8 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
         writer.writeheader()
         writer.writerows(rows)
     (out / "results.json").write_text(json.dumps(
-        {"meta": meta, "rows": rows, "gate": gate, "metrics": metrics,
+        {"meta": meta, "rows": rows, "worktree_rows": wt_rows, "evidence": evidence,
+         "gate": gate, "metrics": metrics,
          "dag_analysis": report_dag.analysis(rows)}, indent=2) + "\n")
 
     lines = ["# ECT Check Benchmark - Local Report", "",
@@ -378,7 +409,7 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
              "of the whole process tree. RSS is the largest single process in the tree "
              "(not a sum). Counters are summed over the checker runs one command starts.", ""]
     for mode in ("cold", "warm"):
-        mode_rows = [r for r in rows if r["mode"] == mode]
+        mode_rows = [r for r in rows if r["mode"] == mode and not r.get("scenario")]
         if not mode_rows:
             continue
         lines += [f"### Mode: {mode}", "",
@@ -403,7 +434,8 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
               "(the compiler's own `MOSS_PROFILE` names; today's memo is in-process, so "
               "hits are intra-run reuse only).", ""]
 
-    lines += report_dag.sections(rows)
+    lines += report_dag.sections([r for r in rows if not r.get("scenario")])
+    lines += report_scenarios.sections(rows, scenarios, evidence, wt_rows, meta)
 
     lines += ["## 2. Correctness gate (reference vs candidate)", ""]
     if gate is None:
@@ -422,6 +454,13 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                          f"{'yes' if r['identical'] else '**NO**'} | "
                          f"{'yes' if r['reference_matches_expected'] else '**NO**'} | "
                          f"{r.get('candidate_note') or ''} |")
+        if gate.get("scenarios"):
+            lines += ["", "Edit sequences (every check step compared; reference == step expectation):", "",
+                      "| Scenario | Steps identical | Reference matches expectation |", "|---|---|---|"]
+            for sg in gate["scenarios"]:
+                lines.append(f"| `{sg['scenario']}` | "
+                             f"{'yes' if all(x['identical'] for x in sg['steps']) else '**NO**'} | "
+                             f"{'yes' if all(x['reference_matches_expected'] for x in sg['steps']) else '**NO**'} |")
         same = gate["reference_moss"] == gate["candidate_moss"] and \
             gate["candidate_command"] == "built-in cold command"
         if same:
@@ -494,7 +533,10 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
 def add_common(ap):
     ap.add_argument("--moss", default=os.environ.get("MOSS") or str(C.DEFAULT_MOSS))
     ap.add_argument("--margo", default=str(C.DEFAULT_MARGO))
-    ap.add_argument("--ids", nargs="*", help="restrict to these fixture ids")
+    ap.add_argument("--ids", nargs="*", help="restrict to these fixture ids (scenarios are then "
+                    "skipped unless --scenario-ids is given)")
+    ap.add_argument("--scenario-ids", nargs="*", help="scenario ids (B3 edits, B4 sequences, B5 "
+                    "worktrees), or 'all'; default: every scenario when --ids is not given")
     ap.add_argument("--out", help="output dir (default tmp/ect_check/<run-id>)")
 
 
@@ -553,6 +595,15 @@ def make_run_dir(args) -> tuple[str, Path]:
     return run_id, (Path(args.out) if args.out else C.TMP_ROOT / run_id).resolve()
 
 
+def pick_scenarios(manifest: dict, args) -> list[dict]:
+    ids = getattr(args, "scenario_ids", None)
+    if ids:
+        return S.select_scenarios(manifest, None if ids == ["all"] else ids)
+    if getattr(args, "ids", None):
+        return []
+    return manifest.get("scenarios", [])
+
+
 def gate_toolchains(args):
     ref = C.Toolchain(Path(args.reference_moss or args.moss), Path(args.margo))
     cand = C.Toolchain(Path(args.candidate_moss or args.moss), Path(args.margo))
@@ -574,6 +625,8 @@ def main() -> int:
     b.add_argument("--no-warmup", action="store_true",
                    help="do not discard one cold warm-up run per fixture before the timed reps")
     b.add_argument("--no-gate", action="store_true")
+    b.add_argument("--no-evidence", action="store_true",
+                   help="skip the B3 query evidence (CPU heavy, runs after the timed loop)")
     b.add_argument("--no-metrics", action="store_true")
     b.add_argument("--metrics-modes", default="check,build",
                    help="comma list of margo modes: check (--check) and/or build")
@@ -582,6 +635,8 @@ def main() -> int:
     g = sub.add_parser("gate")
     add_common(g)
     add_gate_args(g)
+    ev = sub.add_parser("evidence", help="B3 query evidence only (moss inspect before/after each edit)")
+    add_common(ev)
     m = sub.add_parser("metrics")
     add_common(m)
     m.add_argument("--metrics-modes", default="check,build",
@@ -612,10 +667,22 @@ def main() -> int:
 
     if cmd == "gate":
         ref, cand = gate_toolchains(args)
-        gate = run_gate(fixtures, ref, cand, args.candidate_cmd, run_dir)
+        gate = run_gate(fixtures, ref, cand, args.candidate_cmd, run_dir,
+                        pick_scenarios(manifest, args))
         (run_dir / "gate.json").write_text(json.dumps(gate, indent=2) + "\n")
         print(f"gate: {'PASS' if gate['passed'] else 'FAIL'} ({gate['fixtures']} fixtures); {run_dir / 'gate.json'}")
         return 0 if gate["passed"] else 1
+
+    if cmd == "evidence":
+        scs = [sc for sc in (pick_scenarios(manifest, args) if (args.scenario_ids or args.ids) else
+                             manifest.get("scenarios", [])) if sc["family"] == "b3_edits"]
+        evidence = [edit_evidence.evidence_for(sc, S.fixture_of(manifest, sc), tc.moss, run_dir / "evidence")
+                    for sc in scs]
+        (run_dir / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        for e in evidence:
+            print(f"{e['scenario']}: {e['summary']} (ideal recheck {len(e['ideal_recheck'])})")
+        print(run_dir / "evidence.json")
+        return 0
 
     if cmd == "metrics":
         roots = [Path(x) for x in args.root] if args.root else None
@@ -648,12 +715,40 @@ def main() -> int:
             rows.append(row)
             print(f"{mode:4} {fx['id']}: wall {row['wall_ms_median']:.2f} ms, "
                   f"status {row['status']}", flush=True)
+    chosen_scenarios = pick_scenarios(manifest, args)
+    wt_rows: list[dict] = []
+    for sc in chosen_scenarios:
+        fx = S.fixture_of(manifest, sc)
+        for mode in modes:
+            template = args.warm_client_cmd if mode == "warm" else None
+            if sc["kind"] == "edit_sequence":
+                new = S.measure_scenario(sc, fx, tc, template, mode, args.reps, args.warm_primes,
+                                         run_dir, not args.no_warmup)
+                rows.extend(new)
+                print(f"{mode:4} {sc['id']}: " + ", ".join(
+                    f"{r['step']} {r['wall_ms_median']:.1f} ms" for r in new), flush=True)
+            else:
+                new = S.measure_worktrees(sc, fx, tc, template, mode, args.reps, run_dir,
+                                          not args.no_warmup)
+                wt_rows.extend(new)
+                print(f"{mode:4} {sc['id']}: " + ", ".join(
+                    f"N={r['n']} {r['schedule'][:4]} {r['group_wall_ms_median']:.0f} ms"
+                    for r in new), flush=True)
     noise = noise_summary(noise_start, noise_probe(tc, manifest_all, run_dir, "end")) \
         if noise_start else None
+    # Query evidence for the B3 edits runs AFTER the timed loop and the end noise
+    # probe (it is CPU heavy and must not perturb any timing).
+    evidence = None
+    b3 = [sc for sc in chosen_scenarios if sc["family"] == "b3_edits"]
+    if b3 and not args.no_evidence:
+        evidence = [edit_evidence.evidence_for(sc, S.fixture_of(manifest, sc), tc.moss,
+                                               run_dir / "evidence") for sc in b3]
+        (run_dir / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     gate = None
     if not args.no_gate:
         ref, cand = gate_toolchains(args)
-        gate = run_gate(fixtures, ref, cand, args.candidate_cmd or args.warm_client_cmd, run_dir)
+        gate = run_gate(fixtures, ref, cand, args.candidate_cmd or args.warm_client_cmd, run_dir,
+                        chosen_scenarios)
     metrics = None if args.no_metrics else {
         m: run_metrics(tc, run_dir, m) for m in args.metrics_modes.split(",")}
     meta = {"suite": manifest["suite_name"], "suite_version": manifest["version"],
@@ -665,10 +760,11 @@ def main() -> int:
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
             "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise}
-    write_outputs(run_dir, meta, rows, gate, metrics)
+    write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.
     # Warm rows (a candidate client) only produce IMPROVED/REGRESSED notes.
     ok = all(r["status_ok"] for r in rows if r["mode"] == "cold") and \
+        all(r["status_ok"] for r in wt_rows if r["mode"] == "cold") and \
         (gate is None or gate["passed"])
     print(f"report: {run_dir / 'LOCAL_REPORT.md'}")
     if metrics:

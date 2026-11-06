@@ -142,7 +142,8 @@ class TrivialGenerator(Generator):
 # Later teams: append generator instances here (generic-DAG and torture-extension
 # generators live in dag_generators.py to keep this module small).
 from dag_generators import DAG_GENERATORS  # noqa: E402
-GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS]
+from edit_generators import EDIT_GENERATORS  # noqa: E402
+GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS, *EDIT_GENERATORS]
 
 
 def reject_reserved_names(root: Path) -> None:
@@ -153,7 +154,38 @@ def reject_reserved_names(root: Path) -> None:
 
 
 def build_rows(out_dir: Path) -> list[dict]:
+    return build_all(out_dir)[0]
+
+
+def check_scenarios(out_dir: Path, rows: list[dict], scenarios: list[dict]) -> None:
+    """Every scenario must reference a real fixture and its frozen patches must
+    apply forward and backward on a scratch copy of that fixture, leaving the
+    tree byte-identical (the generator-side guarantee behind the runner's check)."""
+    by_id = {r["id"]: r for r in rows}
+    ids = [sc["id"] for sc in scenarios]
+    assert len(ids) == len(set(ids)), "duplicate scenario ids"
+    scratch = C.TMP_ROOT / "scenario_check"
+    for sc in scenarios:
+        fx = by_id.get(sc["fixture"])
+        if fx is None:
+            raise SystemExit(f"scenario {sc['id']}: unknown fixture {sc['fixture']}")
+        if sc["kind"] != "edit_sequence":
+            continue
+        if scratch.exists():
+            shutil.rmtree(scratch)
+        shutil.copytree(out_dir / fx["path"], scratch, ignore=C.copy_ignore)
+        for patch in sc["patches"].values():
+            C.apply_patch(scratch, patch, "forward")
+        for patch in reversed(list(sc["patches"].values())):
+            C.apply_patch(scratch, patch, "backward")
+        if C.tree_sha256(scratch) != fx["sha256"]:
+            raise SystemExit(f"scenario {sc['id']}: revert is not byte-identical to the fixture")
+    shutil.rmtree(scratch, ignore_errors=True)
+
+
+def build_all(out_dir: Path) -> tuple[list[dict], list[dict]]:
     rows = []
+    scenarios: list[dict] = []
     for gen in GENERATORS:
         # Each generator gets an independent, name-derived stream so adding a
         # generator never perturbs existing fixtures.
@@ -164,16 +196,18 @@ def build_rows(out_dir: Path) -> list[dict]:
                        generator_version=gen.version, generator_seed=C.SUITE_SEED,
                        sha256=C.tree_sha256(out_dir / row["path"]))
             rows.append(row)
-    return rows
+        scenarios.extend(getattr(gen, "scenarios", []) or [])
+    check_scenarios(out_dir, rows, scenarios)
+    return rows, scenarios
 
 
-def write_manifest(rows: list[dict]) -> None:
+def write_manifest(rows: list[dict], scenarios: list[dict]) -> None:
     ids = [r["id"] for r in rows]
     assert len(ids) == len(set(ids)), "duplicate fixture ids"
     manifest = {"suite_name": C.SUITE_NAME, "version": C.SUITE_VERSION,
                 "seed": C.SUITE_SEED, "total_fixtures": len(rows),
                 "generators": {g.name: g.version for g in GENERATORS},
-                "fixtures": rows}
+                "fixtures": rows, "scenarios": scenarios}
     C.MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
@@ -185,9 +219,9 @@ def cmd_generate(regenerate: bool) -> int:
     if C.FIXTURES_DIR.exists():
         shutil.rmtree(C.FIXTURES_DIR)
     C.FIXTURES_DIR.mkdir(parents=True)
-    rows = build_rows(C.FIXTURES_DIR)
-    write_manifest(rows)
-    print(f"wrote {len(rows)} fixtures")
+    rows, scenarios = build_all(C.FIXTURES_DIR)
+    write_manifest(rows, scenarios)
+    print(f"wrote {len(rows)} fixtures, {len(scenarios)} scenarios")
     return 0
 
 
@@ -196,15 +230,19 @@ def cmd_verify_determinism() -> int:
     if scratch.exists():
         shutil.rmtree(scratch)
     scratch.mkdir(parents=True)
-    rows = build_rows(scratch)
-    frozen = {f["id"]: f["sha256"] for f in C.load_manifest()["fixtures"]}
+    rows, scenarios = build_all(scratch)
+    manifest = C.load_manifest()
+    frozen = {f["id"]: f["sha256"] for f in manifest["fixtures"]}
     bad = [r["id"] for r in rows if frozen.get(r["id"]) != r["sha256"]]
     for fid in sorted(set(frozen) - {r["id"] for r in rows}):
         bad.append(fid)
+    frozen_sc = {sc["id"]: sc for sc in manifest.get("scenarios", [])}
+    bad += [f"scenario:{sc['id']}" for sc in scenarios if frozen_sc.get(sc["id"]) != sc]
+    bad += [f"scenario:{i}" for i in sorted(set(frozen_sc) - {sc["id"] for sc in scenarios})]
     if bad:
         print(f"NON-DETERMINISTIC or drifted: {bad}", file=sys.stderr)
         return 1
-    print(f"determinism ok: {len(rows)} fixtures regenerate byte-identically")
+    print(f"determinism ok: {len(rows)} fixtures and {len(scenarios)} scenarios regenerate byte-identically")
     return 0
 
 
@@ -232,10 +270,28 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
                                 f"timed_out={verdict.get('timed_out')} does not satisfy the manifest")
             line += f", status {status} (expected {fx['expected_status']})"
         print(line)
+    scenarios = manifest.get("scenarios", [])
+    if scenarios:
+        import scenarios as S
+        by_id = {f["id"]: f for f in manifest["fixtures"]}
+        for sc in scenarios:
+            body = {k: v for k, v in sc.items() if k != "sha256"}
+            ok = C.text_sha256(C.canonical_json(body)) == sc["sha256"]
+            line = f"scenario {sc['id']}: spec sha256 {'ok' if ok else 'MISMATCH'}"
+            if not ok:
+                failures.append(f"scenario {sc['id']}: spec sha256 mismatch")
+            if compile_check:
+                fx = by_id[sc["fixture"]]
+                found = (S.validate_scenario(sc, fx, tc, C.TMP_ROOT / "validate")
+                         if sc["kind"] == "edit_sequence"
+                         else S.validate_worktrees(sc, fx, tc, C.TMP_ROOT / "validate"))
+                failures += found
+                line += ", steps ok" if not found else ", FAILED"
+            print(line)
     if failures:
         print("VALIDATION FAILED:\n  " + "\n  ".join(failures), file=sys.stderr)
         return 1
-    print(f"validated {len(manifest['fixtures'])} fixtures")
+    print(f"validated {len(manifest['fixtures'])} fixtures and {len(scenarios)} scenarios")
     return 0
 
 
