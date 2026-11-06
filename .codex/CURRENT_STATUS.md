@@ -79,9 +79,31 @@
   60/60 semantic PASS, zero engine disagreements, 19/60 all-gate PASS, and 41
   provenance-only failures. Clone totals remain 258 audited, 252
   unclassified/unauthorized, 2 explicit-copy classifications, and 4
-  root-capture classifications; no new authorization. Full suites and a fresh
-  oracle on integrated source checkpoint `9b440e93` are running/pending; Phase
-  28 remains NO-GO.
+  root-capture classifications; no new authorization.
+- Full suites on integrated source checkpoint `9b440e93` now report 99/167 PASS,
+  67 FAIL, and 1 SKIP in both Default and EST-shadow. The source-free
+  proof-edge job passes in both matrices. Sequential X1 v9/v10 and Phase 27
+  `.mossi` also pass on this integrated compiler binary, while the parallel
+  X1/`.mossi` jobs still fail and remain counted in the full gates; the exact
+  cause of the sequential/parallel discrepancy is not yet established. The
+  same three pinned performance corpus hash mismatches remain.
+- Fresh frozen v2 oracle on exact integrated compiler binary `9b440e93`:
+  60/60 semantic PASS, zero engine disagreements, 19/60 all-gate PASS, and 41
+  provenance-only failures; 252 generated `.clone()` observations remain
+  unverified and unauthorized. Artifacts are
+  `tmp/phase28-9b440e93-oracle.json` (SHA-256
+  `b4c79ffa14ef4baf493d3062360e86ee518338fd808e3ae269fd19087ebe7f0a`) and
+  `.md` (SHA-256
+  `97da0235adc978f0672ee812d1ee048ff1150da3186b8c4b39995eacfcb5f77d`).
+- Current failure-ledger triage: the largest shared remaining class is missing
+  root message payload checker authority (`root message payload needs a checked
+  copy(x) fact or exact consume authority`), 24 diagnostic occurrences across
+  11 suite job directories. Separate remaining classes include 13 imported
+  ReturnValue EST missing diagnostics, 7 Map.keys CollectionView diagnostics,
+  5 projected indexed-read authority diagnostics, and 5 ReturnValue type-binding
+  mismatches. The single vertical team is taking the root-ingress payload
+  authority path next on a fresh isolated branch from `9b440e93`; other classes
+  are not considered fixed by that slice. Phase 28 remains NO-GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
