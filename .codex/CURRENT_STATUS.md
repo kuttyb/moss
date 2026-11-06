@@ -17526,3 +17526,22 @@ untouched.
 - The duplicate native Rust method-name lowering failure is also present on
   candidate and baseline; it is a separate follow-up. Neither result changes
   the historical oracle/suite counts recorded at the top of this status file.
+
+### R7-010 reviewed Team A intake checkpoint (2026-11-05)
+
+- Isolated vertical integration branch `phase28-r7-010-vertical-integration`
+  includes the reviewed Team A stack through implementation `3dc803a2`,
+  cherry-picked as `eec02c05`, `bd80b5c8`, `2dcc9493`, and `12b9407c`. The
+  scoped review report is `docs/phase28/agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md`.
+- Combined worktree build (`make --jobs="$(nproc)" moss`) passes. The registered
+  ReturnValue authority gate passes in Default and EST-shadow. The isolated
+  Phase 26 C3 `-Werror` gate passes on this tree.
+- Phase 26 X1 fails on this combined tree in check-only Fast Debug after
+  `4\n7\n`, with `MOSS_INTERNAL_INVARIANT checked return-value authority
+  unavailable`. Independent review rebuilt exact baseline `150ab36b` and got
+  PASS; frozen Team A `735a36c3` and its overload follow-up `3dc803a2` fail at
+  the same later stage. This remains a Team A stack regression and the next
+  checker/`.mossi`/consumer dependency.
+- No full Default/EST-shadow suite or full frozen oracle has run on this
+  combined tree. Runtime clone authorization remains NONE. Do not use the
+  historical measurements above as validation for this branch.
