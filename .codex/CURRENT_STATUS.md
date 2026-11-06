@@ -17328,3 +17328,20 @@ untouched.
   normalization, and the 84-artifact inventory. Docs-only follow-up
   `3dbf9307` records that review and adds the Phase 28 team-pattern closeout.
   The conformance report remains NO-GO because 41 fixtures fail provenance.
+
+## Team A direct Vector-index call READ authority (in progress)
+
+Team A is adding a separate checker-owned authority contract for direct
+`Vector[index]` passed to a statically resolved READ call parameter. The
+scoped changes add `TypedIndexedCallArgumentReadFactV1` and its requirement,
+exact producer/lookup checks, a Moss regression fixture, and C++/Python
+corruption gates. Unsupported or ambiguous target/access/source cases remain
+non-authoritative; the existing projected-member fact stays separate.
+
+Validation completed on branch `phase28-r7-010-team-a-next-checker` at base
+`636a5a06439fe8ed447500341f8cc71620a9c724`: build, indexed call argument,
+projected call argument, local ownership, specialized ownership contract, and
+R7-009 primitive-index gates all pass. `git diff --check` and
+`python3 tests/tooling/check_agent_feedback.py` pass. Shared runner registration
+and native consumer integration remain with L7/Team B. No oracle expectations
+were changed. Independent review is pending after freezing the candidate.
