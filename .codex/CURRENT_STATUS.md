@@ -17774,7 +17774,10 @@ untouched.
 
 - Isolated branch `phase28-r7-010-root-interpreter-authority` is based on
   `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`; prior frozen slices remain
-  untouched. Fast Debug now resolves exact Root argument authority from the
+  untouched. Its frozen implementation is
+  `7e4a56b3461ffd949f89542ad50bc7ccd4557241`; both reviewed commits were
+  cherry-picked into the isolated vertical integration as `26e15798` and
+  `b6e2a53f`. Fast Debug now resolves exact Root argument authority from the
   active main statement, EST Message/argument occurrence, selected handler,
   checked closed TypeRef, and checker Copy or fresh-transfer facts. Primitive
   authority is limited to direct checked `TypeKind::Primitive` TypeRefs with
@@ -17793,8 +17796,12 @@ untouched.
   native `-D warnings` execution, interpreter Copy/Fresh fact drop/duplicate/
   perturb hooks, and fail-closed unsupported local arguments. The gate is now
   invoked by both `check-parallel` and `check-shadow`. Full suites and oracle
-  were not run. These messages originate in main-source EST and this path has
-  no `.mossi` serialization/import boundary. Feedback validation and final
-  `git diff --check` are pending;
-  exact freeze SHA and Agent 2 / Team C reviews remain pending. No integration
-  or push.
+  were not run on the new source. These messages originate in main-source EST
+  and this path has no `.mossi` serialization/import boundary. Feedback
+  validation and `git diff --check` passed before freeze. Agent 2 and Team C
+  both returned scoped GO for exact SHA `7e4a56b3`; reports are archived at
+  `docs/phase28/agent2-reviews/R7-010-root-interpreter-authority-7e4a56b3.md`
+  and `docs/phase28/team-c/R7-010-root-interpreter-authority-7e4a56b3.md`.
+  Their GO is limited to the Root-ingress slice and does not grant any runtime
+  clone exception or close Phase 28. The reviewed slice is integrated only on
+  this isolated vertical branch; no push or production merge occurred.
