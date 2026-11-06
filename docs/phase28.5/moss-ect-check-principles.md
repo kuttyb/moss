@@ -13,6 +13,8 @@ Moss wants an edit–compile–test (ECT) loop that beats Rust and stays cheap w
 
 None of this changes Moss source syntax.
 
+Caching works in three layers: the **`.mossi` firewall** stops walks at package boundaries, the **fact store** stops them at unchanged call edges, and **today's in-process memo** keeps whatever walking remains linear. See *How the caching layers fit together*.
+
 ## Goals
 
 1. Make the check part of ECT approach zero per edit, so the ECT story beats Rust's build-time pain.
@@ -148,6 +150,24 @@ A resident process holds the EST, the facts and the edge records. Startup become
 - **A hit must be free.** Today's hit path recomputes concrete effects (`spec_cache_hit_recheck`).
 
 ---
+
+## How the caching layers fit together
+
+Three layers, each with one job.
+
+**1. Today's memo: dedup within one walk.** Phase 26 W3's specialization memo is keyed by callable plus concrete types (and receiver, callback arguments and result bindings). It lives inside one check process. It collapses repeated questions about the same node, from shared callees or from repeated effect queries, so a walk costs one computation per distinct node. That took W4 at depth 18 from 27.6 s to milliseconds. It never generalizes across types: `process(Int)` twice is a full hit, but `process(Float)` re-walks every node the type flows through. It doesn't survive the process. It stays as it is, and every walk in this design uses it.
+
+**2. The `.mossi` firewall (Mossi Leak): no walk across packages.** At package build, the provider walks each exported generic once (deduplicated by the memo), derives its bound, result rule and effect formula, and publishes them. A consumer's call to that export never walks: it checks conformance to the traits, binds the internal type variables, and substitutes into the effect formula. `process(Int)` and `process(Float)` each cost one conformance check, because the bound makes every satisfying type equivalent before the emitter. The memo isn't involved at the boundary.
+
+**3. The fact store (Inference Ripple): no unnecessary walks across edits.** Inside a package, the private `.mossi` holds each declaration's facts plus, for each call edge, the slice of the callee's facts the caller consumed. Entries are keyed by content: the declaration's body hash plus the hashes of those consumed slices. On an edit:
+
+- The edited declaration is rechecked, which is a walk, deduplicated by the memo.
+- Each caller's consumed slice is compared. If it's unchanged, the caller's key is unchanged, so it's a hit and the ripple stops there.
+- If it changed, that caller is re-walked, again deduplicated by the memo, and the same test moves up one level, as one upward topological pass over the DAG.
+
+**How they relate.** The fact store is effectively today's memo made persistent and keyed on consumed facts rather than on whole callee bodies. A memo persisted with whole-body keys would *be* the ripple, cached: every edit would invalidate everything above it. The daemon keeps the fact store in memory, and worktrees share it by content.
+
+**What still walks.** The provider's hardening walk at package build; the slow path when a consumed fact changes; and the native emitter, which needs one facts-only walk per concrete type (monomorphization, after legality is already proven). The ECT path needs none of those for unchanged code, once Fast Debug resolves dispatch from the bound rather than from per-specialization records.
 
 ## Open questions
 
