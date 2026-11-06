@@ -1,0 +1,10 @@
+type MatchSpan:
+  text: String
+
+test "indexed member call argument is a checked read borrow":
+  var spans = Vector[MatchSpan]()
+  spans.push(MatchSpan(text = "λλ"))
+  assertEqual(spans[0].text, "λλ")
+
+fn main():
+  pass
