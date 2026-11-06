@@ -455,12 +455,17 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                          f"{'yes' if r['reference_matches_expected'] else '**NO**'} | "
                          f"{r.get('candidate_note') or ''} |")
         if gate.get("scenarios"):
-            lines += ["", "Edit sequences (every check step compared; reference == step expectation):", "",
-                      "| Scenario | Steps identical | Reference matches expectation |", "|---|---|---|"]
+            lines += ["", "Edit sequences (every check step compared; reference == step expectation). "
+                      "margo's `checked` / `skipped` package lists are volatile here (a client may "
+                      "legitimately answer a repeat from a store) and shown as information only; "
+                      "everything else, including diagnostics and exit codes, is strict:", "",
+                      "| Scenario | Steps identical | Reference matches expectation | checked/skipped differ (info) |",
+                      "|---|---|---|---|"]
             for sg in gate["scenarios"]:
                 lines.append(f"| `{sg['scenario']}` | "
                              f"{'yes' if all(x['identical'] for x in sg['steps']) else '**NO**'} | "
-                             f"{'yes' if all(x['reference_matches_expected'] for x in sg['steps']) else '**NO**'} |")
+                             f"{'yes' if all(x['reference_matches_expected'] for x in sg['steps']) else '**NO**'} | "
+                             f"{'yes' if any(x['bookkeeping_reference'] != x['bookkeeping_candidate'] for x in sg['steps']) else 'no'} |")
         same = gate["reference_moss"] == gate["candidate_moss"] and \
             gate["candidate_command"] == "built-in cold command"
         if same:
@@ -595,6 +600,34 @@ def make_run_dir(args) -> tuple[str, Path]:
     return run_id, (Path(args.out) if args.out else C.TMP_ROOT / run_id).resolve()
 
 
+def startup_decomposition(tc: C.Toolchain, manifest: dict, run_dir: Path, reps: int = 11) -> list[dict]:
+    """Where the ~45 ms of a package check goes: median wall/CPU of bare process
+    starts, so margo's Python/driver overhead is its own number."""
+    floor_file = next(f for f in manifest["fixtures"] if f["id"] == "b4_floor_file")
+    floor_pkg = next(f for f in manifest["fixtures"] if f["id"] == "b4_floor_pkg")
+    wf, wp = run_dir / "work" / "startup-file", run_dir / "work" / "startup-pkg"
+    vf, vp = C.stage_fixture(floor_file, wf), None
+    cases = [("python3 -c pass", ["python3", "-c", "pass"], wf, None),
+             ("margo --help (Python start + imports + argparse)", [str(tc.margo), "--help"], wf, None),
+             ("moss check floor file (no margo)", C.command_for(floor_file, {**tc.values(), **vf}, None), wf, None),
+             ("margo --check build floor package (empty build dir)", None, wp, floor_pkg)]
+    out = []
+    for label, argv, cwd, fx in cases:
+        walls, cpus = [], []
+        for _ in range(reps + 1):
+            if fx is not None:
+                vp = C.stage_fixture(fx, cwd)
+                argv = C.command_for(fx, {**tc.values(), **vp}, None)
+            r = C.run_measured(argv, cwd=cwd, env=tc.env(), timeout=60)
+            walls.append(r["wall_ms"])
+            cpus.append(r["cpu_ms"])
+        out.append({"case": label, "wall_ms_median": C.median(walls[1:]), "cpu_ms_median": C.median(cpus[1:]),
+                    "reps": reps})
+    shutil.rmtree(wf, ignore_errors=True)
+    shutil.rmtree(wp, ignore_errors=True)
+    return out
+
+
 def pick_scenarios(manifest: dict, args) -> list[dict]:
     ids = getattr(args, "scenario_ids", None)
     if ids:
@@ -661,6 +694,7 @@ def main() -> int:
         return subprocess.call([sys.executable, str(C.SUITE_DIR / "generate.py"),
                                 "--validate-only", "--moss", args.moss, "--margo", args.margo])
 
+    S.verify_frozen(manifest, fixtures, pick_scenarios(manifest, args))
     tc = C.Toolchain(Path(args.moss), Path(args.margo))
     run_id, run_dir = make_run_dir(args)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -734,6 +768,8 @@ def main() -> int:
                 print(f"{mode:4} {sc['id']}: " + ", ".join(
                     f"N={r['n']} {r['schedule'][:4]} {r['group_wall_ms_median']:.0f} ms"
                     for r in new), flush=True)
+    startup = startup_decomposition(tc, manifest_all, run_dir) \
+        if any(sc["family"] == "b4_cold_warm" for sc in chosen_scenarios) else None
     noise = noise_summary(noise_start, noise_probe(tc, manifest_all, run_dir, "end")) \
         if noise_start else None
     # Query evidence for the B3 edits runs AFTER the timed loop and the end noise
@@ -759,7 +795,8 @@ def main() -> int:
             "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
-            "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise}
+            "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise,
+            "startup": startup}
     write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.
     # Warm rows (a candidate client) only produce IMPROVED/REGRESSED notes.

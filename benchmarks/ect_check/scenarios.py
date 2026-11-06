@@ -152,6 +152,43 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
     return rows
 
 
+# margo's package bookkeeping: which packages it ran or skipped. A client that
+# answers a repeat from its store legitimately reports different values here, so
+# the SCENARIO gate treats them as volatile (verdict, diagnostics, exit code and
+# every other field stay strict) and reports them as information.
+SCENARIO_VOLATILE = ("checked", "skipped")
+
+
+def gate_view(verdict: dict) -> dict:
+    doc = verdict.get("document")
+    if not isinstance(doc, dict):
+        return verdict
+    return {**verdict, "document": {k: v for k, v in doc.items() if k not in SCENARIO_VOLATILE}}
+
+
+def bookkeeping(verdict: dict) -> dict:
+    doc = verdict.get("document")
+    return {k: doc.get(k) for k in SCENARIO_VOLATILE} if isinstance(doc, dict) else {}
+
+
+def verify_frozen(manifest: dict, fixtures: list[dict], scenarios: list[dict]) -> None:
+    """Refuse to run on anything that no longer matches the frozen hashes:
+    every selected fixture tree, every scenario spec (canonical JSON) and the
+    fixtures the scenarios reference."""
+    by_id = {f["id"]: f for f in manifest["fixtures"]}
+    needed = {f["id"]: f for f in fixtures}
+    for sc in scenarios:
+        needed.setdefault(sc["fixture"], by_id[sc["fixture"]])
+    for fx in needed.values():
+        if C.tree_sha256(C.FIXTURES_DIR / fx["path"]) != fx["sha256"]:
+            raise C.ToolError(f"fixture {fx['id']} does not match its frozen SHA-256; "
+                              "refusing to run (re-freeze deliberately with generate.py --regenerate)")
+    for sc in scenarios:
+        body = {k: v for k, v in sc.items() if k != "sha256"}
+        if C.text_sha256(C.canonical_json(body)) != sc["sha256"]:
+            raise C.ToolError(f"scenario {sc['id']} does not match its frozen SHA-256; refusing to run")
+
+
 def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolchain,
                   candidate_template: str | None, run_dir: Path) -> dict:
     """Reference vs candidate on EVERY check step of the sequence: identical
@@ -168,7 +205,9 @@ def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolc
     steps = []
     for label, exp in expects.items():
         ref, cand = verdicts["reference"][label], verdicts["candidate"][label]
-        steps.append({"step": label, "identical": ref == cand,
+        steps.append({"step": label, "identical": gate_view(ref) == gate_view(cand),
+                      "bookkeeping_reference": bookkeeping(ref),
+                      "bookkeeping_candidate": bookkeeping(cand),
                       "reference_matches_expected": _expect(exp, ref),
                       "candidate_matches_expected": _expect(exp, cand),
                       "status": C.status_of(ref), "reference": ref, "candidate": cand})
@@ -273,7 +312,7 @@ def _wt_argv(fx: dict, tc: C.Toolchain, template: str | None, wt: Path) -> list[
 
 def run_worktree_group(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, repo: Path,
                        base: Path, n: int, concurrent: bool, rep: int,
-                       counter_dir: Path | None = None) -> dict:
+                       counter_dir: Path | None = None, sample: bool = False) -> dict:
     """Create N worktrees of the one commit, apply each worktree's edit, run the
     first check in each (concurrently or one after the other), then remove them."""
     dirs = add_worktrees(sc, repo, base, n, rep)
@@ -299,14 +338,19 @@ def run_worktree_group(sc: dict, fx: dict, tc: C.Toolchain, template: str | None
         if concurrent:
             if counter_dir is not None:
                 raise C.ToolError("counter passes run sequentially")
-            group = C.run_measured_group([(a, c) for a, c, _ in jobs], env=env, timeout=timeout)
+            group = C.run_measured_group([(a, c) for a, c, _ in jobs], env=env, timeout=timeout,
+                                         sample_tree_rss=sample)
             results = group["results"]
-            totals = {"group_wall_ms": group["group_wall_ms"], "total_cpu_ms": group["total_cpu_ms"],
+            totals = {"group_tree_rss_peak_kib": group.get("group_tree_rss_peak_kib"),
+                      "group_wall_ms": group["group_wall_ms"], "total_cpu_ms": group["total_cpu_ms"],
                       "sum_rss_kib": group["sum_rss_kib"], "max_rss_kib": group["max_rss_kib"],
                       "timed_out": group["timed_out"]}
         else:
-            results = [C.run_measured(a, cwd=c, env=e, timeout=timeout) for a, c, e in jobs]
-            totals = {"group_wall_ms": sum(r["wall_ms"] for r in results),
+            results = [C.run_measured(a, cwd=c, env=e, timeout=timeout, sample_tree_rss=sample)
+                       for a, c, e in jobs]
+            totals = {"group_tree_rss_peak_kib": max((r.get("tree_rss_peak_kib") or 0) for r in results)
+                      if sample else None,
+                      "group_wall_ms": sum(r["wall_ms"] for r in results),
                       "total_cpu_ms": sum(r["cpu_ms"] for r in results),
                       "sum_rss_kib": sum((r["rss_kib"] or 0) for r in results),
                       "max_rss_kib": max((r["rss_kib"] or 0) for r in results),
@@ -320,7 +364,8 @@ def run_worktree_group(sc: dict, fx: dict, tc: C.Toolchain, template: str | None
             counters = [C.summarize_counters(C.read_counter_records(s)) for s in sinks]
         return {"n": n, "concurrent": concurrent, "first_check_ms": [r["wall_ms"] for r in results],
                 "per_cpu_ms": [r["cpu_ms"] for r in results],
-                "per_rss_kib": [r["rss_kib"] for r in results], "all_ok": all(statuses),
+                "per_rss_kib": [r["rss_kib"] for r in results],
+                "per_tree_rss_peak_kib": [r.get("tree_rss_peak_kib") for r in results], "all_ok": all(statuses),
                 "loadavg_start": load_start, **totals, "counters": counters}
     finally:
         remove_worktrees(sc, repo, dirs)
@@ -343,6 +388,14 @@ def measure_worktrees(sc: dict, fx: dict, tc: C.Toolchain, template: str | None,
                 for concurrent in (True, False):
                     g = run_worktree_group(sc, fx, tc, template, repo, wt_root, n, concurrent, rep)
                     collected.setdefault((n, "concurrent" if concurrent else "sequential"), []).append(g)
+        sampled: dict[tuple[int, str], list[dict]] = {}
+        if mode == "cold":   # separate, untimed passes: the /proc sampler perturbs the machine
+            for rep in range(3):
+                for n in sc["counts"]:
+                    for concurrent in (True, False):
+                        g = run_worktree_group(sc, fx, tc, template, repo, wt_root, n, concurrent,
+                                               50 + rep, sample=True)
+                        sampled.setdefault((n, "concurrent" if concurrent else "sequential"), []).append(g)
         counters = None
         if mode == "cold":
             nmax = max(sc["counts"])
@@ -373,6 +426,11 @@ def measure_worktrees(sc: dict, fx: dict, tc: C.Toolchain, template: str | None,
             "loadavg_start": groups[0]["loadavg_start"],
             "cpus": os.cpu_count(),
         }
+        sg = sampled.get((n, schedule))
+        if sg:
+            row["sampled_group_tree_rss_peak_mib"] = C.median([g["group_tree_rss_peak_kib"] for g in sg]) / 1024
+            row["sampled_per_tree_peak_mib"] = C.median(
+                [C.median(g["per_tree_rss_peak_kib"]) for g in sg]) / 1024
         if counters:
             for name, _ in C.WORK_COUNTERS:
                 row[name] = sum(int(c[name] or 0) for c in counters[:n])

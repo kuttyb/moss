@@ -13,6 +13,7 @@ plus frozen SCENARIO specs (manifest key `scenarios`):
                   c   provenance-only change: two statements swapped, so the
                       call's source line moves; no type/effect/ownership fact moves
                   d   comment-only change
+                  e   one comment line inserted above the leaf (every later line shifts)
                 Scenario per (shape, patch): check, apply, check, revert, check.
   b4_cold_warm  B4 Cold Tax. Floors (empty `main`, as a file and as a package),
                 a 12-package sdk-style set and the B3 DAG base; scenario:
@@ -118,6 +119,7 @@ class B3EditsGenerator(Generator):
         ("b2", "consumed fact: may_panic propagates", "cone", dict(ret="r / k")),
         ("c", "provenance-only: statement swap moves call line", "local", dict(swapped=True)),
         ("d", "comment-only", "none", dict(comment="# leaf body (reworded)")),
+        ("e", "one comment line inserted ABOVE the leaf (line shift)", "identity", dict(prefix=True)),
     )
 
     def __init__(self):
@@ -142,9 +144,10 @@ class B3EditsGenerator(Generator):
                              "predicted_spec_keys": nodes * k, "shape": blurb}})
             base_leaf = leaf_source(leaf)
             for eid, label, classification, change in self.EDITS:
+                new_leaf = ("# inserted above the leaf\n" + base_leaf if change.get("prefix")
+                            else leaf_source(leaf, **change))
                 patch = C.make_patch(eid, d, [{
-                    "file": "pkg/src/main.moss", "old": base_leaf,
-                    "new": leaf_source(leaf, **change)}])
+                    "file": "pkg/src/main.moss", "old": base_leaf, "new": new_leaf}])
                 sid = f"b3_{shape}_{eid}"
                 self.scenarios.append(scenario_row({
                     "id": sid, "family": "b3_edits", "fixture": fid, "kind": "edit_sequence",

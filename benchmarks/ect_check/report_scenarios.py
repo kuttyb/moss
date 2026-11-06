@@ -52,9 +52,9 @@ def sections(rows: list[dict], scenarios: list[dict], evidence: list[dict] | Non
             fx = sc_by_id[ids[0]]["fixture"]
             lines += [f"### {fx}", "",
                       "| Edit | Class | Step | Wall ms | CPU ms | Fns analyzed | Source fn checks | "
-                      "Spec evals | Spec keys | Checker runs | Callables (src) | Ideal recheck | Observed summary change | "
-                      "Analyzed / ideal |",
-                      "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+                      "Spec evals | Spec keys | Checker runs | Callables (src) | Ideal recheck | Ideal spec keys | "
+                      "Observed summary change | Analyzed / ideal |",
+                      "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
             base_done = False
             for sid in ids:
                 steps = cold[sid]
@@ -67,13 +67,14 @@ def sections(rows: list[dict], scenarios: list[dict], evidence: list[dict] | Non
                     lines.append(f"| (none) | unedited baseline | base | {f(r['wall_ms_median'])} | {f(r['cpu_ms_median'])} | "
                                  f"{f(r['functions_analyzed'])} | {f(r['source_function_checks'])} | "
                                  f"{f(r['specialization_evaluations'])} | {f(r['specialization_keys'])} | "
-                                 f"{f(r['checker_runs'])} | {f(callables)} | n/a | n/a | n/a |{_status(r)}")
+                                 f"{f(r['checker_runs'])} | {f(callables)} | n/a | n/a | n/a | n/a |{_status(r)}")
                     base_done = True
                 for step in ("edit", "revert"):
                     r = steps[step]
-                    ideal = obs = ratio = ""
+                    ideal = obs = ratio = ikeys = ""
                     if step == "edit" and ev:
                         ideal = str(len(ev["ideal_recheck"]))
+                        ikeys = str(len(ev["ideal_recheck"]) * (shape[1] if shape else 1))
                         obs = str(len(ev["summary_changed"]))
                         ratio = (f"{r['functions_analyzed'] / len(ev['ideal_recheck']):.1f}x"
                                  if ev["ideal_recheck"] and r["functions_analyzed"] is not None
@@ -81,7 +82,7 @@ def sections(rows: list[dict], scenarios: list[dict], evidence: list[dict] | Non
                     lines.append(f"| `{sid.split('_', 2)[2]}` | {sc['classification']} | {step} | "
                                  f"{f(r['wall_ms_median'])} | {f(r['cpu_ms_median'])} | {f(r['functions_analyzed'])} | "
                                  f"{f(r['source_function_checks'])} | {f(r['specialization_evaluations'])} | "
-                                 f"{f(r['specialization_keys'])} | {f(r['checker_runs'])} | {f(callables)} | {ideal} | {obs} | {ratio} |{_status(r)}")
+                                 f"{f(r['specialization_keys'])} | {f(r['checker_runs'])} | {f(callables)} | {ideal} | {ikeys} | {obs} | {ratio} |{_status(r)}")
             lines.append("")
         if evidence:
             lines += ["### B3 query evidence (what the compiler says changed)", "",
@@ -112,6 +113,13 @@ def sections(rows: list[dict], scenarios: list[dict], evidence: list[dict] | Non
                              f"{f(r['rss_kib_median'], 0)} | {f(r['checker_runs'])} | {f(r['functions_analyzed'])} | "
                              f"{f(r['specialization_keys'])} |{_status(r)}")
         lines.append("")
+        if meta.get("startup"):
+            lines += ["Startup decomposition (median of 11 bare starts, untimed-state independent):", "",
+                      "| Command | Wall ms | CPU ms |", "|---|---:|---:|"]
+            for u in meta["startup"]:
+                lines.append(f"| {u['case']} | {f(u['wall_ms_median'])} | {f(u['cpu_ms_median'])} |")
+            lines += ["", "margo is a Python script: the package rows of every table include this "
+                      "interpreter and driver overhead, which a resident client also removes.", ""]
         floor = [r for r in rows if r["mode"] == "cold" and r.get("fixture", "").startswith("b4_floor") and not r.get("scenario")]
         if floor:
             lines += ["Startup floor (checking a `main` that only echoes a literal), plain cold fixtures:", "",
@@ -138,25 +146,31 @@ def sections(rows: list[dict], scenarios: list[dict], evidence: list[dict] | Non
                   "(built under `tmp/`, committed once), each with a distinct small uncommitted edit, "
                   "each checked from an empty build dir. `concurrent` starts all N checks together; "
                   "`sequential` runs them one after another. Total CPU is the sum of per-process "
-                  "user+system; summed RSS is the sum of per-process PEAKS (an upper bound on the "
-                  "simultaneous footprint, since the peaks need not coincide); group wall is first launch "
+                  "user+system; the `time %M` column is the sum over the N trees of the LARGEST SINGLE "
+                  "PROCESS in each tree (margo's Python, not moss) and is NOT a footprint or an upper "
+                  "bound; the sampled columns are the real figure: a /proc scanner (every ~3 ms, "
+                  "untimed separate passes, 3 reps) sums the RSS of every process of the trees, "
+                  "giving the peak simultaneous RSS of the whole group (concurrent) or of the "
+                  "largest tree (sequential: trees do not overlap); group wall is first launch "
                   f"to last finish (sequential: the sum). **{meta['cpus']} CPUs: at N=16 concurrent the "
                   "processes (plus the margo Python processes and their children) contend for the same "
-                  "CPUs and memory bandwidth and the runner polls; per-worktree wall times at N=16 "
-                  "concurrent are therefore contention-inflated and are not first-check cost.**", ""]
+                  "CPUs and the runner polls; per-worktree wall times and CPU totals when concurrent are "
+                  "inflated and are not first-check cost (the cause is not established, see README).**", ""]
         for sid in sorted({r["scenario"] for r in wt_rows}):
             for mode in ("cold", "warm"):
                 sel = [r for r in wt_rows if r["scenario"] == sid and r["mode"] == mode]
                 if not sel:
                     continue
                 lines += [f"### {sid} ({mode}), base fixture `{sel[0]['base_fixture']}`, commit `{sel[0]['commit'][:12]}`", "",
-                          "| N | Schedule | Group wall ms | Total CPU ms | Sum peak RSS MiB | Max peak RSS MiB | "
+                          "| N | Schedule | Group wall ms | Total CPU ms | Sum of per-tree largest-process peaks MiB (time %M) | "
+                          "Sampled peak simultaneous RSS, whole trees MiB | Sampled peak per tree MiB | "
                           "wt0 first ms | later wt median ms | slowest wt ms | Fns analyzed (sum) | Source fn checks (sum) |",
-                          "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+                          "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
                 for r in sel:
                     lines.append(f"| {r['n']} | {r['schedule']} | {f(r['group_wall_ms_median'])} | "
                                  f"{f(r['total_cpu_ms_median'])} | {f(r['sum_rss_kib_median'] / 1024)} | "
-                                 f"{f(r['max_rss_kib_median'] / 1024)} | {f(r['first_check_ms_wt0'])} | "
+                                 f"{f(r.get('sampled_group_tree_rss_peak_mib'))} | {f(r.get('sampled_per_tree_peak_mib'))} | "
+                                 f"{f(r['first_check_ms_wt0'])} | "
                                  f"{f(r['first_check_ms_later_median'])} | {f(r['first_check_ms_max'])} | "
                                  f"{f(r.get('functions_analyzed'))} | {f(r.get('source_function_checks'))} |"
                                  f"{'' if r['status_ok'] else ' **(UNEXPECTED)**'}")

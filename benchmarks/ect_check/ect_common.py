@@ -18,6 +18,7 @@ import shutil
 import statistics
 import subprocess
 import tempfile
+import threading
 import time
 
 SUITE_NAME = "moss_ect_check"
@@ -274,6 +275,63 @@ def fixture_ok(fixture: dict, verdict: dict, timed_out: bool = False) -> bool:
     return want is None or verdict.get("exit_code") == want
 
 
+class TreeRssSampler:
+    """Samples the SIMULTANEOUS resident set of whole process trees.
+
+    Every measured command runs in its own session (start_new_session), so all
+    its descendants share the session id of the `time` wrapper's pid. A thread
+    scans /proc every `interval` seconds, sums statm RSS per session and keeps
+    the peak per tree and the peak of the sum over all trees. This perturbs the
+    machine (a /proc scan per tick), so it is used only in separate, untimed
+    passes (see scenarios.measure_worktrees)."""
+
+    def __init__(self, interval: float = 0.003):
+        self.interval = interval
+        self.pids: list[int] = []
+        self.peak_by_pid: dict[int, int] = {}
+        self.group_peak = 0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._page_kib = os.sysconf("SC_PAGE_SIZE") // 1024
+
+    def _scan(self):
+        sums: dict[int, int] = {pid: 0 for pid in self.pids}
+        want = set(self.pids)
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat") as f:
+                    stat = f.read()
+                sid = int(stat[stat.rindex(")") + 2:].split()[3])
+                if sid not in want:
+                    continue
+                with open(f"/proc/{entry}/statm") as f:
+                    sums[sid] += int(f.read().split()[1]) * self._page_kib
+            except (OSError, ValueError, IndexError):
+                continue
+        total = sum(sums.values())
+        self.group_peak = max(self.group_peak, total)
+        for pid, v in sums.items():
+            self.peak_by_pid[pid] = max(self.peak_by_pid.get(pid, 0), v)
+
+    def _run(self):
+        while not self._stop.is_set():
+            self._scan()
+            self._stop.wait(self.interval)
+
+    def start(self, pids: list[int]):
+        self.pids = list(pids)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
+
+
 class _Launch:
     """One launched `/usr/bin/time`-wrapped command (see run_measured)."""
 
@@ -334,7 +392,8 @@ class _Launch:
 
 
 def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
-                 timeout: float = 600.0, stack_kib: int | None = None) -> dict:
+                 timeout: float = 600.0, stack_kib: int | None = None,
+                 sample_tree_rss: bool = False) -> dict:
     """Run argv once; return rc, stdout, stderr, wall/CPU ms and peak RSS (KiB).
 
     Peak RSS is read from a /usr/bin/time wrapper (-f %M), NOT from this
@@ -351,6 +410,7 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
     runs in its own session) so no compiler is left burning CPU.
     """
     launch = _Launch(argv, cwd, env, stack_kib)
+    sampler = TreeRssSampler().start([launch.proc.pid]) if sample_tree_rss else None
     deadline = launch.start + timeout
     timed_out = False
     while True:
@@ -363,11 +423,15 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
             pid, status, usage = os.wait4(launch.proc.pid, 0)
             break
         time.sleep(0.0005)
-    return launch.result(status, usage, timed_out)
+    res = launch.result(status, usage, timed_out)
+    if sampler:
+        sampler.stop()
+        res["tree_rss_peak_kib"] = sampler.peak_by_pid.get(launch.proc.pid, 0)
+    return res
 
 
 def run_measured_group(jobs: list[tuple[list[str], Path]], *, env: dict[str, str],
-                       timeout: float = 600.0) -> dict:
+                       timeout: float = 600.0, sample_tree_rss: bool = False) -> dict:
     """Launch every job at (nearly) the same time and wait for all of them.
 
     jobs: (argv, cwd) pairs. Every process is wrapped exactly like run_measured,
@@ -388,6 +452,7 @@ def run_measured_group(jobs: list[tuple[list[str], Path]], *, env: dict[str, str
             os.wait4(l.proc.pid, 0)
             l.close()
         raise
+    sampler = TreeRssSampler().start([l.proc.pid for l in launches]) if sample_tree_rss else None
     start = min(l.start for l in launches)
     deadline = start + timeout
     pending = dict(enumerate(launches))
@@ -410,7 +475,13 @@ def run_measured_group(jobs: list[tuple[list[str], Path]], *, env: dict[str, str
             time.sleep(0.0005)
     end = time.perf_counter()
     ordered = [results[i] for i in range(len(launches))]
-    return {"results": ordered, "timed_out": timed_out,
+    extra = {}
+    if sampler:
+        sampler.stop()
+        for i, l in enumerate(launches):
+            ordered[i]["tree_rss_peak_kib"] = sampler.peak_by_pid.get(l.proc.pid, 0)
+        extra = {"group_tree_rss_peak_kib": sampler.group_peak}
+    return {**extra, "results": ordered, "timed_out": timed_out,
             "group_wall_ms": (end - start) * 1000.0,
             "total_cpu_ms": sum(r["cpu_ms"] for r in ordered),
             "sum_rss_kib": sum((r["rss_kib"] or 0) for r in ordered),

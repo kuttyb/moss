@@ -82,6 +82,8 @@ def facts(result: dict, name: str) -> dict:
             prov.append([m.get("origin", {}).get("line") for m in sp.get("member_requirements", [])])
     return {
         "body": t.get("implementation_hash"),
+        "identity": [t.get("semantic_identity"), (t.get("source") or {}).get("line"),
+                     [c.get("call_site_semantic_identity") for c in result.get("direct_calls", [])]],
         "summary": {"iface": t.get("semantic_interface_hash"), "type": t.get("type"),
                     "ownership": result.get("ownership"),
                     "effects": (result.get("effect_summary") or {}).get("transitive"),
@@ -117,8 +119,10 @@ def evidence_for(sc: dict, fx: dict, moss: Path, scratch: Path) -> dict:
     text = edit_file.read_text()
     names = callables(text)
     before, after = collect(moss, base_file, names), collect(moss, edit_file, names)
-    body, summary, prov = [], [], []
+    body, summary, prov, ident = [], [], [], []
     for n in names:
+        if before[n]["identity"] != after[n]["identity"]:
+            ident.append(n)
         if before[n]["body"] != after[n]["body"]:
             body.append(n)
         if before[n]["summary"] != after[n]["summary"]:
@@ -130,14 +134,16 @@ def evidence_for(sc: dict, fx: dict, moss: Path, scratch: Path) -> dict:
     cone_set = cone(graph, edited)
     shutil.rmtree(root, ignore_errors=True)
     kind = sc.get("classification")
-    ideal = {"local": {edited}, "cone": cone_set, "none": set()}[kind]
+    # "identity": a line-shifting edit. A store keyed on hashes rechecks nothing
+    # (ideal 0); one keyed on @line identities loses every callable below the edit.
+    ideal = {"local": {edited}, "cone": cone_set, "none": set(), "identity": set()}[kind]
     order = {n: i for i, n in enumerate(names)}
     sort = lambda xs: sorted(xs, key=order.get)
     return {
         "scenario": sc["id"], "edited_function": edited, "callables": len(names),
         "classification": kind,
         "body_changed": sort(body), "summary_changed": sort(summary),
-        "provenance_only_changed": sort(prov),
+        "provenance_only_changed": sort(prov), "identity_changed": sort(ident),
         "source_cone": sort(cone_set), "ideal_recheck": sort(ideal),
         # The compiler's own answer matches the source-graph cone for consumed
         # edits, and shows no summary change outside the edited callable otherwise.
@@ -145,5 +151,6 @@ def evidence_for(sc: dict, fx: dict, moss: Path, scratch: Path) -> dict:
         "callers_summary_unchanged": (kind != "cone") and not (set(summary) - {edited}),
         "summary": f"body: {_compress(sort(body)) or 'none'}; summary facts: "
                    f"{_compress(sort(summary)) or 'none'}; provenance only: "
-                   f"{_compress(sort(prov)) or 'none'}",
+                   f"{_compress(sort(prov)) or 'none'}; @line identities: "
+                   f"{_compress(sort(ident)) or 'none'}",
     }

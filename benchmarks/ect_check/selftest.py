@@ -20,6 +20,14 @@ else:
     argv = [margo, "--root", path, "--check", "--json", "build"]
 p = subprocess.run(argv, capture_output=True, text=True, env=env)
 out = p.stdout
+if mode == "bookkeeping":
+    doc = json.loads(out)
+    doc["checked"], doc["skipped"] = [], ["answered-from-store"]
+    out = json.dumps(doc)
+if mode == "diag":
+    doc = json.loads(out)
+    doc["ok"], doc["error"] = False, "boom"
+    out = json.dumps(doc)
 if mode == "mutate":
     doc = json.loads(out)
     if doc.get("ok"):
@@ -233,8 +241,50 @@ def scenario_tests(R, tc, manifest, scratch, results) -> None:
                      scratch / "gate-seq-mut", [sc])
     check("gate: mutating client fails the edit sequence", not mut["passed"], "extra field detected", results)
 
-    # --- group runner ---------------------------------------------------------
     env = tc.env()
+    # --- scenario gate: bookkeeping volatile, diagnostics strict ----------------
+    for mode, expect in (("bookkeeping", True), ("diag", False)):
+        g = R.run_gate([], tc, tc, f"python3 {shlex.quote(str(wrapper))} {{kind}} {{path}} {{moss}} {{margo}} {mode}",
+                       scratch / f"gate-seq-{mode}", [sc])
+        check(f"gate: client differing only in {'checked/skipped' if expect else 'the verdict/diagnostic'} "
+              f"{'passes' if expect else 'fails'}", g["passed"] == expect,
+              f"passed={g['passed']}", results)
+    info = g  # noqa: F841
+    # --- frozen hashes are re-verified by the runner ---------------------------
+    import copy
+    forged = copy.deepcopy(sc)
+    p0 = forged["patches"]["a"]
+    p0["edits"][0]["new"] = p0["edits"][0]["new"].replace("k = 2", "k = 3")
+    rel0 = p0["edits"][0]["file"]
+    p0["after_sha256"][rel0] = C.text_sha256((C.FIXTURES_DIR / fx["path"] / rel0).read_text()
+                                             .replace(p0["edits"][0]["old"], p0["edits"][0]["new"]))
+    try:
+        S.verify_frozen(manifest, [], [forged])
+        check("frozen: consistently forged patch with a stale scenario sha256 is refused", False, "accepted", results)
+    except C.ToolError as exc:
+        check("frozen: consistently forged patch with a stale scenario sha256 is refused",
+              "scenario" in str(exc), str(exc)[:70], results)
+    bad_fx = dict(fx, sha256="0" * 64)
+    try:
+        S.verify_frozen(manifest, [bad_fx], [])
+        check("frozen: fixture with a wrong frozen hash is refused", False, "accepted", results)
+    except C.ToolError as exc:
+        check("frozen: fixture with a wrong frozen hash is refused", "fixture" in str(exc), str(exc)[:70], results)
+    S.verify_frozen(manifest, [fx], [sc])
+    check("frozen: genuine fixture and scenario verify", True, "ok", results)
+
+    # --- whole-tree RSS sampler ------------------------------------------------
+    r = C.run_measured(["/bin/sh", "-c", "python3 -c 'b=bytearray(150*1024*1024);import time;time.sleep(0.5)'; true"],
+                       cwd=scratch, env=env, sample_tree_rss=True)
+    check("sampler: whole-tree peak sees a grandchild's 150 MiB",
+          r["tree_rss_peak_kib"] >= 150 * 1024 and r["tree_rss_peak_kib"] < 400 * 1024,
+          f"{r['tree_rss_peak_kib'] / 1024:.0f} MiB", results)
+    g2 = C.run_measured_group([(["/bin/sh", "-c", "python3 -c 'b=bytearray(100*1024*1024);import time;time.sleep(0.6)'"], scratch)] * 3,
+                              env=env, sample_tree_rss=True)
+    check("sampler: group peak is the simultaneous sum of the trees",
+          g2["group_tree_rss_peak_kib"] >= 2.5 * 100 * 1024, f"{g2['group_tree_rss_peak_kib'] / 1024:.0f} MiB", results)
+
+    # --- group runner ---------------------------------------------------------
     conc = C.run_measured_group([(["/bin/sleep", "0.4"], scratch)] * 3, env=env)
     seq = [C.run_measured(["/bin/sleep", "0.4"], cwd=scratch, env=env) for _ in range(3)]
     check("group: three 0.4 s sleeps run concurrently (wall ~0.4 s) vs sequentially (~1.2 s)",

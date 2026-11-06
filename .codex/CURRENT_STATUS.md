@@ -18137,3 +18137,8 @@ report_scenarios.py; 5 new fixtures + 16 frozen scenarios in manifest.json. Vali
 all` PASS (80 fixtures, 14 edit sequences); `run.py selftest` 24/24; quiet `bench --reps 5` baseline
 (tmp/ect_check/t3final, drift 2.7%) numbers are in the README; `make check` shows only the 3 pre-existing
 failures (check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases). No src/ change.
+
+Team 3 review fixes (tag `bench-t3-done-r2`): edit `e` (line shift), edit `c` relabeled leaf-local call-site identity,
+frozen hashes re-verified by bench/gate, scenario gate treats margo checked/skipped as volatile, whole-tree RSS sampler
+for B5, startup decomposition, floor_pkg skip cause (main-only package has no .mossi), README corrections. Baseline run
+tmp/ect_check/t3final2 (quiet, drift 1.4%).

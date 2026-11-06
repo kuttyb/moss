@@ -2140,6 +2140,59 @@
       "sha256": "3b86f1cf3ae3b7f5429e8386fffc5dc9fd01f25c2fe76ba49406dc89e8dc1f51"
     },
     {
+      "id": "b3_dag_e",
+      "family": "b3_edits",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "one comment line inserted ABOVE the leaf (line shift) at leaf n019_0 of the spine DAG: W parallel chains under one root, no shared callees",
+      "edited_function": "n019_0",
+      "classification": "identity",
+      "patches": {
+        "e": {
+          "id": "e",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "# inserted above the leaf\nfn n019_0(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "a50df6875872ea32ee2263847018f14c9ef017877bef5988b0dcfb79e00be179"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "dd13a7c4334403250970f434523ee7a2fa0a886464427b1395339432f5474b21"
+    },
+    {
       "id": "b3_fanin_a",
       "family": "b3_edits",
       "fixture": "b3_fanin_d50_w4_k02",
@@ -2403,6 +2456,59 @@
         }
       ],
       "sha256": "adad10f70769778e7a0a3f5fbaa4258ee1f5cf178a154a71263851d960fa754c"
+    },
+    {
+      "id": "b3_fanin_e",
+      "family": "b3_edits",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "one comment line inserted ABOVE the leaf (line shift) at leaf c049 of the fan-in: W entries into one shared chain",
+      "edited_function": "c049",
+      "classification": "identity",
+      "patches": {
+        "e": {
+          "id": "e",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n",
+              "new": "# inserted above the leaf\nfn c049(x):\n  # leaf body\n  k = 1\n  r = x.score()\n  return r + k\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "ef2412f3b8f2595371584427b8947b52d9a3c470e31b700df92424225c5e086d"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "ad4e0db67df94ed9fc8b69cbf8b84132c3a6d4db120ce21f8a741bdb314d11da"
     },
     {
       "id": "b4_seq_floor_file",
