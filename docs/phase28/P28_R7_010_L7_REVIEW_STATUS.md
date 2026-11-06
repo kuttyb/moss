@@ -57,6 +57,12 @@ they do not validate `1990dd82`. No full Default/EST-shadow suite, frozen
 oracle, or final clone-provenance audit has run on the integrated tree. No
 runtime clone exception is authorized.
 
+On `1990dd82`, a fresh focused take harness is 17/18; only `take_map_field`
+fails closed for missing bounded, nonescaping Map-view authority. The checker
+producer/remap path is under scoped follow-up. Independent Team C verification
+of intake SHA `993fbd54a5000d184dae5db7228da5fd63bffe4f` is also in progress in
+an isolated worktree; no final Team C verdict is recorded yet.
+
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  
 **State:** isolated staging; no merge to `phase28-work` or `main`. The HEAD is

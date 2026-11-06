@@ -17579,3 +17579,13 @@ untouched.
   oracle has run after this source edit, and no runtime clone exception is
   authorized. The earlier 92/167 shadow and Default preflight results are
   retained as measurements of pre-X1 code SHA `12b9407c`, not this tree.
+- On integrated source SHA `1990dd82`, the focused
+  `python3 tests/phase28/verify_take_fixtures.py` rerun is 17/18: only
+  `take_map_field` fails closed with `nonprimitive Map view lacks checked
+  nonescaping CollectionView authority`. The existing baseline notes attribute
+  this to a checker producer gap; a fresh scoped follow-up is tracing and
+  validating that fact path. No Fast Debug/native fallback is being added.
+- Team C has started independent verification of exact intake commit
+  `993fbd54a5000d184dae5db7228da5fd63bffe4f` in a separate worktree; its
+  current-suite deltas, frozen oracle, clone inventory, and X1 evidence remain
+  pending. Do not use its historical or in-progress results as validation.
