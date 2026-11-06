@@ -2,8 +2,8 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, HEAD
-  `d1bb2303c0cfa8a9020b34a5a302da0f934385f9` (two reviewed Team A commits
-  ahead of the previously recorded `43e03980`; not yet pushed at this note).
+  `3106249c1fc9405bfe2065231621d5cd694b242c` (two reviewed Team A commits
+  plus the pushed status checkpoint; source integration SHA is `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`).
   No merge to `phase28-work` or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
@@ -11,6 +11,10 @@
   local-transfer authority (23 Default/Shadow scenarios), oracle authority
   facts, specialized ownership contract, all 17 primitive-index cases, and
   local ownership facts pass.
+- On the intact Regex package, `./margo test` fails closed at the known
+  `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
+  READ/WRITE, Copy, or projected-borrow authority`; this confirms the native
+  consumer defect Team B owns.
 - The intact Regex package now resolves module provenance correctly and
   reaches the known fail-closed native indexed-read invariant. Team B resumed
   in isolated worktree `tmp/phase28-r7-010-team-b-projected-read-consumer-d1bb`,
