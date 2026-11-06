@@ -20,6 +20,7 @@ FIXTURES = [
     ("tests/tooling/fixtures/phase28_root_repeated_nested_messages.moss", 2),
     ("tests/tooling/fixtures/phase28_root_nested_message_arguments.moss", 2),
     ("tests/tooling/fixtures/phase28_root_depth2_message_arguments.moss", 3),
+    ("tests/tooling/fixtures/phase28_root_nested_copy_payload.moss", 2),
 ]
 ALIAS_REJECTED = "tests/tooling/fixtures/phase28_root_domain_handle_alias_rejected.moss"
 UNKNOWN_HANDLER = "tests/tooling/fixtures/phase28_root_unknown_handler.moss"
@@ -47,6 +48,8 @@ def nested_native_consumer_cases():
          "7\n"),
         ("tests/tooling/fixtures/phase28_root_depth2_message_arguments.moss",
          "7\n"),
+        ("tests/tooling/fixtures/phase28_root_nested_copy_payload.moss",
+         "9\n"),
     )
     count = 0
     with tempfile.TemporaryDirectory(prefix="root-capture-consumer-",
@@ -82,7 +85,8 @@ def nested_native_consumer_cases():
                                                executed.stderr)
                 count += 1
                 if source.endswith(("phase28_root_nested_message_arguments.moss",
-                                    "phase28_root_depth2_message_arguments.moss")):
+                                    "phase28_root_depth2_message_arguments.moss",
+                                    "phase28_root_nested_copy_payload.moss")):
                     debug = subprocess.run(
                         [COMPILER, "run", "--interp", source], cwd=ROOT,
                         env=env, text=True, stdout=subprocess.PIPE,
@@ -128,7 +132,8 @@ def nested_native_consumer_cases():
                     "Root-ingress" in result.stdout + result.stderr), (
                         source, mode, "expr-id", result.stdout, result.stderr)
                 count += 1
-                if source.endswith("phase28_root_nested_message_arguments.moss"):
+                if source.endswith(("phase28_root_nested_message_arguments.moss",
+                                    "phase28_root_nested_copy_payload.moss")):
                     env = os.environ.copy()
                     for key in list(env):
                         if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
@@ -145,7 +150,8 @@ def nested_native_consumer_cases():
                             source, mode, "nested-expr-id", result.stdout,
                             result.stderr)
                     count += 1
-                if source.endswith("phase28_root_depth2_message_arguments.moss"):
+                if source.endswith(("phase28_root_depth2_message_arguments.moss",
+                                    "phase28_root_nested_copy_payload.moss")):
                     for hook, command, expected_error in (
                         ("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_OWNER",
                          [COMPILER, source, "-O0", "-o", str(output)],
@@ -357,7 +363,9 @@ def explicit_copy_root_cases(mode, source, expected_output):
 
         for hook in ("MOSS_TEST_CONSUMER_DROP_COPY_FACT",
                      "MOSS_TEST_CONSUMER_DUPLICATE_COPY_FACT",
-                     "MOSS_TEST_CONSUMER_PERTURB_COPY_FACT"):
+                     "MOSS_TEST_CONSUMER_PERTURB_COPY_FACT",
+                     "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_OWNER",
+                     "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_EXPR_ID"):
             result = run([COMPILER, source, "-o", str(rust_path)], {hook: "1"})
             assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
                 result.stdout + result.stderr), (
@@ -377,16 +385,33 @@ def explicit_copy_root_cases(mode, source, expected_output):
             "MOSS_TEST_TRACE_ROOT_INGRESS_COPY_COUNTS": "1"})
         trace_facts = [line for line in traced.stderr.splitlines()
                        if line.startswith("ROOT_INGRESS_INTERPRETER_COPY_COUNTS ")]
-        assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
-            len(trace_facts) == 1 and "authority=copy" in trace_facts[0] and
-            "explicit_copy_evaluations=1" in trace_facts[0] and
-            "authorized_independent_calls=1" in trace_facts[0] and
-            "implicit_independent_calls=0" in trace_facts[0]), (
-                mode, source, traced.stdout, traced.stderr)
+        if source.endswith("phase28_root_nested_copy_payload.moss"):
+            assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
+                len(trace_facts) == 2 and
+                any("authority=copy" in fact and
+                    "explicit_copy_evaluations=1" in fact and
+                    "authorized_independent_calls=1" in fact and
+                    "implicit_independent_calls=0" in fact
+                    for fact in trace_facts) and
+                any("authority=primitive" in fact and
+                    "explicit_copy_evaluations=0" in fact and
+                    "authorized_independent_calls=0" in fact and
+                    "implicit_independent_calls=0" in fact
+                    for fact in trace_facts)), (mode, source, traced.stdout,
+                                                traced.stderr)
+        else:
+            assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
+                len(trace_facts) == 1 and "authority=copy" in trace_facts[0] and
+                "explicit_copy_evaluations=1" in trace_facts[0] and
+                "authorized_independent_calls=1" in trace_facts[0] and
+                "implicit_independent_calls=0" in trace_facts[0]), (
+                    mode, source, traced.stdout, traced.stderr)
 
         for hook in ("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_COPY_FACT",
                      "MOSS_TEST_INTERP_DUPLICATE_ROOT_INGRESS_COPY_FACT",
-                     "MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_COPY_FACT"):
+                     "MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_COPY_FACT",
+                     "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_COPY_OWNER",
+                     "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_COPY_EXPR_ID"):
             result = run([COMPILER, "run", "--interp", source], {hook: "1"})
             assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
                 result.stdout + result.stderr), (
@@ -466,6 +491,7 @@ def main():
         ("tests/phase26_direct_payload.moss", "7 8"),
         ("tests/phase27/conformance/message_argument_binding_use.moss",
          "777777\n777777\n777777\naccepted"),
+        ("tests/tooling/fixtures/phase28_root_nested_copy_payload.moss", "9"),
     )
     scenario_count += sum(
         explicit_copy_root_cases(mode, source, expected)

@@ -298,7 +298,7 @@
       const ExpressionTreeView& tree, const est::Message& message_node,
       est::ExprId message_expression, std::uint32_t argument_index,
       DomainValue& instance, const Handler& target, Frame& caller,
-      int line) const {
+      int line, RootIngressCopyAuthorityOccurrence* copy_authority) const {
     const Stmt* statement = active_statement_;
     if (!statement || !statement->message_root_ingress ||
         statement->checked_statement_occurrence_id == UINT32_MAX ||
@@ -421,6 +421,20 @@
               !fact->result_type->structurally_equal(*argument_facts->type))
             throw std::invalid_argument(
                 "Root-ingress explicit copy fact contradicts checked argument type/context");
+          if (copy_authority) {
+            *copy_authority = RootIngressCopyAuthorityOccurrence{
+                statement->checked_statement_occurrence_id,
+                tree.arena_index, tree.root, exact_message_expression,
+                argument_index, argument_expression};
+#ifdef MOSS_TEST_BUILD
+            if (std::getenv(
+                    "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_COPY_OWNER"))
+              ++copy_authority->owner_expression;
+            if (std::getenv(
+                    "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_COPY_EXPR_ID"))
+              ++copy_authority->copy_expression;
+#endif
+          }
           return "copy";
         } catch (const std::exception& error) {
           throw RuntimeError(line,
@@ -486,10 +500,34 @@
     call.instance = &instance;
     call.target = &target;
     call.line = line;
+    struct RootIngressCopyCounterScope {
+      std::size_t& implicit_calls;
+      std::size_t& explicit_calls;
+      std::size_t& copy_evaluations;
+      std::size_t prior_implicit_calls;
+      std::size_t prior_explicit_calls;
+      std::size_t prior_copy_evaluations;
+      RootIngressCopyCounterScope(std::size_t& implicit_target,
+                                  std::size_t& explicit_target,
+                                  std::size_t& copy_target)
+          : implicit_calls(implicit_target), explicit_calls(explicit_target),
+            copy_evaluations(copy_target),
+            prior_implicit_calls(implicit_target),
+            prior_explicit_calls(explicit_target),
+            prior_copy_evaluations(copy_target) {}
+      ~RootIngressCopyCounterScope() {
+        implicit_calls = prior_implicit_calls;
+        explicit_calls = prior_explicit_calls;
+        copy_evaluations = prior_copy_evaluations;
+      }
+    } copy_counter_scope(root_ingress_implicit_independent_calls_,
+                         root_ingress_explicit_independent_calls_,
+                         root_ingress_explicit_copy_evaluations_);
     for (std::uint32_t index = 0; index < message_node.arguments.size(); ++index) {
+      RootIngressCopyAuthorityOccurrence copy_authority;
       const auto authority = resolve_root_ingress_argument_authority(
           tree, message_node, message_expression, index, instance, target,
-          caller, line);
+          caller, line, &copy_authority);
       const auto prior_boundary = root_ingress_argument_preparation_;
       const auto prior_independent_count =
           root_ingress_implicit_independent_calls_;
@@ -503,6 +541,18 @@
             : slot(target), prior(target) { slot = true; }
         ~RootIngressPreparationScope() { slot = prior; }
       } root_scope(root_ingress_argument_preparation_);
+      const auto previous_copy_authority =
+          active_root_ingress_copy_authority_;
+      if (authority == "copy")
+        active_root_ingress_copy_authority_ = copy_authority;
+      else
+        active_root_ingress_copy_authority_.reset();
+      struct RootIngressCopyAuthorityScope {
+        std::optional<RootIngressCopyAuthorityOccurrence>& slot;
+        std::optional<RootIngressCopyAuthorityOccurrence> previous;
+        ~RootIngressCopyAuthorityScope() { slot = std::move(previous); }
+      } copy_authority_scope{active_root_ingress_copy_authority_,
+                             previous_copy_authority};
       Value value = evaluate_tree_node(tree,
           est::unparenthesized(*tree.arena, message_node.arguments[index]),
           caller, line, output);

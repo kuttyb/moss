@@ -18250,3 +18250,25 @@ untouched.
   gates pass in both modes; feedback and diff validation pass. Full suites and
   oracle were not run. This candidate is not integrated or pushed; fresh Team C
   and Agent 2 exact-SHA review is pending.
+
+### Nested explicit-copy Fast Debug attribution follow-up — new candidate
+
+- Based on exact frozen SHA
+  `ccfe4c2c749ea0493734816740e4dccdc31e4f23`. Team C's
+  `Wrap(Accept(copy(payload)))` repro had exact checker copy authority and
+  Native output `9`, but Fast Debug attributed the nested `Accept` independent
+  copy to the enclosing `Wrap` primitive argument and failed closed.
+- Fast Debug now carries the exact statement occurrence, arena, owner handle
+  root, nested Message ExprId, argument index, and copy ExprId returned from the
+  checker requirement/fact join. The `copy` evaluator counts the event only
+  when its active statement/tree/node and exact Message-to-argument edge match
+  that tuple. Per-handler counter scopes prevent child copies from leaking to
+  the enclosing argument. No copy fallback or source-text selection was added.
+- Added the Team C source as a fixture. Checker, Native, and Fast Debug parity
+  returns `9` in Default and EST-shadow; exact copy traces show one authorized
+  copy for the `Accept` argument and zero for the enclosing primitive `Wrap`
+  argument. Checker/Native/Fast Debug fact drop, duplicate, perturb, wrong-owner,
+  and wrong-copy-ExprId probes fail closed. Final focused gates: Phase 28
+  authority 368 scenarios in each mode; Phase 21 ingress gates pass in both
+  modes; feedback and diff validation pass. Full suites/oracle were not run.
+  New exact-SHA Team C and Agent 2 reviews are pending; no push/integration.

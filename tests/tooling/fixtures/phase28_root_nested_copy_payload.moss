@@ -1,0 +1,14 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  fn Accept(value: Payload) -> Int:
+    reply value.value
+
+  fn Wrap(value: Int) -> Int:
+    reply value
+
+fn main():
+  worker = Worker()
+  payload = Payload(value: 9)
+  echo message worker.Wrap(message worker.Accept(copy(payload)))

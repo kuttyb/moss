@@ -2052,8 +2052,13 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress copy query identity unavailable");
     const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
-    const auto copy_id = est::unparenthesized(
+    auto copy_id = est::unparenthesized(
         arena, occurrence.argument_expressions[argument_index]);
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv(
+            "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_EXPR_ID"))
+      ++copy_id;
+#endif
     if (copy_id >= arena.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress copy EST occurrence unavailable");

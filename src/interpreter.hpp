@@ -1139,8 +1139,19 @@ class FastInterpreter {
     std::uint32_t arena_index = 0;
   };
 
+  struct RootIngressCopyAuthorityOccurrence {
+    std::uint32_t statement_occurrence_id{UINT32_MAX};
+    std::uint32_t arena_index{UINT32_MAX};
+    est::ExprId owner_expression{UINT32_MAX};
+    est::ExprId message_expression{UINT32_MAX};
+    std::uint32_t argument_index{UINT32_MAX};
+    est::ExprId copy_expression{UINT32_MAX};
+  };
+
   const ExpressionTreeView* active_expression_tree_ = nullptr;
   est::ExprId active_expression_node_ = 0;
+  std::optional<RootIngressCopyAuthorityOccurrence>
+      active_root_ingress_copy_authority_;
 
   std::optional<ExpressionTreeView> expression_tree(
       std::string_view source, std::string_view caller = {},
@@ -2671,7 +2682,32 @@ class FastInterpreter {
           return some;
         }
         if (callee == "copy" && args.size() == 1) {
-          if (root_ingress_argument_preparation_)
+          bool exact_root_ingress_copy = false;
+          if (root_ingress_argument_preparation_ &&
+              active_root_ingress_copy_authority_ &&
+              active_expression_tree_ && active_statement_) {
+            const auto& authority = *active_root_ingress_copy_authority_;
+            const auto& tree = *active_expression_tree_;
+            const auto* message = authority.arena_index == tree.arena_index &&
+                    authority.arena_index < program_.expression_arenas.size() &&
+                    program_.expression_arenas[authority.arena_index] &&
+                    program_.expression_arenas[authority.arena_index].get() ==
+                        tree.arena &&
+                    authority.message_expression < tree.arena->size()
+                ? std::get_if<est::Message>(
+                    &tree.arena->at(authority.message_expression))
+                : nullptr;
+            exact_root_ingress_copy =
+                authority.statement_occurrence_id ==
+                    active_statement_->checked_statement_occurrence_id &&
+                authority.owner_expression == tree.root &&
+                authority.copy_expression == active_expression_node_ &&
+                message && authority.argument_index < message->arguments.size() &&
+                est::unparenthesized(*tree.arena,
+                    message->arguments[authority.argument_index]) ==
+                    authority.copy_expression;
+          }
+          if (exact_root_ingress_copy)
             ++root_ingress_explicit_copy_evaluations_;
           Value val = evaluate_call_argument(0);
           struct ExplicitCopyEvaluationScope {
