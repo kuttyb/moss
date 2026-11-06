@@ -84,7 +84,7 @@ audits the exact sidecar. The Team C-root invocation now passes with ten marked
 runtime sites, one checked explicit copy, and three runtime direct clones left
 unclassified/unauthorized. The exact L7-root invocation also passes; no source
 or oracle expectation was changed. Independent review of the Team C test change
-is pending.
+returned **GO** on exact Team C commit `bbe0c6bd8ba5ce598463159e5794f342ea34f7b9`, covering the report, result/inventory evidence, unchanged v1/v2 expectations and mappings, targeted gates, and root-normalization reproduction. This review approves the evidence and test change; the conformance result remains **NO-GO** because 41 fixtures are provenance-only failures.
 
 ## Reproduction commands
 
