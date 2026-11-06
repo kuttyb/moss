@@ -1050,6 +1050,7 @@ class Generator {
   mutable const TypedCopyFactV1* root_ingress_copy_fact_ = nullptr;
   struct RootIngressMessageOccurrence {
     std::uint32_t arena_index{UINT32_MAX};
+    est::ExprId owner_expression{UINT32_MAX};
     est::ExprId message_expression{UINT32_MAX};
     est::ExprId receiver_expression{UINT32_MAX};
     std::uint64_t source_fingerprint{0};
@@ -1943,7 +1944,8 @@ class Generator {
           argument = est::unparenthesized(arena, argument);
         queue.messages.push_back({
             RootIngressMessageOccurrence{
-                expression.arena_index, id, message->target,
+                expression.arena_index, expression.expression, id,
+                message->target,
                 expression.source_fingerprint, expression.origin_id,
                 std::move(arguments)},
             expression.source.substr(span.source_begin,
@@ -2021,6 +2023,22 @@ class Generator {
     return occurrence;
   }
 
+  std::size_t root_ingress_owner_handle_count(
+      const Program& checked_program, const Stmt& statement,
+      const RootIngressMessageOccurrence& occurrence,
+      est::ExprId owner_expression) const {
+    return std::count_if(statement.expression_handles.begin(),
+        statement.expression_handles.end(), [&](const est::Handle& handle) {
+          return handle.arena_index == occurrence.arena_index &&
+              handle.expr == owner_expression &&
+              handle.source_fingerprint == occurrence.source_fingerprint &&
+              handle.origin_id == occurrence.origin_id &&
+              handle.arena_index < checked_program.expression_arenas.size() &&
+              checked_program.expression_arenas[handle.arena_index] &&
+              handle.expr < checked_program.expression_arenas[handle.arena_index]->size();
+        });
+  }
+
   const TypedCopyFactV1* resolve_root_ingress_copy_fact(
       const RootIngressMessageOccurrence& occurrence,
       std::uint32_t argument_index) const {
@@ -2040,24 +2058,18 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress copy EST occurrence unavailable");
     if (occurrence.message_expression >= arena.size() ||
-        occurrence.source_fingerprint == 0)
+        occurrence.source_fingerprint == 0 ||
+        occurrence.owner_expression >= arena.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress copy message identity unavailable");
-    const auto exact_statement_handle = std::count_if(
-        statement->expression_handles.begin(), statement->expression_handles.end(),
-        [&](const est::Handle& handle) {
-          if (handle.arena_index != occurrence.arena_index ||
-              handle.source_fingerprint != occurrence.source_fingerprint ||
-              handle.arena_index >= checked_program.expression_arenas.size() ||
-              !checked_program.expression_arenas[handle.arena_index])
-            return false;
-          const auto& handle_arena =
-              *checked_program.expression_arenas[handle.arena_index];
-          return handle.expr < handle_arena.size() &&
-              est::unparenthesized(handle_arena, handle.expr) ==
-                  occurrence.message_expression;
-        });
-    if (exact_statement_handle != 1)
+    est::ExprId owner_expression = occurrence.owner_expression;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv(
+            "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_OWNER"))
+      ++owner_expression;
+#endif
+    if (root_ingress_owner_handle_count(checked_program, *statement,
+                                        occurrence, owner_expression) != 1)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress copy lacks its exact statement source handle");
     const auto* message = std::get_if<est::Message>(
@@ -2135,6 +2147,11 @@ class Generator {
         !checked_program.expression_arenas[occurrence.arena_index])
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress payload query identity unavailable");
+    if (root_ingress_owner_handle_count(checked_program, *statement,
+                                        occurrence,
+                                        occurrence.owner_expression) != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress payload owner handle missing or ambiguous");
     const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
     const auto argument_id = est::unparenthesized(
         arena, occurrence.argument_expressions[argument_index]);
@@ -2239,6 +2256,11 @@ class Generator {
         !checked_program.expression_arenas[occurrence.arena_index])
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress capture query identity unavailable");
+    if (root_ingress_owner_handle_count(checked_program, *statement,
+                                        occurrence,
+                                        occurrence.owner_expression) != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture owner handle missing or ambiguous");
     const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
     if (occurrence.message_expression >= arena.size() ||
         occurrence.receiver_expression >= arena.size())

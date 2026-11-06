@@ -316,8 +316,18 @@
     if (context != "main")
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT Root-ingress argument context is not main");
+    est::ExprId exact_message_expression = message_expression;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_NESTED_EXPR_ID") &&
+        tree.root != exact_message_expression)
+      ++exact_message_expression;
+#endif
+    if (exact_message_expression >= tree.arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress message ExprId is unavailable");
     const auto* checked_message = std::get_if<est::Message>(
-        &tree.arena->at(message_expression));
+        &tree.arena->at(exact_message_expression));
     if (!checked_message || checked_message->handler != message_node.handler ||
         checked_message->target != message_node.target ||
         argument_index >= checked_message->arguments.size())
@@ -326,12 +336,17 @@
     const auto argument_expression = est::unparenthesized(
         *tree.arena, checked_message->arguments[argument_index]);
 
+    est::ExprId owner_expression = tree.root;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_OWNER"))
+      ++owner_expression;
+#endif
     const est::Handle* message_handle = nullptr;
     std::size_t matching_handles = 0;
     for (const auto& handle : statement->expression_handles) {
       if (handle.arena_index != tree.arena_index ||
           handle.source_fingerprint == 0 || handle.expr >= tree.arena->size() ||
-          est::unparenthesized(*tree.arena, handle.expr) != message_expression)
+          handle.expr != owner_expression)
         continue;
       message_handle = &handle;
       ++matching_handles;
@@ -351,8 +366,9 @@
       if (candidate.statement_occurrence_id ==
               statement->checked_statement_occurrence_id &&
           candidate.est_arena_index == tree.arena_index &&
-          candidate.message_expression_occurrence_id == message_expression &&
+          candidate.message_expression_occurrence_id == exact_message_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&
+          candidate.origin_id == message_handle->origin_id &&
           candidate.specialization_context == context) {
         capture_requirement = &candidate;
         ++capture_requirement_count;
@@ -369,7 +385,8 @@
           "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
     }
     if (!capture || capture->selected_handler_identity != handler_identity ||
-        capture->source_fingerprint != message_handle->source_fingerprint)
+        capture->source_fingerprint != message_handle->source_fingerprint ||
+        capture->origin_id != message_handle->origin_id)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT Root-ingress checked handler identity mismatch");
 
@@ -419,7 +436,7 @@
       if (candidate.statement_occurrence_id ==
               statement->checked_statement_occurrence_id &&
           candidate.est_arena_index == tree.arena_index &&
-          candidate.message_expression_occurrence_id == message_expression &&
+          candidate.message_expression_occurrence_id == exact_message_expression &&
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&

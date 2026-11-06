@@ -18181,8 +18181,9 @@ untouched.
 
 - Isolated worktree/branch: `tmp/phase28-r7-010-root-message-occurrence` /
   `phase28-r7-010-root-message-occurrence`, based on exact source SHA
-  `8d2de3301e5f2dafef079439b0143a7b6675213e`. The vertical staging worktree was
-  not modified. Candidate commit is pending freeze; no integration or push.
+  `8d2de3301e5f2dafef079439b0143a7b6675213e`. Initial candidate `80028dbf`
+  froze this slice; Team C later returned NO-GO on a nested parent/child span
+  case. The vertical staging worktree was not modified; no integration or push.
 - Root cause: checker capture collection and synchronous message-edge retention
   covered only a handle whose root itself was `est::Message`. Native lowering
   also lacked exact occurrence threading for nested messages and omitted
@@ -18208,6 +18209,10 @@ untouched.
 
 ### Nested Root-ingress Message argument follow-up — new candidate
 
+- Candidate `e471c0be5fba4b164ee41bb38fd3d5991ecb665e` followed `80028dbf` and
+  fixed the Team C span-order finding. It passed the two-level focused cases,
+  but Agent 2 later found a three-level owner-handle defect, so `e471c0be` is
+  not approved for integration.
 - Team C returned NO-GO on `80028dbf27101f2e4017107450f08b3fc469ba7c`: accepted
   `message worker.Accept(message worker.Fetch())` had a child Message source
   span contained by its parent, and Native's prior span-overlap check rejected
@@ -18223,3 +18228,25 @@ untouched.
   scenarios Default and Shadow; feedback validation and `git diff --check`.
   Full suites/oracle were not run. New exact-SHA Team C and Agent 2 reviews are
   pending; do not integrate or push.
+
+### Three-level Root-ingress owner-handle follow-up — new candidate
+
+- This candidate is based on exact frozen SHA
+  `e471c0be5fba4b164ee41bb38fd3d5991ecb665e`; it preserves both `80028dbf` and
+  `e471c0be` in branch history and does not alter their review reports.
+- Agent 2 found that checker-accepted `message worker.Accept(message
+  worker.Accept(message worker.Fetch()))` failed in both consumers because each
+  compared the nested Message ExprId to the owning statement handle root.
+- Native now transports `owner_expression` separately from each nested Message
+  ExprId and validates the exact owner handle using arena, fingerprint, and
+  origin for capture, copy, and payload authority. Fast Debug uses the active
+  `ExpressionTreeView.root` as the owner and resolves facts using the nested
+  Message ExprId. No source text selects semantic authority; no copy fallback
+  was added.
+- The three-level fixture passes checker, Fast Debug, and Native output parity
+  (`7`) in Default and EST-shadow. Native and interpreter wrong-owner and
+  nested-ExprId perturbations fail closed. Exact results on this candidate:
+  Phase 28 capture-authority 312 scenarios in each mode; Phase 21 nested-ingress
+  gates pass in both modes; feedback and diff validation pass. Full suites and
+  oracle were not run. This candidate is not integrated or pushed; fresh Team C
+  and Agent 2 exact-SHA review is pending.

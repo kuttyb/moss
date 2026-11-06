@@ -19,6 +19,7 @@ FIXTURES = [
     ("tests/tooling/fixtures/phase21_root_nested_ingress.moss", 5),
     ("tests/tooling/fixtures/phase28_root_repeated_nested_messages.moss", 2),
     ("tests/tooling/fixtures/phase28_root_nested_message_arguments.moss", 2),
+    ("tests/tooling/fixtures/phase28_root_depth2_message_arguments.moss", 3),
 ]
 ALIAS_REJECTED = "tests/tooling/fixtures/phase28_root_domain_handle_alias_rejected.moss"
 UNKNOWN_HANDLER = "tests/tooling/fixtures/phase28_root_unknown_handler.moss"
@@ -43,6 +44,8 @@ def nested_native_consumer_cases():
         ("tests/tooling/fixtures/phase28_root_repeated_nested_messages.moss",
          "14\n"),
         ("tests/tooling/fixtures/phase28_root_nested_message_arguments.moss",
+         "7\n"),
+        ("tests/tooling/fixtures/phase28_root_depth2_message_arguments.moss",
          "7\n"),
     )
     count = 0
@@ -78,7 +81,8 @@ def nested_native_consumer_cases():
                     executed.stderr == ""), (source, mode, executed.stdout,
                                                executed.stderr)
                 count += 1
-                if source.endswith("phase28_root_nested_message_arguments.moss"):
+                if source.endswith(("phase28_root_nested_message_arguments.moss",
+                                    "phase28_root_depth2_message_arguments.moss")):
                     debug = subprocess.run(
                         [COMPILER, "run", "--interp", source], cwd=ROOT,
                         env=env, text=True, stdout=subprocess.PIPE,
@@ -141,6 +145,36 @@ def nested_native_consumer_cases():
                             source, mode, "nested-expr-id", result.stdout,
                             result.stderr)
                     count += 1
+                if source.endswith("phase28_root_depth2_message_arguments.moss"):
+                    for hook, command, expected_error in (
+                        ("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_COPY_OWNER",
+                         [COMPILER, source, "-O0", "-o", str(output)],
+                         "copy lacks its exact statement source handle"),
+                        ("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_NESTED_MESSAGE_EXPR_ID",
+                         [COMPILER, source, "-O0", "-o", str(output)],
+                         "Root-ingress"),
+                        ("MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_OWNER",
+                         [COMPILER, "run", "--interp", source],
+                         "statement/message handle missing or ambiguous"),
+                        ("MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_NESTED_EXPR_ID",
+                         [COMPILER, "run", "--interp", source],
+                         "Root-ingress"),
+                    ):
+                        env = os.environ.copy()
+                        for key in list(env):
+                            if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+                                env.pop(key)
+                        if mode == "shadow":
+                            env["MOSS_EST"] = "shadow"
+                        env[hook] = "1"
+                        result = subprocess.run(
+                            command, cwd=ROOT, env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            check=False)
+                        assert result.returncode != 0 and (
+                            expected_error in result.stdout + result.stderr), (
+                                source, mode, hook, result.stdout, result.stderr)
+                        count += 1
     return count
 
 

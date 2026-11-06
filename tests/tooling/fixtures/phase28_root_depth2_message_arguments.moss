@@ -1,0 +1,13 @@
+domain Worker:
+  fn Fetch() -> Int:
+    reply 7
+
+  fn Accept(value: Int) -> Int:
+    reply value
+
+  fn Wrap(value: Int) -> Int:
+    reply value
+
+fn main():
+  worker = Worker()
+  echo message worker.Wrap(message worker.Accept(message worker.Fetch()))
