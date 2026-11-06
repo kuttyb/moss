@@ -2065,9 +2065,12 @@ class Checker {
           ++conditional_operation_counts.at(static_cast<std::size_t>(fact.operation));
         for (const auto& fact : p_.typed_semantics->return_value_facts)
           if (fact.expression_type && fact.expression_type->is_closed()) {
-            return_specialization_identities.insert(fact.specialization_identity);
-            return_specialization_types.insert(
-                fact.expression_type->to_canonical_string());
+            if (!fact.specialization_identity.empty()) {
+              return_specialization_identities.insert(
+                  fact.specialization_identity);
+              return_specialization_types.insert(
+                  fact.expression_type->to_canonical_string());
+            }
             std::cerr << "PHASE28_RETURN_FACT type="
                       << fact.expression_type->to_canonical_string()
                       << " specialization=" << fact.specialization_identity
