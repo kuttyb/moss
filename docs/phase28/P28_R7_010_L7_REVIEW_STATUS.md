@@ -62,9 +62,12 @@ distinct Moss-copy counts. Full Default/Shadow suite comparison and the broader
 qualified Arc clone inventory remain pending. No runtime clone exception is
 authorized.
 
-Team C's candidate Default job matrix on the same intake has 97/168 PASS,
-70 FAIL, 1 SKIP. The exact baseline and candidate Shadow matrices remain in
-progress; no paired suite verdict is claimed yet.
+Team C's corrected candidate Default and EST-shadow job matrices on the same
+intake each have 97/167 PASS, 69 FAIL, 1 SKIP; Default retains the sole
+baseline failure and adds 68 failing job IDs plus one dependent skip. The
+candidate Shadow failure set is similarly broad. The exact baseline Shadow
+matrix and failure-ID comparison remain in progress; these candidate results
+are not GO.
 
 On `1990dd82`, a fresh focused take harness is 17/18; only `take_map_field`
 fails closed for missing bounded, nonescaping Map-view authority. The checker
