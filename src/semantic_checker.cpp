@@ -2078,6 +2078,8 @@ class Checker {
           indexed_expression_read_facts_;
       p_.typed_semantics->required_indexed_expression_read_occurrences =
           required_indexed_expression_read_occurrences_;
+      p_.typed_semantics->checker_required_indexed_expression_read_occurrence_count =
+          required_indexed_expression_read_occurrences_.size();
 #ifdef MOSS_TEST_BUILD
       auto& indexed_read_facts =
           p_.typed_semantics->indexed_expression_read_facts;
@@ -29168,11 +29170,6 @@ class Checker {
         const auto receiver_type = receiver
             ? inferred_expr_term(receiver->name, env.types) : nullptr;
         const auto occurrence_span = arena->span(id);
-        const auto receiver_source = occurrence_span.source_begin <= occurrence_span.source_end &&
-                occurrence_span.source_end <= statement.a.size()
-            ? statement.a.substr(occurrence_span.source_begin,
-                occurrence_span.source_end - occurrence_span.source_begin)
-            : string();
         const auto selector_span = arena->span(index->index);
         const auto selector_source = selector_span.source_begin <= selector_span.source_end &&
                 selector_span.source_end <= statement.a.size()
@@ -29180,12 +29177,15 @@ class Checker {
                 selector_span.source_end - selector_span.source_begin)
             : string();
         const auto selector_type = inferred_expr_term(selector_source, env.types);
-        const auto result_type = inferred_expr_term(receiver_source, env.types);
+        const auto result_type = receiver_type &&
+                receiver_type->kind == TypeKind::Builtin &&
+                receiver_type->name == "vector" &&
+                receiver_type->type_args.size() == 1
+            ? receiver_type->type_args.front() : nullptr;
         if (!receiver || !receiver_type || !selector_type || !result_type ||
             receiver_type->kind != TypeKind::Builtin ||
             receiver_type->name != "vector" ||
-            receiver_type->type_args.size() != 1 ||
-            copy_type(receiver_type->type_args.front())) {
+            receiver_type->type_args.size() != 1) {
           auto children = syntax_children(*arena, id);
           pending.insert(pending.end(), children.begin(), children.end());
           continue;
@@ -29219,8 +29219,17 @@ class Checker {
         fact.selector_type = selector_type;
         fact.result_type = result_type;
         fact.required_access = Effect::Read;
-        fact.temporary_nonescaping_borrow = true;
-        fact.permits_copy = false;
+        if (copy_type(result_type)) {
+          fact.disposition =
+              TypedIndexedExpressionReadFactV1::ReadDisposition::PrimitiveValue;
+          fact.temporary_nonescaping_borrow = false;
+          fact.permits_copy = true;
+        } else {
+          fact.disposition =
+              TypedIndexedExpressionReadFactV1::ReadDisposition::BorrowedNonprimitive;
+          fact.temporary_nonescaping_borrow = true;
+          fact.permits_copy = false;
+        }
         fact.specialization_identity = specialization;
         fact.specialization_context = consumer_context;
         fact.est_fact_context = fact_context;

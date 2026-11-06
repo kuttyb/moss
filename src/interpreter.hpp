@@ -626,6 +626,12 @@ class FastInterpreter {
     frame.source_file = program_.main->source_file;
     frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_REQUIRE_INDEXED_EXPRESSION_READ_BORROW") &&
+        fast_debug_borrowed_indexed_read_count_ == 0)
+      throw RuntimeError(0,
+          "MOSS_INTERNAL_INVARIANT no checker-authorized indexed READ borrow was observed");
+#endif
   }
 
   struct TestResult {
@@ -956,6 +962,7 @@ class FastInterpreter {
   std::size_t root_ingress_implicit_independent_calls_ = 0;
   std::size_t root_ingress_explicit_copy_evaluations_ = 0;
   std::size_t root_ingress_explicit_independent_calls_ = 0;
+  std::size_t fast_debug_borrowed_indexed_read_count_ = 0;
   const RaiseSet* active_checked_exceptional_alternatives_ = nullptr;
   Options options_;
   std::vector<TraceEvent> trace_;
@@ -1312,6 +1319,11 @@ class FastInterpreter {
       }
     }
     if (const auto* index = std::get_if<est::Index>(&value)) {
+      if (active_statement_ &&
+          (active_statement_->kind == Stmt::Kind::If ||
+           active_statement_->kind == Stmt::Kind::While))
+        (void)resolve_indexed_expression_read_fact(
+            *active_statement_, tree, node, frame, line);
       Place place = locate_tree_node(tree, index->base, frame, line, output,
                                      conditional_error);
       if (!place.value) return {};
@@ -2341,6 +2353,33 @@ class FastInterpreter {
         place.value) {
       if (place.domain) state_event("state_read", frame, line, place);
       else emit("LocalRead", frame, line, e);
+      if (const auto* index = std::get_if<est::Index>(
+              &tree->arena->at(current_root));
+          index && active_statement_ &&
+          (active_statement_->kind == Stmt::Kind::If ||
+           active_statement_->kind == Stmt::Kind::While)) {
+        if (const auto* fact = resolve_indexed_expression_read_fact(
+                *active_statement_, *tree, current_root, frame, line)) {
+          if (fact->disposition ==
+              TypedIndexedExpressionReadFactV1::ReadDisposition::PrimitiveValue)
+            return *place.value;
+          ++fast_debug_borrowed_indexed_read_count_;
+          Value receiver = evaluate_tree_node(*tree, index->base, frame,
+                                              line, output);
+          Value selector = evaluate_tree_node(*tree, index->index, frame,
+                                              line, output);
+          if (receiver.kind != Value::Kind::Vector || !receiver.vector ||
+              selector.kind != Value::Kind::Int || selector.integer < 0 ||
+              static_cast<std::uint64_t>(selector.integer) >=
+                  receiver.vector->size() ||
+              &receiver.vector->at(static_cast<std::size_t>(selector.integer)) !=
+                  place.value)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT indexed READ place contradicts checked authority");
+          return Value::borrowed_element_value(
+              receiver.vector, static_cast<std::size_t>(selector.integer));
+        }
+      }
       return *place.value;
     }
     {
@@ -3381,6 +3420,18 @@ class FastInterpreter {
   }
 
   static bool equal(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::BorrowedElement) {
+      if (!left.borrowed_elements ||
+          left.borrowed_element_index >= left.borrowed_elements->size())
+        return false;
+      return equal(left.borrowed_elements->at(left.borrowed_element_index), right);
+    }
+    if (right.kind == Value::Kind::BorrowedElement) {
+      if (!right.borrowed_elements ||
+          right.borrowed_element_index >= right.borrowed_elements->size())
+        return false;
+      return equal(left, right.borrowed_elements->at(right.borrowed_element_index));
+    }
     if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Float)
       return static_cast<double>(left.integer) == right.floating;
     if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Int)
@@ -4828,6 +4879,155 @@ class FastInterpreter {
       return fact;
     } catch (const RuntimeError&) {
       throw;
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+  }
+
+  const TypedIndexedExpressionReadFactV1*
+  resolve_indexed_expression_read_fact(const Stmt& statement,
+      const ExpressionTreeView& tree, est::ExprId index_id, Frame& frame,
+      int line) {
+    if (!program_.typed_semantics ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT indexed expression-read context unavailable");
+    if (program_.typed_semantics->indexed_expression_read_facts.size() !=
+            program_.typed_semantics->checker_required_indexed_expression_read_occurrence_count ||
+        program_.typed_semantics->required_indexed_expression_read_occurrences.size() !=
+            program_.typed_semantics->checker_required_indexed_expression_read_occurrence_count)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checker indexed expression-read authority was dropped or duplicated");
+    const est::Handle* condition = nullptr;
+    for (const auto& handle : statement.expression_handles)
+      if (handle.slot == est::ExprSlot::Condition &&
+          handle.argument_index == 0) {
+        if (condition) throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT duplicate indexed READ condition handle");
+        condition = &handle;
+      }
+    if (!condition || condition->arena_index != tree.arena_index ||
+        condition->expr != tree.root)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT indexed READ condition handle mismatch");
+    const auto* index = index_id < tree.arena->size()
+        ? std::get_if<est::Index>(&tree.arena->at(index_id)) : nullptr;
+    if (!index) throw RuntimeError(line,
+        "MOSS_INTERNAL_INVARIANT indexed READ ExprId is invalid");
+    const auto context = frame.functional_context.empty()
+        ? std::string("main") : frame.functional_context;
+    const auto specialization = frame.specialization_key;
+    const TypedIndexedExpressionReadRequirementV1* requirement = nullptr;
+    std::size_t requirement_count = 0;
+    for (const auto& candidate :
+         program_.typed_semantics->required_indexed_expression_read_occurrences)
+      if (candidate.est_arena_index == tree.arena_index &&
+          candidate.index_expression_occurrence_id == index_id &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.statement_slot == est::ExprSlot::Condition &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    std::size_t fact_count = 0;
+    for (const auto& candidate :
+         program_.typed_semantics->indexed_expression_read_facts)
+      if (candidate.est_arena_index == tree.arena_index &&
+          candidate.index_expression_occurrence_id == index_id &&
+          candidate.statement_occurrence_id ==
+              statement.checked_statement_occurrence_id &&
+          candidate.specialization_context == context &&
+          candidate.specialization_identity == specialization)
+        ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_AUTHORITY")) {
+      auto& requirements = program_.typed_semantics
+          ->required_indexed_expression_read_occurrences;
+      auto& facts = program_.typed_semantics->indexed_expression_read_facts;
+      requirements.erase(std::remove_if(requirements.begin(), requirements.end(),
+          [&](const auto& row) {
+            return row.statement_occurrence_id == statement.checked_statement_occurrence_id &&
+                row.index_expression_occurrence_id == index_id &&
+                row.specialization_context == context &&
+                row.specialization_identity == specialization;
+          }), requirements.end());
+      facts.erase(std::remove_if(facts.begin(), facts.end(), [&](const auto& row) {
+        return row.statement_occurrence_id == statement.checked_statement_occurrence_id &&
+            row.index_expression_occurrence_id == index_id &&
+            row.specialization_context == context &&
+            row.specialization_identity == specialization;
+      }), facts.end());
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checker indexed expression-read authority was dropped");
+    }
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT"))
+      requirement_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_FACT"))
+      ++fact_count;
+#endif
+    if (requirement_count == 0 && fact_count == 0) {
+      std::size_t map_requirements = 0;
+      std::size_t map_facts = 0;
+      for (const auto& candidate : program_.typed_semantics
+               ->required_conditional_collection_error_occurrences)
+        if (candidate.operation ==
+                TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead &&
+            candidate.est_arena_index == tree.arena_index &&
+            candidate.operation_expression_occurrence_id == index_id &&
+            candidate.statement_occurrence_id ==
+                statement.checked_statement_occurrence_id &&
+            candidate.specialization_context == context &&
+            candidate.specialization_identity == specialization)
+          ++map_requirements;
+      for (const auto& candidate : program_.typed_semantics
+               ->conditional_collection_error_facts)
+        if (candidate.operation ==
+                TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead &&
+            candidate.est_arena_index == tree.arena_index &&
+            candidate.operation_expression_occurrence_id == index_id &&
+            candidate.statement_occurrence_id ==
+                statement.checked_statement_occurrence_id &&
+            candidate.specialization_context == context &&
+            candidate.specialization_identity == specialization)
+          ++map_facts;
+      if (map_requirements == 1 && map_facts == 1) return nullptr;
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT conditional indexed READ lacks checker classification");
+    }
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT indexed expression-read requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_FACT") ||
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT"))
+        throw std::invalid_argument("perturbed indexed expression-read authority rejected");
+#endif
+      const auto& fact = program_.typed_semantics->find_indexed_expression_read_fact(
+          *requirement);
+      if (fact.index_expression_occurrence_id != index_id ||
+          fact.receiver_expression_occurrence_id != index->base ||
+          fact.selector_expression_occurrence_id != index->index ||
+          fact.required_access != Effect::Read ||
+          (fact.disposition == TypedIndexedExpressionReadFactV1::ReadDisposition::BorrowedNonprimitive &&
+           (fact.permits_copy || !fact.temporary_nonescaping_borrow)) ||
+          (fact.disposition == TypedIndexedExpressionReadFactV1::ReadDisposition::PrimitiveValue &&
+           (!fact.permits_copy || fact.temporary_nonescaping_borrow)) ||
+          fact.specialization_context != context ||
+          fact.specialization_identity != specialization)
+        throw std::invalid_argument(
+            "indexed expression-read authority does not match exact checked occurrence");
+      if (fact.disposition ==
+          TypedIndexedExpressionReadFactV1::ReadDisposition::BorrowedNonprimitive)
+        ++fast_debug_borrowed_indexed_read_count_;
+      return &fact;
     } catch (const std::exception& error) {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));

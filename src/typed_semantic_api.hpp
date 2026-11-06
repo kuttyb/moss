@@ -1205,11 +1205,12 @@ struct TypedIndexedCallArgumentReadFactV1 {
 struct TypedIndexedCallArgumentReadRequirementV1
     : TypedIndexedCallArgumentReadFactV1 {};
 
-// Checker proof that one exact nonprimitive Vector[index] expression is read
-// as part of a synchronous expression (for example, a conditional). This is
-// a bounded read of the indexed place; it never authorizes a value copy.
+// Checker classification for one exact Vector[index] occurrence in a
+// conditional. Nonprimitive elements use a bounded borrowed read; primitive
+// elements retain their permitted scalar value behavior.
 struct TypedIndexedExpressionReadFactV1 {
   enum class Availability { Present, Contradictory };
+  enum class ReadDisposition { BorrowedNonprimitive, PrimitiveValue };
   Availability availability{Availability::Contradictory};
   std::uint32_t est_arena_index{UINT32_MAX};
   est::ExprId index_expression_occurrence_id{UINT32_MAX};
@@ -1224,6 +1225,7 @@ struct TypedIndexedExpressionReadFactV1 {
   TypeRef selector_type;
   TypeRef result_type;
   Effect required_access{Effect::Read};
+  ReadDisposition disposition{ReadDisposition::BorrowedNonprimitive};
   bool temporary_nonescaping_borrow{false};
   bool permits_copy{false};
   std::string specialization_identity;
@@ -1235,6 +1237,13 @@ struct TypedIndexedExpressionReadFactV1 {
     const auto same_type = [](const TypeRef& left, const TypeRef& right) {
       return left && right && left->structurally_equal(*right);
     };
+    const bool primitive_value = result_type &&
+        copy_type_name(result_type->to_canonical_string());
+    const bool disposition_matches = primitive_value
+        ? disposition == ReadDisposition::PrimitiveValue && permits_copy &&
+              !temporary_nonescaping_borrow
+        : disposition == ReadDisposition::BorrowedNonprimitive && !permits_copy &&
+              temporary_nonescaping_borrow;
     return availability == Availability::Present &&
         est_arena_index != UINT32_MAX &&
         index_expression_occurrence_id != UINT32_MAX &&
@@ -1250,8 +1259,7 @@ struct TypedIndexedExpressionReadFactV1 {
         selector_type->kind == TypeKind::Primitive && selector_type->name == "int" &&
         result_type && result_type->is_closed() &&
         same_type(receiver_type->type_args.front(), result_type) &&
-        required_access == Effect::Read && temporary_nonescaping_borrow &&
-        !permits_copy && !specialization_identity.empty() &&
+        required_access == Effect::Read && disposition_matches &&
         !specialization_context.empty() &&
         !est_fact_context.empty() && !provenance.source_file.empty() &&
         provenance.line > 0 && !provenance.enclosing_callable_id.empty() &&
@@ -1888,6 +1896,7 @@ struct TypedSemanticModuleV1 {
       indexed_expression_read_facts;
   std::vector<TypedIndexedExpressionReadRequirementV1>
       required_indexed_expression_read_occurrences;
+  std::size_t checker_required_indexed_expression_read_occurrence_count{0};
   std::vector<TypedMatchOwnershipFactV1> match_ownership_facts;
   std::vector<TypedMatchOwnershipRequirementV1> required_match_occurrences;
   std::vector<TypedEchoArgumentFactV1> echo_argument_facts;
@@ -3300,6 +3309,10 @@ struct TypedSemanticModuleV1 {
         required_indexed_expression_read_occurrences.size())
       throw std::invalid_argument(
           "indexed expression-read fact/requirement set is incomplete");
+    if (indexed_expression_read_facts.size() !=
+        checker_required_indexed_expression_read_occurrence_count)
+      throw std::invalid_argument(
+          "checker indexed expression-read occurrence was dropped");
     for (const auto& requirement : required_indexed_expression_read_occurrences)
       (void)find_indexed_expression_read_fact(requirement);
   }
@@ -3357,6 +3370,7 @@ struct TypedSemanticModuleV1 {
         !same_type(fact->selector_type, requirement.selector_type) ||
         !same_type(fact->result_type, requirement.result_type) ||
         fact->required_access != requirement.required_access ||
+        fact->disposition != requirement.disposition ||
         fact->temporary_nonescaping_borrow !=
             requirement.temporary_nonescaping_borrow ||
         fact->permits_copy != requirement.permits_copy ||

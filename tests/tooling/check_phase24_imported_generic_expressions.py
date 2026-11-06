@@ -72,6 +72,27 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
             raise AssertionError(f"margo {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}")
         if args[0] in ("run", "debug") and result.stdout != "-1\n7\n3\n1\n1\n":
             raise AssertionError(f"margo {' '.join(args)}: {result.stdout!r}")
+    borrowed_debug = subprocess.run(
+        [str(MARGO), "debug"], cwd=consumer,
+        env=env | {"MOSS_TEST_REQUIRE_INDEXED_EXPRESSION_READ_BORROW": "1"},
+        capture_output=True, text=True)
+    if borrowed_debug.returncode or borrowed_debug.stdout != "-1\n7\n3\n1\n1\n":
+        raise AssertionError(
+            "Fast Debug did not preserve imported indexed READs as checked borrows:\n"
+            f"{borrowed_debug.stdout}\n{borrowed_debug.stderr}")
+    for hook in (() if os.environ.get("MOSS_SKIP_TEST_HOOKS") == "1" else (
+        "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_AUTHORITY",
+        "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_FACT",
+        "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_FACT",
+    )):
+        result = subprocess.run([str(MARGO), "debug"], cwd=consumer,
+                                env=env | {hook: "1"}, capture_output=True, text=True)
+        if result.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in result.stderr:
+            raise AssertionError(f"Fast Debug {hook} did not fail closed:\n{result.stdout}\n{result.stderr}")
 
     # Rebuild the same consumer against the selected compiled provider only.
     source_free = work / "source_free"
