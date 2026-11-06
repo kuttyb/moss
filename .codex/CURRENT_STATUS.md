@@ -2,6 +2,7 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, pushed HEAD
+  `4d937844734de5000f99a65a079aec98eedf752b`; integrated implementation SHA
   `3417bedcd523dbeff187014de18d4a699ab53b10`. It integrates Team A's checker
   fact and Team B's projected-member and bare-index consumers, with all
   relevant gates registered in Default and EST-shadow. No merge to
@@ -55,8 +56,19 @@
   disagreements, zero infrastructure failures**. The inventory records 252
   direct `.clone()` observations in 84 artifacts and 1,876 duplication
   candidates/36 groups; 252 is not a count of confirmed Moss-level copies.
-  Frozen v2 expectation, mapping, and certification hashes match. Per-fixture
-  deltas and the refreshed source-site report are in progress.
+  Frozen v2 expectation, mapping, and certification hashes match. Team C's
+  corrected report/delta branch is
+  `phase28-r7-010-team-c-combined-conformance` at
+  `282bc2b7cba77ce03efd789c579423f2f4e543c7`; Agent 2 returned scoped GO. It
+  accurately separates identical fixture verdicts from timing and
+  worktree-path-derived raw metadata differences. The normalized runtime gate
+  passes; the raw-path artifact hash check failure is documented separately.
+- Team B's exact-source clone audit on `3417bedc` maps the 252 direct runtime
+  rows to three `executor_runtime.cpp` emitter sites and 588 `Arc::clone` rows
+  to seven runtime handle sites. None has current registry approval or a
+  checked Moss-copy fact; Team B proposes no source edit without evidence of
+  application-value duplication. A durable Team B evidence report and
+  independent review are pending.
 - Current disposition remains NO-GO. Remaining: finalize Team C's per-fixture
   and clone-site report; account for all 41 provenance-only fixtures and every
   duplication site; then compare the full default and
