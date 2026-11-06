@@ -274,6 +274,8 @@ def main() -> int:
         (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_COLLECTION_TYPE"),
         (CASES["projected_read"], "MOSS_TEST_DROP_PROJECTED_PROVENANCE"),
         (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_PROVENANCE"),
+        (CASES["projected_read"], "MOSS_TEST_PERTURB_PROJECTED_MODULE"),
+        (CASES["projected_read"], "MOSS_TEST_CLEAR_PROJECTED_MODULE_BOTH"),
     ):
         expect_closed(source, hook)
     print("Phase 28 oracle authority facts: PASS")

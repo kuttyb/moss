@@ -121,7 +121,7 @@ def main() -> int:
         "source-binding", "source-definition", "target-binding",
         "target-definition", "killed-target-definition", "scope",
         "liveness", "last-use", "rhs-handle", "rhs-span", "rhs-type",
-        "context", "specialization", "provenance", "owned",
+        "context", "specialization", "provenance", "module-provenance", "owned",
     ]
     for field in corruptions:
         require_failure(run(compiler, source, "default", {
@@ -133,6 +133,9 @@ def main() -> int:
     require_failure(run(compiler, source, "default", {
         **common, "MOSS_TEST_DUPLICATE_LOCAL_TRANSFER_FACT": "1",
     }), "duplicate local transfer fact")
+    require_failure(run(compiler, source, "default", {
+        **common, "MOSS_TEST_CLEAR_LOCAL_TRANSFER_MODULE_BOTH": "1",
+    }), "missing local transfer module identity")
     require_failure(run(compiler, source, "shadow", {
         **common, "MOSS_TEST_DROP_LOCAL_TRANSFER_FACT": "1",
     }), "shadow dropped local transfer fact")

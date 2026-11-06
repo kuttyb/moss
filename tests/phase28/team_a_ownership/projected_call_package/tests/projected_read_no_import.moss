@@ -1,0 +1,9 @@
+module projected_read_no_import
+
+export type LocalSpan:
+  text: String
+
+test "no-import test uses its own checked module identity":
+  var spans = Vector[LocalSpan]()
+  spans.push(LocalSpan(text = "z"))
+  assertEqual(spans[0].text, "z")

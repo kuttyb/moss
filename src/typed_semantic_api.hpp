@@ -248,6 +248,7 @@ struct TypedLocalTransferFactV1 {
         source_type->structurally_equal(*target_type) &&
         !specialization_context.empty() && !est_fact_context.empty() &&
         !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
 };
@@ -982,6 +983,7 @@ struct TypedProjectedCollectionReadFactV1 {
         required_access == Effect::Read && temporary_non_escaping_query_borrow &&
         !specialization_context.empty() && !est_fact_context.empty() &&
         !provenance.source_file.empty() && provenance.line > 0 &&
+        !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
 };
