@@ -17554,3 +17554,8 @@ untouched.
   under `build/tests/parallel/`. This result does not meet the 166/167 baseline
   and is not an acceptance pass. The default full suite has not run on this
   tree yet.
+- `make --jobs="$(nproc)" check` was attempted at the same code SHA and stopped
+  during preflight at `tests/phase28/verify_take_fixtures.py`: 17/18 passed;
+  `take_map_field` failed closed because nonprimitive Map view access lacks
+  checked nonescaping CollectionView authority. The Default parallel regression
+  suite did not start, so no Default suite count is available for this SHA.
