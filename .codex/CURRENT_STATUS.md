@@ -17512,14 +17512,14 @@ untouched.
   final Default/Shadow runs and independent final implementation review.
   No runtime clone is authorized.
 
-### R7-010 Team A overload authority review (2026-11-05)
+### Historical R7-010 Team A overload review (before X1 follow-up, 2026-11-05)
 
 - Team A follow-up implementation `3dc803a241c49bbff7c6976fbdb0c749e3aba56d`
   received independent scoped GO for exact overloaded ReturnValue checker
   authority; the reviewer explicitly closed the overloaded-method identity
   defect and isolated Phase 26 C3 `-Werror` requirement. The report is
   `docs/phase28/agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md`.
-- Whole Team A stack remains NO-GO: a fresh isolated build of baseline
+- At this review checkpoint the Team A stack was NO-GO: a fresh isolated build of baseline
   `150ab36b41e45504aaa400aa717da241be7542fb` passes X1, while `735a36c3` and
   `3dc803a2` fail identically at the later check-only Fast Debug ReturnValue
   consumer. The overload fix did not change this stack-level regression.
@@ -17559,12 +17559,23 @@ untouched.
   `take_map_field` failed closed because nonprimitive Map view access lacks
   checked nonescaping CollectionView authority. The Default parallel regression
   suite did not start, so no Default suite count is available for this SHA.
-- A separate vertical X1 follow-up is frozen at
+- Historical pre-review note: a separate vertical X1 follow-up was frozen at
   `46ff31314cc6000e9543a7459e07a19a7119c703` on branch
   `phase28-r7-010-x1-authority`, based on this branch before the follow-up
   source edit (`b2c6198a`). It serializes/imports exact handler and failure-arm
   Reply ReturnValue authority with normalized module provenance. X1, handler
   artifact and Fast Debug/native consumer corruption gates, generated native
   execution (`4\n7\n9\n`), overload authority Default/Shadow, and C3 isolated
-  `-Werror` pass. Independent Agent 2 exact-SHA review is pending. No full suite
-  or oracle has run on this follow-up. It is not integrated into this branch.
+  `-Werror` pass. At this point review was pending and it was not integrated;
+  the subsequent independent review and intake are recorded below.
+- The scoped-GO X1 implementation at `46ff31314cc6000e9543a7459e07a19a7119c703`
+  is now integrated as `1990dd82` on this isolated branch. The combined-tree
+  `make --jobs="$(nproc)" moss` build passes; X1 passes with generated native
+  output `4\n7\n9\n`, handler artifact/consumer corruption cases, and check-only /
+  native-profile parity. Overload authority passes Default and EST-shadow; the
+  isolated C3 `-Werror` gate passes. The exact-SHA independent report is
+  `docs/phase28/agent2-reviews/R7-010-X1-authority-46ff3131.md`.
+- Whole Phase 28 remains NO-GO. No full Default/EST-shadow suite or frozen
+  oracle has run after this source edit, and no runtime clone exception is
+  authorized. The earlier 92/167 shadow and Default preflight results are
+  retained as measurements of pre-X1 code SHA `12b9407c`, not this tree.

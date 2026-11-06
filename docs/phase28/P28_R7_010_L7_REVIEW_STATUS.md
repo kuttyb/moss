@@ -39,6 +39,24 @@ that stack-level regression. Duplicate native Rust method-name lowering is
 also present on the Team A candidate and baseline and is tracked separately.
 None of these scoped results are full-suite or current-staging oracle evidence.
 
+## X1 source-free Reply authority intake (2026-11-05)
+
+The exact-SHA scoped-GO implementation `46ff31314cc6000e9543a7459e07a19a7119c703`
+is integrated on isolated branch `phase28-r7-010-vertical-integration` as
+`1990dd82`. It carries handler and `on_fail` Reply facts through `.mossi`
+Section 2 and exact imported consumers. The combined tree rebuilds; X1 now
+passes, including generated native output `4\n7\n9\n`, artifact and consumer
+corruption cases, and check-only/native-profile parity. The overload authority
+gate passes Default and EST-shadow, and isolated C3 `-Werror` passes. Agent 2's
+review is archived at
+[`agent2-reviews/R7-010-X1-authority-46ff3131.md`](agent2-reviews/R7-010-X1-authority-46ff3131.md).
+
+Whole Phase 28 remains NO-GO. The earlier 92/167 EST-shadow result and the
+Default preflight stop at 17/18 were measured on pre-X1 code SHA `12b9407c`;
+they do not validate `1990dd82`. No full Default/EST-shadow suite, frozen
+oracle, or final clone-provenance audit has run on the integrated tree. No
+runtime clone exception is authorized.
+
 **Branch:** `phase28-r7-010-wip-checkpoint`  
 **Current HEAD:** `06a266385ab25ef35917d0c8bf3e7821c057d91c`  
 **State:** isolated staging; no merge to `phase28-work` or `main`. The HEAD is
