@@ -99,6 +99,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s1_checker_authori
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s3_key_protocol.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adversarial.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_r7_009_primitive_index.py "$compiler"
+env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_return_none_authority.py "$compiler"
+MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_return_none_authority.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_projected_call_argument_read.py "$compiler"
 MOSS_EST=shadow PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_projected_call_argument_read.py "$compiler"
 env -u MOSS_EST PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_indexed_call_argument_read.py "$compiler"

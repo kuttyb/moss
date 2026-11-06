@@ -3032,6 +3032,9 @@ class Checker {
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
+  // Exact declaration currently being ownership-checked. Method names alone
+  // do not distinguish overload bodies.
+  const Method* current_method_ = nullptr;
   // The leaf-effect traversal can enter a method body while retaining the
   // caller's semantic context. Preserve the checked implicit-self owner for
   // nested argument inference without rewriting that context string.
@@ -23946,6 +23949,13 @@ class Checker {
         SourceFileScope semantic_context(
             current_semantic_context_,
             "method:" + object.name + "." + method.name);
+        struct CurrentMethodScope {
+          const Method*& slot;
+          const Method* prior;
+          CurrentMethodScope(const Method*& target, const Method& method)
+              : slot(target), prior(target) { slot = &method; }
+          ~CurrentMethodScope() { slot = prior; }
+        } method_scope(current_method_, method);
         OwnershipEnv ownership;
         ownership.types["self"] = object.name;
         for (const auto& field : object.fields)
@@ -23961,6 +23971,63 @@ class Checker {
       }
       current_object_ = nullptr;
     }
+  }
+
+  struct OverloadedMethodReturnContext {
+    string identity;
+    string selector;
+  };
+
+  std::optional<OverloadedMethodReturnContext>
+  overloaded_method_return_context(const Method& selected, int line) const {
+    if (!current_object_) return std::nullopt;
+    vector<const Method*> overloads;
+    for (const auto& method : current_object_->methods)
+      if (method.name == selected.name) overloads.push_back(&method);
+    if (overloads.size() <= 1) return std::nullopt;
+
+    std::map<string, const Method*> by_signature;
+    string selected_signature;
+    string selected_selector;
+    for (const auto* method : overloads) {
+      string signature = std::to_string(method->params.size()) + ";";
+      string selector = "(";
+      for (size_t index = 0; index < method->params.size(); ++index) {
+        const auto& parameter = method->params[index];
+        TypeRef type = parameter.type_ref;
+        if (!type && !parameter.type.empty()) {
+          auto parsed = moss::Type::parse_canonical(
+              canonical_type_name(parameter.type));
+          if (parsed) type = *parsed;
+        }
+        if (!type || !type->is_closed())
+          err(line,
+              "overloaded method return authority requires closed parameter types",
+              "MOSS_INTERNAL_INVARIANT");
+        const string canonical = type->to_canonical_string();
+        signature += std::to_string(canonical.size()) + ":" + canonical;
+        if (index) selector += ",";
+        selector += canonical;
+      }
+      selector += ")";
+      if (!by_signature.emplace(signature, method).second)
+        err(line, "duplicate canonical method overload signature",
+            "MOSS_INTERNAL_INVARIANT");
+      if (method == &selected) {
+        selected_signature = std::move(signature);
+        selected_selector = std::move(selector);
+      }
+    }
+    if (selected_signature.empty())
+      err(line, "selected method declaration is absent from its overload set",
+          "MOSS_INTERNAL_INVARIANT");
+
+    string encoded = "method-return-v1:" +
+        std::to_string(selected.owner.size()) + ":" + selected.owner +
+        std::to_string(selected.name.size()) + ":" + selected.name +
+        std::to_string(selected_signature.size()) + ":" + selected_signature;
+    return OverloadedMethodReturnContext{std::move(encoded),
+                                         std::move(selected_selector)};
   }
 
   std::optional<size_t> static_payload_size(const string& type,
@@ -30657,31 +30724,31 @@ class Checker {
               checked_return_type = checking_specialization_->return_type_ref
                   ->to_canonical_string();
             }
-            if ((!checked_return_type ||
-                 contains_internal_placeholder(*checked_return_type)) &&
-                unshadowed_none_return &&
+            if (unshadowed_none_return &&
                 starts_with(current_semantic_context_, "method:")) {
-              const string identity = current_semantic_context_.substr(7);
-              const auto separator = identity.find('.');
-              const auto object = separator == string::npos
-                  ? objects_.end() : objects_.find(identity.substr(0, separator));
-              if (object != objects_.end()) {
-                const string method_name = identity.substr(separator + 1);
-                const auto method = std::find_if(
-                    object->second->methods.begin(), object->second->methods.end(),
-                    [&](const Method& candidate) {
-                      return candidate.name == method_name &&
-                          candidate.return_type.has_value();
-                    });
-                if (method != object->second->methods.end()) {
-                  auto declared = moss::Type::parse_canonical(
-                      canonical_type_name(*method->return_type));
-                  if (declared && (*declared)->is_closed()) {
-                    checked_return_type = (*declared)->to_canonical_string();
-                    return_type_from_declared_callable_contract = true;
-                  }
-                }
+              if (!current_method_ || !current_object_ ||
+                  current_method_->owner != current_object_->name ||
+                  current_semantic_context_ !=
+                      "method:" + current_method_->owner + "." +
+                          current_method_->name)
+                err(s.line,
+                    "None return lacks exact checked method declaration identity",
+                    "MOSS_INTERNAL_INVARIANT");
+              TypeRef declared = current_method_->return_type_ref;
+              if (!declared && current_method_->return_type) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(*current_method_->return_type));
+                if (parsed) declared = *parsed;
               }
+              if (!declared || !declared->is_closed() ||
+                  declared->kind != TypeKind::Builtin ||
+                  declared->name != "option" ||
+                  declared->type_args.size() != 1)
+                err(s.line,
+                    "None return requires the exact method's closed Option result type",
+                    "MOSS_INTERNAL_INVARIANT");
+              checked_return_type = declared->to_canonical_string();
+              return_type_from_declared_callable_contract = true;
             }
             const bool defer_unresolved_return_fact = return_owner &&
                 (return_owner->generic || return_owner->static_dispatch) &&
@@ -30728,7 +30795,36 @@ class Checker {
             // bodies share source occurrences with their generic declaration;
             // ordinary bodies may have typed facts under the callable context
             // even when their source context contains only parser facts.
-            fact.est_fact_context = expression_fact_context();
+            std::optional<OverloadedMethodReturnContext> overload_context;
+            if (current_method_)
+              overload_context = overloaded_method_return_context(
+                  *current_method_, s.line);
+            string exact_method_est_context = overload_context
+                ? overload_context->identity : string();
+#ifdef MOSS_TEST_BUILD
+            const auto* context_perturb = std::getenv(
+                "MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_CONTEXT");
+            if (overload_context && context_perturb &&
+                overload_context->selector == context_perturb) {
+              for (const auto& candidate : current_object_->methods) {
+                if (&candidate == current_method_ ||
+                    candidate.name != current_method_->name) continue;
+                auto alternate = overloaded_method_return_context(
+                    candidate, s.line);
+                if (alternate) {
+                  exact_method_est_context = alternate->identity;
+                  break;
+                }
+              }
+            }
+#endif
+            if (overload_context &&
+                exact_method_est_context != overload_context->identity)
+              err(s.line,
+                  "overloaded method return authority has a crossed declaration identity",
+                  "MOSS_INTERNAL_INVARIANT");
+            fact.est_fact_context = overload_context
+                ? exact_method_est_context : expression_fact_context();
             fact.provenance.source_file = s.source_file.empty()
                 ? current_source_file_ : s.source_file;
             fact.provenance.line = s.line;
@@ -30749,6 +30845,64 @@ class Checker {
                 unshadowed_none_return;
             if (fact.expression_occurrence_id != UINT32_MAX) {
               auto* arena = expression_arena(fact.est_arena_index);
+              if (overload_context) {
+                if (!fact.expression_type || !arena)
+                  err(s.line,
+                      "overloaded method return lacks an exact checked EST type",
+                      "MOSS_INTERNAL_INVARIANT");
+                TypeRef retained_type = fact.expression_type;
+#ifdef MOSS_TEST_BUILD
+                const auto* perturb = std::getenv(
+                    "MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_EST_FACT");
+                const auto* drop = std::getenv(
+                    "MOSS_TEST_DROP_RETURN_VALUE_METHOD_EST_FACT");
+                if (perturb && overload_context->selector == perturb) {
+                  for (const auto& candidate : current_object_->methods) {
+                    if (&candidate == current_method_ ||
+                        candidate.name != current_method_->name) continue;
+                    TypeRef alternate = candidate.return_type_ref;
+                    if (!alternate && candidate.return_type) {
+                      auto parsed = moss::Type::parse_canonical(
+                          canonical_type_name(*candidate.return_type));
+                      if (parsed) alternate = *parsed;
+                    }
+                    if (alternate && alternate->is_closed() &&
+                        !alternate->structurally_equal(*fact.expression_type)) {
+                      retained_type = alternate;
+                      break;
+                    }
+                  }
+                }
+                const bool drop_method_context =
+                    drop && overload_context->selector == drop;
+#else
+                const bool drop_method_context = false;
+#endif
+                if (const auto* existing = arena->facts(
+                        fact.expression_occurrence_id,
+                        exact_method_est_context);
+                    existing && existing->type &&
+                    !existing->type->structurally_equal(*retained_type))
+                  err(s.line,
+                      "overloaded method return context has a contradictory EST type",
+                      "MOSS_INTERNAL_INVARIANT");
+                if (!drop_method_context) {
+                  est::SemanticFacts exact_facts;
+                  exact_facts.type = retained_type;
+                  arena->record_facts(fact.expression_occurrence_id,
+                                      exact_method_est_context,
+                                      exact_facts);
+                }
+                const auto* retained = drop_method_context ? nullptr :
+                    arena->facts(fact.expression_occurrence_id,
+                                 exact_method_est_context);
+                if (!retained || !retained->type ||
+                    !retained->type->structurally_equal(
+                        *fact.expression_type))
+                  err(s.line,
+                      "exact overloaded method return EST authority is missing or contradictory",
+                      "MOSS_INTERNAL_INVARIANT");
+              } else {
               const string source_context = "source:" +
                   fact.provenance.source_file + ":" +
                   std::to_string(fact.provenance.line);
@@ -30769,6 +30923,7 @@ class Checker {
                   fact.est_fact_context = context;
                   break;
                 }
+              }
               }
             }
             if (!fact.expression_type ||

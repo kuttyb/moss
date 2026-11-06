@@ -1,0 +1,18 @@
+type Choice:
+  fn next(seed: Int) -> option[Int]:
+    return None
+  fn next(seed: String) -> option[String]:
+    return None
+
+fn main():
+  choice = Choice()
+  match choice.next(1):
+    case Some(value):
+      echo value
+    case None:
+      echo "empty-int"
+  match choice.next("x"):
+    case Some(value):
+      echo value
+    case None:
+      echo "empty-string"

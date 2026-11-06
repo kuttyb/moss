@@ -17511,3 +17511,18 @@ untouched.
   inventory on final source; explicit versioned ABI-bound clone provenance;
   final Default/Shadow runs and independent final implementation review.
   No runtime clone is authorized.
+
+### R7-010 Team A overload authority review (2026-11-05)
+
+- Team A follow-up implementation `3dc803a241c49bbff7c6976fbdb0c749e3aba56d`
+  received independent scoped GO for exact overloaded ReturnValue checker
+  authority; the reviewer explicitly closed the overloaded-method identity
+  defect and isolated Phase 26 C3 `-Werror` requirement. The report is
+  `docs/phase28/agent2-reviews/R7-010-team-a-overload-fix-3dc803a2.md`.
+- Whole Team A stack remains NO-GO: a fresh isolated build of baseline
+  `150ab36b41e45504aaa400aa717da241be7542fb` passes X1, while `735a36c3` and
+  `3dc803a2` fail identically at the later check-only Fast Debug ReturnValue
+  consumer. The overload fix did not change this stack-level regression.
+- The duplicate native Rust method-name lowering failure is also present on
+  candidate and baseline; it is a separate follow-up. Neither result changes
+  the historical oracle/suite counts recorded at the top of this status file.

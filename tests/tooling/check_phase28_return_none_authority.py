@@ -12,6 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/phase28/r7_010/team_a/return_none_fact.moss"
 SHADOWED_FIXTURE = ROOT / "tests/phase28/r7_010/team_a/return_shadowed_none.moss"
+OVERLOADED_FIXTURE = ROOT / "tests/phase28/r7_010/team_a/return_none_overloads.moss"
 
 
 def run(command: list[str], env: dict[str, str]):
@@ -56,6 +57,50 @@ def main() -> int:
                for row in shadow_rows):
         raise AssertionError(f"shadowed None did not use checked binding authority: "
                              f"{shadow_rows!r}")
+
+    overloaded = run([compiler, "check", "--json", str(OVERLOADED_FIXTURE)], env)
+    overloaded_response = json.loads(overloaded.stdout)
+    if overloaded.returncode or not overloaded_response.get("ok"):
+        raise AssertionError(f"overloaded None methods were rejected: "
+                             f"{overloaded_response!r}\n{overloaded.stderr}")
+    overloaded_rows = re.findall(
+        r"PHASE28_RETURN_FACT ([^\n]*context=method:Choice\.next[^\n]+)",
+        overloaded.stderr)
+    int_rows = [row for row in overloaded_rows if "type=option[int]" in row]
+    string_rows = [row for row in overloaded_rows if "type=option[string]" in row]
+    if len(int_rows) != 1 or len(string_rows) != 1:
+        raise AssertionError(f"overloads did not retain their exact return types: "
+                             f"{overloaded_rows!r}")
+    def est_context(row: str) -> str:
+        match = re.search(r"est_context=(\S+)", row)
+        return match.group(1) if match else ""
+    int_context, string_context = est_context(int_rows[0]), est_context(string_rows[0])
+    if not int_context.startswith("method-return-v1:") or \
+            not string_context.startswith("method-return-v1:") or \
+            int_context == string_context:
+        raise AssertionError(f"overload ReturnValue contexts are missing or collide: "
+                             f"{int_context!r}, {string_context!r}")
+
+    for hook, value in (
+            ("MOSS_TEST_DROP_RETURN_VALUE_METHOD_EST_FACT", "(string)"),
+            ("MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_CONTEXT", "(string)"),
+            ("MOSS_TEST_PERTURB_RETURN_VALUE_METHOD_EST_FACT", "(string)")):
+        failed = run([compiler, "check", "--json", str(OVERLOADED_FIXTURE)],
+                     {**env, hook: value})
+        result = json.loads(failed.stdout)
+        if result.get("ok") or result.get("error", {}).get("code") not in {
+                "MOSS_INTERNAL_INVARIANT", "MOSS_INTERNAL_OR_IO_ERROR"}:
+            raise AssertionError(f"{hook} did not fail closed for one overload: "
+                                 f"{result!r}\n{failed.stderr}")
+
+    interpreted_overloads = run(
+        [compiler, "run", "--interp", str(OVERLOADED_FIXTURE)], base_env)
+    if interpreted_overloads.returncode or interpreted_overloads.stdout != \
+            "empty-int\nempty-string\n":
+        raise AssertionError("overloaded None Fast Debug mismatch: "
+                             f"{interpreted_overloads.returncode}, "
+                             f"{interpreted_overloads.stdout!r}, "
+                             f"{interpreted_overloads.stderr!r}")
     interpreted_shadow = run([compiler, "run", "--interp", str(SHADOWED_FIXTURE)],
                              base_env)
     if interpreted_shadow.returncode or interpreted_shadow.stdout != "7\n":
