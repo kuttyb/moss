@@ -1053,6 +1053,7 @@ class Generator {
     est::ExprId receiver_expression{UINT32_MAX};
     std::uint64_t source_fingerprint{0};
     std::uint64_t origin_id{0};
+    std::vector<est::ExprId> argument_expressions;
   };
   mutable size_t fileio_chunk_temp_ = 0;
   bool phase21_result_context_ = false;
@@ -1777,9 +1778,119 @@ class Generator {
     const auto* message = message_id < arena.size()
         ? std::get_if<est::Message>(&arena.at(message_id)) : nullptr;
     if (!message) return std::nullopt;
+    auto argument_expressions = message->arguments;
+    for (auto& argument : argument_expressions)
+      argument = est::unparenthesized(arena, argument);
     return RootIngressMessageOccurrence{
         selected->arena_index, message_id, message->target,
-        selected->source_fingerprint, selected->origin_id};
+        selected->source_fingerprint, selected->origin_id,
+        std::move(argument_expressions)};
+  }
+
+  const TypedRootIngressPayloadFactV1& resolve_root_ingress_payload_fact(
+      const RootIngressMessageOccurrence& occurrence,
+      std::uint32_t argument_index, const Domain& domain,
+      const Handler& handler,
+      const string& expected_type) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!checked_program.typed_semantics || !statement ||
+        statement->checked_statement_occurrence_id == UINT32_MAX ||
+        argument_index >= occurrence.argument_expressions.size() ||
+        occurrence.arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[occurrence.arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress payload query identity unavailable");
+    const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
+    const auto argument_id = est::unparenthesized(
+        arena, occurrence.argument_expressions[argument_index]);
+    if (argument_id >= arena.size() ||
+        (!std::holds_alternative<est::Constructor>(arena.at(argument_id)) &&
+         !std::holds_alternative<est::Literal>(arena.at(argument_id))))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT fresh Root-ingress payload expression identity unavailable");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const TypedRootIngressPayloadRequirementV1* requirement = nullptr;
+    std::size_t requirement_count = 0;
+    std::size_t fact_count = 0;
+    for (const auto& candidate : checked_program.typed_semantics
+             ->required_root_ingress_payload_occurrences)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_id &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.specialization_context == context) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    for (const auto& candidate : checked_program.typed_semantics
+             ->root_ingress_payload_facts)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_id &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.specialization_context == context)
+        ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_PAYLOAD_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_PAYLOAD_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_PAYLOAD_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_PAYLOAD_FACT"))
+      ++fact_count;
+#endif
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress payload requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_PAYLOAD_FACT")) {
+        auto corrupted = *requirement;
+        const string field = std::getenv(
+            "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_PAYLOAD_FACT");
+        if (field == "owner") corrupted.selected_handler_identity += ":wrong-owner";
+        else if (field == "argument") ++corrupted.argument_index;
+        else if (field == "type") corrupted.payload_type.reset();
+        else if (field == "action")
+          corrupted.action = static_cast<TypedRootIngressPayloadActionV1>(99);
+        else if (field == "context") corrupted.specialization_context += ":wrong-context";
+        else if (field == "occurrence") ++corrupted.argument_expression_occurrence_id;
+        (void)checked_program.typed_semantics
+            ->find_root_ingress_payload_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed Root-ingress payload fact unexpectedly passed");
+      }
+#endif
+      const auto& fact = checked_program.typed_semantics
+          ->find_root_ingress_payload_fact(*requirement);
+      const auto actual_type = arena.facts(argument_id,
+          fact.est_fact_context);
+      const auto expected = moss::Type::parse_canonical(expected_type);
+      if (!actual_type || !actual_type->type || !expected || !*expected ||
+          !actual_type->type->structurally_equal(*fact.payload_type) ||
+          !fact.payload_type->structurally_equal(**expected) ||
+          fact.selected_handler_identity !=
+              handler_semantic_identity(domain, handler) ||
+          fact.action !=
+              TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue ||
+          fact.permits_moss_value_copy || !fact.checker_proved_fresh_rvalue)
+        throw std::invalid_argument(
+            "Root-ingress payload authority does not match exact handler, argument, type, and action");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
   }
 
   const TypedRootIngressDomainCaptureFactV1&
@@ -6037,7 +6148,8 @@ class Generator {
             capture_fact);
         return root_ingress_message(receiver, handler, arguments, target_domain,
                                     *target_handler, d, locals, types,
-                                    message_argument_plans, capture_id);
+                                    message_argument_plans, capture_id,
+                                    *root_ingress_occurrence);
       }
       const bool raises = !target_handler->observable_effects.raise_set.empty();
       if (raises && !phase21_result_context_)
@@ -7449,7 +7561,8 @@ class Generator {
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
                      size_t functional_pipeline_id = 0,
-                     const TypedReturnValueFactV1* return_fact = nullptr) const {
+                     const TypedReturnValueFactV1* return_fact = nullptr,
+                     const TypedRootIngressPayloadFactV1* root_payload_fact = nullptr) const {
     string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (copy_type(t)) return r;
@@ -7466,6 +7579,11 @@ class Generator {
         return_fact->action ==
             TypedReturnValueActionV1::TransferOwnedValue &&
         return_fact->required_access == Effect::Consume)
+      return r;
+    if (root_payload_fact && root_payload_fact->is_authoritative() &&
+        root_payload_fact->action ==
+            TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue &&
+        !root_payload_fact->permits_moss_value_copy)
       return r;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT root message payload needs a checked copy(x) fact or exact consume authority");
