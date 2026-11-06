@@ -32,7 +32,23 @@ DEFAULT_MOSS = REPO_ROOT / "build" / "compiler" / "moss-opt"
 DEFAULT_MARGO = REPO_ROOT / "margo"
 
 # Directories that are build products and never part of a fixture's identity.
-IGNORED_DIRS = {"build", "target", "__pycache__"}
+# Only a package's own top-level `build/` (a directory next to a Moss.toml) is a
+# build output. Any other directory named build/target is fixture content, and
+# generators reject such names outright (see generate.reject_reserved_names).
+RESERVED_NAMES = {"build", "target", "__pycache__"}
+
+
+class ToolError(Exception):
+    """A configuration/usage problem reported as one line, not a traceback."""
+
+
+def is_build_output(directory: Path, name: str) -> bool:
+    return name == "build" and (Path(directory) / "Moss.toml").exists()
+
+
+def copy_ignore(directory, names):
+    return [n for n in names
+            if is_build_output(Path(directory), n) or n == "__pycache__"]
 
 # Default cold commands. Tokens are formatted after shlex-splitting, so paths
 # containing spaces stay intact.
@@ -55,6 +71,8 @@ WORK_COUNTERS = (
     ("specialization_effect_evaluations", "specialization_effect_function_evaluations"),
     ("specialization_effect_hits", "specialization_effect_cache_hits"),
 )
+# The complete list of fields ignored when comparing verdicts. Everything else
+# in the JSON document must match exactly between reference and candidate.
 VOLATILE_KEYS = {"duration_ms", "elapsed_ms", "time_ms", "timings", "pid",
                  "scheduling_events", "compiler_version"}
 
@@ -70,7 +88,12 @@ def tree_sha256(path: Path) -> str:
     rows = []
     for item in sorted(path.rglob("*")):
         rel = item.relative_to(path)
-        if any(part in IGNORED_DIRS for part in rel.parts) or not item.is_file():
+        skip = False
+        for i, part in enumerate(rel.parts[:-1] if item.is_file() else rel.parts):
+            if part == "__pycache__" or is_build_output(path.joinpath(*rel.parts[:i]), part):
+                skip = True
+                break
+        if skip or not item.is_file():
             continue
         rows.append(f"{rel.as_posix()}\0{hashlib.sha256(item.read_bytes()).hexdigest()}")
     return hashlib.sha256("\n".join(rows).encode()).hexdigest()
@@ -101,17 +124,29 @@ def stage_fixture(fixture: dict, dest: Path) -> dict[str, str]:
     if dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(FIXTURES_DIR / fixture["path"], dest,
-                    ignore=shutil.ignore_patterns(*IGNORED_DIRS))
+                    ignore=copy_ignore)
     return {"root": str(dest), "path": str(dest / fixture["entry"]),
-            "id": fixture["id"]}
+            "id": fixture["id"], "kind": fixture["kind"]}
 
 
 def expand_command(template: str, values: dict[str, str]) -> list[str]:
-    return [token.format_map(values) for token in shlex.split(template)]
+    try:
+        return [token.format_map(values) for token in shlex.split(template)]
+    except KeyError as exc:
+        raise ToolError(f"command template {template!r} uses unknown placeholder "
+                        f"{{{exc.args[0]}}}; known: {', '.join('{'+k+'}' for k in sorted(values))}")
+    except (ValueError, IndexError) as exc:
+        raise ToolError(f"bad command template {template!r}: {exc}")
 
 
 def command_for(fixture: dict, values: dict[str, str], template: str | None) -> list[str]:
     return expand_command(template or DEFAULT_COMMANDS[fixture["kind"]], values)
+
+
+def is_instrumentation_var(name: str) -> bool:
+    return (name.startswith(("MOSS_PROFILE", "MOSS_ECT_")) or
+            (name.startswith("MOSS_") and name.endswith("_TRACE")) or
+            name in ("MOSS_ECT_COUNTERS",))
 
 
 def build_flavor(path: Path) -> str:
@@ -147,7 +182,10 @@ class Toolchain:
         return {"moss": str(self.moss), "margo": str(self.margo)}
 
     def env(self) -> dict[str, str]:
-        env = dict(os.environ)
+        """Clean environment for timed and gate runs: no profiling/counter or
+        trace variables inherited from the caller. Only the separate counter
+        run adds them back (counter_env)."""
+        env = {k: v for k, v in os.environ.items() if not is_instrumentation_var(k)}
         env["MOSS"] = str(self.moss)
         return env
 
@@ -156,18 +194,32 @@ class Toolchain:
 # Measured execution
 # --------------------------------------------------------------------------
 
+TIME_BIN = "/usr/bin/time"
+
+
 def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
                  timeout: float = 600.0) -> dict:
     """Run argv once; return rc, stdout, stderr, wall/CPU ms and peak RSS (KiB).
 
-    CPU and RSS come from wait4() rusage, which covers every descendant the
-    process waited for (margo -> moss included). RSS is the largest single
-    process in the tree, not a sum.
+    Peak RSS is read from a /usr/bin/time wrapper (-f %M), NOT from this
+    process's wait4() rusage: on Linux ru_maxrss of a forked+exec'd child
+    includes the parent's pre-exec high-water mark, so a large Python runner
+    would inflate every child. `time` is tiny, forks the real command and
+    reports that command's tree maximum (largest single process). Wall is the
+    runner's monotonic clock around the whole wrapped command (adds ~1 ms of
+    `time` startup); CPU is user+system from wait4 (unaffected by mm history).
     """
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+    if not Path(TIME_BIN).exists():
+        raise ToolError(f"{TIME_BIN} is required for peak-RSS measurement")
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, \
+            tempfile.NamedTemporaryFile("r") as rss_file:
+        wrapped = [TIME_BIN, "-f", "%M", "-o", rss_file.name, *argv]
         start = time.perf_counter()
-        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=out, stderr=err,
-                                stdin=subprocess.DEVNULL)
+        try:
+            proc = subprocess.Popen(wrapped, cwd=cwd, env=env, stdout=out,
+                                    stderr=err, stdin=subprocess.DEVNULL)
+        except OSError as exc:
+            raise ToolError(f"cannot run {argv[0]!r}: {exc.strerror or exc}")
         deadline = start + timeout
         while True:
             pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
@@ -179,15 +231,24 @@ def run_measured(argv: list[str], *, cwd: Path, env: dict[str, str],
                 break
             time.sleep(0.0005)
         wall = time.perf_counter() - start
-        proc.returncode = os.waitstatus_to_exitcode(status)
+        rc = os.waitstatus_to_exitcode(status)
         out.seek(0)
         err.seek(0)
-        return {"rc": proc.returncode,
-                "stdout": out.read().decode(errors="replace"),
-                "stderr": err.read().decode(errors="replace"),
-                "wall_ms": wall * 1000.0,
+        rss_text = rss_file.read()
+        # `time` writes "Command exited with non-zero status N" before %M when
+        # the command fails; the last line is always the %M value.
+        lines = [l for l in rss_text.splitlines() if l.strip()]
+        try:
+            rss = int(lines[-1])
+        except (IndexError, ValueError):
+            rss = None
+        stderr = err.read().decode(errors="replace")
+        if rc in (126, 127) and "cannot run" in stderr.splitlines()[:1].__str__():
+            raise ToolError(f"cannot run {argv[0]!r}: {stderr.strip().splitlines()[0].split(': ', 2)[-1]}")
+        return {"rc": rc, "stdout": out.read().decode(errors="replace"),
+                "stderr": stderr, "wall_ms": wall * 1000.0,
                 "cpu_ms": (usage.ru_utime + usage.ru_stime) * 1000.0,
-                "rss_kib": int(usage.ru_maxrss)}
+                "rss_kib": rss}
 
 
 def median(values):
@@ -224,10 +285,14 @@ def _embedded_error(text: str):
 
 
 def extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
-    """Reduce a command result to {exit_code, ok, diagnostics}.
+    """Reduce a command result to {exit_code, ok, diagnostics, document}.
 
-    Understands moss-agent-1 (`moss check --json`) and margo-1 (`margo --json`)
-    documents. A client template must print one of those; anything else is
+    `document` is the WHOLE parsed JSON output with VOLATILE_KEYS dropped and
+    paths normalized, so any extra or changed field is a gate failure.
+    `diagnostics` is a convenience view of the same data for reports.
+    Understands moss-agent-1 (`moss check --json`) and margo-1 (`margo --json`);
+    a margo failure embeds the moss JSON in its `error` string, which is parsed
+    so the compiler's diagnostic is compared structurally. Non-JSON output is
     compared as scrubbed raw text so a mismatch is visible, never hidden.
     """
     text = result["stdout"]
@@ -241,14 +306,24 @@ def extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
         diagnostics = (doc.get("result") or {}).get("diagnostics", [])
     elif doc.get("schema_version") == "margo-1" and isinstance(doc.get("error"), str):
         inner = _embedded_error(doc["error"])
-        if inner is not None:
-            diagnostics = [inner.get("error", inner)]
-        else:
-            diagnostics = [doc["error"]]
+        diagnostics = [inner.get("error", inner)] if inner is not None else [doc["error"]]
     else:
         diagnostics = [doc.get("error", doc)]
+    document = dict(doc)
+    if not ok and doc.get("schema_version") == "margo-1" and isinstance(doc.get("error"), str):
+        prefix_end = doc["error"].find("{")
+        inner = _embedded_error(doc["error"])
+        if inner is not None:
+            document["error"] = {"prefix": doc["error"][:prefix_end], "embedded": inner}
     return {"exit_code": result["rc"], "ok": bool(ok),
-            "diagnostics": _scrub(diagnostics, replacements)}
+            "diagnostics": _scrub(diagnostics, replacements),
+            "document": _scrub(document, replacements)}
+
+
+def path_replacements(work: Path, tc: "Toolchain") -> list[tuple[str, str]]:
+    """Normalize staged-dir and tool paths so reference/candidate documents
+    (including margo's embedded error strings) compare equal."""
+    return [(str(work), "<FIXTURE>"), (str(tc.moss), "<MOSS>"), (str(tc.margo), "<MARGO>")]
 
 
 def status_of(verdict: dict) -> str:

@@ -18122,3 +18122,9 @@ future optimizer-isolated proof and must remain explicit in final review.
 - `make check`: 3 failures identical to the documented baseline
   (`check_phase25_conformance` gate 10, `check_phase27_accepts_rustc`,
   `shard_swarm_cases`); no new failures.
+
+- Phase 28.5 Team 1 review fixes (tag `bench-t1-done-r2`): RSS via
+  `/usr/bin/time -f %M` (runner-size independent, `run.py selftest`), M2 headline
+  over eligible functions, `metrics --root`, whole-document gate with selftests,
+  clean env for timed/gate runs, build-dir ignore rule, warm-up rep, two more
+  trivial fixtures. `make check`: same 3 baseline failures by name.

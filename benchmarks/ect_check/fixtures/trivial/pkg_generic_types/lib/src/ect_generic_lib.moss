@@ -1,0 +1,7 @@
+module ect_generic_lib
+
+export fn first_of(a, b):
+  return a
+
+export fn show_id(x):
+  return x.id()

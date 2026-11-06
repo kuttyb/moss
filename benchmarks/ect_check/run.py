@@ -37,7 +37,7 @@ CANDIDATE_ENV = "ECT_CANDIDATE_CMD"
 # --------------------------------------------------------------------------
 
 def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
-                    reps: int, primes: int, run_dir: Path) -> dict:
+                    reps: int, primes: int, run_dir: Path, warmup: bool = True) -> dict:
     """Median-of-reps wall/CPU/RSS for one fixture in one mode.
 
     cold: a fresh staged copy per rep (full, from-scratch check).
@@ -46,13 +46,12 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
     """
     work = run_dir / "work" / f"{mode}-{fx['id']}"
     samples, verdict = [], None
-    repl = [(str(work), "<FIXTURE>")]
+    repl = C.path_replacements(work, tc)
 
     def one(stage: bool, extra_env: dict | None = None):
         values = C.stage_fixture(fx, work) if stage else \
-            {"root": str(work), "path": str(work / fx["entry"]), "id": fx["id"]}
-        if fx["kind"] == "package" and not stage:
-            values["path"] = str(work / fx["entry"])
+            {"root": str(work), "path": str(work / fx["entry"]), "id": fx["id"],
+             "kind": fx["kind"]}
         argv = C.command_for(fx, {**tc.values(), **values}, template)
         env = tc.env()
         env.update(extra_env or {})
@@ -62,6 +61,8 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
         C.stage_fixture(fx, work)
         for _ in range(primes):
             one(stage=False)
+    if mode == "cold" and warmup:
+        one(stage=True)  # discarded: first run pays binary/page-cache page-in
     for _ in range(reps):
         res = one(stage=(mode == "cold"))
         samples.append(res)
@@ -109,7 +110,7 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
             values = C.stage_fixture(fx, work)
             argv = C.command_for(fx, {**tc.values(), **values}, template)
             res = C.run_measured(argv, cwd=work, env=tc.env())
-            verdicts[side] = C.extract_verdict(res, [(str(work), "<FIXTURE>")])
+            verdicts[side] = C.extract_verdict(res, C.path_replacements(work, tc))
             shutil.rmtree(work, ignore_errors=True)
         identical = verdicts["reference"] == verdicts["candidate"]
         expected = verdicts["reference"]["ok"] == (fx["expected_status"] == "pass")
@@ -134,7 +135,8 @@ def _package_dirs(root: Path) -> list[Path]:
     found = []
     for toml in sorted(root.rglob("Moss.toml")):
         rel = toml.relative_to(root).parts
-        if any(p in C.IGNORED_DIRS or p in ("tests", "examples", "benches") for p in rel):
+        if any(p in ("build", "target", "__pycache__", "tests", "examples", "benches")
+               for p in rel):
             continue
         found.append(toml.parent)
     return found
@@ -164,7 +166,8 @@ def _topo_order(pkgs: list[Path]) -> list[Path]:
     return order
 
 
-def run_metrics(tc: C.Toolchain, run_dir: Path, mode: str = "check") -> dict:
+def run_metrics(tc: C.Toolchain, run_dir: Path, mode: str = "check",
+                roots: list[Path] | None = None) -> dict:
     """M1: exported untyped generics reaching scheme_complete (sdk/, packages/).
     M2: internal (non-exported) functions whose local summary is complete.
 
@@ -175,9 +178,9 @@ def run_metrics(tc: C.Toolchain, run_dir: Path, mode: str = "check") -> dict:
     scratch = run_dir / "metrics_work"
     if scratch.exists():
         shutil.rmtree(scratch)
-    for top in ("sdk", "packages"):
-        shutil.copytree(C.REPO_ROOT / top, scratch / top,
-                        ignore=shutil.ignore_patterns(*C.IGNORED_DIRS))
+    for root in roots or [C.REPO_ROOT / "sdk", C.REPO_ROOT / "packages"]:
+        shutil.copytree(Path(root).resolve(), scratch / Path(root).resolve().name,
+                        ignore=C.copy_ignore)
     pkgs = _topo_order(_package_dirs(scratch))
     rows, failed = [], []
     by_pkg: dict[Path, list[dict]] = {p: [] for p in pkgs}
@@ -229,12 +232,15 @@ def run_metrics(tc: C.Toolchain, run_dir: Path, mode: str = "check") -> dict:
 
     m1n, m1d = total("m1_scheme_complete"), total("m1_exported_generics")
     m2n, m2d = total("m2_internal_complete"), total("m2_internal_functions")
-    m2sd = total("m2_internal_with_summary")
+    eligible = total("m2_internal_with_summary")
     return {"mode": mode, "packages_measured": len(rows), "packages_failed": failed,
+            "roots": [str(Path(x)) for x in (roots or ["sdk", "packages"])],
             "m1": {"scheme_complete": m1n, "exported_generics": m1d, "share": share(m1n, m1d)},
-            "m2": {"complete": m2n, "internal_functions": m2d, "share": share(m2n, m2d),
-                   "internal_with_summary": m2sd,
-                   "share_of_with_summary": share(m2n, m2sd)},
+            # Headline M2: only internal functions with an untyped parameter
+            # carry an open summary, so they are the only ones that can be
+            # `complete`. Fully annotated functions are reported separately.
+            "m2": {"complete": m2n, "eligible": eligible, "share": share(m2n, eligible),
+                   "annotated_internal": m2d - eligible, "internal_functions": m2d},
             "per_package": rows}
 
 
@@ -353,18 +359,18 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
             m1, m2 = mres["m1"], mres["m2"]
             lines += [
                 f"### margo mode: {mode}", "",
-                f"Packages measured: {mres['packages_measured']}; "
-                f"failed/skipped: {len(mres['packages_failed'])} "
+                f"Roots: {', '.join(mres['roots'])}. Packages measured: {mres['packages_measured']}; "
+                f"failed and dropped from every figure below: {len(mres['packages_failed'])} "
                 f"{mres['packages_failed'] or ''}", "",
                 "| Metric | Numerator | Denominator | Share |", "|---|---:|---:|---:|",
                 f"| **M1** exported generics reaching `scheme_complete` | {m1['scheme_complete']} | "
                 f"{m1['exported_generics']} | {pct(m1['share'])} |",
-                f"| **M2** internal functions with `complete` local summary | {m2['complete']} | "
-                f"{m2['internal_functions']} | {pct(m2['share'])} |",
-                f"| M2 restricted to internal functions carrying an open summary | "
-                f"{m2['complete']} | {m2['internal_with_summary']} | {pct(m2['share_of_with_summary'])} |",
+                f"| **M2** eligible internal functions (open summary) that are `complete` | "
+                f"{m2['complete']} | {m2['eligible']} | {pct(m2['share'])} |",
+                f"| (not in M2) fully annotated internal functions, never eligible | "
+                f"{m2['annotated_internal']} | {m2['internal_functions']} total internal | n/a |",
                 "",
-                "| Package | Exp. generics | scheme_complete | Internal fns | with summary | complete |",
+                "| Package | Exp. generics | scheme_complete | Internal fns | eligible (open summary) | complete |",
                 "|---|---:|---:|---:|---:|---:|"]
             for r_ in mres["per_package"]:
                 if r_["m1_exported_generics"] or r_["m2_internal_functions"]:
@@ -372,14 +378,19 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                                  f"{r_['m1_scheme_complete']} | {r_['m2_internal_functions']} | "
                                  f"{r_['m2_internal_with_summary']} | {r_['m2_internal_complete']} |")
             lines.append("")
+        lines += ["Denominators differ between modes because a package whose margo run "
+                  "fails in one mode is dropped from that mode only.", ""]
         lines += ["Definitions: an *exported generic* is a package-local `export fn` with at "
                   "least one untyped (inferred) parameter. An *internal function* is a "
                   "package-local non-exported function (imported interface functions are "
-                  "excluded). Only callables with inferred signatures carry an open summary, "
-                  "so the restricted M2 row is the sharper read; the plain M2 row also counts "
-                  "fully annotated internal functions in its denominator. These are counts of "
-                  "checker facts; nothing is recomputed. Per-package numbers come from the "
-                  "checker run that saw the package's own source (see `ect_common.metric_record`).", ""]
+                  "excluded). **M2 is only meaningful over eligible functions**: only "
+                  "callables with an untyped parameter carry an open summary. `complete` "
+                  "is also leaf-biased (callers of inferred callees are not complete; "
+                  "open arithmetic such as `i = i + a` is incomplete), so M2 is a weak "
+                  "proxy for how much a fact store could skip. These are counts of "
+                  "checker facts; nothing is recomputed. Per-package numbers come from "
+                  "the checker run that saw the package's own source "
+                  "(`ect_common.metric_record`).", ""]
 
     lines += ["## 4. Caveats", "",
               "- Cold mode starts a fresh process (package fixtures: `margo --check build` from "
@@ -417,9 +428,8 @@ def print_metrics(metrics: dict) -> None:
     for mode, m in metrics.items():
         print(f"[margo {mode}] M1 {pct(m['m1']['share'])} "
               f"({m['m1']['scheme_complete']}/{m['m1']['exported_generics']}); "
-              f"M2 {pct(m['m2']['share'])} ({m['m2']['complete']}/{m['m2']['internal_functions']}), "
-              f"restricted {pct(m['m2']['share_of_with_summary'])} "
-              f"({m['m2']['complete']}/{m['m2']['internal_with_summary']}); "
+              f"M2 {pct(m['m2']['share'])} ({m['m2']['complete']}/{m['m2']['eligible']} eligible; "
+              f"{m['m2']['annotated_internal']} annotated internal fns not eligible); "
               f"{m['packages_measured']} packages, {len(m['packages_failed'])} failed")
 
 
@@ -446,6 +456,8 @@ def main() -> int:
                    help="warm-client command template (same placeholders); measured as "
                         f"mode 'warm' after --warm-primes unmeasured runs. Env: {WARM_ENV}")
     b.add_argument("--warm-primes", type=int, default=1)
+    b.add_argument("--no-warmup", action="store_true",
+                   help="do not discard one cold warm-up run per fixture before the timed reps")
     b.add_argument("--no-gate", action="store_true")
     b.add_argument("--no-metrics", action="store_true")
     b.add_argument("--metrics-modes", default="check,build",
@@ -459,13 +471,21 @@ def main() -> int:
     add_common(m)
     m.add_argument("--metrics-modes", default="check,build",
                    help="comma list of margo modes: check (--check) and/or build")
+    m.add_argument("--root", nargs="+", help="package-tree roots to measure instead of "
+                   "sdk/ and packages/ (e.g. benchmarks/ect_check/fixtures/trivial/pkg_pass)")
     v = sub.add_parser("validate")
     add_common(v)
+    s = sub.add_parser("selftest", help="RSS-independence and gate self-tests")
+    add_common(s)
 
     args = ap.parse_args(sys.argv[1:] or ["bench"])
     cmd = args.cmd or "bench"
     manifest = C.load_manifest()
     fixtures = C.select_fixtures(manifest, getattr(args, "ids", None))
+
+    if cmd == "selftest":
+        import selftest
+        return selftest.run(Path(args.moss), Path(args.margo))
 
     if cmd == "validate":
         return subprocess.call([sys.executable, str(C.SUITE_DIR / "generate.py"),
@@ -483,7 +503,8 @@ def main() -> int:
         return 0 if gate["passed"] else 1
 
     if cmd == "metrics":
-        metrics = {m: run_metrics(tc, run_dir, m) for m in args.metrics_modes.split(",")}
+        roots = [Path(x) for x in args.root] if args.root else None
+        metrics = {m: run_metrics(tc, run_dir, m, roots) for m in args.metrics_modes.split(",")}
         (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
         print_metrics(metrics)
         print(f"{run_dir / 'metrics.json'}")
@@ -505,7 +526,7 @@ def main() -> int:
         for mode in modes:
             template = args.warm_client_cmd if mode == "warm" else None
             row = measure_fixture(fx, tc, template, mode, args.reps,
-                                  args.warm_primes, run_dir)
+                                  args.warm_primes, run_dir, not args.no_warmup)
             rows.append(row)
             print(f"{mode:4} {fx['id']}: wall {row['wall_ms_median']:.2f} ms, "
                   f"status {row['status']}", flush=True)
@@ -533,4 +554,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except C.ToolError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)

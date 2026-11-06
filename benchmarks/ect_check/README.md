@@ -17,7 +17,8 @@ by this one.
 benchmarks/ect_check/
   README.md
   generate.py      generator framework, frozen manifest, --validate-only
-  run.py           runner: bench | gate | metrics | validate
+  run.py           runner: bench | gate | metrics | validate | selftest
+  selftest.py      RSS-independence and gate-sensitivity self-tests
   ect_common.py    hashing, command templates, measured execution, verdicts
   manifest.json    frozen: id, kind, entry, expected_status, SHA-256 per fixture
   fixtures/        generated, committed, never regenerated implicitly
@@ -48,8 +49,12 @@ python3 benchmarks/ect_check/generate.py --verify-determinism   # regenerate == 
 python3 benchmarks/ect_check/run.py gate --candidate-moss /path/to/other/moss
 python3 benchmarks/ect_check/run.py gate --candidate-cmd 'mossc check --json {path}'
 
-# M1 / M2 only
+# M1 / M2 only (default roots: sdk/ and packages/)
 python3 benchmarks/ect_check/run.py metrics
+python3 benchmarks/ect_check/run.py metrics --root benchmarks/ect_check/fixtures/trivial/pkg_generic_types
+
+# Harness self-tests (RSS independent of runner size; gate catches mutations)
+python3 benchmarks/ect_check/run.py selftest
 ```
 
 Compiler selection: `--moss` or `$MOSS`, default `build/compiler/moss-opt`.
@@ -69,7 +74,7 @@ ECT_WARM_CLIENT_CMD='mossc --socket /run/user/1000/moss.sock check --json {path}
 Placeholders (formatted per token after shell-splitting, so spaces are safe):
 `{moss}` `{margo}` compiler / driver paths, `{path}` the entry file (file
 fixtures) or root package directory (package fixtures), `{root}` the staged
-fixture directory, `{id}` the fixture id. The command must print a
+fixture directory, `{id}` the fixture id, `{kind}` `file` or `package`. The command must print a
 `moss-agent-1` (`moss check --json`) or `margo-1` (`margo --json`) document and
 exit non-zero on failure; anything else is compared as raw text so a mismatch
 is visible. Warm mode stages each fixture once, runs `--warm-primes`
@@ -81,30 +86,60 @@ gate only). Warm mode reports no compiler counters.
 ## What the outputs mean
 
 - **Mode `cold`**: fresh process per rep on a fresh copy of the fixture
-  (package fixtures: `margo --check build` from an empty build dir).
-- **Wall / CPU / RSS**: median of the timed reps (range shown for wall). CPU is
-  user+system of the whole process tree, RSS is the largest single process in
-  the tree (not a sum), both from `wait4` rusage.
+  (package fixtures: `margo --check build` from an empty build dir). `cold`
+  means fresh process + empty build dir, **not** a cold page cache. One
+  discarded warm-up run per fixture precedes the timed reps (binary page-in);
+  disable with `--no-warmup`. `margo` is a Python script, so package fixtures
+  include roughly 15-20 ms of Python startup that a single-file check does not.
+  Timed and gate runs get a clean environment: `MOSS_PROFILE*`, `MOSS_ECT_*` and
+  `MOSS_*_TRACE` variables from the caller are stripped; only the separate
+  counter run sets them.
+- **Wall / CPU / RSS**: median of the timed reps (range shown for wall). Wall is
+  the runner's monotonic clock around the command (includes ~1 ms of the
+  `/usr/bin/time` wrapper). CPU is user+system of the whole process tree from
+  `wait4`. **Peak RSS comes from `/usr/bin/time -f %M`**, the largest single
+  process in the tree (not a sum). It is deliberately not taken from the
+  runner's `wait4` rusage: on Linux a forked+exec'd child's `ru_maxrss` includes
+  the parent's pre-exec high-water mark, so a large Python runner inflates every
+  child. `run.py selftest` proves RSS does not move when the runner is inflated
+  by 400 MiB.
 - **Counters** come from one separate counter run with
   `MOSS_PROFILE_COMPILER=1` and `MOSS_ECT_COUNTERS=<file>` so they never perturb
   timing. A command may start several checker runs; counters are summed
-  (`checker_runs`). `functions_analyzed`; specialization *evals*
+  (`checker_runs`). A fixture that fails before the checker finishes (e.g. a
+  failing file fixture) reports `checker_runs` 0 and null counters. `functions_analyzed`; specialization *evals*
   (`specialization_requests`), *hits* (`reused_specialization_results`, the
   in-process memo), *keys* (`distinct_specialization_keys`); plus specialization
   effect evaluations / cache hits in the CSV/JSON.
 - **Correctness gate**: runs reference and candidate on every fixture and
-  requires identical `{exit_code, ok, diagnostics}` (paths normalized, volatile
-  timing keys dropped), and that the reference agrees with the manifest's
-  `expected_status`. Today both sides are the same compiler, so a pass proves
+  requires identical `exit_code`, `ok` and the **whole JSON document** (an extra
+  or changed field anywhere fails). Only paths (fixture dir, compiler and margo
+  executables) are normalized and these keys are ignored at any depth:
+  `duration_ms elapsed_ms time_ms timings pid scheduling_events compiler_version`
+  (`ect_common.VOLATILE_KEYS`). A margo failure embeds the compiler's JSON in
+  its `error` string; it is parsed and compared structurally
+  (`trivial_pkg_fail` exercises this). The reference must also agree with the
+  manifest's `expected_status`. A broken template (unknown placeholder, missing
+  binary) fails with a one-line error. `selftest` checks that an identity client
+  passes and a mutating client fails. Today both sides are the same compiler, so a pass proves
   only that the gate is wired and deterministic.
 - **M1**: share of package-local exported generics (`export fn` with an untyped
   parameter) in `sdk/` and `packages/` whose open summary is `scheme_complete`.
-- **M2**: share of package-local non-exported functions whose local summary is
-  `complete`. Reported two ways: over all internal functions, and restricted
-  to those that carry an open summary (only inferred-signature callables do).
-  Both are reported for `margo --check` and full `margo build`, because the
-  flags are read at the end of the package's source check and depend on that
-  stage. Packages whose margo run fails are listed, not counted.
+- **M2**: of package-local non-exported functions that are *eligible* (only
+  callables with an untyped parameter carry an open summary), the share whose
+  local summary is `complete`. Fully annotated internal functions can never be
+  eligible; their count is reported separately and is not part of the share.
+  Today in `sdk/` and `packages/` only two internal functions are eligible
+  (`sdk/text` `matches_at`, `sdk/path` `starts_with_at`), so M2 is
+  `0/2`, not a statement about hundreds of functions. `complete` is also
+  leaf-biased (callers of inferred callees are not complete; a body with open
+  arithmetic such as `i = i + a` is incomplete), so M2 is a weak proxy for how
+  much a fact store could skip. Both M1 and M2 are reported for `margo --check`
+  and full `margo build` because the flags are read at the end of the package's
+  source check and depend on that stage. Packages whose margo run fails are
+  dropped from that mode only, so denominators differ between modes. `metrics
+  --root DIR...` measures any package tree (e.g. a fixture) instead of
+  `sdk/` and `packages/`.
 
 ## Compiler support (read-only)
 
@@ -132,7 +167,9 @@ manifest; `--regenerate` is an intentional re-freeze. Later teams add a
 `Generator` subclass for generic DAGs, edit sequences, worktree layouts and
 replay logs, then re-freeze once. Manifest rows carry `kind` (`file` or
 `package`), `entry`, `expected_status`, `sha256` (files: content; directories:
-sorted relpath+hash rows, build dirs excluded) and free-form `metadata`.
+sorted relpath+hash rows; only a package's own top-level `build/`, i.e. a
+`build` directory next to a `Moss.toml`, and `__pycache__` are excluded, and
+generators reject fixture paths named `build`, `target` or `__pycache__`) and free-form `metadata`.
 
 ## What improvement looks like (stubs for later teams)
 
@@ -149,12 +186,21 @@ sorted relpath+hash rows, build dirs excluded) and free-form `metadata`.
   M2 is the reference for how much of the internal graph a fact store could
   skip.
 
-## Known quirks recorded while building the harness
+## Fixture-shape constraints and known quirks
 
-- `fn twice(x): return bump(bump(x))` with `bump(x): return x + 1` makes
-  `moss check` fail with `MOSS_INTERNAL_OR_IO_ERROR: internal synchronization
-  invariant: unresolved state layout`; the trivial fixture uses an intermediate
-  `var` instead. Not investigated further here.
+- **Do not nest calls of inferred-generic functions.** A call of an inferred
+  generic inside another inferred generic's body, e.g. `fn bump(x): return x + 1`
+  / `fn twice(x): return bump(bump(x))`, is rejected by `moss check` with
+  `MOSS_INTERNAL_OR_IO_ERROR: internal synchronization invariant: unresolved
+  state layout` (pre-existing on main, moss-opt and moss-dev; reproduced by
+  Agent 2; valid program rejected, compiler defect, see
+  `agent-feedback/phase28-5/ect-bench/harness/`). `bump(bump(3))` from `main`,
+  `bump(x) + bump(x)`, and a typed `bump` called from an untyped caller pass.
+  Generated DAG nodes must therefore call their children as single,
+  non-nested calls (`var y = bump(x)` then `return bump(y)`).
+- Package-boundary generics with distinct user types (`export fn first_of(a, b)`,
+  `show_id(x)`; two user types in the app) check and run today; see
+  `trivial_pkg_generic_types`.
 - `packages/linalg`, `packages/sparse` and `sdk/tables` fail their test-target
   semantic check under `margo --check` today (`TYPE_MISMATCH` on binding
   `ignored`); they are excluded from the metrics and listed in the report.

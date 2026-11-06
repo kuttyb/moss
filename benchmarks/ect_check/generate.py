@@ -98,11 +98,67 @@ class TrivialGenerator(Generator):
                      "expected_status": "pass",
                      "metadata": {"shape": "package_graph", "packages": 2,
                                   "constant": k}})
+
+        # 4. Failing package: the app references a missing library symbol, so
+        #    margo wraps the compiler's JSON error inside its own `error`
+        #    string (exercises the embedded-error comparison path).
+        d = out_dir / "trivial" / "pkg_fail"
+        (d / "lib" / "src").mkdir(parents=True)
+        (d / "app" / "src").mkdir(parents=True)
+        (d / "lib" / "Moss.toml").write_text(
+            '[project]\nname = "ect_failing_lib"\nversion = "0.1.0"\n')
+        (d / "lib" / "src" / "ect_failing_lib.moss").write_text(
+            "module ect_failing_lib\n\nexport fn double(x):\n  return x + x\n")
+        (d / "app" / "Moss.toml").write_text(
+            '[project]\nname = "ect_failing_app"\nversion = "0.1.0"\n\n'
+            '[dependencies]\nect_failing_lib = { path = "../lib" }\n')
+        (d / "app" / "src" / "main.moss").write_text(
+            "module main\nimport ect_failing_lib\n\n"
+            "fn main():\n  echo ect_failing_lib.not_exported(1)\n")
+        rows.append({"id": "trivial_pkg_fail", "path": "trivial/pkg_fail",
+                     "kind": "package", "entry": "app",
+                     "expected_status": "fail",
+                     "metadata": {"shape": "package_graph", "packages": 2,
+                                  "reason": "unknown library symbol"}})
+
+        # 5. Package-boundary generics instantiated with distinct user types
+        #    (Mossi Leak shape at size 2): untyped exported fns, two user types.
+        d = out_dir / "trivial" / "pkg_generic_types"
+        (d / "lib" / "src").mkdir(parents=True)
+        (d / "app" / "src").mkdir(parents=True)
+        (d / "lib" / "Moss.toml").write_text(
+            '[project]\nname = "ect_generic_lib"\nversion = "0.1.0"\n')
+        (d / "lib" / "src" / "ect_generic_lib.moss").write_text(
+            "module ect_generic_lib\n\n"
+            "export fn first_of(a, b):\n  return a\n\n"
+            "export fn show_id(x):\n  return x.id()\n")
+        (d / "app" / "Moss.toml").write_text(
+            '[project]\nname = "ect_generic_app"\nversion = "0.1.0"\n\n'
+            '[dependencies]\nect_generic_lib = { path = "../lib" }\n')
+        (d / "app" / "src" / "main.moss").write_text(
+            "module main\nimport ect_generic_lib\n\n"
+            "type Alpha:\n  tag: Int\n\n  fn id() -> Int:\n    return tag\n\n"
+            "type Beta:\n  tag: Int\n\n  fn id() -> Int:\n    return tag + 100\n\n"
+            "fn main():\n"
+            f"  echo ect_generic_lib.show_id(ect_generic_lib.first_of(Alpha(tag: {k}), Beta(tag: {k + 1})))\n"
+            f"  echo ect_generic_lib.show_id(ect_generic_lib.first_of(Beta(tag: {k}), Alpha(tag: {k + 1})))\n")
+        rows.append({"id": "trivial_pkg_generic_types", "path": "trivial/pkg_generic_types",
+                     "kind": "package", "entry": "app",
+                     "expected_status": "pass",
+                     "metadata": {"shape": "package_boundary_generics", "packages": 2,
+                                  "user_types": 2}})
         return rows
 
 
 # Later teams: append generator instances here.
 GENERATORS: list[Generator] = [TrivialGenerator()]
+
+
+def reject_reserved_names(root: Path) -> None:
+    """Fixture content may not use names the harness treats as build output."""
+    for item in root.rglob("*"):
+        if item.name in C.RESERVED_NAMES:
+            raise SystemExit(f"fixture path uses reserved name {item.name!r}: {item}")
 
 
 def build_rows(out_dir: Path) -> list[dict]:
@@ -112,6 +168,7 @@ def build_rows(out_dir: Path) -> list[dict]:
         # generator never perturbs existing fixtures.
         rng = random.Random(f"{C.SUITE_SEED}:{gen.name}")
         for row in gen.generate(rng, out_dir):
+            reject_reserved_names(out_dir / row["path"])
             row.update(category=gen.category, generator=gen.name,
                        generator_version=gen.version, generator_seed=C.SUITE_SEED,
                        sha256=C.tree_sha256(out_dir / row["path"]))
@@ -174,7 +231,7 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
             values = C.stage_fixture(fx, work)
             argv = C.command_for(fx, {**tc.values(), **values}, None)
             res = C.run_measured(argv, cwd=work, env=tc.env())
-            verdict = C.extract_verdict(res, [(str(work), "<FIXTURE>")])
+            verdict = C.extract_verdict(res, C.path_replacements(work, tc))
             status = C.status_of(verdict)
             line += f", status {status} (expected {fx['expected_status']})"
             if status != fx["expected_status"]:
@@ -206,4 +263,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except C.ToolError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)

@@ -2,7 +2,7 @@
   "suite_name": "moss_ect_check",
   "version": "0.1.0",
   "seed": 20261105,
-  "total_fixtures": 3,
+  "total_fixtures": 5,
   "generators": {
     "trivial": "1.0.0"
   },
@@ -55,6 +55,40 @@
       "generator_version": "1.0.0",
       "generator_seed": 20261105,
       "sha256": "012c821900953705919a2acf3b77367be85b7bdfed00b69be403762e71b38cff"
+    },
+    {
+      "id": "trivial_pkg_fail",
+      "path": "trivial/pkg_fail",
+      "kind": "package",
+      "entry": "app",
+      "expected_status": "fail",
+      "metadata": {
+        "shape": "package_graph",
+        "packages": 2,
+        "reason": "unknown library symbol"
+      },
+      "category": "smoke",
+      "generator": "trivial",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "90e5277a9d01647a53b3610f10980e3fe8885d7bc0640e4aa2282f72d148f699"
+    },
+    {
+      "id": "trivial_pkg_generic_types",
+      "path": "trivial/pkg_generic_types",
+      "kind": "package",
+      "entry": "app",
+      "expected_status": "pass",
+      "metadata": {
+        "shape": "package_boundary_generics",
+        "packages": 2,
+        "user_types": 2
+      },
+      "category": "smoke",
+      "generator": "trivial",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "79d21f15e58dbe63e670077f766497b828ca8500ad13258aaaca6f6cefbab1ff"
     }
   ]
 }
