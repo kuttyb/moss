@@ -1,5 +1,41 @@
 ## Phase 28 R7-010 recovery correction (2026-11-05)
 
+### Current integrated checkpoint — `bf5fc4616aa4dadd7ca4ef30a967e80237fef884`
+
+- On the isolated `phase28-r7-010-vertical-integration` branch, the scoped-GO
+  CollectionView authority implementation `342f2258` was cherry-picked unchanged
+  as `bf5fc461`. The worktree was clean before validation. The focused `take`
+  harness is now 18/18; CollectionView Default/Shadow checks pass with all 8
+  corruption hooks, and the registered ReturnValue authority checks pass in
+  both modes.
+- Fresh full suites on this exact SHA: `make --jobs="$(nproc)" check` and
+  `make --jobs="$(nproc)" check-shadow` each report 97/167 PASS, 69 FAIL, 1
+  SKIP. These are current `bf5fc461` results and supersede the earlier 993 intake
+  matrix for this checkpoint. Broad failures include source-free imported
+  ReturnValue consumers, X1 v9/v10, `.mossi` generic specialization, and
+  downstream SDK/shard jobs. Both suites also encounter the same three pinned
+  performance-corpus SHA mismatches (`rw_packages_regex`,
+  `rw_phase106d1_borrowed_reads`, `rw_phase106d1_read_projection`); retain these
+  as separate fixture-integrity failures.
+- The frozen oracle has **not** been rerun on `bf5fc461`; the 60/60 semantic,
+  19/60 all-gate, and 41 provenance-only result remains historical, not
+  evidence for this checkpoint. The clone inventory and zero-approved-site
+  policy also remain as previously recorded; no clone exception is authorized.
+- Next repair dependency: materialize and serialize checker-owned ReturnValue
+  authority for imported Section 1 generic bodies, then remap it to the exact
+  caller specialization/occurrence in `.mossi` consumers. Current evidence:
+  X1 v10 focused fails at source-free `identity(7)` because the imported
+  generic `identity` body has no ReturnValue artifact; provider checking defers
+  the unresolved generic return fact. The source-free consumer must remain
+  fail-closed with no fallback. This repair is in the single vertical team and
+  has not yet been frozen or independently reviewed.
+- Independent Team C is re-verifying exact `bf5fc461`, including fresh oracle
+  and baseline Shadow provenance reconciliation. Overall Phase 28 status stays
+  **NO-GO**. No merge to `phase28-work` or `main` has occurred.
+- The prior intake verification and scoped implementation review are archived
+  at `docs/phase28/team-c/R7-010-993fbd54-verification.md` and
+  `docs/phase28/agent2-reviews/R7-010-CollectionView-342f2258.md`.
+
 This recovery record supersedes stale summary counts below for status reporting.
 The measurements are from earlier tested revisions and do **not** validate the
 current staging HEAD `ff0e6eefcef88ad9fa9b1703ae31f4786db516ab`.
