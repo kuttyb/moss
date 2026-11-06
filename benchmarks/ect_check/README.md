@@ -2,8 +2,8 @@
 
 **Phase 28.5, Team 1 (harness and measurement plumbing), Team 2 (generic-DAG
 fixtures), Team 3 (edit sequences B3, cold/warm B4, worktrees B5) and Team 4
-(agent-loop replay B6 and summary churn).** Suite version 0.4.0 (0.3.0 plus the
-Team 4 replay specs; every earlier fixture and scenario is byte-identical,
+(agent-loop replay B6 and summary churn).** Suite version 0.4.1 (0.3.0 plus the
+Team 4 replay specs, 0.4.1 after review; every earlier fixture and scenario is byte-identical,
 hashes unchanged).
 
 Records today's cost of the *check* part of edit-compile-test and is built to
@@ -750,11 +750,10 @@ that touched a `.moss` file under `sdk/` or `packages/`
 replayed oldest first: `a25a6fe195a7` (2026-10-12) ... `4601a468f89b` (2026-10-28). The exact
 SHAs, parents, blob ids and reference verdicts are in `manifest.json` (`scenarios`,
 family `b6_replay`, one `replay_step` scenario per commit, each with its own SHA-256) and the
-list as a whole has a range spec (`manifest["replay"]`, SHA-256 `f0f3b6bc...`). `bench` and
-`gate` verify, before running anything: every selected step's SHA-256, the range spec,
-that the range selected from git today equals the frozen list, and that every commit,
-parent and blob id exists with the recorded content (history is immutable; a shallow
-clone or a tampered spec is refused).
+list as a whole has a range spec (`manifest["replay"]`). `bench` and `gate` verify, before running
+anything: every selected step's SHA-256, the range spec, that the range selected from git today
+equals the frozen list, and that every commit, parent and blob id exists with the recorded content
+(history is immutable; a shallow clone or a tampered spec is refused).
 
 **One step = one edit.** For each commit (never a working-tree checkout; nothing is ever
 created inside the repository, no `git worktree`):
@@ -765,97 +764,139 @@ created inside the repository, no `git worktree`):
 3. apply the commit's tracked changes: added, modified and deleted `*.moss` files and
    `Moss.toml` manifests under `sdk/` and `packages/`; every pre-image and every written
    post-image is verified against the frozen git blob id (a drifted tree is refused, never
-   silently patched). Other files the commit touched (READMEs, Python/Rust helpers; 
+   silently patched). Other files the commit touched (READMEs, Python/Rust helpers;
    listed per step as `untracked_changes`) and anything outside `sdk/`/`packages/` (the
    compiler itself) are NOT replayed: the compiler is today's;
 4. check the same entry points again: phase `post`, **the per-edit latency**.
 
-**Entry points (defined per commit in the spec, derived from git alone).**
+**Entry points (defined per commit in the spec, derived from git alone).** In execution order:
 
+- standalone `.moss` files that no package owns: `moss check <file> --json` (only the 4 probes of commit #19);
 - for every package (nearest ancestor directory with a `Moss.toml`) that owns a changed
   tracked file: `margo --root <package> --check --json build` (through the same command
   template as every other package fixture). margo first checks the package's dependencies
   (all cold in `pre`; in `post` its package fingerprint cache skips the unchanged ones),
-  then the package, then `moss test --check` on the root package's test sources. Entry
-  points of one commit run one after the other in sorted order in the same tree, so a
-  later package's dependencies are already built by an earlier entry point;
-- for every changed `.moss` file that no package owns: `moss check <file> --json`
-  (only the 4 probes of commit #19);
+  then the package, then `moss test --check` on the root package's test sources (so changed
+  `tests/*.moss` files ARE type-checked; Agent 2 confirmed an injected error is found);
+- **for every changed `.moss` file under a package's `benches/` or `fixtures/`** (27 of the 179
+  tracked changes: 23 benches, 4 fixtures): `env MOSS_MODULE_PATH={modpath} moss check <file> --json`,
+  with the package's own and its dependencies' `build/check-debug` interface directories, run
+  right after the package's own entry point. **margo `--check` never type-checks these files**
+  (an injected `fn f() -> Int: return "x"` in a bench was not detected by margo, and is detected
+  by this entry point; `selftest` proves both). A warm client must honour `{modpath}`, or the command
+  template for `auxfile` entries, which are the one place the default command is not a plain
+  `moss`/`margo` invocation;
 - packages that merely DEPEND on a changed package are NOT checked. That is a scope choice
-  (an agent normally checks the package it edits; checking dependents multiplies the cost
-  and depends on which dependents one picks), but it means cross-package ripple is not
+  (an agent normally checks the package it edits), but it means cross-package ripple is not
   measured here;
 - a package that does not exist in the parent tree (a commit that adds one) has no `pre`
-  phase (the `post` check is then a first, cold check, not an edit); a package deleted by the
-  commit has no `post` phase.
+  phase; a package deleted by the commit has no `post` phase. A **scaffold** (a `Moss.toml`
+  without any `.moss` source in the parent: #27 hash, #28 compress, #34 regex, #35
+  data_utils_integration) is flagged `effectively_new` together with the 15 commits that add a
+  package: 19 commits whose `post` is a first check of a package, not an edit. Reports and
+  populations below separate them.
 
-Included in the 50 commits: 89 entry points (85 package checks, 4 file checks), 179 tracked
-changes; 15 commits add at least one package, 8 change no file under any package's source
-directory (tests, benches, fixtures or manifests only), 17 touch a `Moss.toml`.
+Included in the 50 commits: 116 entry points (85 package checks, 27 bench/fixture file checks,
+4 standalone file checks), 179 tracked changes (68 under a package `src`, 53 tests, 27
+benches/fixtures, the rest manifests).
 
 **What a latency means.** Per rep, a phase's latency is the sum of its entry points' wall
 times; the reported value is the median over reps (5 reps after one discarded sequence; each
 rep re-materializes the parent tree, so every rep starts from empty build dirs). Percentiles
-over the 50 commits use linear interpolation between order statistics (`statistics.quantiles`
-'inclusive'). Counters come from one separate run with the profiling environment (never in a
-timed rep) and are summed over the checker runs of a phase; margo skips unchanged packages in
-`post`, so `post` counters cover only what was rechecked.
+over commits use linear interpolation between order statistics (`statistics.quantiles`
+'inclusive'); **a population of fewer than 10 commits is reported as a min-max range, never as a
+p95.** Counters come from one separate run with the profiling environment (never in a timed
+rep) and are summed over the checker runs of a phase; margo skips unchanged packages in `post`,
+so `post` counters cover only what was rechecked, and a failing step that stops before the checker
+finishes reports none (every counter statistic states its denominator).
+
+**Measurement guards (added after review; all in the runner).**
+- *Per-step spread guard.* A phase's rep max/min wall ratio above 1.3 re-measures the whole step, at most 3
+  attempts; the kept attempt is the one with the lowest worst-phase spread (ties: earliest), never chosen
+  by median. Rows record `attempts`, `attempt_spreads`, `spread_flagged`; the report counts them.
+- *Mid-run noise probe.* Steps run in blocks of 5; after each block a combined probe (the single-process
+  calibration `b2_k04` plus the multi-process `b4_floor_pkg` through margo, which catches interference in
+  process trees that a single-process probe missed) is compared with the same probe taken before the loop.
+  A block whose probe drifted more than 10% is discarded and re-measured (up to 2 more times; still noisy
+  blocks are flagged `block_noisy`). Probes and drifts are in `results.json` (`meta.block_probes`).
+- *Reference pin.* The frozen verdicts were recorded with one `moss-opt` (sha256 `e9a22cf0...`). The report and
+  every replay gate result state the reference binary's SHA-256 and say plainly when it is not that binary: a step
+  that then differs from its frozen expectation means **re-freeze deliberately** (`run.py replay-record`, then
+  `generate.py --regenerate`), not "regression".
 
 **Expected status, not silent skips.** Old trees are checked with TODAY's compiler and many
 legitimately fail. Every entry point's `pre` and `post` verdict is frozen in the spec as
-`{status, exit_code, diagnostic}` (the first diagnostic's code and message; for a margo failure
-the embedded compiler diagnostic); `bench` flags any deviation, `gate` requires reference ==
-frozen verdict, and `validate` re-observes it. A failing check ends at the first diagnostic,
-so its latency is NOT representative of a check that completes, which is why the results
-below are split by population. Of the 149 checks (60 `pre`, 89 `post`), 57 pass and 92 fail;
-the failing ones are dominated by the SDK/compiler drift described under Limits.
+`{status, exit_code, diagnostic}`; `bench` flags any deviation, `gate` requires reference == frozen
+verdict, and `validate` re-observes it. A failing check ends at the first diagnostic, so its latency is
+NOT representative of a check that completes, which is why the results below are split by population. Of
+the 194 checks (77 `pre`, 117 `post`), 77 pass and 117 fail; 40 of the 50 commits have at least one failing check.
 
 ### B6 results (final quiet run, `results/b6-final/`)
 
-Run `20261106-072632`, `moss-opt` (SHA-256 `e9a22cf0...`), 16 CPUs, 5 reps, loadavg 0.25 at start,
-calibration drift 1.3% (quiet by the runner's probe). Everything below is read off
-`results/b6-final/LOCAL_REPORT.md` / `results_replay.csv`; repeat runs of the same code on the
-same machine moved p50 by a few percent and the small populations' p95 by up to 20%.
-Startup floors in the same run: `moss check` of a trivial file 1.90 ms, `margo --check build`
-of a trivial package 47.8 ms.
+Run `20261106-112733` is the committed one (`results/b6-final/`): `moss-opt`
+(sha256 `e9a22cf0...`, the pinned reference), 16 CPUs, 5 reps, suite 0.4.1, loadavg 0.12 at start, calibration
+drift 4.8% start-to-end (quiet by the runner's probe). The guards fired: 13 mid-run probes, 3 blocks (steps
+26-40) drifted 17-26% because a second session was building on the machine and were re-measured clean; 2 steps
+(#43 3 attempts, #49 2) were re-measured for spread; none is still flagged. An earlier run of the same code was
+discarded entirely because its last block stayed noisy through all retries and its end-of-run probe drifted 30%.
+Startup floors in the same run: `moss check` of a trivial file 1.89 ms, `margo --check build` of a trivial
+package 46.8 ms. Run-to-run variation on this shared machine is real: three runs of essentially the same
+steps gave all-commits post p50/p95 of 308/2210, 329/2200 and 343/2470 ms (the latter is reported), so differences
+under about 10% between two runs are noise.
 
-| Population | Commits | post p50 ms | post p95 ms | post max ms | pre p50 ms | pre p95 ms |
+**All commits (the whole frozen range, failing checks included) next to the clean-edit range:**
+
+| Population | Commits | post p50 ms | post p95 ms | post min-max ms | pre p50 ms | pre p95 ms |
 |---|---:|---:|---:|---:|---:|---:|
-| all commits (incl. failing checks) | 50 | 308.1 | 2209.6 | 2934.7 | 424.0 | 1952.9 |
-| post-edit check passes | 15 | 697.3 | 2436.9 | 2934.7 | 355.9 | 1910.1 |
-| post passes, package existed (pre may fail) | 9 | 382.3 | 2637.8 | 2934.7 | 258.9 | 1765.1 |
-| clean edits: pre and post pass, package existed | 5 | 231.2 | 893.4 | 942.4 | 452.9 | 1907.7 |
+| **whole frozen range** | 50 | 343.0 | 2470.1 | 57.4-2986.4 | 388.6 | 1887.3 |
+| post-edit check passes | 14 | 801.8 | 2734.4 | 63.6-2986.4 | 265.8 | 1365.3 |
+| post passes, not new/scaffold (pre may fail) | 7 | 806.5 | n/a (n<10) | 63.6-2986.4 | 265.8 | n/a (n<10) |
+| **clean edits**: pre and post pass, not new/scaffold, a checker ran | 4 | 519.3 | n/a (n<10) | 63.6-835.4 | 330.5 | n/a (n<10) |
 
-Distribution of the post-edit latency over all 50 commits (commits per bucket): <50 ms 0;
-50-100 ms 7; 100-250 ms 15; 250-500 ms 7; 0.5-1 s 9; 1-2 s 8; 2-5 s 4; >=5 s 0. Median compiler
-counters of the post-edit check, all 50 commits: 134 functions analyzed, 98 source function
-checks, 314 specialization evaluations, 0 specialization keys, 2 checker runs (sum of functions
-analyzed over the 50 commits: 7902); for the 5 clean edits: 118 / 54 / 236 / 0 / 2.
-One commit (#49) has a passing post check in which margo reported every package skipped and no
-checker ran (its only tracked change is a file under `fixtures/`); the post check then cost
-margo's own bookkeeping, 0.13 s.
+The clean-edit row is commits #2, #20, #25 and #26 (post 232, 64, 806, 835 ms). Its p95 is not a
+result (n=4); read it as the range 64-835 ms. (Commit #49, whose only change is a fixtures file, is not a
+clean edit: margo skips it and the fixture entry point fails identically before and after, so it measures nothing.) The whole-range row mixes failures (fast:
+they stop at the first diagnostic), first checks of new packages and scaffolds (slow: cold, whole package) and
+multi-entry-point commits, and is reported because it is the whole frozen range, not because it is a clean latency.
 
-How to read it. Only 9 of the 50 post-edit checks are checks of an existing package that
-pass and only 5 of them also passed before the edit, so the "clean edit" row is the one closest to an
-agent's steady-state loop and it is small (n=5; p95 of 5 values is within 10% of the max). The
-all-commit row mixes in failures (fast: they stop at the first diagnostic), first checks of new
-packages (slow: cold, whole package) and multi-entry-point commits (up to 8 entry points). It is
-reported because it is the whole frozen range, not because it is a clean latency.
+Distribution of the post-edit latency over all 50 commits (commits per bucket): <50 ms 0; 50-100 ms 8; 100-250 ms 16;
+250-500 ms 5; 0.5-1 s 8; 1-2 s 9; 2-5 s 4; >=5 s 0.
 
-**What an IMPROVEMENT looks like.** B6 is the benchmark where a resident daemon or fact store
-must show up as a collapse of the right-hand tail toward the left: p95 of the per-edit
-latency approaching the p50 of an incremental check, and that p50 approaching the startup floor
-(about 2 ms for a file request and 48 ms for the margo path today). With a content-addressed
-fact store, a post-edit check after an edit whose summaries do not change should analyze
-only the edited functions: the `post` "functions analyzed" counter should fall from today's
-whole-package count (median 118 for the clean edits, 134 over all commits) to roughly the number
-of edited functions, with `checker_runs` per package at most one.
-The gate must stay green throughout (identical verdicts and diagnostics per step, `pre` and
-`post`, between the reference compiler and the candidate or warm client), and a warm client is
-measured by the same specs: `--warm-client-cmd` adds a `warm` series (one stable work path,
-`--warm-primes` full unmeasured sequences first). The warm series replays the history in the
-same order every rep, so a content-addressed client may answer later reps from its store; read
-`wall_ms_first` next to the median.
+Compiler counters of the post-edit check (denominators matter: 14 of the 50 post steps have no counters, all of them
+failing steps that stop before the checker finishes, 0 checker runs; medians are over the commits that have counters):
+over the 36 commits with counters, median 142.0 functions analyzed, 98.0 source function checks, 314.0
+specialization evaluations, 0 specialization keys, 1.5 checker runs (sum of functions analyzed 8530); over the 4 clean
+edits, 118.0 / 54.5 / 236.5 / 0 / 2.0.
+
+**Which comparison to make later.** Population percentiles mix failing and passing steps and change composition when
+the compiler improves (a step that fails today may pass tomorrow and move from the fast to the slow bucket). The
+best future-comparison unit is the **per-step latency of the candidate against the reference on identical steps**
+(`results_replay.csv`, one row per commit, `pre_ms`/`post_ms` with the same `status`), judged only on steps whose
+status is the same on both sides and whose spread guard passed.
+
+**What an IMPROVEMENT looks like.** B6 is the benchmark where a resident daemon or fact store must show up as the
+right-hand tail collapsing toward the left: p95 of the per-edit latency approaching the p50 of an incremental check,
+and that p50 approaching the startup floor (about 2 ms for a file request and 47 ms for the margo path today). With
+a content-addressed fact store, a post-edit check after an edit whose summaries do not change should analyze only
+the edited functions: the `post` "functions analyzed" counter should fall from about 118 per post-edit check (the
+clean-edit median over 4 steps; whole packages every time) toward the number of edited functions, with
+`checker_runs` per package at most one. The gate must stay green throughout (identical verdicts and diagnostics per
+step, `pre` and `post`, between the reference compiler and the candidate or warm client), and a warm client is
+measured by the same specs: `--warm-client-cmd` adds a `warm` series (one stable work path, `--warm-primes` full
+unmeasured sequences first). The warm series replays the history in the same order every rep, so a content-addressed
+client may answer later reps from its store; read `wall_ms_first` next to the median.
+
+### Which commits measure nothing for the edit (disclosure)
+
+- **8 commits change no file under any package's `src`**: #6, #9, #39, #42, #43, #44, #49, #50 (tests, benches or
+  fixtures only). With bench/fixture entry points their post checks do run, but: #6, #9, #39, #42, #43, #44 and #49
+  fail both before and after for a reason independent of the edit (Char/String drift, a cascading missing dependency
+  interface, cbor test-support names, or - #39, #44, #49 - `fixtures/source_free_consumer.moss`, which imports
+  `ndarray` although that package is not in the dependency list and so fails identically before and after), so
+  their `post` latency is the cost of re-reporting an existing failure, not a check of the edit. Only #50 (cbor
+  tests) passes, with `pre` failing, so it is not an edit comparison either.
+- **Churn for these commits is vacuous by construction**: the churn pass reads package `src` files only.
+- 19 commits are first checks of a package (new or scaffold): their `post` is not an edit.
 
 ### Summary churn
 
@@ -880,91 +921,104 @@ the entry point's `margo --check` has written the dependency interfaces, with
 
 Not compared, on purpose: source line/column and `semantic_identity` (positional; `@<line>`
 suffixes inside compared strings are stripped), `implementation_hash` and `semantic_interface_hash`
-(whole-function hashes that include transitive effects: Team 3 found they move for every caller in a
-cone, so they are not the summary), and the synchronization plan (its graph identity changes with any
-program change). Output is deterministic: sorted entity ids, normalized fields, `sort_keys` JSON.
+(whole-function hashes; they move for a caller only when the callee's SUMMARY changes - verified by
+Agent 2 on commits #41, #2, #16 and on a synthetic file - so a hash-keyed store sees essentially the same
+ripple as this classifier), and the synchronization plan (its graph identity changes with any program
+change). Output is deterministic: sorted entity ids, normalized fields, `sort_keys` JSON.
 
 **Edited vs not edited.** A function is *edited* when its source text slice differs between the two trees:
 from its declaration line (given by the `symbols` query) to the line before the next non-blank line indented
 no deeper than the declaration, trailing blanks trimmed, line ends stripped. That attributes the diff to
-functions; it is a location fact, and a comment-only edit inside a body counts as an edit. The classifier then
-reports separately: functions added or removed (membership), *the edited function's own* summary changed, and
-*some other, not edited function's* summary changed (ripple: a caller's inferred access, effects or raises moved
-because a callee's did).
+functions; it is a location fact, and a comment-only edit inside a body counts as an edit. A function
+**rename shows as one function removed and one added** (membership only) and so hides any summary change made
+by the rename. The classifier reports separately: functions added or removed (membership), *the edited
+function's own* summary changed, and *some other, not edited function's* summary changed (ripple).
 
-**Availability.** A commit is analysable only when every touched unit answered the queries on both sides: the
-tree must check far enough for the compiler to answer. 21 of 50 do; 29 do not (the same drift as above; each
-reason is in `churn.json` and the report). Of the 21, 7 add a package (all functions are added; no summary can
-change), leaving **14 edits of existing packages: the denominator**. That is a small, non-random sample (the trees
-that happen to check today); read the intervals, not the point values.
+**Availability and what the sample is.** A commit is analysable only when every touched unit answered the
+queries on both sides, i.e. the tree must check far enough for the compiler to answer: 21 of 50 do; 29 do not
+(the same drift as below; each reason is in `churn.json` and the report). Of the 21: 8 add a package or give a
+scaffold its first source (nothing can change), 4 are tests/benches/fixtures only (#42, #43, #49, #50: vacuous),
+5 only add functions (#20, #25, #26, #30, #32), and **4 change the text of an existing function (#2, #10, #16,
+#41): the informative edits.** Of the 22 commits that modify an existing source file of an existing package only 9
+are analysable; the missing 13 are the text/csv/fmt/path/hash/regex cone (interface-missing cascades for text,
+csv, fmt, path and hash, and the Char/String and `push` type errors), so churn is silent on exactly the
+string-heavy packages.
 
-| Question (14 edit commits) | Commits | Share | 95% Wilson |
-|---|---:|---:|---|
-| any function summary changed | 4 | 29% | 12-55% |
-| an edited function's own summary changed | 4 | 29% | 12-55% |
-| some other (not edited) function's summary changed (ripple) | 2 | 14% | 4-40% |
-| no summary changed at all | 10 | 71% | |
-| ... of which only functions were added/removed | 6 | 43% | |
+**Headline (informative edits only):** any function summary changed in **4 of 4** (95% Wilson 51-100%); an edited
+function's own summary changed in 4 of 4; another, unedited function's summary changed (ripple) in **2 of 4** (95%
+Wilson 15-85%, #10: `linalg.get`/`linalg.set`, #41: `cbor.array_push`/`cbor.map_set`, both `raises`). 57 functions
+were edited, 37 of them changed summary (34 of the 37 in commit #10, a numerics review pass), and 4 functions that
+were not edited changed summary. n=4 cannot distinguish "rare" from "common"; the other 9 analysable non-new
+commits are additions or vacuous and carry no information about ripple.
 
-By category (commits with at least one changed function in it; any / edited / other): types 1 / 1 / 0, access
-1 / 1 / 0, raises 4 / 4 / 2, effects 1 / 1 / 0. Of the 14, only 4 changed the text of an existing function; for
-those 4: any summary changed 4/4, own 4/4, ripple 2/4 (95% Wilson 15-85%); 57 functions edited, 37 of them changed
-summary, and 4 functions that were not edited changed summary (both ripples were `raises`: commit #41's callers
-`cbor.array_push`/`cbor.map_set`, and #10's `linalg.get`/`linalg.set`). Functions whose summary changed, per edit
-commit: p50 0, p95 14.5, max 36, mean 2.9 (one commit, #10, a numerics review pass, accounts for 36 of the 41).
+Secondary figure only (diluted by the vacuous and addition-only commits), over the 13 analysable commits that are
+not new packages: any change 4 / 13 (31%, Wilson 13-58%), own 4 / 13, ripple 2 / 13 (15%, 4-42%); no summary changed
+at all 9 / 13. By category (any / edited / other), over the 13: types 1/1/0, access 1/1/0, raises 4/4/2,
+effects 1/1/0. Functions whose summary changed per analysable non-new commit: p50 0, p95 16.2, max 36, mean 3.2.
 
-**What an IMPROVEMENT means here.** Churn is a property of the history, not of the compiler, and does not
-"improve". It tells which fix can pay off. In this sample most edits (10 of 14) move no summary at all and all
-of those would be answered by a fact store that reuses an unchanged summary and rechecks only the edited functions;
-where an edited function's summary did change, the change reached a caller in 2 of 4 cases, so a summary-aware store
-must still follow changed summaries to their callers (it cannot stop at the edited function) but would touch a handful,
-not the whole package. Low churn means a summary-aware store pays off; high churn (here, concentrated in one big edit)
-means it cannot. n=14 (4 with an edited existing function) cannot distinguish "rare" from "common".
+**What this means for a summary-aware store (not an "improvement" metric: churn is a property of history).** The
+only informative evidence is the 4 edits: every one moved some summary and half reached an unedited function, so a
+store must follow a changed summary to its callers rather than stop at the edited function, but in these 4 cases it
+would touch a handful of functions (2-36 changed per commit, 34 of them in one commit), not the whole package. The
+other 9 analysable commits (additions and tests-only) say nothing about the ripple; they only show that an addition
+or a tests-only edit moves no existing summary. Low churn would mean a summary-aware store pays off; this sample is
+too small, and silent on the string-heavy cone, to say whether churn is low.
 
 ### Determinism, gate and self-tests
 
 - `generate.py --verify-determinism` regenerates the whole suite, including the 50 steps from git plus the recorded
   expectations, and compares it with the manifest; `generate.py --validate-only` re-observes every step with the
   reference compiler (blobs, applied tree equals the commit's tracked tree, every frozen verdict).
-- `run.py replay-check --with-churn` ran every step twice on moss-opt: the classification (status, exit code,
-  diagnostic of every check) and the per-phase counters were identical on the repeat for all 50 steps, and the
-  churn records of all 50 commits (availability, function sets, per-function changes) were identical across two
-  complete churn passes; each step also met its frozen expectation.
+- `run.py replay-check --with-churn` runs every step twice on moss-opt: the classification (status, exit code,
+  diagnostic of every check) and the per-phase counters must be identical on the repeat for all 50 steps, and the
+  churn records of all 50 commits identical across two complete churn passes; each step must also meet its frozen
+  expectation.
 - The gate treats every entry point of every step, `pre` and `post`, as a check step compared on the whole JSON
   verdict (volatile keys and margo's `checked`/`skipped` bookkeeping excluded, shown as information) and requires
-  reference == frozen expectation. `selftest` proves it fails a mutating or diagnostic-changing client and
-  passes an identity client and, for the plumbing only, a stand-in memoizing client.
+  reference == frozen expectation, and reports the reference binary's SHA-256 (see the reference pin above).
+  `selftest` proves it fails a mutating or diagnostic-changing client and passes an identity client and, for the
+  plumbing only, a stand-in memoizing client.
 - `selftest` also checks the churn classifier on synthetic input, end to end through the real queries (a
-  comment-only edit is an edit with no summary change; a deliberately injected body change that makes a function
-  write its parameter is detected as an own change in access and effects and as a ripple on its caller, while an
-  unrelated function is untouched), spec forgery (a re-hashed forged expectation is refused by the frozen
-  range; a wrong blob id; a drifted pre-image), cold rows and counters, and that no worktree is left registered.
+  comment-only edit is an edit with no summary change; a deliberately injected body change is detected as an own
+  change and as a ripple on its caller while an unrelated function is untouched), the spread guard, the mid-run noise
+  blocks and their bounded retries, the reference-pin message, `effectively_new`, the bench-file entry point finding
+  an injected type error, spec forgery (a re-hashed forged expectation is refused by the frozen range; a wrong blob
+  id; a drifted pre-image), cold rows and counters, and that no worktree is left registered.
 
 ### Limits of the method
 
 - **Old commits, today's compiler.** The compiler and SDK evolved together; checking an old tree with today's
-  compiler measures neither the old nor the new world. 39 of the 50 commits have at least one failing check
-  today; 46 of the 92 failing checks are one diagnostic (`TYPE_MISMATCH` "push argument conflicts with the element
-  type of 'parts'" in `sdk/text` and everything depending on it), and the post-edit checks of the last four
-  commits (#47-#50) all pass. That pattern is consistent with the Char/String SDK repair in commit #47
-  (`dd45e307`, "Fix SDK Char and String boundaries"), but the cause of each failure is not diagnosed here. Failing
-  checks stop at the first diagnostic and are fast; they are in the "all" row and excluded from the others.
-- **Entry points.** Package checks of the packages that own a changed file; dependents are not checked (above), and
-  `moss test --check` runs only for the root package of an entry point. Only `.moss` and `Moss.toml` changes are
-  replayed. Commits that change only tests, benches or fixtures mostly produce a `post` equal in cost to `pre`
-  minus the dependency builds, or (#49) no checker run at all.
+  compiler measures neither the old nor the new world. 40 of the 50 commits have at least one failing check today
+  (117 of 194 checks). Diagnosed causes (Agent 2's review reproduced them by hand through `git archive` and a full
+  git worktree): the dominant one is commit `983acb2`, which made `String.chars()` / `char_at` return `Char`; trees
+  before commit #45 (`7bf962d2`, whose message fixes the SDK for it) fail with `TYPE_MISMATCH` "push argument
+  conflicts with the element type of 'parts'/'pieces'" (49 checks, at `sdk/text` `text.moss:78`
+  `parts.push(chars[start+i])`) in text and everything that depends on it: fmt, json, parse, path, tables. The same
+  kind: `packages/time` (5, `pad_digit` returns `char`), `packages/regex` (9, `add_tok` argument `esc_ch`), `Char`
+  vs `String` comparisons and `assertEqual` operand types (5), and `String find expects string` in hash/regex (7).
+  Other classes: cbor test-support names not found (8, `cbor_test__same_ints`), a `TYPE_MISMATCH` on binding
+  `ignored` in the numerics tests of linalg/sparse/tables (11; a genuine repository defect also present at the
+  anchor), "Moss.toml with no source" scaffolds (3), dependency interface missing because a dependency failed (10),
+  and in commit #19 the host-I/O feasibility probes (`env_probe`/`process_probe`: unknown `Env`/`Process`;
+  `unbounded_range_write`: a deliberate `FILEIO_UNBOUNDED_REQUEST` negative), plus
+  `fixtures/source_free_consumer.moss` (unknown `ndarray`, 7). That the older compiler accepted these trees rests on
+  commit messages, **not on a rebuilt old compiler**. Failing checks stop at the first diagnostic and are fast; they
+  are in the whole-range row and excluded from the others.
+- **Entry points.** Package checks of the packages that own a changed file plus the bench/fixture file checks;
+  dependents are not checked, and `moss test --check` runs only for the root package of an entry point. Only
+  `.moss` and `Moss.toml` changes are replayed. The disclosure above lists the commits that measure nothing for the
+  edit.
 - **Cold, per step.** Every step starts from empty build dirs and ends one edit later; the real loop (many edits in
   a row in one tree) is what the warm series is for. The steps are independent, not cumulative.
 - **Sample.** 50 commits by many authors in a few weeks, mostly large feature commits (new packages, bulk
   additions), not the one-function edits of an agent loop; B3 is the controlled version of that. The churn sample is
-  small (14 edits, 4 with an edited existing function).
+  4 informative edits.
 - **Textual "edited".** A function whose text did not change but whose callee in another file did is not edited; a
-  reformatted function is. Entity ids are per module name; two functions with the same id in one commit would be
-  disambiguated by order.
-- **Mechanisms not established.** Why individual post checks cost what they do (for example #50: 2.9 s and 628 functions
-  analyzed over 5 checker runs for a cbor package whose pre check failed after 1.1 s, so the two are not
+  reformatted function is; a rename hides a summary change (above). Entity ids are per module name; two functions with
+  the same id in one commit would be disambiguated by order.
+- **Mechanisms not established.** Why individual post checks cost what they do (for example #50: 3.0 s and 628
+  functions analyzed over 5 checker runs for a cbor package whose pre check failed after 1.1 s, so the two are not
   comparable) was not investigated; the counters show what was analyzed, not where the time went.
-
 
 ## Fixture-shape constraints and known quirks
 
