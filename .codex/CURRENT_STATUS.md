@@ -2,9 +2,9 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, pushed HEAD
-  `6d97f238` before the current uncommitted Team B direct-index consumer
-  runner registration. Local source HEAD is `5e6f8c77`, which integrates Team
-  B's reviewed-source candidate `9acb3311` on the Team A fact. No merge to
+  `3417bedcd523dbeff187014de18d4a699ab53b10`. It integrates Team A's checker
+  fact and Team B's projected-member and bare-index consumers, with all
+  relevant gates registered in Default and EST-shadow. No merge to
   `phase28-work` or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
@@ -25,8 +25,8 @@
   Its minimized direct consumer gate passes six corruption cases and
   Native Debug/Optimized/Fast Debug parity; the copied Regex package reports
   19/19 Debug and 19/19 Release. The frozen/pushed Team B candidate is
-  `9acb331117ba12ca6ccaf94c30e30b44d2ad88ac`; L7 is integrating it and will
-  register its gate in the shared runners before independent review. On the
+  `9acb331117ba12ca6ccaf94c30e30b44d2ad88ac`. L7 registered its gate and
+  independent Agent 2 review is GO on exact staging SHA `3417bedc`. On the
   current integrated source, the direct consumer gate passes Default and
   EST-shadow, the projected-member consumer gate still passes, and intact
   `packages/regex` tests pass 19/19 Debug and 19/19 Release.
@@ -36,10 +36,11 @@
   GO for the limited evidence scope. It verifies frozen oracle digests and the ORACLE-10A clone evidence
   gate, but carries forward the previous 252-row full inventory rather than
   claiming a new full-oracle run. The stale 524 count is explicitly retired.
-- On integrated source `5e6f8c77`, `moss-dev` and `moss-opt` rebuilds pass; the
+- On integrated source `3417bedc`, `moss-dev` and `moss-opt` rebuilds pass; the
   indexed-call checker and native consumer gates pass Default and EST-shadow.
-  The projected-member consumer gate also passes. Feedback validation and
-  `git diff --check` pass; the new consumer runner registration is uncommitted.
+  The projected-member consumer gate also passes. The intact Regex package
+  passes 19/19 Debug and 19/19 Release. Feedback validation and
+  `git diff --check` pass.
   Team A also checked all 14 cases listed as semantic
   failures in the older post-Map.get ledger against the unchanged v2 checker
   expectations; all 14 now match on `7ba77e06`. This is targeted checker
@@ -49,11 +50,16 @@
   ORACLE-15/28/30/35/46/48 reject with their frozen diagnostics; ORACLE-54
   accepts. This supersedes the old checker-failure labels only, not native,
   Fast Debug, clone-provenance, or full-oracle results.
-- Current disposition remains NO-GO. Remaining: finish L7 runner registration
-  and obtain independent review of Team B's direct-index consumer; rerun Team
-  C's frozen oracle, clone provenance and corruption/parity audits against the
-  combined SHA; resolve any semantic/native issues and unapproved runtime
-  duplication; then compare the full default and
+- Team C's fresh v2 oracle run on exact SHA `3417bedc` reports **19/60 all-gate
+  PASS, 60/60 semantic PASS, 41 provenance-only failures, zero engine
+  disagreements, zero infrastructure failures**. The inventory records 252
+  direct `.clone()` observations in 84 artifacts and 1,876 duplication
+  candidates/36 groups; 252 is not a count of confirmed Moss-level copies.
+  Frozen v2 expectation, mapping, and certification hashes match. Per-fixture
+  deltas and the refreshed source-site report are in progress.
+- Current disposition remains NO-GO. Remaining: finalize Team C's per-fixture
+  and clone-site report; account for all 41 provenance-only fixtures and every
+  duplication site; then compare the full default and
   EST-shadow suites to their recorded baselines and obtain final independent
   review. Oracle expectations/digests remain frozen. No unverified clone is
   authorized. Full suites have not been run on this integrated SHA.
