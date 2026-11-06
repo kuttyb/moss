@@ -157,6 +157,8 @@ check-parallel: moss-dev moss-opt
 	MOSS_EST=shadow python3 tests/tooling/check_phase27_5_4_fact_hooks.py $(MOSS_DEV) $(MOSS_OPT)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_local_ownership.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_local_ownership.py $(MOSS_DEV)
+	env -u MOSS_EST python3 tests/tooling/check_phase28_projected_call_argument_read.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_projected_call_argument_read.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_selector_argument_effects.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/tooling/check_phase28_match_arm_authority.py $(MOSS_DEV)
