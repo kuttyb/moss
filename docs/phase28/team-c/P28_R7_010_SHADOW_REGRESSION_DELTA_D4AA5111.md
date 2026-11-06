@@ -123,11 +123,12 @@ failures.
   `shard_phase25_int_payloads` expected `ENUM_MAP_KEY_UNSUPPORTED` for an enum
   Map key but logged `ROOT_UNHANDLED_RAISE`; `check_phase21_original_af` also
   logs an unexpected root-raise diagnostic.
-- **Two explicit non-semantic issues are visible.**
-  `check_phase26_0_1_c3_parse_cache` fails an isolated `-Werror` build on an
-  unused `local_transfer` variable in `semantic_checker.cpp`.
-  `check_phase25_4_performance_baseline` reports three fixture SHA mismatches
-  (`packages/regex/src/main.moss`, `tests/phase106d1_borrowed_reads.moss`,
+- **Two non-semantic findings of different kinds are visible.**
+  `check_phase26_0_1_c3_parse_cache` hits a compile-hygiene defect: its
+  isolated `-Werror` build rejects an unused `local_transfer` variable in
+  `semantic_checker.cpp`. Separately,
+  `check_phase25_4_performance_baseline` reports three fixture-integrity SHA
+  mismatches (`packages/regex/src/main.moss`, `tests/phase106d1_borrowed_reads.moss`,
   and `tests/phase106d1_read_projection.moss`).
 - **Other aggregate package, SDK and shard failures** report underlying
   compiler, interpreter, Margo or assertion failures. The log-only pass does

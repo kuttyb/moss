@@ -115,10 +115,11 @@ These are classifications of the logged failure evidence, not a claim that all
 75 are independent source defects. Categories overlap because aggregate jobs
 can report several underlying failures.
 
-- **Two explicit non-semantic runner/checkpoint issues:**
-  `check_phase26_0_1_c3_parse_cache` fails its isolated `-Werror` build on an
-  unused `local_transfer` variable in `semantic_checker.cpp`.
-  `check_phase25_4_performance_baseline` reports three real-world fixture SHA
+- **Two non-semantic findings of different kinds:**
+  `check_phase26_0_1_c3_parse_cache` hits a compile-hygiene defect: its
+  isolated `-Werror` build rejects an unused `local_transfer` variable in
+  `semantic_checker.cpp`. Separately,
+  `check_phase25_4_performance_baseline` reports three fixture-integrity SHA
   mismatches (`packages/regex/src/main.moss`,
   `tests/phase106d1_borrowed_reads.moss`, and
   `tests/phase106d1_read_projection.moss`). These are logged integrity failures;
