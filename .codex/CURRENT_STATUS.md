@@ -73,10 +73,15 @@
   `docs/phase28/agent2-reviews/R7-010-native-proof-edge-ReturnValue-9a673127.md`.
   Source-free proof-edge Default/Shadow, ReturnValue Default/Shadow with
   drop/type-perturb/wrong-context checks, X1 v9/v10, Phase 27 `.mossi`, and
-  isolated Phase 26 C3 `-Werror` pass per independent review. Team C's exact-SHA
-  verification/oracle of `9a673127` is in progress. Full suites and oracle have
-  not yet been rerun on integrated source checkpoint `9b440e93`; Phase 28
-  remains NO-GO.
+  isolated Phase 26 C3 `-Werror` pass per independent review. Team C returned
+  scoped PASS for exact `9a673127`; its report is archived at
+  `docs/phase28/team-c/R7-010-9a673127-verification.md`. Its oracle reports
+  60/60 semantic PASS, zero engine disagreements, 19/60 all-gate PASS, and 41
+  provenance-only failures. Clone totals remain 258 audited, 252
+  unclassified/unauthorized, 2 explicit-copy classifications, and 4
+  root-capture classifications; no new authorization. Full suites and a fresh
+  oracle on integrated source checkpoint `9b440e93` are running/pending; Phase
+  28 remains NO-GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
