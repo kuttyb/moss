@@ -109,7 +109,8 @@ def check(compiler: str, fixture: str, expected_effect: int | None = None,
     if expected_fresh_owned_rebind:
         definitions = re.findall(
             r'MOSS_EST_OWNERSHIP_FACT definition="([^"]+)" source="([^"]*)" '
-            r'binding="([^"]*)" killed="([^"]*)" expr=(\d+) '
+            r'source_definition="[^"]*" binding="([^"]*)" '
+            r'disposition=\d+ killed="([^"]*)" expr=(\d+) '
             r'context="([^"]+)" access=(\d+) availability=(\d+) '
             r'source_kind=(\d+) type="([^"]*)"', proc.stderr)
         borrowed = [row for row in definitions

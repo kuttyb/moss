@@ -404,8 +404,10 @@ int main() {
   fresh_req.killed_definition_identity = "definition:borrowed";
   fresh_req.join_definition_identity.clear();
   fresh_req.source_binding_identity.clear();
+  fresh_req.source_definition_identity.clear();
   fresh_req.source_kind =
       TypedLocalOwnershipFactV1::SourceKind::FreshOwnedValue;
+  fresh_req.disposition = TypedLocalOwnershipFactV1::Disposition::NotApplicable;
   fresh_req.access = Effect::Read;
   fresh_req.value_type = Type::builtin("vector", {Type::primitive("int")});
   auto fresh_value_fact = fact(fresh_req);
@@ -486,11 +488,6 @@ int main() {
   assert(borrowed_write_module.find_local_ownership_fact(borrowed_write_req)
              .is_authoritative());
 
-  auto require_throw = [](auto&& operation) {
-    bool threw = false;
-    try { operation(); } catch (const std::invalid_argument&) { threw = true; }
-    assert(threw);
-  };
   auto dropped_borrow_fact = borrowed_read_module;
   dropped_borrow_fact.local_ownership_facts.clear();
   require_throw([&] {

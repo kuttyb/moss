@@ -2038,6 +2038,10 @@ class Checker {
           projected_collection_read_facts_;
       p_.typed_semantics->required_projected_collection_read_occurrences =
           required_projected_collection_read_occurrences_;
+      p_.typed_semantics->projected_call_argument_read_facts =
+          projected_call_argument_read_facts_;
+      p_.typed_semantics->required_projected_call_argument_read_occurrences =
+          required_projected_call_argument_read_occurrences_;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS")) {
         std::array<std::size_t, 4> conditional_operation_counts{};
@@ -2081,7 +2085,51 @@ class Checker {
                   << " view=" << p_.typed_semantics->collection_view_facts.size()
                   << " projected_read="
                   << p_.typed_semantics->projected_collection_read_facts.size()
+                  << " projected_call_argument_read="
+                  << p_.typed_semantics->projected_call_argument_read_facts.size()
                   << '\n';
+        for (const auto& fact :
+             p_.typed_semantics->projected_call_argument_read_facts)
+          std::cerr << "PHASE28_PROJECTED_CALL_READ availability="
+                    << static_cast<int>(fact.availability)
+                    << " arena=" << fact.est_arena_index
+                    << " argument=" << fact.call_argument_expression_occurrence_id
+                    << " receiver=" << fact.receiver_expression_occurrence_id
+                    << " index_node="
+                    << fact.collection_index_expression_occurrence_id
+                    << " index=" << fact.index_expression_occurrence_id
+                    << " member=" << fact.member_projection_expression_occurrence_id
+                    << " statement=" << fact.statement_occurrence_id
+                    << " argument_index=" << fact.argument_index
+                    << " parameter_index=" << fact.target_parameter_index
+                    << " target=" << std::quoted(fact.target_callable_identity)
+                    << " target_spec="
+                    << std::quoted(fact.target_specialization_identity)
+                    << " target_resolution="
+                    << static_cast<int>(fact.target_resolution)
+                    << " parameter_access="
+                    << static_cast<int>(fact.target_parameter_access)
+                    << " receiver_binding="
+                    << std::quoted(fact.receiver_binding_identity)
+                    << " receiver_definition="
+                    << std::quoted(fact.receiver_definition_identity)
+                    << " receiver_type="
+                    << std::quoted(fact.receiver_type
+                        ? fact.receiver_type->to_canonical_string() : string())
+                    << " index_type="
+                    << std::quoted(fact.index_type
+                        ? fact.index_type->to_canonical_string() : string())
+                    << " element_type="
+                    << std::quoted(fact.indexed_element_type
+                        ? fact.indexed_element_type->to_canonical_string() : string())
+                    << " member_type="
+                    << std::quoted(fact.projected_member_type
+                        ? fact.projected_member_type->to_canonical_string() : string())
+                    << " copy=" << fact.permits_copy
+                    << " nonescaping=" << fact.temporary_nonescaping_borrow
+                    << " context=" << std::quoted(fact.specialization_context)
+                    << " est_context=" << std::quoted(fact.est_fact_context)
+                    << '\n';
         if (std::getenv("MOSS_TEST_DUMP_PHASE28_AUTHORITY_FACTS"))
           for (const auto& function : p_.functions)
             if (function.name == "inspect")
@@ -2167,6 +2215,28 @@ class Checker {
           !p_.typed_semantics->projected_collection_read_facts.empty())
         p_.typed_semantics->projected_collection_read_facts.push_back(
             p_.typed_semantics->projected_collection_read_facts.front());
+      if (std::getenv("MOSS_TEST_DROP_PROJECTED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->projected_call_argument_read_facts.empty())
+        p_.typed_semantics->projected_call_argument_read_facts.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_PROJECTED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->projected_call_argument_read_facts.empty())
+        p_.typed_semantics->projected_call_argument_read_facts.push_back(
+            p_.typed_semantics->projected_call_argument_read_facts.front());
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_CALL_ARGUMENT_READ_FACT") &&
+          !p_.typed_semantics->projected_call_argument_read_facts.empty())
+        p_.typed_semantics->projected_call_argument_read_facts.front()
+            .temporary_nonescaping_borrow = false;
+      if (std::getenv("MOSS_TEST_DROP_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_projected_call_argument_read_occurrences.pop_back();
+      if (std::getenv("MOSS_TEST_DUPLICATE_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_projected_call_argument_read_occurrences.push_back(
+            p_.typed_semantics->required_projected_call_argument_read_occurrences.front());
+      if (std::getenv("MOSS_TEST_PERTURB_PROJECTED_CALL_ARGUMENT_READ_REQUIREMENT") &&
+          !p_.typed_semantics->required_projected_call_argument_read_occurrences.empty())
+        p_.typed_semantics->required_projected_call_argument_read_occurrences.front()
+            .target_callable_identity += ":perturbed";
       if (std::getenv("MOSS_TEST_VALIDATE_PHASE28_AUTHORITY_FACTS"))
         p_.typed_semantics->require_all_phase28_authority_facts();
 #endif
@@ -2894,6 +2964,10 @@ class Checker {
   vector<TypedProjectedCollectionReadFactV1> projected_collection_read_facts_;
   vector<TypedProjectedCollectionReadRequirementV1>
       required_projected_collection_read_occurrences_;
+  vector<TypedProjectedCallArgumentReadFactV1>
+      projected_call_argument_read_facts_;
+  vector<TypedProjectedCallArgumentReadRequirementV1>
+      required_projected_call_argument_read_occurrences_;
   vector<TypedMatchOwnershipFactV1> match_ownership_facts_;
   vector<TypedMatchOwnershipRequirementV1> required_match_occurrences_;
   vector<TypedEchoArgumentFactV1> echo_argument_facts_;
@@ -28644,6 +28718,215 @@ class Checker {
     }
   }
 
+  void retain_projected_call_argument_read_facts(
+      const Stmt& statement, const OwnershipEnv& env) {
+    if (statement.kind != Stmt::Kind::Call || !current_body_types_ ||
+        statement.args.empty()) return;
+    const auto statement_id = current_body_types_->statement_occurrence_ids.find(
+        &statement);
+    if (statement_id == current_body_types_->statement_occurrence_ids.end()) return;
+    const string context = expression_fact_context();
+
+    string target_identity;
+    string target_specialization_identity;
+    vector<Effect> target_accesses;
+    vector<size_t> parameter_indices(statement.args.size(), SIZE_MAX);
+    auto target_resolution =
+        TypedProjectedCallArgumentReadFactV1::TargetResolution::Unresolved;
+    if (statement.b.empty() && statement.a == "assertEqual") {
+      // assertEqual is a reserved test intrinsic; native lowering passes both
+      // operands by shared reference and Fast Debug observes them by READ.
+      target_identity = "builtin:assertEqual-v1";
+      target_accesses.assign(statement.args.size(), Effect::Read);
+      for (size_t i = 0; i < statement.args.size(); ++i)
+        parameter_indices[i] = i;
+      if (statement.args.size() == 2)
+        target_resolution =
+            TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+    } else if (statement.b.empty()) {
+      auto function = functions_.find(statement.a);
+      if (function != functions_.end() &&
+          !function->second->semantic_callable_id.empty()) {
+        target_identity = function->second->semantic_callable_id;
+        auto argument_types = concrete_argument_types(statement.args, env.types);
+        const auto* specialization = concrete_specialization(
+            *function->second, argument_types);
+        if (specialization &&
+            specialization->parameter_effects.size() ==
+                function->second->params.size()) {
+          target_specialization_identity = specialization->stable_type_key;
+          target_accesses = specialization->parameter_effects;
+          target_resolution =
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+        } else if (!function->second->static_dispatch &&
+                   final_parameter_effects_ready_ &&
+                   function->second->parameter_effects.size() ==
+                       function->second->params.size()) {
+          target_accesses = function->second->parameter_effects;
+          target_resolution =
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+        }
+        for (size_t arg = 0; arg < statement.args.size(); ++arg) {
+          string label, value;
+          if (tree_parse_named_argument(statement.args[arg], label, value)) {
+            auto parameter = std::find_if(function->second->params.begin(),
+                function->second->params.end(), [&](const Param& candidate) {
+                  return candidate.name == label;
+                });
+            if (parameter != function->second->params.end())
+              parameter_indices[arg] = static_cast<size_t>(
+                  parameter - function->second->params.begin());
+          } else if (arg < function->second->params.size()) {
+            parameter_indices[arg] = arg;
+          }
+        }
+      }
+    } else {
+      auto requirements = statement.member_requirements_by_context.find(
+          current_semantic_context_);
+      if (requirements != statement.member_requirements_by_context.end() &&
+          requirements->second.size() > 1) {
+        target_resolution =
+            TypedProjectedCallArgumentReadFactV1::TargetResolution::Ambiguous;
+      } else if (requirements != statement.member_requirements_by_context.end() &&
+                 requirements->second.size() == 1) {
+        const auto& requirement = requirements->second.front();
+        if (requirement.selected_callable_id &&
+            requirement.argument_access.size() == statement.args.size()) {
+          target_identity = *requirement.selected_callable_id;
+          target_resolution =
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+          for (size_t i = 0; i < statement.args.size(); ++i) {
+            parameter_indices[i] = i;
+            const auto mode = requirement.argument_access[i];
+            target_accesses.push_back(mode == moss::AccessMode::Read
+                ? Effect::Read : mode == moss::AccessMode::Write
+                    ? Effect::Write : Effect::Consume);
+          }
+        }
+      }
+    }
+
+    auto ungroup = [&](const est::Arena& arena, est::ExprId expression) {
+      while (expression < arena.size()) {
+        const auto* group = std::get_if<est::Parenthesized>(
+            &arena.at(expression));
+        if (!group) break;
+        expression = group->inner;
+      }
+      return expression;
+    };
+    for (const auto& argument_handle : statement.expression_handles) {
+      if (argument_handle.slot != est::ExprSlot::Argument ||
+          argument_handle.argument_index >= statement.args.size())
+        continue;
+      const auto* arena = expression_arena(argument_handle.arena_index);
+      if (!arena || argument_handle.expr >= arena->size()) continue;
+      const size_t arg_index = argument_handle.argument_index;
+      const est::ExprId argument_id = ungroup(*arena, argument_handle.expr);
+      if (argument_id != argument_handle.expr) continue;
+      if (argument_id >= arena->size()) continue;
+      const auto* member = std::get_if<est::Member>(&arena->at(argument_id));
+      if (!member) continue;
+      const est::ExprId index_id = ungroup(*arena, member->base);
+      if (index_id != member->base) continue;
+      const auto* index = index_id < arena->size()
+          ? std::get_if<est::Index>(&arena->at(index_id)) : nullptr;
+      if (!index) continue;
+      const est::ExprId receiver_id = ungroup(*arena, index->base);
+      const est::ExprId index_value_id = ungroup(*arena, index->index);
+      if (receiver_id != index->base || index_value_id != index->index) continue;
+      const auto* receiver_identifier = receiver_id < arena->size()
+          ? std::get_if<est::Identifier>(&arena->at(receiver_id)) : nullptr;
+      if (!receiver_identifier) continue;
+      const auto* receiver_facts = arena->facts(receiver_id, context);
+      if (!receiver_facts || !receiver_facts->type ||
+          receiver_facts->type->kind != TypeKind::Builtin ||
+          receiver_facts->type->name != "vector")
+        continue;
+
+      TypedProjectedCallArgumentReadFactV1 fact;
+      fact.availability = TypedProjectedCallArgumentReadFactV1::Availability::Present;
+      fact.est_arena_index = argument_handle.arena_index;
+      fact.call_argument_expression_occurrence_id = argument_handle.expr;
+      fact.receiver_expression_occurrence_id = index->base;
+      fact.collection_index_expression_occurrence_id = index_id;
+      fact.index_expression_occurrence_id = index->index;
+      fact.member_projection_expression_occurrence_id = argument_id;
+      fact.statement_occurrence_id = statement_id->second;
+      fact.argument_index = static_cast<std::uint32_t>(arg_index);
+      fact.target_parameter_index = parameter_indices[arg_index] == SIZE_MAX
+          ? UINT32_MAX : static_cast<std::uint32_t>(parameter_indices[arg_index]);
+      fact.argument_occurrence_span = arena->span(argument_handle.expr);
+      fact.projection_occurrence_span = arena->span(argument_id);
+      fact.target_callable_identity = target_identity;
+      fact.target_specialization_identity = target_specialization_identity;
+      fact.target_resolution = target_resolution;
+      fact.receiver_binding_identity = env.binding_identities.count(
+          receiver_identifier->name)
+              ? env.binding_identities.at(receiver_identifier->name) : string();
+      fact.receiver_definition_identity = env.definition_identities.count(
+          receiver_identifier->name)
+              ? env.definition_identities.at(receiver_identifier->name) : string();
+      fact.member_name = member->name;
+      fact.receiver_type = receiver_facts->type;
+      if (const auto* index_facts = arena->facts(index_value_id, context))
+        fact.index_type = index_facts->type;
+      if (const auto* element_facts = arena->facts(index_id, context))
+        fact.indexed_element_type = element_facts->type;
+      if (const auto* base_facts = arena->facts(member->base, context))
+        fact.projection_base_type = base_facts->type;
+      if (const auto* member_facts = arena->facts(argument_id, context))
+        fact.projected_member_type = member_facts->type;
+      if (target_resolution !=
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved ||
+          fact.target_parameter_index == UINT32_MAX ||
+          fact.target_callable_identity.empty()) {
+        fact.availability =
+            TypedProjectedCallArgumentReadFactV1::Availability::UnsupportedTarget;
+      } else if (fact.target_parameter_index >= target_accesses.size()) {
+        fact.availability =
+            TypedProjectedCallArgumentReadFactV1::Availability::UnsupportedTarget;
+      } else {
+        fact.target_parameter_access =
+            target_accesses[fact.target_parameter_index];
+        if (fact.target_parameter_access != Effect::Read)
+          fact.availability = TypedProjectedCallArgumentReadFactV1::Availability::
+              UnsupportedParameterAccess;
+      }
+      if (fact.receiver_binding_identity.empty() ||
+          fact.receiver_definition_identity.empty())
+        fact.availability =
+            TypedProjectedCallArgumentReadFactV1::Availability::
+                UnsupportedReceiverBinding;
+      fact.required_access = Effect::Read;
+      fact.temporary_nonescaping_borrow =
+          fact.target_parameter_access == Effect::Read &&
+          target_resolution ==
+              TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved;
+      fact.permits_copy = false;
+      fact.specialization_identity = local_ownership_specialization_identity();
+      fact.specialization_context = local_ownership_consumer_context();
+      fact.est_fact_context = context;
+      fact.provenance.source_file = statement.source_file.empty()
+          ? current_source_file_ : statement.source_file;
+      fact.provenance.line = statement.line;
+      fact.provenance.enclosing_callable_id = current_semantic_context_;
+      string defining_module = p_.main_module;
+      if (starts_with(current_semantic_context_, "fn:")) {
+        auto function = functions_.find(current_semantic_context_.substr(3));
+        if (function != functions_.end())
+          defining_module = function->second->defining_module;
+      }
+      fact.provenance.defining_module_id = program_module_identity(p_, defining_module);
+      if (!fact.has_exact_occurrence()) continue;
+      TypedProjectedCallArgumentReadRequirementV1 requirement;
+      static_cast<TypedProjectedCallArgumentReadFactV1&>(requirement) = fact;
+      projected_call_argument_read_facts_.push_back(fact);
+      required_projected_call_argument_read_occurrences_.push_back(requirement);
+    }
+  }
+
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
                              const Handler* current_handler,
@@ -28706,6 +28989,7 @@ class Checker {
       retain_conditional_collection_error_facts(s, env);
       retain_map_collection_view_facts(statements, index, env);
       retain_projected_collection_read_facts(s, env);
+      retain_projected_call_argument_read_facts(s, env);
 
       const RaiseSet direct_raises = exceptional
           ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
