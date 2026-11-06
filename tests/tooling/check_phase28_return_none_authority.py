@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/phase28/r7_010/team_a/return_none_fact.moss"
+SHADOWED_FIXTURE = ROOT / "tests/phase28/r7_010/team_a/return_shadowed_none.moss"
 
 
 def run(command: list[str], env: dict[str, str]):
@@ -43,6 +45,24 @@ def main() -> int:
                 "MOSS_INTERNAL_OR_IO_ERROR":
             raise AssertionError(f"{hook} did not fail closed: {result!r}\n"
                                  f"{failed.stderr}")
+
+    shadowed = run([compiler, "check", "--json", str(SHADOWED_FIXTURE)], env)
+    shadow_response = json.loads(shadowed.stdout)
+    if shadowed.returncode or not shadow_response.get("ok"):
+        raise AssertionError(f"shadowed None binding was rejected: {shadow_response!r}\n"
+                             f"{shadowed.stderr}")
+    shadow_rows = re.findall(r"PHASE28_RETURN_FACT ([^\n]+)", shadowed.stderr)
+    if not any(re.search(r"binding=\S+", row) and "type_origin=0" in row
+               for row in shadow_rows):
+        raise AssertionError(f"shadowed None did not use checked binding authority: "
+                             f"{shadow_rows!r}")
+    interpreted_shadow = run([compiler, "run", "--interp", str(SHADOWED_FIXTURE)],
+                             base_env)
+    if interpreted_shadow.returncode or interpreted_shadow.stdout != "7\n":
+        raise AssertionError("shadowed None runtime mismatch: "
+                             f"{interpreted_shadow.returncode}, "
+                             f"{interpreted_shadow.stdout!r}, "
+                             f"{interpreted_shadow.stderr!r}")
     print("Phase 28 None return-value authority: PASS")
     return 0
 

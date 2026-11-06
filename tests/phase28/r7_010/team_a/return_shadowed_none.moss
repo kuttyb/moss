@@ -1,0 +1,13 @@
+type Counter:
+  count: Int
+  fn next() -> option[Int]:
+    None = Some(count)
+    return None
+
+fn main():
+  counter = Counter(count: 7)
+  match counter.next():
+    case Some(value):
+      echo value
+    case None:
+      echo "empty"
