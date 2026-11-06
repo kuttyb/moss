@@ -17991,3 +17991,27 @@ untouched.
 - The take gate now adds checker and Fast Debug fact/requirement drop, duplicate, and perturb probes for both affected projected receiver cases. The fact perturb hook changes exact specialization context, so it is effective for primitive facts as well as nonprimitive facts.
 - Current candidate evidence: `make`/dev and `make moss-opt` builds passed. `python3 tests/phase28/verify_take_fixtures.py` passed 18/18 in Default and `MOSS_EST=shadow` passed 18/18, including native and optimized native parity, zero-clone assertions, and 13 checker/Fast Debug corruption hooks on each affected fixture. `check_phase24_imported_generic_expressions.py` passed Default and Shadow, including String borrow observation and Fast Debug/source-free authority corruption checks. `check_phase28_copy_index_authority.py` passed its 8-case Default/Shadow matrix. The initial exact base failure remains recorded above.
 - Feedback validation and `git diff --check` pass. No full suite or oracle has run. Exact-SHA Agent 2/Team C review remains pending. Do not integrate or push.
+
+### Reviewed projected-receiver indexed READ fix integrated
+
+- Frozen checker classification fix `ca88a6c3242aa0344e69d81e7a644b93cb4742b7`
+  received scoped GO from Agent 2 and Team C. Exact-SHA reports are archived at
+  `docs/phase28/agent2-reviews/take-fastdebug-classification-ca88a6c3.md` and
+  `docs/phase28/team-c/TEAM_C_CA88A6C_TAKE_INDEXED_CLASSIFICATION_VERIFICATION.md`.
+- The reviewed implementation was cherry-picked unchanged to isolated vertical
+  staging as `badad52f`, based on integrated `58e80e8d`. It extends exact checker
+  indexed-read facts to projected Vector receivers rooted in a checked
+  Identifier; unsupported receiver shapes still get no authority and consumers
+  fail closed. No runtime inference or copy fallback was introduced.
+- Independent exact-SHA focused validation: `verify_take_fixtures.py` 18/18 in
+  Default and Shadow, including `take_specialized_effects` and `take_multi_selector`
+  with Native/Optimized/Fast Debug parity and zero-clone checks; imported-generic
+  gate passes Default/Shadow; indexed-copy authority passes 8/8. Both Agent 2 and
+  Team C verified the exact candidate. Full suites/oracle have not run on the
+  integrated source yet.
+- Next: rerun integrated `make check` and `make check-shadow` sequentially. The
+  previous integrated `58e80e8d` Default target stopped before the full parallel
+  suite at the 16/18 preflight; no Shadow or complete matrix result exists for
+  that source. Preserve the documented direct `Vector[String]` Fast Debug scope
+  and Box projected-field limitation. Whole Phase 28 stays NO-GO; no merge or
+  clone exception is authorized.
