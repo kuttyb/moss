@@ -1,0 +1,3107 @@
+[
+  {
+    "available": false,
+    "commit": "a25a6fe195a7d30e5eb71aee2766630409816d99",
+    "index": 1,
+    "new_package": false,
+    "scenario": "b6_01_a25a6fe1",
+    "touches_source": true,
+    "unavailable_reason": "pre packages/time/src/main.moss: symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'; post packages/time/src/main.moss: symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "units": {
+      "post": {
+        "packages/math/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/math",
+          "error": null,
+          "functions": 45,
+          "ok": true
+        },
+        "packages/random/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/random",
+          "error": null,
+          "functions": 16,
+          "ok": true
+        },
+        "packages/time/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/time",
+          "error": "symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/math/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/math",
+          "error": null,
+          "functions": 45,
+          "ok": true
+        },
+        "packages/random/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/random",
+          "error": null,
+          "functions": 15,
+          "ok": true
+        },
+        "packages/time/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/time",
+          "error": "symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": true,
+    "available": true,
+    "categories_any": [
+      "raises"
+    ],
+    "categories_other": [],
+    "categories_own": [
+      "raises"
+    ],
+    "changed": {
+      "entity-v1:function:encoding__encode_utf8": [
+        "raises"
+      ]
+    },
+    "changed_other": {},
+    "changed_own": {
+      "entity-v1:function:encoding__encode_utf8": [
+        "raises"
+      ]
+    },
+    "commit": "026db4140a8d81508c915b0064ff4b769a6e7ed4",
+    "common": 6,
+    "edited": [
+      "entity-v1:function:encoding__encode_utf8",
+      "entity-v1:function:encoding__require_byte",
+      "entity-v1:function:encoding__validate_utf8"
+    ],
+    "functions_post": 6,
+    "functions_pre": 7,
+    "index": 2,
+    "membership_only": false,
+    "n_changed": 1,
+    "n_changed_other": 0,
+    "n_changed_own": 1,
+    "new_package": false,
+    "other_change": false,
+    "own_change": true,
+    "removed": [
+      "entity-v1:function:encoding__append_encoded_byte"
+    ],
+    "scenario": "b6_02_026db414",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/encoding/src/encoding.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/encoding",
+          "error": null,
+          "functions": 6,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/encoding/src/encoding.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/encoding",
+          "error": null,
+          "functions": 7,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "4bae08636c5bb8eff5ef804273f0c08bd32ed503",
+    "index": 3,
+    "new_package": false,
+    "scenario": "b6_03_4bae0863",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'; post sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "eb09e4214162bbab42d76e432f9eecd9085ef0f6",
+    "index": 4,
+    "new_package": false,
+    "scenario": "b6_04_eb09e421",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'; post sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "a257917ee9edb877ce6b793c2b1a2670e6b51dc3",
+    "index": 5,
+    "new_package": false,
+    "scenario": "b6_05_a257917e",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'; post sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "7e049160ef46ab847a3621486c28ad5a40e02204",
+    "index": 6,
+    "new_package": false,
+    "scenario": "b6_06_7e049160",
+    "touches_source": false,
+    "unavailable_reason": "pre sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'; post sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+    "units": {
+      "post": {
+        "sdk/encoding/src/encoding.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/encoding",
+          "error": null,
+          "functions": 6,
+          "ok": true
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/encoding/src/encoding.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/encoding",
+          "error": null,
+          "functions": 6,
+          "ok": true
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:linalg__determinant",
+      "entity-v1:function:linalg__from_vector",
+      "entity-v1:function:linalg__get",
+      "entity-v1:function:linalg__identity",
+      "entity-v1:function:linalg__invert",
+      "entity-v1:function:linalg__lu_factorize",
+      "entity-v1:function:linalg__lu_solve",
+      "entity-v1:function:linalg__mat_add",
+      "entity-v1:function:linalg__mat_mul",
+      "entity-v1:function:linalg__mat_norm_frobenius",
+      "entity-v1:function:linalg__mat_scale",
+      "entity-v1:function:linalg__mat_sub",
+      "entity-v1:function:linalg__mat_vec_mul",
+      "entity-v1:function:linalg__matrix_clone",
+      "entity-v1:function:linalg__matrix_cols",
+      "entity-v1:function:linalg__matrix_get",
+      "entity-v1:function:linalg__matrix_log_det",
+      "entity-v1:function:linalg__matrix_rows",
+      "entity-v1:function:linalg__matrix_set",
+      "entity-v1:function:linalg__ones",
+      "entity-v1:function:linalg__set",
+      "entity-v1:function:linalg__solve",
+      "entity-v1:function:linalg__trace",
+      "entity-v1:function:linalg__transpose",
+      "entity-v1:function:linalg__vec_add",
+      "entity-v1:function:linalg__vec_dot",
+      "entity-v1:function:linalg__vec_norm",
+      "entity-v1:function:linalg__vec_norm_inf",
+      "entity-v1:function:linalg__vec_norm_l1",
+      "entity-v1:function:linalg__vec_outer",
+      "entity-v1:function:linalg__vec_scale",
+      "entity-v1:function:linalg__vec_sub",
+      "entity-v1:function:linalg__zeros",
+      "entity-v1:function:numerics_integration__analyze_sparse_spectrum_diagonal",
+      "entity-v1:function:numerics_integration__solve_linear_regression",
+      "entity-v1:function:numerics_integration__verify_sparse_dense_consistency",
+      "entity-v1:function:sparse__csc_to_csr",
+      "entity-v1:function:sparse__csr_eliminate_zeros",
+      "entity-v1:function:sparse__csr_get",
+      "entity-v1:function:sparse__csr_mat_add",
+      "entity-v1:function:sparse__csr_mat_mul",
+      "entity-v1:function:sparse__csr_mat_vec_mul",
+      "entity-v1:function:sparse__csr_scale",
+      "entity-v1:function:sparse__csr_to_csc",
+      "entity-v1:function:sparse__csr_transpose",
+      "entity-v1:function:sparse__density",
+      "entity-v1:function:sparse__from_dense",
+      "entity-v1:function:sparse__from_triplets",
+      "entity-v1:function:sparse__heapsort_triplets",
+      "entity-v1:function:sparse__nnz",
+      "entity-v1:function:sparse__sift_down_triplets",
+      "entity-v1:function:sparse__to_dense",
+      "entity-v1:function:sparse__triplet_less",
+      "entity-v1:function:sparse__validate_csc",
+      "entity-v1:function:sparse__validate_csr",
+      "entity-v1:function:statistics__correlation",
+      "entity-v1:function:statistics__covariance",
+      "entity-v1:function:statistics__data_range",
+      "entity-v1:function:statistics__float_to_int_nonneg",
+      "entity-v1:function:statistics__iqr",
+      "entity-v1:function:statistics__kahan_sum",
+      "entity-v1:function:statistics__max_value",
+      "entity-v1:function:statistics__mean",
+      "entity-v1:function:statistics__median",
+      "entity-v1:function:statistics__min_value",
+      "entity-v1:function:statistics__new_running_stats",
+      "entity-v1:function:statistics__percentile",
+      "entity-v1:function:statistics__quantile",
+      "entity-v1:function:statistics__running_combine",
+      "entity-v1:function:statistics__running_count",
+      "entity-v1:function:statistics__running_mean",
+      "entity-v1:function:statistics__running_std_dev",
+      "entity-v1:function:statistics__running_update",
+      "entity-v1:function:statistics__running_variance",
+      "entity-v1:function:statistics__sift_down_floats",
+      "entity-v1:function:statistics__sort_floats",
+      "entity-v1:function:statistics__std_dev",
+      "entity-v1:function:statistics__sum",
+      "entity-v1:function:statistics__summary",
+      "entity-v1:function:statistics__variance",
+      "entity-v1:function:statistics__weighted_mean"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "67b7d9b7f0b3cf858862aa167ce024b63981e1cd",
+    "common": 0,
+    "edited": [],
+    "functions_post": 81,
+    "functions_pre": 0,
+    "index": 7,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_07_67b7d9b7",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "packages/linalg/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/linalg",
+          "error": null,
+          "functions": 33,
+          "ok": true
+        },
+        "packages/numerics_integration/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/numerics_integration",
+          "error": null,
+          "functions": 3,
+          "ok": true
+        },
+        "packages/sparse/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/sparse",
+          "error": null,
+          "functions": 19,
+          "ok": true
+        },
+        "packages/statistics/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/statistics",
+          "error": null,
+          "functions": 26,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "7ba41b83fd15200842ac3585138c0587f78f150f",
+    "index": 8,
+    "new_package": false,
+    "scenario": "b6_08_7ba41b83",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/text/src/text.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'; post sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "05834f8bfe71dfe1f12ce658c3a3ab006af5d27a",
+    "index": 9,
+    "new_package": false,
+    "scenario": "b6_09_05834f8b",
+    "touches_source": false,
+    "unavailable_reason": "pre sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; post sdk/text-encoding-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:linalg__is_valid_matrix",
+      "entity-v1:function:statistics__sift_down"
+    ],
+    "any_change": true,
+    "available": true,
+    "categories_any": [
+      "access",
+      "effects",
+      "raises",
+      "types"
+    ],
+    "categories_other": [
+      "raises"
+    ],
+    "categories_own": [
+      "access",
+      "effects",
+      "raises",
+      "types"
+    ],
+    "changed": {
+      "entity-v1:function:linalg__get": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__identity": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__lu_solve": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_add": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_mul": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__mat_norm_frobenius": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_scale": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_sub": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_vec_mul": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_clone": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_cols": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_get": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_rows": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_set": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__set": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__trace": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__transpose": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__vec_outer": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__csc_to_csr": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_eliminate_zeros": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_get": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_add": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_mul": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_vec_mul": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_scale": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__csr_to_csc": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_transpose": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__density": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__from_dense": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__heapsort_triplets": [
+        "types"
+      ],
+      "entity-v1:function:sparse__nnz": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__sift_down_triplets": [
+        "types"
+      ],
+      "entity-v1:function:sparse__to_dense": [
+        "raises"
+      ],
+      "entity-v1:function:statistics__float_to_int_nonneg": [
+        "types",
+        "access"
+      ],
+      "entity-v1:function:statistics__running_combine": [
+        "raises"
+      ],
+      "entity-v1:function:statistics__running_update": [
+        "raises"
+      ]
+    },
+    "changed_other": {
+      "entity-v1:function:linalg__get": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__set": [
+        "raises"
+      ]
+    },
+    "changed_own": {
+      "entity-v1:function:linalg__identity": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__lu_solve": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_add": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_mul": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__mat_norm_frobenius": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_scale": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_sub": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__mat_vec_mul": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_clone": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_cols": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_get": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_rows": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__matrix_set": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__trace": [
+        "raises"
+      ],
+      "entity-v1:function:linalg__transpose": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:linalg__vec_outer": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__csc_to_csr": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_eliminate_zeros": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_get": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_add": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_mul": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_mat_vec_mul": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_scale": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__csr_to_csc": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__csr_transpose": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__density": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__from_dense": [
+        "raises"
+      ],
+      "entity-v1:function:sparse__heapsort_triplets": [
+        "types"
+      ],
+      "entity-v1:function:sparse__nnz": [
+        "raises",
+        "effects"
+      ],
+      "entity-v1:function:sparse__sift_down_triplets": [
+        "types"
+      ],
+      "entity-v1:function:sparse__to_dense": [
+        "raises"
+      ],
+      "entity-v1:function:statistics__float_to_int_nonneg": [
+        "types",
+        "access"
+      ],
+      "entity-v1:function:statistics__running_combine": [
+        "raises"
+      ],
+      "entity-v1:function:statistics__running_update": [
+        "raises"
+      ]
+    },
+    "commit": "47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28",
+    "common": 76,
+    "edited": [
+      "entity-v1:function:linalg__identity",
+      "entity-v1:function:linalg__invert",
+      "entity-v1:function:linalg__lu_factorize",
+      "entity-v1:function:linalg__lu_solve",
+      "entity-v1:function:linalg__mat_add",
+      "entity-v1:function:linalg__mat_mul",
+      "entity-v1:function:linalg__mat_norm_frobenius",
+      "entity-v1:function:linalg__mat_scale",
+      "entity-v1:function:linalg__mat_sub",
+      "entity-v1:function:linalg__mat_vec_mul",
+      "entity-v1:function:linalg__matrix_clone",
+      "entity-v1:function:linalg__matrix_cols",
+      "entity-v1:function:linalg__matrix_get",
+      "entity-v1:function:linalg__matrix_rows",
+      "entity-v1:function:linalg__matrix_set",
+      "entity-v1:function:linalg__trace",
+      "entity-v1:function:linalg__transpose",
+      "entity-v1:function:linalg__vec_norm",
+      "entity-v1:function:linalg__vec_norm_inf",
+      "entity-v1:function:linalg__vec_norm_l1",
+      "entity-v1:function:linalg__vec_outer",
+      "entity-v1:function:sparse__csc_to_csr",
+      "entity-v1:function:sparse__csr_eliminate_zeros",
+      "entity-v1:function:sparse__csr_get",
+      "entity-v1:function:sparse__csr_mat_add",
+      "entity-v1:function:sparse__csr_mat_mul",
+      "entity-v1:function:sparse__csr_mat_vec_mul",
+      "entity-v1:function:sparse__csr_scale",
+      "entity-v1:function:sparse__csr_to_csc",
+      "entity-v1:function:sparse__csr_transpose",
+      "entity-v1:function:sparse__density",
+      "entity-v1:function:sparse__from_dense",
+      "entity-v1:function:sparse__from_triplets",
+      "entity-v1:function:sparse__heapsort_triplets",
+      "entity-v1:function:sparse__nnz",
+      "entity-v1:function:sparse__sift_down_triplets",
+      "entity-v1:function:sparse__to_dense",
+      "entity-v1:function:statistics__correlation",
+      "entity-v1:function:statistics__covariance",
+      "entity-v1:function:statistics__float_to_int_nonneg",
+      "entity-v1:function:statistics__kahan_sum",
+      "entity-v1:function:statistics__quantile",
+      "entity-v1:function:statistics__running_combine",
+      "entity-v1:function:statistics__running_update",
+      "entity-v1:function:statistics__sort_floats",
+      "entity-v1:function:statistics__variance"
+    ],
+    "functions_post": 78,
+    "functions_pre": 78,
+    "index": 10,
+    "membership_only": false,
+    "n_changed": 36,
+    "n_changed_other": 2,
+    "n_changed_own": 34,
+    "new_package": false,
+    "other_change": true,
+    "own_change": true,
+    "removed": [
+      "entity-v1:function:sparse__triplet_less",
+      "entity-v1:function:statistics__sift_down_floats"
+    ],
+    "scenario": "b6_10_47d50f49",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "packages/linalg/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/linalg",
+          "error": null,
+          "functions": 34,
+          "ok": true
+        },
+        "packages/sparse/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/sparse",
+          "error": null,
+          "functions": 18,
+          "ok": true
+        },
+        "packages/statistics/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/statistics",
+          "error": null,
+          "functions": 26,
+          "ok": true
+        }
+      },
+      "pre": {
+        "packages/linalg/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/linalg",
+          "error": null,
+          "functions": 33,
+          "ok": true
+        },
+        "packages/sparse/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/sparse",
+          "error": null,
+          "functions": 19,
+          "ok": true
+        },
+        "packages/statistics/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/statistics",
+          "error": null,
+          "functions": 26,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "5cc8b17e0b16dd16a743b7dd244d0fad583e34b2",
+    "index": 11,
+    "new_package": true,
+    "scenario": "b6_11_5cc8b17e",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/parse/src/parse.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/parse/src/parse.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/parse",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "1d58b910b54f89a213b274866283a826d8960eb2",
+    "index": 12,
+    "new_package": true,
+    "scenario": "b6_12_1d58b910",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/fmt/src/fmt.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "c20ef73cf5c11c63c0c15c24bc580f57e72a6cf5",
+    "index": 13,
+    "new_package": true,
+    "scenario": "b6_13_c20ef73c",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/json/src/json.moss: symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "048b46c1f94dbd3b17a0b04f337740e24cd4fff4",
+    "index": 14,
+    "new_package": false,
+    "scenario": "b6_14_048b46c1",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/fmt/src/fmt.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/json/src/json.moss: symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`; post sdk/fmt/src/fmt.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "ac328671d66d422a4b5067665e769231cafdef10",
+    "index": 15,
+    "new_package": true,
+    "scenario": "b6_15_ac328671",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/csv/src/csv.moss: symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/csv/src/csv.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/csv",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:linalg__validate_lu"
+    ],
+    "any_change": true,
+    "available": true,
+    "categories_any": [
+      "raises"
+    ],
+    "categories_other": [],
+    "categories_own": [
+      "raises"
+    ],
+    "changed": {
+      "entity-v1:function:linalg__lu_solve": [
+        "raises"
+      ]
+    },
+    "changed_other": {},
+    "changed_own": {
+      "entity-v1:function:linalg__lu_solve": [
+        "raises"
+      ]
+    },
+    "commit": "234ff9e2e3a1e03de64be4276f2aef64ba8c6d73",
+    "common": 78,
+    "edited": [
+      "entity-v1:function:linalg__lu_solve",
+      "entity-v1:function:sparse__csr_mat_mul",
+      "entity-v1:function:sparse__from_dense",
+      "entity-v1:function:sparse__from_triplets",
+      "entity-v1:function:sparse__validate_csc",
+      "entity-v1:function:sparse__validate_csr"
+    ],
+    "functions_post": 79,
+    "functions_pre": 78,
+    "index": 16,
+    "membership_only": false,
+    "n_changed": 1,
+    "n_changed_other": 0,
+    "n_changed_own": 1,
+    "new_package": false,
+    "other_change": false,
+    "own_change": true,
+    "removed": [],
+    "scenario": "b6_16_234ff9e2",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "packages/linalg/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/linalg",
+          "error": null,
+          "functions": 35,
+          "ok": true
+        },
+        "packages/sparse/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/sparse",
+          "error": null,
+          "functions": 18,
+          "ok": true
+        },
+        "packages/statistics/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/statistics",
+          "error": null,
+          "functions": 26,
+          "ok": true
+        }
+      },
+      "pre": {
+        "packages/linalg/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/linalg",
+          "error": null,
+          "functions": 34,
+          "ok": true
+        },
+        "packages/sparse/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/sparse",
+          "error": null,
+          "functions": 18,
+          "ok": true
+        },
+        "packages/statistics/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/statistics",
+          "error": null,
+          "functions": 26,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "6ce098afe2d7546c2775236c56b7ff973666016b",
+    "index": 17,
+    "new_package": true,
+    "scenario": "b6_17_6ce098af",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/data-acceptance/src/data_bench_support.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/data-acceptance/src/data_bench_support.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "bff4f72a8a578a4ea575921ee92480741597e550",
+    "index": 18,
+    "new_package": true,
+    "scenario": "b6_18_bff4f72a",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/path/examples/basic/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for path is missing or stale; run `margo build`; post sdk/path/src/path.moss: symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'pieces'",
+    "units": {
+      "post": {
+        "sdk/fs/examples/basic/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/fs/examples/basic",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        },
+        "sdk/fs/src/fs.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/fs",
+          "error": null,
+          "functions": 5,
+          "ok": true
+        },
+        "sdk/path/examples/basic/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/path/examples/basic",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for path is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/path/src/path.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/path",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'pieces'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "f8c14cfce48d2ec384450a68d3e2f6bce93336d2",
+    "index": 19,
+    "new_package": true,
+    "scenario": "b6_19_f8c14cfc",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/host/io/feasibility/env_probe.moss: symbols: UNKNOWN_SYMBOL_OR_TYPE: unknown identifier 'Env'; post sdk/host/io/feasibility/process_probe.moss: symbols: UNKNOWN_SYMBOL_OR_TYPE: unknown identifier 'Process'; post sdk/host/io/feasibility/unbounded_range_write.moss: symbols: FILEIO_UNBOUNDED_REQUEST: FileIO write payload must have a statically provable finite bound",
+    "units": {
+      "post": {
+        "sdk/host/io/feasibility/capability_consumer/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/host/io/feasibility/capability_consumer",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        },
+        "sdk/host/io/feasibility/capability_provider/src/hostcap.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/host/io/feasibility/capability_provider",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        },
+        "sdk/host/io/feasibility/consumer/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/host/io/feasibility/consumer",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        },
+        "sdk/host/io/feasibility/env_probe.moss": {
+          "check": null,
+          "entry": "file:sdk/host/io/feasibility/env_probe.moss",
+          "error": "symbols: UNKNOWN_SYMBOL_OR_TYPE: unknown identifier 'Env'",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/host/io/feasibility/process_probe.moss": {
+          "check": null,
+          "entry": "file:sdk/host/io/feasibility/process_probe.moss",
+          "error": "symbols: UNKNOWN_SYMBOL_OR_TYPE: unknown identifier 'Process'",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/host/io/feasibility/provider/src/hostio.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/host/io/feasibility/provider",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        },
+        "sdk/host/io/feasibility/same_package.moss": {
+          "check": null,
+          "entry": "file:sdk/host/io/feasibility/same_package.moss",
+          "error": null,
+          "functions": 4,
+          "ok": true
+        },
+        "sdk/host/io/feasibility/unbounded_range_write.moss": {
+          "check": null,
+          "entry": "file:sdk/host/io/feasibility/unbounded_range_write.moss",
+          "error": "symbols: FILEIO_UNBOUNDED_REQUEST: FileIO write payload must have a statically provable finite bound",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:fs__read_limited"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "4d04481fceb5c258670c566ed27de879fa0cddfe",
+    "common": 5,
+    "edited": [],
+    "functions_post": 6,
+    "functions_pre": 5,
+    "index": 20,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_20_4d04481f",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/fs/src/fs.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/fs",
+          "error": null,
+          "functions": 6,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/fs/src/fs.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/fs",
+          "error": null,
+          "functions": 5,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:ndarray__array_clone",
+      "entity-v1:function:ndarray__checked_offset",
+      "entity-v1:function:ndarray__copy_float_vector",
+      "entity-v1:function:ndarray__copy_int_vector",
+      "entity-v1:function:ndarray__element_count",
+      "entity-v1:function:ndarray__flatten",
+      "entity-v1:function:ndarray__from_flat",
+      "entity-v1:function:ndarray__from_matrix",
+      "entity-v1:function:ndarray__full",
+      "entity-v1:function:ndarray__get",
+      "entity-v1:function:ndarray__ones",
+      "entity-v1:function:ndarray__permute_axes",
+      "entity-v1:function:ndarray__rank",
+      "entity-v1:function:ndarray__require_valid",
+      "entity-v1:function:ndarray__reshape",
+      "entity-v1:function:ndarray__scalar",
+      "entity-v1:function:ndarray__set",
+      "entity-v1:function:ndarray__shape_copy",
+      "entity-v1:function:ndarray__shape_info",
+      "entity-v1:function:ndarray__size",
+      "entity-v1:function:ndarray__to_matrix",
+      "entity-v1:function:ndarray__transpose",
+      "entity-v1:function:ndarray__validate",
+      "entity-v1:function:ndarray__zeros"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "314290020e748d9aa0380701c1e975e99a0de129",
+    "common": 0,
+    "edited": [],
+    "functions_post": 24,
+    "functions_pre": 0,
+    "index": 21,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_21_31429002",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/ndarray/src/ndarray.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray",
+          "error": null,
+          "functions": 24,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:datastructures__copy_ints",
+      "entity-v1:function:datastructures__deque_storage_index",
+      "entity-v1:function:datastructures__int_deque_at",
+      "entity-v1:function:datastructures__int_deque_capacity",
+      "entity-v1:function:datastructures__int_deque_clear",
+      "entity-v1:function:datastructures__int_deque_is_empty",
+      "entity-v1:function:datastructures__int_deque_is_full",
+      "entity-v1:function:datastructures__int_deque_len",
+      "entity-v1:function:datastructures__int_deque_peek_back",
+      "entity-v1:function:datastructures__int_deque_peek_front",
+      "entity-v1:function:datastructures__int_deque_pop_back",
+      "entity-v1:function:datastructures__int_deque_pop_front",
+      "entity-v1:function:datastructures__int_deque_push_back",
+      "entity-v1:function:datastructures__int_deque_push_front",
+      "entity-v1:function:datastructures__int_deque_validate",
+      "entity-v1:function:datastructures__int_deque_values",
+      "entity-v1:function:datastructures__int_vector_pop",
+      "entity-v1:function:datastructures__int_vector_push",
+      "entity-v1:function:datastructures__max_heap_from",
+      "entity-v1:function:datastructures__max_heap_is_empty",
+      "entity-v1:function:datastructures__max_heap_len",
+      "entity-v1:function:datastructures__max_heap_peek",
+      "entity-v1:function:datastructures__max_heap_pop",
+      "entity-v1:function:datastructures__max_heap_push",
+      "entity-v1:function:datastructures__max_heap_validate",
+      "entity-v1:function:datastructures__max_sift_down",
+      "entity-v1:function:datastructures__max_sift_up",
+      "entity-v1:function:datastructures__min_heap_from",
+      "entity-v1:function:datastructures__min_heap_is_empty",
+      "entity-v1:function:datastructures__min_heap_len",
+      "entity-v1:function:datastructures__min_heap_peek",
+      "entity-v1:function:datastructures__min_heap_pop",
+      "entity-v1:function:datastructures__min_heap_push",
+      "entity-v1:function:datastructures__min_heap_validate",
+      "entity-v1:function:datastructures__min_sift_down",
+      "entity-v1:function:datastructures__min_sift_up",
+      "entity-v1:function:datastructures__new_int_bounded_deque",
+      "entity-v1:function:datastructures__new_max_heap",
+      "entity-v1:function:datastructures__new_min_heap",
+      "entity-v1:function:datastructures__new_priority_queue",
+      "entity-v1:function:datastructures__new_sequence_set",
+      "entity-v1:function:datastructures__priority_move",
+      "entity-v1:function:datastructures__priority_precedes",
+      "entity-v1:function:datastructures__priority_queue_is_empty",
+      "entity-v1:function:datastructures__priority_queue_len",
+      "entity-v1:function:datastructures__priority_queue_peek",
+      "entity-v1:function:datastructures__priority_queue_pop",
+      "entity-v1:function:datastructures__priority_queue_push",
+      "entity-v1:function:datastructures__priority_queue_validate",
+      "entity-v1:function:datastructures__priority_sift_down",
+      "entity-v1:function:datastructures__priority_sift_up",
+      "entity-v1:function:datastructures__require_int_deque",
+      "entity-v1:function:datastructures__require_max_heap",
+      "entity-v1:function:datastructures__require_min_heap",
+      "entity-v1:function:datastructures__require_priority_queue",
+      "entity-v1:function:datastructures__zeros"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf",
+    "common": 0,
+    "edited": [],
+    "functions_post": 56,
+    "functions_pre": 0,
+    "index": 22,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_22_2dfdd86c",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/datastructures/src/datastructures.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/datastructures",
+          "error": null,
+          "functions": 56,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:tables__add_column",
+      "entity-v1:function:tables__bool_column",
+      "entity-v1:function:tables__bool_values",
+      "entity-v1:function:tables__clone",
+      "entity-v1:function:tables__clone_column_unchecked",
+      "entity-v1:function:tables__clone_table",
+      "entity-v1:function:tables__clone_table_unchecked",
+      "entity-v1:function:tables__column_count",
+      "entity-v1:function:tables__column_index",
+      "entity-v1:function:tables__column_kind",
+      "entity-v1:function:tables__column_name",
+      "entity-v1:function:tables__column_nullable",
+      "entity-v1:function:tables__copy_bools",
+      "entity-v1:function:tables__copy_floats",
+      "entity-v1:function:tables__copy_ints",
+      "entity-v1:function:tables__copy_strings",
+      "entity-v1:function:tables__drop_missing_rows",
+      "entity-v1:function:tables__empty_columns",
+      "entity-v1:function:tables__fill_missing_bool",
+      "entity-v1:function:tables__fill_missing_float",
+      "entity-v1:function:tables__fill_missing_int",
+      "entity-v1:function:tables__fill_missing_string",
+      "entity-v1:function:tables__filter_mask",
+      "entity-v1:function:tables__find_column_index_unchecked",
+      "entity-v1:function:tables__float_column",
+      "entity-v1:function:tables__float_values",
+      "entity-v1:function:tables__has_only_selected_storage",
+      "entity-v1:function:tables__int_column",
+      "entity-v1:function:tables__int_values",
+      "entity-v1:function:tables__is_missing",
+      "entity-v1:function:tables__kind_bool",
+      "entity-v1:function:tables__kind_float",
+      "entity-v1:function:tables__kind_int",
+      "entity-v1:function:tables__kind_string",
+      "entity-v1:function:tables__missing_filler_is_canonical",
+      "entity-v1:function:tables__new_table",
+      "entity-v1:function:tables__push_column",
+      "entity-v1:function:tables__remove_column",
+      "entity-v1:function:tables__replace_at_unchecked",
+      "entity-v1:function:tables__replace_column",
+      "entity-v1:function:tables__require_valid_column",
+      "entity-v1:function:tables__require_valid_table",
+      "entity-v1:function:tables__select_column_rows_unchecked",
+      "entity-v1:function:tables__select_columns",
+      "entity-v1:function:tables__select_rows",
+      "entity-v1:function:tables__select_rows_unchecked",
+      "entity-v1:function:tables__selected_length",
+      "entity-v1:function:tables__string_column",
+      "entity-v1:function:tables__string_values",
+      "entity-v1:function:tables__table_row_count",
+      "entity-v1:function:tables__validate_column",
+      "entity-v1:function:tables__validate_table"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "dbb3bec5b05b3255a69f420f0a4d30040fac919d",
+    "common": 0,
+    "edited": [],
+    "functions_post": 52,
+    "functions_pre": 0,
+    "index": 23,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_23_dbb3bec5",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 52,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:binary__append_staged",
+      "entity-v1:function:binary__decode_signed_be",
+      "entity-v1:function:binary__decode_signed_le",
+      "entity-v1:function:binary__decode_unsigned_be",
+      "entity-v1:function:binary__decode_unsigned_le",
+      "entity-v1:function:binary__decode_uvarint_at",
+      "entity-v1:function:binary__default_payload_limit",
+      "entity-v1:function:binary__default_total_limit",
+      "entity-v1:function:binary__encode_signed_be",
+      "entity-v1:function:binary__encode_signed_le",
+      "entity-v1:function:binary__encode_unsigned_be",
+      "entity-v1:function:binary__encode_unsigned_le",
+      "entity-v1:function:binary__encode_uvarint",
+      "entity-v1:function:binary__ensure_writer_capacity",
+      "entity-v1:function:binary__maximum_int",
+      "entity-v1:function:binary__minimum_int",
+      "entity-v1:function:binary__new_reader",
+      "entity-v1:function:binary__new_reader_with_limits",
+      "entity-v1:function:binary__new_writer",
+      "entity-v1:function:binary__new_writer_with_limits",
+      "entity-v1:function:binary__power_256",
+      "entity-v1:function:binary__push_int",
+      "entity-v1:function:binary__read_byte",
+      "entity-v1:function:binary__read_bytes",
+      "entity-v1:function:binary__read_i16_be",
+      "entity-v1:function:binary__read_i16_le",
+      "entity-v1:function:binary__read_i32_be",
+      "entity-v1:function:binary__read_i32_le",
+      "entity-v1:function:binary__read_i64_be",
+      "entity-v1:function:binary__read_i64_le",
+      "entity-v1:function:binary__read_length_delimited",
+      "entity-v1:function:binary__read_u16_be",
+      "entity-v1:function:binary__read_u16_le",
+      "entity-v1:function:binary__read_u32_be",
+      "entity-v1:function:binary__read_u32_le",
+      "entity-v1:function:binary__read_u64_be",
+      "entity-v1:function:binary__read_u64_le",
+      "entity-v1:function:binary__read_uvarint",
+      "entity-v1:function:binary__reader_cursor",
+      "entity-v1:function:binary__reader_input",
+      "entity-v1:function:binary__reader_remaining",
+      "entity-v1:function:binary__require_available",
+      "entity-v1:function:binary__require_bytes",
+      "entity-v1:function:binary__require_finished",
+      "entity-v1:function:binary__require_input_limits",
+      "entity-v1:function:binary__require_output_limits",
+      "entity-v1:function:binary__require_reader",
+      "entity-v1:function:binary__require_writer",
+      "entity-v1:function:binary__signed_maximum",
+      "entity-v1:function:binary__signed_minimum",
+      "entity-v1:function:binary__unsigned_maximum",
+      "entity-v1:function:binary__validate_reader",
+      "entity-v1:function:binary__validate_writer",
+      "entity-v1:function:binary__write_byte",
+      "entity-v1:function:binary__write_bytes",
+      "entity-v1:function:binary__write_i16_be",
+      "entity-v1:function:binary__write_i16_le",
+      "entity-v1:function:binary__write_i32_be",
+      "entity-v1:function:binary__write_i32_le",
+      "entity-v1:function:binary__write_i64_be",
+      "entity-v1:function:binary__write_i64_le",
+      "entity-v1:function:binary__write_length_delimited",
+      "entity-v1:function:binary__write_u16_be",
+      "entity-v1:function:binary__write_u16_le",
+      "entity-v1:function:binary__write_u32_be",
+      "entity-v1:function:binary__write_u32_le",
+      "entity-v1:function:binary__write_u64_be",
+      "entity-v1:function:binary__write_u64_le",
+      "entity-v1:function:binary__write_uvarint",
+      "entity-v1:function:binary__writer_length",
+      "entity-v1:function:binary__writer_output"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "0dfbcd79c02439e90ee5a51c1370c181104aa626",
+    "common": 0,
+    "edited": [],
+    "functions_post": 71,
+    "functions_pre": 0,
+    "index": 24,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_24_0dfbcd79",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/binary/src/binary.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/binary",
+          "error": null,
+          "functions": 71,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:datastructures__copy_strings",
+      "entity-v1:function:datastructures__int_lower_bound",
+      "entity-v1:function:datastructures__int_sorted_map_contains",
+      "entity-v1:function:datastructures__int_sorted_map_get",
+      "entity-v1:function:datastructures__int_sorted_map_get_or",
+      "entity-v1:function:datastructures__int_sorted_map_key_at",
+      "entity-v1:function:datastructures__int_sorted_map_len",
+      "entity-v1:function:datastructures__int_sorted_map_put",
+      "entity-v1:function:datastructures__int_sorted_map_remove",
+      "entity-v1:function:datastructures__int_sorted_map_validate",
+      "entity-v1:function:datastructures__int_sorted_map_value_at",
+      "entity-v1:function:datastructures__int_sorted_set_add",
+      "entity-v1:function:datastructures__int_sorted_set_at",
+      "entity-v1:function:datastructures__int_sorted_set_contains",
+      "entity-v1:function:datastructures__int_sorted_set_len",
+      "entity-v1:function:datastructures__int_sorted_set_remove",
+      "entity-v1:function:datastructures__int_sorted_set_validate",
+      "entity-v1:function:datastructures__int_sorted_set_values",
+      "entity-v1:function:datastructures__new_int_sorted_map",
+      "entity-v1:function:datastructures__new_int_sorted_set",
+      "entity-v1:function:datastructures__new_string_insertion_map",
+      "entity-v1:function:datastructures__new_string_insertion_set",
+      "entity-v1:function:datastructures__new_union_find",
+      "entity-v1:function:datastructures__require_int_sorted_map",
+      "entity-v1:function:datastructures__require_int_sorted_set",
+      "entity-v1:function:datastructures__require_string_insertion_map",
+      "entity-v1:function:datastructures__require_string_insertion_set",
+      "entity-v1:function:datastructures__require_union_find",
+      "entity-v1:function:datastructures__require_union_find_index",
+      "entity-v1:function:datastructures__string_index",
+      "entity-v1:function:datastructures__string_insertion_map_contains",
+      "entity-v1:function:datastructures__string_insertion_map_get",
+      "entity-v1:function:datastructures__string_insertion_map_get_or",
+      "entity-v1:function:datastructures__string_insertion_map_key_at",
+      "entity-v1:function:datastructures__string_insertion_map_len",
+      "entity-v1:function:datastructures__string_insertion_map_put",
+      "entity-v1:function:datastructures__string_insertion_map_remove",
+      "entity-v1:function:datastructures__string_insertion_map_validate",
+      "entity-v1:function:datastructures__string_insertion_map_value_at",
+      "entity-v1:function:datastructures__string_insertion_set_add",
+      "entity-v1:function:datastructures__string_insertion_set_at",
+      "entity-v1:function:datastructures__string_insertion_set_contains",
+      "entity-v1:function:datastructures__string_insertion_set_len",
+      "entity-v1:function:datastructures__string_insertion_set_remove",
+      "entity-v1:function:datastructures__string_insertion_set_validate",
+      "entity-v1:function:datastructures__string_insertion_set_values",
+      "entity-v1:function:datastructures__string_vector_push",
+      "entity-v1:function:datastructures__union_find_component_size",
+      "entity-v1:function:datastructures__union_find_find",
+      "entity-v1:function:datastructures__union_find_len",
+      "entity-v1:function:datastructures__union_find_root_unchecked",
+      "entity-v1:function:datastructures__union_find_same",
+      "entity-v1:function:datastructures__union_find_set_count",
+      "entity-v1:function:datastructures__union_find_union",
+      "entity-v1:function:datastructures__union_find_validate",
+      "entity-v1:function:datastructures__unique_strings"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "99fc7fc8b260629c60a4c455b292a4365f716d8f",
+    "common": 56,
+    "edited": [],
+    "functions_post": 112,
+    "functions_pre": 56,
+    "index": 25,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_25_99fc7fc8",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/datastructures/src/datastructures.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/datastructures",
+          "error": null,
+          "functions": 112,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/datastructures/src/datastructures.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/datastructures",
+          "error": null,
+          "functions": 56,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:ndarray__add",
+      "entity-v1:function:ndarray__add_scalar",
+      "entity-v1:function:ndarray__aligned_dimension",
+      "entity-v1:function:ndarray__binary_elementwise",
+      "entity-v1:function:ndarray__broadcast_offset",
+      "entity-v1:function:ndarray__broadcast_shape",
+      "entity-v1:function:ndarray__divide",
+      "entity-v1:function:ndarray__divide_scalar",
+      "entity-v1:function:ndarray__max_axis",
+      "entity-v1:function:ndarray__mean_axis",
+      "entity-v1:function:ndarray__min_axis",
+      "entity-v1:function:ndarray__multiply",
+      "entity-v1:function:ndarray__multiply_scalar",
+      "entity-v1:function:ndarray__reduce_axis",
+      "entity-v1:function:ndarray__reduction_base_offset",
+      "entity-v1:function:ndarray__reduction_lane_sum",
+      "entity-v1:function:ndarray__reduction_shape",
+      "entity-v1:function:ndarray__scalar_elementwise",
+      "entity-v1:function:ndarray__slice_copy",
+      "entity-v1:function:ndarray__subarray_copy",
+      "entity-v1:function:ndarray__subtract",
+      "entity-v1:function:ndarray__subtract_scalar",
+      "entity-v1:function:ndarray__sum_axis"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "0d5784241a43caba87e8f024d4b10e20b4a996ea",
+    "common": 24,
+    "edited": [],
+    "functions_post": 47,
+    "functions_pre": 24,
+    "index": 26,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_26_0d578424",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/ndarray/src/ndarray.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray",
+          "error": null,
+          "functions": 47,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/ndarray/src/ndarray.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray",
+          "error": null,
+          "functions": 24,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "0fe2e6ef79933db607ab2e426bafe6974d2b3d42",
+    "index": 27,
+    "new_package": false,
+    "scenario": "b6_27_0fe2e6ef",
+    "touches_source": true,
+    "unavailable_reason": "post packages/hash/src/main.moss: symbols: TYPE_MISMATCH: String find expects string",
+    "units": {
+      "post": {
+        "packages/hash/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/hash",
+          "error": "symbols: TYPE_MISMATCH: String find expects string",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/hash/(no sources)": {
+          "check": "fail",
+          "entry": "pkg:packages/hash",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:compress__compress_lz4_block",
+      "entity-v1:function:compress__compress_lz4_size_prefixed",
+      "entity-v1:function:compress__decompress_lz4_block",
+      "entity-v1:function:compress__decompress_lz4_size_prefixed",
+      "entity-v1:function:compress__deflate_stored",
+      "entity-v1:function:compress__inflate_stored",
+      "entity-v1:function:compress__min_int",
+      "entity-v1:function:compress__push_int",
+      "entity-v1:function:compress__validate_bytes"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "7f6cd553e708664e891673705f935bf684a984fb",
+    "common": 0,
+    "edited": [],
+    "functions_post": 9,
+    "functions_pre": 0,
+    "index": 28,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_28_7f6cd553",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "packages/compress/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/compress",
+          "error": null,
+          "functions": 9,
+          "ok": true
+        }
+      },
+      "pre": {
+        "packages/compress/(no sources)": {
+          "check": "fail",
+          "entry": "pkg:packages/compress",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:cbor__add_array",
+      "entity-v1:function:cbor__add_bool",
+      "entity-v1:function:cbor__add_byte_string",
+      "entity-v1:function:cbor__add_float",
+      "entity-v1:function:cbor__add_int",
+      "entity-v1:function:cbor__add_map",
+      "entity-v1:function:cbor__add_null",
+      "entity-v1:function:cbor__add_payload_node",
+      "entity-v1:function:cbor__add_scalar_node",
+      "entity-v1:function:cbor__add_text_bytes",
+      "entity-v1:function:cbor__append_edge",
+      "entity-v1:function:cbor__array_get",
+      "entity-v1:function:cbor__array_length",
+      "entity-v1:function:cbor__array_push",
+      "entity-v1:function:cbor__bool_value",
+      "entity-v1:function:cbor__byte_string",
+      "entity-v1:function:cbor__checked_output_size",
+      "entity-v1:function:cbor__default_item_limit",
+      "entity-v1:function:cbor__default_max_depth",
+      "entity-v1:function:cbor__default_output_limit",
+      "entity-v1:function:cbor__default_payload_limit",
+      "entity-v1:function:cbor__edge_at",
+      "entity-v1:function:cbor__edge_count",
+      "entity-v1:function:cbor__encode",
+      "entity-v1:function:cbor__encoded_size",
+      "entity-v1:function:cbor__float_value",
+      "entity-v1:function:cbor__head_size",
+      "entity-v1:function:cbor__int_value",
+      "entity-v1:function:cbor__is_ancestor",
+      "entity-v1:function:cbor__is_container_kind",
+      "entity-v1:function:cbor__is_payload_kind",
+      "entity-v1:function:cbor__is_valid_kind",
+      "entity-v1:function:cbor__kind_array",
+      "entity-v1:function:cbor__kind_bool",
+      "entity-v1:function:cbor__kind_bytes",
+      "entity-v1:function:cbor__kind_float",
+      "entity-v1:function:cbor__kind_int",
+      "entity-v1:function:cbor__kind_map",
+      "entity-v1:function:cbor__kind_null",
+      "entity-v1:function:cbor__kind_text",
+      "entity-v1:function:cbor__map_key",
+      "entity-v1:function:cbor__map_length",
+      "entity-v1:function:cbor__map_set",
+      "entity-v1:function:cbor__map_value",
+      "entity-v1:function:cbor__new_doc",
+      "entity-v1:function:cbor__new_doc_with_limits",
+      "entity-v1:function:cbor__node_count",
+      "entity-v1:function:cbor__node_kind",
+      "entity-v1:function:cbor__parent_of",
+      "entity-v1:function:cbor__payload_copy",
+      "entity-v1:function:cbor__push_bool",
+      "entity-v1:function:cbor__push_container_tasks",
+      "entity-v1:function:cbor__push_float",
+      "entity-v1:function:cbor__push_int",
+      "entity-v1:function:cbor__push_node",
+      "entity-v1:function:cbor__require_attachable",
+      "entity-v1:function:cbor__require_complete",
+      "entity-v1:function:cbor__require_doc",
+      "entity-v1:function:cbor__require_edge_capacity",
+      "entity-v1:function:cbor__require_kind",
+      "entity-v1:function:cbor__require_limits",
+      "entity-v1:function:cbor__require_node",
+      "entity-v1:function:cbor__require_node_capacity",
+      "entity-v1:function:cbor__require_payload_bytes",
+      "entity-v1:function:cbor__require_unique_key",
+      "entity-v1:function:cbor__root_id",
+      "entity-v1:function:cbor__same_edge_vector_lengths",
+      "entity-v1:function:cbor__same_key",
+      "entity-v1:function:cbor__same_node_vector_lengths",
+      "entity-v1:function:cbor__same_text_key",
+      "entity-v1:function:cbor__set_root",
+      "entity-v1:function:cbor__text_bytes",
+      "entity-v1:function:cbor__text_scalars",
+      "entity-v1:function:cbor__valid_limits",
+      "entity-v1:function:cbor__validate_complete",
+      "entity-v1:function:cbor__validate_doc",
+      "entity-v1:function:cbor__write_head"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "b9c6ea4049530abd503c97c0d32c444efc45c3a7",
+    "common": 0,
+    "edited": [],
+    "functions_post": 77,
+    "functions_pre": 0,
+    "index": 29,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_29_b9c6ea40",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 77,
+          "ok": true
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:tables__append_group_row",
+      "entity-v1:function:tables__append_join_pair",
+      "entity-v1:function:tables__assemble_join",
+      "entity-v1:function:tables__checked_add_int",
+      "entity-v1:function:tables__contains_string",
+      "entity-v1:function:tables__distinct_int",
+      "entity-v1:function:tables__distinct_string",
+      "entity-v1:function:tables__empty_int_bool_map",
+      "entity-v1:function:tables__empty_int_int_map",
+      "entity-v1:function:tables__empty_string_bool_map",
+      "entity-v1:function:tables__empty_string_int_map",
+      "entity-v1:function:tables__filter_bool_equal",
+      "entity-v1:function:tables__filter_float_equal",
+      "entity-v1:function:tables__filter_float_range",
+      "entity-v1:function:tables__filter_int_equal",
+      "entity-v1:function:tables__filter_int_range",
+      "entity-v1:function:tables__filter_missing",
+      "entity-v1:function:tables__filter_present",
+      "entity-v1:function:tables__filter_string_equal",
+      "entity-v1:function:tables__group_by_int",
+      "entity-v1:function:tables__group_by_string",
+      "entity-v1:function:tables__group_count",
+      "entity-v1:function:tables__group_count_present",
+      "entity-v1:function:tables__group_count_rows",
+      "entity-v1:function:tables__group_extreme_float",
+      "entity-v1:function:tables__group_extreme_int",
+      "entity-v1:function:tables__group_int_keys",
+      "entity-v1:function:tables__group_max_float",
+      "entity-v1:function:tables__group_max_int",
+      "entity-v1:function:tables__group_mean_float",
+      "entity-v1:function:tables__group_mean_int",
+      "entity-v1:function:tables__group_min_float",
+      "entity-v1:function:tables__group_min_int",
+      "entity-v1:function:tables__group_string_keys",
+      "entity-v1:function:tables__group_sum_float",
+      "entity-v1:function:tables__group_sum_int",
+      "entity-v1:function:tables__inner_join_int",
+      "entity-v1:function:tables__inner_join_string",
+      "entity-v1:function:tables__joined_right_column",
+      "entity-v1:function:tables__left_join_int",
+      "entity-v1:function:tables__left_join_string",
+      "entity-v1:function:tables__require_group_table",
+      "entity-v1:function:tables__require_named_column",
+      "entity-v1:function:tables__require_output_limit",
+      "entity-v1:function:tables__require_valid_group_index",
+      "entity-v1:function:tables__right_join_names",
+      "entity-v1:function:tables__row_precedes",
+      "entity-v1:function:tables__sort_by",
+      "entity-v1:function:tables__sort_string_by_order",
+      "entity-v1:function:tables__stable_order",
+      "entity-v1:function:tables__validate_group_index"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "7773a3006faf6b247fe808de54f6a8ec01ea95ba",
+    "common": 52,
+    "edited": [],
+    "functions_post": 103,
+    "functions_pre": 52,
+    "index": 30,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_30_7773a300",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 103,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 52,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:app__run",
+      "entity-v1:function:app__run#u2"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "b4271cdc3b86f543b8add199af49983903d9ddd5",
+    "common": 47,
+    "edited": [],
+    "functions_post": 49,
+    "functions_pre": 47,
+    "index": 31,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": true,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_31_b4271cdc",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/ndarray/examples/batched_normalization/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray/examples/batched_normalization",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        },
+        "sdk/ndarray/examples/tensor_transforms/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray/examples/tensor_transforms",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        },
+        "sdk/ndarray/src/ndarray.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray",
+          "error": null,
+          "functions": 47,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/ndarray/src/ndarray.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/ndarray",
+          "error": null,
+          "functions": 47,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [
+      "entity-v1:function:cbor__additional_width",
+      "entity-v1:function:cbor__append_decoded_array_edge",
+      "entity-v1:function:cbor__append_decoded_map_edge",
+      "entity-v1:function:cbor__checked_decode_allocation",
+      "entity-v1:function:cbor__cursor_after_argument",
+      "entity-v1:function:cbor__decode",
+      "entity-v1:function:cbor__decode_with_limits",
+      "entity-v1:function:cbor__default_allocation_limit",
+      "entity-v1:function:cbor__default_input_limit",
+      "entity-v1:function:cbor__edge_allocation_units",
+      "entity-v1:function:cbor__maximum_int_value",
+      "entity-v1:function:cbor__node_allocation_units",
+      "entity-v1:function:cbor__push_decoded_node",
+      "entity-v1:function:cbor__push_decoded_payload",
+      "entity-v1:function:cbor__read_argument",
+      "entity-v1:function:cbor__require_declared_container_capacity",
+      "entity-v1:function:cbor__require_decode_input",
+      "entity-v1:function:cbor__require_decode_limits",
+      "entity-v1:function:cbor__require_supported_additional",
+      "entity-v1:function:cbor__require_wire_bytes",
+      "entity-v1:function:cbor__validate_utf8_range"
+    ],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "8d8712a8f80c7063801f06cf69c5cb2935fd6dd6",
+    "common": 77,
+    "edited": [],
+    "functions_post": 98,
+    "functions_pre": 77,
+    "index": 32,
+    "membership_only": true,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_32_8d8712a8",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 77,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "48e369446671cd1d44152e140ad0d5250ec518fa",
+    "index": 33,
+    "new_package": false,
+    "scenario": "b6_33_48e36944",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/tables/src/csv_adapter.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`; post sdk/tables/src/tables.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/tables/src/csv_adapter.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 103,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "b2f09d61407b0d6344223a6d108733a27b63f6a5",
+    "index": 34,
+    "new_package": false,
+    "scenario": "b6_34_b2f09d61",
+    "touches_source": true,
+    "unavailable_reason": "post packages/regex/src/main.moss: symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "units": {
+      "post": {
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/regex/(no sources)": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "40d4ae20ab4a4fbe776decab2400ad444e134803",
+    "index": 35,
+    "new_package": false,
+    "scenario": "b6_35_40d4ae20",
+    "touches_source": true,
+    "unavailable_reason": "post packages/data_utils_integration/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for hash is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "packages/data_utils_integration/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/data_utils_integration",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for hash is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/data_utils_integration/(no sources)": {
+          "check": "fail",
+          "entry": "pkg:packages/data_utils_integration",
+          "error": null,
+          "functions": 0,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "cdcadb26b9b46d332f5f577886c359d44ce839c0",
+    "index": 36,
+    "new_package": true,
+    "scenario": "b6_36_cdcadb26",
+    "touches_source": true,
+    "unavailable_reason": "post sdk/advanced-data-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {}
+    }
+  },
+  {
+    "available": false,
+    "commit": "6ef17f1c2edc1022f00f77a35bec051b1b9cdab3",
+    "index": 37,
+    "new_package": false,
+    "scenario": "b6_37_6ef17f1c",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/data-acceptance/src/data_bench_support.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`; pre sdk/fmt/src/fmt.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/json/src/json.moss: symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/data-acceptance/src/data_bench_support.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/data-acceptance/src/data_bench_support.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "a50a8342cbb33067dd21a7e3f502497c22929203",
+    "index": 38,
+    "new_package": false,
+    "scenario": "b6_38_a50a8342",
+    "touches_source": true,
+    "unavailable_reason": "pre packages/hash/src/main.moss: symbols: TYPE_MISMATCH: String find expects string; pre packages/regex/src/main.moss: symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'; post packages/hash/src/main.moss: symbols: TYPE_MISMATCH: String find expects string",
+    "units": {
+      "post": {
+        "packages/compress/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/compress",
+          "error": null,
+          "functions": 9,
+          "ok": true
+        },
+        "packages/hash/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/hash",
+          "error": "symbols: TYPE_MISMATCH: String find expects string",
+          "functions": 0,
+          "ok": false
+        },
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/compress/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/compress",
+          "error": null,
+          "functions": 9,
+          "ok": true
+        },
+        "packages/hash/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/hash",
+          "error": "symbols: TYPE_MISMATCH: String find expects string",
+          "functions": 0,
+          "ok": false
+        },
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "3ea1092359cb82b537bbf33595b3d75836df8e79",
+    "index": 39,
+    "new_package": false,
+    "scenario": "b6_39_3ea10923",
+    "touches_source": false,
+    "unavailable_reason": "pre sdk/advanced-data-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`; post sdk/advanced-data-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "4068976a9a4d1bb046b69fbc35708d8b51f831e4",
+    "index": 40,
+    "new_package": false,
+    "scenario": "b6_40_4068976a",
+    "touches_source": true,
+    "unavailable_reason": "pre packages/regex/src/main.moss: symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'; post packages/regex/src/main.moss: symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "units": {
+      "post": {
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": true,
+    "available": true,
+    "categories_any": [
+      "raises"
+    ],
+    "categories_other": [
+      "raises"
+    ],
+    "categories_own": [
+      "raises"
+    ],
+    "changed": {
+      "entity-v1:function:cbor__array_push": [
+        "raises"
+      ],
+      "entity-v1:function:cbor__map_set": [
+        "raises"
+      ],
+      "entity-v1:function:cbor__require_attachable": [
+        "raises"
+      ]
+    },
+    "changed_other": {
+      "entity-v1:function:cbor__array_push": [
+        "raises"
+      ],
+      "entity-v1:function:cbor__map_set": [
+        "raises"
+      ]
+    },
+    "changed_own": {
+      "entity-v1:function:cbor__require_attachable": [
+        "raises"
+      ]
+    },
+    "commit": "debf99f068735630ca28a7d5ee4fc343832ac094",
+    "common": 98,
+    "edited": [
+      "entity-v1:function:cbor__require_attachable",
+      "entity-v1:function:cbor__validate_doc"
+    ],
+    "functions_post": 98,
+    "functions_pre": 98,
+    "index": 41,
+    "membership_only": false,
+    "n_changed": 3,
+    "n_changed_other": 2,
+    "n_changed_own": 1,
+    "new_package": false,
+    "other_change": true,
+    "own_change": true,
+    "removed": [],
+    "scenario": "b6_41_debf99f0",
+    "touches_source": true,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783",
+    "common": 98,
+    "edited": [],
+    "functions_post": 98,
+    "functions_pre": 98,
+    "index": 42,
+    "membership_only": false,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_42_a6ecc79f",
+    "touches_source": false,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "76baf8739276a5e451baa18ae13cde9970b0ac08",
+    "common": 98,
+    "edited": [],
+    "functions_post": 98,
+    "functions_pre": 98,
+    "index": 43,
+    "membership_only": false,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_43_76baf873",
+    "touches_source": false,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "58340e636738331b84c5be1e42556ee612a73449",
+    "index": 44,
+    "new_package": false,
+    "scenario": "b6_44_58340e63",
+    "touches_source": false,
+    "unavailable_reason": "pre sdk/advanced-data-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`; post sdk/advanced-data-acceptance/src/main.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      },
+      "pre": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "7bf962d287a4ce341c2b7015f4c7032d9f395031",
+    "index": 45,
+    "new_package": false,
+    "scenario": "b6_45_7bf962d2",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/data-acceptance/src/data_bench_support.moss: symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`; pre sdk/fmt/src/fmt.moss: symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`; pre sdk/json/src/json.moss: symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+    "units": {
+      "post": {
+        "sdk/data-acceptance/src/data_bench_support.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/data-acceptance",
+          "error": null,
+          "functions": 6,
+          "ok": true
+        },
+        "sdk/fmt/src/fmt.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/fmt",
+          "error": null,
+          "functions": 20,
+          "ok": true
+        },
+        "sdk/json/src/json.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/json",
+          "error": null,
+          "functions": 51,
+          "ok": true
+        },
+        "sdk/parse/src/parse.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/parse",
+          "error": null,
+          "functions": 24,
+          "ok": true
+        },
+        "sdk/path/src/path.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/path",
+          "error": "symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/text",
+          "error": null,
+          "functions": 28,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/data-acceptance/src/data_bench_support.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/data-acceptance",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for csv is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/fmt/src/fmt.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/fmt",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/json/src/json.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/json",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for fmt is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/parse/src/parse.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/parse",
+          "error": "symbols: MOSS_COMPILE_ERROR: interface for text is missing or stale; run `margo build`",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/path/src/path.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/path",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'pieces'",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text/src/text.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/text",
+          "error": "symbols: TYPE_MISMATCH: push argument conflicts with the element type of 'parts'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "f272af9ca5e7d82b90716aae0494feceddc3d2b7",
+    "index": 46,
+    "new_package": false,
+    "scenario": "b6_46_f272af9c",
+    "touches_source": true,
+    "unavailable_reason": "pre sdk/path/src/path.moss: symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed; pre sdk/tables/src/csv_adapter.moss: symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed; pre sdk/tables/src/tables.moss: symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+    "units": {
+      "post": {
+        "sdk/path/src/path.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/path",
+          "error": null,
+          "functions": 16,
+          "ok": true
+        },
+        "sdk/tables/src/csv_adapter.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 19,
+          "ok": true
+        },
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": null,
+          "functions": 103,
+          "ok": true
+        },
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/path/src/path.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/path",
+          "error": "symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/tables/src/csv_adapter.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": "symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/tables/src/tables.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/tables",
+          "error": "symbols: TYPE_MISMATCH: Char and String are distinct types and cannot be compared with '==' or '!='; use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "functions": 0,
+          "ok": false
+        },
+        "sdk/text-encoding-acceptance/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/text-encoding-acceptance",
+          "error": null,
+          "functions": 1,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "dd45e30722bcc2d62d4bb46ba184d426cbaea066",
+    "index": 47,
+    "new_package": false,
+    "scenario": "b6_47_dd45e307",
+    "touches_source": true,
+    "unavailable_reason": "pre packages/hash/src/main.moss: symbols: TYPE_MISMATCH: String find expects string; pre packages/regex/src/main.moss: symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+    "units": {
+      "post": {
+        "packages/hash/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/hash",
+          "error": null,
+          "functions": 38,
+          "ok": true
+        },
+        "packages/regex/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/regex",
+          "error": null,
+          "functions": 49,
+          "ok": true
+        }
+      },
+      "pre": {
+        "packages/hash/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/hash",
+          "error": "symbols: TYPE_MISMATCH: String find expects string",
+          "functions": 0,
+          "ok": false
+        },
+        "packages/regex/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/regex",
+          "error": "symbols: TYPE_MISMATCH: argument 6 to function 'regex__add_tok' requires 'string' for 'esc_ch'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "available": false,
+    "commit": "bb4b340981207a2d988227ca30d3d5b4bd1d3a20",
+    "index": 48,
+    "new_package": false,
+    "scenario": "b6_48_bb4b3409",
+    "touches_source": true,
+    "unavailable_reason": "pre packages/time/src/main.moss: symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'",
+    "units": {
+      "post": {
+        "packages/time/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:packages/time",
+          "error": null,
+          "functions": 59,
+          "ok": true
+        }
+      },
+      "pre": {
+        "packages/time/src/main.moss": {
+          "check": "fail",
+          "entry": "pkg:packages/time",
+          "error": "symbols: MOSS_COMPILE_ERROR: function 'time__pad_digit' returns 'char' but is annotated 'string'",
+          "functions": 0,
+          "ok": false
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "c0ff87fd2c361a5ccac668778dfff779bce82017",
+    "common": 13,
+    "edited": [],
+    "functions_post": 13,
+    "functions_pre": 13,
+    "index": 49,
+    "membership_only": false,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_49_c0ff87fd",
+    "touches_source": false,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": null,
+          "functions": 13,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/advanced-data-acceptance/src/main.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/advanced-data-acceptance",
+          "error": null,
+          "functions": 13,
+          "ok": true
+        }
+      }
+    }
+  },
+  {
+    "added": [],
+    "any_change": false,
+    "available": true,
+    "categories_any": [],
+    "categories_other": [],
+    "categories_own": [],
+    "changed": {},
+    "changed_other": {},
+    "changed_own": {},
+    "commit": "4601a468f89b889a58f45639cde0a8e7aba9cc00",
+    "common": 98,
+    "edited": [],
+    "functions_post": 98,
+    "functions_pre": 98,
+    "index": 50,
+    "membership_only": false,
+    "n_changed": 0,
+    "n_changed_other": 0,
+    "n_changed_own": 0,
+    "new_package": false,
+    "other_change": false,
+    "own_change": false,
+    "removed": [],
+    "scenario": "b6_50_4601a468",
+    "touches_source": false,
+    "unavailable_reason": null,
+    "units": {
+      "post": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "pass",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      },
+      "pre": {
+        "sdk/cbor/src/cbor.moss": {
+          "check": "fail",
+          "entry": "pkg:sdk/cbor",
+          "error": null,
+          "functions": 98,
+          "ok": true
+        }
+      }
+    }
+  }
+]

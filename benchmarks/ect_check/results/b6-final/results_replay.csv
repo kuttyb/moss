@@ -1,0 +1,51 @@
+mode,scenario,index,commit,entries,new_package,touches_source,pre_status,post_status,pre_ms,post_ms,pre_functions_analyzed,pre_source_function_checks,pre_specialization_evaluations,pre_specialization_keys,pre_checker_runs,post_functions_analyzed,post_source_function_checks,post_specialization_evaluations,post_specialization_keys,post_checker_runs,subject
+cold,b6_01_a25a6fe1,1,a25a6fe195a7d30e5eb71aee2766630409816d99,3,False,True,fail,fail,901.3351790199522,936.5892659989186,105,105,464,0,4,108,108,488,0,4,Phase 24 Team M: Implement L7 closeout repairs and robust benchmark loops
+cold,b6_02_026db414,2,026db4140a8d81508c915b0064ff4b769a6e7ed4,1,False,True,pass,pass,258.8557240087539,231.1753269750625,41,25,103,0,3,15,15,64,0,2,Optimize UTF-8 codec hot paths
+cold,b6_03_4bae0863,3,4bae08636c5bb8eff5ef804273f0c08bd32ed503,2,False,True,fail,fail,211.22170699527487,124.22442098613828,27,27,18,0,5,,,,,0,Optimize text search and slicing through native primitives
+cold,b6_04_eb09e421,4,eb09e4214162bbab42d76e432f9eecd9085ef0f6,2,False,True,fail,fail,207.57878699805588,125.76434400398284,27,27,18,0,5,,,,,0,Correct preconstructed text performance workloads
+cold,b6_05_a257917e,5,a257917ee9edb877ce6b793c2b1a2670e6b51dc3,2,False,True,fail,fail,208.9864209992811,127.35684399376623,27,27,18,0,5,,,,,0,Optimize ASCII case and characterize builders
+cold,b6_06_7e049160,6,7e049160ef46ab847a3621486c28ad5a40e02204,2,False,False,fail,fail,281.8633000133559,287.8898159833625,20,20,64,0,3,15,15,73,0,2,Add independent Text performance validation
+cold,b6_07_67b7d9b7,7,67b7d9b7f0b3cf858862aa167ce024b63981e1cd,4,True,True,,pass,,2223.621844983427,,,,,,1020,276,618,6,12,Phase 24 Team N: Complete numerical computing SDK with architect sign-off
+cold,b6_08_7ba41b83,8,7ba41b83fd15200842ac3585138c0587f78f150f,2,False,True,fail,fail,219.74478897755034,132.53797602374107,27,27,18,0,5,,,,,0,Add capacity-aware Text builder
+cold,b6_09_05834f8b,9,05834f8bfe71dfe1f12ce658c3a3ab006af5d27a,1,False,False,fail,fail,271.08863499597646,101.48726400802843,27,27,18,0,5,,,,,0,Correct reusable builder benchmark equivalence
+cold,b6_10_47d50f49,10,47d50f49c54eb1aba9de5e5c8dd21cb4c833bf28,3,False,True,pass,fail,2284.919134050142,1626.5284880064428,606,225,504,4,8,395,137,354,0,5,"phase24(numerics): resolve L7 review defects, expand differential oracles, benchmark Rust parity"
+cold,b6_11_5cc8b17e,11,5cc8b17e0b16dd16a743b7dd244d0fad583e34b2,1,True,True,,fail,,68.79228597972542,,,,,,5,5,0,0,1,Phase 24 D1: Implement moss.parse cursor primitives and source tracking
+cold,b6_12_1d58b910,12,1d58b910b54f89a213b274866283a826d8960eb2,1,True,True,,fail,,70.01206499990076,,,,,,5,5,0,0,1,Phase 24 D2: Implement moss.fmt formatting and escaping
+cold,b6_13_c20ef73c,13,c20ef73cf5c11c63c0c15c24bc580f57e72a6cf5,1,True,True,,fail,,182.09751701215282,,,,,,28,20,31,0,3,Phase 24 D3: Implement moss.json columnar tape representation and iterative parser
+cold,b6_14_048b46c1,14,048b46c1f94dbd3b17a0b04f337740e24cd4fff4,2,False,True,fail,fail,251.85788999078795,131.26962399110198,28,20,31,0,3,,,,,0,"Phase 24 D4: Implement JSON serialization, pretty-printing, and validation"
+cold,b6_15_ac328671,15,ac328671d66d422a4b5067665e769231cafdef10,1,True,True,,fail,,72.22508901031688,,,,,,5,5,0,0,1,"Phase 24 D5: Implement moss.csv RFC 4180 reader, writer, validation, and table accessors"
+cold,b6_16_234ff9e2,16,234ff9e2e3a1e03de64be4276f2aef64ba8c6d73,3,False,True,fail,fail,1874.2370849940926,1261.2441859673709,440,182,430,0,6,257,88,177,0,3,phase24-numerics: final L7 closeout repairs and integration handoff
+cold,b6_17_6ce098af,17,6ce098afe2d7546c2775236c56b7ff973666016b,1,True,True,,fail,,184.88234802498482,,,,,,28,20,31,0,3,"Phase 24 D6: Add cross-package data-acceptance suite, differential tests, and benchmarks"
+cold,b6_18_bff4f72a,18,bff4f72a8a578a4ea575921ee92480741597e550,4,True,True,,fail,,250.74461800977588,,,,,,8,5,3,0,2,Add Team H path and bounded filesystem SDKs
+cold,b6_19_f8c14cfc,19,f8c14cfce48d2ec384450a68d3e2f6bce93336d2,8,True,True,,fail,,264.025448996108,,,,,,8,6,6,0,5,Document host I/O service feasibility
+cold,b6_20_4d04481f,20,4d04481fceb5c258670c566ed27de879fa0cddfe,1,False,True,pass,pass,70.6620890123304,76.18621201254427,5,5,2,0,1,6,6,3,0,1,Bound Team H filesystem reads
+cold,b6_21_31429002,21,314290020e748d9aa0380701c1e975e99a0de129,1,True,True,,pass,,987.8097430046182,,,,,,331,128,318,0,4,Implement moss.ndarray core
+cold,b6_22_2dfdd86c,22,2dfdd86ced6c5ef954b12ec81c7696d029b9d0bf,1,True,True,,pass,,449.66145599028096,,,,,,111,111,261,0,2,Implement Phase 24 priority structures
+cold,b6_23_dbb3bec5,23,dbb3bec5b05b3255a69f420f0a4d30040fac919d,1,True,True,,fail,,384.53988399123773,,,,,,52,52,148,0,1,feat(tables): add typed columnar table core
+cold,b6_24_0dfbcd79,24,0dfbcd79c02439e90ee5a51c1370c181104aa626,1,True,True,,pass,,660.8881349966396,,,,,,167,151,432,0,3,Implement moss.binary primitives
+cold,b6_25_99fc7fc8,25,99fc7fc8b260629c60a4c455b292a4365f716d8f,1,False,True,pass,pass,452.8630709974095,942.4332480120938,111,111,261,0,2,221,221,541,0,2,Implement Phase 24 search structures
+cold,b6_26_0d578424,26,0d5784241a43caba87e8f024d4b10e20b4a996ea,1,False,True,pass,pass,783.7926100182813,697.2590489895083,331,128,318,0,4,252,94,409,0,2,Implement ndarray broadcasting slicing and reductions
+cold,b6_27_0fe2e6ef,27,0fe2e6ef79933db607ab2e426bafe6974d2b3d42,1,False,True,fail,fail,65.35884601180442,130.27682702522725,8,8,7,0,1,,,,,0,"feat(hash): implement moss.hash with Adler-32, CRC-32, FNV-1a, and SHA-256"
+cold,b6_28_7f6cd553,28,7f6cd553e708664e891673705f935bf684a984fb,1,False,True,fail,pass,65.1149179902859,328.4055929980241,8,8,7,0,1,35,19,53,0,2,feat(compress): implement moss.compress with raw LZ4 blocks and RFC 1951 DEFLATE
+cold,b6_29_b9c6ea40,29,b9c6ea4049530abd503c97c0d32c444efc45c3a7,1,True,True,,pass,,1494.6806829830166,,,,,,362,238,823,0,5,Implement moss.cbor arena and encoder
+cold,b6_30_7773a300,30,7773a3006faf6b247fe808de54f6a8ec01ea95ba,1,False,True,fail,fail,515.288149996195,1964.6344859793317,52,52,148,0,1,103,103,350,0,1,feat(tables): add relational operations
+cold,b6_31_b4271cdc,31,b4271cdc3b86f543b8add199af49983903d9ddd5,3,True,True,pass,pass,1569.6189790032804,1765.17669702298,377,174,563,0,4,710,170,634,0,6,Add higher-level ndarray examples
+cold,b6_32_8d8712a8,32,8d8712a8f80c7063801f06cf69c5cb2935fd6dd6,1,False,True,pass,fail,1837.2353719896637,1091.2226939981338,362,238,823,0,5,156,98,314,0,1,Add iterative CBOR decoder
+cold,b6_33_48e36944,33,48e369446671cd1d44152e140ad0d5250ec518fa,1,False,True,fail,fail,1713.9502339996397,77.07488298183307,103,103,350,0,1,5,5,0,0,1,Add typed CSV adapters for tables
+cold,b6_34_b2f09d61,34,b2f09d61407b0d6344223a6d108733a27b63f6a5,1,False,True,fail,fail,56.94522801786661,69.60597398574464,,,,,0,,,,,0,feat(regex): implement moss.regex with non-backtracking Thompson NFA engine
+cold,b6_35_40d4ae20,35,40d4ae20ab4a4fbe776decab2400ad444e134803,1,False,True,fail,fail,262.2133980039507,172.47243199381046,25,17,20,0,2,,,,,0,"feat(data_utils_integration): implement cross-package pipeline with regex, compression, and hashing"
+cold,b6_36_cdcadb26,36,cdcadb26b9b46d332f5f577886c359d44ce839c0,1,True,True,,fail,,1292.4452250008471,,,,,,617,427,836,0,9,Add cross-package advanced-data acceptance
+cold,b6_37_6ef17f1c,37,6ef17f1c2edc1022f00f77a35bec051b1b9cdab3,3,False,True,fail,fail,311.4060630032327,215.94971299055032,28,20,31,0,3,,,,,0,"fix(json,fmt,diff): address L7 adversarial review findings with semantic testing"
+cold,b6_38_a50a8342,38,a50a8342cbb33067dd21a7e3f502497c22929203,3,False,True,fail,fail,542.6109019899741,549.1783320030663,43,27,60,0,3,35,19,56,0,2,"fix(team-r): resolve L7 corrective review across validation, packages, and contracts"
+cold,b6_39_3ea10923,39,3ea1092359cb82b537bbf33595b3d75836df8e79,1,False,False,fail,fail,1471.406755008502,134.10093099810183,617,427,836,0,9,,,,,0,Repair Team A Architect acceptance gaps
+cold,b6_40_4068976a,40,4068976a9a4d1bb046b69fbc35708d8b51f831e4,1,False,True,fail,fail,74.86833102302626,74.77963200653903,,,,,0,,,,,0,fix(regex): repair NFA split origin propagation asymmetry and add linear runtime-scaling verification
+cold,b6_41_debf99f0,41,debf99f068735630ca28a7d5ee4fc343832ac094,1,False,True,fail,fail,1125.0588079856243,881.830556987552,249,183,457,0,4,156,98,314,0,1,Fix CBOR edge ownership validation
+cold,b6_42_a6ecc79f,42,a6ecc79f6d0fd7be9fd8a7bc0beb119608a46783,1,False,False,fail,fail,1139.2277340055443,887.0124099776149,249,183,457,0,4,156,98,314,0,1,Add CBOR L7 adversarial verification
+cold,b6_43_76baf873,43,76baf8739276a5e451baa18ae13cde9970b0ac08,1,False,False,fail,fail,1145.1598440180533,885.934878984699,249,183,457,0,4,156,98,314,0,1,Repair CBOR parent-cycle verifier
+cold,b6_44_58340e63,44,58340e636738331b84c5be1e42556ee612a73449,1,False,False,fail,fail,1304.5609639957547,116.11360099050216,617,427,836,0,9,,,,,0,Exercise corrected CBOR error through ABI-v9
+cold,b6_45_7bf962d2,45,7bf962d287a4ce341c2b7015f4c7032d9f395031,6,False,True,fail,fail,395.1771360298153,2498.219691013219,11,11,8,0,2,1224,394,1320,3,16,refactor(phase25): route Moss String lowering through MossStr; migrate SDK char_at users
+cold,b6_46_f272af9c,46,f272af9ca5e7d82b90716aae0494feceddc3d2b7,3,False,True,fail,fail,977.113430009922,1899.3793659901712,362,110,152,3,11,238,152,492,0,3,"fix(phase25): reject record ==, Char/String mixing, and juxtaposed operands in the checker"
+cold,b6_47_dd45e307,47,dd45e30722bcc2d62d4bb46ba184d426cbaea066,2,False,True,fail,pass,212.9968710942194,2192.4950149841607,8,8,7,0,1,173,157,471,0,4,Fix SDK Char and String boundaries
+cold,b6_48_bb4b3409,48,bb4b340981207a2d988227ca30d3d5b4bd1d3a20,1,False,True,fail,pass,63.2169820019044,382.2530010365881,,,,,0,111,111,269,0,2,phase25.1 R4A: repair time package inventory blocker
+cold,b6_49_c0ff87fd,49,c0ff87fd2c361a5ccac668778dfff779bce82017,1,False,False,pass,pass,2188.7337749940343,130.11795800412074,1526,643,1530,1,15,,,,,0,phase25.1 R4B: validate advanced-data ABI-v10
+cold,b6_50_4601a468,50,4601a468f89b889a58f45639cde0a8e7aba9cc00,1,False,False,fail,pass,1129.6908039948903,2934.6911259926856,249,183,457,0,4,628,338,1672,0,5,Start Phase 26.3 file-scoped test support
