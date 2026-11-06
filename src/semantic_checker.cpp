@@ -2090,7 +2090,8 @@ class Checker {
       if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_FACT") &&
           !indexed_read_facts.empty()) indexed_read_facts.push_back(indexed_read_facts.front());
       if (std::getenv("MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_FACT") &&
-          !indexed_read_facts.empty()) indexed_read_facts.front().permits_copy = true;
+          !indexed_read_facts.empty())
+        indexed_read_facts.front().specialization_context += ":forged";
       if (std::getenv("MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT") &&
           !indexed_read_requirements.empty()) indexed_read_requirements.pop_back();
       if (std::getenv("MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT") &&
@@ -29165,10 +29166,28 @@ class Checker {
       pending.pop_back();
       if (id >= arena->size() || !visited.insert(id).second) continue;
       if (const auto* index = std::get_if<est::Index>(&arena->at(id))) {
-        const auto* receiver = index->base < arena->size()
-            ? std::get_if<est::Identifier>(&arena->at(index->base)) : nullptr;
-        const auto receiver_type = receiver
-            ? inferred_expr_term(receiver->name, env.types) : nullptr;
+        est::ExprId binding_root = index->base;
+        while (binding_root < arena->size()) {
+          const auto& root_node = arena->at(binding_root);
+          if (const auto* grouped = std::get_if<est::Parenthesized>(&root_node))
+            binding_root = grouped->inner;
+          else if (const auto* member = std::get_if<est::Member>(&root_node))
+            binding_root = member->base;
+          else if (const auto* nested_index = std::get_if<est::Index>(&root_node))
+            binding_root = nested_index->base;
+          else
+            break;
+        }
+        const auto* receiver_binding = binding_root < arena->size()
+            ? std::get_if<est::Identifier>(&arena->at(binding_root)) : nullptr;
+        const auto receiver_span = arena->span(index->base);
+        const auto receiver_source = receiver_span.source_begin <= receiver_span.source_end &&
+                receiver_span.source_end <= statement.a.size()
+            ? statement.a.substr(receiver_span.source_begin,
+                receiver_span.source_end - receiver_span.source_begin)
+            : string();
+        const auto receiver_type = receiver_binding && !receiver_source.empty()
+            ? inferred_expr_term(receiver_source, env.types) : nullptr;
         const auto occurrence_span = arena->span(id);
         const auto selector_span = arena->span(index->index);
         const auto selector_source = selector_span.source_begin <= selector_span.source_end &&
@@ -29182,7 +29201,7 @@ class Checker {
                 receiver_type->name == "vector" &&
                 receiver_type->type_args.size() == 1
             ? receiver_type->type_args.front() : nullptr;
-        if (!receiver || !receiver_type || !selector_type || !result_type ||
+        if (!receiver_binding || !receiver_type || !selector_type || !result_type ||
             receiver_type->kind != TypeKind::Builtin ||
             receiver_type->name != "vector" ||
             receiver_type->type_args.size() != 1) {
@@ -29208,10 +29227,12 @@ class Checker {
         fact.statement_occurrence_id = statement.checked_statement_occurrence_id;
         fact.statement_slot = est::ExprSlot::Condition;
         fact.occurrence_span = occurrence_span;
-        if (env.binding_identities.count(receiver->name))
-          fact.receiver_binding_identity = env.binding_identities.at(receiver->name);
-        if (env.definition_identities.count(receiver->name))
-          fact.receiver_definition_identity = env.definition_identities.at(receiver->name);
+        if (env.binding_identities.count(receiver_binding->name))
+          fact.receiver_binding_identity =
+              env.binding_identities.at(receiver_binding->name);
+        if (env.definition_identities.count(receiver_binding->name))
+          fact.receiver_definition_identity =
+              env.definition_identities.at(receiver_binding->name);
         else if (!fact.receiver_binding_identity.empty())
           fact.receiver_definition_identity = "parameter-definition:" +
               fact.receiver_binding_identity;

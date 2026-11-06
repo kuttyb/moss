@@ -218,9 +218,10 @@ TAKE_FIXTURES = [
 ]
 
 
-def run_cmd(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+def run_cmd(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=ROOT
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=ROOT,
+        env=env,
     )
 
 
@@ -258,6 +259,30 @@ def check_fixture(case: dict) -> tuple[str, str]:
     actual_fd = interp_res.stdout.strip()
     if actual_fd != case["expected_fast_debug"]:
         return "FAIL", f"Fast Debug output mismatch: expected '{case['expected_fast_debug']}', got '{actual_fd}'"
+
+    if cid in ("take_specialized_effects", "take_multi_selector"):
+        corruption_hooks = (
+            "MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT",
+            "MOSS_TEST_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT",
+            "MOSS_TEST_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT",
+            "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_AUTHORITY",
+            "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_FACT",
+            "MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT",
+            "MOSS_TEST_CONSUMER_DUPLICATE_INDEXED_EXPRESSION_READ_REQUIREMENT",
+            "MOSS_TEST_CONSUMER_PERTURB_INDEXED_EXPRESSION_READ_REQUIREMENT",
+        )
+        for hook in corruption_hooks:
+            corrupted_env = os.environ.copy()
+            corrupted_env[hook] = "1"
+            corrupted = run_cmd(
+                [str(COMPILER), "run", "--interp", str(source)], corrupted_env)
+            if corrupted.returncode == 0 or "MOSS_INTERNAL_INVARIANT" not in corrupted.stderr:
+                return "FAIL", f"{hook} did not fail closed for projected take selector reads"
 
     # 2. Native compilation and Rust clone audit
     out_rs = TMP / f"{cid}.rs"

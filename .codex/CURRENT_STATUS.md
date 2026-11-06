@@ -17982,3 +17982,12 @@ untouched.
   retaining no-copy behavior for nonprimitive reads. Then rerun the full take
   harness, imported generic gate, builds, Default/Shadow preflight, and obtain new
   exact-SHA independent reviews before further integration.
+
+### Take fixture Fast Debug indexed-classification repair — in progress
+
+- Fresh isolated worktree/branch: `tmp/phase28-r7-010-take-fastdebug-classification` / `phase28-r7-010-take-fastdebug-classification`, based on exact integrated SHA `58e80e8d89e74dcf4923a2cb9eb1325b55f88b80`. Reviewed branches `a4cb6fb4` and `1d64e51f` are preserved and untouched.
+- Exact baseline reproduction was 16/18 in `python3 tests/phase28/verify_take_fixtures.py`. Only `take_specialized_effects` at source line 39 (`c.slots[0].items`) and `take_multi_selector` at line 31 (`r.groups[0].tasks[0].pending`) failed with `conditional indexed READ lacks checker classification`.
+- Root cause: checker fact retention required `Index.base` to be a bare Identifier. The exact checker producer now obtains the receiver TypeRef from the source slice for the exact receiver ExprId/span, requires the expression to be rooted in a checked binding, derives the result TypeRef from the checker-owned closed Vector TypeRef, and keys the fact by exact index/receiver/selector ExprIds, statement, binding/definition, specialization and context. Primitive/nonprimitive disposition remains checker-issued. Consumers stay fail-closed; no runtime type/value fallback or implicit nonprimitive copy was added.
+- The take gate now adds checker and Fast Debug fact/requirement drop, duplicate, and perturb probes for both affected projected receiver cases. The fact perturb hook changes exact specialization context, so it is effective for primitive facts as well as nonprimitive facts.
+- Current candidate evidence: `make`/dev and `make moss-opt` builds passed. `python3 tests/phase28/verify_take_fixtures.py` passed 18/18 in Default and `MOSS_EST=shadow` passed 18/18, including native and optimized native parity, zero-clone assertions, and 13 checker/Fast Debug corruption hooks on each affected fixture. `check_phase24_imported_generic_expressions.py` passed Default and Shadow, including String borrow observation and Fast Debug/source-free authority corruption checks. `check_phase28_copy_index_authority.py` passed its 8-case Default/Shadow matrix. The initial exact base failure remains recorded above.
+- Feedback validation and `git diff --check` pass. No full suite or oracle has run. Exact-SHA Agent 2/Team C review remains pending. Do not integrate or push.
