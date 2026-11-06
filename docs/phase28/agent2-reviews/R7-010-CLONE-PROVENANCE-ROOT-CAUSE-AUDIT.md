@@ -11,13 +11,10 @@ from candidate review reports.
 
 ## Findings
 
-- The recorded **252 direct `.clone()` rows** are an authorization-failure
-  count across repeated generated artifacts, not evidence of 252 distinct
-  semantic Moss copies. The retained combined ledger says the rows collapse
-  to three repeated runtime-template source sites (100% site-root-caused).
-  That ledger's final measurement is from a later implementation run, so its
-  count is useful as retained corpus evidence, not a newly reproduced result
-  pinned to `1d5feb1`.
+- The exact-SHA sidecars record **252 unclassified direct `.clone()` rows**
+  across repeated generated artifacts. These are observation rows, not 252
+  distinct semantic Moss copies; they collapse to three repeated
+  runtime-template source sites.
 - The exact `1d5feb1` `src/executor_runtime.cpp` scan has **3 direct
   `.clone()` sites and 7 qualified `Arc::clone` sites** (10 marked runtime
   operations in that file). Across the compiler/runtime source set, there are
