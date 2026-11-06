@@ -119,8 +119,7 @@ def payload_authority_cases(mode, source, rust_value, expected_output):
     assert fast_debug.returncode == 0 and fast_debug.stdout.strip() == expected_output, (
         mode, fast_debug.stdout, fast_debug.stderr)
     unsupported = (
-        "tests/phase26_direct_payload.moss",
-        "tests/phase27/conformance/message_argument_binding_use.moss",
+        "tests/phase28/r7_010/root_ingress_local_without_copy.moss",
     )
     unsupported_dir = Path(tempfile.mkdtemp(
         prefix="root-ingress-payload-unsupported-", dir=TMP_ROOT))
@@ -145,6 +144,73 @@ def payload_authority_cases(mode, source, rust_value, expected_output):
     return 1 + 2 + 6 + 1 + 4 + 6 + 1 + len(unsupported) * 2
 
 
+def explicit_copy_root_cases(mode, source, expected_output):
+    env_mode = os.environ.copy()
+    for key in list(env_mode):
+        if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+            env_mode.pop(key)
+    if mode == "shadow":
+        env_mode["MOSS_EST"] = "shadow"
+
+    def run(args, extra_env=None):
+        env = dict(env_mode)
+        env.update(extra_env or {})
+        return subprocess.run(
+            args, cwd=ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    checked = run([COMPILER, "check", source, "--json"], {
+        "MOSS_TEST_REQUIRE_COPY_FACT": "1"})
+    response = parse_result(checked)
+    assert checked.returncode == 0 and response.get("ok"), (
+        mode, source, checked.stdout, checked.stderr)
+
+    TMP_ROOT.mkdir(exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="root-ingress-explicit-copy-",
+                                     dir=TMP_ROOT))
+    try:
+        rust_path = temp_dir / "root_copy.rs"
+        binary_path = temp_dir / "root_copy"
+        generated = run([COMPILER, source, "-o", str(rust_path)])
+        assert generated.returncode == 0, (
+            mode, source, generated.stdout, generated.stderr)
+        rust = rust_path.read_text()
+        assert "Moss copy fact call: typed-copy-fact-v1:" in rust, (
+            mode, source, "explicit copy provenance missing")
+        assert "runtime_invoke(move ||" in rust and "__moss_root_arg_" in rust, (
+            mode, source, "explicit copy did not enter exact Root thunk")
+
+        for hook in ("MOSS_TEST_DROP_COPY_FACT",
+                     "MOSS_TEST_DUPLICATE_COPY_FACT",
+                     "MOSS_TEST_PERTURB_COPY_FACT"):
+            result = run([COMPILER, source, "-o", str(rust_path)], {hook: "1"})
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (
+                    mode, source, hook, result.stdout, result.stderr)
+
+        for hook in ("MOSS_TEST_CONSUMER_DROP_COPY_FACT",
+                     "MOSS_TEST_CONSUMER_DUPLICATE_COPY_FACT",
+                     "MOSS_TEST_CONSUMER_PERTURB_COPY_FACT"):
+            result = run([COMPILER, source, "-o", str(rust_path)], {hook: "1"})
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (
+                    mode, source, hook, result.stdout, result.stderr)
+
+        compiled = run(["rustc", "-O", "-D", "warnings", str(rust_path),
+                        "-o", str(binary_path)])
+        assert compiled.returncode == 0, (
+            mode, source, compiled.stdout, compiled.stderr)
+        native = run([str(binary_path)])
+        assert native.returncode == 0 and native.stdout.strip() == expected_output, (
+            mode, source, native.stdout, native.stderr)
+        fast_debug = run([COMPILER, "run", "--interp", source])
+        assert fast_debug.returncode == 0 and fast_debug.stdout.strip() == expected_output, (
+            mode, source, fast_debug.stdout, fast_debug.stderr)
+    finally:
+        shutil.rmtree(temp_dir)
+    return 1 + 3 + 1 + 3 + 1 + 1
+
+
 def main():
     payload_cases = (
         (FRESH_PAYLOAD, "Payload { value: 7_i64 }", "fresh: 7"),
@@ -153,6 +219,17 @@ def main():
     scenario_count = sum(payload_authority_cases(mode, *fixture)
                          for mode in ("default", "shadow")
                          for fixture in payload_cases)
+    explicit_copy_cases = (
+        ("tests/tooling/fixtures/builtin_generic_typing/underscore_handler_payload.moss",
+         "9"),
+        ("tests/phase26_direct_payload.moss", "7 8"),
+        ("tests/phase27/conformance/message_argument_binding_use.moss",
+         "777777\n777777\n777777\naccepted"),
+    )
+    scenario_count += sum(
+        explicit_copy_root_cases(mode, source, expected)
+        for mode in ("default", "shadow")
+        for source, expected in explicit_copy_cases)
     for source, expected_fact_count in FIXTURES:
         baseline = check(source, {"MOSS_TEST_DUMP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT": "1"})
         response = parse_result(baseline)

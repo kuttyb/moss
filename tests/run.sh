@@ -1669,9 +1669,12 @@ run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8
 grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: &impl MossAccess_Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
   fail 'direct handler did not receive the internal borrowed payload ABI'
-grep -F 'let __moss_root_arg_1 = (data).clone(); runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1)' \
+grep -F 'let __moss_root_arg_1 = { fn __moss_copy_value_' \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'main Root ingress did not snapshot and borrow its non-Copy payload inside runtime_invoke'
+  fail 'main Root ingress did not lower the explicit checked copy of its non-Copy payload'
+grep -F 'Moss copy fact call: typed-copy-fact-v1:' \
+  "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'main Root ingress explicit payload copy lacks checker provenance'
 run_optimized_case phase26_repeated_payload tests/phase26_repeated_payload.moss '7 8'
 run_case phase26_message_payload tests/phase26_message_payload.moss '9'
 grep -F 'runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1))' \

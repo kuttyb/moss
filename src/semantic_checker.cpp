@@ -27413,6 +27413,18 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
+    {
+      string message_receiver;
+      string message_handler;
+      vector<string> message_arguments;
+      if (tree_parse_message(value, message_receiver, message_handler,
+                             message_arguments)) {
+        check_ownership_expression(line, message_receiver, env, Effect::Read);
+        for (const auto& argument : message_arguments)
+          check_ownership_expression(line, argument, env, Effect::Read);
+        return;
+      }
+    }
     if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
         check_ownership_expression(line, element, env,
@@ -27748,6 +27760,11 @@ class Checker {
                       return find_copy(n.right);
                     } else if constexpr (std::is_same_v<T, est::Call>) {
                       if (auto found = find_copy(n.callee)) return found;
+                      for (auto arg : n.arguments)
+                        if (auto found = find_copy(arg)) return found;
+                      return std::nullopt;
+                    } else if constexpr (std::is_same_v<T, est::Message>) {
+                      if (auto found = find_copy(n.target)) return found;
                       for (auto arg : n.arguments)
                         if (auto found = find_copy(arg)) return found;
                       return std::nullopt;

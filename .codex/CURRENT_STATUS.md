@@ -17736,3 +17736,36 @@ untouched.
   run on this candidate. The source-free `.mossi` transport path is outside
   this main-body occurrence authority slice. Exact SHA and independent review
   remain pending; do not integrate before Agent 2 and Team C reviews.
+
+### Root-ingress explicit-copy authority follow-up (isolated worktree)
+
+- Worktree `tmp/phase28-r7-010-root-local-transfer`, branch
+  `phase28-r7-010-root-local-transfer`, is based on exact reviewed integration
+  source `ce1bf102d4288dca47aa1aba28e8d96cc7efbd7a`; the integration worktree
+  was not edited. This follow-up preserves the original
+  `echo message reader.Read(...)` fixture shape and migrates the generic
+  `_Payload`, Phase 26 snapshot, and Phase 27 materialized pipeline fixtures
+  to explicit `copy(...)`.
+- The checker ownership walk now visits exact message arguments as READ, and
+  the copy-fact EST traversal visits `est::Message` children. Native Root
+  lowering joins the exact Root message argument ExprId to its statement-scoped
+  TypedCopyFact requirement/fact, validating the message handle, argument
+  index, source child, and spans. No message Consume, implicit copy, or `.mossi`
+  transport path was added. Root-ingress identifier without explicit copy
+  still fails closed; `runtime_invoke` requires a `Send + 'static` closure, so
+  borrowing a local through this thunk needs a separate scoped-runtime design.
+- `make --jobs="$(nproc)" moss-dev` passes. The registered Root-ingress gate
+  passes 190 scenarios in Default and EST-shadow, including producer and
+  consumer copy fact drop/duplicate/perturb hooks, Rust `-O -D warnings`
+  execution, and Fast Debug parity for all three explicit-copy fixtures.
+  `check_phase27_optimizer_expression_uses.py` passes all six three-engine
+  cases with the expected three callbacks for
+  `message_argument_binding_use`.
+- `check_builtin_generic_typing.py` confirms `underscore_handler_payload`
+  passes checker, lowering, native compile/run, and Fast Debug. Its broader
+  run reports six unrelated existing failures: `map_valid`, three ReturnValue
+  type-binding fixtures, `vector_literal_state_replace` and its related
+  handler leaf-effect expectations. These are not addressed by this slice.
+  Agent feedback validation and `git diff --check` pass. No full suite, oracle,
+  or runtime clone audit was run. Exact freeze SHA and independent Agent 2 / Team
+  C reviews are pending; do not integrate before both reviews.

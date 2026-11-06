@@ -1047,6 +1047,7 @@ class Generator {
   mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
+  mutable const TypedCopyFactV1* root_ingress_copy_fact_ = nullptr;
   struct RootIngressMessageOccurrence {
     std::uint32_t arena_index{UINT32_MAX};
     est::ExprId message_expression{UINT32_MAX};
@@ -1785,6 +1786,106 @@ class Generator {
         selected->arena_index, message_id, message->target,
         selected->source_fingerprint, selected->origin_id,
         std::move(argument_expressions)};
+  }
+
+  const TypedCopyFactV1* resolve_root_ingress_copy_fact(
+      const RootIngressMessageOccurrence& occurrence,
+      std::uint32_t argument_index) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!checked_program.typed_semantics || !statement ||
+        statement->checked_statement_occurrence_id == UINT32_MAX ||
+        argument_index >= occurrence.argument_expressions.size() ||
+        occurrence.arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[occurrence.arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress copy query identity unavailable");
+    const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
+    const auto copy_id = est::unparenthesized(
+        arena, occurrence.argument_expressions[argument_index]);
+    if (copy_id >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress copy EST occurrence unavailable");
+    if (occurrence.message_expression >= arena.size() ||
+        occurrence.source_fingerprint == 0)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress copy message identity unavailable");
+    const auto exact_statement_handle = std::count_if(
+        statement->expression_handles.begin(), statement->expression_handles.end(),
+        [&](const est::Handle& handle) {
+          if (handle.arena_index != occurrence.arena_index ||
+              handle.source_fingerprint != occurrence.source_fingerprint ||
+              handle.arena_index >= checked_program.expression_arenas.size() ||
+              !checked_program.expression_arenas[handle.arena_index])
+            return false;
+          const auto& handle_arena =
+              *checked_program.expression_arenas[handle.arena_index];
+          return handle.expr < handle_arena.size() &&
+              est::unparenthesized(handle_arena, handle.expr) ==
+                  occurrence.message_expression;
+        });
+    if (exact_statement_handle != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress copy lacks its exact statement source handle");
+    const auto* message = std::get_if<est::Message>(
+        &arena.at(occurrence.message_expression));
+    if (!message || argument_index >= message->arguments.size() ||
+        est::unparenthesized(arena, message->arguments[argument_index]) != copy_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress copy does not match exact message argument");
+    const auto* call = std::get_if<est::Call>(&arena.at(copy_id));
+    if (!call || call->arguments.size() != 1) return nullptr;
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const auto* expression_facts = arena.facts(copy_id, context);
+    if (!expression_facts ||
+        expression_facts->resolved_target != "builtin:copy-v1")
+      return nullptr;
+    try {
+      const auto& requirement = checked_program.typed_semantics
+          ->find_copy_requirement(occurrence.arena_index, copy_id, context);
+      if (requirement.statement_occurrence_id !=
+              statement->checked_statement_occurrence_id ||
+          requirement.copy_occurrence_id != copy_id ||
+          requirement.est_arena_index != occurrence.arena_index)
+        throw std::invalid_argument(
+            "Root-ingress explicit copy does not match its exact statement and argument occurrence");
+      const auto* fact = checked_program.typed_semantics
+          ->find_copy_fact(requirement);
+      const auto source_id = est::unparenthesized(
+          arena, call->arguments.front());
+      const auto copy_span = arena.span(copy_id);
+      const auto source_span = arena.span(source_id);
+      const auto* copy_expression_facts = arena.facts(copy_id, context);
+      const auto* source_expression_facts = arena.facts(source_id, context);
+      auto same_span = [](const est::SourceSpan& left,
+                          const est::SourceSpan& right) {
+        return left.line == right.line && left.column == right.column &&
+            left.origin_id == right.origin_id &&
+            left.source_begin == right.source_begin &&
+            left.source_end == right.source_end;
+      };
+      if (!fact || fact->source_occurrence_id != source_id ||
+          fact->statement_occurrence_id !=
+              statement->checked_statement_occurrence_id ||
+          (!statement->source_file.empty() &&
+           fact->provenance.source_file != statement->source_file) ||
+          fact->provenance.line != statement->line ||
+          !same_span(fact->copy_occurrence_span, copy_span) ||
+          !same_span(fact->source_occurrence_span, source_span) ||
+          !copy_expression_facts || !copy_expression_facts->type ||
+          !fact->result_type ||
+          !copy_expression_facts->type->structurally_equal(*fact->result_type) ||
+          !source_expression_facts || !source_expression_facts->type ||
+          !fact->source_type ||
+          !source_expression_facts->type->structurally_equal(*fact->source_type))
+        throw std::invalid_argument(
+            "Root-ingress explicit copy source does not match its exact EST child");
+      return fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
   }
 
   const TypedRootIngressPayloadFactV1& resolve_root_ingress_payload_fact(
@@ -8777,6 +8878,13 @@ class Generator {
   const TypedCopyFactV1& resolve_copy_fact(
       std::string_view expression) const {
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (root_ingress_copy_fact_) {
+      if (!root_ingress_copy_fact_->is_authoritative())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT Root-ingress explicit copy fact missing or contradictory");
+      (void)expression;
+      return *root_ingress_copy_fact_;
+    }
     if (!checked_program.typed_semantics || !active_functional_expression_handles_)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT explicit copy lacks checked EST context");
