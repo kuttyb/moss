@@ -1,5 +1,69 @@
 ## Phase 28 R7-010 recovery correction (2026-11-05)
 
+### Fresh integrated matrix checkpoint — `1d5feb1e` (2026-11-06)
+
+- Active isolated staging source remains at
+  `1d5feb1ea237e1d57297d38af0734cb65722c348`; current-session status/audit
+  records are uncommitted in this worktree.
+- Fresh `make --jobs="$(nproc)" check` and sequential
+  `make --jobs="$(nproc)" check-shadow` both completed on this source. Each
+  selected all 167 jobs and reported 108 PASS, 58 FAIL, 1 SKIP (Default wall
+  403.55s; Shadow wall 385.30s). Focused Phase 28 checks at the start of each
+  target passed, including CollectionView borrow parity/corruption, Root-ingress
+  214 scenarios, and local ReturnValue 44 scenarios.
+- Common failure signatures include checker facts missing/ambiguous for
+  ReturnValue, Root-ingress expression/payload authority, CollectionView
+  authority in legacy consumers, and other exact transfer/copy facts. A
+  separate performance gate reports three pinned corpus SHA mismatches. These
+  failures must be compared to a same-harness baseline before assigning all
+  58 as regressions; the full printed run reports are in the current shell
+  output and job artifacts under `build/tests/parallel/`.
+- The local-transfer and Match payload focused gates pass. Team A/Team C take
+  slice review dispositions remain as previously recorded; they do not certify
+  this integrated checkpoint. Overall remains NO-GO, with no clone exception
+  or production merge.
+- Next dependency is a failure-ledger classification of this exact matrix,
+  then one vertical checker-to-serialization-to-consumer slice selected from
+  the shared authority gaps. Preserve independent Team C verification and
+  Agent 2 adversarial review at a new frozen SHA.
+- Independent read-only implementation-team triage narrowed the next slice to
+  source-free imported generic ReturnValue authority across a multi-hop generic
+  call chain. Reproducer: `tests/tooling/check_phase25_r2_wp1_call_chain.py`
+  (`fresh -> middle -> relay`, source-free consumer specializes `relay` as
+  `Vector[Int]` and `Vector[Bool]`); on this SHA it fails the exact checked
+  specialization identity/type, while the same job passes at baseline
+  `150ab36b`. Related failures occur in Phase 25 conformance gates 2/4/9/11,
+  R2 WP2/WP3, and local ReturnValue paths. Root-ingress payload/ExprId,
+  CollectionView, indexed-read and bare-raise transfer failures remain separate
+  clusters. Pinned performance fixture hashes, the established borrowed-view
+  baseline failure, and the dev-only Fast Debug test-hook routing mismatch are
+  classified separately. The vertical implementation team is developing only
+  the multi-hop imported ReturnValue slice on a fresh isolated worktree; no
+  change is integrated yet.
+- Team C independently completed exact-SHA suite classification with NO-GO;
+  the complete roster, baseline comparison and Default artifact limitation are
+  archived at `docs/phase28/team-c/TEAM_C_1D5FEB_MATRIX_AUDIT.md`.
+- Fresh frozen-v2 oracle on the current integrated compiler binary
+  `build/compiler/moss-dev` (source SHA `1d5feb1e`) completed: checker semantic
+  expectations pass 60/60; 19/60 all-gate PASS; 40 fixtures fail only
+  provenance and one fixture (`ORACLE-45-HANDLER-PRIMITIVE-REBIND-LOCAL`) has
+  an engine mismatch because Fast Debug crashes with missing Root-ingress
+  TypeRef authority. Native Debug and Native Optimized agree on all fixtures
+  that reach execution; no native Debug/Optimized disagreement was observed.
+  Runtime provenance remains
+  **NO-GO**: independent accounting sees 258 raw generated Rust `.clone()`
+  observations (252 unclassified/unauthorized, 4 Root-ingress captures, 2
+  explicit-copy tags); those 252 unauthorized rows remain unverified,
+  and the frozen runtime allowlist remains empty. No new exception. Artifacts:
+  `tmp/phase28-1d5feb-oracle.json` SHA-256
+  `10a05d205bd76e64df1ae05aa5c4c37964c95f37d77871507800f1ab6aefac16` and
+  `tmp/phase28-1d5feb-oracle.md` SHA-256
+  `8552d5716115159e7ffc85abad45da76e1d661def4996ff787be63c0e88b396f`.
+  Team C independently reproduced the result with compiler binary SHA-256
+  `143f1e8807ebd24f39be867f640d174b208decbe0c21c8b8960de124b44504e6`; its
+  report and artifacts are archived at
+  `docs/phase28/team-c/TEAM_C_ORACLE_1D5FEB.md`. Independent verdict is NO-GO.
+
 ### Current integrated checkpoint — `bf5fc4616aa4dadd7ca4ef30a967e80237fef884`
 
 - On the isolated `phase28-r7-010-vertical-integration` branch, the scoped-GO
