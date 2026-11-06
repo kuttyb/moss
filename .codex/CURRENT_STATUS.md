@@ -38,9 +38,36 @@
   `.mossi` EST, ReturnValue Default/Shadow, and isolated Phase 26 C3 `-Werror`
   pass per independent review. The exact-SHA Agent 2 report is archived at
   `docs/phase28/agent2-reviews/R7-010-imported-generic-ReturnValue-3ead174e.md`.
-  Team C's independent read-only oracle verification of `3ead174e` remains in
-  progress. Full suites and oracle have not yet been rerun on integrated source
-  checkpoint `9772cf31`; Phase 28 remains NO-GO.
+  Team C independently returned scoped PASS for exact `3ead174e`; its report is
+  archived at `docs/phase28/team-c/R7-010-3ead174e-verification.md`. The fresh
+  oracle remains 60/60 semantic PASS, zero engine disagreements, 19/60 all-gate
+  PASS, 41 provenance-only failures; clone totals match intake at 252
+  unclassified/unauthorized, with no new authorization. Three provenance
+  evidence hashes changed without count/classification changes.
+- Fresh validation on integrated source commit `9772cf31` (current branch HEAD
+  `87a81cef` differs only in status/report documentation): `make check` and
+  `make check-shadow` each report 97/167 PASS, 69 FAIL, 1 SKIP. Both have the
+  same three pinned performance corpus SHA mismatches previously recorded.
+  Sequential X1 v9/v10 and Phase 27 `.mossi` gates pass on the same compiler
+  binary. In the parallel full matrix, the X1 v9/v10 corruption jobs report
+  corruption hooks did not fail closed; these are distinct from the sequential
+  passes and remain unresolved. The source-free proof-edge reproducer also
+  fails sequentially at its initial `margo build --json` with
+  `MOSS_INTERNAL_INVARIANT return-value EST type fact missing outside exact
+  imported owner`, independently reproducing a native-consumer authority gap.
+- A fresh frozen oracle on the integrated `9772cf31` compiler binary confirms
+  60/60 semantic PASS, zero engine disagreements, 19/60 all-gate PASS, and 41
+  provenance-only failures; all 252 generated clone observations remain
+  unverified and unauthorized. Oracle artifacts are
+  `tmp/phase28-9772cf31-oracle.json` (SHA-256
+  `d81296e3c55cc6ce18621a1860bda5c409f777cb54e9fe613787a78c9cead80b`) and
+  `.md` (SHA-256
+  `97da0235adc978f0672ee812d1ee048ff1150da3186b8c4b39995eacfcb5f77d`).
+  Next repair dependency is the remaining checker → `.mossi` → native
+  ReturnValue EST authority path reproduced by the source-free proof-edge
+  fixture. The one vertical team is tracing this path in a new isolated branch;
+  no implementation is integrated until it has a frozen SHA and independent
+  Agent 2 review. Phase 28 remains NO-GO.
 - Independent Team C's exact-SHA report is archived at
   `docs/phase28/team-c/R7-010-bf5fc461-verification.md`. It confirms 97/167
   PASS, 69 FAIL, 1 SKIP for both current suite modes. Preserve the user-provided
