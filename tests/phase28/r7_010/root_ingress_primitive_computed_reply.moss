@@ -1,0 +1,8 @@
+domain Worker:
+  fn Process(n: Int) -> Int:
+    reply n + 1
+
+fn main():
+  w = Worker()
+  res = message w.Process(42)
+  echo res

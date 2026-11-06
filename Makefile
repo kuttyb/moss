@@ -150,6 +150,7 @@ check: check-parallel
 # Run the EST-shadow regression matrix separately from the default suite.
 check-shadow: moss-dev moss-opt
 	MOSS_EST=shadow python3 tests/phase28/r7_010/team_b/check_collection_view_consumers.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_root_ingress_capture_authority.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-parallel: moss-dev moss-opt
@@ -185,6 +186,8 @@ check-parallel: moss-dev moss-opt
 	python3 tests/tooling/check_phase28_team_b_consumer.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/phase28/r7_010/team_b/check_return_value_transfer.py $(MOSS_DEV) $(COMPILER_DIR)/phase28-return-value-default
 	MOSS_EST=shadow python3 tests/phase28/r7_010/team_b/check_return_value_transfer.py $(MOSS_DEV) $(COMPILER_DIR)/phase28-return-value-shadow
+	env -u MOSS_EST python3 tests/tooling/check_phase28_root_ingress_capture_authority.py $(MOSS_DEV)
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_root_ingress_capture_authority.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
