@@ -53,9 +53,18 @@ review is archived at
 
 Whole Phase 28 remains NO-GO. The earlier 92/167 EST-shadow result and the
 Default preflight stop at 17/18 were measured on pre-X1 code SHA `12b9407c`;
-they do not validate `1990dd82`. No full Default/EST-shadow suite, frozen
-oracle, or final clone-provenance audit has run on the integrated tree. No
-runtime clone exception is authorized.
+they do not validate `1990dd82`. Team C independently ran the frozen v2 oracle
+on exact intake commit `993fbd54a5000d184dae5db7228da5fd63bffe4f` (source
+unchanged from `1990dd82`): 60/60 semantic PASS, zero engine disagreements,
+19/60 all-gate PASS, 41 provenance-only failures, and 252 unverified direct
+`.clone()` observations. The 252 observations authorize no clone and are not
+distinct Moss-copy counts. Full Default/Shadow suite comparison and the broader
+qualified Arc clone inventory remain pending. No runtime clone exception is
+authorized.
+
+Team C's candidate Default job matrix on the same intake has 97/168 PASS,
+70 FAIL, 1 SKIP. The exact baseline and candidate Shadow matrices remain in
+progress; no paired suite verdict is claimed yet.
 
 On `1990dd82`, a fresh focused take harness is 17/18; only `take_map_field`
 fails closed for missing bounded, nonescaping Map-view authority. The checker

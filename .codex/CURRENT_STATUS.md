@@ -17588,5 +17588,11 @@ untouched.
   scoped follow-up. No Fast Debug/native fallback is being added.
 - Team C has started independent verification of exact intake commit
   `993fbd54a5000d184dae5db7228da5fd63bffe4f` in a separate worktree; its
-  current-suite deltas, frozen oracle, clone inventory, and X1 evidence remain
-  pending. Do not use its historical or in-progress results as validation.
+  candidate Default matrix completed 97/168 PASS, 70 FAIL, 1 SKIP. Its fresh
+  frozen-v2 oracle completed: 60/60 semantic PASS, zero engine disagreements,
+  19/60 all-gate PASS, and 41/60 provenance-only failures. It counted 252
+  unverified direct `.clone()` observations; this is not authorization and not
+  a count of distinct Moss-level copies. The oracle confirms semantic and
+  engine parity at this exact intake, but provenance acceptance remains NO-GO.
+  Baseline matrix comparison, candidate Shadow matrix, and broader qualified
+  `Arc::clone` inventory are still pending.
