@@ -1,6 +1,20 @@
 // Logical domains in Fast Debug use checked concrete identities and ordinary
 // interpreter frames. No physical synchronization plan or scheduler is involved.
-  static Value independent(const Value& source) {
+  Value independent(const Value& source) {
+    if (root_ingress_argument_preparation_ &&
+        independent_recursion_depth_ == 0) {
+      if (explicit_copy_evaluation_)
+        ++root_ingress_explicit_independent_calls_;
+      else
+        ++root_ingress_implicit_independent_calls_;
+    }
+    struct IndependentRecursionScope {
+      std::size_t& depth;
+      explicit IndependentRecursionScope(std::size_t& current) : depth(current) {
+        ++depth;
+      }
+      ~IndependentRecursionScope() { --depth; }
+    } recursion_scope(independent_recursion_depth_);
     Value result = source;
     if (source.object) {
       result.object = std::make_shared<StructValue>();
@@ -280,8 +294,239 @@
     int line = 0;
   };
 
+  std::string resolve_root_ingress_argument_authority(
+      const ExpressionTreeView& tree, const est::Message& message_node,
+      est::ExprId message_expression, std::uint32_t argument_index,
+      DomainValue& instance, const Handler& target, Frame& caller,
+      int line) const {
+    const Stmt* statement = active_statement_;
+    if (!statement || !statement->message_root_ingress ||
+        statement->checked_statement_occurrence_id == UINT32_MAX ||
+        !program_.typed_semantics || !tree.arena ||
+        tree.arena_index >= program_.expression_arenas.size() ||
+        !program_.expression_arenas[tree.arena_index] ||
+        program_.expression_arenas[tree.arena_index].get() != tree.arena ||
+        message_expression >= tree.arena->size() ||
+        argument_index >= message_node.arguments.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument query identity unavailable");
+
+    const auto context = caller.functional_context.empty()
+        ? std::string("main") : caller.functional_context;
+    if (context != "main")
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument context is not main");
+    const auto* checked_message = std::get_if<est::Message>(
+        &tree.arena->at(message_expression));
+    if (!checked_message || checked_message->handler != message_node.handler ||
+        checked_message->target != message_node.target ||
+        argument_index >= checked_message->arguments.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument does not match exact EST message");
+    const auto argument_expression = est::unparenthesized(
+        *tree.arena, checked_message->arguments[argument_index]);
+
+    const est::Handle* message_handle = nullptr;
+    std::size_t matching_handles = 0;
+    for (const auto& handle : statement->expression_handles) {
+      if (handle.arena_index != tree.arena_index ||
+          handle.source_fingerprint == 0 || handle.expr >= tree.arena->size() ||
+          est::unparenthesized(*tree.arena, handle.expr) != message_expression)
+        continue;
+      message_handle = &handle;
+      ++matching_handles;
+    }
+    if (matching_handles != 1 || !message_handle)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress statement/message handle missing or ambiguous");
+
+    const std::string handler_identity = "handler:" +
+        instance.definition->name + "." + target.name + "@" +
+        std::to_string(target.line);
+    const TypedRootIngressDomainCaptureRequirementV1* capture_requirement =
+        nullptr;
+    std::size_t capture_requirement_count = 0;
+    for (const auto& candidate : program_.typed_semantics
+             ->required_root_ingress_domain_capture_occurrences)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == tree.arena_index &&
+          candidate.message_expression_occurrence_id == message_expression &&
+          candidate.source_fingerprint == message_handle->source_fingerprint &&
+          candidate.specialization_context == context) {
+        capture_requirement = &candidate;
+        ++capture_requirement_count;
+      }
+    if (capture_requirement_count != 1 || !capture_requirement)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT exact Root-ingress domain capture requirement missing or ambiguous");
+    const TypedRootIngressDomainCaptureFactV1* capture = nullptr;
+    try {
+      capture = &program_.typed_semantics
+          ->find_root_ingress_domain_capture_fact(*capture_requirement);
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+    if (!capture || capture->selected_handler_identity != handler_identity ||
+        capture->source_fingerprint != message_handle->source_fingerprint)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress checked handler identity mismatch");
+
+    const auto* argument_facts = tree.arena->facts(argument_expression, context);
+    if (!argument_facts || !argument_facts->type ||
+        !argument_facts->type->is_closed())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument lacks an exact closed TypeRef");
+
+    const auto* argument_call = std::get_if<est::Call>(
+        &tree.arena->at(argument_expression));
+    if (argument_call) {
+      const auto* call_facts = tree.arena->facts(argument_expression, context);
+      if (call_facts && call_facts->resolved_target == "builtin:copy-v1") {
+        if (argument_call->arguments.size() != 1)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT checked Root-ingress copy arity mismatch");
+        try {
+          const auto& requirement = program_.typed_semantics->find_copy_requirement(
+              tree.arena_index, argument_expression, context);
+          if (requirement.statement_occurrence_id !=
+                  statement->checked_statement_occurrence_id ||
+              requirement.est_arena_index != tree.arena_index ||
+              requirement.copy_occurrence_id != argument_expression ||
+              requirement.source_occurrence_id != est::unparenthesized(
+                  *tree.arena, argument_call->arguments.at(0)))
+            throw std::invalid_argument(
+                "Root-ingress explicit copy does not match exact statement/message argument/source");
+          const auto* fact = program_.typed_semantics->find_copy_fact(requirement);
+          if (!fact || !fact->is_authoritative() ||
+              fact->specialization_context != context ||
+              !fact->result_type->structurally_equal(*argument_facts->type))
+            throw std::invalid_argument(
+                "Root-ingress explicit copy fact contradicts checked argument type/context");
+          return "copy";
+        } catch (const std::exception& error) {
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+        }
+      }
+    }
+
+    const TypedRootIngressPayloadRequirementV1* payload_requirement = nullptr;
+    std::size_t payload_requirement_count = 0;
+    for (const auto& candidate : program_.typed_semantics
+             ->required_root_ingress_payload_occurrences)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == tree.arena_index &&
+          candidate.message_expression_occurrence_id == message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_expression &&
+          candidate.source_fingerprint == message_handle->source_fingerprint &&
+          candidate.specialization_context == context) {
+        payload_requirement = &candidate;
+        ++payload_requirement_count;
+      }
+    if (payload_requirement_count > 1)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT duplicate Root-ingress fresh-payload requirements");
+    if (payload_requirement) {
+      try {
+        const auto& fact = program_.typed_semantics
+            ->find_root_ingress_payload_fact(*payload_requirement);
+        if (fact.selected_handler_identity != handler_identity ||
+            !fact.payload_type ||
+            !fact.payload_type->structurally_equal(*argument_facts->type) ||
+            fact.action != TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue ||
+            !fact.checker_proved_fresh_rvalue || fact.permits_moss_value_copy)
+          throw std::invalid_argument(
+              "Root-ingress fresh-payload fact contradicts exact handler/type/action");
+        return "fresh";
+      } catch (const std::exception& error) {
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+      }
+    }
+
+    const auto& checked_type = argument_facts->type;
+    const bool primitive = checked_type->kind == TypeKind::Primitive &&
+        (checked_type->name == "Int" || checked_type->name == "int" ||
+         checked_type->name == "Float" || checked_type->name == "float" ||
+         checked_type->name == "Bool" || checked_type->name == "bool" ||
+         checked_type->name == "Char" || checked_type->name == "char");
+    if (primitive)
+      return "primitive";
+    throw RuntimeError(line,
+        "MOSS_INTERNAL_INVARIANT nonprimitive Root-ingress argument lacks checked copy or fresh-transfer authority");
+  }
+
+  PreparedHandlerCall prepare_root_ingress_handler_call(
+      const ExpressionTreeView& tree, const est::Message& message_node,
+      est::ExprId message_expression, DomainValue& instance,
+      const Handler& target, Frame& caller, int line,
+      std::ostream& output) {
+    PreparedHandlerCall call;
+    call.instance = &instance;
+    call.target = &target;
+    call.line = line;
+    for (std::uint32_t index = 0; index < message_node.arguments.size(); ++index) {
+      const auto authority = resolve_root_ingress_argument_authority(
+          tree, message_node, message_expression, index, instance, target,
+          caller, line);
+      const auto prior_boundary = root_ingress_argument_preparation_;
+      const auto prior_independent_count =
+          root_ingress_implicit_independent_calls_;
+      const auto prior_explicit_independent_count =
+          root_ingress_explicit_independent_calls_;
+      const auto prior_copy_count = root_ingress_explicit_copy_evaluations_;
+      struct RootIngressPreparationScope {
+        bool& slot;
+        bool prior;
+        explicit RootIngressPreparationScope(bool& target)
+            : slot(target), prior(target) { slot = true; }
+        ~RootIngressPreparationScope() { slot = prior; }
+      } root_scope(root_ingress_argument_preparation_);
+      Value value = evaluate_tree_node(tree,
+          est::unparenthesized(*tree.arena, message_node.arguments[index]),
+          caller, line, output);
+      const auto implicit_count = root_ingress_implicit_independent_calls_ -
+          prior_independent_count;
+      const auto copy_count = root_ingress_explicit_copy_evaluations_ -
+          prior_copy_count;
+      const auto explicit_independent_count =
+          root_ingress_explicit_independent_calls_ -
+          prior_explicit_independent_count;
+      root_ingress_argument_preparation_ = prior_boundary;
+      if (implicit_count != 0)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT Root-ingress argument performed an unauthorized implicit independent copy");
+      if (authority == "copy" && copy_count != 1)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked Root-ingress copy was not evaluated exactly once");
+      if (authority == "copy" && explicit_independent_count != 1)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked Root-ingress copy did not create exactly one independent value");
+      if (authority != "copy" && explicit_independent_count != 0)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT Root-ingress argument created an unapproved independent value");
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_TRACE_ROOT_INGRESS_COPY_COUNTS"))
+        std::cerr << "ROOT_INGRESS_INTERPRETER_COPY_COUNTS argument=" << index
+                  << " authority=" << authority
+                  << " explicit_copy_evaluations=" << copy_count
+                  << " authorized_independent_calls=" << explicit_independent_count
+                  << " implicit_independent_calls=" << implicit_count << "\n";
+#endif
+      call.arguments.push_back(std::move(value));
+    }
+    return call;
+  }
+
   PreparedHandlerCall prepare_handler_call(const std::string& invocation, Frame& caller,
                                            int line, std::ostream& output) {
+    if (!caller.domain)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT Root-ingress message lacks an exact checked EST occurrence");
     std::string callee; std::vector<std::string> arguments;
     if (!expression_call(invocation, callee, arguments,
                          "prepare_handler_call")) throw RuntimeError(line, "internal error: malformed checked message");
@@ -305,7 +550,7 @@
 
   PreparedHandlerCall prepare_handler_call(const ExpressionTreeView& tree,
       const est::Message& message_node, Frame& caller, int line,
-      std::ostream& output) {
+      std::ostream& output, est::ExprId message_expression) {
     Value handle = evaluate_tree_node(tree, message_node.target, caller, line,
                                       output);
     if (handle.kind != Value::Kind::DomainHandle || !handle.domain ||
@@ -318,6 +563,14 @@
       if (handler.name == message_node.handler) target = &handler;
     if (!target || target->params.size() != message_node.arguments.size())
       throw RuntimeError(line, "internal error: unresolved checked handler");
+    if (!caller.domain) {
+      if (!active_statement_ || !active_statement_->message_root_ingress)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT Root-ingress statement authority unavailable");
+      return prepare_root_ingress_handler_call(
+          tree, message_node, est::unparenthesized(*tree.arena,
+              message_expression), instance, *target, caller, line, output);
+    }
     PreparedHandlerCall call;
     call.instance = &instance;
     call.target = target;
@@ -375,9 +628,11 @@
   }
 
   Value message(const ExpressionTreeView& tree, const est::Message& node,
-                Frame& caller, int line, std::ostream& output) {
+                Frame& caller, int line, std::ostream& output,
+                est::ExprId message_expression) {
     return run_handler_call(prepare_handler_call(tree, node, caller, line,
-                                                 output), caller, output);
+                                                 output, message_expression),
+                            caller, output);
   }
 
   Value run_handler_call(PreparedHandlerCall call, Frame& caller, std::ostream& output) {

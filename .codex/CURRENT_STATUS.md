@@ -17769,3 +17769,32 @@ untouched.
   Agent feedback validation and `git diff --check` pass. No full suite, oracle,
   or runtime clone audit was run. Exact freeze SHA and independent Agent 2 / Team
   C reviews are pending; do not integrate before both reviews.
+
+### Root-ingress Fast Debug exact authority and copy accounting follow-up
+
+- Isolated branch `phase28-r7-010-root-interpreter-authority` is based on
+  `3f79d7f0206b6c9aa1e38dbfd506838f95bdc79a`; prior frozen slices remain
+  untouched. Fast Debug now resolves exact Root argument authority from the
+  active main statement, EST Message/argument occurrence, selected handler,
+  checked closed TypeRef, and checker Copy or fresh-transfer facts. Primitive
+  authority is limited to direct checked `TypeKind::Primitive` TypeRefs with
+  recognized primitive names. Missing/contradictory facts and unsupported
+  nonprimitive locals fail closed. Evaluated Root arguments are moved into the
+  handler frame without a second `independent()` snapshot.
+- Runtime trace evidence: explicit-copy fixture reports one explicit copy
+  evaluation, one authorized top-level `independent()`, and zero implicit Root
+  boundary copies; fresh object and primitive argument fixtures each report
+  zero explicit copies, zero authorized copies, and zero implicit boundary
+  copies. The primitive case uses a dedicated computed-reply fixture rather
+  than the stale oracle primitive-reply fixture.
+- `make --jobs="$(nproc)" moss-dev` passes. The registered
+  `check_phase28_root_ingress_capture_authority.py` gate passes 214 scenarios,
+  covering Default and EST-shadow checker/native/Fast Debug cases, optimized
+  native `-D warnings` execution, interpreter Copy/Fresh fact drop/duplicate/
+  perturb hooks, and fail-closed unsupported local arguments. The gate is now
+  invoked by both `check-parallel` and `check-shadow`. Full suites and oracle
+  were not run. These messages originate in main-source EST and this path has
+  no `.mossi` serialization/import boundary. Feedback validation and final
+  `git diff --check` are pending;
+  exact freeze SHA and Agent 2 / Team C reviews remain pending. No integration
+  or push.

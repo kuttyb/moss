@@ -145,6 +145,33 @@ class FastInterpreter {
     if (!semantics) return;
 
     const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    auto first_main_copy_fact = [&]() -> TypedCopyFactV1* {
+      for (auto& fact : semantics->copy_facts)
+        if (fact.specialization_context == "main") return &fact;
+      return nullptr;
+    };
+    auto first_main_root_payload_fact =
+        [&]() -> TypedRootIngressPayloadFactV1* {
+      for (auto& fact : semantics->root_ingress_payload_facts)
+        if (fact.specialization_context == "main") return &fact;
+      return nullptr;
+    };
+    if (std::getenv("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_COPY_FACT"))
+      if (auto* fact = first_main_copy_fact())
+        fact->availability = TypedCopyFactV1::Availability::MissingCopyOccurrence;
+    if (std::getenv("MOSS_TEST_INTERP_DUPLICATE_ROOT_INGRESS_COPY_FACT"))
+      if (auto* fact = first_main_copy_fact()) semantics->copy_facts.push_back(*fact);
+    if (std::getenv("MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_COPY_FACT"))
+      if (auto* fact = first_main_copy_fact()) ++fact->source_occurrence_id;
+    if (std::getenv("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_FRESH_FACT"))
+      if (auto* fact = first_main_root_payload_fact())
+        fact->availability = TypedRootIngressPayloadFactV1::Availability::MissingOccurrence;
+    if (std::getenv("MOSS_TEST_INTERP_DUPLICATE_ROOT_INGRESS_FRESH_FACT"))
+      if (auto* fact = first_main_root_payload_fact())
+        semantics->root_ingress_payload_facts.push_back(*fact);
+    if (std::getenv("MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_FRESH_FACT"))
+      if (auto* fact = first_main_root_payload_fact())
+        fact->selected_handler_identity += ":perturbed";
     auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
@@ -922,6 +949,13 @@ class FastInterpreter {
       active_projected_collection_read_fact_ = nullptr;
   const TypedEchoArgumentFactV1* active_echo_argument_fact_ = nullptr;
   const std::vector<est::Handle>* active_expression_handles_ = nullptr;
+  const Stmt* active_statement_ = nullptr;
+  bool root_ingress_argument_preparation_ = false;
+  bool explicit_copy_evaluation_ = false;
+  std::size_t independent_recursion_depth_ = 0;
+  std::size_t root_ingress_implicit_independent_calls_ = 0;
+  std::size_t root_ingress_explicit_copy_evaluations_ = 0;
+  std::size_t root_ingress_explicit_independent_calls_ = 0;
   const RaiseSet* active_checked_exceptional_alternatives_ = nullptr;
   Options options_;
   std::vector<TraceEvent> trace_;
@@ -960,7 +994,7 @@ class FastInterpreter {
 
   std::vector<std::pair<std::string, std::pair<Value, std::string>>>
   error_pattern_payloads(const est::PatternNode& root,
-                         const RaisedSignal& raised, int line) const {
+                         const RaisedSignal& raised, int line) {
     if (moss_test_drop_fact("patterns") ||
         moss_test_perturb_fact("patterns"))
       throw RuntimeError(line,
@@ -2229,7 +2263,7 @@ class FastInterpreter {
       }
       if (const auto* message_node =
               std::get_if<est::Message>(&tree->arena->at(current_root)))
-        return message(*tree, *message_node, frame, line, output);
+        return message(*tree, *message_node, frame, line, output, current_root);
     }
     if (e.rfind("message ", 0) == 0)
       return message(e.substr(8), frame, line, output);
@@ -2598,7 +2632,16 @@ class FastInterpreter {
           return some;
         }
         if (callee == "copy" && args.size() == 1) {
+          if (root_ingress_argument_preparation_)
+            ++root_ingress_explicit_copy_evaluations_;
           Value val = evaluate_call_argument(0);
+          struct ExplicitCopyEvaluationScope {
+            bool& slot;
+            bool prior;
+            explicit ExplicitCopyEvaluationScope(bool& target)
+                : slot(target), prior(target) { slot = true; }
+            ~ExplicitCopyEvaluationScope() { slot = prior; }
+          } explicit_copy_scope(explicit_copy_evaluation_);
           return independent(val);
         }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
@@ -5269,6 +5312,13 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      struct ActiveStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        ActiveStatementScope(const Stmt*& target, const Stmt& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ActiveStatementScope() { slot = prior; }
+      } active_statement_scope(active_statement_, statement);
       RaiseSet checked_exceptional_alternatives =
           statement.exceptional_alternatives;
 #ifdef MOSS_TEST_BUILD
@@ -6094,7 +6144,9 @@ class FastInterpreter {
             throw RuntimeError(statement.line,
                 "MOSS_INTERNAL_INVARIANT checked message node has wrong kind");
           Value result = message(message_tree, *message_node, frame,
-                                 statement.line, output);
+                                 statement.line, output,
+                                 est::unparenthesized(*message_tree.arena,
+                                     message_tree.root));
           if (!statement.message_result.empty()) {
             assign(statement.message_result, std::move(result), frame, statement.line, output);
             frame.local_types[statement.message_result] = checked_binding_type(statement, frame);

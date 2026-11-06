@@ -118,6 +118,23 @@ def payload_authority_cases(mode, source, rust_value, expected_output):
     fast_debug = run([COMPILER, "run", "--interp", source])
     assert fast_debug.returncode == 0 and fast_debug.stdout.strip() == expected_output, (
         mode, fast_debug.stdout, fast_debug.stderr)
+    traced = run([COMPILER, "run", "--interp", source], {
+        "MOSS_TEST_TRACE_ROOT_INGRESS_COPY_COUNTS": "1"})
+    trace_facts = [line for line in traced.stderr.splitlines()
+                   if line.startswith("ROOT_INGRESS_INTERPRETER_COPY_COUNTS ")]
+    assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
+        len(trace_facts) == 1 and "authority=fresh" in trace_facts[0] and
+        "authorized_independent_calls=0" in trace_facts[0] and
+        "implicit_independent_calls=0" in trace_facts[0]), (
+            mode, source, traced.stdout, traced.stderr)
+
+    for hook in ("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_FRESH_FACT",
+                 "MOSS_TEST_INTERP_DUPLICATE_ROOT_INGRESS_FRESH_FACT",
+                 "MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_FRESH_FACT"):
+        result = run([COMPILER, "run", "--interp", source], {hook: "1"})
+        assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+            result.stdout + result.stderr), (
+                mode, source, hook, result.stdout, result.stderr)
     unsupported = (
         "tests/phase28/r7_010/root_ingress_local_without_copy.moss",
     )
@@ -139,9 +156,16 @@ def payload_authority_cases(mode, source, rust_value, expected_output):
                 failed_closed.stdout + failed_closed.stderr), (
                     mode, unsupported_source, failed_closed.stdout,
                     failed_closed.stderr)
+            interp_failed_closed = run([COMPILER, "run", "--interp",
+                                        unsupported_source])
+            assert interp_failed_closed.returncode != 0 and (
+                "MOSS_INTERNAL_INVARIANT nonprimitive Root-ingress argument lacks" in
+                interp_failed_closed.stdout + interp_failed_closed.stderr), (
+                    mode, unsupported_source, interp_failed_closed.stdout,
+                    interp_failed_closed.stderr)
     finally:
         shutil.rmtree(unsupported_dir)
-    return 1 + 2 + 6 + 1 + 4 + 6 + 1 + len(unsupported) * 2
+    return 1 + 2 + 6 + 1 + 4 + 6 + 1 + len(unsupported) * 3 + 3
 
 
 def explicit_copy_root_cases(mode, source, expected_output):
@@ -206,9 +230,82 @@ def explicit_copy_root_cases(mode, source, expected_output):
         fast_debug = run([COMPILER, "run", "--interp", source])
         assert fast_debug.returncode == 0 and fast_debug.stdout.strip() == expected_output, (
             mode, source, fast_debug.stdout, fast_debug.stderr)
+        traced = run([COMPILER, "run", "--interp", source], {
+            "MOSS_TEST_TRACE_ROOT_INGRESS_COPY_COUNTS": "1"})
+        trace_facts = [line for line in traced.stderr.splitlines()
+                       if line.startswith("ROOT_INGRESS_INTERPRETER_COPY_COUNTS ")]
+        assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
+            len(trace_facts) == 1 and "authority=copy" in trace_facts[0] and
+            "explicit_copy_evaluations=1" in trace_facts[0] and
+            "authorized_independent_calls=1" in trace_facts[0] and
+            "implicit_independent_calls=0" in trace_facts[0]), (
+                mode, source, traced.stdout, traced.stderr)
+
+        for hook in ("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_COPY_FACT",
+                     "MOSS_TEST_INTERP_DUPLICATE_ROOT_INGRESS_COPY_FACT",
+                     "MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_COPY_FACT"):
+            result = run([COMPILER, "run", "--interp", source], {hook: "1"})
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (
+                    mode, source, hook, result.stdout, result.stderr)
     finally:
         shutil.rmtree(temp_dir)
     return 1 + 3 + 1 + 3 + 1 + 1
+
+
+def primitive_root_cases(mode, source, expected_output):
+    env_mode = os.environ.copy()
+    for key in list(env_mode):
+        if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+            env_mode.pop(key)
+    if mode == "shadow":
+        env_mode["MOSS_EST"] = "shadow"
+
+    def run(args, extra_env=None):
+        env = dict(env_mode)
+        env.update(extra_env or {})
+        return subprocess.run(
+            args, cwd=ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    checked = run([COMPILER, "check", source, "--json"])
+    response = parse_result(checked)
+    assert checked.returncode == 0 and response.get("ok"), (
+        mode, source, checked.stdout, checked.stderr)
+    TMP_ROOT.mkdir(exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="root-ingress-primitive-",
+                                     dir=TMP_ROOT))
+    try:
+        rust_path = temp_dir / "primitive_root.rs"
+        binary_path = temp_dir / "primitive_root"
+        generated = run([COMPILER, source, "-o", str(rust_path)])
+        assert generated.returncode == 0, (
+            mode, source, generated.stdout, generated.stderr)
+        rust = rust_path.read_text()
+        root_arg_line = next((line for line in rust.splitlines()
+                              if "__moss_root_arg_" in line), "")
+        assert "let __moss_root_arg_1 = 42_i64;" in root_arg_line, (
+            mode, source, root_arg_line)
+        compiled = run(["rustc", "-O", "-D", "warnings", str(rust_path),
+                        "-o", str(binary_path)])
+        assert compiled.returncode == 0, (
+            mode, source, compiled.stdout, compiled.stderr)
+        native = run([str(binary_path)])
+        assert native.returncode == 0 and native.stdout.strip() == expected_output, (
+            mode, source, native.stdout, native.stderr)
+        traced = run([COMPILER, "run", "--interp", source], {
+            "MOSS_TEST_TRACE_ROOT_INGRESS_COPY_COUNTS": "1"})
+        trace_facts = [line for line in traced.stderr.splitlines()
+                       if line.startswith("ROOT_INGRESS_INTERPRETER_COPY_COUNTS ")]
+        assert traced.returncode == 0 and traced.stdout.strip() == expected_output and (
+            len(trace_facts) == 1 and "authority=primitive" in trace_facts[0] and
+            "explicit_copy_evaluations=0" in trace_facts[0] and
+            "authorized_independent_calls=0" in trace_facts[0] and
+            "implicit_independent_calls=0" in trace_facts[0]), (
+                mode, source, traced.stdout, traced.stderr)
+    finally:
+        shutil.rmtree(temp_dir)
+    return 1 + 1 + 1 + 1
 
 
 def main():
@@ -230,6 +327,11 @@ def main():
         explicit_copy_root_cases(mode, source, expected)
         for mode in ("default", "shadow")
         for source, expected in explicit_copy_cases)
+    scenario_count += sum(
+        primitive_root_cases(mode,
+            "tests/phase28/r7_010/root_ingress_primitive_computed_reply.moss",
+            "43")
+        for mode in ("default", "shadow"))
     for source, expected_fact_count in FIXTURES:
         baseline = check(source, {"MOSS_TEST_DUMP_ROOT_INGRESS_DOMAIN_CAPTURE_FACT": "1"})
         response = parse_result(baseline)
