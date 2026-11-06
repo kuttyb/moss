@@ -2,8 +2,11 @@
 
 - Current isolated staging branch: `phase28-r7-010-l7-copy-authority`,
   worktree `tmp/phase28-r7-010-l7-query`, HEAD
-  `3106249c1fc9405bfe2065231621d5cd694b242c` (two reviewed Team A commits
-  plus the pushed status checkpoint; source integration SHA is `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`).
+  `4a5f5171` integrates Team B's frozen projected-member consumer slice
+  (`78de4e67aa718e195f9d11495f3abf4568a192cd`) on source base
+  `d1bb2303c0cfa8a9020b34a5a302da0f934385f9`; L7 runner registration is
+  in the current uncommitted L7 diff. The branch remains isolated from
+  `phase28-work` and `main`.
   No merge to `phase28-work` or `main`.
 - Team A checker successor `22adb68eeeb4aea28d425cde46c390c07a2d9f98` is
   integrated. Its Agent 2 review is GO. Integrated `moss-dev`/`moss-opt`
@@ -15,13 +18,22 @@
   `MOSS_INTERNAL_INVARIANT nonprimitive indexed read lacks exact checked
   READ/WRITE, Copy, or projected-borrow authority`; this confirms the native
   consumer defect Team B owns.
-- The intact Regex package now resolves module provenance correctly and
-  reaches the known fail-closed native indexed-read invariant. Team B resumed
-  in isolated worktree `tmp/phase28-r7-010-team-b-projected-read-consumer-d1bb`,
-  branch `phase28-r7-010-team-b-projected-read-consumer-d1bb`, based exactly
-  on `d1bb2303`. Its scope is native consumption of the exact checked
-  `TypedProjectedCallArgumentReadFactV1`, with drop/duplicate/perturb tests;
-  no implementation edits had been made at this checkpoint.
+- Team B's native consumer path consumes the exact checked
+  `TypedProjectedCallArgumentReadFactV1` for `Vector[index].member` call
+  arguments. Debug/Optimized/Fast Debug parity and six corruption cases pass;
+  its test is now registered in `Makefile` and `tests/run.sh`. Independent
+  review is pending. The stale-binary first run did not exercise Team B's
+  source; after rebuilding the integrated compiler, the registered consumer
+  gate, projected-call checker gate, feedback validator, and diff check pass.
+  The full Regex package still fails at direct
+  `parts[0]` String indexing because the checker has no exact fact for bare
+  `Vector[index]`; Team A is developing that separate checker authority.
+- Team C refreshed exact-source audit is frozen/pushed on
+  `phase28-r7-010-team-c-refreshed-audit` at
+  `1f69ed92599180974ef15ed41689c0e5db6f9ff7`; independent Agent 2 review is
+  pending. It verifies frozen oracle digests and the ORACLE-10A clone evidence
+  gate, but carries forward the previous 252-row full inventory rather than
+  claiming a new full-oracle run. The stale 524 count is explicitly retired.
 - Current disposition remains NO-GO. Remaining: Team B native consumer repair
   and independent review; rerun Team C's frozen oracle, clone provenance and
   corruption/parity audits against the combined SHA; resolve semantic failures
