@@ -1985,7 +1985,8 @@ class FastInterpreter {
   Value invoke_pipeline_callable(const std::vector<Value>& values,
                                  Frame& frame, int line, std::ostream& output,
                                  const ExpressionTreeView* tree = nullptr,
-                                 std::optional<est::ExprId> callback_expr = std::nullopt) {
+                                 std::optional<est::ExprId> callback_expr = std::nullopt,
+                                 std::optional<est::ExprId> stage_expr = std::nullopt) {
     Frame callback = frame;
     std::vector<std::string> names;
     for (size_t i = 0; i < values.size(); ++i) {
@@ -1996,6 +1997,55 @@ class FastInterpreter {
     if (!tree || !callback_expr || *callback_expr >= tree->arena->size())
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT callback lacks its exact EST occurrence");
+    const est::SemanticFacts* stage_facts = nullptr;
+    if (stage_expr) {
+      if (*stage_expr >= tree->arena->size())
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT pipeline callback stage is out of range");
+#ifdef MOSS_TEST_BUILD
+      auto* mutable_arena = const_cast<est::Arena*>(tree->arena);
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_DYNAMIC_CALLBACK_FACT"))
+        mutable_arena->test_drop_occurrence_dynamic_callback(
+            *stage_expr, frame.functional_context);
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_DYNAMIC_CALLBACK_FACT"))
+        mutable_arena->test_perturb_occurrence_dynamic_callback(
+            *stage_expr, frame.functional_context);
+#endif
+      stage_facts = tree->arena->facts(*stage_expr, frame.functional_context);
+      if (!stage_facts || !stage_facts->dynamic_callback)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked pipeline callback classification is missing");
+
+      const auto* callback_identifier = std::get_if<est::Identifier>(
+          &tree->arena->at(*callback_expr));
+      if (!callback_identifier)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked pipeline callback is not an identifier");
+      const Value* local_callable = nullptr;
+      const auto local = frame.locals.find(callback_identifier->name);
+      if (local != frame.locals.end()) local_callable = &local->second;
+      if (!local_callable) {
+        const auto alias = frame.aliases.find(callback_identifier->name);
+        if (alias != frame.aliases.end() && alias->second.value)
+          local_callable = alias->second.value;
+      }
+      const bool is_local_callable = local_callable &&
+          local_callable->kind == Value::Kind::Callable;
+      if (*stage_facts->dynamic_callback) {
+        if (!is_local_callable)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT dynamic callback fact contradicts its checked value");
+        const auto* fn = function(local_callable->string);
+        if (!fn)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT dynamic callback value has no checked function");
+        return call(*fn, names, callback, line, output, tree, nullptr,
+                    &values, std::nullopt);
+      }
+      if (is_local_callable)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT static callback fact contradicts its checked value");
+    }
     const auto* facts = tree->arena->facts(*callback_expr,
                                            frame.functional_context);
 #ifdef MOSS_TEST_BUILD
@@ -2023,14 +2073,15 @@ class FastInterpreter {
                                   est::ExprId expression,
                                   const std::vector<Value>& values,
                                   Frame& frame, int line,
-                                  std::ostream& output) {
+                                  std::ostream& output,
+                                  est::ExprId stage_expr) {
     Frame callback = frame;
     if (values.size() == 1) callback.locals["_"] = values.front();
     if (const auto* identifier = std::get_if<est::Identifier>(
             &tree.arena->at(expression))) {
       (void)identifier;
       return invoke_pipeline_callable(values, frame, line, output,
-                                      &tree, expression);
+                                      &tree, expression, stage_expr);
     }
     return evaluate_tree_node(tree, expression, callback, line, output);
   }
@@ -2143,7 +2194,8 @@ class FastInterpreter {
         const auto stage_callable = stage_call->arguments.front();
         for (const auto& value : *current.vector) {
           Value transformed = invoke_pipeline_expression(
-              tree, stage_callable, {value}, frame, line, output);
+              tree, stage_callable, {value}, frame, line, output,
+              pipeline_node.stages[stage_index - 1]);
           if (callee == "map") {
             switch (transformed.kind) {
               case Value::Kind::Bool: inferred_map_element_type = "bool"; break;
@@ -2211,7 +2263,8 @@ class FastInterpreter {
         reduced = evaluate_tree_node(tree, call->arguments[0], frame, line, output);
         for (const auto& value : *current.vector)
           reduced = invoke_pipeline_expression(tree, call->arguments[1],
-              {reduced, value}, frame, line, output);
+              {reduced, value}, frame, line, output,
+              pipeline_node.stages[stage_index - 1]);
         current = reduced;
       } else if (callee == "any" || callee == "all") {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
@@ -2229,7 +2282,8 @@ class FastInterpreter {
         for (const auto& value : *current.vector) {
           Value predicate_value;
           predicate_value = invoke_pipeline_expression(
-              tree, predicate_node, {value}, frame, line, output);
+              tree, predicate_node, {value}, frame, line, output,
+              pipeline_node.stages[stage_index - 1]);
           const bool predicate = predicate_value.truthy();
           if (callee == "any" && predicate) result = true;
           if (callee == "all" && !predicate) result = false;
