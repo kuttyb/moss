@@ -1290,7 +1290,7 @@ pub mod moss_fileio {
     }
 
     pub fn moss_fileio_branch_read_borrow(file: &FileIO) -> MossFileIOReadBorrow {
-        let inner = Arc::clone(&file.inner);
+        let inner = /* MOSS_RUNTIME_CLONE_SITE:fileio-read-borrow-01 */ Arc::clone(&file.inner);
         #[cfg(any(test, moss_perf))]
         MOSS_LIVE_FILEIO_BRANCH_READ_BORROWS.fetch_add(
             1, std::sync::atomic::Ordering::SeqCst);

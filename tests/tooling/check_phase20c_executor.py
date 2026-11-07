@@ -1388,6 +1388,149 @@ fn main() {
 }
 """))
 
+T.append(RustTest("53-affinity-config-snapshot-independent", "Executor::config owns an independent affinity snapshot", r"""
+fn main() {
+    let mut builder = MossExecutor::new().affinity(vec![2, 4, 8]);
+    let snapshot = builder.config();
+    assert_eq!(snapshot.affinity, Some(vec![2, 4, 8]));
+    builder.affinity = Some(vec![9]);
+    assert_eq!(snapshot.affinity, Some(vec![2, 4, 8]), "config snapshot aliased the builder Vec");
+    assert_eq!(builder.config().affinity, Some(vec![9]));
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("54-worker-arc-lifetime-through-join", "worker and active-executor Arc owners are released by join", r"""
+fn main() {
+    use std::sync::Arc;
+    let exec = MossExecutor::new().threads(2).max_threads(2).start();
+    wait_until("both workers started", || moss_executor_live_threads() == 2);
+    let root_and_workers = Arc::strong_count(&exec.gx);
+    let gx = process_rt().active_executor().expect("ACTIVE executor");
+    assert_eq!(Arc::strong_count(&gx), root_and_workers + 1,
+               "active_executor() did not return one owned Arc snapshot");
+    let weak = Arc::downgrade(&gx);
+    assert_eq!(Arc::strong_count(&gx), 5, "root, handle, test and two worker owners expected");
+    drop(gx);
+    exec.join();
+    assert_eq!(weak.strong_count(), 0, "executor Arc survived join/worker termination");
+    assert_eq!(moss_executor_live_threads(), 0);
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("58-root-ingress-arc-released-after-draining-retry", "Root ingress clone survives admission retry and releases after drain", r"""
+fn main() {
+    use std::sync::Arc;
+    let exec = MossExecutor::new().threads(1).max_threads(1).start();
+    wait_until("worker started", || moss_executor_live_threads() == 1);
+    let gx = process_rt().active_executor().expect("ACTIVE executor");
+    let weak = Arc::downgrade(&gx);
+    let before = Arc::strong_count(&gx);
+    let mut held = gx.lock_inner();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let host = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        runtime_invoke(|| 42usize)
+    });
+    started_rx.recv().unwrap();
+    wait_until("Root ingress clone", || Arc::strong_count(&gx) == before + 1);
+    let joiner = std::thread::spawn(move || exec.join());
+    wait_until("ingress enters DRAINING", || process_rt().lock_inner().state == MossIngressState::Draining);
+    // Deterministically make the first admission observe DRAINING while the
+    // host owns the exact `active_executor` Arc snapshot.
+    held.draining = true;
+    drop(held);
+    assert_eq!(host.join().unwrap(), 42);
+    joiner.join().unwrap();
+    drop(gx);
+    assert_eq!(weak.strong_count(), 0, "Root ingress snapshot survived its retry and executor shutdown");
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("55-runtime-invoke-reply-drop-once", "reply-slot Arc result is delivered and dropped exactly once", r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Reply(Arc<AtomicUsize>);
+    impl Drop for Reply { fn drop(&mut self) { self.0.fetch_add(1, Ordering::SeqCst); } }
+    let exec = MossExecutor::new().threads(2).max_threads(2).start();
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let workers: Vec<_> = (0..16).map(|_| {
+        let d = Arc::clone(&dropped);
+        std::thread::spawn(move || {
+            let value = runtime_invoke(move || Reply(d));
+            drop(value);
+        })
+    }).collect();
+    for worker in workers { worker.join().unwrap(); }
+    assert_eq!(dropped.load(Ordering::SeqCst), 16, "reply value was lost or dropped twice");
+    exec.join();
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("56-fair-mutex-node-arc-drop", "fair mutex tail/node Arc owners release after both uncontended and queued unlock", r"""
+fn main() {
+    use std::sync::Arc;
+    let lock = Arc::new(MossFairMutex::new(()));
+    let first = lock.lock();
+    let first_weak = Arc::downgrade(&first.node);
+    assert_eq!(Arc::strong_count(&first.node), 2, "guard and raw tail each own one node Arc");
+    drop(first);
+    assert_eq!(first_weak.strong_count(), 0, "uncontended tail retained its node");
+
+    let first = lock.lock();
+    let predecessor = Arc::downgrade(&first.node);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let l = Arc::clone(&lock);
+    let next = std::thread::spawn(move || {
+        let guard = l.lock();
+        let weak = Arc::downgrade(&guard.node);
+        tx.send(weak).unwrap();
+        drop(guard);
+    });
+    wait_until("queued fair mutex entrant", || lock.parked_waiters() == 1);
+    assert_eq!(Arc::strong_count(&first.node), 2, "predecessor raw tail owner was lost in transit");
+    drop(first);
+    let successor = rx.recv().unwrap();
+    next.join().unwrap();
+    assert_eq!(predecessor.strong_count(), 0);
+    assert_eq!(successor.strong_count(), 0, "successor node survived unlock");
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("57-fair-condvar-waiter-arc-drop", "condvar queue owns one waiter Arc until notify and releases it after wake", r"""
+fn main() {
+    use std::sync::Arc;
+    let lock = Arc::new(MossFairMutex::new(()));
+    let cv = Arc::new(MossFairCondvar::new());
+    let l = Arc::clone(&lock);
+    let c = Arc::clone(&cv);
+    let worker = std::thread::spawn(move || { let guard = l.lock(); drop(c.wait(guard)); });
+    let guard = loop {
+        let guard = lock.lock();
+        let queued = unsafe { &*cv.waiters.get() };
+        if queued.len() == 1 { break guard; }
+        drop(guard);
+        std::thread::yield_now();
+    };
+    let waiter = unsafe { &*cv.waiters.get() }.front().unwrap();
+    let weak = Arc::downgrade(waiter);
+    assert_eq!(Arc::strong_count(waiter), 2, "local waiter and queue owner expected");
+    waiter.thread.unpark(); // A spurious wake must retain the queued waiter.
+    assert_eq!(Arc::strong_count(waiter), 2);
+    cv.notify_one(&guard);
+    assert!(weak.strong_count() <= 1, "notify did not release queue ownership");
+    drop(guard);
+    worker.join().unwrap();
+    assert_eq!(weak.strong_count(), 0, "condvar waiter survived wake and lock reacquisition");
+    println!("ok");
+}
+"""))
+
 T.append(RustTest("48-tmax-physical-thread-slots", "A retiring compensation worker holds its T_max slot until its thread body ends", r"""
 fn main() {
     // Every leave makes the compensation worker excess; every enter wants a

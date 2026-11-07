@@ -103,8 +103,70 @@ struct NativeCloneProvenanceV3 {
   std::vector<NativeCloneSourceCopyV3> source_copy_occurrences;
   std::vector<NativeCloneCheckedCopyFactV3> checked_copy_facts;
   std::vector<NativeRootIngressCaptureV1> root_ingress_domain_captures;
+  struct RuntimeCloneSiteObservation {
+    std::string site_id, operator_kind, source_file, expected_expression,
+        semantic_type, provenance_status{"source_site_only_unapproved"};
+    std::uint32_t generated_occurrence{0};
+    NativeCloneSpanV2 rust_span, rust_context_span;
+  };
+  std::vector<RuntimeCloneSiteObservation> runtime_clone_site_observations;
   std::vector<NativeCloneOccurrenceV2> occurrences;
 };
+
+struct NativeRuntimeCloneSiteSpecV1 {
+  const char* id;
+  const char* operator_kind;
+  const char* source_file;
+  const char* expected_expression;
+  const char* semantic_type;
+  const char* source_sha256{nullptr};
+  std::uint32_t source_line{0}, source_column{0}, source_end_column{0};
+  std::uint64_t source_begin{0}, source_end{0};
+};
+
+inline const std::vector<NativeRuntimeCloneSiteSpecV1>&
+native_runtime_clone_site_specs_v1() {
+  static const std::vector<NativeRuntimeCloneSiteSpecV1> sites{
+      {"r7-010-runtime-01", "direct_method", "src/executor_runtime.cpp",
+       "self.lock_inner().active_executor.clone()", "Option<Arc<MossGlobalExec>>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",497,9,56,21185,21232},
+      {"r7-010-runtime-02", "direct_method", "src/executor_runtime.cpp",
+       "self.affinity.clone()", "Option<Vec<usize>>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",857,38,85,36876,36923},
+      {"r7-010-runtime-03", "direct_method", "src/executor_runtime.cpp",
+       "s.clone().into_raw_owned()", "MossBranchScope",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",1407,60,107,59291,59338},
+      {"r7-010-runtime-04", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(&node)", "Arc<MossFairNode>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",58,44,91,2174,2221},
+      {"r7-010-runtime-05", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(&waiter)", "Arc<MossFairWaiter>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",152,55,102,6497,6544},
+      {"r7-010-runtime-06", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(scope)", "Arc<MossBranchScopeState>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",438,45,92,18991,19038},
+      {"r7-010-runtime-08", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(gx)", "Arc<MossGlobalExec>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",733,15,62,31425,31472},
+      {"r7-010-runtime-09", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(&gx)", "Arc<MossGlobalExec>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",919,38,85,39420,39467},
+      {"r7-010-runtime-10", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(&reply_slot)",
+       "Arc<(Mutex<Option<R>>, Condvar)>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",1089,17,64,45973,46020},
+      {"r7-010-runtime-11", "qualified_arc", "src/executor_runtime.cpp",
+       "std::sync::Arc::clone(inner.active_executor.as_ref().expect(",
+       "Arc<MossGlobalExec>",
+       "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",1116,26,73,47064,47111},
+      {"file-chunk-01", "qualified_arc", "src/file_chunk_codegen.inc",
+       "std::sync::Arc::clone(&", "Arc<Mutex<Option<ChunkOutcome>>>",
+       "2ba9d8adf1aa1ec926294d2fa8a8f0140466b516ead78da36745d273ad3796c7",238,52,95,12621,12664},
+      {"fileio-read-borrow-01", "qualified_arc", "src/fileio_runtime.cpp",
+       "Arc::clone(&file.inner)", "Arc<MossFairMutex<Option<FileIOInner>>>",
+       "12b88c7b446c964de8a61ad68ff90bb1ee5740d00d936f8b724ec2fd9c1a6e22",1293,21,72,46965,47016}};
+  return sites;
+}
 
 inline std::string native_clone_json_string(std::string_view value) {
   std::string out = "\"";
@@ -517,6 +579,199 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
         return left_order->second < right_order->second;
       });
   const auto code = native_clone_mask_rust_non_code(rust_bytes);
+  std::map<std::string, const NativeRuntimeCloneSiteSpecV1*> runtime_site_by_id;
+  for (const auto& site : native_runtime_clone_site_specs_v1())
+    if (!runtime_site_by_id.emplace(site.id, &site).second)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT duplicate runtime clone site specification");
+  std::map<std::string, std::uint32_t> runtime_marker_counts;
+  const std::string runtime_marker_prefix = "/* MOSS_RUNTIME_CLONE_SITE:";
+  std::size_t runtime_marker_at = 0;
+  while ((runtime_marker_at = rust_bytes.find(runtime_marker_prefix,
+                                               runtime_marker_at)) !=
+         std::string_view::npos) {
+    const auto id_begin = runtime_marker_at + runtime_marker_prefix.size();
+    const auto marker_end = rust_bytes.find(" */", id_begin);
+    if (marker_end == std::string_view::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unterminated runtime clone site marker");
+    const std::string site_id(rust_bytes.substr(id_begin, marker_end - id_begin));
+    const auto spec = runtime_site_by_id.find(site_id);
+    if (spec == runtime_site_by_id.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unknown runtime clone site marker");
+    const auto generated_occurrence = runtime_marker_counts[site_id]++;
+    if (generated_occurrence != 0 && site_id != "file-chunk-01")
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT duplicate non-expanding runtime clone site marker");
+
+    const auto line_begin = rust_bytes.rfind('\n', runtime_marker_at) ==
+            std::string_view::npos
+        ? 0 : rust_bytes.rfind('\n', runtime_marker_at) + 1;
+    const auto line_end = rust_bytes.find('\n', marker_end);
+    const auto bounded_line_end = line_end == std::string_view::npos
+        ? rust_bytes.size() : line_end;
+    std::string normalized_line;
+    bool pending_space = false;
+    for (std::size_t index = line_begin; index < bounded_line_end; ++index) {
+      const unsigned char ch = static_cast<unsigned char>(code[index]);
+      if (std::isspace(ch)) {
+        pending_space = !normalized_line.empty();
+        continue;
+      }
+      if (pending_space) normalized_line.push_back(' ');
+      pending_space = false;
+      normalized_line.push_back(static_cast<char>(ch));
+    }
+    if (normalized_line.find(spec->second->expected_expression) ==
+        std::string::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT runtime clone marker expression mismatch: " +
+          site_id);
+
+    std::size_t operator_begin = std::string_view::npos;
+    std::size_t operator_end = std::string_view::npos;
+    if (std::string_view(spec->second->operator_kind) == "direct_method") {
+      std::size_t found = 0;
+      for (auto at = code.find(".clone()", line_begin);
+           at != std::string::npos && at < bounded_line_end;
+           at = code.find(".clone()", at + 8)) {
+        ++found;
+        operator_begin = at;
+        operator_end = at + 8;
+      }
+      if (found != 1)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT runtime direct clone marker does not select one operator: " +
+            site_id);
+    } else if (std::string_view(spec->second->operator_kind) ==
+               "qualified_arc") {
+      const auto call = code.find("Arc::clone", marker_end + 3);
+      if (call == std::string::npos || call >= bounded_line_end)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT runtime Arc marker lacks its qualified call: " +
+            site_id);
+      const auto open = code.find('(', call + 9);
+      if (open == std::string::npos || open >= bounded_line_end)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT runtime Arc marker lacks call arguments: " +
+            site_id);
+      operator_begin = call;
+      operator_end = native_clone_matching_delimiter(code, open, '(', ')') + 1;
+      if (operator_end > bounded_line_end)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT runtime Arc call crosses its marked line: " +
+            site_id);
+    } else {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT unsupported runtime clone operator kind");
+    }
+
+    NativeCloneProvenanceV3::RuntimeCloneSiteObservation observation;
+    observation.site_id = site_id;
+    observation.generated_occurrence = generated_occurrence;
+    observation.operator_kind = spec->second->operator_kind;
+    observation.source_file = spec->second->source_file;
+    observation.expected_expression = spec->second->expected_expression;
+    observation.semantic_type = spec->second->semantic_type;
+    observation.rust_span = native_checked_copy_source_span(
+        rust_bytes, operator_begin, operator_end);
+    auto context_begin = line_begin;
+    auto context_end = std::max(line_begin + 1, bounded_line_end);
+    if (site_id == "file-chunk-01") {
+      const auto publish = code.find("branch_publish(&", context_end);
+      if (publish == std::string_view::npos || publish - line_begin > 4096)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT FileChunk clone lacks nearby branch publish context");
+      const auto publish_end = code.find('\n', publish);
+      context_end = publish_end == std::string_view::npos
+          ? code.size() : publish_end;
+      const auto slot_assign = code.rfind("let ", line_begin - 1);
+      const auto scope_call = code.rfind("branch_scope_new_current()", line_begin);
+      const auto scope_assign = scope_call == std::string_view::npos
+          ? std::string_view::npos : code.rfind("let ", scope_call);
+      context_begin = scope_assign == std::string_view::npos
+          ? line_begin : code.rfind('\n', scope_assign) + 1;
+      const auto context = code.substr(context_begin, context_end - context_begin);
+      const auto marker_line = normalized_line;
+      const auto clone_token = marker_line.find(" = std::sync::Arc::clone(&");
+      const auto clone_close = clone_token == std::string_view::npos
+          ? std::string_view::npos : marker_line.find(");", clone_token);
+      const auto publish_open = context.find("branch_publish(&");
+      const auto publish_comma = publish_open == std::string_view::npos
+          ? std::string_view::npos : context.find(", move ||", publish_open);
+      if (slot_assign == std::string_view::npos || clone_token == std::string_view::npos ||
+          clone_close == std::string_view::npos || publish_open == std::string_view::npos ||
+          publish_comma == std::string_view::npos ||
+          marker_line.find("let ") != 0 || marker_line.back() != ';')
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT FileChunk clone context shape mismatch");
+      const auto arg_begin = clone_token + std::string_view(" = std::sync::Arc::clone(&").size();
+      const auto clone_arg = marker_line.substr(arg_begin, clone_close - arg_begin);
+      const auto publish_scope_begin = publish_open +
+          std::string_view("branch_publish(&").size();
+      const auto publish_scope = publish_comma == std::string_view::npos
+          ? std::string{} : context.substr(
+              publish_scope_begin, publish_comma - publish_scope_begin);
+      const auto preceding_context = context.substr(0, line_begin-context_begin);
+      const auto last_prior_char = preceding_context.find_last_not_of("\n\r \t");
+      const auto allocation_line_begin = last_prior_char == std::string::npos
+          ? std::string::npos : preceding_context.find_last_of('\n', last_prior_char);
+      const auto allocation_line = preceding_context.substr(
+          allocation_line_begin == std::string::npos ? 0 : allocation_line_begin + 1);
+      if (clone_arg.empty() ||
+          allocation_line.find("let " + std::string(clone_arg)) == std::string_view::npos ||
+          allocation_line.find("std::sync::Arc::new(") == std::string_view::npos ||
+          publish_scope.empty() ||
+          context.substr(0, line_begin - context_begin).find(
+              "let " + std::string(publish_scope) + " = branch_scope_new_current()") ==
+              std::string_view::npos)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT FileChunk clone argument lacks its result-slot allocation: " +
+            std::string(clone_arg));
+    }
+    observation.rust_context_span = native_checked_copy_source_span(
+        rust_bytes, context_begin, context_end);
+    manifest.runtime_clone_site_observations.push_back(std::move(observation));
+    runtime_marker_at = marker_end + 3;
+  }
+  const bool has_executor_runtime =
+      rust_bytes.find("struct MossProcessRuntime") != std::string_view::npos;
+  if (has_executor_runtime) {
+    for (const auto& site : native_runtime_clone_site_specs_v1()) {
+      if (std::string_view(site.source_file) != "src/executor_runtime.cpp")
+        continue;
+      if (!runtime_marker_counts.count(site.id))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT emitted executor runtime lacks required site marker: " +
+            std::string(site.id));
+    }
+  }
+  const bool has_fileio_borrow_runtime =
+      rust_bytes.find("MossFileIOReadBorrow") != std::string_view::npos;
+  if (has_fileio_borrow_runtime &&
+      !runtime_marker_counts.count("fileio-read-borrow-01"))
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitted FileIO runtime lacks read-borrow site marker");
+  const bool has_file_chunk_pipeline =
+      rust_bytes.find("Moss backend: FileIO CHUNK PIPELINE -- eligible") !=
+      std::string_view::npos;
+  if (has_file_chunk_pipeline && !runtime_marker_counts.count("file-chunk-01"))
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT emitted FileChunk pipeline lacks result-slot site marker");
+  std::size_t expected_file_chunk_expansions = 0;
+  for (std::size_t at = 0; (at = rust_bytes.find(
+           "Moss backend: FileIO CHUNK PIPELINE -- eligible", at)) !=
+       std::string_view::npos; ++at)
+    ++expected_file_chunk_expansions;
+  if (runtime_marker_counts["file-chunk-01"] != expected_file_chunk_expansions)
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT FileChunk marker count does not cover every eligible expansion");
+  std::sort(manifest.runtime_clone_site_observations.begin(),
+      manifest.runtime_clone_site_observations.end(), [](const auto& left,
+                                                         const auto& right) {
+        return left.rust_span.source_begin < right.rust_span.source_begin;
+      });
   std::map<std::string, const NativeRootIngressCaptureInputV1*> root_facts;
   for (const auto& input : root_capture_inputs) {
     if (!input.checked_fact.is_authoritative() ||
@@ -1188,6 +1443,78 @@ inline void write_native_clone_provenance_v3(
         << ",\"rust_span\":";
     emit_rust_span(capture.rust_span);
     out << '}';
+  }
+  out << "],\"runtime_clone_site_observations\":[";
+  std::set<std::pair<std::string, std::uint32_t>> emitted_runtime_site_ids;
+  std::map<std::string, std::uint32_t> next_runtime_occurrence;
+  for (std::size_t i = 0;
+       i < manifest.runtime_clone_site_observations.size(); ++i) {
+    if (i) out << ',';
+    const auto& row = manifest.runtime_clone_site_observations[i];
+    const auto spec = std::find_if(native_runtime_clone_site_specs_v1().begin(),
+        native_runtime_clone_site_specs_v1().end(), [&](const auto& candidate) {
+          return row.site_id == candidate.id;
+        });
+    if (spec == native_runtime_clone_site_specs_v1().end() ||
+        !emitted_runtime_site_ids.emplace(row.site_id, row.generated_occurrence).second ||
+        row.operator_kind != spec->operator_kind ||
+        row.source_file != spec->source_file ||
+        row.expected_expression != spec->expected_expression ||
+        row.semantic_type != spec->semantic_type ||
+        row.provenance_status != "source_site_only_unapproved" ||
+        row.generated_occurrence != next_runtime_occurrence[row.site_id]++ ||
+        !spec->source_sha256 || spec->source_line == 0 ||
+        spec->source_column == 0 || spec->source_end_column <= spec->source_column ||
+        spec->source_begin >= spec->source_end ||
+        row.rust_context_span.source_begin > row.rust_span.source_begin ||
+        row.rust_context_span.source_end < row.rust_span.source_end ||
+        row.rust_context_span.source_end > rust_bytes.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT invalid, duplicate, or unauthorized runtime site observation");
+    const auto operator_text = rust_bytes.substr(row.rust_span.source_begin,
+        row.rust_span.source_end - row.rust_span.source_begin);
+    const bool exact_operator = row.operator_kind == "direct_method"
+        ? operator_text == ".clone()"
+        : row.operator_kind == "qualified_arc" &&
+            operator_text.rfind("Arc::clone(", 0) == 0 &&
+            operator_text.back() == ')';
+    const auto context = rust_bytes.substr(row.rust_context_span.source_begin,
+        row.rust_context_span.source_end - row.rust_context_span.source_begin);
+    if (!exact_operator ||
+        native_clone_mask_rust_non_code(context).find(
+            row.expected_expression) == std::string::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT runtime site observation operator/context mismatch");
+    out << "{\"site_id\":" << native_clone_json_string(row.site_id)
+        << ",\"generated_occurrence\":" << row.generated_occurrence
+        << ",\"operator_kind\":"
+        << native_clone_json_string(row.operator_kind)
+        << ",\"source_file\":"
+        << native_clone_json_string(row.source_file)
+        << ",\"expected_expression\":"
+        << native_clone_json_string(row.expected_expression)
+        << ",\"semantic_type\":"
+        << native_clone_json_string(row.semantic_type)
+        << ",\"provenance_status\":"
+        << native_clone_json_string(row.provenance_status)
+        << ",\"source_sha256\":"
+        << native_clone_json_string(spec->source_sha256)
+        << ",\"source_marker\":"
+        << native_clone_json_string(std::string("MOSS_RUNTIME_CLONE_SITE:") +
+                                    row.site_id)
+        << ",\"source_span\":{\"start\":{\"line\":"
+        << spec->source_line << ",\"column\":" << spec->source_column
+        << "},\"end\":{\"line\":" << spec->source_line
+        << ",\"column\":" << spec->source_end_column
+        << "},\"source_begin\":" << spec->source_begin
+        << ",\"source_end\":" << spec->source_end << '}'
+        << ",\"rust_span\":";
+    emit_rust_span(row.rust_span);
+    out << ",\"rust_context_span\":";
+    emit_rust_span(row.rust_context_span);
+    out << ",\"rust_context_sha256\":"
+        << native_clone_json_string(source_free_contract_sha256(context))
+        << '}';
   }
   out << "],\"occurrences\":[";
   std::set<std::string> used_fact_identities;

@@ -1122,6 +1122,104 @@ def derive_copy_materializer_links(rust: str, source_by_id: dict[str, dict],
     return derived
 
 
+def validate_runtime_clone_site_observations(rows: Any, rust: str) -> None:
+    inventory_path = Path(__file__).with_name("runtime_clone_site_inventory.json")
+    inventory = json.loads(inventory_path.read_text())
+    if inventory.get("schema") != "moss-runtime-clone-site-inventory-v1":
+        raise ValueError("unsupported runtime clone site inventory")
+    expected = {row["site_id"]: row for row in inventory.get("sites", [])}
+    if not isinstance(rows, list):
+        raise ValueError("runtime clone site observations are not an array")
+    observed = {}
+    for row in rows:
+        fields = {"site_id", "operator_kind", "source_file", "expected_expression",
+                  "semantic_type", "provenance_status", "source_sha256", "source_marker",
+                  "source_span", "rust_span", "rust_context_span", "rust_context_sha256",
+                  "generated_occurrence"}
+        if not isinstance(row, dict) or set(row) != fields:
+            raise ValueError("runtime clone site row has missing or unknown fields")
+        site_id = row["site_id"]
+        key = (site_id, row["generated_occurrence"])
+        if site_id not in expected or key in observed:
+            raise ValueError("unknown or duplicate runtime clone site observation")
+        observed[key] = row
+    required = set()
+    if "struct MossProcessRuntime" in rust:
+        required |= {site_id for site_id in expected if site_id.startswith("r7-010-runtime-")}
+    if "MossFileIOReadBorrow" in rust:
+        required.add("fileio-read-borrow-01")
+    chunk_expansions = rust.count("Moss backend: FileIO CHUNK PIPELINE -- eligible")
+    if chunk_expansions:
+        required.add("file-chunk-01")
+    observed_site_ids = {site_id for site_id, _ in observed}
+    if observed_site_ids != required:
+        raise ValueError(f"runtime clone site coverage mismatch: expected={sorted(required)} observed={sorted(observed_site_ids)}")
+    marker_positions = {}
+    marker_re = re.compile(r"/\* MOSS_RUNTIME_CLONE_SITE:([^ ]+) \*/")
+    for match in marker_re.finditer(rust):
+        marker_positions.setdefault(match.group(1), []).append(match.start())
+    for site_id in observed_site_ids:
+        indices = sorted(index for observed_id, index in observed if observed_id == site_id)
+        if indices != list(range(len(indices))) or (site_id != "file-chunk-01" and indices != [0]):
+            raise ValueError(f"runtime clone generated occurrence coverage mismatch: {site_id}")
+        if site_id == "file-chunk-01" and indices != list(range(chunk_expansions)):
+            raise ValueError("FileChunk observations do not cover every eligible generated expansion")
+    for (site_id, _), row in observed.items():
+        spec = expected[site_id]
+        for key in ("source_file", "source_sha256", "source_marker", "semantic_type",
+                    "operator_kind", "expected_expression"):
+            inventory_key = {"source_marker": "marker"}.get(key, key)
+            if row[key] != spec[inventory_key]:
+                raise ValueError(f"runtime clone source identity mismatch: {site_id} {key}")
+        if row["source_span"] != spec["source_span"] or row["provenance_status"] != "source_site_only_unapproved":
+            raise ValueError(f"runtime clone source span/status mismatch: {site_id}")
+        source = (Path(__file__).resolve().parents[3] / spec["source_file"]).read_bytes()
+        if hashlib.sha256(source).hexdigest() != spec["source_sha256"]:
+            raise ValueError(f"runtime clone source blob changed: {site_id}")
+        span = spec["source_span"]
+        begin, end = span["source_begin"], span["source_end"]
+        if source[begin:end] != f"/* {spec['marker']} */".encode():
+            raise ValueError(f"runtime clone source marker span changed: {site_id}")
+        if spec["type_evidence_file"] != "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py":
+            raise ValueError(f"runtime clone type evidence is not a registered assertion: {site_id}")
+        op = row["rust_span"]
+        ctx = row["rust_context_span"]
+        if not isinstance(op, dict) or set(op) != {"start", "end"} or not isinstance(ctx, dict) or set(ctx) != {"start", "end"}:
+            raise ValueError(f"runtime clone Rust span malformed: {site_id}")
+        lines = rust.splitlines(keepends=True)
+        def offset(point: dict[str, int]) -> int:
+            line = point.get("line", 0)
+            col = point.get("column", 0)
+            if not (1 <= line <= len(lines) and col >= 1):
+                raise ValueError(f"runtime clone Rust location invalid: {site_id}")
+            return sum(map(len, lines[:line - 1])) + col - 1
+        op_begin, op_end = offset(op["start"]), offset(op["end"])
+        ctx_begin, ctx_end = offset(ctx["start"]), offset(ctx["end"])
+        if not (0 <= ctx_begin <= op_begin < op_end <= ctx_end <= len(rust)):
+            raise ValueError(f"runtime clone Rust span bounds invalid: {site_id}")
+        operator = rust[op_begin:op_end]
+        if row["operator_kind"] == "direct_method":
+            valid_operator = operator == ".clone()"
+        else:
+            valid_operator = operator.startswith("Arc::clone(") and operator.endswith(")")
+        context = rust[ctx_begin:ctx_end]
+        if not valid_operator or hashlib.sha256(context.encode()).hexdigest() != row["rust_context_sha256"]:
+            raise ValueError(f"runtime clone generated operator/context mismatch: {site_id}")
+        markers = marker_positions.get(site_id, [])
+        site_rows = sorted((entry for key, entry in observed.items() if key[0] == site_id),
+                           key=lambda entry: entry["generated_occurrence"])
+        if len(markers) != len(site_rows):
+            raise ValueError(f"runtime clone marker occurrence count mismatch: {site_id}")
+        marker_at = markers[row["generated_occurrence"]]
+        if rust.rfind("\n", 0, marker_at) != rust.rfind("\n", 0, op_begin) or marker_at >= op_begin:
+            raise ValueError(f"runtime clone marker is relocated from its exact operator: {site_id}")
+        context_code = re.sub(r"/\* MOSS_RUNTIME_CLONE_SITE:[^*]+\*/", " ", context)
+        if site_id == "file-chunk-01" and not (
+                re.search(r"let\s+\w+\s*=\s*std::sync::Arc::clone\(&\w+\);", context_code) and
+                re.search(r"branch_publish\(&\w+,\s*move\s*\|\|", context_code)):
+            raise ValueError("FileChunk site lacks bound result-slot and branch_publish context")
+
+
 def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
                            expected_copy_calls: int,
                            checked_copy_authority: dict | None = None,
@@ -1155,8 +1253,11 @@ def audit_clone_provenance(rust_path: Path, source_path: Path, mode: str,
             raise ValueError("unsupported clone provenance format")
         if set(manifest) != {"format", "version", "mode", "rust_sha256", "source_sha256",
                              "source_copy_occurrences", "checked_copy_facts",
-                             "root_ingress_domain_captures", "occurrences"}:
+                             "root_ingress_domain_captures", "runtime_clone_site_observations",
+                             "occurrences"}:
             raise ValueError("clone provenance v3 manifest has missing or unknown fields")
+        validate_runtime_clone_site_observations(
+            manifest.get("runtime_clone_site_observations"), rust)
         if manifest.get("mode") != mode:
             raise ValueError(f"mode mismatch: expected {mode}")
         if manifest.get("rust_sha256") != hashlib.sha256(rust_bytes).hexdigest():

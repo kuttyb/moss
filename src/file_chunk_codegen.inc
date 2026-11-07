@@ -235,7 +235,7 @@ string gen_chunk_pipeline_bounded_k(
   out << "                let " << index << " = " << next
       << ".checked_add(" << lane << " as i64).unwrap_or(i64::MAX);\n";
   out << "                let " << slot << " = std::sync::Arc::new(std::sync::Mutex::new(None));\n";
-  out << "                let " << out_slot << " = std::sync::Arc::clone(&" << slot << ");\n";
+  out << "                let " << out_slot << " = /* MOSS_RUNTIME_CLONE_SITE:file-chunk-01 */ std::sync::Arc::clone(&" << slot << ");\n";
   out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
       << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";

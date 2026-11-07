@@ -18,6 +18,7 @@ EVIDENCE = ROOT / "docs/phase28/team-c/P28_R7_010_ORACLE10A_RUNTIME_CLONE_EVIDEN
 REPORT = ROOT / "docs/phase28/team-c/P28_R7_010_GENERATION_SITE_AUDIT.md"
 HARNESS_PATH = ROOT / "tests/phase28/oracle_r7_005_1/oracle_harness.py"
 SCANNER_PATH = ROOT / "tests/tooling/rust_duplication_scanner.py"
+RUNTIME_INVENTORY = ROOT / "tests/phase28/oracle_r7_005_1/runtime_clone_site_inventory.json"
 
 spec = importlib.util.spec_from_file_location("oracle_harness", HARNESS_PATH)
 harness = importlib.util.module_from_spec(spec)
@@ -86,6 +87,127 @@ def audit_marked_runtime_sites(rust: str) -> None:
         bound.add(span)
     assert len(operator_spans["dot_clone"]) == 4  # three runtime sites plus one checked copy
     assert len(operator_spans["qualified_clone"]) == 7
+
+
+def audit_runtime_sidecar(rows: list[dict], rust: str) -> None:
+    inventory = json.loads(RUNTIME_INVENTORY.read_text())
+    assert inventory["schema"] == "moss-runtime-clone-site-inventory-v1"
+    expected = {row["site_id"]: row for row in inventory["sites"]}
+    reviewed_types = {
+        "r7-010-runtime-01": "Option<Arc<MossGlobalExec>>",
+        "r7-010-runtime-02": "Option<Vec<usize>>",
+        "r7-010-runtime-03": "MossBranchScope",
+        "r7-010-runtime-04": "Arc<MossFairNode>",
+        "r7-010-runtime-05": "Arc<MossFairWaiter>",
+        "r7-010-runtime-06": "Arc<MossBranchScopeState>",
+        "r7-010-runtime-08": "Arc<MossGlobalExec>",
+        "r7-010-runtime-09": "Arc<MossGlobalExec>",
+        "r7-010-runtime-10": "Arc<(Mutex<Option<R>>, Condvar)>",
+        "r7-010-runtime-11": "Arc<MossGlobalExec>",
+        "file-chunk-01": "Arc<Mutex<Option<ChunkOutcome>>>",
+        "fileio-read-borrow-01": "Arc<MossFairMutex<Option<FileIOInner>>>",
+    }
+    assert {key: row["semantic_type"] for key, row in expected.items()} == reviewed_types
+    generated_type_evidence = {
+        "r7-010-runtime-01": "active_executor: std::option::Option<std::sync::Arc<MossGlobalExec>>",
+        "r7-010-runtime-02": "affinity: std::option::Option<std::vec::Vec<usize>>",
+        "r7-010-runtime-03": "pub struct MossBranchScope",
+        "r7-010-runtime-04": "node: std::sync::Arc<MossFairNode>",
+        "r7-010-runtime-05": "std::collections::VecDeque<std::sync::Arc<MossFairWaiter>>",
+        "r7-010-runtime-06": "std::sync::Arc<MossBranchScopeState>",
+        "r7-010-runtime-08": "std::sync::Arc<MossGlobalExec>",
+        "r7-010-runtime-09": "active_executor: std::option::Option<std::sync::Arc<MossGlobalExec>>",
+        "r7-010-runtime-10": "std::sync::Arc<(std::sync::Mutex<std::option::Option<R>>, std::sync::Condvar)>",
+        "r7-010-runtime-11": "active_executor: std::option::Option<std::sync::Arc<MossGlobalExec>>",
+        "file-chunk-01": "std::vec::Vec<std::sync::Arc<std::sync::Mutex<Option<__MossChunkOutcome_",
+        "fileio-read-borrow-01": "inner: Arc<MossFairMutex<Option<FileIOInner>>>",
+    }
+    observed = {(row["site_id"], row["generated_occurrence"]): row for row in rows}
+    assert len(observed) == len(rows), "duplicate sidecar runtime site"
+    required = {site_id for site_id in expected if site_id.startswith("r7-010-runtime-")}
+    if "MossFileIOReadBorrow" in rust:
+        required.add("fileio-read-borrow-01")
+    chunk_expansions = rust.count("Moss backend: FileIO CHUNK PIPELINE -- eligible")
+    if chunk_expansions:
+        required.add("file-chunk-01")
+    observed_ids = {site_id for site_id, _ in observed}
+    assert required <= observed_ids, f"missing runtime site observations: {required - observed_ids}"
+    for site_id in observed_ids:
+        indices = sorted(index for observed_id, index in observed if observed_id == site_id)
+        assert indices == list(range(len(indices))), (site_id, indices)
+        assert site_id == "file-chunk-01" or indices == [0], (site_id, indices)
+        if site_id == "file-chunk-01":
+            assert indices == list(range(chunk_expansions)), (site_id, indices, chunk_expansions)
+    lines = rust.splitlines(keepends=True)
+    markers = {}
+    for match in re.finditer(r"/\* MOSS_RUNTIME_CLONE_SITE:([^ ]+) \*/", rust):
+        markers.setdefault(match.group(1), []).append(match.start())
+    def offset(point: dict) -> int:
+        line, col = point["line"], point["column"]
+        assert 1 <= line <= len(lines) and col >= 1
+        return sum(map(len, lines[:line - 1])) + col - 1
+    for (site_id, _), row in observed.items():
+        spec = expected[site_id]
+        assert row["provenance_status"] == "source_site_only_unapproved"
+        assert row["source_file"] == spec["source_file"]
+        assert row["source_sha256"] == spec["source_sha256"]
+        assert row["source_marker"] == spec["marker"]
+        assert row["semantic_type"] == spec["semantic_type"]
+        assert row["operator_kind"] == spec["operator_kind"]
+        assert row["expected_expression"] == spec["expected_expression"]
+        assert generated_type_evidence[site_id] in rust, (
+            f"generated Rust type does not match reviewed source-site type: {site_id}")
+        assert row["source_span"] == spec["source_span"]
+        span = row["rust_span"]
+        context = row["rust_context_span"]
+        begin, end = offset(span["start"]), offset(span["end"])
+        context_begin, context_end = offset(context["start"]), offset(context["end"])
+        assert 0 <= context_begin <= begin < end <= context_end <= len(rust)
+        operator = rust[begin:end]
+        assert (operator == ".clone()" if row["operator_kind"] == "direct_method"
+                else operator.startswith("Arc::clone(") and operator.endswith(")"))
+        assert hashlib.sha256(rust[context_begin:context_end].encode()).hexdigest() == row["rust_context_sha256"]
+        marker_positions = markers.get(site_id, [])
+        site_rows = sorted((candidate for key, candidate in observed.items()
+                            if key[0] == site_id),
+                           key=lambda candidate: candidate["generated_occurrence"])
+        assert len(marker_positions) == len(site_rows), (site_id, marker_positions, site_rows)
+        marker_at = marker_positions[row["generated_occurrence"]]
+        assert rust.rfind("\n", 0, marker_at) == rust.rfind("\n", 0, begin)
+        assert marker_at < begin
+        source = (ROOT / spec["source_file"]).read_bytes()
+        assert hashlib.sha256(source).hexdigest() == spec["source_sha256"]
+        begin, end = spec["source_span"]["source_begin"], spec["source_span"]["source_end"]
+        assert source[begin:end] == f"/* {spec['marker']} */".encode()
+    for mutate in (
+        lambda values: values[:-1],
+        lambda values: values + [values[0]],
+        lambda values: [{**values[0], "source_sha256": "0" * 64}, *values[1:]],
+        lambda values: [{**values[0], "source_span": {**values[0]["source_span"], "source_begin": 0}}, *values[1:]],
+        lambda values: [{**values[0], "semantic_type": "Arc<Vec<u8>>"}, *values[1:]],
+        lambda values: [{**values[0], "operator_kind": "direct_method"}, *values[1:]],
+    ):
+        try:
+            audit_runtime_sidecar_once(mutate(rows), expected, len(rust))
+        except (AssertionError, KeyError):
+            pass
+        else:
+            raise AssertionError("runtime sidecar mutation was accepted")
+
+
+def audit_runtime_sidecar_once(rows: list[dict], expected: dict, rust_size: int) -> None:
+    observed = {(row["site_id"], row["generated_occurrence"]): row for row in rows}
+    assert len(observed) == len(rows)
+    required = {site_id for site_id in expected if site_id.startswith("r7-010-runtime-")}
+    observed_ids = {site_id for site_id, _ in observed}
+    assert required <= observed_ids
+    for (site_id, _), row in observed.items():
+        spec = expected[site_id]
+        assert row["source_sha256"] == spec["source_sha256"]
+        assert row["source_span"] == spec["source_span"]
+        assert row["semantic_type"] == spec["semantic_type"]
+        assert row["operator_kind"] == spec["operator_kind"]
+        assert 0 <= row["rust_span"]["source_begin"] < row["rust_span"]["source_end"] <= rust_size
 
 
 def main() -> None:
@@ -191,7 +313,7 @@ def main() -> None:
             rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
         # Updated after removing the redundant worker-context Arc increment.
         assert hashlib.sha256(marker_stripped).hexdigest() == (
-            "113847626e46a1ec7e92107fa9c45d207f35664b27eccafcb6c5315f844e45e6")
+            "b1b19c7805e227e48b155b6c5abbb8cc002cb2e6da3e87082e616a9e9d52460f")
 
         # Generated runtime lines remain byte-identical to the reviewed
         # implementation after removing marker comments; markers are locators,
@@ -209,8 +331,76 @@ def main() -> None:
         assert (audit.get("status"), audit.get("authorized"), audit.get("unauthorized"),
                 audit.get("unclassified")) == ("UNAUTHORIZED", 1, 3, 3), audit
         sidecar = json.loads(Path(str(rust_path) + ".mossclone.json").read_text())
+        audit_runtime_sidecar(sidecar["runtime_clone_site_observations"], rust)
         assert [row["origin_kind"] for row in sidecar["occurrences"]].count("explicit_copy") == 1
         assert [row["origin_kind"] for row in sidecar["occurrences"]].count("unclassified") == 3
+
+        # The generated FileChunk site is gensymmed. Its identity is bound by
+        # the exact C++ source marker and by the result-slot / branch scope
+        # shape, not by a guessed variable name.
+        chunk_source = ROOT / "tests/tooling/fixtures/phase21_chunk_fileio_raise.moss"
+        chunk_rust_path = Path(tmp) / "fileio-chunk.rs"
+        chunk_build = subprocess.run([str(compiler), str(chunk_source), "-o", str(chunk_rust_path)],
+                                     capture_output=True, text=True, timeout=120)
+        assert chunk_build.returncode == 0, (chunk_build.stdout, chunk_build.stderr)
+        chunk_rust = chunk_rust_path.read_text()
+        chunk_sidecar = json.loads(Path(str(chunk_rust_path) + ".mossclone.json").read_text())
+        chunk_rows = chunk_sidecar["runtime_clone_site_observations"]
+        audit_runtime_sidecar(chunk_rows, chunk_rust)
+        assert {row["site_id"] for row in chunk_rows} >= {
+            "file-chunk-01", "fileio-read-borrow-01"}
+        (ROOT / "tmp/phase21-chunk-fileio-raise.data").write_bytes(b"abc")
+        chunk_binary = Path(tmp) / "fileio-chunk-bin"
+        rustc = subprocess.run(["rustc", "--edition", "2021", "--cfg", "moss_perf",
+                                str(chunk_rust_path), "-o", str(chunk_binary)],
+                               capture_output=True, text=True, timeout=120)
+        assert rustc.returncode == 0, (rustc.stdout, rustc.stderr)
+        chunk_run = subprocess.run([str(chunk_binary)], cwd=ROOT,
+                                   capture_output=True, text=True, timeout=60)
+        assert chunk_run.returncode == 0 and chunk_run.stdout.strip() == "3", (
+            chunk_run.returncode, chunk_run.stdout, chunk_run.stderr)
+        for changed in (
+            [{**row, "rust_context_sha256": "0" * 64} if row["site_id"] == "file-chunk-01" else row
+             for row in chunk_rows],
+            [row for row in chunk_rows if row["site_id"] != "file-chunk-01"],
+        ):
+            try:
+                audit_runtime_sidecar(changed, chunk_rust)
+            except (AssertionError, KeyError):
+                pass
+            else:
+                raise AssertionError("FileChunk sidecar context/coverage corruption was accepted")
+        chunk_marker = "/* MOSS_RUNTIME_CLONE_SITE:file-chunk-01 */"
+        fileio_call = "/* MOSS_RUNTIME_CLONE_SITE:fileio-read-borrow-01 */ Arc::clone(&file.inner)"
+        relocated_chunk_rust = chunk_rust.replace(chunk_marker, "", 1).replace(
+            fileio_call, chunk_marker + " " + fileio_call, 1)
+        try:
+            audit_runtime_sidecar(chunk_rows, relocated_chunk_rust)
+        except (AssertionError, KeyError):
+            pass
+        else:
+            raise AssertionError("FileChunk marker relocation to another Arc call was accepted")
+
+        multi_source = ROOT / "tests/tooling/fixtures/phase21c_native_ordered_raise.moss"
+        multi_rust_path = Path(tmp) / "fileio-chunk-multiple.rs"
+        multi_build = subprocess.run([str(compiler), str(multi_source), "-o", str(multi_rust_path)],
+                                     capture_output=True, text=True, timeout=120)
+        assert multi_build.returncode == 0, (multi_build.stdout, multi_build.stderr)
+        multi_rust = multi_rust_path.read_text()
+        multi_sidecar = json.loads(Path(str(multi_rust_path) + ".mossclone.json").read_text())
+        multi_rows = multi_sidecar["runtime_clone_site_observations"]
+        audit_runtime_sidecar(multi_rows, multi_rust)
+        multi_expansions = sorted(row["generated_occurrence"] for row in multi_rows
+                                  if row["site_id"] == "file-chunk-01")
+        assert multi_expansions == [0, 1], multi_expansions
+        try:
+            audit_runtime_sidecar([row for row in multi_rows
+                                   if not (row["site_id"] == "file-chunk-01" and
+                                           row["generated_occurrence"] == 1)], multi_rust)
+        except (AssertionError, KeyError):
+            pass
+        else:
+            raise AssertionError("dropping one repeated FileChunk expansion was accepted")
 
     print("phase28 R7-010 runtime clone evidence: PASS "
           "(historical artifact record validated; current output has 10 marked runtime sites, "

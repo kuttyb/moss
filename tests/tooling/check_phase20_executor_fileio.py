@@ -21,6 +21,7 @@ intentionally unsupported in Fast Debug; native execution uses Agent B's
 production FileIO runtime.
 """
 import os
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -596,6 +597,17 @@ def chunk_case(name, content, size, expected):
     assert 'window_k=4 eligible=yes' in ir, ir
     rust, binary = native_build(name, source, observe=True)
     text = rust.read_text()
+    clone_sidecar = json.loads(Path(str(rust) + '.mossclone.json').read_text())
+    clone_sites = {row['site_id']: row
+                   for row in clone_sidecar['runtime_clone_site_observations']}
+    assert 'file-chunk-01' in clone_sites, clone_sites
+    chunk_site = clone_sites['file-chunk-01']
+    assert chunk_site['provenance_status'] == 'source_site_only_unapproved'
+    assert chunk_site['source_file'] == 'src/file_chunk_codegen.inc'
+    assert chunk_site['semantic_type'] == 'Arc<Mutex<Option<ChunkOutcome>>>'
+    assert 'branch_publish(&__moss_chunk_scope_' in text
+    assert re.search(r'let __moss_chunk_out_slot_\d+ = std::sync::Arc::clone\(&__moss_chunk_slot_\d+\);', text)
+    assert 'fileio-read-borrow-01' in clone_sites
     assert_owned_runtime(text, name, fileio=True)
     assert re.search(r'let __moss_chunk_scope_\d+ = branch_scope_new_current\(\);', text), text
     assert not re.search(r'let __moss_chunk_scope_\d+ = branch_scope_new\(', text), text

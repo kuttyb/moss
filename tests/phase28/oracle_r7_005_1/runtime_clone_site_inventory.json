@@ -1,0 +1,305 @@
+{
+  "schema": "moss-runtime-clone-site-inventory-v1",
+  "sites": [
+    {
+      "site_id": "r7-010-runtime-04",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-04",
+      "source_span": {
+        "start": {
+          "line": 58,
+          "column": 44
+        },
+        "end": {
+          "line": 58,
+          "column": 91
+        },
+        "source_begin": 2174,
+        "source_end": 2221
+      },
+      "semantic_type": "Arc<MossFairNode>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-04']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(&node)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-05",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-05",
+      "source_span": {
+        "start": {
+          "line": 152,
+          "column": 55
+        },
+        "end": {
+          "line": 152,
+          "column": 102
+        },
+        "source_begin": 6497,
+        "source_end": 6544
+      },
+      "semantic_type": "Arc<MossFairWaiter>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-05']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(&waiter)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-06",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-06",
+      "source_span": {
+        "start": {
+          "line": 438,
+          "column": 45
+        },
+        "end": {
+          "line": 438,
+          "column": 92
+        },
+        "source_begin": 18991,
+        "source_end": 19038
+      },
+      "semantic_type": "Arc<MossBranchScopeState>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-06']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(scope)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-01",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-01",
+      "source_span": {
+        "start": {
+          "line": 497,
+          "column": 9
+        },
+        "end": {
+          "line": 497,
+          "column": 56
+        },
+        "source_begin": 21185,
+        "source_end": 21232
+      },
+      "semantic_type": "Option<Arc<MossGlobalExec>>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-01']",
+      "authorization": "unapproved",
+      "operator_kind": "direct_method",
+      "expected_expression": "self.lock_inner().active_executor.clone()",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-08",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-08",
+      "source_span": {
+        "start": {
+          "line": 733,
+          "column": 15
+        },
+        "end": {
+          "line": 733,
+          "column": 62
+        },
+        "source_begin": 31425,
+        "source_end": 31472
+      },
+      "semantic_type": "Arc<MossGlobalExec>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-08']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(gx)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-02",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-02",
+      "source_span": {
+        "start": {
+          "line": 857,
+          "column": 38
+        },
+        "end": {
+          "line": 857,
+          "column": 85
+        },
+        "source_begin": 36876,
+        "source_end": 36923
+      },
+      "semantic_type": "Option<Vec<usize>>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-02']",
+      "authorization": "unapproved",
+      "operator_kind": "direct_method",
+      "expected_expression": "self.affinity.clone()",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-09",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-09",
+      "source_span": {
+        "start": {
+          "line": 919,
+          "column": 38
+        },
+        "end": {
+          "line": 919,
+          "column": 85
+        },
+        "source_begin": 39420,
+        "source_end": 39467
+      },
+      "semantic_type": "Arc<MossGlobalExec>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-09']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(&gx)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-10",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-10",
+      "source_span": {
+        "start": {
+          "line": 1089,
+          "column": 17
+        },
+        "end": {
+          "line": 1089,
+          "column": 64
+        },
+        "source_begin": 45973,
+        "source_end": 46020
+      },
+      "semantic_type": "Arc<(Mutex<Option<R>>, Condvar)>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-10']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(&reply_slot)",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-11",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-11",
+      "source_span": {
+        "start": {
+          "line": 1116,
+          "column": 26
+        },
+        "end": {
+          "line": 1116,
+          "column": 73
+        },
+        "source_begin": 47064,
+        "source_end": 47111
+      },
+      "semantic_type": "Arc<MossGlobalExec>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-11']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(inner.active_executor.as_ref().expect(",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "r7-010-runtime-03",
+      "source_file": "src/executor_runtime.cpp",
+      "source_sha256": "3af71438b396ad0303eda7a1844902d2802c27bff8a3cdd18e8d6e82f5d22690",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-03",
+      "source_span": {
+        "start": {
+          "line": 1407,
+          "column": 60
+        },
+        "end": {
+          "line": 1407,
+          "column": 107
+        },
+        "source_begin": 59291,
+        "source_end": 59338
+      },
+      "semantic_type": "MossBranchScope",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['r7-010-runtime-03']",
+      "authorization": "unapproved",
+      "operator_kind": "direct_method",
+      "expected_expression": "s.clone().into_raw_owned()",
+      "expansion_policy": "at_most_once_per_artifact"
+    },
+    {
+      "site_id": "file-chunk-01",
+      "source_file": "src/file_chunk_codegen.inc",
+      "source_sha256": "2ba9d8adf1aa1ec926294d2fa8a8f0140466b516ead78da36745d273ad3796c7",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:file-chunk-01",
+      "source_span": {
+        "start": {
+          "line": 238,
+          "column": 52
+        },
+        "end": {
+          "line": 238,
+          "column": 95
+        },
+        "source_begin": 12621,
+        "source_end": 12664
+      },
+      "semantic_type": "Arc<Mutex<Option<ChunkOutcome>>>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['file-chunk-01']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "std::sync::Arc::clone(&",
+      "expansion_policy": "many_per_artifact"
+    },
+    {
+      "site_id": "fileio-read-borrow-01",
+      "source_file": "src/fileio_runtime.cpp",
+      "source_sha256": "12b88c7b446c964de8a61ad68ff90bb1ee5740d00d936f8b724ec2fd9c1a6e22",
+      "marker": "MOSS_RUNTIME_CLONE_SITE:fileio-read-borrow-01",
+      "source_span": {
+        "start": {
+          "line": 1293,
+          "column": 21
+        },
+        "end": {
+          "line": 1293,
+          "column": 72
+        },
+        "source_begin": 46965,
+        "source_end": 47016
+      },
+      "semantic_type": "Arc<MossFairMutex<Option<FileIOInner>>>",
+      "type_evidence_file": "tests/tooling/check_phase28_r7_010_runtime_clone_evidence.py",
+      "type_evidence": "reviewed_types['fileio-read-borrow-01']",
+      "authorization": "unapproved",
+      "operator_kind": "qualified_arc",
+      "expected_expression": "Arc::clone(&file.inner)",
+      "expansion_policy": "at_most_once_per_artifact"
+    }
+  ]
+}
