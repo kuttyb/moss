@@ -298,38 +298,27 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
-  std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
   std::unordered_map<SpecId, OpenCallResultFacts> open_call_results_by_spec_id;
   // Solver-closed member facts for the direct call in this statement. The
   // specialization registrar consumes these exact terms and access decisions.
-  std::unordered_map<string, vector<MemberDispatchRequirement>>
-      member_requirements_by_context;
   std::unordered_map<SpecId, vector<MemberDispatchRequirement>>
       member_requirements_by_spec_id;
   // Exact checked specialization selected for an open-result call in this
   // body context. Native lowering consumes this key at the source statement.
-  std::unordered_map<string, string> open_call_keys_by_context;
   std::unordered_map<SpecId, string> open_call_keys_by_spec_id;
   // Nested call results can close from an enclosing parameter type. Preserve
   // each expression's exact checked key for native lowering in that context.
-  std::unordered_map<string, std::unordered_map<string, vector<string>>>
-      nested_open_call_keys_by_context;
   std::unordered_map<SpecId, std::unordered_map<string, vector<string>>>
       nested_open_call_keys_by_spec_id;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
-  std::unordered_map<string,string> receiver_types_by_context;
   std::unordered_map<SpecId,string> receiver_types_by_spec_id;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
-  std::unordered_map<string,string> semantic_types_by_context;
-  // SpecId keyed checker result map. Context strings above are retained only
-  // as diagnostic/debug labels during migration; consumers select by ID.
+  // SpecId keyed checker result map.
   std::unordered_map<SpecId,string> semantic_types_by_spec_id;
-  // `echo` argument types the checker accepted under the display contract,
-  // by specialization context ("" for a non-generic body). Native lowering
-  // selects the display helper from this checked fact. Checker metadata only.
-  std::unordered_map<string,vector<string>> echo_types_by_context;
+  // `echo` argument types the checker accepted under the display contract.
+  // Native lowering selects the display helper from this checked fact.
   std::unordered_map<SpecId,vector<string>> echo_types_by_spec_id;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
@@ -337,15 +326,12 @@ struct Stmt {
   std::unordered_map<string,string> joined_types;
   // A generic function's shared source statement is checked once per
   // concrete specialization. Keep each exact join environment separately.
-  std::unordered_map<string,std::unordered_map<string,string>>
-      joined_types_by_context;
   std::unordered_map<SpecId,std::unordered_map<string,string>>
       joined_types_by_spec_id;
   // Exact functional plans for the expression slots emitted by this
   // statement, keyed by the concrete semantic context.  A function body can
   // have several static specializations, so one AST statement can legitimately
   // point at several distinct compilation-local pipeline IDs.
-  mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
   mutable std::unordered_map<SpecId,vector<std::size_t>>
       functional_pipeline_ids_by_spec_id;
   // Expression-tree keyed mirror of functional_pipeline_ids. The optimizer
@@ -358,8 +344,6 @@ struct Stmt {
     est::ExprId expression = 0;
     std::size_t pipeline_id = 0;
   };
-  mutable std::unordered_map<string,vector<FunctionalExpressionPlan>>
-      functional_expression_plans_by_context;
   mutable std::unordered_map<SpecId,vector<FunctionalExpressionPlan>>
       functional_expression_plans_by_spec_id;
   // Phase 20 Agent D: nonzero once check_executor_invoke has built a checked
@@ -487,9 +471,9 @@ struct Method {
   vector<est::Handle> expression_handles;
   int result_line = 0;
   vector<int> result_continuation_lines;
-  std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
-  std::unordered_map<string,Stmt::FunctionalExpressionPlan>
-      result_functional_expression_plans_by_context;
+  std::unordered_map<SpecId,std::size_t> result_functional_pipeline_ids;
+  std::unordered_map<SpecId,Stmt::FunctionalExpressionPlan>
+      result_functional_expression_plans_by_spec_id;
   // Inferred receiver/parameter effects used by ownership checking and Rust
   // lowering.  They are never written in Moss source.
   Effect receiver_effect = Effect::Read;
@@ -735,9 +719,9 @@ struct Function {
   string defining_module, declaration_name, semantic_callable_id;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
   vector<int> result_continuation_lines;
-  std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
-  std::unordered_map<string,Stmt::FunctionalExpressionPlan>
-      result_functional_expression_plans_by_context;
+  std::unordered_map<SpecId,std::size_t> result_functional_pipeline_ids;
+  std::unordered_map<SpecId,Stmt::FunctionalExpressionPlan>
+      result_functional_expression_plans_by_spec_id;
   bool generic = false; bool static_dispatch = false;
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
@@ -1052,6 +1036,22 @@ inline vector<const SemanticCallEdge*> exact_semantic_call_edges(
         edge.call_expression_occurrence_id == expression)
       matches.push_back(&edge);
   return matches;
+}
+
+struct ExactSemanticCallEdgeLookup {
+  enum class Kind { Missing, Unique, Duplicate } kind = Kind::Missing;
+  const SemanticCallEdge* edge = nullptr;
+};
+
+inline ExactSemanticCallEdgeLookup select_exact_semantic_call_edge(
+    const Program& program, SpecId caller, std::uint32_t arena,
+    est::ExprId expression) {
+  const auto matches = exact_semantic_call_edges(
+      program, caller, arena, expression);
+  if (matches.empty()) return {};
+  if (matches.size() != 1)
+    return {ExactSemanticCallEdgeLookup::Kind::Duplicate, nullptr};
+  return {ExactSemanticCallEdgeLookup::Kind::Unique, matches.front()};
 }
 
 enum class CheckedCallEdgeSelectionKind {

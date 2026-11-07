@@ -264,6 +264,7 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   auto source_text = source_slice(pipeline->input);
   if (!source_text || source_text->empty()) return std::nullopt;
   ParsedFunctionalPipeline result;
+  result.expression_id = expression;
   result.source = std::move(*source_text);
   for (const auto stage_id : pipeline->stages) {
     auto raw = source_slice(stage_id);
@@ -281,10 +282,12 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
     ParsedFunctionalStage parsed_stage;
     parsed_stage.kind = *kind;
     parsed_stage.raw = std::move(*raw);
+    parsed_stage.expression_id = stage_id;
     for (const auto argument : arguments) {
       auto argument_text = source_slice(argument);
       if (!argument_text) return std::nullopt;
       parsed_stage.arguments.push_back(std::move(*argument_text));
+      parsed_stage.argument_expression_ids.push_back(argument);
     }
     result.stages.push_back(std::move(parsed_stage));
   }

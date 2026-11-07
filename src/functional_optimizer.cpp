@@ -90,25 +90,26 @@ class FunctionalOptimizer {
             string context = functional_function_context(function, &specialization);
             auto result = result_pipeline(
                 function.expression_handles,
-                function.result_functional_expression_plans_by_context,
-                context);
+                function.result_functional_expression_plans_by_spec_id,
+                specialization.spec_id);
             auto result_expression = handle_expression(
                 function.expression_handles, est::ExprSlot::ReturnValue);
             bool result_complete = !function.result_expression ||
                 result_expression.has_value();
-            plan_scope(function.body, context, known, result,
+            plan_scope(function.body, context, specialization.spec_id, known, result,
                        result_expression, result_complete);
           }
         } else {
           string context = functional_function_context(function);
           auto result = result_pipeline(
               function.expression_handles,
-              function.result_functional_expression_plans_by_context, context);
+              function.result_functional_expression_plans_by_spec_id,
+              function.spec_id);
           auto result_expression = handle_expression(
               function.expression_handles, est::ExprSlot::ReturnValue);
           bool result_complete = !function.result_expression ||
               result_expression.has_value();
-          plan_scope(function.body, context, known, result,
+          plan_scope(function.body, context, function.spec_id, known, result,
                      result_expression, result_complete);
         }
       }
@@ -120,12 +121,13 @@ class FunctionalOptimizer {
           string context = functional_method_context(object, method);
           auto result = result_pipeline(
               method.expression_handles,
-              method.result_functional_expression_plans_by_context, context);
+              method.result_functional_expression_plans_by_spec_id,
+              method.spec_id);
           auto result_expression = handle_expression(
               method.expression_handles, est::ExprSlot::ReturnValue);
           bool result_complete = !method.result_expression ||
               result_expression.has_value();
-          plan_scope(method.body, context, known, result,
+          plan_scope(method.body, context, method.spec_id, known, result,
                      result_expression, result_complete);
         }
       }
@@ -135,17 +137,17 @@ class FunctionalOptimizer {
           for (const auto& field : domain.state) known.insert(field.name);
           for (const auto& parameter : handler.params) known.insert(parameter.name);
           plan_scope(handler.body, functional_handler_context(domain, handler),
-                     known, std::nullopt, std::nullopt, true);
+                     handler.spec_id, known, std::nullopt, std::nullopt, true);
         }
       }
       if (program_.main)
-        plan_scope(program_.main->body, "main", {}, std::nullopt,
+        plan_scope(program_.main->body, "main", program_.main->spec_id, {}, std::nullopt,
                    std::nullopt, true);
       for (auto& test : program_.tests)
-        plan_scope(test.body, "test:" + test.name, {}, std::nullopt,
+        plan_scope(test.body, "test:" + test.name, test.spec_id, {}, std::nullopt,
                    std::nullopt, true);
       for (auto& benchmark : program_.benchmarks)
-        plan_scope(benchmark.body, "bench:" + benchmark.name, {},
+        plan_scope(benchmark.body, "bench:" + benchmark.name, benchmark.spec_id, {},
                    std::nullopt, std::nullopt, true);
     }
 
@@ -204,9 +206,9 @@ class FunctionalOptimizer {
 
   void index_body_expressions(const vector<Stmt>& body) {
     for (const auto& statement : body) {
-      for (const auto& [context, plans] :
-           statement.functional_expression_plans_by_context) {
-        (void)context;
+      for (const auto& [specialization_id, plans] :
+           statement.functional_expression_plans_by_spec_id) {
+        (void)specialization_id;
         for (const auto& plan : plans) {
           if (!plan.pipeline_id) continue;
           if (auto expression = owned_expression(statement.expression_handles,
@@ -222,9 +224,9 @@ class FunctionalOptimizer {
     if (program_.main) index_body_expressions(program_.main->body);
     for (const auto& function : program_.functions) {
       index_body_expressions(function.body);
-      for (const auto& [context, plan] :
-           function.result_functional_expression_plans_by_context) {
-        (void)context;
+      for (const auto& [specialization_id, plan] :
+           function.result_functional_expression_plans_by_spec_id) {
+        (void)specialization_id;
         if (plan.pipeline_id)
           if (auto expression = owned_expression(function.expression_handles,
                                                  plan))
@@ -234,9 +236,9 @@ class FunctionalOptimizer {
     for (const auto& object : program_.objects)
       for (const auto& method : object.methods) {
         index_body_expressions(method.body);
-        for (const auto& [context, plan] :
-             method.result_functional_expression_plans_by_context) {
-          (void)context;
+        for (const auto& [specialization_id, plan] :
+             method.result_functional_expression_plans_by_spec_id) {
+          (void)specialization_id;
           if (plan.pipeline_id)
             if (auto expression = owned_expression(method.expression_handles,
                                                    plan))
@@ -630,9 +632,10 @@ class FunctionalOptimizer {
   }
 
   std::optional<std::pair<size_t, ExpressionRef>> statement_pipeline(
-      const Stmt& statement, const string& context) const {
-    auto plans = statement.functional_expression_plans_by_context.find(context);
-    if (plans == statement.functional_expression_plans_by_context.end() ||
+      const Stmt& statement, SpecId specialization_id) const {
+    auto plans = statement.functional_expression_plans_by_spec_id.find(
+        specialization_id);
+    if (plans == statement.functional_expression_plans_by_spec_id.end() ||
         plans->second.empty() || !plans->second.front().pipeline_id)
       return std::nullopt;
     const auto& plan = plans->second.front();
@@ -643,9 +646,9 @@ class FunctionalOptimizer {
 
   std::optional<std::pair<size_t, ExpressionRef>> result_pipeline(
       const vector<est::Handle>& handles,
-      const std::unordered_map<string, Stmt::FunctionalExpressionPlan>& plans,
-      const string& context) const {
-    auto found = plans.find(context);
+      const std::unordered_map<SpecId, Stmt::FunctionalExpressionPlan>& plans,
+      SpecId specialization_id) const {
+    auto found = plans.find(specialization_id);
     if (found == plans.end() || !found->second.pipeline_id)
       return std::nullopt;
     auto expression = owned_expression(handles, found->second);
@@ -1131,14 +1134,14 @@ class FunctionalOptimizer {
   }
 
   vector<ScopeOccurrence> collect_scope_occurrences(
-      vector<Stmt>& body, const string& context,
+      vector<Stmt>& body, SpecId specialization_id,
       std::set<string> known_bindings,
       const std::optional<std::pair<size_t, ExpressionRef>>& result) {
     vector<ScopeOccurrence> occurrences;
     for (size_t index = 0; index < body.size(); ++index) {
       Stmt& statement = body[index];
       if (statement.indent != 0) continue;
-      const auto plan = statement_pipeline(statement, context);
+      const auto plan = statement_pipeline(statement, specialization_id);
       const auto binding = statement_binding(statement);
       const bool is_new = binding && !known_bindings.count(*binding);
       if (plan) {
@@ -1505,12 +1508,13 @@ class FunctionalOptimizer {
 
   void plan_scope(
       vector<Stmt>& body, const string& context,
+      SpecId specialization_id,
       const std::set<string>& known_bindings,
       const std::optional<std::pair<size_t, ExpressionRef>>& result,
       const std::optional<ExpressionRef>& result_expression,
       bool result_expression_complete) {
     auto occurrences = collect_scope_occurrences(
-        body, context, known_bindings, result);
+        body, specialization_id, known_bindings, result);
     bool dependencies_complete = result_expression_complete;
     for (const auto& statement : body)
       dependencies_complete = dependencies_complete &&
@@ -1767,11 +1771,11 @@ void dump_functional_ir(std::ostream& out, const Program& program,
   if (!decisions_only) {
     auto dump_expression_plans = [&](const vector<Stmt>& body) {
       for (const auto& statement : body)
-        for (const auto& [context, plans] :
-             statement.functional_expression_plans_by_context)
+        for (const auto& [specialization_id, plans] :
+             statement.functional_expression_plans_by_spec_id)
           for (const auto& plan : plans)
             if (plan.pipeline_id)
-              out << "ExpressionPlan [" << context << "] line "
+              out << "ExpressionPlan [SpecId " << specialization_id << "] line "
                   << statement.line << " pipeline=%" << plan.pipeline_id
                   << " slot=" << static_cast<unsigned>(plan.slot)
                   << " argument=" << plan.argument_index

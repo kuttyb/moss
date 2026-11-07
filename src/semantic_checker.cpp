@@ -2054,10 +2054,15 @@ class Checker {
             p_.typed_semantics->return_value_facts.begin(),
             p_.typed_semantics->return_value_facts.end(),
             [&](const auto& candidate) {
-          return candidate.provenance.enclosing_callable_id ==
-              std::string("fn:") + duplicate &&
-              candidate.specialization_context.find(
-                  std::string("fn:") + duplicate + "<") == 0;
+          if (candidate.provenance.enclosing_callable_id !=
+              std::string("fn:") + duplicate)
+            return false;
+          return std::any_of(p_.specialization_table.begin(),
+              p_.specialization_table.end(), [&](const auto& identity) {
+            return identity.id == candidate.specialization_id &&
+                identity.semantic_callable_identity ==
+                    std::string("fn:") + duplicate && identity.semantic_key;
+          });
         });
         if (fact != p_.typed_semantics->return_value_facts.end()) {
           const auto copied = *fact;
@@ -14488,7 +14493,6 @@ class Checker {
                 if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                   prior.semantic_type = canonical_type_name(retained);
                   if (!join_context.empty()) {
-                    prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
                     if (current_spec_id_ != InvalidSpecId)
                       prior.semantic_types_by_spec_id[current_spec_id_] =
                           canonical_type_name(retained);
@@ -14512,7 +14516,6 @@ class Checker {
                     if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                       prior.semantic_type = *refined;
                       if (!join_context.empty()) {
-                        prior.semantic_types_by_context[join_context] = *refined;
                         if (current_spec_id_ != InvalidSpecId)
                           prior.semantic_types_by_spec_id[current_spec_id_] =
                               *refined;
@@ -14570,7 +14573,6 @@ class Checker {
                  (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
               prior.semantic_type = canonical_type_name(retained);
               if (!join_context.empty()) {
-                prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
                 if (current_spec_id_ != InvalidSpecId)
                   prior.semantic_types_by_spec_id[current_spec_id_] =
                       canonical_type_name(retained);
@@ -14597,7 +14599,6 @@ class Checker {
                    (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
                 prior.semantic_type = *refined;
                 if (!join_context.empty()) {
-                  prior.semantic_types_by_context[join_context] = *refined;
                   if (current_spec_id_ != InvalidSpecId)
                     prior.semantic_types_by_spec_id[current_spec_id_] =
                         *refined;
@@ -14737,8 +14738,6 @@ class Checker {
         env = merge_type_environments(paths, statement.line, reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
-          if (!join_context.empty())
-            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
           if (current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).joined_types_by_spec_id[
                 current_spec_id_] = env;
@@ -14797,9 +14796,6 @@ class Checker {
         env = merge_type_environments(paths, statement.line, reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
-          if (!join_context.empty())
-            const_cast<Stmt&>(statement)
-                .joined_types_by_context[join_context] = env;
           if (record_join_types && current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).joined_types_by_spec_id[
                 current_spec_id_] = env;
@@ -14929,8 +14925,6 @@ class Checker {
         }
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
-          if (!join_context.empty())
-            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
           if (current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).joined_types_by_spec_id[
                 current_spec_id_] = env;
@@ -14950,8 +14944,6 @@ class Checker {
                                       reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
-          if (!join_context.empty())
-            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
           if (current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).joined_types_by_spec_id[
                 current_spec_id_] = env;
@@ -15010,8 +15002,6 @@ class Checker {
                                       reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
-          if (!join_context.empty())
-            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
           if (current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).joined_types_by_spec_id[
                 current_spec_id_] = env;
@@ -15033,7 +15023,6 @@ class Checker {
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env)) {
-          const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
           if (current_spec_id_ != InvalidSpecId)
             const_cast<Stmt&>(statement).receiver_types_by_spec_id[
                 current_spec_id_] = canonical_type_name(*receiver);
@@ -15041,13 +15030,10 @@ class Checker {
               statement.a, join_context, canonical_type_name(*receiver));
         }
       }
-      if (record_semantic_types && !join_context.empty() &&
+      if (record_semantic_types && current_spec_id_ != InvalidSpecId &&
           !statement.semantic_type.empty()) {
-        const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
-            statement.semantic_type;
-        if (current_spec_id_ != InvalidSpecId)
-          const_cast<Stmt&>(statement).semantic_types_by_spec_id[
-              current_spec_id_] = statement.semantic_type;
+        const_cast<Stmt&>(statement).semantic_types_by_spec_id[
+            current_spec_id_] = statement.semantic_type;
         const std::string& source = statement.kind == Stmt::Kind::Assign
             ? statement.b : statement.text;
         record_statement_type_fact(statement, est::ExprSlot::RhsValue, 0,
@@ -16142,8 +16128,6 @@ class Checker {
         }
         if (!closed.empty()) {
           auto& checked_statement = *const_cast<Stmt*>(pending.statement);
-          checked_statement.member_requirements_by_context[semantic_context] =
-              closed;
           if (current_spec_id_ != InvalidSpecId)
             checked_statement.member_requirements_by_spec_id[current_spec_id_] =
                 closed;
@@ -16179,15 +16163,14 @@ class Checker {
                                             solver.resolve(binding.second));
       if (record_call_facts) {
         auto& checked_statement = *const_cast<Stmt*>(statement);
-        checked_statement.open_call_results_by_context[semantic_context] = facts;
         if (current_spec_id_ != InvalidSpecId)
           checked_statement.open_call_results_by_spec_id[current_spec_id_] = facts;
         est::SemanticFacts expression_facts;
         expression_facts.type = result;
         expression_facts.resolved_target = facts.callable_id;
-        auto specialization = checked_statement.open_call_keys_by_context.find(
-            semantic_context);
-        if (specialization != checked_statement.open_call_keys_by_context.end())
+        auto specialization = checked_statement.open_call_keys_by_spec_id.find(
+            current_spec_id_);
+        if (specialization != checked_statement.open_call_keys_by_spec_id.end())
           expression_facts.specialization_result = specialization->second;
         record_statement_expression_facts(checked_statement,
             est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
@@ -24191,6 +24174,9 @@ class Checker {
 
     FunctionalPipeline pipeline;
     pipeline.transient_id = next_pipeline_id++;
+    pipeline.specialization_id = current_spec_id_;
+    pipeline.est_arena_index = parsed->arena_index;
+    pipeline.est_expression_id = parsed->expression_id;
     pipeline.semantic_identity = semantic_identity;
     pipeline.source_file = source_file;
     pipeline.line = line;
@@ -24229,6 +24215,10 @@ class Checker {
           ? continuation_lines[index] : line;
       node.span = {stage_line, index + 1};
       node.source_text = parsed_stage.raw;
+      node.est_arena_index = parsed_stage.arena_index;
+      node.est_expression_id = parsed_stage.expression_id;
+      node.est_argument_expression_ids =
+          parsed_stage.argument_expression_ids;
       node.input_type = current_value_type;
       node.effects = no_observable_effects();
       node.provenance.push_back(node.semantic_identity);
@@ -24244,6 +24234,8 @@ class Checker {
                parsed_stage.arguments.size() == 2)
         callable = parsed_stage.arguments[1];
       if (!callable.empty()) {
+        node.callable_argument_index =
+            node.kind == FunctionalNodeKind::Reduce ? 1u : 0u;
         node.callable_expression = callable;
         vector<string> callback_input_types{current_element};
         if (node.kind == FunctionalNodeKind::Reduce)
@@ -24384,7 +24376,7 @@ class Checker {
       const vector<Stmt>& body, const std::optional<string>& result,
       int result_line, const vector<int>& result_continuation_lines,
       const vector<est::Handle>* result_expression_handles,
-      std::unordered_map<string,size_t>* result_pipeline_ids,
+      std::unordered_map<SpecId,size_t>* result_pipeline_ids,
       TypeEnv env, const string& context, Function* owning_function,
       size_t& next_pipeline_id, size_t& next_node_id,
       const std::set<string>& domain_fields = {},
@@ -24395,14 +24387,9 @@ class Checker {
       if (!expressions.empty() && current_spec_id_ == InvalidSpecId)
         throw std::invalid_argument(
             "functional pipeline has no checker-owned caller SpecId");
-      auto& ids = statement.functional_pipeline_ids[context];
-      ids.clear();
       auto& ids_by_spec = statement.functional_pipeline_ids_by_spec_id[
           current_spec_id_];
       ids_by_spec.clear();
-      auto& expression_plans =
-          statement.functional_expression_plans_by_context[context];
-      expression_plans.clear();
       auto& plans_by_spec = statement.functional_expression_plans_by_spec_id[
           current_spec_id_];
       plans_by_spec.clear();
@@ -24415,7 +24402,6 @@ class Checker {
             owning_function, next_pipeline_id, next_node_id, domain_fields,
             implicit_object, statement.continuation_lines,
             statement.source_file, &statement.expression_handles);
-        ids.push_back(id.value_or(0));
         ids_by_spec.push_back(id.value_or(0));
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
@@ -24434,7 +24420,6 @@ class Checker {
             expression_plan.expression = handle->expr;
           }
         }
-        expression_plans.push_back(expression_plan);
         plans_by_spec.push_back(expression_plan);
       }
     };
@@ -24452,9 +24437,9 @@ class Checker {
           owning_function ? owning_function->source_file : string(),
           result_expression_handles);
       if (result_pipeline_ids) {
-        result_pipeline_ids->erase(context);
+        result_pipeline_ids->erase(current_spec_id_);
         if (id) {
-          (*result_pipeline_ids)[context] = *id;
+          (*result_pipeline_ids)[current_spec_id_] = *id;
           if (result_expression_handles) {
             const auto fingerprint = est::fingerprint(*result);
             for (const auto& handle : *result_expression_handles) {
@@ -24469,14 +24454,14 @@ class Checker {
               plan.expression = handle.expr;
               plan.pipeline_id = *id;
               if (owning_function) {
-                owning_function->result_functional_expression_plans_by_context[
-                    context] = plan;
+                owning_function->result_functional_expression_plans_by_spec_id[
+                    current_spec_id_] = plan;
               } else {
                 for (auto& object : p_.objects)
                   for (auto& method : object.methods)
                     if (&method.expression_handles == result_expression_handles)
-                      method.result_functional_expression_plans_by_context[
-                          context] = plan;
+                      method.result_functional_expression_plans_by_spec_id[
+                          current_spec_id_] = plan;
               }
               break;
             }
@@ -24493,9 +24478,10 @@ class Checker {
     for (auto& function : p_.functions) {
       function.callable_dependencies.clear();
       function.result_functional_pipeline_ids.clear();
-      function.result_functional_expression_plans_by_context.clear();
+      function.result_functional_expression_plans_by_spec_id.clear();
       if (function.static_dispatch && !function.specializations.empty()) {
         for (const auto& specialization : function.specializations) {
+          SpecIdScope spec_id_scope(current_spec_id_, specialization.spec_id);
           TypeEnv env;
           for (size_t index = 0; index < function.params.size(); ++index) {
             env[function.params[index].name] = specialization.parameter_types[index];
@@ -24508,6 +24494,7 @@ class Checker {
               &function, next_pipeline_id, next_node_id);
         }
       } else {
+        SpecIdScope spec_id_scope(current_spec_id_, function.spec_id);
         TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty()
@@ -24522,8 +24509,9 @@ class Checker {
     }
     for (auto& object : p_.objects) {
       for (auto& method : object.methods) {
+        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
         method.result_functional_pipeline_ids.clear();
-        method.result_functional_expression_plans_by_context.clear();
+        method.result_functional_expression_plans_by_spec_id.clear();
         TypeEnv env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
@@ -27974,7 +27962,7 @@ class Checker {
     for (const auto& existing : required_take_occurrences_) {
       if (existing.est_arena_index != requirement.est_arena_index ||
           existing.take_occurrence_id != requirement.take_occurrence_id ||
-          existing.specialization_context != requirement.specialization_context)
+          existing.specialization_id != requirement.specialization_id)
         continue;
       auto same_type = [](const TypeRef& left, const TypeRef& right) {
         return left && right && left->structurally_equal(*right);
@@ -29225,8 +29213,7 @@ class Checker {
                   candidate.source_raise_alternatives ==
                       source_raise_alternatives &&
                   candidate.recovery_alternatives == recovery_alternatives &&
-                  candidate.specialization_context ==
-                      current_semantic_context_ &&
+                  candidate.specialization_id == current_spec_id_ &&
                   candidate.specialization_identity ==
                       local_ownership_specialization_identity();
             });
@@ -31037,7 +31024,7 @@ class Checker {
                 for (const auto& take : take_facts_) {
                   if (take.statement_occurrence_id !=
                           fact.source_statement_occurrence_id ||
-                      take.specialization_context != fact.specialization_context ||
+                      take.specialization_id != fact.specialization_id ||
                       take.availability != TypedTakeFactV1::Availability::Present)
                     continue;
                   string path = take.root_binding_identity;
@@ -32372,10 +32359,9 @@ class Checker {
                 fact.checked_body_statement_ordinal = body_statement_ordinal;
                 fact.expression_source_fingerprint =
                     exact_return_handle->source_fingerprint;
-                if (fact.specialization_identity !=
-                        checking_specialization_->stable_type_key ||
-                    fact.specialization_context !=
-                        exact_specialization_context)
+                if (fact.specialization_id != checking_specialization_->spec_id ||
+                    fact.specialization_identity !=
+                        checking_specialization_->stable_type_key)
                   err(s.line,
                       "imported generic ReturnValue has crossed specialization identity/context",
                       "MOSS_INTERNAL_INVARIANT");
@@ -32608,8 +32594,7 @@ class Checker {
                     !checking_specialization_->return_type_ref->is_closed() ||
                     !fact.expression_type || !arena ||
                     fact.expression_occurrence_id == UINT32_MAX ||
-                    fact.specialization_context != functional_function_context(
-                        owner, checking_specialization_) ||
+                    fact.specialization_id != checking_specialization_->spec_id ||
                     fact.specialization_identity !=
                         checking_specialization_->stable_type_key)
                   err(s.line,
@@ -34476,10 +34461,10 @@ class Checker {
                                           direct_arguments) &&
               direct_callee == name && direct_arguments == args;
         }
-        auto retained = statement.member_requirements_by_context.find(
-            current_check_body_context_);
+        auto retained = statement.member_requirements_by_spec_id.find(
+            current_spec_id_);
         if (direct_call &&
-            retained != statement.member_requirements_by_context.end()) {
+            retained != statement.member_requirements_by_spec_id.end()) {
           if (retained->second.size() != requirements.size())
             err(line, "checked member requirement count changed at specialization",
                 "SOURCE_FREE_SPECIALIZATION_MISMATCH");
@@ -34537,10 +34522,10 @@ class Checker {
         open_result = &*nested_result;
       }
       if (!open_result && current_check_statement_) {
-        auto context = current_check_statement_->nested_open_call_keys_by_context.find(
-            current_check_body_context_);
+        auto context = current_check_statement_->nested_open_call_keys_by_spec_id.find(
+            current_spec_id_);
         if (context != current_check_statement_
-                           ->nested_open_call_keys_by_context.end()) {
+                           ->nested_open_call_keys_by_spec_id.end()) {
           auto nested_key = context->second.find(
               function->second->name + "(" + join_arguments(args) + ")");
           if (nested_key != context->second.end() &&
@@ -34551,11 +34536,11 @@ class Checker {
       if (current_check_statement_ &&
           current_check_statement_->line == line) {
         const auto& statement = *current_check_statement_;
-        auto retained = statement.open_call_results_by_context.find(
-            current_check_body_context_);
+        auto retained = statement.open_call_results_by_spec_id.find(
+            current_spec_id_);
         string direct_callee;
         vector<string> direct_arguments;
-        if (retained != statement.open_call_results_by_context.end() &&
+        if (retained != statement.open_call_results_by_spec_id.end() &&
             (statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
@@ -34706,19 +34691,11 @@ class Checker {
             std::nullopt, open_result->ordered_bindings);
         const string exact_key = *key->stable_key();
         if (nested_result && current_check_statement_) {
-          auto& keys = const_cast<Stmt*>(current_check_statement_)
-              ->nested_open_call_keys_by_context[current_check_body_context_]
-                  [function->second->name + "(" + join_arguments(args) + ")"];
           auto& keys_by_spec = const_cast<Stmt*>(current_check_statement_)
               ->nested_open_call_keys_by_spec_id[current_spec_id_]
                   [function->second->name + "(" + join_arguments(args) + ")"];
           const uint32_t occurrence = nested_occurrences
               ? nested_occurrences->second : 0;
-          if (keys.size() <= occurrence) keys.resize(occurrence + 1);
-          if (!keys[occurrence].empty() && keys[occurrence] != exact_key)
-            err(line, "one nested call occurrence acquired two specialization keys",
-                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-          keys[occurrence] = exact_key;
           if (keys_by_spec.size() <= occurrence)
             keys_by_spec.resize(occurrence + 1);
           if (!keys_by_spec[occurrence].empty() &&
@@ -34728,15 +34705,11 @@ class Checker {
           keys_by_spec[occurrence] = exact_key;
         }
         if (current_check_statement_ && !returned_result && !nested_result) {
-          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
-              current_check_body_context_] = exact_key;
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_spec_id[
               current_spec_id_] = exact_key;
         }
         if (returned_result && current_check_statement_ &&
             checking_specialization_) {
-          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
-              checking_specialization_->stable_type_key] = exact_key;
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_spec_id[
               current_spec_id_] = exact_key;
         }
@@ -34744,9 +34717,9 @@ class Checker {
           checking_specialization_->result_call_key = exact_key;
         if (est::mode() == est::Mode::Shadow && current_check_statement_ &&
             !checking_specialization_) {
-          const auto selected = current_check_statement_->open_call_keys_by_context.find(
-              current_check_body_context_);
-          if (selected != current_check_statement_->open_call_keys_by_context.end()) {
+          const auto selected = current_check_statement_->open_call_keys_by_spec_id.find(
+              current_spec_id_);
+          if (selected != current_check_statement_->open_call_keys_by_spec_id.end()) {
             assert(selected->second == exact_key);
             const auto* cursor = active_est_expression_cursors_.empty()
                 ? nullptr : (active_est_expression_cursors_.back()
@@ -36407,8 +36380,14 @@ class Checker {
     auto convert = [&](std::uint32_t arena_index, est::ExprId expression)
         -> std::optional<ParsedFunctionalPipeline> {
       const auto* arena = expression_arena(arena_index);
-      return arena ? est::functional_pipeline(*arena, expression, source,
-                                               resolve_stage) : std::nullopt;
+      if (!arena) return std::nullopt;
+      auto parsed = est::functional_pipeline(*arena, expression, source,
+                                              resolve_stage);
+      if (parsed) {
+        parsed->arena_index = arena_index;
+        for (auto& stage : parsed->stages) stage.arena_index = arena_index;
+      }
+      return parsed;
     };
     if (handles) {
       for (const auto& handle : *handles)
@@ -36536,7 +36515,7 @@ class Checker {
 
   void assert_statement_fact_agreement(
       const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
-      std::string_view source, const std::string& context,
+      std::string_view source, const std::string&,
       const moss::TypeRef& expected_type,
       std::string_view expected_target = {}) const {
     if (est::mode() != est::Mode::Shadow) return;
@@ -39313,7 +39292,7 @@ class Checker {
                   item.est_arena_index == fact.est_arena_index &&
                   item.message_expression_occurrence_id ==
                       fact.message_expression_occurrence_id &&
-                  item.specialization_context == fact.specialization_context;
+                  item.specialization_id == fact.specialization_id;
             });
         if (duplicate != required_root_ingress_domain_capture_occurrences_.end())
           err(statement.source_file, statement.line,
@@ -39376,7 +39355,7 @@ class Checker {
                         argument_type.owner_expression_occurrence_id &&
                     existing.message_expression_occurrence_id == message_id &&
                     existing.argument_index == argument_type.argument_index &&
-                    existing.specialization_context == "main";
+                    existing.specialization_id == p_.main->spec_id;
               });
           if (duplicate !=
               required_root_ingress_argument_type_occurrences_.end())
@@ -39480,8 +39459,7 @@ class Checker {
                     existing.est_arena_index == payload.est_arena_index &&
                     existing.message_expression_occurrence_id == message_id &&
                     existing.argument_index == payload.argument_index &&
-                    existing.specialization_context ==
-                        payload.specialization_context;
+                    existing.specialization_id == payload.specialization_id;
               });
           if (duplicate_payload !=
               required_root_ingress_payload_occurrences_.end())
@@ -40095,8 +40073,6 @@ class Checker {
         const string echo_context = current_function && checking_specialization_
             ? functional_function_context(*current_function, checking_specialization_)
             : string();
-        const_cast<Stmt&>(statement).echo_types_by_context[echo_context] =
-            echo_types;
         if (current_spec_id_ != InvalidSpecId)
           const_cast<Stmt&>(statement).echo_types_by_spec_id[current_spec_id_] =
               echo_types;
@@ -40271,8 +40247,7 @@ class Checker {
                     candidate.argument_expression_occurrence_id ==
                         requirement.argument_expression_occurrence_id &&
                     candidate.argument_index == requirement.argument_index &&
-                    candidate.specialization_context ==
-                        requirement.specialization_context;
+                    candidate.specialization_id == requirement.specialization_id;
               });
           if (existing != required_echo_argument_occurrences_.end()) {
             *existing = requirement;
@@ -40284,8 +40259,7 @@ class Checker {
                       candidate.argument_expression_occurrence_id ==
                           fact.argument_expression_occurrence_id &&
                       candidate.argument_index == fact.argument_index &&
-                      candidate.specialization_context ==
-                          fact.specialization_context;
+                      candidate.specialization_id == fact.specialization_id;
                 });
             if (existing_fact == echo_argument_facts_.end())
               err(statement.line, "required checker Echo fact disappeared",
@@ -42573,7 +42547,7 @@ public:
       for (auto& statement : body) {
         if (drop_joins || perturb_joins) {
           statement.joined_types.clear();
-          statement.joined_types_by_context.clear();
+          statement.joined_types_by_spec_id.clear();
         }
         if (drop_patterns || perturb_patterns)
           alter_pattern(statement.est_pattern);
