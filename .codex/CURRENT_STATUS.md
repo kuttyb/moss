@@ -18169,9 +18169,10 @@ Suite 0.5.0 (`benchmarks/ect_check`, one re-freeze): rust_generators.py / rust_c
 workspace, fan-in single, floor); Moss edit `f` as `b3_dag_f`/`b3_fanin_f` (family `b3_error`, step `expect_exit`), break at
 the top node because leaf breaks did not answer in 20 s (probes/f_edit_probe.txt). Committed quiet run
 `results/team5-final/` (loadavg 0.27, drift 2.0%, 5 reps, no spread flags). README "Team 5" section holds the table,
-differences, the L8 position-mapping requirement for Phase 28.6, and limits. Existing fixtures/scenario rows byte-identical;
+differences, the L8 position-mapping requirement for Phase 28.6 (in the "Correctness gate" bullet and the gate
+commands of "How to run"), and limits. Existing fixtures/scenario rows byte-identical;
 src/, Makefile, tests, compiler_torture unchanged. Validation recorded in the final commit message / README.
-Not done: Rust B1/B2 sweeps, diamond, torture, workspace fan-in; causes of Moss leaf-break non-termination not investigated.
+Not done: Rust B1/B2 sweeps, diamond, torture, workspace fan-in; causes of the missing Moss answer (no answer within 20 s) for leaf breaks not investigated.
 Team 5 validation (after the last code edit): generate.py --validate-only (80 + 4 Rust fixtures, 89 scenarios), --verify-determinism,
 run.py selftest 70/70, run.py gate --scenario-ids all PASS (80 fixtures, 68 Moss + 19 Rust sequences), check_agent_feedback PASS.
 make check (exit=2): the 3 baseline failures by name plus check_phase25_4_performance_baseline, w2_spec_distinct_n016 memory

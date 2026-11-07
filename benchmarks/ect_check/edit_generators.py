@@ -203,7 +203,8 @@ class B3ErrorGenerator(Generator):
                 "steps": [
                     {"op": "check", "label": "base", "expect": "pass"},
                     {"op": "apply", "patch": "f"},
-                    {"op": "check", "label": "edit", "expect": "fail", "expect_exit": 1},
+                    {"op": "check", "label": "edit", "expect": "fail", "expect_exit": 1,
+                     "expect_code": "TYPE_AMBIGUOUS_OPEN_RESULT"},
                     {"op": "revert", "patch": "f"},
                     {"op": "check", "label": "revert", "expect": "pass"}]}))
         shutil.rmtree(ref, ignore_errors=True)

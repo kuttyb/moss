@@ -49,6 +49,11 @@ def fixture_of(manifest: dict, sc: dict) -> dict | None:
 # Edit sequences
 # --------------------------------------------------------------------------
 
+# B3/B4 comparison rows also get a sampled whole-tree peak RSS (Team 5: /usr/bin/time %M is the
+# largest single process, which for a margo run is not the compiler)
+SAMPLED_FAMILIES = ("b3_edits", "b3_error", "b4_cold_warm")
+
+
 def check_labels(sc: dict) -> list[str]:
     return [s["label"] for s in sc["steps"] if s["op"] == "check"]
 
@@ -58,7 +63,7 @@ def _values(fx: dict, work: Path) -> dict[str, str]:
 
 
 def run_sequence(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, work: Path, *,
-                 stage: bool = True, counter_dir: Path | None = None) -> dict[str, dict]:
+                 stage: bool = True, counter_dir: Path | None = None, sample: bool = False) -> dict[str, dict]:
     """Run every step once; return {label: run_measured result}. With
     `counter_dir`, each check also writes its own counter sink and the result
     carries the summarized counters."""
@@ -77,7 +82,7 @@ def run_sequence(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, work
                 env.update(C.counter_env(sink))
             argv = C.command_for(fx, {**tc.values(), **values}, template)
             res = C.run_measured(argv, cwd=work, env=env, timeout=timeout,
-                                 stack_kib=C.fixture_stack(fx))
+                                 stack_kib=C.fixture_stack(fx), sample_tree_rss=sample)
             if sink is not None:
                 res["counters"] = C.summarize_counters(C.read_counter_records(sink))
             results[step["label"]] = res
@@ -93,10 +98,26 @@ def run_sequence(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, work
     return results
 
 
-def _expect(step_expect: str, verdict: dict, exit_code: int | None = None) -> bool:
-    """Does a step's verdict satisfy the frozen expectation? `exit_code` is the
-    step's optional frozen `expect_exit` (None for every pre-Team-5 step)."""
+def verdict_codes(verdict: dict) -> list[str]:
+    """Error codes of a verdict's diagnostics (Moss: `code`; cargo: `code` of errors)."""
+    out = []
+    for d in verdict.get("diagnostics") or []:
+        if isinstance(d, dict) and d.get("code") and d.get("level", "error") == "error":
+            out.append(d["code"])
+    return out
+
+
+def _expect(step_expect: str, verdict: dict, exit_code: int | None = None, code: str | None = None) -> bool:
+    """Does a step's verdict satisfy the frozen expectation? `exit_code` / `code` are the
+    step's optional frozen `expect_exit` / `expect_code` (None for every pre-Team-5 step):
+    the verdict must carry that error code among its diagnostics."""
+    if code is not None and code not in verdict_codes(verdict):
+        return False
     return C.fixture_ok({"expected_status": step_expect, "expected_exit_code": exit_code}, verdict)
+
+
+def expect_codes(sc: dict) -> dict[str, str | None]:
+    return {s["label"]: s.get("expect_code") for s in sc["steps"] if s["op"] == "check"}
 
 
 def expect_exits(sc: dict) -> dict[str, int | None]:
@@ -130,6 +151,7 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
     repl = C.path_replacements(work, tc)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = expect_exits(sc)
+    codes = expect_codes(sc)
     samples: dict[str, list[dict]] = {label: [] for label in expects}
     if mode == "warm":
         C.stage_fixture(fx, work)
@@ -142,6 +164,13 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
         for label, r in res.items():
             samples[label].append(r)
     counters: dict[str, dict] = {}
+    tree_peaks: dict[str, list[int]] = {}
+    if mode == "cold" and sc["family"] in SAMPLED_FAMILIES:
+        # whole-process-tree peak RSS, in separate untimed passes (the /proc sampler perturbs timing)
+        tree_peaks = {label: [] for label in expects}
+        for _ in range(3):
+            for label, r in run_sequence(sc, fx, tc, template, work, sample=True).items():
+                tree_peaks[label].append(r.get("tree_rss_peak_kib") or 0)
     if mode == "cold":
         cres = run_sequence(sc, fx, tc, template, work, counter_dir=run_dir / "counters")
         counters = {label: r["counters"] for label, r in cres.items()}
@@ -155,8 +184,10 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
             "fixture": f"{sc['id']}:{label}", "scenario": sc["id"], "step": label,
             "base_fixture": fx["id"], "kind": fx["kind"], "mode": mode, "reps": reps,
             "expected_status": expects[label], "status": C.status_of(verdicts[-1]),
-            "status_ok": len(good) == len(runs) and all(_expect(expects[label], v, exits[label]) for v in verdicts),
-            "expected_exit_code": exits[label], "diagnostic": diag_summary(verdicts[-1]),
+            "status_ok": len(good) == len(runs) and all(_expect(expects[label], v, exits[label], codes[label]) for v in verdicts),
+            "expected_exit_code": exits[label], "expected_code": codes[label],
+            "tree_rss_peak_kib_median": C.median(tree_peaks.get(label, [])) if tree_peaks else None,
+            "diagnostic": diag_summary(verdicts[-1]),
             "timed_out_reps": len(runs) - len(good), "timed_out": len(good) != len(runs),
             "wall_ms_median": C.median([r["wall_ms"] for r in good]),
             "wall_ms_min": min((r["wall_ms"] for r in good), default=None),
@@ -234,14 +265,15 @@ def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolc
         shutil.rmtree(work, ignore_errors=True)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = expect_exits(sc)
+    codes = expect_codes(sc)
     steps = []
     for label, exp in expects.items():
         ref, cand = verdicts["reference"][label], verdicts["candidate"][label]
         steps.append({"step": label, "identical": gate_view(ref) == gate_view(cand),
                       "bookkeeping_reference": bookkeeping(ref),
                       "bookkeeping_candidate": bookkeeping(cand),
-                      "reference_matches_expected": _expect(exp, ref, exits[label]),
-                      "candidate_matches_expected": _expect(exp, cand, exits[label]),
+                      "reference_matches_expected": _expect(exp, ref, exits[label], codes[label]),
+                      "candidate_matches_expected": _expect(exp, cand, exits[label], codes[label]),
                       "status": C.status_of(ref), "reference": ref, "candidate": cand})
     return {"scenario": sc["id"], "fixture": fx["id"], "steps": steps,
             "passed": all(s["identical"] and s["reference_matches_expected"] for s in steps)}
@@ -261,7 +293,7 @@ def validate_scenario(sc: dict, fx: dict, tc: C.Toolchain, run_dir: Path) -> lis
     for step in sc["steps"]:
         if step["op"] == "check":
             verdict = C.extract_verdict(res[step["label"]], repl)
-            if not _expect(step["expect"], verdict, step.get("expect_exit")):
+            if not _expect(step["expect"], verdict, step.get("expect_exit"), step.get("expect_code")):
                 failures.append(f"{sc['id']}:{step['label']}: status {C.status_of(verdict)} "
                                 f"(exit {verdict.get('exit_code')}) != expected {step['expect']}")
     shutil.rmtree(work, ignore_errors=True)

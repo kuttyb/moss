@@ -262,7 +262,7 @@ class RustDagGenerator(C.Generator):
                         {"op": "check", "label": "second", "expect": "pass"},
                         {"op": "apply", "patch": eid},
                         {"op": "check", "label": "edit", "expect": expect_edit,
-                         **({"expect_exit": 101} if expect_edit == "fail" else {})},
+                         **({"expect_exit": 101, "expect_code": "E0277"} if expect_edit == "fail" else {})},
                         {"op": "revert", "patch": eid},
                         {"op": "check", "label": "revert", "expect": "pass"}]}))
         # startup floor: a crate whose main only prints a literal (the B4 floor counterpart)

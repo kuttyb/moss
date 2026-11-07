@@ -66,6 +66,11 @@ python3 benchmarks/ect_check/generate.py --verify-determinism   # regenerate == 
 # Correctness gate on its own
 python3 benchmarks/ect_check/run.py gate --candidate-moss /path/to/other/moss
 python3 benchmarks/ect_check/run.py gate --candidate-cmd 'mossc check --json {path}'
+# Phase 28.6 (L8): a candidate that anchors diagnostics to declarations must supply a position mapping back to the
+# reference layout, which the gate applies before comparing; see "Correctness gate" below. Until that hook
+# exists the gate compares positions raw.
+# Rust (Team 5): the 19 cargo sequences run in `bench` and `gate` too; --require-rust fails instead of skipping
+# when cargo is missing (default: a loud FAIL-OPEN line, recorded in the gate result and the report).
 
 # M1 / M2 only (default roots: sdk/ and packages/)
 python3 benchmarks/ect_check/run.py metrics
@@ -141,7 +146,21 @@ gate only). Warm mode reports no compiler counters.
   codes and every other field stay strict. `bench` and `gate` also re-verify every selected
   fixture's frozen tree hash and every scenario's canonical-JSON SHA-256 before running anything. A margo failure embeds the compiler's JSON in
   its `error` string; it is parsed and compared structurally
-  (`trivial_pkg_fail` exercises this). The reference must also agree with the
+  (`trivial_pkg_fail` exercises this). **L8 requirement (Phase 28.6): position mapping before
+  comparison.** Once Phase 28.6 Team 1 anchors diagnostics to declarations (positions relative to a
+  declaration instead of file line/column), a candidate's positions no longer equal the
+  reference's, and a gate that compares them raw reports false mismatches. The gate must then
+  compare **after mapping the candidate's positions back to the previous (reference) layout**. This
+  applies to every position-bearing field of the Moss verdict (diagnostic `line`/`column`/span
+  fields, `source.line`, `direct_calls[].line`, `semantic_identity` and call-site ids, which embed
+  `@line`) and, in the Rust gate, to the primary-span `line`/`column` of each diagnostic. Who owns
+  what: **the candidate's author supplies the mapping** (a tool or table that turns the candidate's
+  anchored positions into reference positions for the frozen fixture and edit sequences, delivered
+  with the Phase 28.6 change); **the gate applies it** to the candidate verdict before the
+  comparison (a hook in `ect_common.extract_verdict`/`scenarios.gate_view` that today does not
+  exist: today the gate compares positions exactly as printed). Until the hook exists, an
+  "identical" in the gate for a candidate that changes the position scheme means nothing, and a
+  "differs" may be only the scheme. The reference must also agree with the
   manifest: `expected_status`, the optional `expected_exit_code` (so a crash,
   abort or clean diagnostic cannot stand in for each other) and no timeout
   (`ect_common.fixture_ok`). The gate passes only when candidate verdict ==
@@ -1221,7 +1240,7 @@ store would make the `revert` and `d` steps cost a hit, which cargo's mtime fres
 
 - **Not expressible in Rust:** `b2` (`may_panic` effect propagation to callers); an inferred return type change as a
   one-site edit (translated as a cone edit); a leaf break for the Moss error path is expressible in Rust (E0277) but not
-  measurable in Moss (does not terminate in 20 s), so `f` is at the top node for both.
+  measurable in Moss (no answer within 20 s), so `f` is at the top node for both.
 - **Not expressible in Moss:** none found.
 - **Not built (scope):** Rust counterparts of the B1/B2 K and D sweeps (one K probe only), the torture chains, the
   diamond shape, fan-in as a workspace, an edit on the app side of the workspace, B5 worktrees and B6 replay for Rust
@@ -1255,9 +1274,9 @@ with divergence, not with N), B6 ("What an IMPROVEMENT looks like" in the B6 res
   matter; differences below ~2 ms are not meaningful.
 - Moss RSS is margo's Python (probably); Moss counters are absent for failing checks; the Rust "units" are bookkeeping.
 - The Rust edit `b` is a different-sized edit than the Moss one (by language design); `b2` has no Rust counterpart.
-- Edit `f` is at the top node because leaf breaks do not terminate on Moss; error-path conclusions about leaf errors are not
+- Edit `f` is at the top node because leaf breaks gave no answer within 20 s on Moss; error-path conclusions about leaf errors are not
   available for Moss.
-- The cause of the Moss non-termination on deep breaks and of the margo revert-after-failure skip was not investigated.
+- The cause of the missing Moss answer on deep breaks and of the margo revert-after-failure skip was not investigated.
 
 ## Fixture-shape constraints and known quirks
 

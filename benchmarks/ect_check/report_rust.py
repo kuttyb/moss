@@ -30,10 +30,11 @@ def _rows(rows):
 
 
 def _cell(r):
-    """wall / CPU ms / RSS MiB (time %M) of one measured step."""
+    """wall ms / CPU ms / peak RSS MiB of the whole process tree (sampled in separate untimed
+    passes; Moss and Rust alike) of one measured step."""
     if r is None:
         return "n/a"
-    return f"{f(r['wall_ms_median'])} / {f(r['cpu_ms_median'])} / {mib(r['rss_kib_median'])}"
+    return f"{f(r['wall_ms_median'])} / {f(r['cpu_ms_median'])} / {mib(r.get('tree_rss_peak_kib_median'))}"
 
 
 def _flag(r):
@@ -60,9 +61,10 @@ def sections(rows: list[dict], moss_scs: list[dict], rust_scs: list[dict], gate:
         lines += ["**Not apples-to-apples**: a different language, checker and feature set (see README). "
                   "Rust figures are `cargo check` on a std-only crate with the same generic DAG shape; "
                   "Moss figures are `margo --check build` of the B3 package from the same run. "
-                  "Cells are wall ms / CPU ms / peak RSS MiB (`/usr/bin/time %M`, the largest single "
-                  "process of the tree; Moss rows read 24 MiB everywhere, consistent with margo's Python being "
-                  "the largest process, not established); medians over the timed reps.", "",
+                  "Cells are wall ms / CPU ms / peak RSS MiB of the WHOLE process tree (sampled every ~3 ms in "
+                  "separate untimed passes, median of 3; for both languages: margo + python + moss, cargo + rustc). "
+                  "`/usr/bin/time %M` (largest single process) is in the all-steps table and results.csv; for Moss "
+                  "it probably reads margo's Python rather than the compiler (not established). Wall and CPU are medians over the timed reps.", "",
                   f"Toolchain: `{rv.get('cargo')}`, `{rv.get('rustc')}`. {meta.get('rust_env')}. "
                   "`CARGO_INCREMENTAL` is the default for `cargo check`.", ""]
         # ---------------- per-edit comparison (after-edit step), per shape
@@ -155,7 +157,7 @@ def sections(rows: list[dict], moss_scs: list[dict], rust_scs: list[dict], gate:
     if err or rerr:
         lines += ["### The error path: edit `f` (a type error in the top node of the edited chain)", "",
                   "Moss: `+ \"one\"` in `n000_0` (DAG) / `e0` (fan-in); the same text and position in the Rust "
-                  "crates (`i64 + &str`). Probed alternatives (leaf breaks) did not terminate within 20 s on "
+                  "crates (`i64 + &str`). Probed alternatives (leaf breaks) gave no answer within 20 s on "
                   "Moss: `probes/f_edit_probe.txt`. Expected: `edit` fails (Moss margo exit 1, cargo exit 101), "
                   "`revert` passes. Counters for a failing Moss check are whatever the compiler reports "
                   "before the failure (functions analyzed shown).", "",
@@ -173,6 +175,9 @@ def sections(rows: list[dict], moss_scs: list[dict], rust_scs: list[dict], gate:
                              f"{(r.get('diagnostic') or '')[:110]} |{_flag(r)}")
         lines.append("")
     # -------------------------------------------------------------------- gate
+    if gate and gate.get("rust_skipped"):
+        lines += ["### Rust gate", "", "**FAIL-OPEN: " + "; ".join(gate["rust_skipped"]) +
+                  " The gate result above does NOT cover Rust.**", ""]
     if gate and gate.get("rust"):
         lines += ["### Rust correctness gate (reference vs candidate cargo)", "",
                   f"**Result: {'PASS' if all(r['passed'] for r in gate['rust']) else 'FAIL'}** over "

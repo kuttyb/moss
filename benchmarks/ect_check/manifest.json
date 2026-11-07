@@ -3097,7 +3097,8 @@
           "op": "check",
           "label": "edit",
           "expect": "fail",
-          "expect_exit": 1
+          "expect_exit": 1,
+          "expect_code": "TYPE_AMBIGUOUS_OPEN_RESULT"
         },
         {
           "op": "revert",
@@ -3109,7 +3110,7 @@
           "expect": "pass"
         }
       ],
-      "sha256": "07e16cc33b9b1a5352ac4ec0b9e63688900e408728cf3fcf39dcc25d79178739"
+      "sha256": "52e8d3b759718a7ba43293efba6bee1e30f69a684c972b2cf2f58e0c977b10ef"
     },
     {
       "id": "b3_fanin_f",
@@ -3151,7 +3152,8 @@
           "op": "check",
           "label": "edit",
           "expect": "fail",
-          "expect_exit": 1
+          "expect_exit": 1,
+          "expect_code": "TYPE_AMBIGUOUS_OPEN_RESULT"
         },
         {
           "op": "revert",
@@ -3163,7 +3165,7 @@
           "expect": "pass"
         }
       ],
-      "sha256": "3c2a4b8fc577d81af6833beefc6752f0e5f64326a4c6490700f63ae1e2358383"
+      "sha256": "aecedee2e4db9788c0497b17e884c0c4fb39621084fc266d0fdb6ffc53e73df6"
     },
     {
       "id": "b6_01_a25a6fe1",
@@ -8337,7 +8339,8 @@
           "op": "check",
           "label": "edit",
           "expect": "fail",
-          "expect_exit": 101
+          "expect_exit": 101,
+          "expect_code": "E0277"
         },
         {
           "op": "revert",
@@ -8349,7 +8352,7 @@
           "expect": "pass"
         }
       ],
-      "sha256": "9801b7dcfff308db743d2ec55f1716ca9a834696e1131f2c3e6cfa84dbf322e8"
+      "sha256": "f607f7de136d52474dce3bf1db9bc671a86f0861abbbb25b972cf5671b53e34a"
     },
     {
       "id": "rust_dag_workspace_a",
@@ -8792,7 +8795,8 @@
           "op": "check",
           "label": "edit",
           "expect": "fail",
-          "expect_exit": 101
+          "expect_exit": 101,
+          "expect_code": "E0277"
         },
         {
           "op": "revert",
@@ -8804,7 +8808,7 @@
           "expect": "pass"
         }
       ],
-      "sha256": "47ff8b48444daacecc0fd4abf88f6fb973951be0520b3c4a5342d55aed6d4381"
+      "sha256": "c84d7816825f6b09101d3ce9a3932e283833ba8ea83818d0eae2e35b965b29fd"
     },
     {
       "id": "rust_fanin_single_a",
@@ -9417,7 +9421,8 @@
           "op": "check",
           "label": "edit",
           "expect": "fail",
-          "expect_exit": 101
+          "expect_exit": 101,
+          "expect_code": "E0277"
         },
         {
           "op": "revert",
@@ -9429,7 +9434,7 @@
           "expect": "pass"
         }
       ],
-      "sha256": "1369435cfd25ad388d98eabe889bef35b3a89356264ab43b691a68cead30abca"
+      "sha256": "b211e125e1224a9f78a6cf6b4143a93b2e20b2471310e7b9f919c68ae76e88b7"
     },
     {
       "id": "rust_floor_edit",

@@ -4,7 +4,7 @@ of a B3 shape terminate with a diagnostic? Each candidate is applied to a scratc
 copy of the frozen fixture (leaf n019_0 / c049) and run with a timeout; on timeout
 the whole process group is killed (an orphaned moss-opt would keep spinning).
 
-Usage: f_edit_probe.py [timeout_s] [leaf|inner|both]     (needs build/compiler/moss-opt)
+Usage: f_edit_probe.py [timeout_s] [leaf|inner|both] [fixture:candidate]     (needs build/compiler/moss-opt)
 Recorded result: probes/f_edit_probe.txt
 """
 import json, os, shutil, signal, subprocess, sys, time
@@ -73,6 +73,10 @@ def run(fid, leaf, name, make, old_text=None):
 
 
 phase = sys.argv[2] if len(sys.argv) > 2 else "both"
+if len(sys.argv) > 3:       # one leaf variant only: <fixture>:<candidate>, e.g. b3_dag_d20_w4_k02:string_constant
+    fid, cand = sys.argv[3].split(":")
+    print(f"{fid} leaf:{cand}: {run(fid, SHAPES[fid], cand, CANDIDATES[cand])}", flush=True)
+    sys.exit(0)
 for fid, leaf in SHAPES.items():
     if phase in ("leaf", "both"):
         for name, make in CANDIDATES.items():

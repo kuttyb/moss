@@ -175,6 +175,7 @@ def run(moss: Path, margo: Path) -> int:
     replay_tests(R, tc, manifest, scratch, results)
     guard_tests(R, tc, manifest, scratch, results)
     rust_tests(R, tc, manifest, scratch, results)
+    rust_gate_strength_tests(R, manifest, scratch, results)
     shutil.rmtree(scratch / "work", ignore_errors=True)
     print(f"selftest: {sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
@@ -579,8 +580,8 @@ def guard_tests(R, tc, manifest, scratch, results) -> None:
 
 MUTATE_CARGO = '''\
 import os, shutil, sys, tempfile
-cargo, path = sys.argv[1], sys.argv[2]
-copy = os.path.join(tempfile.mkdtemp(), "c")           # inject a type error into a COPY (the staged tree stays intact)
+cargo, path, scratch = sys.argv[1], sys.argv[2], sys.argv[3]
+copy = os.path.join(tempfile.mkdtemp(dir=scratch), "c")     # inject a type error into a COPY (the staged tree stays intact)
 shutil.copytree(path, copy)
 f = os.path.join(copy, "src", "main.rs")
 open(f, "a").write("\\nfn injected() -> i64 {\\n    \\"x\\"\\n}\\n")
@@ -678,7 +679,9 @@ def rust_tests(R, tc, manifest, scratch, results) -> None:
     ident = [RC.gate_scenario(s, RC.fixture_by_id(manifest, s["fixture"]), rust, rust, None, run_dir) for s in scs]
     wrapper = scratch / "mutate_cargo.py"
     wrapper.write_text(MUTATE_CARGO)
-    tmpl = f"python3 {wrapper} {{cargo}} {{path}}"
+    mut_tmp = scratch / "mutate-copies"
+    mut_tmp.mkdir(parents=True, exist_ok=True)
+    tmpl = f"python3 {wrapper} {{cargo}} {{path}} {mut_tmp}"
     mut = [RC.gate_scenario(s, RC.fixture_by_id(manifest, s["fixture"]), rust, rust, tmpl, run_dir) for s in scs]
     check("rust gate: identity candidate passes (incl. the failing edit f with its diagnostic)",
           all(g["passed"] for g in ident), str([g["passed"] for g in ident]), results)
@@ -688,8 +691,86 @@ def rust_tests(R, tc, manifest, scratch, results) -> None:
           str([x["identical"] for x in floor_mut["steps"]]), results)
     f_steps = ident[[s["id"] for s in scs].index("rust_dag_single_f")]["steps"]
     edit_step = next(x for x in f_steps if x["step"] == "edit")
+    ref_edit = edit_step["reference"]
     check("rust error path: reference edit step fails with exit 101, code E0277, and revert passes again",
-          edit_step["reference"]["exit_code"] == 101 and not edit_step["reference"]["ok"] and
-          edit_step["reference"]["document"]["diagnostics"][0]["code"] == "E0277" and
-          next(x for x in f_steps if x["step"] == "revert")["reference"]["ok"], "E0277", results)
+          ref_edit.get("exit_code") == 101 and ref_edit.get("ok") is False and
+          ((ref_edit.get("document") or {}).get("diagnostics") or [{}])[0].get("code") == "E0277" and
+          next(x for x in f_steps if x["step"] == "revert")["reference"].get("ok") is True, "E0277", results)
     shutil.rmtree(run_dir, ignore_errors=True)
+    shutil.rmtree(mut_tmp, ignore_errors=True)
+    (scratch / "mutate_cargo.py").unlink(missing_ok=True)
+
+
+def rust_gate_strength_tests(R, manifest, scratch, results) -> None:
+    """Team 5 review: the Rust gate must be sensitive to every field it claims to compare.
+    Each pure case differs from its twin in exactly ONE field, so a gate that drops that
+    field (spans, line, column, primary, message, level, code, exit code, ok) fails here."""
+    import rust_cmp as RC
+    import scenarios as S
+
+    def run_of(*, code="E0277", msg="boom", level="error", line=3, col=5, primary=True, file="src/x.rs",
+               rc=101, success=False):
+        d = {"reason": "compiler-message", "message": {"level": level, "code": {"code": code}, "message": msg,
+             "rendered": "r", "spans": [{"file_name": file, "line_start": line, "column_start": col,
+                                        "is_primary": primary}]}}
+        return {"rc": rc, "timed_out": False, "stderr": "",
+                "stdout": "\n".join(json.dumps(x) for x in (d, {"reason": "build-finished", "success": success}))}
+
+    base = RC.gate_view(RC.extract_verdict(run_of(), []))
+    cases = {"line": dict(line=4), "column": dict(col=6), "primary": dict(primary=False),
+             "message": dict(msg="other"), "level": dict(level="warning"), "code": dict(code="E0308"),
+             "file": dict(file="src/y.rs"), "exit code": dict(rc=1), "build-finished success": dict(success=True)}
+    missed = [name for name, kw in cases.items() if RC.gate_view(RC.extract_verdict(run_of(**kw), [])) == base]
+    check("rust gate strength: a difference in only ONE of line/column/primary/message/level/code/file/exit code/"
+          "success is a gate difference", not missed, f"missed: {missed}", results)
+    twin = RC.gate_view(RC.extract_verdict(run_of(), []))
+    check("rust gate strength: identical inputs are identical (no spurious difference)", twin == base, "twin", results)
+
+    # the byte-identical revert check: a tree that differs after revert must abort the sequence
+    sc = next(s for s in manifest["scenarios"] if s["id"] == "rust_floor_edit")
+    fx = {**RC.fixture_by_id(manifest, sc["fixture"])}
+    fx["sha256"] = "0" * 64          # a frozen hash the reverted tree cannot equal
+    try:
+        RC.run_sequence(sc, fx, RC.find_rust(), None, scratch / "revert-neg" / "w", scratch / "revert-neg")
+        check("rust revert check: a reverted tree that differs from the frozen hash aborts the sequence", False,
+              "no error", results)
+    except C.ToolError as exc:
+        check("rust revert check: a reverted tree that differs from the frozen hash aborts the sequence",
+              "byte-identical" in str(exc), str(exc)[:80], results)
+    except RC.RustUnavailable:
+        pass
+    shutil.rmtree(scratch / "revert-neg", ignore_errors=True)
+
+    # frozen expect_code: a step whose verdict lacks the code does not satisfy it
+    v = RC.extract_verdict(run_of(), [])
+    check("expect_code: the frozen error code must be among the diagnostics (E0277 yes, E0308 no); Moss shape too",
+          S._expect("fail", v, 101, "E0277") and not S._expect("fail", v, 101, "E0308") and
+          S._expect("fail", {"ok": False, "exit_code": 1, "diagnostics": [{"code": "TYPE_AMBIGUOUS_OPEN_RESULT"}]},
+                    1, "TYPE_AMBIGUOUS_OPEN_RESULT") and
+          not S._expect("fail", {"ok": False, "exit_code": 1, "diagnostics": [{"code": "OTHER"}]}, 1,
+                        "TYPE_AMBIGUOUS_OPEN_RESULT"), "E0277/E0308", results)
+    sc_f = next(s for s in manifest["scenarios"] if s["id"] == "b3_dag_f")
+    check("expect_code is frozen in the f specs (Moss and Rust)",
+          S.expect_codes(sc_f)["edit"] == "TYPE_AMBIGUOUS_OPEN_RESULT" and
+          S.expect_codes(next(s for s in manifest["scenarios"] if s["id"] == "rust_dag_single_f"))["edit"] == "E0277",
+          "codes", results)
+
+    # fail-open: a missing cargo is loud and recorded
+    import os
+    saved = os.environ.get("PATH")
+    os.environ["PATH"] = str(scratch / "no-such-bin")
+    R.RUST_SKIPPED.clear()
+    try:
+        R.rust_toolchains(None, [{"id": "x"}])
+        try:
+            class A:
+                require_rust = True
+            R.rust_toolchains(A, [{"id": "x"}])
+            strict = False
+        except C.ToolError:
+            strict = True
+    finally:
+        os.environ["PATH"] = saved
+    check("missing cargo: the skip is recorded (FAIL-OPEN) and --require-rust turns it into an error",
+          len(R.RUST_SKIPPED) >= 1 and "SKIPPED" in R.RUST_SKIPPED[0] and strict, str(R.RUST_SKIPPED[:1])[:90], results)
+    R.RUST_SKIPPED.clear()

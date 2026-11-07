@@ -584,6 +584,9 @@ def add_common(ap):
 def add_gate_args(ap):
     ap.add_argument("--reference-moss", help="reference compiler (default --moss)")
     ap.add_argument("--candidate-moss", help="candidate compiler (default --moss)")
+    ap.add_argument("--require-rust", action="store_true",
+                    help="fail instead of skipping when cargo is unavailable (default: a loud FAIL-OPEN "
+                         "SKIPPED line, recorded in the gate result and the report)")
     ap.add_argument("--rust-candidate-cmd", default=os.environ.get(RC.CANDIDATE_ENV),
                     help="candidate command template for the Rust (cargo) sequences; placeholders "
                          "{cargo} {path} {root} {id}; must print cargo --message-format=json. "
@@ -703,15 +706,24 @@ def pick_scenarios(manifest: dict, args) -> list[dict]:
     return [sc for sc in chosen if sc["kind"] != RC.SEQ_KIND]
 
 
+RUST_SKIPPED: list[str] = []     # reasons the Rust sequences did not run (FAIL-OPEN for Rust)
+
+
 def rust_toolchains(args, scs: list[dict]):
-    """(reference, candidate) cargo toolchains, or (None, None) with a one-line
-    SKIP message when cargo is not usable (never a crash)."""
+    """(reference, candidate) cargo toolchains, or (None, None) with a loud
+    SKIPPED line when cargo is not usable (never a crash). A skip is recorded in
+    RUST_SKIPPED so the gate result and the report say the Rust part did not run;
+    `--require-rust` turns it into a failure."""
     if not scs:
         return None, None
     try:
         ref = RC.find_rust()
     except RC.RustUnavailable as exc:
-        print(f"SKIP Rust comparison: {exc}", file=sys.stderr)
+        msg = f"Rust comparison SKIPPED ({len(scs)} sequences NOT RUN): {exc}"
+        RUST_SKIPPED.append(msg)
+        print(f"*** FAIL-OPEN: {msg} ***", file=sys.stderr)
+        if getattr(args, "require_rust", False):
+            raise C.ToolError(msg + " (--require-rust)")
         return None, None
     return ref, ref
 
@@ -845,9 +857,12 @@ def main() -> int:
             if sg.get("reference_note"):
                 print(f"NOTE {sg['scenario']}: {sg['reference_note']}")
                 break
+        gate["rust_skipped"] = list(RUST_SKIPPED)
+        (run_dir / "gate.json").write_text(json.dumps(gate, indent=2) + "\n")
         print(f"gate: {'PASS' if gate['passed'] else 'FAIL'} ({gate['fixtures']} fixtures, "
-              f"{len(gate['scenarios'])} Moss sequences, {len(gate.get('rust', []))} Rust sequences); "
-              f"{run_dir / 'gate.json'}")
+              f"{len(gate['scenarios'])} Moss sequences, {len(gate.get('rust', []))} Rust sequences)"
+              + (" *** Rust part SKIPPED (FAIL-OPEN for Rust: cargo unavailable) ***" if RUST_SKIPPED else "")
+              + f"; {run_dir / 'gate.json'}")
         return 0 if gate["passed"] else 1
 
     if cmd == "evidence":
@@ -983,6 +998,8 @@ def main() -> int:
             gate["passed"] = gate["passed"] and all(r["passed"] for r in gate["rust"])
     metrics = None if args.no_metrics else {
         m: run_metrics(tc, run_dir, m) for m in args.metrics_modes.split(",")}
+    if gate is not None:
+        gate["rust_skipped"] = list(RUST_SKIPPED)
     meta = {"suite": manifest["suite_name"], "suite_version": manifest["version"],
             "seed": manifest["seed"], "fixtures": len(fixtures), "run_id": run_id,
             "timestamp": C.now_iso(), "moss": str(tc.moss),

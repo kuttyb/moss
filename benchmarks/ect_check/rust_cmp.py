@@ -259,6 +259,7 @@ def measure_once(sc: dict, fx: dict, rust: Rust, reps: int, run_dir: Path, warmu
     repl = replacements(work, rust, run_dir)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = S.expect_exits(sc)
+    codes = S.expect_codes(sc)
     samples: dict[str, list[dict]] = {label: [] for label in expects}
     if warmup:
         run_sequence(sc, fx, rust, None, work, run_dir)
@@ -282,9 +283,9 @@ def measure_once(sc: dict, fx: dict, rust: Rust, reps: int, run_dir: Path, warmu
         rows.append({
             "fixture": f"{sc['id']}:{label}", "scenario": sc["id"], "step": label, "base_fixture": fx["id"],
             "kind": KIND, "mode": "cold", "reps": reps, "expected_status": expects[label],
-            "expected_exit_code": exits[label], "status": C.status_of(v),
+            "expected_exit_code": exits[label], "expected_code": codes[label], "status": C.status_of(v),
             "status_ok": len(good) == len(runs) and all(
-                S._expect(expects[label], x, exits[label]) for x in verdicts),
+                S._expect(expects[label], x, exits[label], codes[label]) for x in verdicts),
             "timed_out_reps": len(runs) - len(good), "timed_out": len(good) != len(runs),
             "wall_ms_median": C.median(walls), "wall_ms_min": min(walls, default=None),
             "wall_ms_max": max(walls, default=None), "wall_ms_first": walls[0] if walls else None,
@@ -328,14 +329,15 @@ def gate_scenario(sc: dict, fx: dict, ref: Rust, cand: Rust, cand_template: str 
         shutil.rmtree(target_dir(work), ignore_errors=True)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = S.expect_exits(sc)
+    codes = S.expect_codes(sc)
     steps = []
     for label, exp in expects.items():
         r, c = verdicts["reference"][label], verdicts["candidate"][label]
         steps.append({"step": label, "identical": gate_view(r) == gate_view(c),
                       "bookkeeping_reference": r["bookkeeping"]["units_checked"],
                       "bookkeeping_candidate": c["bookkeeping"]["units_checked"],
-                      "reference_matches_expected": S._expect(exp, r, exits[label]),
-                      "candidate_matches_expected": S._expect(exp, c, exits[label]),
+                      "reference_matches_expected": S._expect(exp, r, exits[label], codes[label]),
+                      "candidate_matches_expected": S._expect(exp, c, exits[label], codes[label]),
                       "status": C.status_of(r), "reference": gate_view(r), "candidate": gate_view(c)})
     return {"scenario": sc["id"], "fixture": fx["id"], "steps": steps,
             "passed": all(s["identical"] and s["reference_matches_expected"] for s in steps)}
@@ -352,10 +354,11 @@ def validate_scenario(sc: dict, fx: dict, rust: Rust, run_dir: Path) -> list[str
     repl = replacements(work, rust, run_dir)
     bad = []
     exits = S.expect_exits(sc)
+    codes = S.expect_codes(sc)
     for step in sc["steps"]:
         if step["op"] == "check":
             v = extract_verdict(res[step["label"]], repl)
-            if not S._expect(step["expect"], v, exits[step["label"]]):
+            if not S._expect(step["expect"], v, exits[step["label"]], codes[step["label"]]):
                 bad.append(f"{sc['id']}:{step['label']}: status {C.status_of(v)} (exit {v['exit_code']}) "
                            f"!= expected {step['expect']}")
     shutil.rmtree(work, ignore_errors=True)
