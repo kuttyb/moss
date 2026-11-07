@@ -18822,3 +18822,24 @@ untouched.
   `swarm_030` CollectionView failure without masking it; then rerun complete
   Default/Shadow suites and update this checkpoint. Step 1, Step 2, and clone
   authorization remain out of scope; all runtime clone sites stay pending.
+
+## P28-R7-011 direct corpus diff on combined Step 0 SHA 83e42ee
+
+- Compared the pinned 150ab36 source bytes with the `83e42ee` dev compiler for
+  direct `tests/*.moss` and `examples/*.moss` files (238 total). Baseline accepts
+  236; candidate accepts 203; 33 losses; 0 gains. Full JSON is
+  `tmp/phase28-r7-011-corpus-step0-general/summary.json`.
+- First diagnostic code counts for the 33 losses: 13
+  `MOSS_INTERNAL_INVARIANT`, 6 `ROOT_UNHANDLED_RAISE`, 5
+  `OWNERSHIP_ILLEGAL_CONSUME`, 4 `MOSS_COMPILE_ERROR`, 2
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`, and one each
+  `OWNERSHIP_INCOMPATIBLE_JOIN`, `OWNERSHIP_USE_AFTER_CONSUME`, and
+  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`. Nine missing bracketed codes in
+  the initial script output were resolved by checking the compiler's exact
+  emitted invariant signatures; no failures remain labeled `NO_CODE`.
+- The 13 internal invariants include six known ReturnValue/specialization
+  failures, three nonprimitive Map.keys/Map.values CollectionView failures,
+  and four other checker/emitter invariant losses. This corpus uses the pinned
+  150ab36 source bytes on both compilers, so explicit-take test migrations are
+  intentionally still visible as losses rather than being hidden by source
+  changes.
