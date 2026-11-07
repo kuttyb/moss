@@ -6,7 +6,7 @@ This report records observations only. Every runtime site remains `source_site_o
 
 Candidate worktree: `tmp/phase28-r7-010-runtime-clone-provenance-abada`
 Base: `abada4f03ac2b13f59ac5b97ce14ce2c29c28ed9`
-Candidate SHA: pending local freeze.
+Frozen implementation commit: `c393f5f7501d2b149c1e6f5979a696ef2fb04bdb`. The source/test tree at the exact review target is frozen.
 
 The source-site blobs for the ten executor sites were unchanged from the pinned 9cad matrix. FileChunk and FileIO received marker comments only. Inventory rows bind source blob SHA-256, marker byte span and line/column, operator kind, expected expression, and a reviewed generated-type assertion. The v3 sidecar records the exact Rust operator/context span and context hash.
 
