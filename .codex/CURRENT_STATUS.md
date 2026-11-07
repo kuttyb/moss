@@ -18666,3 +18666,82 @@ untouched.
   and Team C review, then integrate only the approved exact SHA into isolated
   staging. Full suites and oracle have not been rerun on this follow-up. Clone
   authorizations remain pending.
+
+## P28-R7-011 ordered convergence checkpoint (2026-11-07)
+
+- Working source base is frozen `45b586c2de3a405f96f0be8268947a1abb98d3c1`;
+  latest published W5 branch remains unchanged. Production branches are
+  untouched. Isolated worktrees are preserved for Team A Step 0, Team C Step 3,
+  oracle Step 0c, and this integration branch.
+- Exact 45b586c2 full-suite baseline was rerun with the prescribed build and
+  `tests/run_parallel.py` command. Default: 112/168 pass, 55 fail, 1 skipped.
+  Shadow: 112/168 pass, 55 fail, 1 skipped. Exact failure sets and runner
+  details are in `tmp/suite-45b-default.log` and `tmp/suite-45b-shadow.log`
+  under the 45b worktree. These are baseline measurements, not Step 0 results.
+- Team A is implementing callback-owner and field-borrow repairs in its
+  isolated branch. Its live schema finding is that `take(place)` is EST `Take`,
+  not `Call`; checks must use that typed node and exact place ExprId. Its
+  callback trace also found one static named callback among the reported
+  callback losses; static authority remains fail-closed while the active
+  pipeline occurrence path is repaired.
+- Oracle candidate `a27a9f308be0b6150c28dcb88ed5c1ae859633aa` is scoped GO as an
+  oracle draft only. It fixes ORACLE-15/15B/15C and README's fixture count to
+  62; its table digest is
+  `426b6ad9d140d0235a25c8c51a826076b819b730e62148d4c203222676432242`.
+  Against 45b586c2 it records 19/62 all-gate PASS, 2 semantic failures (15B/C),
+  and 41 provenance-only failures; no recertification or clone exception is
+  authorized. Re-run with Step 0 compiler and complete reviewer holdouts.
+- Team C is implementing the five hidden-copy removals, the full-corpus
+  `check_phase28_no_hidden_copies` gate, and a type-restricted domain-share
+  runtime API on its separate branch. Do not integrate Step 3 before the Step 0
+  suite/corpus/reproducer report is recorded.
+- Next dependency: finish and review Team A Step 0 plus independent oracle
+  holdouts; then integrate into this isolated branch, run both full suites, the
+  150ab36 corpus diff and the nine-case two-engine repro gate. Step 1 has not
+  started. No change has reached `phase28-work` or `main`.
+
+## P28-R7-011 implementation findings (not yet integrated)
+
+- Team A producer checkpoint `8fe68784119831a2e8403b73d2e2c7c07b81abe2` adds
+  optional `est::SemanticFacts::dynamic_callback` on the exact EST pipeline
+  stage Call ExprId, keyed by arena/ExprId/checked context. It validates stage
+  ordinal, callee, argument count and callback argument ExprId. Nine callback
+  sources pass checker and native Rust compilation; `cb_spec` native prints
+  `12`. Fast Debug still fails because its consumer has not yet read this
+  marker. Step 0a is pending Team B and mutation coverage.
+- Step 0b remains open: all three required field reproducers still reject in an
+  earlier ownership-expression phase before the downstream use-inference path.
+  Team A traced this to assignments (`Stmt::Kind::Assign`): the Assign branch
+  initializes `source_access=Consume`, recognizes identifier/index aliases but
+  not plain field places, then falls through to the field rejection. The
+  Let/Var use-inference block is not executed for these source statements.
+  Team A is adding the same use-based decision to Assign; no field rejection
+  rule or wording change is planned.
+- Team B has a separate consumer branch based on the producer checkpoint. It
+  reads `dynamic_callback` from the exact stage ExprId/context and dispatches
+  only an already-checked callable value for `true`; `false` retains the
+  existing exact static target path. Step 0 callback output/drop/perturb cases
+  will be included in the single `check_phase28_l8_identity_repros` job.
+- The combined nine-case script currently stops at `dom_spec` native with the
+  known ReturnValue specialization-identity failure (F1); `nest_spec` passes.
+  F1/F2 are Step 1 scope, so the permanent script stays unregistered during the
+  Step 0 full-suite baseline and will be registered when Step 1 makes all nine
+  cross-engine results pass. This avoids treating a known Step 1 reproducer as
+  an added Step 0 suite regression.
+- Team C's current full-corpus gate on its unintegrated changes reports 2,086
+  sources: 1,186 compile, 900 already fail, 13 explicit-copy clone occurrences,
+  and 4 hidden copies. The four are generated map-key `.clone()` at
+  `examples/swarm/Python/Counter/src/main.moss:12` (two method variants),
+  `tests/swarm_061b_map_get_before_write.moss:5`, and
+  `text_toolkit/toolkit/src/stats.moss:104`. All come from
+  `native_generator.cpp` map assignment lowering and have no exact checker
+  copy/use fact; the checker reports no per-use move provenance. Explicit
+  `copy(key)` in the index is rejected as not an exact checked EST handle.
+  This is a Step 1 checker-authority dependency; no emitter inference or source
+  workaround was accepted.
+- Team C's non-oracle Step 3 implementation is still unreviewed and incomplete.
+  Its runtime signature is exactly
+  `share_domain<T>(&DomainHandle<T>) -> DomainHandle<T>`. The existing
+  Root-ingress provenance validator expects a `.clone()` span and remains
+  unresolved; Team C restored the prohibited oracle harness edit and retained
+  the discarded diff only in its worktree `tmp/` for audit. No Step 3 GO.
