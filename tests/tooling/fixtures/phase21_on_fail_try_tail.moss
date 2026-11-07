@@ -1,0 +1,17 @@
+enum Failure:
+  Primary
+  Secondary
+
+domain Worker:
+  fn Run() -> Int:
+    raise Failure.Primary
+  on_fail Failure.Primary:
+    try:
+      raise Failure.Secondary
+    recover Failure.Secondary:
+      reply 9
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

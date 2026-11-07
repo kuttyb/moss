@@ -208,6 +208,7 @@
     o << ") -> " << handler_internal_return_type(h) << " {\n";
     string result = reply_binding(d, h);
     if (h.reply_type) o << "    let mut " << result << " = None;\n";
+    if (handler_needs_label(h)) o << "    #[allow(unused_labels)]\n";
     o << "    " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
     std::set<string> locals{result}; std::unordered_map<string,string> types{{"self", d.name}};
     for (const auto& f : d.state) types[f.name] = f.type;
@@ -1061,6 +1062,7 @@
       o << ") -> " << handler_internal_return_type(h) << " {\n";
       string result = reply_binding(d, h);
       if (h.reply_type) o << "    let mut " << result << " = None;\n";
+      if (handler_needs_label(h)) o << "    #[allow(unused_labels)]\n";
       o << "    " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
       std::set<string> locals{result};
       std::unordered_map<string,string> types{{"self", d.name}};

@@ -536,6 +536,19 @@ class Generator {
           !bare_requirements.empty())
         bare_requirements.push_back(bare_requirements.front());
     }
+    if (test_semantic_facts) {
+      auto& try_facts = test_semantic_facts->try_continuation_facts;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_TRY_CONTINUATION_FACT") &&
+          !try_facts.empty())
+        try_facts.erase(try_facts.begin());
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_TRY_CONTINUATION_FACT") &&
+          !try_facts.empty())
+        try_facts.push_back(try_facts.front());
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TRY_CONTINUATION_FACT") &&
+          !try_facts.empty())
+        try_facts.front().has_normal_successor =
+            !try_facts.front().has_normal_successor;
+    }
 
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
@@ -9280,6 +9293,52 @@ class Generator {
     return found_fact;
   }
 
+  const TypedTryContinuationFactV1& resolve_try_continuation_fact(
+      const Stmt& statement, const string& functional_context) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics ||
+        statement.checked_statement_occurrence_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Try continuation identity unavailable");
+    string context = functional_context.empty()
+        ? "main" : functional_context;
+    const auto failure_arm = context.find(":on_fail:");
+    if (failure_arm != string::npos) {
+      const auto arm_index = failure_arm + std::string(":on_fail:").size();
+      const bool numeric_arm = arm_index < context.size() &&
+          std::all_of(context.begin() + arm_index, context.end(),
+                      [](unsigned char ch) { return std::isdigit(ch); });
+      if (numeric_arm) context.resize(failure_arm);
+    }
+    const string specialization = codegen_active_specialization_key_;
+    const TypedTryContinuationRequirementV1* requirement = nullptr;
+    for (const auto& candidate : checked_program.typed_semantics
+             ->required_try_continuation_occurrences) {
+      if (candidate.statement_occurrence_id !=
+              statement.checked_statement_occurrence_id ||
+          candidate.specialization_context != context ||
+          candidate.specialization_identity != specialization)
+        continue;
+      if (requirement)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate required Try continuation identity");
+      requirement = &candidate;
+    }
+    if (!requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT required Try continuation fact missing "
+          "(statement=" +
+          std::to_string(statement.checked_statement_occurrence_id) +
+          ", context=" + context + ", specialization=" + specialization + ")");
+    try {
+      return checked_program.typed_semantics->find_try_continuation_fact(
+          *requirement);
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
   const TypedLocalTransferFactV1* resolve_local_transfer_fact(
       const Stmt& statement, const string& functional_context) const {
     if (statement.kind != Stmt::Kind::Assign ||
@@ -10352,6 +10411,8 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::Try: {
+          const auto& try_continuation =
+              resolve_try_continuation_fact(s, functional_context);
           auto ex_facts = resolve_exceptional_ownership_facts(s, functional_context);
           (void)ex_facts;
           // Rust cannot infer that a move on one exceptional variant leaves
@@ -10456,6 +10517,8 @@ class Generator {
               ++i;
               while (i < ss.size() && ss[i].indent > level) ++i;
             }
+            if (!try_continuation.has_normal_successor)
+              while (i < ss.size() && ss[i].indent >= level) ++i;
             break;
           }
 
@@ -10681,6 +10744,8 @@ class Generator {
           o << indent(level) << "}\n";
           o << indent(level) << "}\n";
           phase21_return_result_context_ = saved_return_result_context;
+          if (!try_continuation.has_normal_successor)
+            while (i < ss.size() && ss[i].indent >= level) ++i;
           break;
         }
         case Stmt::Kind::Recover:

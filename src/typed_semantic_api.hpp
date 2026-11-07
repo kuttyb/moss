@@ -1764,6 +1764,30 @@ inline const char* typed_open_summary_gap_message(TypedOpenSummaryGapV1 gap) {
   throw std::invalid_argument("unknown typed open summary gap");
 }
 
+// Exact checker result for the normal successor of a Try statement. A false
+// answer allows Native to omit the remaining syntactic siblings in that
+// checked block; it does not authorize or fabricate any expression facts.
+struct TypedTryContinuationFactV1 {
+  enum class Availability {
+    Present, MissingStatementOccurrence, MissingCallableContext,
+    MissingSpecializationContext, Contradictory
+  };
+  Availability availability{Availability::MissingStatementOccurrence};
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::string owner_callable_identity;
+  std::string specialization_identity;
+  std::string specialization_context;
+  bool has_normal_successor{false};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        !owner_callable_identity.empty() &&
+        !specialization_context.empty();
+  }
+};
+struct TypedTryContinuationRequirementV1 : TypedTryContinuationFactV1 {};
+
 struct TypedSemanticModuleV1 {
   static constexpr const char* version = "typed-semantic-v1";
   std::map<std::string, std::shared_ptr<const std::string>> modules;
@@ -1802,6 +1826,55 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedBareRaiseTransferFactV1> bare_raise_transfer_facts;
   std::vector<TypedBareRaiseTransferRequirementV1>
       required_bare_raise_transfer_occurrences;
+  std::vector<TypedTryContinuationFactV1> try_continuation_facts;
+  std::vector<TypedTryContinuationRequirementV1>
+      required_try_continuation_occurrences;
+
+  const TypedTryContinuationFactV1& find_try_continuation_fact(
+      const TypedTryContinuationRequirementV1& requirement) const {
+    const auto same_identity = [&](const auto& candidate) {
+      return candidate.statement_occurrence_id ==
+              requirement.statement_occurrence_id &&
+          candidate.owner_callable_identity ==
+              requirement.owner_callable_identity &&
+          candidate.specialization_identity ==
+              requirement.specialization_identity &&
+          candidate.specialization_context ==
+              requirement.specialization_context;
+    };
+    const TypedTryContinuationRequirementV1* required = nullptr;
+    std::size_t requirement_count = 0;
+    for (const auto& candidate : required_try_continuation_occurrences)
+      if (same_identity(candidate)) {
+        required = &candidate;
+        ++requirement_count;
+      }
+    if (requirement_count != 1 || !required ||
+        !requirement.is_authoritative() ||
+        required->has_normal_successor != requirement.has_normal_successor ||
+        required->availability != requirement.availability)
+      throw std::invalid_argument(
+          requirement_count ? "duplicate or contradictory required Try continuation"
+                            : "unknown required Try continuation");
+
+    const TypedTryContinuationFactV1* found = nullptr;
+    std::size_t fact_count = 0;
+    for (const auto& candidate : try_continuation_facts)
+      if (same_identity(candidate)) {
+        found = &candidate;
+        ++fact_count;
+      }
+    if (fact_count != 1 || !found)
+      throw std::invalid_argument(fact_count
+          ? "duplicate Try continuation facts"
+          : "required Try continuation fact missing");
+    if (!found->is_authoritative() ||
+        found->availability != requirement.availability ||
+        found->has_normal_successor != requirement.has_normal_successor)
+      throw std::invalid_argument(
+          "required Try continuation fact is missing or contradictory");
+    return *found;
+  }
 
   const TypedExceptionalOwnershipFactV1& find_exceptional_ownership_fact(
       const TypedExceptionalOwnershipRequirementV1& requirement) const {
@@ -3513,6 +3586,12 @@ struct TypedSemanticModuleV1 {
         return_value_facts.size() != required_return_value_occurrences.size() ||
         collection_view_facts.size() != required_collection_view_occurrences.size())
       throw std::invalid_argument("Phase 28 checker authority fact/requirement set is incomplete");
+    if (try_continuation_facts.size() !=
+        required_try_continuation_occurrences.size())
+      throw std::invalid_argument(
+          "Try continuation fact/requirement set is incomplete");
+    for (const auto& requirement : required_try_continuation_occurrences)
+      (void)find_try_continuation_fact(requirement);
     for (const auto& requirement : required_conditional_collection_error_occurrences)
       (void)find_conditional_collection_error_fact(requirement);
     for (const auto& requirement : required_return_value_occurrences)

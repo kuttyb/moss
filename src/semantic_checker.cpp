@@ -2003,6 +2003,9 @@ class Checker {
           bare_raise_transfer_facts_;
       p_.typed_semantics->required_bare_raise_transfer_occurrences =
           required_bare_raise_transfer_occurrences_;
+      p_.typed_semantics->try_continuation_facts = try_continuation_facts_;
+      p_.typed_semantics->required_try_continuation_occurrences =
+          required_try_continuation_occurrences_;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DROP_EXCEPTIONAL_OWNERSHIP_FACT") &&
           !p_.typed_semantics->exceptional_ownership_facts.empty())
@@ -3290,6 +3293,9 @@ class Checker {
   vector<TypedBareRaiseTransferFactV1> bare_raise_transfer_facts_;
   vector<TypedBareRaiseTransferRequirementV1>
       required_bare_raise_transfer_occurrences_;
+  vector<TypedTryContinuationFactV1> try_continuation_facts_;
+  vector<TypedTryContinuationRequirementV1>
+      required_try_continuation_occurrences_;
   std::map<string, string> local_ownership_specialization_contexts_;
   struct BodyOwnershipFlowAnalysis;
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
@@ -30805,6 +30811,36 @@ class Checker {
         }
         env = incoming;
         env.can_continue = !paths.empty();
+        std::uint32_t try_occurrence_id = s.checked_statement_occurrence_id;
+        if (current_body_types_) {
+          const auto try_occurrence =
+              current_body_types_->statement_occurrence_ids.find(&s);
+          if (try_occurrence !=
+              current_body_types_->statement_occurrence_ids.end())
+            try_occurrence_id = try_occurrence->second;
+        }
+        if (try_occurrence_id == UINT32_MAX ||
+            current_semantic_context_.empty() ||
+            local_ownership_consumer_context().empty())
+          err(s.source_file, s.line,
+              "Try continuation lacks an exact checked identity",
+              "MOSS_INTERNAL_INVARIANT");
+        TypedTryContinuationFactV1 try_continuation;
+        try_continuation.availability =
+            TypedTryContinuationFactV1::Availability::Present;
+        try_continuation.statement_occurrence_id = try_occurrence_id;
+        try_continuation.owner_callable_identity = current_semantic_context_;
+        try_continuation.specialization_identity =
+            local_ownership_specialization_identity();
+        try_continuation.specialization_context =
+            local_ownership_consumer_context();
+        try_continuation.has_normal_successor = env.can_continue;
+        try_continuation_facts_.push_back(try_continuation);
+        TypedTryContinuationRequirementV1 try_requirement;
+        static_cast<TypedTryContinuationFactV1&>(try_requirement) =
+            try_continuation;
+        required_try_continuation_occurrences_.push_back(
+            std::move(try_requirement));
         if (!paths.empty()) {
           vector<TypeEnv> path_types;
           for (const auto& path : paths) path_types.push_back(path.types);

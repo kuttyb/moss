@@ -1,0 +1,17 @@
+enum Failure:
+  Inner
+  Outer
+
+fn nested_recover_tail() -> Int:
+  try:
+    try:
+      raise Failure.Inner
+    recover Failure.Inner:
+      pass
+    raise Failure.Outer
+  recover Failure.Outer:
+    return 8
+  return 0
+
+fn main():
+  echo nested_recover_tail()

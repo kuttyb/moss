@@ -1,0 +1,13 @@
+enum Failure:
+  Stop
+
+fn reachable_tail() -> Int:
+  try:
+    value = 4
+    value = value + 1
+  recover Failure.Stop:
+    value = 2
+  return 6
+
+fn main():
+  echo reachable_tail()

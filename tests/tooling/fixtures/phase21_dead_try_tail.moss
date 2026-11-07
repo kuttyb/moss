@@ -1,0 +1,12 @@
+enum Failure:
+  Stop
+
+fn recover_tail() -> Int:
+  try:
+    raise Failure.Stop
+  recover Failure.Stop:
+    return 3
+  return 0
+
+fn main():
+  echo recover_tail()
