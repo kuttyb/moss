@@ -1090,8 +1090,8 @@ workspace layout was not built (scope).
 | Edit | Moss (B3) | Rust equivalent | Translates? |
 |---|---|---|---|
 | `a` | `k = 1` -> `k = 2` at the leaf | `let k = 1;` -> `let k = 2;` | yes, one-line body edit |
-| `b` | `k = 0.5`: the leaf's inferred return type becomes Float, the cone follows by inference (21 / 55 callables) | leaf `-> f64`, `let k = 0.5;`, `r as f64 + k`; **and every function in the call cone is edited by hand** (`-> f64`, `+ 1.0`; non-cone root terms get `as f64`): 21 edits in the DAG, 55 in the fan-in | partly: Rust has no return-type inference across functions, so the Moss one-line edit is a 21/55-site edit; same semantic change, different edit size |
-| `b2` | `r / k`: `may_panic` propagates to every caller | none | **no**: Rust has no inferred effects that reach callers; `r / k` would only be another body edit, equivalent to `a` for `cargo check` |
+| `b` | `k = 0.5`: the leaf's inferred return type becomes Float, the cone follows by inference (21 / 55 callables) | leaf `-> f64`, `let k = 0.5;`, `r as f64 + k`; **and every function in the call cone is edited by hand** (`-> f64`, `+ 1.0`; non-cone root terms get `as f64`): 21 edits in the DAG, 55 in the fan-in | yes, as written: Rust has no return-type inference across function boundaries, so without changing the signatures' form the same semantic change needs the 21/55 explicit signature edits. A one-site variant exists (a `type Num = i64;` alias used in every signature, edit = the alias line plus the leaf body); it is a different fixture style (every signature spelled through an alias) and was **not built** |
+| `b2` | `r / k`: `may_panic` propagates to every caller | none built | **not built, not impossible**: Rust has no inferred effects, so the closest analogue is a fallible leaf (`-> Result<i64, E>`, `?` at every call site), a cone edit of the same size as `b` (explicit signatures again). The literal text edit `r / k` is just another body edit, equivalent to `a` for `cargo check` |
 | `c` | the first two statements swapped | the same two `let` statements swapped | yes |
 | `d` | comment text only | `// leaf body` -> `// leaf body (reworded)` | yes |
 | `e` | one comment line inserted above the leaf (line shift) | the same | yes (cargo/rustc use no line-keyed fact store, so the question is moot; measured anyway) |
@@ -1120,7 +1120,7 @@ cargo reports E0277 "cannot add `&str` to `i64`" at the expression.
 
 Measured (Moss: `edit` fails, counters absent; the compiler prints none for a failing check): the failing Moss check
 is cheaper than the passing one (DAG 321 ms against 432-456; fan-in 569 against 658-698), and the **`revert` after
-the failure costs 48 ms with 0 checker runs**, i.e. margo answers it from the last good interface (same figure as the
+the failure costs 48 ms with 0 checker runs**, i.e. (inferred, not traced) margo answers it from the last good interface (same figure as the
 B4 no-change second, 46 ms); the Rust failing check is 26 ms, and the revert is a normal 20-31 ms recheck. For
 Rust in the workspace layout the failing `lib` unit stops the build, so the `app` unit is not attempted
 (1 unit rechecked, against 2 for a passing edit).
@@ -1238,8 +1238,9 @@ store would make the `revert` and `d` steps cost a hit, which cargo's mtime fres
 
 ### Fixtures not expressed, and not built
 
-- **Not expressible in Rust:** `b2` (`may_panic` effect propagation to callers); an inferred return type change as a
-  one-site edit (translated as a cone edit); a leaf break for the Moss error path is expressible in Rust (E0277) but not
+- **Not expressible in Rust without explicit signature edits:** `b2` (`may_panic` propagation) and `b` (inferred return
+  type change): Rust has no return-type or effect inference, so both need explicit signature changes through the cone
+  (`b` built as such; `b2` as a `Result`/`?` cone edit and the `type Num = i64;` alias variant of `b` were not built); a leaf break for the Moss error path is expressible in Rust (E0277) but not
   measurable in Moss (no answer within 20 s), so `f` is at the top node for both.
 - **Not expressible in Moss:** none found.
 - **Not built (scope):** Rust counterparts of the B1/B2 K and D sweeps (one K probe only), the torture chains, the
@@ -1266,6 +1267,27 @@ Each benchmark states it where it is described: B1 (`.mossi` firewall: consumer 
 slope toward one lookup), torture extension (chains near constant for unchanged code), B3 (rechecked set equal to the
 ideal cone; `f`: the error path above), B4 (floors approach a socket round trip; `second` about zero), B5 (CPU and RSS grow
 with divergence, not with N), B6 ("What an IMPROVEMENT looks like" in the B6 results), Rust comparison (above).
+
+### Behaviour changes in 0.5.0 (read before upgrading a runner)
+
+- **Default `bench` and `gate` now also run the Team 5 scenarios**: the 2 Moss `f` sequences and the 19 Rust (cargo)
+  sequences (`--ids` still disables scenarios unless `--scenario-ids` is given). A whole-suite gate therefore needs cargo
+  (or prints the FAIL-OPEN line below); the gate's sequence counts are 68 Moss + 19 Rust.
+- **Missing cargo is fail-open and loud**: one `*** FAIL-OPEN: Rust comparison SKIPPED (N sequences NOT RUN) ***` line on
+  stderr, the same warning on the final `gate:` line, `rust_skipped` in `gate.json`/`results.json`, and a "FAIL-OPEN"
+  paragraph in the report's Rust gate section. The exit status is unchanged (the Moss part still passes); use
+  `--require-rust` to make a missing cargo an error.
+- **Minimum toolchain**: the committed `Cargo.lock` files are lockfile version 4, which needs cargo >= 1.78; the committed
+  run used cargo/rustc 1.98.1. An older cargo fails `--locked` with a lockfile error, not a check difference.
+- **`results.csv` schema**: nine columns were added (`tree_rss_peak_kib_median`, `units_checked`, `units_fresh`, `spread`,
+  `attempts`, `spread_flagged`, `block_attempts`, `block_noisy`, `diagnostic`); old columns are unchanged. Rust rows have
+  `kind` = `cargo` and `units_*` filled, Moss rows leave them empty. B3/B4 Moss rows now also carry a sampled
+  whole-tree peak RSS (separate untimed passes, 3 sequences per scenario; adds run time).
+- **What the Rust gate does not compare**: rustc's `children` (notes/help sub-diagnostics), `suggestions`, span end
+  line/column, span `label`, `rendered` text and cargo's fresh/dirty counts. It compares level, code, message and
+  every span's file, start line, start column and primary flag. A candidate that changes only the dropped fields passes.
+- **Step expectations** may carry `expect_exit` and `expect_code` (the error code must be among the verdict's
+  diagnostics); both are frozen in the specs of the `f` sequences and enforced by bench, gate and validate.
 
 ### Limits (Team 5)
 

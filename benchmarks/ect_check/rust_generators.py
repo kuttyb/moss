@@ -33,7 +33,7 @@ Edits (frozen patches; positions equal the B3 positions: the same leaf `n019_0`
   e  one comment line inserted above the leaf (line shift)
   f  error path at the TOP node (n000_0 / e0, see probes/f_edit_probe.txt for why not the leaf):
      `+ 1` -> `+ "one"` (a type error: `i64 + &str`)
-(b2 has no Rust counterpart: see README.)
+(b2 was not built: see README.)
 
 Generated with fixed text only; the suite seed picks the per-type constants
 (same policy as every other generator: an RNG stream derived from the suite
