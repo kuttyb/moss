@@ -1815,6 +1815,18 @@ class FastInterpreter {
     return nullptr;
   }
 
+  const Function* function_by_semantic_identity(
+      const std::string& semantic_identity) const {
+    if (semantic_identity.empty()) return nullptr;
+    for (const auto& candidate : program_.functions)
+      if (candidate.semantic_callable_id == semantic_identity)
+        return &candidate;
+    for (const auto& candidate : program_.file_scope_pruned_functions)
+      if (candidate.semantic_callable_id == semantic_identity)
+        return &candidate;
+    return nullptr;
+  }
+
   const Function* function_signature(const std::string& name) const {
     if (const auto* executable = function(name)) return executable;
     for (const auto& candidate : program_.file_scope_pruned_functions)
@@ -1954,8 +1966,7 @@ class FastInterpreter {
         expression_node_text(tree, root), resolve_stage);
   }
 
-  Value invoke_pipeline_callable(const std::string& callable,
-                                 const std::vector<Value>& values,
+  Value invoke_pipeline_callable(const std::vector<Value>& values,
                                  Frame& frame, int line, std::ostream& output,
                                  const ExpressionTreeView* tree = nullptr,
                                  std::optional<est::ExprId> callback_expr = std::nullopt) {
@@ -1966,11 +1977,26 @@ class FastInterpreter {
       callback.locals[name] = values[i]; names.push_back(name);
     }
     if (values.size() == 1) callback.locals["_"] = values.front();
-    std::string target_callable = trim_copy(callable);
-    auto local_it = callback.locals.find(target_callable);
-    if (local_it != callback.locals.end() && local_it->second.kind == Value::Kind::Callable)
-      target_callable = local_it->second.string;
-    if (auto fn = function(target_callable))
+    if (!tree || !callback_expr || *callback_expr >= tree->arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT callback lacks its exact EST occurrence");
+    const auto* facts = tree->arena->facts(*callback_expr,
+                                           frame.functional_context);
+#ifdef MOSS_TEST_BUILD
+    est::SemanticFacts perturbed_target_facts;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CALLBACK_TARGET"))
+      facts = nullptr;
+    if (facts &&
+        std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET")) {
+      perturbed_target_facts = *facts;
+      perturbed_target_facts.resolved_target = "callable-v1:forged";
+      facts = &perturbed_target_facts;
+    }
+#endif
+    if (!facts || facts->resolved_target.empty())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT callback target authority is missing");
+    if (const auto* fn = function_by_semantic_identity(facts->resolved_target))
       return call(*fn, names, callback, line, output, tree, nullptr,
                   &values, callback_expr);
     throw RuntimeError(line,
@@ -1986,14 +2012,9 @@ class FastInterpreter {
     if (values.size() == 1) callback.locals["_"] = values.front();
     if (const auto* identifier = std::get_if<est::Identifier>(
             &tree.arena->at(expression))) {
-      auto local = callback.locals.find(identifier->name);
-      if (local != callback.locals.end() &&
-          local->second.kind == Value::Kind::Callable)
-        return invoke_pipeline_callable(local->second.string, values,
-                                        frame, line, output, &tree, expression);
-      if (function(identifier->name))
-        return invoke_pipeline_callable(identifier->name, values, frame,
-                                        line, output, &tree, expression);
+      (void)identifier;
+      return invoke_pipeline_callable(values, frame, line, output,
+                                      &tree, expression);
     }
     return evaluate_tree_node(tree, expression, callback, line, output);
   }
@@ -2935,9 +2956,9 @@ class FastInterpreter {
                 &tree->arena->at(key_node));
             std::stable_sort(vec.begin(), vec.end(), [&](const Value& a, const Value& b) {
               auto key = [&](const Value& item) {
-                if (key_identifier && function(key_identifier->name))
-                  return invoke_pipeline_callable(key_identifier->name,
-                      {item}, frame, line, output);
+                if (key_identifier)
+                  return invoke_pipeline_callable({item}, frame, line,
+                      output, tree, key_node);
                 Frame callback = frame;
                 callback.locals["_"] = item;
                 return evaluate_tree_node(*tree, key_node, callback, line,

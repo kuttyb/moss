@@ -1,0 +1,14 @@
+fn positive(value):
+  return value > 0
+
+fn identity(value):
+  return value
+
+fn main():
+  values = [1, 2, 3]
+  copied = values |> map(identity)
+  found = values |> any(positive)
+  bounded = values |> all(positive)
+  echo copied
+  echo found
+  echo bounded

@@ -33232,6 +33232,8 @@ class Checker {
       return;
     }
     if (name == "sort" && !functions_.count(name)) {
+      mark_active_expression(BodyTypeState::ExpressionOccurrence::Kind::Call,
+                             "call:sort");
       check_sort_call(line, args, env);
       return;
     }
@@ -34128,99 +34130,160 @@ class Checker {
 
   void retain_functional_callback_specialization(
       const Function& function, const vector<string>& input_types,
-      int line) {
-    if (!function.static_dispatch || !current_body_types_ ||
-        current_body_types_->active_expression_occurrences.empty() ||
-        active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return;
-    const auto stage_id =
-        current_body_types_->active_expression_occurrences.back();
-    if (stage_id >= current_body_types_->expression_occurrences.size())
-      throw std::invalid_argument(
-          "checked pipeline callback stage occurrence is unavailable");
-    const auto& stage_occurrence =
-        current_body_types_->expression_occurrences[stage_id];
-    if (stage_occurrence.kind !=
-            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
-        stage_occurrence.parent_id == UINT32_MAX)
-      throw std::invalid_argument(
-          "checked pipeline callback lacks its exact stage owner");
-    std::size_t stage_ordinal = 0;
-    std::size_t matching_stage_occurrences = 0;
-    std::size_t sibling_stage_count = 0;
-    for (const auto& occurrence :
-         current_body_types_->expression_occurrences) {
-      if (occurrence.parent_id != stage_occurrence.parent_id ||
-          occurrence.kind !=
-              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
-        continue;
-      ++sibling_stage_count;
-      if (occurrence.id < stage_id) ++stage_ordinal;
-      if (occurrence.id == stage_id) ++matching_stage_occurrences;
+      int line, const string& source_callable) {
+    if (!current_body_types_) return;
+    const BodyTypeState::ExpressionOccurrence* stage_occurrence = nullptr;
+    std::uint32_t stage_id = UINT32_MAX;
+    if (!current_body_types_->active_expression_occurrences.empty()) {
+      stage_id = current_body_types_->active_expression_occurrences.back();
+      if (stage_id >= current_body_types_->expression_occurrences.size())
+        throw std::invalid_argument(
+            "checked pipeline callback stage occurrence is unavailable");
+      stage_occurrence =
+          &current_body_types_->expression_occurrences[stage_id];
     }
-    if (matching_stage_occurrences != 1)
-      throw std::invalid_argument(
-          "checked pipeline callback stage identity is missing or duplicated");
-
-    const auto& cursor = *active_est_expression_cursors_.back();
-    auto* arena = expression_arena(cursor.arena_index);
-    if (!arena || cursor.expr >= arena->size())
+    std::size_t arena_index = UINT32_MAX;
+    est::ExprId owner_expr = UINT32_MAX;
+    if (stage_occurrence && stage_occurrence->kind ==
+            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+        !active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back()) {
+      arena_index = active_est_expression_cursors_.back()->arena_index;
+      owner_expr = active_est_expression_cursors_.back()->expr;
+    } else if (stage_occurrence && stage_occurrence->kind ==
+                   BodyTypeState::ExpressionOccurrence::Kind::Call &&
+               stage_occurrence->operation_id == "call:sort") {
+      arena_index = stage_occurrence->est_arena_index;
+      owner_expr = stage_occurrence->est_expr_id;
+      if (arena_index == UINT32_MAX || owner_expr == UINT32_MAX) {
+        const auto cursor = root_expression_cursor(
+            stage_occurrence->source_expression, stage_occurrence->root_slot);
+        if (cursor) {
+          arena_index = cursor->arena_index;
+          owner_expr = cursor->expr;
+        }
+      }
+    }
+    const bool pipeline_callback = stage_occurrence &&
+        stage_occurrence->kind ==
+            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage;
+    if (!pipeline_callback) {
+      if (stage_occurrence &&
+          (stage_occurrence->kind !=
+               BodyTypeState::ExpressionOccurrence::Kind::Call ||
+           stage_occurrence->operation_id != "call:sort"))
+        return;
+    }
+    auto* arena = arena_index == UINT32_MAX
+        ? nullptr : expression_arena(arena_index);
+    if (!arena || owner_expr >= arena->size())
       throw std::invalid_argument(
           "checked pipeline callback owner arena is unavailable");
-    const auto pipeline_root = est::unparenthesized(*arena, cursor.expr);
-    const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(pipeline_root));
-    if (!pipeline || pipeline->stages.size() != sibling_stage_count)
-      throw std::invalid_argument(
-          "checked pipeline callback stage does not map to its EST owner");
-    if (stage_ordinal >= pipeline->stages.size())
-      throw std::invalid_argument(
-          "checked pipeline callback stage ordinal is out of range");
-    const auto* stage_call = std::get_if<est::Call>(
-        &arena->at(pipeline->stages[stage_ordinal]));
-    const std::size_t callback_ordinal =
-        stage_occurrence.operation_id == "functional:Reduce" ? 1 : 0;
-    if (!stage_call || callback_ordinal >= stage_call->arguments.size())
-      throw std::invalid_argument(
-          "checked pipeline callback argument occurrence is unavailable");
-    const auto callback_id = stage_call->arguments[callback_ordinal];
+    const auto owner_root = est::unparenthesized(*arena, owner_expr);
+    est::ExprId callback_id = UINT32_MAX;
+    if (pipeline_callback) {
+      if (stage_occurrence->parent_id == UINT32_MAX)
+        throw std::invalid_argument(
+            "checked pipeline callback lacks its exact stage owner");
+      std::size_t stage_ordinal = 0;
+      std::size_t matching_stage_occurrences = 0;
+      for (const auto& occurrence :
+           current_body_types_->expression_occurrences) {
+        if (occurrence.parent_id != stage_occurrence->parent_id ||
+            occurrence.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
+          continue;
+        if (occurrence.id < stage_id) ++stage_ordinal;
+        if (occurrence.id == stage_id) ++matching_stage_occurrences;
+      }
+      if (matching_stage_occurrences != 1)
+        throw std::invalid_argument(
+            "checked pipeline callback stage identity is missing or duplicated");
+      const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(owner_root));
+      if (!pipeline || stage_ordinal >= pipeline->stages.size())
+        throw std::invalid_argument(
+            "checked pipeline callback stage does not map to its EST owner");
+      const auto* stage_call = std::get_if<est::Call>(
+          &arena->at(pipeline->stages[stage_ordinal]));
+      const auto* stage_callee = stage_call
+          ? std::get_if<est::Identifier>(&arena->at(stage_call->callee))
+          : nullptr;
+      const string expected_stage_callee =
+          stage_occurrence->operation_id == "functional:Map" ? "map" :
+          stage_occurrence->operation_id == "functional:Filter" ? "filter" :
+          stage_occurrence->operation_id == "functional:Reduce" ? "reduce" :
+          stage_occurrence->operation_id == "functional:Any" ? "any" :
+          stage_occurrence->operation_id == "functional:All" ? "all" :
+          stage_occurrence->operation_id == "functional:Count" ? "count" : "";
+      if (!stage_callee || expected_stage_callee.empty() ||
+          stage_callee->name != expected_stage_callee || !stage_call ||
+          stage_call->arguments.size() !=
+              stage_occurrence->source_operands.size())
+        throw std::invalid_argument(
+            "checked pipeline callback stage identity contradicts its EST child");
+      const std::size_t callback_ordinal =
+          stage_occurrence->operation_id == "functional:Reduce" ? 1 : 0;
+      if (callback_ordinal >= stage_call->arguments.size())
+        throw std::invalid_argument(
+            "checked pipeline callback argument occurrence is unavailable");
+      callback_id = stage_call->arguments[callback_ordinal];
+    } else {
+      const auto* sort_call = std::get_if<est::Call>(&arena->at(owner_root));
+      const auto* sort_callee = sort_call
+          ? std::get_if<est::Identifier>(&arena->at(sort_call->callee)) : nullptr;
+      if (!sort_call || !sort_callee || sort_callee->name != "sort" ||
+          sort_call->arguments.size() != 2)
+        throw std::invalid_argument(
+            "checked sort key does not map to its exact EST call");
+      const auto* named = std::get_if<est::NamedArgument>(
+          &arena->at(sort_call->arguments[1]));
+      if (!named || named->name != "by")
+        throw std::invalid_argument(
+            "checked sort key lacks the exact `by` argument occurrence");
+      callback_id = named->value;
+      if (const auto* reverse = std::get_if<est::Call>(&arena->at(callback_id))) {
+        const auto* reverse_callee = std::get_if<est::Identifier>(
+            &arena->at(reverse->callee));
+        if (reverse_callee && reverse_callee->name == "Reverse" &&
+            reverse->arguments.size() == 1)
+          callback_id = reverse->arguments.front();
+      }
+    }
     const auto* callback = callback_id < arena->size()
         ? std::get_if<est::Identifier>(&arena->at(callback_id)) : nullptr;
-    if (!callback || !tree_plain_identifier(callback->name))
+    if (!callback || !tree_plain_identifier(callback->name) ||
+        trim(source_callable) != callback->name)
       return;  // Non-identifier callback forms retain their existing checker path.
 
-    const auto key = specialization_key_inputs(
-        function.semantic_callable_id,
-        semantic_specialization_arguments(line, input_types));
-    if (!key || !key->stable_key())
-      throw std::invalid_argument(
-          "checked pipeline callback specialization key is unresolved");
-    const auto stable_key = *key->stable_key();
-    const auto specialization_count = std::count_if(
-        function.specializations.begin(), function.specializations.end(),
-        [&](const FunctionSpecialization& candidate) {
-          return candidate.stable_type_key == stable_key;
-        });
-    if (specialization_count != 1)
-      throw std::invalid_argument(
-          "checked pipeline callback specialization is missing or duplicated");
+    string stable_key;
+    if (function.static_dispatch) {
+      const auto key = specialization_key_inputs(
+          function.semantic_callable_id,
+          semantic_specialization_arguments(line, input_types));
+      if (!key || !key->stable_key())
+        throw std::invalid_argument(
+            "checked pipeline callback specialization key is unresolved");
+      stable_key = *key->stable_key();
+    }
     const string context = expression_fact_context();
     const auto* existing = arena->facts(callback_id, context);
     if (existing &&
         ((!existing->resolved_target.empty() &&
           existing->resolved_target != function.semantic_callable_id) ||
-         (!existing->specialization_result.empty() &&
+         (!stable_key.empty() &&
+          !existing->specialization_result.empty() &&
           existing->specialization_result != stable_key)))
       throw std::invalid_argument(
           "checked pipeline callback EST identity is contradictory");
     est::SemanticFacts facts = existing ? *existing : est::SemanticFacts{};
     facts.resolved_target = function.semantic_callable_id;
-    facts.specialization_result = stable_key;
+    if (!stable_key.empty()) facts.specialization_result = stable_key;
     arena->record_facts(callback_id, context, std::move(facts));
     const auto* retained = arena->facts(callback_id, context);
     if (!retained ||
         retained->resolved_target != function.semantic_callable_id ||
-        retained->specialization_result != stable_key)
+        (!stable_key.empty() &&
+         retained->specialization_result != stable_key))
       throw std::invalid_argument(
           "checked pipeline callback EST authority failed publication");
   }
@@ -34427,6 +34490,11 @@ class Checker {
                                       !traits_.count(canonical_type_name(type));
                                 });
     if (concrete) {
+      // Publish callback target/specialization authority while the exact
+      // caller occurrence and semantic context are still active. The
+      // specialization registration below may switch checker body context.
+      retain_functional_callback_specialization(*function->second,
+                                                input_types, line, callable);
       const auto validation_view = imported_method_validation_view(
           *function->second);
       auto requirements = validate_method_requirements(
@@ -34434,8 +34502,6 @@ class Checker {
           input_types);
       register_static_specialization(line, *function->second, input_types,
                                      std::move(requirements));
-      retain_functional_callback_specialization(*function->second,
-                                                input_types, line);
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)
@@ -34494,6 +34560,20 @@ class Checker {
   // named function whose specialization has no observable effect, so the
   // number and order of key evaluations is unobservable in every engine.
   void check_sort_call(int line, const vector<string>& args, const TypeEnv& env) {
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty()) {
+      auto& occurrence = current_body_types_->expression_occurrences.at(
+          current_body_types_->active_expression_occurrences.back());
+      if (occurrence.kind !=
+          BodyTypeState::ExpressionOccurrence::Kind::Call)
+        err(line, "sort call lacks its exact checker occurrence",
+            "MOSS_INTERNAL_INVARIANT");
+      if (!occurrence.operation_id.empty() &&
+          occurrence.operation_id != "call:sort")
+        err(line, "sort call occurrence has a contradictory operation",
+            "MOSS_INTERNAL_INVARIANT");
+      occurrence.operation_id = "call:sort";
+    }
     if (args.empty() || args.size() > 2)
       err(line, "sort expects sort(v), sort(v, by: key), or sort(v, by: Reverse(key))",
           "SORT_SIGNATURE");
@@ -37079,6 +37159,8 @@ class Checker {
         }
       }
       if (callee == "sort" && !functions_.count(callee)) {
+        mark_active_expression(
+            BodyTypeState::ExpressionOccurrence::Kind::Call, "call:sort");
         retain_active_expression_target("builtin:sort");
         if (args.size() == 2 && current_body_types_ &&
             !checking_specialization_ &&

@@ -1,0 +1,10 @@
+fn increment(value):
+  return value + 1
+
+fn plus_ten(value):
+  return value + 10
+
+fn main():
+  values = [1, 2, 3]
+  mapped = values |> map(increment) |> map(plus_ten)
+  echo mapped

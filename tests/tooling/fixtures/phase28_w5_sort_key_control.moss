@@ -1,0 +1,7 @@
+fn negative_key(value):
+  return 0 - value
+
+fn main():
+  var values = [1, 2, 3]
+  sort(values, by: negative_key)
+  echo values
