@@ -1853,7 +1853,11 @@ class FastInterpreter {
     }
     const auto checked = checked_call_edge_specialization_exact(
         program_, caller.functional_context, caller.specialization_key,
-        target, line, exact_call_specialization_key);
+        target, line, exact_call_specialization_key,
+        tree && call_expr
+            ? std::optional<std::pair<std::uint32_t, est::ExprId>>{
+                  std::make_pair(tree->arena_index, *call_expr)}
+            : std::nullopt);
     if (checked.test_fact_dropped || checked.test_fact_perturbed ||
         checked.test_edge_dropped || checked.test_edge_duplicated ||
         checked.test_edge_perturbed ||

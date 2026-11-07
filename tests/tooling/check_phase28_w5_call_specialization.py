@@ -10,6 +10,7 @@ import sys
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "moss").resolve()
 source = repo / "tests/tooling/fixtures/phase28_w5_call_specialization.moss"
+nested_occurrence_source = repo / "tests/tooling/fixtures/phase28_w5_nested_call_occurrence.moss"
 callback_source = repo / "tests/phase26_w2_pipeline_callback.moss"
 chained_callback_source = repo / "tests/tooling/fixtures/phase28_w5_chained_pipeline_callbacks.moss"
 callback_boundaries_source = repo / "tests/tooling/fixtures/phase28_w5_callback_boundaries.moss"
@@ -44,6 +45,25 @@ assert optimized_compiled.returncode == 0, optimized_compiled.stderr
 optimized_result = run(optimized_native)
 assert optimized_result.returncode == 0 and optimized_result.stdout == "15\n", (
     optimized_result.stdout, optimized_result.stderr)
+
+# Same-target generic calls nested among same-line siblings retain their
+# statement-wide checked source occurrence in Fast Debug and Native.
+nested_occurrence = run(compiler, "run", "--interp", nested_occurrence_source)
+assert nested_occurrence.returncode == 0 and \
+    nested_occurrence.stdout == "0 3\n", (
+        nested_occurrence.stdout, nested_occurrence.stderr)
+nested_rust = scratch / "nested-occurrence.rs"
+nested_native = scratch / "nested-occurrence"
+nested_generated = run(compiler, nested_occurrence_source, "-o", nested_rust)
+assert nested_generated.returncode == 0, (
+    nested_generated.stdout, nested_generated.stderr)
+nested_compiled = run("rustc", "-D", "warnings", nested_rust,
+                      "-o", nested_native)
+assert nested_compiled.returncode == 0, nested_compiled.stderr
+nested_native_result = run(nested_native)
+assert nested_native_result.returncode == 0 and \
+    nested_native_result.stdout == "0 3\n", (
+        nested_native_result.stdout, nested_native_result.stderr)
 
 # Named callbacks in a chained pipeline are separate exact EST stage
 # occurrences even though the checker publishes their facts incrementally.
@@ -113,10 +133,12 @@ for mutation in mutations:
     for name in mutations:
         env.pop(name, None)
     env[mutation] = "1"
-    rejected = run(compiler, "run", "--interp", source, env=env)
-    assert rejected.returncode != 0, (mutation, rejected.stdout, rejected.stderr)
-    assert "MOSS_INTERNAL_INVARIANT" in rejected.stderr, (
-        mutation, rejected.stderr)
+    for call_program in (source, nested_occurrence_source):
+        rejected = run(compiler, "run", "--interp", call_program, env=env)
+        assert rejected.returncode != 0, (
+            mutation, call_program, rejected.stdout, rejected.stderr)
+        assert "MOSS_INTERNAL_INVARIANT" in rejected.stderr, (
+            mutation, call_program, rejected.stderr)
 
 callback_positive = run(compiler, "run", "--interp", callback_source)
 assert callback_positive.returncode == 0 and \

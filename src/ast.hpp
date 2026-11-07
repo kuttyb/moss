@@ -791,6 +791,11 @@ struct SemanticCallEdge {
   // target. This distinguishes two expressions on one source line without
   // changing the callable or specialization identity.
   uint32_t occurrence = 0;
+  // Exact ordinary-call EST occurrence, bound by the checker when it closes a
+  // static call. Fast Debug uses this pair to distinguish nested same-line
+  // calls whose source-order ordinals are local to different parent calls.
+  uint32_t call_est_arena_index = UINT32_MAX;
+  est::ExprId call_expression_occurrence_id = UINT32_MAX;
   // Exact EST message edge when invocation_kind is synchronous_message.
   // These fields let typed authority bind to the checked source occurrence,
   // not just a displayed target/line pair.
@@ -1015,7 +1020,9 @@ struct CheckedCallEdgeSpecialization {
 inline CheckedCallEdgeSpecialization checked_call_edge_specialization_exact(
     const Program& program, const string& caller_context,
     const string& caller_specialization_key, const Function& target,
-    int line, const string& exact_target_specialization_key = {}) {
+    int line, const string& exact_target_specialization_key = {},
+    std::optional<std::pair<uint32_t, est::ExprId>> exact_call_occurrence =
+        std::nullopt) {
   CheckedCallEdgeSpecialization result;
   result.test_fact_dropped = moss_test_drop_fact("specializations");
   result.test_fact_perturbed = moss_test_perturb_fact("specializations");
@@ -1050,6 +1057,10 @@ inline CheckedCallEdgeSpecialization checked_call_edge_specialization_exact(
     if (!exact_source(edge) || result.test_edge_dropped) continue;
     if (result.test_target_identity_perturbed ||
         edge.target_callable_identity != target.semantic_callable_id) continue;
+    if (exact_call_occurrence &&
+        (edge.call_est_arena_index != exact_call_occurrence->first ||
+         edge.call_expression_occurrence_id != exact_call_occurrence->second))
+      continue;
     if (!exact_target_specialization_key.empty() &&
         edge.specialization_key != exact_target_specialization_key) continue;
     ++matching_edges;

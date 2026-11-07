@@ -18610,3 +18610,32 @@ untouched.
   exact EST callback fact.
 - Candidate is frozen on the isolated branch for fresh Team A and Team C
   exact-SHA review. No integration or push authorized.
+
+## W5 nested call-occurrence review snapshot (2026-11-07)
+
+- Frozen candidate `c820b5071ba177ea8ed43fb03490903beb743269` was reviewed by
+  Team C (scoped GO with a documented limitation) and Agent 2 (NO-GO). Agent
+  2's adversarial probe showed that argument-local nested occurrence ordinals
+  collided with source-order `SemanticCallEdge::occurrence` when same-target
+  calls preceded a nested call on the same line. The two take failures were
+  resolved on c820; do not treat that as approval.
+- The follow-up currently in this worktree binds checker static-call edges to
+  exact EST arena/ExprId pairs and computes occurrence order across the owning
+  statement's EST handles. It adds nested/sibling occurrence coverage to
+  `check_phase28_w5_call_specialization.py`. Both compiler targets compiled;
+  Agent 2's nested-only and same-line sibling probes ran in Fast Debug with
+  expected outputs `3` and `0 3`.
+- Current blocker: the W5 gate fails on the existing `two<int> -> one<int>`
+  fixture after Fast Debug began requiring exact EST call IDs. The checker to
+  interpreter arena/ExprId binding remains inconsistent for that nested return
+  expression. Do not freeze or integrate this follow-up yet.
+- The take fixture matrix passed 18/18 on c820 before this identity follow-up;
+  it has not been rerun against the current uncommitted source. The broad
+  Default suite was interrupted on c820 after review found a separate
+  adversarial failure, so no full-suite result exists for the current follow-up.
+  The earlier Shadow 112/168 result belongs to bf921, not c820 or this source.
+- Next: reconcile exact EST arena/ExprId binding for `two<int> -> one<int>`
+  without weakening missing/duplicate/contradictory behavior; rerun the
+  registered W5 gate plus nested-only and same-line sibling probes; then freeze
+  a new SHA for Team A and Team C review. No staging integration or clone
+  authorization has occurred.

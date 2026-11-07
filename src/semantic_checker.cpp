@@ -33204,12 +33204,98 @@ class Checker {
     throw error;
   }
 
+  std::optional<EstExpressionCursor> checked_call_est_cursor(
+      const string& callee) const {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return std::nullopt;
+    const auto& cursor = *active_est_expression_cursors_.back();
+    const auto* arena = expression_arena(cursor.arena_index);
+    if (!arena || cursor.expr >= arena->size()) return std::nullopt;
+    const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+    if (!call) return std::nullopt;
+    const auto* identifier = std::get_if<est::Identifier>(
+        &arena->at(call->callee));
+    if (!identifier || identifier->name != callee) return std::nullopt;
+    return cursor;
+  }
+
+  std::optional<uint32_t> checked_call_source_occurrence(
+      const EstExpressionCursor& exact_call, const string& callee) const {
+    vector<const est::Handle*> handles;
+    if (current_check_statement_)
+      for (const auto& handle : current_check_statement_->expression_handles)
+        handles.push_back(&handle);
+    if (handles.empty() && current_check_result_function_)
+      for (const auto& handle : current_check_result_function_->expression_handles)
+        handles.push_back(&handle);
+    if (handles.empty()) return std::nullopt;
+
+    auto slot_order = [&](const est::Handle& handle) {
+      if (!current_check_statement_)
+        return std::make_pair(std::uint32_t{0}, handle.argument_index);
+      switch (current_check_statement_->kind) {
+        case Stmt::Kind::Echo:
+        case Stmt::Kind::Message:
+          return std::make_pair(std::uint32_t{0}, handle.argument_index);
+        case Stmt::Kind::Assign:
+          return std::make_pair(
+              handle.slot == est::ExprSlot::LhsPlace ? std::uint32_t{0}
+                  : handle.slot == est::ExprSlot::RhsValue ? std::uint32_t{1}
+                                                          : std::uint32_t{2},
+              handle.argument_index);
+        default:
+          return std::make_pair(static_cast<std::uint32_t>(handle.slot),
+                                handle.argument_index);
+      }
+    };
+    std::stable_sort(handles.begin(), handles.end(), [&](const auto* left,
+                                                         const auto* right) {
+      return slot_order(*left) < slot_order(*right);
+    });
+
+    uint32_t occurrence = 0;
+    std::set<std::pair<uint32_t, est::ExprId>> visited;
+    bool found = false;
+    std::function<void(uint32_t, const est::Arena&, est::ExprId)> visit =
+        [&](uint32_t arena_index, const est::Arena& arena, est::ExprId id) {
+      if (found || id >= arena.size() || !visited.emplace(arena_index, id).second)
+        return;
+      if (arena_index == exact_call.arena_index && id == exact_call.expr) {
+        found = true;
+        return;
+      }
+      if (const auto* call = std::get_if<est::Call>(&arena.at(id))) {
+        const auto* identifier = std::get_if<est::Identifier>(
+            &arena.at(call->callee));
+        if (identifier && identifier->name == callee) ++occurrence;
+      }
+      for (const auto child : syntax_children(arena, id))
+        visit(arena_index, arena, child);
+    };
+    for (const auto* handle : handles) {
+      const auto* arena = expression_arena(handle->arena_index);
+      if (arena) visit(handle->arena_index, *arena, handle->expr);
+      if (found) return occurrence;
+    }
+    return std::nullopt;
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env,
                            const moss::TypeRef& expected_open_result = nullptr,
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt,
                            Function** resolved_target = nullptr) {
+    const auto exact_call_cursor = checked_call_est_cursor(name);
+    const auto exact_source_occurrence = exact_call_cursor
+        ? checked_call_source_occurrence(*exact_call_cursor, name)
+        : std::nullopt;
+    auto retain_exact_call_occurrence = [&](SemanticCallEdge& edge) {
+      if (!exact_call_cursor) return;
+      edge.call_est_arena_index = exact_call_cursor->arena_index;
+      edge.call_expression_occurrence_id = exact_call_cursor->expr;
+    };
     if (name == "copy") {
       if (args.size() != 1)
         err(line, "copy expects exactly one argument", "COPY_ARGUMENT_ARITY");
@@ -33482,10 +33568,22 @@ class Checker {
             if (tree_expressions_structurally_equal(args[prior], argument))
               ++expression_occurrence;
           }
-          check_function_call(line, nested_name, nested_arguments, env,
-                              *required,
-                              std::make_pair(target_occurrence,
-                                             expression_occurrence));
+          auto nested_call_cursor = resolve_expression_cursor(
+              argument, "argument",
+              "argument:" + std::to_string(index), 0);
+          if (nested_call_cursor)
+            active_est_expression_cursors_.push_back(nested_call_cursor);
+          try {
+            check_function_call(line, nested_name, nested_arguments, env,
+                                *required,
+                                std::make_pair(target_occurrence,
+                                               expression_occurrence));
+          } catch (...) {
+            if (nested_call_cursor)
+              active_est_expression_cursors_.pop_back();
+            throw;
+          }
+          if (nested_call_cursor) active_est_expression_cursors_.pop_back();
           actual_types.push_back((*required)->to_canonical_string());
           actual_results.push_back({*required, {}});
           continue;
@@ -34025,13 +34123,20 @@ class Checker {
               return false;
           return true;
         };
+        const uint32_t checked_occurrence = exact_source_occurrence
+            ? *exact_source_occurrence
+            : nested_occurrences ? nested_occurrences->first : 0;
         vector<SemanticCallEdge*> matching_edges;
         vector<SemanticCallEdge*> source_edges;
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ ||
               edge.line != line ||
-              (nested_occurrences &&
-               edge.occurrence != nested_occurrences->first) ||
+              ((exact_source_occurrence || nested_occurrences) &&
+               edge.occurrence != checked_occurrence) ||
+              (exact_call_cursor &&
+               edge.call_expression_occurrence_id != UINT32_MAX &&
+               (edge.call_est_arena_index != exact_call_cursor->arena_index ||
+                edge.call_expression_occurrence_id != exact_call_cursor->expr)) ||
               (edge.target != function->second->name &&
                edge.target != "fn:" + function->second->name) ||
               (!returned_result && !edge.source_file.empty() &&
@@ -34062,6 +34167,7 @@ class Checker {
           edge.specialization_key = exact_key;
           edge.target_callable_identity =
               function->second->semantic_callable_id;
+          retain_exact_call_occurrence(edge);
           attached = true;
         }
         if (!attached && !caller_key.empty()) {
@@ -34081,6 +34187,8 @@ class Checker {
           concrete_edge.specialization_key = exact_key;
           concrete_edge.target_callable_identity =
               function->second->semantic_callable_id;
+          concrete_edge.occurrence = checked_occurrence;
+          retain_exact_call_occurrence(concrete_edge);
           p_.semantic_call_edges.push_back(std::move(concrete_edge));
         }
         if (!attached && source_edges.empty()) {
@@ -34095,18 +34203,8 @@ class Checker {
           checked_edge.specialization_key = exact_key;
           checked_edge.target_callable_identity =
               function->second->semantic_callable_id;
-          if (nested_occurrences) {
-            checked_edge.occurrence = nested_occurrences->first;
-          } else {
-            for (const auto& edge : p_.semantic_call_edges)
-              if (edge.source == checked_edge.source &&
-                  edge.target == checked_edge.target &&
-                  edge.line == checked_edge.line &&
-                  edge.source_file == checked_edge.source_file &&
-                  edge.invocation_kind == checked_edge.invocation_kind)
-                checked_edge.occurrence = std::max(
-                    checked_edge.occurrence, edge.occurrence + 1);
-          }
+          checked_edge.occurrence = checked_occurrence;
+          retain_exact_call_occurrence(checked_edge);
           p_.semantic_call_edges.push_back(std::move(checked_edge));
         }
       }
@@ -34128,12 +34226,19 @@ class Checker {
               return false;
           return true;
         };
+        const uint32_t checked_occurrence = exact_source_occurrence
+            ? *exact_source_occurrence
+            : nested_occurrences ? nested_occurrences->first : 0;
         vector<SemanticCallEdge*> matching_edges;
         vector<SemanticCallEdge*> source_edges;
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ || edge.line != line ||
-              (nested_occurrences &&
-               edge.occurrence != nested_occurrences->first) ||
+              ((exact_source_occurrence || nested_occurrences) &&
+               edge.occurrence != checked_occurrence) ||
+              (exact_call_cursor &&
+               edge.call_expression_occurrence_id != UINT32_MAX &&
+               (edge.call_est_arena_index != exact_call_cursor->arena_index ||
+                edge.call_expression_occurrence_id != exact_call_cursor->expr)) ||
               (edge.target != function->second->name &&
                edge.target != "fn:" + function->second->name) ||
               (!edge.source_file.empty() && current_check_statement_ &&
@@ -34164,6 +34269,7 @@ class Checker {
           edge.specialization_key = exact_key;
           edge.target_callable_identity =
               function->second->semantic_callable_id;
+          retain_exact_call_occurrence(edge);
           attached = true;
         }
         if (!attached && !caller_key.empty() && source_edges.size() > 1)
@@ -34175,6 +34281,8 @@ class Checker {
           concrete_edge.specialization_key = exact_key;
           concrete_edge.target_callable_identity =
               function->second->semantic_callable_id;
+          concrete_edge.occurrence = checked_occurrence;
+          retain_exact_call_occurrence(concrete_edge);
           p_.semantic_call_edges.push_back(std::move(concrete_edge));
         }
         if (!attached && source_edges.empty()) {
@@ -34189,18 +34297,8 @@ class Checker {
           checked_edge.specialization_key = exact_key;
           checked_edge.target_callable_identity =
               function->second->semantic_callable_id;
-          if (nested_occurrences) {
-            checked_edge.occurrence = nested_occurrences->first;
-          } else {
-            for (const auto& edge : p_.semantic_call_edges)
-              if (edge.source == checked_edge.source &&
-                  edge.target == checked_edge.target &&
-                  edge.line == checked_edge.line &&
-                  edge.source_file == checked_edge.source_file &&
-                  edge.invocation_kind == checked_edge.invocation_kind)
-                checked_edge.occurrence = std::max(
-                    checked_edge.occurrence, edge.occurrence + 1);
-          }
+          checked_edge.occurrence = checked_occurrence;
+          retain_exact_call_occurrence(checked_edge);
           p_.semantic_call_edges.push_back(std::move(checked_edge));
         }
       }

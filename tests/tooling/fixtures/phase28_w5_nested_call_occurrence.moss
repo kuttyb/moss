@@ -1,0 +1,8 @@
+fn identity(value):
+  return value
+
+fn combine(left: Int, right: Int) -> Int:
+  return left + right
+
+fn main():
+  echo identity(0), combine(identity(1), identity(2))
