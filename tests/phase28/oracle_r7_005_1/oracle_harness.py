@@ -138,8 +138,8 @@ def validate_mutation_assertions(fixture: dict) -> None:
 
 def validate_oracle_data() -> None:
     oracle_version = _expectation_doc.get("version")
-    if oracle_version != 2 or len(_expectation_doc.get("fixtures", [])) != 60:
-        raise ValueError("R7-005.1 package must be version 2 with exactly 60 fixtures")
+    if oracle_version != 2 or len(_expectation_doc.get("fixtures", [])) != 62:
+        raise ValueError("P28-R7-011 oracle package must be version 2 with exactly 62 fixtures")
     if _diagnostic_doc.get("version") != oracle_version:
         raise ValueError("diagnostic mapping version must match the expectation version")
     expectation_status = _expectation_doc.get("approval_status")

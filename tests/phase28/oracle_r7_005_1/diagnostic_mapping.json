@@ -200,5 +200,5 @@
       ]
     }
   },
-  "approval_status": "CERTIFIED_FROZEN"
+  "approval_status": "DRAFT_PENDING_L7_APPROVAL"
 }
