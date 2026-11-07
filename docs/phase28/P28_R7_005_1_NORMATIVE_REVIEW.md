@@ -13,12 +13,12 @@ provenance. See
 `tests/phase28/oracle_r7_005_1/reports/P28_R7_011_ORACLE_LEDGER.md` for the
 fixture-defect record and current combined-compiler comparison.
 
-The latest pinned implementation comparison and independent holdout
-revalidation use combined compiler source
-`977f5fe1a40e13cc72245b38f625ef00879194a6`; see the R7-011 oracle ledger and
-`certification.json` for binary, result, and reviewer evidence hashes. The
-recorded 43 provenance failures remain open and are not authorized by oracle
-certification.
+The latest full implementation comparison uses combined compiler source
+`00b54a515364f9237ce758eb866fa621da5375b5`; the independent holdout
+revalidation remains pinned to `977f5fe1a40e13cc72245b38f625ef00879194a6`.
+See the R7-011 oracle ledger and `certification.json` for binary, result, and
+reviewer evidence hashes. The 43 provenance failures remain open and are not
+authorized by oracle certification.
 
 ## Frozen parent preservation
 

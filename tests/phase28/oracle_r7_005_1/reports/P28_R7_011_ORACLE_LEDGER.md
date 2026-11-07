@@ -151,3 +151,30 @@ rejected with `OWNERSHIP_ILLEGAL_CONSUME` across checker/interpreter/native
 paths and emitted no Rust. Revalidation report and JSON are pinned in
 `reports/holdouts/p28-r7-011-oracle-v2/`. This remains oracle certification
 only; it does not claim Step 0/compiler GO or clone provenance approval.
+
+## Full oracle rerun on integrated source 00b54a51
+
+The frozen 62-row oracle was rerun without changing fixtures, expectations or
+mappings, against integration source
+`00b54a515364f9237ce758eb866fa621da5375b5`. Stable binary snapshots were taken
+after the direct Shadow suite completed: `moss-dev`
+`d8590fa4ff2b85d375db65518315d12a8f5b55c2fc0bea9b242a265c92ea479a` and
+`moss-opt` `73c0b311f6c826f0ed3c05108fc2f5e0412d05305c94710230c12d3ddfb738b1`.
+The source `semantic_checker.cpp` timestamp precedes both corresponding
+compiled object timestamps. No source edit or rebuild was made for this oracle
+measurement.
+
+Result: 62 fixtures; 19 pass all applicable gates; 43 fail on provenance only;
+0 semantic mismatches; 0 missing/invalid provenance blocks; 264 unverified
+clone occurrences. No status or engine outcome differs from the 977f comparison.
+ORACLE-15 passes its consuming rejection. ORACLE-15B/C pass checker, Fast Debug,
+Native Debug and Native Optimized with exact stdout `3`; each retains its
+provenance failure. The expected-input digest remains
+`4f5f2b1849ced45e520c15fc17914cc6e284b47da709d17c5c33d8668f52045a`; no clone
+authorization, compiler GO or Step 0 GO is implied.
+
+Full machine results and generated ledger are pinned in
+`P28_R7_011_00b54_RESULTS.json` (SHA-256
+`4238e632b696d2fd77d14ef6bfcd4c237437d58594063079c0c849668f1c5ecb`) and
+`P28_R7_011_00b54_LEDGER.md` (SHA-256
+`15ecad26cfe307de292424126917478c7ddc65fb90838bb98fc4917c81a01c85`).
