@@ -18912,3 +18912,45 @@ untouched.
   and gate commit from this branch.
 - Full suites were not run on this callback follow-up. No production merge was
   performed.
+
+## P28-R7-011 callback-shadow fix integration checkpoint (2026-11-07)
+
+- Cherry-picked only Team A's scoped commit `d3c1198b` (rebased as
+  `977f5fe1a40e13cc72245b38f625ef00879194a6`) into the isolated integration
+  branch. Team B's already-integrated consumer implementation was not
+  duplicated. New callback gate and shadow fixture are registered and pushed.
+- Rebuilt both compiler binaries using the prescribed build. Hashes:
+  `moss-dev` `8a094a5c5c901ba0ed14153d483685e81c63d890a81aa5b90907abe5cd2aff44`;
+  `moss-opt` `82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4`.
+  Registered callback-authority job passes 1/1 in Default and 1/1 in
+  `MOSS_EST=shadow`; both engines output `12` and `[3, 6]`, and drop/perturb
+  hooks fail closed.
+- Agent 2 and Team C independently gave scoped GO on the callback shadowing
+  fix and registered mutation gate at `977f5fe1`. Their verdict is limited to
+  that slice. Both retain overall Step 0 NO-GO because the field-control job
+  still fails on `swarm_030` Map CollectionView authority.
+- Full Default and Shadow suites on `977f5fe1`: each 116/170 passed, 54 failed,
+  0 skipped. Complete logs and exact failing-job sets:
+  `tmp/suite-step0-callback-default.log` and
+  `tmp/suite-step0-callback-shadow.log`. The failure set is unchanged from
+  `83e42ee`: this commit adds one passing registered callback job and does not
+  recover or regress another job. Relative to the 45b586c2 baseline, recovered
+  jobs remain `check_phase26_1_c1_scope`, `shard_phase46_opt`, and
+  `shard_phase4_diff`; new failures remain `shard_phase5_tooling` and the
+  registered field-control job.
+- Repeated the 150ab36 direct source corpus comparison on `977f5fe1`: 238
+  programs, 236 baseline-OK, 203 candidate-OK, 33 losses, 0 gains. Exact loss
+  list and first diagnostic signatures are in
+  `tmp/phase28-r7-011-corpus-step0-callback/summary.json`; counts are unchanged
+  from `83e42ee` (13 `MOSS_INTERNAL_INVARIANT`, 6 `ROOT_UNHANDLED_RAISE`, 5
+  `OWNERSHIP_ILLEGAL_CONSUME`, 4 `MOSS_COMPILE_ERROR`, 2
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`, and one each
+  `OWNERSHIP_INCOMPATIBLE_JOIN`, `OWNERSHIP_USE_AFTER_CONSUME`,
+  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`).
+- Oracle certification `e3d0cb70` remains pinned to compiler SHA `83e42ee`.
+  Oracle rerun/independent validity check is pending for exact compiler SHA
+  `977f5fe1`; do not cite the old oracle as validation of this source.
+- No production branch was changed. Next: obtain the updated oracle run,
+  disposition/fix the still-red `swarm_030` within the directed scope, then
+  rerun the required suites and request refreshed independent verification.
+  Step 1 and runtime clone authorization remain pending.
