@@ -26330,6 +26330,33 @@ class Checker {
             else if (return_is_copy_projection_of_alias(
                          statement, alias, source, env))
               use = Effect::Read;
+            else if ([&] {
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::ReturnValue ||
+                    handle.argument_index != 0)
+                  continue;
+                const auto* arena = expression_arena(handle.arena_index);
+                if (!arena || handle.expr >= arena->size()) continue;
+                const auto root = est::unparenthesized(*arena, handle.expr);
+                const auto* pipeline =
+                    std::get_if<est::Pipeline>(&arena->at(root));
+                if (!pipeline) continue;
+                const auto input = est::unparenthesized(
+                    *arena, pipeline->input);
+                const auto* input_identifier =
+                    std::get_if<est::Identifier>(&arena->at(input));
+                if (!input_identifier) continue;
+                const auto identity =
+                    binding_identities.find(input_identifier->name);
+                if (identity != binding_identities.end() &&
+                    identity->second == alias_binding_identity)
+                  return true;
+              }
+              return false;
+            }())
+              // Checked functional pipelines READ their source collection and
+              // build or compute their result without extracting the source.
+              use = Effect::Read;
             else if (auto call_effect = checked_nested_call_effect(statement))
               use = *call_effect;
             else
@@ -31038,10 +31065,7 @@ class Checker {
             }
           } else if (auto loc = storage_location(s.b, env.types);
                      loc && !loc->path.empty() &&
-                     std::none_of(loc->path.begin(), loc->path.end(),
-                         [](const string& projection) {
-                           return projection == "[]";
-                         })) {
+                     loc->path.back() != "[]") {
             // A field binding borrows the field value. Its access comes from
             // the uses of this definition just like a local alias; the
             // provisional transfer effect must not decide extraction.
@@ -31251,10 +31275,7 @@ class Checker {
                 source_root = loc->root;
             } else if (auto loc = storage_location(s.b, env.types);
                        loc && !loc->path.empty() &&
-                       std::none_of(loc->path.begin(), loc->path.end(),
-                           [](const string& projection) {
-                             return projection == "[]";
-                           })) {
+                       loc->path.back() != "[]") {
               // A plain field initializer is a borrow alias. Decide whether
               // that alias is READ or CONSUME from its downstream uses.
               source_root = loc->root;

@@ -18743,7 +18743,7 @@ untouched.
   `copy(key)` in the index is rejected as not an exact checked EST handle.
   This is a Step 1 checker-authority dependency; no emitter inference or source
   workaround was accepted.
-- Team A pushed its latest Step 0 branch SHA `4047ce1f9f45d63c2d41058f9cf46d9011ae015e`;
+- Team A earlier Step 0 branch SHA `4047ce1f9f45d63c2d41058f9cf46d9011ae015e` (superseded by `7e1aff28c23a0ea0346e7667e0fb24c561094fbf`);
   it includes the field source/gate checkpoint, status note, and one feedback
   record. The branch's latest gates are not yet a Step 0 GO.
 - Team C's non-oracle Step 3 implementation is still unreviewed and incomplete.
@@ -18752,3 +18752,24 @@ untouched.
   Root-ingress provenance validator expects a `.clone()` span and remains
   unresolved; Team C restored the prohibited oracle harness edit and retained
   the discarded diff only in its worktree `tmp/` for audit. No Step 3 GO.
+
+## Phase 28 R7-011 Team A generalized field READ follow-up (2026-11-07)
+
+- On branch `phase28-r7-011-team-a-step0`, field alias inference now covers a
+  field reached through an indexed collection place and a field alias inside a
+  function parameter body. Functional pipeline returns use the exact EST
+  Pipeline input to classify an alias as READ; no diagnostic wording changed.
+- `check_phase28_l8_field_controls.py` is registered in `tests/run_parallel.py`.
+  It executes Fast Debug and Native for all five READ fixtures; outputs pass as
+  `3`, `3`, `3`, `1\n3`, and `3`. It also confirms `field_consume` rejects at
+  line 9 in both compiler paths with the unchanged diagnostic.
+- `swarm_027` executes in both paths and is labeled the expected Step 2
+  CollectionView failure. `swarm_028` passes both engines with output `100`.
+  `swarm_030` executes in both paths and remains an unexpected/red separate
+  CollectionView failure: Fast Debug reports missing nonescaping CollectionView
+  authority at line 9; Native reports missing checked Map.keys CollectionView
+  authority. It is not skipped or allowlisted.
+- The focused gate therefore remains red solely on `swarm_030`; the existing
+  `check_phase28_local_ownership.py` passes its drop/perturb and ownership matrix.
+  Full Default/Shadow suites were not run on this follow-up. No production merge
+  was performed.

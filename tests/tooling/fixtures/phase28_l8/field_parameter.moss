@@ -1,0 +1,9 @@
+type State:
+  frontier: Vector[Int]
+
+fn size(s: State) -> Int:
+  b = s.frontier
+  return (b |> count)
+
+fn main():
+  echo size(State(frontier = [1, 2, 3]))
