@@ -18705,25 +18705,29 @@ untouched.
 - Team A producer checkpoint `8fe68784119831a2e8403b73d2e2c7c07b81abe2` adds
   optional `est::SemanticFacts::dynamic_callback` on the exact EST pipeline
   stage Call ExprId, keyed by arena/ExprId/checked context. It validates stage
-  ordinal, callee, argument count and callback argument ExprId. Nine callback
-  sources pass checker and native Rust compilation; `cb_spec` native prints
-  `12`. Fast Debug still fails because its consumer has not yet read this
-  marker. Step 0a is pending Team B and mutation coverage.
-- Step 0b remains open: all three required field reproducers still reject in an
-  earlier ownership-expression phase before the downstream use-inference path.
-  Team A traced this to assignments (`Stmt::Kind::Assign`): the Assign branch
-  initializes `source_access=Consume`, recognizes identifier/index aliases but
-  not plain field places, then falls through to the field rejection. The
-  Let/Var use-inference block is not executed for these source statements.
-  Team A is adding the same use-based decision to Assign; no field rejection
-  rule or wording change is planned.
-- Team B has a separate consumer branch based on the producer checkpoint. It
-  reads `dynamic_callback` from the exact stage ExprId/context and dispatches
-  only an already-checked callable value for `true`; `false` retains the
-  existing exact static target path. Step 0 callback output/drop/perturb cases
-  will be included in the single `check_phase28_l8_identity_repros` job.
+  ordinal, callee, argument count and callback argument ExprId. Follow-up
+  `fcc72aba37251243882a90e6e9b104276aa62dd6` uses the checker-owned frame
+  context. All nine callback programs pass checker and native Rust compilation;
+  `cb_spec` prints `12` in both engines on Team B's binary. Dropped and
+  contradictory marker tests fail closed. Team B commit
+  `0c571343b639d7f41aa84476eedb0264a0bc7b4b` reads the exact stage ExprId and
+  context; its existing static W5 call gate passes.
+- Team A field commit `301024e044098e735607783f95a44e497aeccb9c` fixes the
+  Assign-case source recognition: `source_access` had been initialized to
+  Consume, the Assign branch did not identify plain field aliases, and it
+  reached member-place rejection before Let/Var use inference. The fix now
+  derives the binding effect from its uses. `o15b` and `field_read` print `3`
+  in both engines; `field_consume` rejects at line 9 in both compiler paths
+  with the unchanged diagnostic. The three MapHolder controls were migrated to
+  explicit `take(h.m)`; checker validation passes, but native generation for
+  swarm_027 and swarm_030 remains blocked by the separate nonprimitive
+  Map.keys CollectionView authority (swarm_028 native-compiles). No field
+  rejection rule or diagnostic wording was weakened.
 - The combined nine-case script currently stops at `dom_spec` native with the
   known ReturnValue specialization-identity failure (F1); `nest_spec` passes.
+  On Team B's binary, `meth_spec` also fails Fast Debug's exact call-edge
+  lookup; `try_spec`, `cb_spec`, and `dead_tail2` pass. `o15b` and `field_read`
+  pass only when Team A's field fix is included.
   F1/F2 are Step 1 scope, so the permanent script stays unregistered during the
   Step 0 full-suite baseline and will be registered when Step 1 makes all nine
   cross-engine results pass. This avoids treating a known Step 1 reproducer as
@@ -18739,6 +18743,9 @@ untouched.
   `copy(key)` in the index is rejected as not an exact checked EST handle.
   This is a Step 1 checker-authority dependency; no emitter inference or source
   workaround was accepted.
+- Team A pushed its latest Step 0 branch SHA `4047ce1f9f45d63c2d41058f9cf46d9011ae015e`;
+  it includes the field source/gate checkpoint, status note, and one feedback
+  record. The branch's latest gates are not yet a Step 0 GO.
 - Team C's non-oracle Step 3 implementation is still unreviewed and incomplete.
   Its runtime signature is exactly
   `share_domain<T>(&DomainHandle<T>) -> DomainHandle<T>`. The existing
