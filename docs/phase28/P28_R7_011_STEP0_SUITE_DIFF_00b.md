@@ -14,6 +14,8 @@ By name, **52 failing jobs are shared**. The three baseline failures that recove
 
 When `shard_phase5_tooling` runs on 00b, it reports three Emacs-mode failures: `moss-mode-cross-package-xref-source-location-known-regression`, `moss-mode-dependent-package-check-and-compilation`, and `moss-mode-dependent-package-cross-module-navigation`. Since the job was skipped on baseline, this is newly exposed work, not a demonstrated regression. The Build Planner `OWNERSHIP_USE_AFTER_CONSUME` at source line 58 after transfer at line 47 occurs in the separate shared failing job `check_phase15_8_cross_package_fast_debug`; it is not the `shard_phase5_tooling` cause.
 
+The §6 specialization reproduction statuses and exact engine errors are recorded in `docs/phase28/P28_R7_011_IDENTITY_REPROS_00b.md`; `dom_spec` Native and `meth_spec` Fast Debug remain the two known Step 1 failures.
+
 ## Shared failure names
 
 - `check_agent_benchmark`

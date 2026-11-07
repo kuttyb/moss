@@ -19037,7 +19037,10 @@ untouched.
   `8dd275684240dd5287fbfa111b83a091c51a8319`: 19 all-gate PASS, 43
   provenance-only failures, zero semantic mismatches/blocked cases, 264
   unverified clones; frozen expectations unchanged. The suite diff is
-  `docs/phase28/P28_R7_011_STEP0_SUITE_DIFF_00b.md`; oracle details are in
+  `docs/phase28/P28_R7_011_STEP0_SUITE_DIFF_00b.md`; the current §6 engine
+  table is `docs/phase28/P28_R7_011_IDENTITY_REPROS_00b.md` (dom_spec Native
+  and meth_spec Fast Debug remain Step 1 failures; other seven cases pass).
+  The identity repro script is not yet a registered suite job and remains a Step 1 acceptance action. `make check-shadow` also completed at this source with 117/170, 53 fail, 0 skipped; Phase 28 preflight gates passed before the full suite returned the same failures. Step 0 callback/field/oracle scope is closed; overall Phase 28 remains NO-GO. Oracle details are in
   `P28_R7_011_00b54_RESULTS.json` and `P28_R7_011_00b54_LEDGER.md` on the
   oracle branch. No runtime clone site is authorized. Team A producer and Team B consumer Step 1 work continue; Team C's
   four Map-key copy patch remains uncommitted and is held for the shared
