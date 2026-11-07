@@ -1503,6 +1503,41 @@ struct TypedRootIngressDomainCaptureFactV1 {
 using TypedRootIngressDomainCaptureRequirementV1 =
     TypedRootIngressDomainCaptureFactV1;
 
+// The checked type of one exact Root-ingress argument. This carries no
+// ownership or copy authority; it lets consumers classify an argument using
+// the selected handler's checker-validated parameter contract.
+struct TypedRootIngressArgumentTypeFactV1 {
+  enum class Availability { Present, MissingOccurrence, MissingType,
+                            Contradictory };
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId owner_expression_occurrence_id{UINT32_MAX};
+  est::ExprId message_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  std::uint64_t source_fingerprint{0};
+  std::string selected_handler_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef argument_type;
+  Availability availability{Availability::MissingOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        owner_expression_occurrence_id != UINT32_MAX &&
+        message_expression_occurrence_id != UINT32_MAX &&
+        argument_index != UINT32_MAX &&
+        argument_expression_occurrence_id != UINT32_MAX &&
+        source_fingerprint != 0 && !selected_handler_identity.empty() &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        argument_type && argument_type->is_closed();
+  }
+};
+using TypedRootIngressArgumentTypeRequirementV1 =
+    TypedRootIngressArgumentTypeFactV1;
+
 // Checker proof that an exact fresh, nonprimitive Root-ingress payload
 // expression transfers its already-owned value into the synchronous thunk.
 // This authorizes no Moss-level copy and deliberately excludes identifiers,
@@ -2011,6 +2046,10 @@ struct TypedSemanticModuleV1 {
       root_ingress_domain_capture_facts;
   std::vector<TypedRootIngressDomainCaptureRequirementV1>
       required_root_ingress_domain_capture_occurrences;
+  std::vector<TypedRootIngressArgumentTypeFactV1>
+      root_ingress_argument_type_facts;
+  std::vector<TypedRootIngressArgumentTypeRequirementV1>
+      required_root_ingress_argument_type_occurrences;
   std::vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts;
   std::vector<TypedRootIngressPayloadRequirementV1>
       required_root_ingress_payload_occurrences;
@@ -2199,6 +2238,71 @@ struct TypedSemanticModuleV1 {
       throw std::invalid_argument(fact_matches
           ? "duplicate or contradictory Root-ingress domain capture facts"
           : "required Root-ingress domain capture fact missing");
+    return *result;
+  }
+
+  const TypedRootIngressArgumentTypeFactV1&
+  find_root_ingress_argument_type_fact(
+      const TypedRootIngressArgumentTypeRequirementV1& requirement) const {
+    const auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    const auto same = [&](const auto& left, const auto& right) {
+      return left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.est_arena_index == right.est_arena_index &&
+          left.owner_expression_occurrence_id ==
+              right.owner_expression_occurrence_id &&
+          left.message_expression_occurrence_id ==
+              right.message_expression_occurrence_id &&
+          left.argument_index == right.argument_index &&
+          left.argument_expression_occurrence_id ==
+              right.argument_expression_occurrence_id &&
+          left.source_fingerprint == right.source_fingerprint &&
+          left.selected_handler_identity == right.selected_handler_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_type(left.argument_type, right.argument_type) &&
+          left.availability == right.availability;
+    };
+    const auto matches_identity = [&](const auto& candidate) {
+      return candidate.statement_occurrence_id ==
+              requirement.statement_occurrence_id &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.owner_expression_occurrence_id ==
+              requirement.owner_expression_occurrence_id &&
+          candidate.message_expression_occurrence_id ==
+              requirement.message_expression_occurrence_id &&
+          candidate.argument_index == requirement.argument_index &&
+          candidate.argument_expression_occurrence_id ==
+              requirement.argument_expression_occurrence_id &&
+          candidate.source_fingerprint == requirement.source_fingerprint &&
+          candidate.specialization_context ==
+              requirement.specialization_context;
+    };
+    const TypedRootIngressArgumentTypeRequirementV1* retained = nullptr;
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate :
+         required_root_ingress_argument_type_occurrences)
+      if (matches_identity(candidate)) {
+        retained = &candidate;
+        ++requirement_matches;
+      }
+    if (requirement_matches != 1 || !retained ||
+        !same(*retained, requirement) || !retained->is_authoritative())
+      throw std::invalid_argument(
+          "unknown or contradictory required Root-ingress argument type");
+    const TypedRootIngressArgumentTypeFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : root_ingress_argument_type_facts)
+      if (matches_identity(candidate)) {
+        result = &candidate;
+        ++fact_matches;
+      }
+    if (fact_matches != 1 || !result || !same(*result, requirement) ||
+        !result->is_authoritative())
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory Root-ingress argument type facts"
+          : "required Root-ingress argument type fact missing");
     return *result;
   }
 

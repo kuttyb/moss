@@ -18298,3 +18298,37 @@ untouched.
   Feedback validation, Python syntax validation, and `git diff --check` pass.
   Full suites/oracle were not run. Candidate freeze and fresh Team C and Agent 2
   exact-SHA review remain. Do not integrate or push.
+
+### Root-ingress primitive argument TypeRef — active follow-up
+
+- Fresh isolated branch `phase28-r7-010-root-ingress-primitive-type` is based
+  exactly on staging parent `9cad0f78bea157ffee1a3838fdd41373f95dfa5d`; no
+  staging worktree or prior candidate was edited.
+- At the parent SHA, exact fixture
+  `tests/phase28/oracle/fixtures/oracle_45_handler_primitive_rebind_local.moss`
+  failed only in Fast Debug with
+  `MOSS_INTERNAL_INVARIANT Root-ingress argument lacks an exact closed TypeRef`;
+  checker and Native Debug/Optimized passed. The checker retained the Root
+  capture for the nested message, but only wrote argument TypeRefs for fresh
+  nonprimitive payloads on direct statement-form messages. The enclosing echo
+  expression had `main:int`; the literal argument child had no retained type.
+- Checker now emits a distinct exact Root-ingress argument TypeRef fact for
+  each closed-typed message argument. It binds statement, arena, owner root,
+  Message/argument ExprIds, source fingerprint, selected handler and contexts.
+  Fast Debug uses the fact only for type classification. It does not grant a
+  copy or ownership disposition. Missing, duplicate, perturbed identity/type,
+  and context facts fail closed.
+- ORACLE-45 now returns `11` in Fast Debug and Native Debug/Optimized parity.
+  Focused final results: Phase 28 Root-ingress gate 474 scenarios PASS in each
+  of Default and EST-shadow; Phase 21 nested Root-ingress passes in both modes;
+  Phase 4 diff shard exits 0 in both modes. Full Shadow suite: 115/167 PASS,
+  52 FAIL, 0 SKIP. Full Default suite: 115/167 PASS, 52 FAIL, 0 SKIP. The
+  frozen `oracle_r7_005_1` has 60/60 semantic PASS, zero semantic engine
+  disagreements, 19/60 all-applicable-gate PASS, 41 provenance-only failures,
+  and 252 unverified generated `.clone()` occurrences. ORACLE-45 passes checker,
+  Fast Debug, Native Debug, and Native Optimized. The
+  full-suite failures remain the established cross-phase failures; see the
+  candidate run log at `tmp/phase28-r7-010-root-ingress-primitive-type-results/`
+  records the per-job failures.
+  Feedback, Python syntax, and diff validation pass. Candidate freeze and
+  exact-SHA Team C/Agent 2 review remain pending; no push or integration.

@@ -2468,6 +2468,58 @@ class Checker {
           root_ingress_domain_capture_facts_;
       p_.typed_semantics->required_root_ingress_domain_capture_occurrences =
           required_root_ingress_domain_capture_occurrences_;
+      p_.typed_semantics->root_ingress_argument_type_facts =
+          root_ingress_argument_type_facts_;
+      p_.typed_semantics->required_root_ingress_argument_type_occurrences =
+          required_root_ingress_argument_type_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CHECKER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_type_facts.empty())
+        p_.typed_semantics->root_ingress_argument_type_facts.pop_back();
+      if (std::getenv("MOSS_TEST_CHECKER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_type_facts.empty())
+        p_.typed_semantics->root_ingress_argument_type_facts.push_back(
+            p_.typed_semantics->root_ingress_argument_type_facts.back());
+      if (std::getenv("MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_type_facts.empty()) {
+        auto& fact = p_.typed_semantics->root_ingress_argument_type_facts.back();
+        const string field = std::getenv(
+            "MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT");
+        if (field == "statement") ++fact.statement_occurrence_id;
+        else if (field == "arena") ++fact.est_arena_index;
+        else if (field == "owner") ++fact.owner_expression_occurrence_id;
+        else if (field == "message") ++fact.message_expression_occurrence_id;
+        else if (field == "argument") ++fact.argument_expression_occurrence_id;
+        else if (field == "source") ++fact.source_fingerprint;
+        else if (field == "handler") fact.selected_handler_identity += ":wrong";
+        else if (field == "type") fact.argument_type.reset();
+        else if (field == "context") fact.specialization_context += ":wrong";
+        else if (field == "est-context") fact.est_fact_context += ":wrong";
+      }
+#endif
+      if (p_.typed_semantics->root_ingress_argument_type_facts.size() !=
+          p_.typed_semantics->required_root_ingress_argument_type_occurrences.size())
+        throw std::invalid_argument(
+            "Root-ingress argument type checker fact/requirement set is incomplete");
+      for (const auto& requirement :
+           p_.typed_semantics->required_root_ingress_argument_type_occurrences)
+        (void)p_.typed_semantics->find_root_ingress_argument_type_fact(requirement);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DUMP_ROOT_INGRESS_ARGUMENT_TYPE_FACT"))
+        for (const auto& fact : p_.typed_semantics->root_ingress_argument_type_facts)
+          std::cerr << "ROOT_INGRESS_ARGUMENT_TYPE_FACT stmt="
+                    << fact.statement_occurrence_id << " arena="
+                    << fact.est_arena_index << " owner="
+                    << fact.owner_expression_occurrence_id << " message="
+                    << fact.message_expression_occurrence_id << " arg="
+                    << fact.argument_index << " arg_expr="
+                    << fact.argument_expression_occurrence_id << " handler="
+                    << fact.selected_handler_identity << " type="
+                    << (fact.argument_type
+                            ? fact.argument_type->to_canonical_string()
+                            : "<missing>") << " context="
+                    << fact.specialization_context << '\n';
+#endif
       p_.typed_semantics->root_ingress_payload_facts =
           root_ingress_payload_facts_;
       p_.typed_semantics->required_root_ingress_payload_occurrences =
@@ -3280,6 +3332,10 @@ class Checker {
       root_ingress_domain_capture_facts_;
   vector<TypedRootIngressDomainCaptureRequirementV1>
       required_root_ingress_domain_capture_occurrences_;
+  vector<TypedRootIngressArgumentTypeFactV1>
+      root_ingress_argument_type_facts_;
+  vector<TypedRootIngressArgumentTypeRequirementV1>
+      required_root_ingress_argument_type_occurrences_;
   vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts_;
   vector<TypedRootIngressPayloadRequirementV1>
       required_root_ingress_payload_occurrences_;
@@ -37702,7 +37758,70 @@ class Checker {
         root_ingress_domain_capture_facts_.push_back(fact);
         const string selected_handler_identity = fact.selected_handler_identity;
         required_root_ingress_domain_capture_occurrences_.push_back(
-            std::move(fact));
+            fact);
+
+        // Keep the checker-validated handler parameter TypeRef available on
+        // every exact argument edge. Nested Root messages are not necessarily
+        // the root of a Stmt expression handle, so the ordinary root-expression
+        // fact recorder may only retain the enclosing expression's type.
+        for (std::size_t argument_index = 0;
+             argument_index < message.arguments.size() &&
+                 argument_index < handler->params.size();
+             ++argument_index) {
+          const auto argument_id = est::unparenthesized(
+              *arena, message.arguments[argument_index]);
+          const auto parsed_type = moss::Type::parse_canonical(
+              canonical_type_name(handler->params[argument_index].type));
+          if (!parsed_type || !*parsed_type || !(*parsed_type)->is_closed())
+            continue;
+          if (const auto* existing = arena->facts(
+                  argument_id, fact.est_fact_context);
+              existing && existing->type &&
+              !existing->type->structurally_equal(**parsed_type))
+            err(statement.source_file, statement.line,
+                "contradictory checked Root-ingress argument TypeRef",
+                "MOSS_INTERNAL_INVARIANT");
+          TypedRootIngressArgumentTypeFactV1 argument_type;
+          argument_type.statement_occurrence_id = fact.statement_occurrence_id;
+          argument_type.est_arena_index = handle.arena_index;
+          argument_type.owner_expression_occurrence_id = handle.expr;
+          argument_type.message_expression_occurrence_id = message_id;
+          argument_type.argument_index =
+              static_cast<std::uint32_t>(argument_index);
+          argument_type.argument_expression_occurrence_id = argument_id;
+          argument_type.source_fingerprint = handle.source_fingerprint;
+          argument_type.selected_handler_identity = selected_handler_identity;
+          argument_type.specialization_context = "main";
+          argument_type.est_fact_context = fact.est_fact_context;
+          argument_type.argument_type = *parsed_type;
+          argument_type.availability =
+              TypedRootIngressArgumentTypeFactV1::Availability::Present;
+          if (!argument_type.is_authoritative())
+            err(statement.source_file, statement.line,
+                "checker could not retain exact Root-ingress argument TypeRef",
+                "MOSS_INTERNAL_INVARIANT");
+          const auto duplicate = std::find_if(
+              required_root_ingress_argument_type_occurrences_.begin(),
+              required_root_ingress_argument_type_occurrences_.end(),
+              [&](const auto& existing) {
+                return existing.statement_occurrence_id ==
+                        argument_type.statement_occurrence_id &&
+                    existing.est_arena_index == argument_type.est_arena_index &&
+                    existing.owner_expression_occurrence_id ==
+                        argument_type.owner_expression_occurrence_id &&
+                    existing.message_expression_occurrence_id == message_id &&
+                    existing.argument_index == argument_type.argument_index &&
+                    existing.specialization_context == "main";
+              });
+          if (duplicate !=
+              required_root_ingress_argument_type_occurrences_.end())
+            err(statement.source_file, statement.line,
+                "duplicate exact Root-ingress argument TypeRef occurrence",
+                "MOSS_INTERNAL_INVARIANT");
+          root_ingress_argument_type_facts_.push_back(argument_type);
+          required_root_ingress_argument_type_occurrences_.push_back(
+              std::move(argument_type));
+        }
 
         // A Root thunk is 'static, so a fresh nonprimitive constructor or
         // literal argument must transfer its existing owner into the thunk.

@@ -390,11 +390,102 @@
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT Root-ingress checked handler identity mismatch");
 
-    const auto* argument_facts = tree.arena->facts(argument_expression, context);
-    if (!argument_facts || !argument_facts->type ||
-        !argument_facts->type->is_closed())
+    const TypedRootIngressArgumentTypeRequirementV1* argument_type_requirement =
+        nullptr;
+    std::size_t argument_type_requirements = 0;
+    std::size_t argument_type_facts = 0;
+    for (const auto& candidate : program_.typed_semantics
+             ->required_root_ingress_argument_type_occurrences)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == tree.arena_index &&
+          candidate.owner_expression_occurrence_id == owner_expression &&
+          candidate.message_expression_occurrence_id ==
+              exact_message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_expression &&
+          candidate.source_fingerprint == message_handle->source_fingerprint &&
+          candidate.selected_handler_identity == handler_identity &&
+          candidate.specialization_context == context) {
+        argument_type_requirement = &candidate;
+        ++argument_type_requirements;
+      }
+    for (const auto& candidate : program_.typed_semantics
+             ->root_ingress_argument_type_facts)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == tree.arena_index &&
+          candidate.owner_expression_occurrence_id == owner_expression &&
+          candidate.message_expression_occurrence_id ==
+              exact_message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_expression &&
+          candidate.source_fingerprint == message_handle->source_fingerprint &&
+          candidate.selected_handler_identity == handler_identity &&
+          candidate.specialization_context == context)
+        ++argument_type_facts;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_REQUIREMENT"))
+      --argument_type_requirements;
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_REQUIREMENT"))
+      ++argument_type_requirements;
+    if (std::getenv("MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_FACT"))
+      argument_type_facts = 0;
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_FACT"))
+      ++argument_type_facts;
+#endif
+    if (argument_type_requirements != 1 || argument_type_facts != 1 ||
+        !argument_type_requirement)
       throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT Root-ingress argument lacks an exact closed TypeRef");
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument type requirement/fact missing or ambiguous");
+    const TypedRootIngressArgumentTypeFactV1* checked_argument_type = nullptr;
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT")) {
+        auto corrupted = *argument_type_requirement;
+        const std::string field = std::getenv(
+            "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT");
+        if (field == "statement") ++corrupted.statement_occurrence_id;
+        else if (field == "arena") ++corrupted.est_arena_index;
+        else if (field == "owner") ++corrupted.owner_expression_occurrence_id;
+        else if (field == "message") ++corrupted.message_expression_occurrence_id;
+        else if (field == "argument") ++corrupted.argument_expression_occurrence_id;
+        else if (field == "source") ++corrupted.source_fingerprint;
+        else if (field == "handler") corrupted.selected_handler_identity += ":wrong";
+        else if (field == "type") corrupted.argument_type.reset();
+        else if (field == "context") corrupted.specialization_context += ":wrong";
+        else if (field == "est-context") corrupted.est_fact_context += ":wrong";
+        (void)program_.typed_semantics
+            ->find_root_ingress_argument_type_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed Root-ingress argument TypeRef unexpectedly passed");
+      }
+#endif
+      checked_argument_type = &program_.typed_semantics
+          ->find_root_ingress_argument_type_fact(*argument_type_requirement);
+      if (checked_argument_type->selected_handler_identity != handler_identity ||
+          checked_argument_type->est_fact_context !=
+              argument_type_requirement->est_fact_context ||
+          !checked_argument_type->argument_type ||
+          !checked_argument_type->argument_type->is_closed())
+        throw std::invalid_argument(
+            "Root-ingress argument type contradicts selected handler/context");
+      if (const auto* expression_facts = tree.arena->facts(
+              argument_expression, checked_argument_type->est_fact_context);
+          expression_facts && expression_facts->type &&
+          !expression_facts->type->structurally_equal(
+              *checked_argument_type->argument_type))
+        throw std::invalid_argument(
+            "Root-ingress argument type contradicts checked EST TypeRef");
+    } catch (const std::exception& error) {
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+    }
+    const TypeRef& checked_type = checked_argument_type->argument_type;
 
     const auto* argument_call = std::get_if<est::Call>(
         &tree.arena->at(argument_expression));
@@ -418,7 +509,7 @@
           const auto* fact = program_.typed_semantics->find_copy_fact(requirement);
           if (!fact || !fact->is_authoritative() ||
               fact->specialization_context != context ||
-              !fact->result_type->structurally_equal(*argument_facts->type))
+              !fact->result_type->structurally_equal(*checked_type))
             throw std::invalid_argument(
                 "Root-ingress explicit copy fact contradicts checked argument type/context");
           if (copy_authority) {
@@ -528,8 +619,7 @@
           const auto& fact = program_.typed_semantics
               ->find_root_ingress_argument_disposition_fact(*disposition);
           const std::string expected_type = target.params.at(argument_index).type;
-          if (!argument_facts->type ||
-              !fact.payload_type->structurally_equal(*argument_facts->type) ||
+          if (!fact.payload_type->structurally_equal(*checked_type) ||
               fact.payload_type->to_canonical_string() != expected_type ||
               fact.specialization_context != context ||
               fact.action != TypedRootIngressArgumentDispositionFactV1::Action::TransferOwnedBinding ||
@@ -569,7 +659,7 @@
             ->find_root_ingress_payload_fact(*payload_requirement);
         if (fact.selected_handler_identity != handler_identity ||
             !fact.payload_type ||
-            !fact.payload_type->structurally_equal(*argument_facts->type) ||
+            !fact.payload_type->structurally_equal(*checked_type) ||
             fact.action != TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue ||
             !fact.checker_proved_fresh_rvalue || fact.permits_moss_value_copy)
           throw std::invalid_argument(
@@ -581,7 +671,6 @@
       }
     }
 
-    const auto& checked_type = argument_facts->type;
     const bool primitive = checked_type->kind == TypeKind::Primitive &&
         (checked_type->name == "Int" || checked_type->name == "int" ||
          checked_type->name == "Float" || checked_type->name == "float" ||

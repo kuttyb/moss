@@ -476,6 +476,96 @@ def primitive_root_cases(mode, source, expected_output):
     return 1 + 1 + 1 + 1
 
 
+def nested_primitive_argument_type_cases(mode):
+    source = "tests/phase28/oracle/fixtures/oracle_45_handler_primitive_rebind_local.moss"
+    env_mode = os.environ.copy()
+    for key in list(env_mode):
+        if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+            env_mode.pop(key)
+    if mode == "shadow":
+        env_mode["MOSS_EST"] = "shadow"
+
+    def run(args, extra_env=None):
+        env = dict(env_mode)
+        env.update(extra_env or {})
+        return subprocess.run(
+            args, cwd=ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    dumped = run([COMPILER, "check", source, "--json"], {
+        "MOSS_TEST_DUMP_ROOT_INGRESS_ARGUMENT_TYPE_FACT": "1"})
+    response = parse_result(dumped)
+    facts = [line for line in dumped.stderr.splitlines()
+             if line.startswith("ROOT_INGRESS_ARGUMENT_TYPE_FACT ")]
+    assert dumped.returncode == 0 and response.get("ok") and len(facts) == 1, (
+        mode, dumped.stdout, dumped.stderr)
+    for field in ("stmt=", "arena=", "owner=", "message=", "arg=0",
+                  "arg_expr=", "handler=handler:Worker.Increment@",
+                  "type=int", "context=main"):
+        assert field in facts[0], (mode, field, facts[0])
+
+    for hook in (
+        "MOSS_TEST_CHECKER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_FACT",
+        "MOSS_TEST_CHECKER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_FACT",
+    ):
+        failed = run([COMPILER, "check", source, "--json"], {hook: "1"})
+        assert failed.returncode != 0 and (
+            "Root-ingress argument type checker fact/requirement set is incomplete" in
+            failed.stdout + failed.stderr), (mode, hook, failed.stdout, failed.stderr)
+    for field in ("statement", "arena", "owner", "message", "argument",
+                  "source", "handler", "type", "context", "est-context"):
+        failed = run([COMPILER, "check", source, "--json"], {
+            "MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT": field})
+        assert failed.returncode != 0 and "Root-ingress argument type" in (
+            failed.stdout + failed.stderr), (mode, field, failed.stdout, failed.stderr)
+
+    TMP_ROOT.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="root-ingress-nested-primitive-",
+                                     dir=TMP_ROOT) as temporary:
+        directory = Path(temporary)
+        for opt, rust_opt in (("-O0", "0"), ("-O", "3")):
+            native_source = directory / f"oracle45-{rust_opt}.rs"
+            native_binary = directory / f"oracle45-{rust_opt}"
+            generated = run([COMPILER, source, opt, "-o", str(native_source)])
+            assert generated.returncode == 0, (
+                mode, opt, generated.stdout, generated.stderr)
+            root_arg_line = next((line for line in native_source.read_text().splitlines()
+                                  if "__moss_root_arg_" in line), "")
+            root_payload = (root_arg_line.split("let __moss_root_arg_1 = ", 1)[-1]
+                            .split(";", 1)[0])
+            assert root_payload == "10_i64", (mode, opt, root_arg_line)
+            compiled = run(["rustc", "--edition=2021", "-Awarnings", "-C",
+                            f"opt-level={rust_opt}", str(native_source),
+                            "-o", str(native_binary)])
+            assert compiled.returncode == 0, (
+                mode, opt, compiled.stdout, compiled.stderr)
+            native = run([str(native_binary)])
+            assert native.returncode == 0 and native.stdout == "11\n", (
+                mode, opt, native.stdout, native.stderr)
+        fast_debug = run([COMPILER, "run", "--interp", source])
+        assert fast_debug.returncode == 0 and fast_debug.stdout == "11\n", (
+            mode, fast_debug.stdout, fast_debug.stderr)
+
+        for hook in (
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_REQUIREMENT",
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_REQUIREMENT",
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_TYPE_FACT",
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_TYPE_FACT",
+        ):
+            failed = run([COMPILER, "run", "--interp", source], {hook: "1"})
+            assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                failed.stdout + failed.stderr), (
+                    mode, hook, failed.stdout, failed.stderr)
+        for field in ("statement", "arena", "owner", "message", "argument",
+                      "source", "handler", "type", "context", "est-context"):
+            failed = run([COMPILER, "run", "--interp", source], {
+                "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_TYPE_FACT": field})
+            assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                failed.stdout + failed.stderr), (
+                    mode, field, failed.stdout, failed.stderr)
+    return 1 + 2 + 10 + 2 + 1 + 4 + 10
+
+
 def root_argument_disposition_cases(mode):
     env_mode = os.environ.copy()
     for key in list(env_mode):
@@ -666,6 +756,8 @@ def main():
     )
     scenario_count = nested_native_consumer_cases()
     scenario_count += sum(root_argument_disposition_cases(mode)
+                          for mode in ("default", "shadow"))
+    scenario_count += sum(nested_primitive_argument_type_cases(mode)
                           for mode in ("default", "shadow"))
     scenario_count += sum(payload_authority_cases(mode, *fixture)
                          for mode in ("default", "shadow")
