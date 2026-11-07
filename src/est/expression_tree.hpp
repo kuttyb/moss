@@ -72,6 +72,10 @@ struct SemanticFacts {
   std::string specialization_result;
   std::string resolved_target;
   std::optional<Effect> inferred_effect;
+  // Present on a checked functional pipeline stage when the stage invokes a
+  // callable value from a parameter/local binding. The key remains the exact
+  // stage EST occurrence and its checked context.
+  std::optional<bool> dynamic_callback;
 };
 
 enum class LiteralClass : std::uint8_t {
@@ -165,6 +169,10 @@ class Arena {
   bool test_perturb_occurrence_effect(ExprId id, std::string_view context);
   bool test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type);
   bool test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec);
+  bool test_drop_occurrence_dynamic_callback(ExprId id,
+                                            std::string_view context);
+  bool test_perturb_occurrence_dynamic_callback(ExprId id,
+                                               std::string_view context);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.

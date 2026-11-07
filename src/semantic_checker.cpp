@@ -3276,6 +3276,17 @@ class Checker {
     std::uint32_t child_count = 0;
   };
   vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
+  struct PipelineCallbackCursor {
+    std::uint32_t arena_index = UINT32_MAX;
+    est::ExprId pipeline_expr = UINT32_MAX;
+    est::ExprId callback_expr = UINT32_MAX;
+    std::size_t stage_ordinal = SIZE_MAX;
+    std::size_t callback_argument_ordinal = SIZE_MAX;
+    std::size_t stage_argument_count = 0;
+    string stage_callee;
+    bool dynamic_callback = false;
+  };
+  vector<PipelineCallbackCursor> active_pipeline_callback_cursors_;
   mutable vector<std::optional<EstExpressionCursor>> active_effect_cursors_;
   bool suppress_expression_occurrence_capture_ = false;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
@@ -3431,6 +3442,11 @@ class Checker {
       string semantic_target_id;
       std::uint32_t semantic_target_ordinal = UINT32_MAX;
       vector<std::uint32_t> semantic_operand_ordinals;
+      // A pipeline stage may invoke a callable parameter/local value whose
+      // body is checked without a static source EST owner. Preserve that
+      // checker-owned distinction for consumers; do not invent static EST
+      // authority for the callback occurrence.
+      bool dynamic_callback = false;
       vector<Constraint> linked_constraints;
       vector<LinkedCallableFact> linked_callables;
       bool completed = false;
@@ -34376,11 +34392,61 @@ class Checker {
     return result && !unresolved_semantic_type(*result);
   }
 
+  void retain_pipeline_callback_stage_fact(
+      const PipelineCallbackCursor& checked_stage) {
+    auto* arena = expression_arena(checked_stage.arena_index);
+    if (!arena || checked_stage.pipeline_expr >= arena->size() ||
+        checked_stage.stage_ordinal == SIZE_MAX)
+      throw std::invalid_argument(
+          "checked pipeline stage callback fact lacks an exact EST occurrence");
+    const auto pipeline_root = est::unparenthesized(
+        *arena, checked_stage.pipeline_expr);
+    const auto* pipeline =
+        std::get_if<est::Pipeline>(&arena->at(pipeline_root));
+    if (!pipeline || checked_stage.stage_ordinal >= pipeline->stages.size())
+      throw std::invalid_argument(
+          "checked pipeline stage callback fact has a contradictory owner");
+    const auto stage_expr = est::unparenthesized(
+        *arena, pipeline->stages[checked_stage.stage_ordinal]);
+    const auto* stage_call =
+        std::get_if<est::Call>(&arena->at(stage_expr));
+    const auto* stage_callee = stage_call
+        ? std::get_if<est::Identifier>(&arena->at(stage_call->callee))
+        : nullptr;
+    if (!stage_call || !stage_callee ||
+        stage_callee->name != checked_stage.stage_callee ||
+        stage_call->arguments.size() != checked_stage.stage_argument_count ||
+        checked_stage.callback_argument_ordinal >= stage_call->arguments.size() ||
+        est::unparenthesized(*arena,
+            stage_call->arguments[checked_stage.callback_argument_ordinal]) !=
+            checked_stage.callback_expr)
+      throw std::invalid_argument(
+          "checked pipeline stage callback fact contradicts its EST child");
+
+    const string context = expression_fact_context();
+    const auto* existing = arena->facts(stage_expr, context);
+    if (existing && existing->dynamic_callback &&
+        *existing->dynamic_callback != checked_stage.dynamic_callback)
+      throw std::invalid_argument(
+          "checked pipeline stage callback classification is contradictory");
+    est::SemanticFacts facts = existing ? *existing : est::SemanticFacts{};
+    facts.dynamic_callback = checked_stage.dynamic_callback;
+    arena->record_facts(stage_expr, context, std::move(facts));
+    const auto* retained = arena->facts(stage_expr, context);
+    if (!retained || !retained->dynamic_callback ||
+        *retained->dynamic_callback != checked_stage.dynamic_callback)
+      throw std::invalid_argument(
+          "checked pipeline stage callback fact failed publication");
+  }
+
   void retain_functional_callback_specialization(
       const Function& function, const vector<string>& input_types,
       int line, const string& source_callable) {
     if (!current_body_types_) return;
-    const BodyTypeState::ExpressionOccurrence* stage_occurrence = nullptr;
+    BodyTypeState::ExpressionOccurrence* stage_occurrence = nullptr;
+    const PipelineCallbackCursor* exact_callback_cursor =
+        active_pipeline_callback_cursors_.empty()
+            ? nullptr : &active_pipeline_callback_cursors_.back();
     std::uint32_t stage_id = UINT32_MAX;
     if (!current_body_types_->active_expression_occurrences.empty()) {
       stage_id = current_body_types_->active_expression_occurrences.back();
@@ -34392,12 +34458,19 @@ class Checker {
     }
     std::size_t arena_index = UINT32_MAX;
     est::ExprId owner_expr = UINT32_MAX;
-    if (stage_occurrence && stage_occurrence->kind ==
+    if (exact_callback_cursor) {
+      arena_index = exact_callback_cursor->arena_index;
+      owner_expr = exact_callback_cursor->pipeline_expr;
+    } else if (stage_occurrence && stage_occurrence->kind ==
             BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
         !active_est_expression_cursors_.empty() &&
         active_est_expression_cursors_.back()) {
       arena_index = active_est_expression_cursors_.back()->arena_index;
       owner_expr = active_est_expression_cursors_.back()->expr;
+    } else if (stage_occurrence && stage_occurrence->kind ==
+                   BodyTypeState::ExpressionOccurrence::Kind::PipelineStage) {
+      arena_index = stage_occurrence->est_arena_index;
+      owner_expr = stage_occurrence->est_expr_id;
     } else if (stage_occurrence && stage_occurrence->kind ==
                    BodyTypeState::ExpressionOccurrence::Kind::Call &&
                stage_occurrence->operation_id == "call:sort") {
@@ -34412,9 +34485,18 @@ class Checker {
         }
       }
     }
-    const bool pipeline_callback = stage_occurrence &&
-        stage_occurrence->kind ==
-            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage;
+    const bool pipeline_callback = exact_callback_cursor ||
+        (stage_occurrence && stage_occurrence->kind ==
+            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage);
+    const string callback_source = trim(source_callable);
+    const bool dynamic_callback = exact_callback_cursor
+        ? exact_callback_cursor->dynamic_callback
+        : pipeline_callback && stage_occurrence &&
+              stage_occurrence->dynamic_callback;
+    if (pipeline_callback && dynamic_callback) {
+      if (stage_occurrence) stage_occurrence->dynamic_callback = true;
+      return;  // Dynamic callbacks have no static owner arena or static edge.
+    }
     if (!pipeline_callback) {
       if (stage_occurrence &&
           (stage_occurrence->kind !=
@@ -34430,23 +34512,27 @@ class Checker {
     const auto owner_root = est::unparenthesized(*arena, owner_expr);
     est::ExprId callback_id = UINT32_MAX;
     if (pipeline_callback) {
-      if (stage_occurrence->parent_id == UINT32_MAX)
-        throw std::invalid_argument(
-            "checked pipeline callback lacks its exact stage owner");
       std::size_t stage_ordinal = 0;
-      std::size_t matching_stage_occurrences = 0;
-      for (const auto& occurrence :
-           current_body_types_->expression_occurrences) {
-        if (occurrence.parent_id != stage_occurrence->parent_id ||
-            occurrence.kind !=
-                BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
-          continue;
-        if (occurrence.id < stage_id) ++stage_ordinal;
-        if (occurrence.id == stage_id) ++matching_stage_occurrences;
+      if (exact_callback_cursor) {
+        stage_ordinal = exact_callback_cursor->stage_ordinal;
+      } else {
+        if (!stage_occurrence || stage_occurrence->parent_id == UINT32_MAX)
+          throw std::invalid_argument(
+              "checked pipeline callback lacks its exact stage owner");
+        std::size_t matching_stage_occurrences = 0;
+        for (const auto& occurrence :
+             current_body_types_->expression_occurrences) {
+          if (occurrence.parent_id != stage_occurrence->parent_id ||
+              occurrence.kind !=
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
+            continue;
+          if (occurrence.id < stage_id) ++stage_ordinal;
+          if (occurrence.id == stage_id) ++matching_stage_occurrences;
+        }
+        if (matching_stage_occurrences != 1)
+          throw std::invalid_argument(
+              "checked pipeline callback stage identity is missing or duplicated");
       }
-      if (matching_stage_occurrences != 1)
-        throw std::invalid_argument(
-            "checked pipeline callback stage identity is missing or duplicated");
       const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(owner_root));
       if (!pipeline || stage_ordinal >= pipeline->stages.size())
         throw std::invalid_argument(
@@ -34456,25 +34542,31 @@ class Checker {
       const auto* stage_callee = stage_call
           ? std::get_if<est::Identifier>(&arena->at(stage_call->callee))
           : nullptr;
-      const string expected_stage_callee =
-          stage_occurrence->operation_id == "functional:Map" ? "map" :
-          stage_occurrence->operation_id == "functional:Filter" ? "filter" :
-          stage_occurrence->operation_id == "functional:Reduce" ? "reduce" :
-          stage_occurrence->operation_id == "functional:Any" ? "any" :
-          stage_occurrence->operation_id == "functional:All" ? "all" :
-          stage_occurrence->operation_id == "functional:Count" ? "count" : "";
+      const string expected_stage_callee = exact_callback_cursor
+          ? exact_callback_cursor->stage_callee
+          : stage_occurrence->operation_id == "functional:Map" ? "map" :
+            stage_occurrence->operation_id == "functional:Filter" ? "filter" :
+            stage_occurrence->operation_id == "functional:Reduce" ? "reduce" :
+            stage_occurrence->operation_id == "functional:Any" ? "any" :
+            stage_occurrence->operation_id == "functional:All" ? "all" :
+            stage_occurrence->operation_id == "functional:Count" ? "count" : "";
       if (!stage_callee || expected_stage_callee.empty() ||
           stage_callee->name != expected_stage_callee || !stage_call ||
           stage_call->arguments.size() !=
-              stage_occurrence->source_operands.size())
+              (exact_callback_cursor
+                  ? exact_callback_cursor->stage_argument_count
+                  : stage_occurrence->source_operands.size()))
         throw std::invalid_argument(
             "checked pipeline callback stage identity contradicts its EST child");
-      const std::size_t callback_ordinal =
-          stage_occurrence->operation_id == "functional:Reduce" ? 1 : 0;
+      const std::size_t callback_ordinal = exact_callback_cursor
+          ? exact_callback_cursor->callback_argument_ordinal
+          : stage_occurrence->operation_id == "functional:Reduce" ? 1 : 0;
       if (callback_ordinal >= stage_call->arguments.size())
         throw std::invalid_argument(
             "checked pipeline callback argument occurrence is unavailable");
-      callback_id = stage_call->arguments[callback_ordinal];
+      callback_id = exact_callback_cursor
+          ? exact_callback_cursor->callback_expr
+          : stage_call->arguments[callback_ordinal];
     } else {
       const auto* sort_call = std::get_if<est::Call>(&arena->at(owner_root));
       const auto* sort_callee = sort_call
@@ -34904,6 +34996,33 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = functional_pipeline_from_est(expression);
     if (!parsed) return false;
+    const auto stage_callee_name = [](FunctionalNodeKind kind) {
+      switch (kind) {
+        case FunctionalNodeKind::Map: return "map";
+        case FunctionalNodeKind::Filter: return "filter";
+        case FunctionalNodeKind::Reduce: return "reduce";
+        case FunctionalNodeKind::Any: return "any";
+        case FunctionalNodeKind::All: return "all";
+        default: return "";
+      }
+    };
+    const auto has_dynamic_callback = [&](const auto& stage) {
+      if (stage.kind != FunctionalNodeKind::Map &&
+          stage.kind != FunctionalNodeKind::Filter &&
+          stage.kind != FunctionalNodeKind::Reduce &&
+          stage.kind != FunctionalNodeKind::Any &&
+          stage.kind != FunctionalNodeKind::All)
+        return false;
+      const size_t callback_index =
+          stage.kind == FunctionalNodeKind::Reduce ? 1 : 0;
+      if (callback_index >= stage.arguments.size()) return false;
+      const auto callback_name = tree_identifier_name(
+          stage.arguments[callback_index]);
+      if (!callback_name || functions_.count(*callback_name)) return false;
+      const auto binding = env.find(*callback_name);
+      return binding != env.end() &&
+          (callable_identity(binding->second) || open_generic(binding->second));
+    };
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {
       auto& occurrence = current_body_types_->expression_occurrences.at(
@@ -34955,6 +35074,11 @@ class Checker {
         occurrence.operation_id = string("functional:") +
             functional_node_name(stage.kind);
         occurrence.source_operands = stage.arguments;
+        occurrence.dynamic_callback = has_dynamic_callback(stage);
+        const auto& pipeline_owner = current_body_types_->expression_occurrences.at(
+            occurrence.parent_id);
+        occurrence.est_arena_index = pipeline_owner.est_arena_index;
+        occurrence.est_expr_id = pipeline_owner.est_expr_id;
         occurrence.input_type.clear();
         occurrence.output_type.clear();
         const auto operation = std::find_if(
@@ -35211,6 +35335,11 @@ class Checker {
           captured.operation_id = string("functional:") +
               functional_node_name(stage.kind);
           captured.source_operands = stage.arguments;
+          captured.dynamic_callback = has_dynamic_callback(stage);
+          const auto& pipeline_owner = current_body_types_->expression_occurrences.at(
+              captured.parent_id);
+          captured.est_arena_index = pipeline_owner.est_arena_index;
+          captured.est_expr_id = pipeline_owner.est_expr_id;
           captured.input_type = canonical_type_name(state.element_type);
         }
       }
@@ -35223,6 +35352,104 @@ class Checker {
       } stage_occurrence_scope{
           stage_occurrence_id == UINT32_MAX ? nullptr : current_body_types_,
           stage_occurrence_id};
+      PipelineCallbackCursor callback_cursor;
+      const size_t callback_argument =
+          stage.kind == FunctionalNodeKind::Reduce ? 1 : 0;
+      if (callback_argument < stage.arguments.size()) {
+        for (auto cursor_it = active_est_expression_cursors_.rbegin();
+             cursor_it != active_est_expression_cursors_.rend(); ++cursor_it) {
+          if (!*cursor_it) continue;
+          const auto& cursor = **cursor_it;
+          auto* arena = expression_arena(cursor.arena_index);
+          if (!arena || cursor.expr >= arena->size()) continue;
+          const auto pipeline_root = est::unparenthesized(*arena, cursor.expr);
+          const auto* pipeline =
+              std::get_if<est::Pipeline>(&arena->at(pipeline_root));
+          if (!pipeline || stage_index >= pipeline->stages.size()) continue;
+          const auto* stage_call = std::get_if<est::Call>(
+              &arena->at(pipeline->stages[stage_index]));
+          const auto* stage_callee = stage_call
+              ? std::get_if<est::Identifier>(&arena->at(stage_call->callee))
+              : nullptr;
+          if (!stage_call || !stage_callee ||
+              stage_callee->name != stage_callee_name(stage.kind) ||
+              callback_argument >= stage_call->arguments.size())
+            continue;
+          callback_cursor.arena_index = cursor.arena_index;
+          callback_cursor.pipeline_expr = pipeline_root;
+          callback_cursor.callback_expr = est::unparenthesized(
+              *arena, stage_call->arguments[callback_argument]);
+          callback_cursor.stage_ordinal = stage_index;
+          callback_cursor.callback_argument_ordinal = callback_argument;
+          callback_cursor.stage_argument_count = stage_call->arguments.size();
+          callback_cursor.stage_callee = stage_callee_name(stage.kind);
+          callback_cursor.dynamic_callback = has_dynamic_callback(stage);
+          break;
+        }
+      }
+      if (callback_cursor.pipeline_expr == UINT32_MAX &&
+          callback_argument < stage.arguments.size() &&
+          current_check_statement_) {
+        // A specialized body can be checked while an outer call cursor is
+        // active. Recover the pipeline only from this exact statement's
+        // retained EST handles and the stage ordinal currently being checked.
+        std::vector<std::tuple<std::uint32_t, est::ExprId, est::ExprId>> matches;
+        for (const auto& handle :
+             current_check_statement_->expression_handles) {
+          auto* arena = expression_arena(handle.arena_index);
+          if (!arena || handle.expr >= arena->size()) continue;
+          const auto root = est::unparenthesized(*arena, handle.expr);
+          const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(root));
+          if (!pipeline || stage_index >= pipeline->stages.size()) continue;
+          const auto stage_expr = est::unparenthesized(
+              *arena, pipeline->stages[stage_index]);
+          const auto* stage_call =
+              std::get_if<est::Call>(&arena->at(stage_expr));
+          const auto* stage_callee = stage_call
+              ? std::get_if<est::Identifier>(&arena->at(stage_call->callee))
+              : nullptr;
+          if (stage_call && stage_callee &&
+              stage_callee->name == stage_callee_name(stage.kind) &&
+              callback_argument < stage_call->arguments.size())
+            matches.emplace_back(handle.arena_index, root, stage_expr);
+        }
+        std::sort(matches.begin(), matches.end());
+        matches.erase(std::unique(matches.begin(), matches.end()),
+                      matches.end());
+        if (matches.size() == 1) {
+          const auto [arena_index, pipeline_root, stage_expr] = matches.front();
+          auto* arena = expression_arena(arena_index);
+          const auto* stage_call = arena
+              ? std::get_if<est::Call>(&arena->at(stage_expr)) : nullptr;
+          if (stage_call && arena) {
+            callback_cursor.arena_index = arena_index;
+            callback_cursor.pipeline_expr = pipeline_root;
+            callback_cursor.callback_expr = est::unparenthesized(
+                *arena, stage_call->arguments[callback_argument]);
+            callback_cursor.stage_ordinal = stage_index;
+            callback_cursor.callback_argument_ordinal = callback_argument;
+            callback_cursor.stage_argument_count = stage_call->arguments.size();
+            callback_cursor.stage_callee = stage_callee_name(stage.kind);
+            callback_cursor.dynamic_callback = has_dynamic_callback(stage);
+          }
+        }
+      }
+      const bool has_callback_cursor =
+          callback_cursor.arena_index != UINT32_MAX &&
+          callback_cursor.pipeline_expr != UINT32_MAX &&
+          callback_cursor.callback_expr != UINT32_MAX &&
+          callback_cursor.stage_ordinal != SIZE_MAX;
+      if (has_callback_cursor) {
+        active_pipeline_callback_cursors_.push_back(callback_cursor);
+        retain_pipeline_callback_stage_fact(callback_cursor);
+      }
+      struct PipelineCallbackCursorScope {
+        vector<PipelineCallbackCursor>* cursors;
+        ~PipelineCallbackCursorScope() {
+          if (cursors) cursors->pop_back();
+        }
+      } callback_cursor_scope{
+          has_callback_cursor ? &active_pipeline_callback_cursors_ : nullptr};
       string stage_target = string("builtin:functional:") +
           functional_node_name(stage.kind);
       string stage_output_type = canonical_type_name(state.element_type);
