@@ -1,0 +1,9 @@
+fn normalize(x):
+  return x
+
+fn wrap(x):
+  return normalize(x)
+
+fn main():
+  echo wrap(10)
+  echo wrap(3.5)

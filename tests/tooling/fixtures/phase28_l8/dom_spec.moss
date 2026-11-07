@@ -1,0 +1,16 @@
+fn normalize(x):
+  return x
+
+domain Box:
+  value
+
+  fn Set(x):
+    value = normalize(x)
+
+  fn Get():
+    reply value
+
+fn main():
+  intBox = Box()
+  message intBox.Set(10)
+  echo message intBox.Get()

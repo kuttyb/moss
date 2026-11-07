@@ -1,0 +1,13 @@
+fn normalize(x):
+  return x
+
+type Holder:
+  n: Int
+
+  fn get_norm():
+    return normalize(n)
+
+fn main():
+  h = Holder(n = 4)
+  echo h.get_norm()
+  echo normalize(2.5)

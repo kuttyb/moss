@@ -1,0 +1,16 @@
+enum Bad:
+  Big
+fn normalize(x):
+  return x
+
+fn risky(x: Int) -> Int:
+  if x > 100:
+    raise Bad.Big
+  return normalize(x)
+
+fn main():
+  try:
+    echo risky(5)
+  recover:
+    echo 0
+  echo normalize(1.5)
