@@ -24254,8 +24254,21 @@ class Checker {
         ownership.types["self"] = object.name;
         for (const auto& field : object.fields)
           ownership.types[field.name] = field.type;
-        for (const auto& parameter : method.params)
+        const auto overloaded_context = overloaded_method_return_context(
+            method, method.line);
+        const string method_identity = overloaded_context
+            ? overloaded_context->identity
+            : functional_method_context(object, method);
+        for (std::size_t parameter_index = 0;
+             parameter_index < method.params.size(); ++parameter_index) {
+          const auto& parameter = method.params[parameter_index];
           ownership.types[parameter.name] = parameter.type;
+          const string parameter_identity = method_identity +
+              ":parameter:" + std::to_string(parameter_index);
+          ownership.binding_identities[parameter.name] = parameter_identity;
+          ownership.definition_identities[parameter.name] =
+              parameter_identity + ":definition";
+        }
         OwnershipEnv final_ownership = check_ownership(
             method.body, std::move(ownership), nullptr, nullptr);
         if (method.result_expression)
