@@ -118,5 +118,6 @@ SHA-256 is `596bf6b29dc930a90eb26e0b250493f8fd80bd91554f0db1fddcdc3ae1f8b28d`.
 
 This GO approves only the ORACLE-15/15B/15C normative expectations and holdout
 integrity. It does not approve compiler conformance or clone provenance. The
-certification metadata records the GO and PASS; the exact frozen content SHA is
-set by the following certification commit.
+certification metadata records the GO and PASS. Frozen expectation content SHA:
+`55ec3d44980133d2dfe38e30d75b4df8eab78783`; final certification metadata is
+committed separately afterward.

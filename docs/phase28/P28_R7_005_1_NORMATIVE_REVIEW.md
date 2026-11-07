@@ -6,8 +6,10 @@
 expectation file has 62 rows after ORACLE-15 was corrected and ORACLE-15B/C
 were added. Independent normative review returned scoped GO and reviewer-
 controlled holdouts passed on candidate `ff306c27f58738bd7eb9c79b00eb165cead01209`.
-The R7-011 certification metadata records this separate review; it does not
-certify compiler conformance or clone provenance. See
+R7-011 expectations are frozen at
+`55ec3d44980133d2dfe38e30d75b4df8eab78783`; separate certification metadata
+records this review. This does not certify compiler conformance or clone
+provenance. See
 `tests/phase28/oracle_r7_005_1/reports/P28_R7_011_ORACLE_LEDGER.md` for the
 fixture-defect record and current combined-compiler comparison.
 
