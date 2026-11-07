@@ -33205,19 +33205,72 @@ class Checker {
   }
 
   std::optional<EstExpressionCursor> checked_call_est_cursor(
-      const string& callee) const {
-    if (active_est_expression_cursors_.empty() ||
-        !active_est_expression_cursors_.back())
-      return std::nullopt;
-    const auto& cursor = *active_est_expression_cursors_.back();
-    const auto* arena = expression_arena(cursor.arena_index);
-    if (!arena || cursor.expr >= arena->size()) return std::nullopt;
-    const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
-    if (!call) return std::nullopt;
-    const auto* identifier = std::get_if<est::Identifier>(
-        &arena->at(call->callee));
-    if (!identifier || identifier->name != callee) return std::nullopt;
-    return cursor;
+      const string& callee, const vector<string>& arguments) const {
+    auto is_call = [&](const EstExpressionCursor& cursor) {
+      const auto* arena = expression_arena(cursor.arena_index);
+      if (!arena || cursor.expr >= arena->size()) return false;
+      const auto* call = std::get_if<est::Call>(&arena->at(cursor.expr));
+      if (!call) return false;
+      const auto* identifier = std::get_if<est::Identifier>(
+          &arena->at(call->callee));
+      return identifier && identifier->name == callee;
+    };
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back() &&
+        is_call(*active_est_expression_cursors_.back()))
+      return active_est_expression_cursors_.back();
+
+    vector<std::pair<const est::Handle*, string>> roots;
+    if (current_check_statement_) {
+      const auto expressions = statement_expressions(*current_check_statement_);
+      for (const auto& expression : expressions)
+        for (const auto& handle : current_check_statement_->expression_handles)
+          if (handle.source_fingerprint == est::fingerprint(expression))
+            roots.emplace_back(&handle, expression);
+    } else if (current_check_result_function_ &&
+               current_check_result_function_->result_expression) {
+      const auto& expression =
+          *current_check_result_function_->result_expression;
+      for (const auto& handle : current_check_result_function_->expression_handles)
+        if (handle.source_fingerprint == est::fingerprint(expression))
+          roots.emplace_back(&handle, expression);
+    }
+    vector<EstExpressionCursor> matches;
+    std::set<std::pair<uint32_t, est::ExprId>> visited;
+    for (const auto& root : roots) {
+      const auto* handle = root.first;
+      const auto& source = root.second;
+      const auto* arena = expression_arena(handle->arena_index);
+      if (!arena) continue;
+      std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
+        if (id >= arena->size() ||
+            !visited.emplace(handle->arena_index, id).second) return;
+        if (const auto* call = std::get_if<est::Call>(&arena->at(id))) {
+          const auto* identifier = std::get_if<est::Identifier>(
+              &arena->at(call->callee));
+          if (identifier && identifier->name == callee) {
+            auto expression = est::view(*arena, handle->expr, source)
+                                  .source_text(id);
+            string parsed_callee;
+            vector<string> parsed_arguments;
+            if (expression && tree_parse_simple_call(*expression,
+                    parsed_callee, parsed_arguments) &&
+                parsed_callee == callee &&
+                parsed_arguments.size() == arguments.size() &&
+                std::equal(parsed_arguments.begin(), parsed_arguments.end(),
+                    arguments.begin(), [](const string& left,
+                                          const string& right) {
+                      return trim(left) == trim(right);
+                    }))
+              matches.push_back({handle->arena_index, id, source});
+          }
+        }
+        for (const auto child : syntax_children(*arena, id)) visit(child);
+      };
+      visit(handle->expr);
+    }
+    return matches.size() == 1
+        ? std::optional<EstExpressionCursor>{matches.front()} : std::nullopt;
   }
 
   std::optional<uint32_t> checked_call_source_occurrence(
@@ -33287,7 +33340,7 @@ class Checker {
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt,
                            Function** resolved_target = nullptr) {
-    const auto exact_call_cursor = checked_call_est_cursor(name);
+    const auto exact_call_cursor = checked_call_est_cursor(name, args);
     const auto exact_source_occurrence = exact_call_cursor
         ? checked_call_source_occurrence(*exact_call_cursor, name)
         : std::nullopt;

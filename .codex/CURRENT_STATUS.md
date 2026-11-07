@@ -18639,3 +18639,30 @@ untouched.
   registered W5 gate plus nested-only and same-line sibling probes; then freeze
   a new SHA for Team A and Team C review. No staging integration or clone
   authorization has occurred.
+
+## W5 exact EST call identity follow-up after review snapshot
+
+- The checker now resolves the exact call EST cursor from the active cursor, or
+  from the unique source-slice match among the current statement's EST handles
+  when a later specialization pass has no active cursor. It carries arena and
+  ExprId on checker-authored static edges. Source-order edge ordinals are
+  computed over the statement's EST roots, so parent-local nested ordinals
+  cannot collide with same-line siblings. Fast Debug requires the exact pair
+  when it is available and continues to reject missing, duplicate, or
+  contradictory checked edges.
+- The original `two<int> -> one<int>` W5 gate now passes in Default and
+  EST-shadow after the cursor fallback. The new registered nested/sibling
+  fixture passes Fast Debug and Native Debug with exact output `0 3`; nested-only
+  output is `3`. The W5 mutation matrix covers dropped, duplicated, perturbed,
+  and wrong-target edges on both direct and nested fixtures.
+- Revalidated on the current uncommitted source: take fixture matrix 18/18 with
+  checker/Fast Debug/Native Debug/Optimized parity; take/selector corruption
+  gate 22/22 in both modes; W5 gate in both modes; on_fail capture, recovery
+  reinit, and W2 worklist jobs in both modes. Both compiler builds pass. The
+  earlier `a0799127` review branch remains an incomplete snapshot and must not
+  be treated as the current candidate.
+- Next: remove temporary diagnostics (done before this status), run feedback,
+  Python and diff validation, freeze a new candidate SHA, obtain fresh Team A
+  and Team C review, then integrate only the approved exact SHA into isolated
+  staging. Full suites and oracle have not been rerun on this follow-up. Clone
+  authorizations remain pending.
