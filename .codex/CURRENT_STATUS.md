@@ -18344,7 +18344,7 @@ untouched.
   `9cad0f78bea157ffee1a3838fdd41373f95dfa5d` and remains isolated on
   `phase28-r7-010-root-ingress-primitive-type`; after exact-SHA review it was
   fast-forwarded into this isolated integration branch. The implementation is
-  commit dce8e519; a following docs checkpoint is current HEAD 9d4087b4. Neither
+  commit dce8e519; a following docs checkpoint is current HEAD 715946e0. Neither
   commit was pushed.
 - Checker now retains an exact per-argument closed TypeRef fact for Root
   messages; Fast Debug requires the exact fact. It grants no copy or ownership
@@ -18374,12 +18374,12 @@ untouched.
   and the remaining per-site lifetime tests are listed in both reports. The
   FileChunk and FileIO Arc sites still need separate focused artifact coverage.
 
-### Reviewed staging HEAD
+### Reviewed staging HEAD before ReturnValue follow-up
 
-- The isolated integration branch current HEAD is `dee4b6216ff0e02c5a64b9b341598fb4bbdde054`; it contains the reviewed implementation commit
-  `dce8e519238e89bce228f4db90e18c782d1f4def` unchanged. The two docs/status checkpoint commits
-  after it do not change source/test content. The prior staging worktree changes and
-  review reports were restored from retained stash
+- The isolated integration branch was at `715946e0ef3eed3c963100374f8516b864444282`; it contains the reviewed implementation commit
+  `dce8e519238e89bce228f4db90e18c782d1f4def` unchanged. The docs/status
+  checkpoint commits after it do not change source/test content. Prior staging
+  worktree changes and review reports were restored from retained stash
   `preserve 9cad staging status and review reports before reviewed ORACLE-45
   integration`; no prior stash was dropped. `phase28-work` and `main` are
   unchanged.
@@ -18391,3 +18391,85 @@ untouched.
   `Arc::clone`; add focused FileChunk and FileIO artifacts for their two
   additional sites. Continue triaging the 52 remaining full-suite failures by
   the recorded root-cause groups. No runtime clone exception is authorized.
+
+### R7-010 sequence correction — regression triage before clone implementation
+
+- Recovery verification: prior staging was `715946e0ef3eed3c963100374f8516b864444282`;
+  the older `9d4087b4` clone worktree remains preserved. No clone-remediation
+  source edit or authorization row has been made.
+- Corrected measurement boundary: the 60/60 semantic oracle and
+  115/167-PASS Default/Shadow results are tied to the reviewed source commit
+  `dce8e519238e89bce228f4db90e18c782d1f4def`. The later staging commits are
+  documentation-only, but no new full suite or frozen oracle is claimed for
+  exact HEAD `715946e0`.
+- Regression triage status: the preserved `dce8e519` suite summary is 52 FAIL
+  in each mode, but its temporary full `make-check.log` and enumerated failing
+  job list are no longer present in this checkout. The available complete
+  53-failure log is from `9cad0f78`, before ORACLE-45 was repaired. Therefore
+  the exact job-set delta is not established; only the directly reproduced
+  repaired job (`check_phase25_s1_checker_authority`) and net summary change
+  are confirmed. Do not attribute all remaining failures by counts alone.
+- Read-only inspection of retained candidate test logs and checker paths
+  identifies separate families: ReturnValue exact binding/definition and
+  callable/specialization context (checker producers in
+  `semantic_checker.cpp`, exact matching in `typed_semantic_api.hpp`, and
+  Native/Fast Debug reconstruction plus source-free projection); collection
+  and indexed-read authority; Root raise/effect accounting; ownership
+  contract mismatches; plus stale fixtures and downstream package fallout.
+  These are diagnoses to be confirmed against a complete exact-SHA failure
+  ledger, not 52 independently proven causes.
+- Current vertical dependency is the high-recurrence ReturnValue identity
+  seam. The isolated implementation agent is preparing a bounded checker-side
+  parameter identity repair with focused regression and corruption controls. Clone
+  provenance remains paused until this triage checkpoint and repair are
+  complete; no runtime clone is authorized.
+- First confirmed ReturnValue root cause: `check_method_ownership()` records
+  method-parameter types but does not seed `OwnershipEnv.binding_identities`
+  or `definition_identities`. A method returning a nonprimitive parameter
+  therefore reaches ReturnValue production without its exact source identity
+  and fails closed. Reproducer: the existing Phase 21 transport provider's
+  `Carrier.Echo(error: std.ParseError) -> std.ParseError { return error }`.
+  The scoped fix will assign overload-stable identities from the fully
+  qualified method, canonical signature, and parameter index; consumer and
+  `.mossi` behavior will change only if focused evidence demonstrates a
+  separate gap.
+- Focused diagnosis on the isolated worktree confirms the method-only provider
+  now checks, builds natively, runs with the expected reply, and emits a
+  `return_value_fact_v1` bound to
+  `method:provider__Carrier.Echo:parameter:0` and its matching definition ID.
+  The original combined Phase 21 fixture proceeds past the provider and then
+  fails later at its distinct incoming-message-payload-to-reply ownership
+  case; that remains separately triaged.
+- Current candidate-only validation: `make --jobs="$(nproc)" moss-dev`,
+  `tests/tooling/check_phase28_method_parameter_return.py` in Default and
+  EST-shadow, `tests/tooling/check_agent_feedback.py`, and `git diff --check`
+  pass in the isolated worktree. The test is registered in `check-parallel`
+  and `check-shadow`; this focused result does not validate staging HEAD or the
+  full suites. Candidate source was subsequently frozen and requested for
+  independent review as recorded below.
+- Frozen follow-up candidate: `602a14404af92c64f22b20391ed1579e03570098`,
+  worktree `phase28-r7-010-runtime-clone-provenance-715946`, clean at freeze.
+  Fresh exact-SHA Team C and Agent 2 reviews have been requested. No full
+  Default/Shadow suite, frozen oracle, or clone provenance matrix was run on
+  this candidate; no clone files or authorization rows changed. The original
+  Phase 21 aggregate continues past the repaired Carrier method and then fails
+  on a separate message-payload reply ownership case.
+- Independent Team C verdict is scoped PASS on `602a1440`, after a fresh exact-SHA
+  build and Default/Shadow gate. It confirmed method/parameter/definition
+  identity serialization, source-free import checking, and fail-closed
+  corruption hooks. Its overload probe found distinct checker identities and
+  Fast Debug outputs, while Native emitted duplicate Rust method definitions;
+  the candidate does not modify the emitter. Team C classifies this as a
+  separate Native limitation, not an identity collision. Durable report is
+  retained under
+  `docs/phase28/team-c/TEAM_C_METHOD_PARAMETER_RETURN_602A1440.md`. Agent 2
+  also returned scoped GO; see
+  `docs/phase28/agent2-reviews/R7-010-METHOD-PARAMETER-RETURN-602A1440.md`.
+- Reviewed implementation `602a14404af92c64f22b20391ed1579e03570098` has
+  now been fast-forwarded into isolated staging branch
+  `phase28-r7-010-vertical-integration`. Current staging source HEAD is that
+  exact reviewed SHA; reviewer reports and this status update are uncommitted
+  documentation. No full suites/oracle were run on `602a1440`; the 52-failure
+  suite and 60/60 semantic oracle measurements remain tied to `dce8e519`.
+  Clone work remains paused pending the next exact-SHA regression triage and
+  repair checkpoint. `phase28-work` and `main` remain unchanged.
