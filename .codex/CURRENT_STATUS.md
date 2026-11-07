@@ -18272,3 +18272,29 @@ untouched.
   authority 368 scenarios in each mode; Phase 21 ingress gates pass in both
   modes; feedback and diff validation pass. Full suites/oracle were not run.
   New exact-SHA Team C and Agent 2 reviews are pending; no push/integration.
+
+### Root-ingress owned-local argument disposition — active follow-up
+
+- Isolated worktree/branch `tmp/phase28-r7-010-root-argument-disposition` is
+  based exactly on `e3c52c8ed7ec4a1088dd1cd61918b63ab0740c8e`; staging remains
+  untouched. No candidate SHA is frozen yet.
+- The failure in `tests/phase4_materialized_message.moss` reproduced on both
+  e3c52c8e and 8d2de330. The Root message passed an owned `Vector[Int]` local
+  with no exact consume fact. Checker now routes direct local Root arguments
+  through its existing CFG ownership effect/availability analysis and retains
+  an exact statement/arena/owner-root/Message/argument/binding/definition/type
+  disposition. Native and Fast Debug require that fact and move the value into
+  the Root thunk; this authorizes no Moss copy.
+- Use after the message fails with `OWNERSHIP_USE_AFTER_CONSUME`; an explicit
+  `copy(materialized)` allows later reads and has Native/Fast Debug parity.
+  Branch joins and loop-carried availability fail with
+  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`. Direct nonprimitive local
+  arguments on nested non-owner Root message expressions fail with the same
+  checker diagnostic; computed argument expressions remain outside this slice.
+- Final focused evidence after the nested non-owner checker diagnostic:
+  Phase 28 Root-ingress gate reports 414 scenarios PASS in Default and
+  EST-shadow; Phase 21 nested Root-ingress/source-free trailer gate passes in
+  Default and EST-shadow; Phase 4 diff shard exits 0 in Default and EST-shadow.
+  Feedback validation, Python syntax validation, and `git diff --check` pass.
+  Full suites/oracle were not run. Candidate freeze and fresh Team C and Agent 2
+  exact-SHA review remain. Do not integrate or push.

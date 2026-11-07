@@ -2472,6 +2472,56 @@ class Checker {
           root_ingress_payload_facts_;
       p_.typed_semantics->required_root_ingress_payload_occurrences =
           required_root_ingress_payload_occurrences_;
+      p_.typed_semantics->root_ingress_argument_disposition_facts =
+          root_ingress_argument_disposition_facts_;
+      p_.typed_semantics->required_root_ingress_argument_disposition_occurrences =
+          required_root_ingress_argument_disposition_occurrences_;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CHECKER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_disposition_facts.empty())
+        p_.typed_semantics->root_ingress_argument_disposition_facts.pop_back();
+      if (std::getenv("MOSS_TEST_CHECKER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_disposition_facts.empty())
+        p_.typed_semantics->root_ingress_argument_disposition_facts.push_back(
+            p_.typed_semantics->root_ingress_argument_disposition_facts.back());
+      if (std::getenv("MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT") &&
+          !p_.typed_semantics->root_ingress_argument_disposition_facts.empty()) {
+        auto& fact = p_.typed_semantics->root_ingress_argument_disposition_facts.back();
+        const string field = std::getenv(
+            "MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT");
+        if (field == "owner") ++fact.owner_expression_occurrence_id;
+        else if (field == "message") ++fact.message_expression_occurrence_id;
+        else if (field == "argument") ++fact.argument_expression_occurrence_id;
+        else if (field == "binding") fact.source_binding_identity += ":perturbed";
+        else if (field == "definition") fact.source_definition_identity += ":perturbed";
+        else if (field == "type") fact.payload_type.reset();
+        else if (field == "context") fact.specialization_context += ":perturbed";
+      }
+#endif
+      if (p_.typed_semantics->root_ingress_argument_disposition_facts.size() !=
+          p_.typed_semantics->required_root_ingress_argument_disposition_occurrences.size())
+        throw std::invalid_argument(
+            "Root-ingress argument disposition checker fact/requirement set is incomplete");
+      for (const auto& requirement :
+           p_.typed_semantics->required_root_ingress_argument_disposition_occurrences)
+        (void)p_.typed_semantics->find_root_ingress_argument_disposition_fact(requirement);
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_DUMP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+        for (const auto& fact : p_.typed_semantics->root_ingress_argument_disposition_facts)
+          std::cerr << "ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT stmt="
+                    << fact.statement_occurrence_id << " arena="
+                    << fact.est_arena_index << " owner="
+                    << fact.owner_expression_occurrence_id << " message="
+                    << fact.message_expression_occurrence_id << " arg="
+                    << fact.argument_index << " arg_expr="
+                    << fact.argument_expression_occurrence_id << " binding="
+                    << fact.source_binding_identity << " definition="
+                    << fact.source_definition_identity << " type="
+                    << (fact.payload_type ? fact.payload_type->to_canonical_string()
+                                          : "<missing>")
+                    << " access=" << static_cast<int>(fact.required_access)
+                    << " context=" << fact.specialization_context << '\n';
+#endif
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_DROP_ROOT_INGRESS_PAYLOAD_FACT") &&
           !p_.typed_semantics->root_ingress_payload_facts.empty())
@@ -3233,6 +3283,10 @@ class Checker {
   vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts_;
   vector<TypedRootIngressPayloadRequirementV1>
       required_root_ingress_payload_occurrences_;
+  vector<TypedRootIngressArgumentDispositionFactV1>
+      root_ingress_argument_disposition_facts_;
+  vector<TypedRootIngressArgumentDispositionRequirementV1>
+      required_root_ingress_argument_disposition_occurrences_;
   std::unordered_map<std::string, EnumType> option_enums_cache_;
   std::set<std::string> taken_places_in_current_stmt_;
   std::set<std::pair<std::uint32_t, est::ExprId>> visited_takes_in_current_stmt_;
@@ -24702,6 +24756,47 @@ class Checker {
       const string& source,
       const TypeEnv& env,
       const std::unordered_map<string, string>& binding_identities) const {
+    // Root-ingress arguments execute in a move closure. An exact direct local
+    // argument therefore consumes its checked binding; this feeds the same
+    // CFG/reaching-definition/availability analysis as every other consume.
+    if (statement.message_root_ingress && !alias_binding_identity.empty()) {
+      std::set<std::pair<std::uint32_t, est::ExprId>> visited_messages;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.slot == est::ExprSlot::LhsPlace) continue;
+        const auto* arena = expression_arena(handle.arena_index);
+        if (!arena || handle.expr >= arena->size()) continue;
+        std::vector<est::ExprId> pending{handle.expr};
+        while (!pending.empty()) {
+          const auto id = pending.back();
+          pending.pop_back();
+          if (id >= arena->size()) continue;
+          if (const auto* message =
+                  std::get_if<est::Message>(&arena->at(id))) {
+            if (visited_messages.emplace(handle.arena_index, id).second) {
+              if (est::unparenthesized(*arena, handle.expr) != id) {
+                const auto children = syntax_children(*arena, id);
+                pending.insert(pending.end(), children.begin(), children.end());
+                continue;
+              }
+              for (const auto argument : message->arguments) {
+                const auto exact = est::unparenthesized(*arena, argument);
+                const auto* local = std::get_if<est::Identifier>(
+                    &arena->at(exact));
+                if (!local) continue;
+                const auto binding = binding_identities.find(local->name);
+                const auto type = env.find(local->name);
+                if (binding != binding_identities.end() &&
+                    binding->second == alias_binding_identity &&
+                    type != env.end() && transfer_type(type->second))
+                  return Effect::Consume;
+              }
+            }
+          }
+          const auto children = syntax_children(*arena, id);
+          pending.insert(pending.end(), children.begin(), children.end());
+        }
+      }
+    }
     if (writes_definition_for_alias(statement, alias_binding_identity, alias, binding_identities))
       return Effect::Write;
 
@@ -24882,6 +24977,8 @@ class Checker {
     vector<TypedLoopOwnershipRequirementV1> loop_requirements;
     vector<std::vector<uint32_t>> reaching_definitions_by_statement;
     vector<std::set<string>> live_out;
+    vector<std::map<std::uint32_t, TypedLoopOwnershipFactV1::ValueState>>
+        availability_at_statement;
   };
 
   BodyOwnershipFlowAnalysis analyze_body_ownership_flow(
@@ -25496,6 +25593,10 @@ class Checker {
           in_availability_worklist[successor] = true;
         }
     }
+    analysis.availability_at_statement.resize(N);
+    for (size_t statement = 0; statement < N; ++statement)
+      for (const auto& [definition, state] : available_in[statement])
+        analysis.availability_at_statement[statement][definition] = state;
 
     // 6. Live join resolution and legality
     for (size_t J = 0; J < N; ++J) {
@@ -27520,8 +27621,50 @@ class Checker {
       if (tree_parse_message(value, message_receiver, message_handler,
                              message_arguments)) {
         check_ownership_expression(line, message_receiver, env, Effect::Read);
-        for (const auto& argument : message_arguments)
-          check_ownership_expression(line, argument, env, Effect::Read);
+        const est::Arena* message_arena = nullptr;
+        const est::Message* checked_message = nullptr;
+        bool root_message_occurrence = false;
+        if (!ownership_est_expression_cursors_.empty() &&
+            ownership_est_expression_cursors_.back()) {
+          const auto& cursor = *ownership_est_expression_cursors_.back();
+          auto* arena = expression_arena(cursor.arena_index);
+          if (arena && cursor.expr < arena->size()) {
+            const auto exact = est::unparenthesized(*arena, cursor.expr);
+            checked_message = std::get_if<est::Message>(&arena->at(exact));
+            if (checked_message) {
+              message_arena = arena;
+              if (ownership_current_stmt_)
+                for (const auto& handle :
+                     ownership_current_stmt_->expression_handles)
+                  if (handle.arena_index == cursor.arena_index &&
+                      handle.slot != est::ExprSlot::LhsPlace &&
+                      est::unparenthesized(*arena, handle.expr) == exact) {
+                    root_message_occurrence = true;
+                    break;
+                  }
+            }
+          }
+        }
+        for (size_t argument_index = 0;
+             argument_index < message_arguments.size(); ++argument_index) {
+          Effect argument_access = Effect::Read;
+          if (ownership_current_stmt_ &&
+              ownership_current_stmt_->message_root_ingress &&
+              root_message_occurrence &&
+              checked_message && message_arena &&
+              argument_index < checked_message->arguments.size()) {
+            const auto argument_id = est::unparenthesized(*message_arena,
+                checked_message->arguments[argument_index]);
+            if (const auto* local = std::get_if<est::Identifier>(
+                    &message_arena->at(argument_id))) {
+              auto type = env.types.find(local->name);
+              if (type != env.types.end() && transfer_type(type->second))
+                argument_access = Effect::Consume;
+            }
+          }
+          check_ownership_expression(line, message_arguments[argument_index],
+                                     env, argument_access);
+        }
         return;
       }
     }
@@ -29766,6 +29909,160 @@ class Checker {
     }
   }
 
+  void retain_root_ingress_argument_dispositions(
+      const Stmt& statement, std::size_t statement_index) {
+    if (!statement.message_root_ingress || !current_ownership_flow_ ||
+        !current_body_types_ ||
+        statement_index >= current_ownership_flow_->reaching_definitions_by_statement.size() ||
+        statement_index >= current_ownership_flow_->availability_at_statement.size())
+      return;
+    const auto occurrence = current_body_types_->statement_occurrence_ids.find(
+        &statement);
+    if (occurrence == current_body_types_->statement_occurrence_ids.end())
+      return;
+    std::set<std::tuple<std::uint32_t, est::ExprId, est::ExprId,
+                        std::uint32_t>> seen;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot == est::ExprSlot::LhsPlace ||
+          handle.arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[handle.arena_index] ||
+          handle.expr >= p_.expression_arenas[handle.arena_index]->size())
+        continue;
+      auto& arena = *p_.expression_arenas[handle.arena_index];
+      std::vector<est::ExprId> pending{handle.expr};
+      std::set<est::ExprId> visited;
+      while (!pending.empty()) {
+        const auto node_id = pending.back();
+        pending.pop_back();
+        if (node_id >= arena.size() || !visited.insert(node_id).second)
+          continue;
+        const auto* message = std::get_if<est::Message>(&arena.at(node_id));
+        if (message) {
+          if (est::unparenthesized(arena, handle.expr) != node_id) {
+            for (const auto argument : message->arguments) {
+              const auto argument_id = est::unparenthesized(arena, argument);
+              const auto* local = argument_id < arena.size()
+                  ? std::get_if<est::Identifier>(&arena.at(argument_id))
+                  : nullptr;
+              if (!local) continue;
+              const auto* facts = arena.facts(
+                  argument_id, expression_fact_context());
+              if (facts && facts->type && facts->type->is_closed() &&
+                  facts->type->kind != TypeKind::Primitive)
+                err(statement.source_file, statement.line,
+                    "nested Root-ingress nonprimitive local argument lacks an exact owner-root disposition",
+                    "OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN");
+            }
+            const auto children = syntax_children(arena, node_id);
+            pending.insert(pending.end(), children.begin(), children.end());
+            continue;
+          }
+          for (std::size_t argument_index = 0;
+               argument_index < message->arguments.size(); ++argument_index) {
+            const auto argument_id = est::unparenthesized(
+                arena, message->arguments[argument_index]);
+            if (argument_id >= arena.size()) continue;
+            const auto* local = std::get_if<est::Identifier>(
+                &arena.at(argument_id));
+            if (!local) continue;  // Explicit copies and computed values have their own authority.
+            const auto* expression_facts = arena.facts(
+                argument_id, expression_fact_context());
+            const TypeRef checked_type = expression_facts
+                ? expression_facts->type : nullptr;
+            if (!checked_type || !checked_type->is_closed() ||
+                checked_type->kind == TypeKind::Primitive)
+              continue;
+
+            std::vector<std::uint32_t> reaching;
+            for (const auto definition_id :
+                 current_ownership_flow_->reaching_definitions_by_statement[statement_index]) {
+              if (definition_id < current_ownership_flow_->definitions.size() &&
+                  current_ownership_flow_->definitions[definition_id].name ==
+                      local->name)
+                reaching.push_back(definition_id);
+            }
+            if (reaching.size() != 1)
+              err(statement.source_file, statement.line,
+                  "Root-ingress argument transfer lacks one exact reaching definition",
+                  "OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN");
+            const auto definition_id = reaching.front();
+            const auto& definition =
+                current_ownership_flow_->definitions[definition_id];
+            const auto state = current_ownership_flow_->availability_at_statement[
+                statement_index].find(definition_id);
+            if (!definition.is_owned || definition.demand != Effect::Consume ||
+                definition.binding_identity.empty() ||
+                definition.def_identity.empty() || !definition.value_type ||
+                !definition.value_type->structurally_equal(*checked_type) ||
+                state == current_ownership_flow_->availability_at_statement[
+                    statement_index].end() ||
+                state->second != TypedLoopOwnershipFactV1::ValueState::Available)
+              err(statement.source_file, statement.line,
+                  "Root-ingress argument transfer is not proven available and owned",
+                  "OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN");
+            if (!expression_facts || !expression_facts->type ||
+                !expression_facts->type->is_closed() ||
+                !expression_facts->type->structurally_equal(*checked_type))
+              err(statement.source_file, statement.line,
+                  "Root-ingress argument transfer lacks its exact closed TypeRef",
+                  "MOSS_INTERNAL_INVARIANT");
+            if (!seen.emplace(handle.arena_index, handle.expr, node_id,
+                              static_cast<std::uint32_t>(argument_index)).second)
+              err(statement.source_file, statement.line,
+                  "duplicate Root-ingress argument disposition occurrence",
+                  "MOSS_INTERNAL_INVARIANT");
+            TypedRootIngressArgumentDispositionFactV1 fact;
+            fact.statement_occurrence_id = occurrence->second;
+            fact.est_arena_index = handle.arena_index;
+            fact.owner_expression_occurrence_id = handle.expr;
+            fact.message_expression_occurrence_id = node_id;
+            fact.argument_index = static_cast<std::uint32_t>(argument_index);
+            fact.argument_expression_occurrence_id = argument_id;
+            fact.source_fingerprint = handle.source_fingerprint;
+            fact.source_binding_identity = definition.binding_identity;
+            fact.source_definition_identity = definition.def_identity;
+            fact.specialization_identity = local_ownership_specialization_identity();
+            fact.specialization_context = "main";
+            fact.est_fact_context = expression_fact_context();
+            fact.payload_type = checked_type;
+            fact.required_access = Effect::Consume;
+            fact.source_is_owned = true;
+            fact.checker_proved_available = true;
+            fact.availability =
+                TypedRootIngressArgumentDispositionFactV1::Availability::Present;
+            if (!fact.is_authoritative())
+              err(statement.source_file, statement.line,
+                  "checker could not retain exact Root-ingress argument disposition",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto duplicate = std::find_if(
+                required_root_ingress_argument_disposition_occurrences_.begin(),
+                required_root_ingress_argument_disposition_occurrences_.end(),
+                [&](const auto& existing) {
+                  return existing.statement_occurrence_id ==
+                          fact.statement_occurrence_id &&
+                      existing.est_arena_index == fact.est_arena_index &&
+                      existing.owner_expression_occurrence_id ==
+                          fact.owner_expression_occurrence_id &&
+                      existing.message_expression_occurrence_id ==
+                          fact.message_expression_occurrence_id &&
+                      existing.argument_index == fact.argument_index;
+                });
+            if (duplicate !=
+                required_root_ingress_argument_disposition_occurrences_.end())
+              err(statement.source_file, statement.line,
+                  "duplicate Root-ingress argument disposition requirement",
+                  "MOSS_INTERNAL_INVARIANT");
+            root_ingress_argument_disposition_facts_.push_back(fact);
+            required_root_ingress_argument_disposition_occurrences_.push_back(
+                fact);
+          }
+        }
+        const auto children = syntax_children(arena, node_id);
+        pending.insert(pending.end(), children.begin(), children.end());
+      }
+    }
+  }
+
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
                              const Handler* current_handler,
@@ -29805,6 +30102,7 @@ class Checker {
             : slot(target), prior(target) { slot = current; }
         ~OwnershipStatementScope() { slot = prior; }
       } ownership_statement_scope(ownership_current_stmt_, &s);
+      retain_root_ingress_argument_dispositions(s, index);
 
       struct OwnershipExceptionalScope {
         Checker& checker;
@@ -30993,7 +31291,26 @@ class Checker {
             if (type && fileio_scoped_type(*type))
               err(s.line, "FileIO and ranges cannot cross a message boundary",
                   "FILEIO_BOUNDARY_ESCAPE");
-            check_ownership_expression(s.line, arg, env, Effect::Read);
+            Effect argument_access = Effect::Read;
+            if (s.message_root_ingress) {
+              for (const auto& handle : s.expression_handles) {
+                if (handle.slot != est::ExprSlot::Receiver) continue;
+                auto* arena = expression_arena(handle.arena_index);
+                if (!arena || handle.expr >= arena->size()) continue;
+                const auto root = est::unparenthesized(*arena, handle.expr);
+                const auto* message = std::get_if<est::Message>(
+                    &arena->at(root));
+                if (!message || arg_index >= message->arguments.size()) continue;
+                const auto argument_id = est::unparenthesized(
+                    *arena, message->arguments[arg_index]);
+                if (const auto* local = std::get_if<est::Identifier>(
+                        &arena->at(argument_id)); local && type &&
+                    transfer_type(*type))
+                  argument_access = Effect::Consume;
+                break;
+              }
+            }
+            check_ownership_expression(s.line, arg, env, argument_access);
             if (arg_index < handler->params.size()) {
               require_cross_domain_value(s.line, arg, handler->params[arg_index].type,
                                          env, "");

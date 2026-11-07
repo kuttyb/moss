@@ -443,6 +443,108 @@
       }
     }
 
+    const auto* argument_local = std::get_if<est::Identifier>(
+        &tree.arena->at(argument_expression));
+    if (argument_local) {
+      const TypedRootIngressArgumentDispositionRequirementV1* disposition =
+          nullptr;
+      std::size_t disposition_requirements = 0;
+      std::size_t disposition_facts = 0;
+      est::ExprId owner_expression = tree.root;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_DISPOSITION_OWNER"))
+        ++owner_expression;
+#endif
+      for (const auto& candidate : program_.typed_semantics
+               ->required_root_ingress_argument_disposition_occurrences)
+        if (candidate.statement_occurrence_id ==
+                statement->checked_statement_occurrence_id &&
+            candidate.est_arena_index == tree.arena_index &&
+            candidate.owner_expression_occurrence_id == owner_expression &&
+            candidate.message_expression_occurrence_id ==
+                exact_message_expression &&
+            candidate.argument_index == argument_index &&
+            candidate.argument_expression_occurrence_id ==
+                argument_expression &&
+            candidate.source_fingerprint == message_handle->source_fingerprint &&
+            candidate.specialization_context == context) {
+          disposition = &candidate;
+          ++disposition_requirements;
+        }
+      for (const auto& candidate : program_.typed_semantics
+               ->root_ingress_argument_disposition_facts)
+        if (candidate.statement_occurrence_id ==
+                statement->checked_statement_occurrence_id &&
+            candidate.est_arena_index == tree.arena_index &&
+            candidate.owner_expression_occurrence_id == owner_expression &&
+            candidate.message_expression_occurrence_id ==
+                exact_message_expression &&
+            candidate.argument_index == argument_index &&
+            candidate.argument_expression_occurrence_id ==
+                argument_expression &&
+            candidate.source_fingerprint == message_handle->source_fingerprint &&
+            candidate.specialization_context == context)
+          ++disposition_facts;
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT"))
+        --disposition_requirements;
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT"))
+        ++disposition_requirements;
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+        disposition_facts = 0;
+      if (std::getenv(
+              "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+        ++disposition_facts;
+#endif
+      if (disposition_requirements != 0 || disposition_facts != 0) {
+        if (disposition_requirements != 1 || disposition_facts != 1 ||
+            !disposition)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT Root-ingress argument disposition requirement/fact missing or ambiguous");
+        try {
+#ifdef MOSS_TEST_BUILD
+          if (std::getenv(
+                  "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT")) {
+            auto corrupted = *disposition;
+            const std::string field = std::getenv(
+                "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT");
+            if (field == "owner") ++corrupted.owner_expression_occurrence_id;
+            else if (field == "message") ++corrupted.message_expression_occurrence_id;
+            else if (field == "argument") ++corrupted.argument_expression_occurrence_id;
+            else if (field == "binding") corrupted.source_binding_identity += ":wrong";
+            else if (field == "definition") corrupted.source_definition_identity += ":wrong";
+            else if (field == "type") corrupted.payload_type.reset();
+            else if (field == "context") corrupted.specialization_context += ":wrong";
+            (void)program_.typed_semantics
+                ->find_root_ingress_argument_disposition_fact(corrupted);
+            throw std::runtime_error(
+                "perturbed Root-ingress argument disposition unexpectedly passed");
+          }
+#endif
+          const auto& fact = program_.typed_semantics
+              ->find_root_ingress_argument_disposition_fact(*disposition);
+          const std::string expected_type = target.params.at(argument_index).type;
+          if (!argument_facts->type ||
+              !fact.payload_type->structurally_equal(*argument_facts->type) ||
+              fact.payload_type->to_canonical_string() != expected_type ||
+              fact.specialization_context != context ||
+              fact.action != TypedRootIngressArgumentDispositionFactV1::Action::TransferOwnedBinding ||
+              fact.required_access != Effect::Consume || !fact.source_is_owned ||
+              !fact.checker_proved_available)
+            throw std::invalid_argument(
+                "Root-ingress argument disposition contradicts exact handler/type/Consume action");
+          return "transfer";
+        } catch (const std::exception& error) {
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
+        }
+      }
+    }
+
     const TypedRootIngressPayloadRequirementV1* payload_requirement = nullptr;
     std::size_t payload_requirement_count = 0;
     for (const auto& candidate : program_.typed_semantics
@@ -553,9 +655,27 @@
         ~RootIngressCopyAuthorityScope() { slot = std::move(previous); }
       } copy_authority_scope{active_root_ingress_copy_authority_,
                              previous_copy_authority};
-      Value value = evaluate_tree_node(tree,
-          est::unparenthesized(*tree.arena, message_node.arguments[index]),
-          caller, line, output);
+      const auto argument_expression = est::unparenthesized(
+          *tree.arena, message_node.arguments[index]);
+      Value value;
+      if (authority == "transfer") {
+        const auto* identifier = std::get_if<est::Identifier>(
+            &tree.arena->at(argument_expression));
+        if (!identifier || caller.aliases.count(identifier->name) ||
+            caller.consumed.count(identifier->name))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT Root-ingress Consume authority does not name an available owned local");
+        auto source = caller.locals.find(identifier->name);
+        if (source == caller.locals.end())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT Root-ingress Consume source local is unavailable");
+        value = std::move(source->second);
+        caller.locals.erase(source);
+        caller.consumed.insert(identifier->name);
+      } else {
+        value = evaluate_tree_node(tree, argument_expression,
+                                   caller, line, output);
+      }
       const auto implicit_count = root_ingress_implicit_independent_calls_ -
           prior_independent_count;
       const auto copy_count = root_ingress_explicit_copy_evaluations_ -

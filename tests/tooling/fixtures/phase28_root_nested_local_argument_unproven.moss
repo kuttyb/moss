@@ -1,0 +1,15 @@
+type Payload:
+  value: Int
+
+domain Sink:
+  fn Accept(payload: Payload) -> Int:
+    reply payload.value
+
+  fn Wrap(value: Int) -> Int:
+    reply value
+
+fn main():
+  sink = Sink()
+  payload = Payload(value = 9)
+  total = message sink.Wrap(message sink.Accept(payload))
+  echo total

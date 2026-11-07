@@ -1554,6 +1554,53 @@ struct TypedRootIngressPayloadFactV1 {
 };
 using TypedRootIngressPayloadRequirementV1 = TypedRootIngressPayloadFactV1;
 
+// Checker authorization to transfer an already-owned local into one exact
+// synchronous Root-ingress message argument. This grants no Moss copy.
+struct TypedRootIngressArgumentDispositionFactV1 {
+  enum class Action { TransferOwnedBinding };
+  enum class Availability { Present, MissingOccurrence, MissingBinding,
+                            MissingDefinition, MissingType, NotOwned,
+                            NotAvailable, Ambiguous, Contradictory };
+  std::uint32_t statement_occurrence_id{UINT32_MAX};
+  std::uint32_t est_arena_index{UINT32_MAX};
+  est::ExprId owner_expression_occurrence_id{UINT32_MAX};
+  est::ExprId message_expression_occurrence_id{UINT32_MAX};
+  std::uint32_t argument_index{UINT32_MAX};
+  est::ExprId argument_expression_occurrence_id{UINT32_MAX};
+  std::uint64_t source_fingerprint{0};
+  std::string source_binding_identity;
+  std::string source_definition_identity;
+  std::string specialization_identity;
+  std::string specialization_context;
+  std::string est_fact_context;
+  TypeRef payload_type;
+  Action action{Action::TransferOwnedBinding};
+  Effect required_access{Effect::Consume};
+  bool source_is_owned{false};
+  bool checker_proved_available{false};
+  Availability availability{Availability::MissingOccurrence};
+
+  bool is_authoritative() const noexcept {
+    return availability == Availability::Present &&
+        statement_occurrence_id != UINT32_MAX &&
+        est_arena_index != UINT32_MAX &&
+        owner_expression_occurrence_id != UINT32_MAX &&
+        message_expression_occurrence_id != UINT32_MAX &&
+        argument_index != UINT32_MAX &&
+        argument_expression_occurrence_id != UINT32_MAX &&
+        source_fingerprint != 0 &&
+        !source_binding_identity.empty() &&
+        !source_definition_identity.empty() &&
+        !specialization_context.empty() && !est_fact_context.empty() &&
+        payload_type && payload_type->is_closed() &&
+        action == Action::TransferOwnedBinding &&
+        required_access == Effect::Consume && source_is_owned &&
+        checker_proved_available;
+  }
+};
+using TypedRootIngressArgumentDispositionRequirementV1 =
+    TypedRootIngressArgumentDispositionFactV1;
+
 enum class TypedMatchScrutineeKindV1 { Enum, Option };
 
 struct TypedMatchArmFactV1 {
@@ -1967,6 +2014,10 @@ struct TypedSemanticModuleV1 {
   std::vector<TypedRootIngressPayloadFactV1> root_ingress_payload_facts;
   std::vector<TypedRootIngressPayloadRequirementV1>
       required_root_ingress_payload_occurrences;
+  std::vector<TypedRootIngressArgumentDispositionFactV1>
+      root_ingress_argument_disposition_facts;
+  std::vector<TypedRootIngressArgumentDispositionRequirementV1>
+      required_root_ingress_argument_disposition_occurrences;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
   // Keep their exact IDs visible to consumers until A2 supplies summaries.
@@ -2209,6 +2260,77 @@ struct TypedSemanticModuleV1 {
       throw std::invalid_argument(fact_matches
           ? "duplicate or contradictory Root-ingress payload facts"
           : "required Root-ingress payload fact missing");
+    return *result;
+  }
+
+  const TypedRootIngressArgumentDispositionFactV1&
+  find_root_ingress_argument_disposition_fact(
+      const TypedRootIngressArgumentDispositionRequirementV1& requirement) const {
+    auto same_type = [](const TypeRef& left, const TypeRef& right) {
+      return left && right && left->structurally_equal(*right);
+    };
+    auto same = [&](const auto& left, const auto& right) {
+      return left.statement_occurrence_id == right.statement_occurrence_id &&
+          left.est_arena_index == right.est_arena_index &&
+          left.owner_expression_occurrence_id ==
+              right.owner_expression_occurrence_id &&
+          left.message_expression_occurrence_id ==
+              right.message_expression_occurrence_id &&
+          left.argument_index == right.argument_index &&
+          left.argument_expression_occurrence_id ==
+              right.argument_expression_occurrence_id &&
+          left.source_fingerprint == right.source_fingerprint &&
+          left.source_binding_identity == right.source_binding_identity &&
+          left.source_definition_identity == right.source_definition_identity &&
+          left.specialization_identity == right.specialization_identity &&
+          left.specialization_context == right.specialization_context &&
+          left.est_fact_context == right.est_fact_context &&
+          same_type(left.payload_type, right.payload_type) &&
+          left.action == right.action &&
+          left.required_access == right.required_access &&
+          left.source_is_owned == right.source_is_owned &&
+          left.checker_proved_available == right.checker_proved_available &&
+          left.availability == right.availability;
+    };
+    auto matches_identity = [&](const auto& candidate) {
+      return candidate.statement_occurrence_id ==
+              requirement.statement_occurrence_id &&
+          candidate.est_arena_index == requirement.est_arena_index &&
+          candidate.owner_expression_occurrence_id ==
+              requirement.owner_expression_occurrence_id &&
+          candidate.message_expression_occurrence_id ==
+              requirement.message_expression_occurrence_id &&
+          candidate.argument_index == requirement.argument_index &&
+          candidate.argument_expression_occurrence_id ==
+              requirement.argument_expression_occurrence_id &&
+          candidate.source_fingerprint == requirement.source_fingerprint &&
+          candidate.specialization_identity == requirement.specialization_identity &&
+          candidate.specialization_context == requirement.specialization_context;
+    };
+    const TypedRootIngressArgumentDispositionRequirementV1* retained = nullptr;
+    std::size_t requirement_matches = 0;
+    for (const auto& candidate :
+         required_root_ingress_argument_disposition_occurrences)
+      if (matches_identity(candidate)) {
+        retained = &candidate;
+        ++requirement_matches;
+      }
+    if (requirement_matches != 1 || !retained || !same(*retained, requirement) ||
+        !retained->is_authoritative())
+      throw std::invalid_argument(
+          "unknown or contradictory Root-ingress argument disposition requirement");
+    const TypedRootIngressArgumentDispositionFactV1* result = nullptr;
+    std::size_t fact_matches = 0;
+    for (const auto& candidate : root_ingress_argument_disposition_facts)
+      if (matches_identity(candidate)) {
+        result = &candidate;
+        ++fact_matches;
+      }
+    if (fact_matches != 1 || !result || !same(*result, requirement) ||
+        !result->is_authoritative())
+      throw std::invalid_argument(fact_matches
+          ? "duplicate or contradictory Root-ingress argument disposition facts"
+          : "required Root-ingress argument disposition fact missing");
     return *result;
   }
 

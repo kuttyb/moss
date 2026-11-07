@@ -240,11 +240,15 @@ string root_ingress_message(const string& receiver, const string& handler,
             occurrence, static_cast<std::uint32_t>(index), target_domain,
             target_handler, target_handler.params.at(index).type);
     }
+    const auto* argument_disposition_fact =
+        resolve_root_ingress_argument_disposition(
+            occurrence, static_cast<std::uint32_t>(index),
+            target_handler.params.at(index).type);
     rendered << "let " << temp << " = "
              << message_arg(arguments[index], target_handler.params.at(index).type, d,
                             locals, types,
                             message_argument_plans ? message_argument_plans->at(index) : 0,
-                            nullptr, payload_fact)
+                            nullptr, payload_fact, argument_disposition_fact)
              << "; ";
     argument_locals.push_back(temp);
   }

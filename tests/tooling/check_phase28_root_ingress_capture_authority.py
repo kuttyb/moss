@@ -284,37 +284,37 @@ def payload_authority_cases(mode, source, rust_value, expected_output):
         assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
             result.stdout + result.stderr), (
                 mode, source, hook, result.stdout, result.stderr)
-    unsupported = (
-        "tests/phase28/r7_010/root_ingress_local_without_copy.moss",
-    )
-    unsupported_dir = Path(tempfile.mkdtemp(
-        prefix="root-ingress-payload-unsupported-", dir=TMP_ROOT))
+    owned_local = "tests/phase28/r7_010/root_ingress_local_without_copy.moss"
+    owned_local_dir = Path(tempfile.mkdtemp(
+        prefix="root-ingress-owned-local-", dir=TMP_ROOT))
     try:
-        for unsupported_source in unsupported:
-            checked = run([COMPILER, "check", unsupported_source, "--json"], {
-                "MOSS_TEST_DUMP_ROOT_INGRESS_PAYLOAD_FACT": "1"})
-            response = parse_result(checked)
-            assert checked.returncode == 0 and response.get("ok"), (
-                mode, unsupported_source, checked.stdout, checked.stderr)
-            assert "ROOT_INGRESS_PAYLOAD_FACT " not in checked.stderr, (
-                mode, unsupported_source, checked.stderr)
-            failed_closed = run([COMPILER, unsupported_source, "-o",
-                                 str(unsupported_dir / "unsupported.rs")])
-            assert failed_closed.returncode != 0 and (
-                "MOSS_INTERNAL_INVARIANT root message payload needs" in
-                failed_closed.stdout + failed_closed.stderr), (
-                    mode, unsupported_source, failed_closed.stdout,
-                    failed_closed.stderr)
-            interp_failed_closed = run([COMPILER, "run", "--interp",
-                                        unsupported_source])
-            assert interp_failed_closed.returncode != 0 and (
-                "MOSS_INTERNAL_INVARIANT nonprimitive Root-ingress argument lacks" in
-                interp_failed_closed.stdout + interp_failed_closed.stderr), (
-                    mode, unsupported_source, interp_failed_closed.stdout,
-                    interp_failed_closed.stderr)
+        checked = run([COMPILER, "check", owned_local, "--json"], {
+            "MOSS_TEST_DUMP_ROOT_INGRESS_PAYLOAD_FACT": "1",
+            "MOSS_TEST_DUMP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": "1"})
+        response = parse_result(checked)
+        assert checked.returncode == 0 and response.get("ok"), (
+            mode, owned_local, checked.stdout, checked.stderr)
+        assert "ROOT_INGRESS_PAYLOAD_FACT " not in checked.stderr and (
+            "ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT " in checked.stderr), (
+                mode, owned_local, checked.stderr)
+        rust_path = owned_local_dir / "owned_local.rs"
+        binary_path = owned_local_dir / "owned_local"
+        generated = run([COMPILER, owned_local, "-O0", "-o", str(rust_path)])
+        assert generated.returncode == 0, (
+            mode, owned_local, generated.stdout, generated.stderr)
+        compiled = run(["rustc", "--edition=2021", "-Dwarnings", str(rust_path),
+                        "-o", str(binary_path)])
+        assert compiled.returncode == 0, (
+            mode, owned_local, compiled.stdout, compiled.stderr)
+        native = run([str(binary_path)])
+        debug = run([COMPILER, "run", "--interp", owned_local])
+        assert native.returncode == 0 and native.stdout == "accepted\n" and (
+            debug.returncode == 0 and debug.stdout == native.stdout), (
+                mode, owned_local, native.stdout, native.stderr,
+                debug.stdout, debug.stderr)
     finally:
-        shutil.rmtree(unsupported_dir)
-    return 1 + 2 + 6 + 1 + 4 + 6 + 1 + len(unsupported) * 3 + 3
+        shutil.rmtree(owned_local_dir)
+    return 1 + 2 + 6 + 1 + 4 + 6 + 1 + 1 + 1 + 1 + 3
 
 
 def explicit_copy_root_cases(mode, source, expected_output):
@@ -476,12 +476,197 @@ def primitive_root_cases(mode, source, expected_output):
     return 1 + 1 + 1 + 1
 
 
+def root_argument_disposition_cases(mode):
+    env_mode = os.environ.copy()
+    for key in list(env_mode):
+        if key.startswith("MOSS_TEST_") or key == "MOSS_EST":
+            env_mode.pop(key)
+    if mode == "shadow":
+        env_mode["MOSS_EST"] = "shadow"
+
+    def run(args, extra_env=None):
+        env = dict(env_mode)
+        env.update(extra_env or {})
+        return subprocess.run(
+            args, cwd=ROOT, env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    TMP_ROOT.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="root-argument-disposition-",
+                                     dir=TMP_ROOT) as temporary:
+        directory = Path(temporary)
+        baseline_source = ROOT / "tests/phase4_materialized_message.moss"
+        baseline_text = baseline_source.read_text()
+        post_use_source = directory / "post_use.moss"
+        post_use_source.write_text(
+            baseline_text.replace("  echo total\n",
+                                  "  echo total\n  echo materialized\n"))
+        explicit_copy_source = directory / "explicit_copy_reuse.moss"
+        explicit_copy_source.write_text(
+            baseline_text.replace(
+                "message sink.Total(materialized)",
+                "message sink.Total(copy(materialized))").replace(
+                    "  echo total\n",
+                    "  echo total\n  echo materialized\n"))
+        nested_source = ROOT / (
+            "tests/tooling/fixtures/phase28_root_nested_local_argument_unproven.moss")
+        branch_source = directory / "branch_join.moss"
+        branch_source.write_text(baseline_text.replace(
+            "  materialized = source |> map(double)\n",
+            "  flag = true\n"
+            "  if flag:\n"
+            "    materialized = source |> map(double)\n"
+            "  else:\n"
+            "    materialized = source |> map(double)\n"))
+        loop_source = directory / "loop_carried.moss"
+        loop_source.write_text(baseline_text.replace(
+            "  total = message sink.Total(materialized)\n  echo total\n",
+            "  count = 0\n"
+            "  while count < 1:\n"
+            "    total = message sink.Total(materialized)\n"
+            "    count = count + 1\n"
+            "  echo count\n"))
+
+        dumped = run([COMPILER, "check", str(baseline_source), "--json"], {
+            "MOSS_TEST_DUMP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": "1"})
+        response = parse_result(dumped)
+        facts = [line for line in dumped.stderr.splitlines()
+                 if line.startswith("ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT ")]
+        assert dumped.returncode == 0 and response.get("ok") and len(facts) == 1, (
+            mode, dumped.stdout, dumped.stderr)
+        for field in ("stmt=", "arena=", "owner=", "message=", "arg=0",
+                      "arg_expr=", "binding=main@", "definition=main@",
+                      "type=vector[int]", "access=2", "context=main"):
+            assert field in facts[0], (mode, field, facts[0])
+
+        for extra_env in (
+            {"MOSS_TEST_CHECKER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": "1"},
+            {"MOSS_TEST_CHECKER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": "1"},
+        ):
+            rejected = run([COMPILER, "check", str(baseline_source), "--json"],
+                           extra_env)
+            assert rejected.returncode != 0 and (
+                "Root-ingress argument disposition checker fact/requirement set is incomplete" in
+                rejected.stdout + rejected.stderr), (
+                    mode, extra_env, rejected.stdout, rejected.stderr)
+        for field in ("owner", "message", "argument", "binding", "definition",
+                      "type", "context"):
+            rejected = run([COMPILER, "check", str(baseline_source), "--json"], {
+                "MOSS_TEST_CHECKER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": field})
+            assert rejected.returncode != 0 and (
+                "Root-ingress argument disposition" in
+                rejected.stdout + rejected.stderr), (
+                    mode, field, rejected.stdout, rejected.stderr)
+
+        for source in (branch_source, loop_source):
+            rejected = run([COMPILER, "check", str(source), "--json"])
+            assert rejected.returncode != 0 and (
+                "OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN" in
+                rejected.stdout + rejected.stderr), (
+                    mode, source, rejected.stdout, rejected.stderr)
+        nested_rejected = run([COMPILER, "check", str(nested_source), "--json"])
+        assert nested_rejected.returncode != 0 and (
+            "OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN" in
+            nested_rejected.stdout + nested_rejected.stderr), (
+                mode, nested_rejected.stdout, nested_rejected.stderr)
+
+        rejected = run([COMPILER, "check", str(post_use_source), "--json"])
+        assert rejected.returncode != 0 and (
+            "OWNERSHIP_USE_AFTER_CONSUME" in rejected.stdout + rejected.stderr), (
+                mode, rejected.stdout, rejected.stderr)
+
+        for opt, suffix in (("-O0", "o0"), ("-O", "optimized")):
+            rust_path = directory / f"transfer-{suffix}.rs"
+            binary_path = directory / f"transfer-{suffix}"
+            generated = run([COMPILER, str(baseline_source), opt,
+                             "-o", str(rust_path)])
+            assert generated.returncode == 0, (
+                mode, opt, generated.stdout, generated.stderr)
+            root_arg_line = next((line for line in rust_path.read_text().splitlines()
+                                  if "__moss_root_arg_" in line and
+                                  "materialized" in line), "")
+            root_payload = (root_arg_line.split("let __moss_root_arg_", 1)[-1]
+                            .split(" = ", 1)[-1].split(";", 1)[0])
+            assert root_arg_line and root_payload == "materialized" and (
+                ".clone()" not in root_payload), (mode, opt, root_arg_line)
+            for hook in (
+                "MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT",
+            ):
+                failed = run([COMPILER, str(baseline_source), opt,
+                              "-o", str(rust_path)], {hook: "1"})
+                assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                    failed.stdout + failed.stderr), (
+                        mode, opt, hook, failed.stdout, failed.stderr)
+            for field in ("owner", "message", "argument", "binding", "definition",
+                          "type", "context"):
+                failed = run([COMPILER, str(baseline_source), opt,
+                              "-o", str(rust_path)], {
+                    "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": field})
+                assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                    failed.stdout + failed.stderr), (
+                        mode, opt, field, failed.stdout, failed.stderr)
+            compiled = run(["rustc", "--edition=2021", "-Dwarnings",
+                            "-C", "opt-level=" + ("0" if opt == "-O0" else "3"),
+                            str(rust_path), "-o", str(binary_path)])
+            assert compiled.returncode == 0, (
+                mode, opt, compiled.stdout, compiled.stderr)
+            native = run([str(binary_path)])
+            assert native.returncode == 0 and native.stdout == "12\n", (
+                mode, opt, native.stdout, native.stderr)
+        fast_debug = run([COMPILER, "run", "--interp", str(baseline_source)])
+        assert fast_debug.returncode == 0 and fast_debug.stdout == "12\n", (
+            mode, fast_debug.stdout, fast_debug.stderr)
+        for hook in (
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT",
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT",
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT",
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT",
+        ):
+            failed = run([COMPILER, "run", "--interp", str(baseline_source)],
+                         {hook: "1"})
+            assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                failed.stdout + failed.stderr), (
+                    mode, hook, failed.stdout, failed.stderr)
+        for field in ("owner", "message", "argument", "binding", "definition",
+                      "type", "context"):
+            failed = run([COMPILER, "run", "--interp", str(baseline_source)], {
+                "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT": field})
+            assert failed.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                failed.stdout + failed.stderr), (
+                    mode, field, failed.stdout, failed.stderr)
+
+        copy_generated = run([COMPILER, str(explicit_copy_source), "-O0",
+                              "-o", str(directory / "copy-reuse.rs")])
+        assert copy_generated.returncode == 0, (
+            mode, copy_generated.stdout, copy_generated.stderr)
+        copy_binary = directory / "copy-reuse"
+        copy_compiled = run(["rustc", "--edition=2021", "-Dwarnings",
+                             str(directory / "copy-reuse.rs"), "-o",
+                             str(copy_binary)])
+        assert copy_compiled.returncode == 0, (
+            mode, copy_compiled.stdout, copy_compiled.stderr)
+        copy_native = run([str(copy_binary)])
+        copy_debug = run([COMPILER, "run", "--interp",
+                          str(explicit_copy_source)])
+        assert copy_native.returncode == 0 and copy_native.stdout == (
+            "12\n[2, 4, 6]\n") and copy_debug.returncode == 0 and (
+                copy_debug.stdout == copy_native.stdout), (
+                    mode, copy_native.stdout, copy_native.stderr,
+                    copy_debug.stdout, copy_debug.stderr)
+    return 1 + 2 + 7 + 2 + 1 + 2 + 7 + 1
+
+
 def main():
     payload_cases = (
         (FRESH_PAYLOAD, "Payload { value: 7_i64 }", "fresh: 7"),
         ("tests/string_payload_snapshot.moss", 'MossStr::from("fresh")', "fresh"),
     )
     scenario_count = nested_native_consumer_cases()
+    scenario_count += sum(root_argument_disposition_cases(mode)
+                          for mode in ("default", "shadow"))
     scenario_count += sum(payload_authority_cases(mode, *fixture)
                          for mode in ("default", "shadow")
                          for fixture in payload_cases)

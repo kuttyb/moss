@@ -2249,6 +2249,118 @@ class Generator {
     }
   }
 
+  const TypedRootIngressArgumentDispositionFactV1*
+  resolve_root_ingress_argument_disposition(
+      const RootIngressMessageOccurrence& occurrence,
+      std::uint32_t argument_index, const string& expected_type) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const Stmt* statement = phase21_codegen_statement_;
+    if (!checked_program.typed_semantics || !statement ||
+        statement->checked_statement_occurrence_id == UINT32_MAX ||
+        argument_index >= occurrence.argument_expressions.size() ||
+        occurrence.arena_index >= checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[occurrence.arena_index])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument disposition query identity unavailable");
+    const auto& arena = *checked_program.expression_arenas[occurrence.arena_index];
+    const auto argument_id = est::unparenthesized(
+        arena, occurrence.argument_expressions[argument_index]);
+    if (argument_id >= arena.size() ||
+        !std::holds_alternative<est::Identifier>(arena.at(argument_id)))
+      return nullptr;
+    if (root_ingress_owner_handle_count(checked_program, *statement,
+                                        occurrence,
+                                        occurrence.owner_expression) != 1)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument disposition owner handle missing or ambiguous");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    const TypedRootIngressArgumentDispositionRequirementV1* requirement = nullptr;
+    std::size_t requirement_count = 0;
+    std::size_t fact_count = 0;
+    for (const auto& candidate : checked_program.typed_semantics
+             ->required_root_ingress_argument_disposition_occurrences)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.owner_expression_occurrence_id ==
+              occurrence.owner_expression &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_id &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.specialization_context == context) {
+        requirement = &candidate;
+        ++requirement_count;
+      }
+    for (const auto& candidate : checked_program.typed_semantics
+             ->root_ingress_argument_disposition_facts)
+      if (candidate.statement_occurrence_id ==
+              statement->checked_statement_occurrence_id &&
+          candidate.est_arena_index == occurrence.arena_index &&
+          candidate.owner_expression_occurrence_id ==
+              occurrence.owner_expression &&
+          candidate.message_expression_occurrence_id ==
+              occurrence.message_expression &&
+          candidate.argument_index == argument_index &&
+          candidate.argument_expression_occurrence_id == argument_id &&
+          candidate.source_fingerprint == occurrence.source_fingerprint &&
+          candidate.specialization_context == context)
+        ++fact_count;
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT"))
+      --requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT"))
+      ++requirement_count;
+    if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+      fact_count = 0;
+    if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+      ++fact_count;
+#endif
+    if (requirement_count == 0 && fact_count == 0 && !requirement)
+      return nullptr;
+    if (requirement_count != 1 || fact_count != 1 || !requirement)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress argument disposition requirement/fact missing or ambiguous");
+    try {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT")) {
+        auto corrupted = *requirement;
+        const string field = std::getenv(
+            "MOSS_TEST_CONSUMER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT");
+        if (field == "owner") ++corrupted.owner_expression_occurrence_id;
+        else if (field == "message") ++corrupted.message_expression_occurrence_id;
+        else if (field == "argument") ++corrupted.argument_expression_occurrence_id;
+        else if (field == "binding") corrupted.source_binding_identity += ":wrong";
+        else if (field == "definition") corrupted.source_definition_identity += ":wrong";
+        else if (field == "type") corrupted.payload_type.reset();
+        else if (field == "context") corrupted.specialization_context += ":wrong";
+        (void)checked_program.typed_semantics
+            ->find_root_ingress_argument_disposition_fact(corrupted);
+        throw std::runtime_error(
+            "perturbed Root-ingress argument disposition unexpectedly passed");
+      }
+#endif
+      const auto& fact = checked_program.typed_semantics
+          ->find_root_ingress_argument_disposition_fact(*requirement);
+      const auto* expression_facts = arena.facts(argument_id, fact.est_fact_context);
+      const auto expected = moss::Type::parse_canonical(expected_type);
+      if (!expression_facts || !expression_facts->type || !expected || !*expected ||
+          !expression_facts->type->structurally_equal(*fact.payload_type) ||
+          !fact.payload_type->structurally_equal(**expected) ||
+          fact.specialization_context != context ||
+          fact.required_access != Effect::Consume || !fact.source_is_owned ||
+          !fact.checker_proved_available)
+        throw std::invalid_argument(
+            "Root-ingress argument disposition contradicts exact binding, type, context, or Consume action");
+      return &fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
   const TypedRootIngressDomainCaptureFactV1&
   resolve_root_ingress_domain_capture(
       const string& receiver, const string& handler,
@@ -8082,7 +8194,9 @@ class Generator {
                      const std::unordered_map<string,string>* types = nullptr,
                      size_t functional_pipeline_id = 0,
                      const TypedReturnValueFactV1* return_fact = nullptr,
-                     const TypedRootIngressPayloadFactV1* root_payload_fact = nullptr) const {
+                     const TypedRootIngressPayloadFactV1* root_payload_fact = nullptr,
+                     const TypedRootIngressArgumentDispositionFactV1*
+                         argument_disposition_fact = nullptr) const {
     string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (copy_type(t)) return r;
@@ -8104,6 +8218,11 @@ class Generator {
         root_payload_fact->action ==
             TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue &&
         !root_payload_fact->permits_moss_value_copy)
+      return r;
+    if (argument_disposition_fact &&
+        argument_disposition_fact->is_authoritative() &&
+        argument_disposition_fact->action ==
+            TypedRootIngressArgumentDispositionFactV1::Action::TransferOwnedBinding)
       return r;
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT root message payload needs a checked copy(x) fact or exact consume authority");

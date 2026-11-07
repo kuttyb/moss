@@ -156,6 +156,12 @@ class FastInterpreter {
         if (fact.specialization_context == "main") return &fact;
       return nullptr;
     };
+    auto first_main_root_argument_disposition =
+        [&]() -> TypedRootIngressArgumentDispositionFactV1* {
+      for (auto& fact : semantics->root_ingress_argument_disposition_facts)
+        if (fact.specialization_context == "main") return &fact;
+      return nullptr;
+    };
     if (std::getenv("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_COPY_FACT"))
       if (auto* fact = first_main_copy_fact())
         fact->availability = TypedCopyFactV1::Availability::MissingCopyOccurrence;
@@ -172,6 +178,28 @@ class FastInterpreter {
     if (std::getenv("MOSS_TEST_INTERP_PERTURB_ROOT_INGRESS_FRESH_FACT"))
       if (auto* fact = first_main_root_payload_fact())
         fact->selected_handler_identity += ":perturbed";
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+      if (auto* fact = first_main_root_argument_disposition())
+        fact->availability =
+            TypedRootIngressArgumentDispositionFactV1::Availability::MissingOccurrence;
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_DUPLICATE_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+      if (auto* fact = first_main_root_argument_disposition())
+        semantics->root_ingress_argument_disposition_facts.push_back(*fact);
+    if (std::getenv(
+            "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT"))
+      if (auto* fact = first_main_root_argument_disposition()) {
+        const std::string field = std::getenv(
+            "MOSS_TEST_INTERPRETER_PERTURB_ROOT_INGRESS_ARGUMENT_DISPOSITION_FACT");
+        if (field == "owner") ++fact->owner_expression_occurrence_id;
+        else if (field == "message") ++fact->message_expression_occurrence_id;
+        else if (field == "argument") ++fact->argument_expression_occurrence_id;
+        else if (field == "binding") fact->source_binding_identity += ":wrong";
+        else if (field == "definition") fact->source_definition_identity += ":wrong";
+        else if (field == "type") fact->payload_type.reset();
+        else if (field == "context") fact->specialization_context += ":wrong";
+      }
     auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
       for (auto& f : facts) {
         if (!f.specialization_identity.empty()) {
