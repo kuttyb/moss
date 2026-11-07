@@ -18344,7 +18344,7 @@ untouched.
   `9cad0f78bea157ffee1a3838fdd41373f95dfa5d` and remains isolated on
   `phase28-r7-010-root-ingress-primitive-type`; after exact-SHA review it was
   fast-forwarded into this isolated integration branch. The implementation is
-  commit dce8e519; a following docs checkpoint is current HEAD dee4b621. Neither
+  commit dce8e519; a following docs checkpoint is current HEAD 9d4087b4. Neither
   commit was pushed.
 - Checker now retains an exact per-argument closed TypeRef fact for Root
   messages; Fast Debug requires the exact fact. It grants no copy or ownership
@@ -18377,8 +18377,8 @@ untouched.
 ### Reviewed staging HEAD
 
 - The isolated integration branch current HEAD is `dee4b6216ff0e02c5a64b9b341598fb4bbdde054`; it contains the reviewed implementation commit
-  `dce8e519238e89bce228f4db90e18c782d1f4def` unchanged. The docs checkpoint
-  does not change source/test content. The prior staging worktree changes and
+  `dce8e519238e89bce228f4db90e18c782d1f4def` unchanged. The two docs/status checkpoint commits
+  after it do not change source/test content. The prior staging worktree changes and
   review reports were restored from retained stash
   `preserve 9cad staging status and review reports before reviewed ORACLE-45
   integration`; no prior stash was dropped. `phase28-work` and `main` are
