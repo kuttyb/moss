@@ -18467,9 +18467,9 @@ untouched.
   `docs/phase28/agent2-reviews/R7-010-METHOD-PARAMETER-RETURN-602A1440.md`.
 - Reviewed implementation `602a14404af92c64f22b20391ed1579e03570098` has
   now been fast-forwarded into isolated staging branch
-  `phase28-r7-010-vertical-integration`. Current staging source HEAD is that
-  exact reviewed SHA; reviewer reports and this status update are uncommitted
-  documentation. No full suites/oracle were run on `602a1440`; the 52-failure
+  `phase28-r7-010-vertical-integration`. Staging source remains at that exact
+  reviewed SHA; reviewer reports and the status checkpoint were committed in
+  docs commit `2437fefc`. No full suites/oracle were run on `602a1440`; the 52-failure
   suite and 60/60 semantic oracle measurements remain tied to `dce8e519`.
   Clone work remains paused pending the next exact-SHA regression triage and
   repair checkpoint. `phase28-work` and `main` remain unchanged.
