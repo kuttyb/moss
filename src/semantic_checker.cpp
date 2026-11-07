@@ -34083,6 +34083,32 @@ class Checker {
               function->second->semantic_callable_id;
           p_.semantic_call_edges.push_back(std::move(concrete_edge));
         }
+        if (!attached && source_edges.empty()) {
+          SemanticCallEdge checked_edge{
+              current_semantic_context_, "fn:" + function->second->name,
+              line, actual_types,
+              current_check_statement_
+                  ? current_check_statement_->source_file
+                  : function->second->source_file,
+              "ordinary_call", {}, {}, {}, {}};
+          checked_edge.source_specialization_key = caller_key;
+          checked_edge.specialization_key = exact_key;
+          checked_edge.target_callable_identity =
+              function->second->semantic_callable_id;
+          if (nested_occurrences) {
+            checked_edge.occurrence = nested_occurrences->first;
+          } else {
+            for (const auto& edge : p_.semantic_call_edges)
+              if (edge.source == checked_edge.source &&
+                  edge.target == checked_edge.target &&
+                  edge.line == checked_edge.line &&
+                  edge.source_file == checked_edge.source_file &&
+                  edge.invocation_kind == checked_edge.invocation_kind)
+                checked_edge.occurrence = std::max(
+                    checked_edge.occurrence, edge.occurrence + 1);
+          }
+          p_.semantic_call_edges.push_back(std::move(checked_edge));
+        }
       }
       if (!open_result && function->second->static_dispatch) {
         const auto key = specialization_key_inputs(
@@ -34150,6 +34176,32 @@ class Checker {
           concrete_edge.target_callable_identity =
               function->second->semantic_callable_id;
           p_.semantic_call_edges.push_back(std::move(concrete_edge));
+        }
+        if (!attached && source_edges.empty()) {
+          SemanticCallEdge checked_edge{
+              current_semantic_context_, "fn:" + function->second->name,
+              line, actual_types,
+              current_check_statement_
+                  ? current_check_statement_->source_file
+                  : function->second->source_file,
+              "ordinary_call", {}, {}, {}, {}};
+          checked_edge.source_specialization_key = caller_key;
+          checked_edge.specialization_key = exact_key;
+          checked_edge.target_callable_identity =
+              function->second->semantic_callable_id;
+          if (nested_occurrences) {
+            checked_edge.occurrence = nested_occurrences->first;
+          } else {
+            for (const auto& edge : p_.semantic_call_edges)
+              if (edge.source == checked_edge.source &&
+                  edge.target == checked_edge.target &&
+                  edge.line == checked_edge.line &&
+                  edge.source_file == checked_edge.source_file &&
+                  edge.invocation_kind == checked_edge.invocation_kind)
+                checked_edge.occurrence = std::max(
+                    checked_edge.occurrence, edge.occurrence + 1);
+          }
+          p_.semantic_call_edges.push_back(std::move(checked_edge));
         }
       }
     }
