@@ -25,6 +25,29 @@ struct TypedSemanticModuleV1;
 using std::string;
 using std::vector;
 
+// Program-local opaque identity for one checked callable body or concrete
+// specialization. IDs are dense indexes into Program::specialization_table;
+// their readable keys are diagnostic labels only.
+using SpecId = std::uint32_t;
+inline constexpr SpecId InvalidSpecId = UINT32_MAX;
+
+struct ProgramSpecializationIdentity {
+  SpecId id = InvalidSpecId;
+  string semantic_callable_identity;
+  std::optional<SpecializationKey> semantic_key;
+  string diagnostic_key;
+  // Imported table rows preserve their provider-local identity while `id`
+  // remains remapped into this Program's dense table.
+  string provider_module_identity;
+  SpecId provider_spec_id = InvalidSpecId;
+};
+
+enum class SemanticCallTargetKind : std::uint8_t {
+  Unresolved,
+  Static,
+  DynamicCallback
+};
+
 // The checked ownership rule shared by the checker, native lowering, and
 // Fast Debug. Callers may pass canonical names or source primitive spellings.
 inline bool copy_type_name(string type) {
@@ -456,6 +479,7 @@ struct Method {
   vector<RecoveryWarningWitness> recovery_warning_witnesses;
   int line = 0;
   string source_file;
+  SpecId spec_id = InvalidSpecId;
 };
 struct TraitMethod {
   string name;
@@ -563,6 +587,7 @@ struct Handler {
   // contract during interface emission; source-free handlers must carry the
   // complete record or loading fails closed.
   std::optional<ProviderHandlerAbi> provider_abi;
+  SpecId spec_id = InvalidSpecId;
 };
 struct DomainRoute {
   string name, type;
@@ -577,7 +602,7 @@ struct Domain { string name, header; vector<Field> state; vector<DomainRoute> ro
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; string execution_source_file; };
 struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
 struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
-struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
+struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; SpecId spec_id = InvalidSpecId; };
 struct StaticSpecializationDependency {
   // Canonical Moss callable identity and concrete parameter types.  This is
   // checked specialization metadata, not a backend symbol reference.
@@ -612,6 +637,7 @@ struct FunctionSpecialization {
   vector<StaticSpecializationDependency> dependencies;
   // Closed member requirements checked for this exact static instance.
   vector<MemberDispatchRequirement> member_requirements;
+  SpecId spec_id = InvalidSpecId;
 };
 
 struct DomainSpecialization {
@@ -629,6 +655,8 @@ struct DomainSpecialization {
   // handler_parameter_types[handler][index].
   std::unordered_map<string,vector<string>> handler_parameter_types;
   std::unordered_map<string,string> handler_reply_types;
+  // Per-instance concrete handler body IDs, aligned with Domain::handlers.
+  vector<SpecId> handler_spec_ids;
 };
 struct Function {
   vector<est::Handle> expression_handles;
@@ -740,6 +768,7 @@ struct Function {
   // True once a validated ABI-v10 checked body replaced the imported legacy
   // generic_stmt projection for this callable.
   bool imported_checked_body_projected = false;
+  SpecId spec_id = InvalidSpecId;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
@@ -750,6 +779,7 @@ struct TestDecl {
   vector<Stmt> body;
   int line = 0;
   string source_file;
+  SpecId spec_id = InvalidSpecId;
 };
 
 struct BenchDecl {
@@ -759,6 +789,7 @@ struct BenchDecl {
   vector<Stmt> body;
   int line = 0;
   string source_file;
+  SpecId spec_id = InvalidSpecId;
 };
 
 // Existing checker passes populate these records while validating recursion
@@ -803,6 +834,12 @@ struct SemanticCallEdge {
   est::ExprId message_expression_occurrence_id = UINT32_MAX;
   est::ExprId receiver_expression_occurrence_id = UINT32_MAX;
   uint64_t message_source_fingerprint = 0;
+  // Exact specialization authority. Selection keys are the checker-issued
+  // caller ID and EST occurrence; source/target strings remain diagnostics.
+  SpecId caller_spec_id = InvalidSpecId;
+  SpecId callee_spec_id = InvalidSpecId;
+  SemanticCallTargetKind target_kind = SemanticCallTargetKind::Unresolved;
+  string target_module_identity;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic
@@ -957,6 +994,7 @@ struct Program {
   vector<FunctionalPipeline> functional_pipelines;
   vector<FunctionalTraversalGroup> functional_traversal_groups;
   vector<SemanticCallEdge> semantic_call_edges;
+  vector<ProgramSpecializationIdentity> specialization_table;
   vector<SemanticUse> semantic_uses;
   // Per-declared-instance facts for source domains whose untyped state and
   // handler parameters were inferred at concrete call sites.
@@ -975,6 +1013,21 @@ struct Program {
       for (const auto& h : d.handlers) h.assert_consistent();
   }
 };
+
+// Return every checker-issued row for one exact call occurrence. Consumers
+// must require exactly one row; this helper deliberately does not select or
+// reconcile duplicate/contradictory facts.
+inline vector<const SemanticCallEdge*> exact_semantic_call_edges(
+    const Program& program, SpecId caller, std::uint32_t arena,
+    est::ExprId expression) {
+  vector<const SemanticCallEdge*> matches;
+  for (const auto& edge : program.semantic_call_edges)
+    if (edge.caller_spec_id == caller &&
+        edge.call_est_arena_index == arena &&
+        edge.call_expression_occurrence_id == expression)
+      matches.push_back(&edge);
+  return matches;
+}
 
 enum class CheckedCallEdgeSelectionKind {
   None, Unique, Ambiguous, Missing, Contradictory
