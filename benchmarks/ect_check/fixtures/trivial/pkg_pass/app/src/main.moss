@@ -1,0 +1,6 @@
+module main
+import ect_trivial_lib
+
+fn main():
+  echo ect_trivial_lib.double(3)
+  echo ect_trivial_lib.bump(1)

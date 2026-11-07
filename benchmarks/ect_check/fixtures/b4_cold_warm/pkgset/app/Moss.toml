@@ -1,0 +1,17 @@
+[project]
+name = "ect_pkgset_app"
+version = "0.1.0"
+
+[dependencies]
+ect_p00 = { path = "../p00" }
+ect_p01 = { path = "../p01" }
+ect_p02 = { path = "../p02" }
+ect_p03 = { path = "../p03" }
+ect_p04 = { path = "../p04" }
+ect_p05 = { path = "../p05" }
+ect_p06 = { path = "../p06" }
+ect_p07 = { path = "../p07" }
+ect_p08 = { path = "../p08" }
+ect_p09 = { path = "../p09" }
+ect_p10 = { path = "../p10" }
+ect_p11 = { path = "../p11" }

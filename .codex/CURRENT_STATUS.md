@@ -18112,3 +18112,86 @@ future optimizer-isolated proof and must remain explicit in final review.
   documented C1 failures; all other phase acceptance gates passed as recorded
   in `docs/phase27/27_5_5_REPORT.md`.
 - No unfinished Phase 27.5.5 work remains.
+
+# Phase 28.5 Team 1 bench harness (branch phase28-5-bench)
+
+- Added `benchmarks/ect_check/` (generator framework, frozen manifest, runner,
+  gate, M1/M2) and read-only env-gated counters in `src/semantic_checker.cpp`
+  (`MOSS_ECT_COUNTERS`, `ect_m1_*`, `ect_m2_*`). Targets `ect-check-bench`,
+  `ect-check-validate`.
+- `make check`: 3 failures identical to the documented baseline
+  (`check_phase25_conformance` gate 10, `check_phase27_accepts_rustc`,
+  `shard_swarm_cases`); no new failures.
+
+- Phase 28.5 Team 1 review fixes (tag `bench-t1-done-r2`): RSS via
+  `/usr/bin/time -f %M` (runner-size independent, `run.py selftest`), M2 headline
+  over eligible functions, `metrics --root`, whole-document gate with selftests,
+  clean env for timed/gate runs, build-dir ignore rule, warm-up rep, two more
+  trivial fixtures. `make check`: same 3 baseline failures by name.
+
+## Phase 28.5 Team 3 (benchmarks: edits B3, cold/warm B4, worktrees B5) - done on `phase28-5-bench`
+
+Suite 0.3.0 (`benchmarks/ect_check`): edit_generators.py / scenarios.py / edit_evidence.py /
+report_scenarios.py; 5 new fixtures + 16 frozen scenarios in manifest.json. Validation: `generate.py
+--validate-only` (80 fixtures, 16 scenarios) and `--verify-determinism` pass; `run.py gate --scenario-ids
+all` PASS (80 fixtures, 14 edit sequences); `run.py selftest` 24/24; quiet `bench --reps 5` baseline
+(tmp/ect_check/t3final, drift 2.7%) numbers are in the README; `make check` shows only the 3 pre-existing
+failures (check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases). No src/ change.
+
+Team 3 review fixes (tag `bench-t3-done-r2`): edit `e` (line shift), edit `c` relabeled leaf-local call-site identity,
+frozen hashes re-verified by bench/gate, scenario gate treats margo checked/skipped as volatile, whole-tree RSS sampler
+for B5, startup decomposition, floor_pkg skip cause (main-only package has no .mossi), README corrections. Baseline run
+tmp/ect_check/t3final2 (quiet, drift 1.4%).
+
+## Phase 28.5 Team 4 (B6 agent-loop replay and summary churn) - done on `phase28-5-bench`
+
+Suite 0.4.0 (`benchmarks/ect_check`): replay.py / churn.py / replay_generators.py / report_replay.py /
+replay_expectations.json; 50 frozen `replay_step` scenarios (last 50 non-merge commits touching sdk/packages `.moss`,
+anchor 9b840e8a) plus range spec (manifest `replay`). Final quiet run committed in
+`benchmarks/ect_check/results/b6-final/` (drift 1.3%): post-edit p50/p95 308/2210 ms over all 50 commits; churn 4/14
+edit commits changed any summary, 2/14 rippled. Validation after the last code edit: `generate.py --verify-determinism`
+and `--validate-only` (80 fixtures, 68 scenarios) pass; `run.py selftest` 51/51; `run.py gate --scenario-ids all` PASS;
+`run.py replay-check --with-churn` PASS (50 steps, repeat classification, counters and churn identical);
+`check_agent_feedback.py` passes; `make check`: only the 3 pre-existing failures (check_phase25_conformance,
+check_phase27_accepts_rustc, shard_swarm_cases). No src/ or compiler_torture change. Not done: dependents of a changed
+package are not checked; churn covers 14 analysable edit commits only (29 of 50 trees do not check with today's compiler).
+
+Team 4 review fixes (tag `bench-t4-done-r2`, suite 0.4.1): bench/fixture files are entry points (moss check + MOSS_MODULE_PATH),
+`effectively_new` scaffolds, per-step spread guard (1.3, 3 attempts), mid-run block probes, reference-pin message, churn
+breakdown (4 informative edits), README limits/disclosures. Final run `results/b6-final` (drift 4.8%, 3 blocks and 2 steps
+re-measured). selftest 60/60, validate-only, determinism, gate all, replay-check --with-churn pass; make check: only the
+3 baseline failures. No src/ change.
+
+## Phase 28.5 Team 5 (Rust comparison, B3 error-path edit `f`) - on `phase28-5-bench`
+
+Suite 0.5.0 (`benchmarks/ect_check`, one re-freeze): rust_generators.py / rust_cmp.py / report_rust.py; 4 Rust fixtures
+(manifest key `rust_fixtures`, std-only, offline `cargo check`), 19 `rust_edit_sequence` scenarios (edits a-f, D20 single and
+workspace, fan-in single, floor); Moss edit `f` as `b3_dag_f`/`b3_fanin_f` (family `b3_error`, step `expect_exit`), break at
+the top node because leaf breaks did not answer in 20 s (probes/f_edit_probe.txt). Committed quiet run
+`results/team5-final/` (loadavg 0.27, drift 2.0%, 5 reps, no spread flags). README "Team 5" section holds the table,
+differences, the L8 position-mapping requirement for Phase 28.6 (in the "Correctness gate" bullet and the gate
+commands of "How to run"), and limits. Existing fixtures/scenario rows byte-identical;
+src/, Makefile, tests, compiler_torture unchanged. Validation recorded in the final commit message / README.
+Not done: Rust B1/B2 sweeps, diamond, torture, workspace fan-in; causes of the missing Moss answer (no answer within 20 s) for leaf breaks not investigated.
+Team 5 validation (after the last code edit): generate.py --validate-only (80 + 4 Rust fixtures, 89 scenarios), --verify-determinism,
+run.py selftest 70/70, run.py gate --scenario-ids all PASS (80 fixtures, 68 Moss + 19 Rust sequences), check_agent_feedback PASS.
+make check (exit=2): the 3 baseline failures by name plus check_phase25_4_performance_baseline, w2_spec_distinct_n016 memory
+25084 KiB vs limit 25000 under the 16-job run; the same gate passed 3/3 when rerun alone (src/ unchanged; treated as load noise,
+not established).
+
+Team 5 review round 1 (tag `bench-t5-done-r2`): fixed the BLOCKER (`.gitignore` negation so the 7 Rust fixture `.rs` files are tracked;
+verified from a fresh `git worktree`: validate-only exit 0, determinism ok, selftest 76/76, Rust gate PASS), L8 text now in the README
+gate bullet + gate commands, new gate-strength selftests (5 mutants caught by `probes/rust_gate_mutants.py`, none crash),
+headline ratios 12-33x by shape/layout with the 6x no-change floor ratio and a bare `moss check` number (375 ms DAG / 584 ms fan-in),
+reworded b/b2, "no answer within 20 s" (one variant also within 300 s), frozen `expect_code`, sampled Moss whole-tree RSS, fail-open line
++ `--require-rust`, results re-run from a clean commit (`results/team5-final`, git_sha 3dd88270, noise drift 0.5%; two noisier attempts
+discarded; `rust_fanin_single_b` still spread-flagged, stated in the README). make check: only the 3 baseline failures by name
+(check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases); the earlier perf-baseline flake did not recur.
+
+## Phase 28.5.1 (benchmark wiring for Phase 28.6; suite 0.6.0) - on `phase28-5-bench`
+
+Work in progress (not yet tagged): covering `export trait`s in the 24 package fixtures (generators b1_leak, dag_fanin, b4_cold_warm,
+trivial bumped to 1.1.0; `export_sweep.py` finds no uncovered export), provider failure as a gate verdict, per-series stores via
+`MOSS_STORE_DIR` (StoreSet/Toolchain.with_store; B6 ReplayStores with clone/promote), counters under the same store policy (also warm),
+`--candidate-position-map`, `--warm-store`, `--keep-stores`; README "Behaviour changes in 0.6.0" + every old results table marked
+0.5.0 superseded. No benchmark or timed run was executed (the owner runs the baseline). src/ and compiler_torture untouched.

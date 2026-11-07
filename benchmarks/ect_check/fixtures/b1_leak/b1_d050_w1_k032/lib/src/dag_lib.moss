@@ -1,0 +1,157 @@
+module dag_lib
+
+export trait Scorable:
+  fn score() -> Int
+
+fn n049_0(x):
+  return x.score()
+
+fn n048_0(x):
+  return n049_0(x) + 1
+
+fn n047_0(x):
+  return n048_0(x) + 1
+
+fn n046_0(x):
+  return n047_0(x) + 1
+
+fn n045_0(x):
+  return n046_0(x) + 1
+
+fn n044_0(x):
+  return n045_0(x) + 1
+
+fn n043_0(x):
+  return n044_0(x) + 1
+
+fn n042_0(x):
+  return n043_0(x) + 1
+
+fn n041_0(x):
+  return n042_0(x) + 1
+
+fn n040_0(x):
+  return n041_0(x) + 1
+
+fn n039_0(x):
+  return n040_0(x) + 1
+
+fn n038_0(x):
+  return n039_0(x) + 1
+
+fn n037_0(x):
+  return n038_0(x) + 1
+
+fn n036_0(x):
+  return n037_0(x) + 1
+
+fn n035_0(x):
+  return n036_0(x) + 1
+
+fn n034_0(x):
+  return n035_0(x) + 1
+
+fn n033_0(x):
+  return n034_0(x) + 1
+
+fn n032_0(x):
+  return n033_0(x) + 1
+
+fn n031_0(x):
+  return n032_0(x) + 1
+
+fn n030_0(x):
+  return n031_0(x) + 1
+
+fn n029_0(x):
+  return n030_0(x) + 1
+
+fn n028_0(x):
+  return n029_0(x) + 1
+
+fn n027_0(x):
+  return n028_0(x) + 1
+
+fn n026_0(x):
+  return n027_0(x) + 1
+
+fn n025_0(x):
+  return n026_0(x) + 1
+
+fn n024_0(x):
+  return n025_0(x) + 1
+
+fn n023_0(x):
+  return n024_0(x) + 1
+
+fn n022_0(x):
+  return n023_0(x) + 1
+
+fn n021_0(x):
+  return n022_0(x) + 1
+
+fn n020_0(x):
+  return n021_0(x) + 1
+
+fn n019_0(x):
+  return n020_0(x) + 1
+
+fn n018_0(x):
+  return n019_0(x) + 1
+
+fn n017_0(x):
+  return n018_0(x) + 1
+
+fn n016_0(x):
+  return n017_0(x) + 1
+
+fn n015_0(x):
+  return n016_0(x) + 1
+
+fn n014_0(x):
+  return n015_0(x) + 1
+
+fn n013_0(x):
+  return n014_0(x) + 1
+
+fn n012_0(x):
+  return n013_0(x) + 1
+
+fn n011_0(x):
+  return n012_0(x) + 1
+
+fn n010_0(x):
+  return n011_0(x) + 1
+
+fn n009_0(x):
+  return n010_0(x) + 1
+
+fn n008_0(x):
+  return n009_0(x) + 1
+
+fn n007_0(x):
+  return n008_0(x) + 1
+
+fn n006_0(x):
+  return n007_0(x) + 1
+
+fn n005_0(x):
+  return n006_0(x) + 1
+
+fn n004_0(x):
+  return n005_0(x) + 1
+
+fn n003_0(x):
+  return n004_0(x) + 1
+
+fn n002_0(x):
+  return n003_0(x) + 1
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+export fn root(x):
+  return n000_0(x)

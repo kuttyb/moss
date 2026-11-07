@@ -1,0 +1,230 @@
+module main
+import dag_lib
+
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+type T001:
+  v: Int
+
+  fn score() -> Int:
+    return v + 2
+
+type T002:
+  v: Int
+
+  fn score() -> Int:
+    return v + 3
+
+type T003:
+  v: Int
+
+  fn score() -> Int:
+    return v + 4
+
+type T004:
+  v: Int
+
+  fn score() -> Int:
+    return v + 5
+
+type T005:
+  v: Int
+
+  fn score() -> Int:
+    return v + 6
+
+type T006:
+  v: Int
+
+  fn score() -> Int:
+    return v + 7
+
+type T007:
+  v: Int
+
+  fn score() -> Int:
+    return v + 8
+
+type T008:
+  v: Int
+
+  fn score() -> Int:
+    return v + 9
+
+type T009:
+  v: Int
+
+  fn score() -> Int:
+    return v + 10
+
+type T010:
+  v: Int
+
+  fn score() -> Int:
+    return v + 11
+
+type T011:
+  v: Int
+
+  fn score() -> Int:
+    return v + 12
+
+type T012:
+  v: Int
+
+  fn score() -> Int:
+    return v + 13
+
+type T013:
+  v: Int
+
+  fn score() -> Int:
+    return v + 14
+
+type T014:
+  v: Int
+
+  fn score() -> Int:
+    return v + 15
+
+type T015:
+  v: Int
+
+  fn score() -> Int:
+    return v + 16
+
+type T016:
+  v: Int
+
+  fn score() -> Int:
+    return v + 17
+
+type T017:
+  v: Int
+
+  fn score() -> Int:
+    return v + 18
+
+type T018:
+  v: Int
+
+  fn score() -> Int:
+    return v + 19
+
+type T019:
+  v: Int
+
+  fn score() -> Int:
+    return v + 20
+
+type T020:
+  v: Int
+
+  fn score() -> Int:
+    return v + 21
+
+type T021:
+  v: Int
+
+  fn score() -> Int:
+    return v + 22
+
+type T022:
+  v: Int
+
+  fn score() -> Int:
+    return v + 23
+
+type T023:
+  v: Int
+
+  fn score() -> Int:
+    return v + 24
+
+type T024:
+  v: Int
+
+  fn score() -> Int:
+    return v + 25
+
+type T025:
+  v: Int
+
+  fn score() -> Int:
+    return v + 26
+
+type T026:
+  v: Int
+
+  fn score() -> Int:
+    return v + 27
+
+type T027:
+  v: Int
+
+  fn score() -> Int:
+    return v + 28
+
+type T028:
+  v: Int
+
+  fn score() -> Int:
+    return v + 29
+
+type T029:
+  v: Int
+
+  fn score() -> Int:
+    return v + 30
+
+type T030:
+  v: Int
+
+  fn score() -> Int:
+    return v + 31
+
+type T031:
+  v: Int
+
+  fn score() -> Int:
+    return v + 32
+
+fn main():
+  var total = 0
+  total = total + dag_lib.root(T000(v: 1))
+  total = total + dag_lib.root(T001(v: 2))
+  total = total + dag_lib.root(T002(v: 3))
+  total = total + dag_lib.root(T003(v: 4))
+  total = total + dag_lib.root(T004(v: 5))
+  total = total + dag_lib.root(T005(v: 6))
+  total = total + dag_lib.root(T006(v: 7))
+  total = total + dag_lib.root(T007(v: 8))
+  total = total + dag_lib.root(T008(v: 9))
+  total = total + dag_lib.root(T009(v: 10))
+  total = total + dag_lib.root(T010(v: 11))
+  total = total + dag_lib.root(T011(v: 12))
+  total = total + dag_lib.root(T012(v: 13))
+  total = total + dag_lib.root(T013(v: 14))
+  total = total + dag_lib.root(T014(v: 15))
+  total = total + dag_lib.root(T015(v: 16))
+  total = total + dag_lib.root(T016(v: 17))
+  total = total + dag_lib.root(T017(v: 18))
+  total = total + dag_lib.root(T018(v: 19))
+  total = total + dag_lib.root(T019(v: 20))
+  total = total + dag_lib.root(T020(v: 21))
+  total = total + dag_lib.root(T021(v: 22))
+  total = total + dag_lib.root(T022(v: 23))
+  total = total + dag_lib.root(T023(v: 24))
+  total = total + dag_lib.root(T024(v: 25))
+  total = total + dag_lib.root(T025(v: 26))
+  total = total + dag_lib.root(T026(v: 27))
+  total = total + dag_lib.root(T027(v: 28))
+  total = total + dag_lib.root(T028(v: 29))
+  total = total + dag_lib.root(T029(v: 30))
+  total = total + dag_lib.root(T030(v: 31))
+  total = total + dag_lib.root(T031(v: 32))
+  echo total

@@ -1,0 +1,13 @@
+module main
+import dag_lib
+
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+fn main():
+  var total = 0
+  total = total + dag_lib.root(T000(v: 1))
+  echo total

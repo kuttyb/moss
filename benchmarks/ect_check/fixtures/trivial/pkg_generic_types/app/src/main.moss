@@ -1,0 +1,18 @@
+module main
+import ect_generic_lib
+
+type Alpha:
+  tag: Int
+
+  fn id() -> Int:
+    return tag
+
+type Beta:
+  tag: Int
+
+  fn id() -> Int:
+    return tag + 100
+
+fn main():
+  echo ect_generic_lib.show_id(ect_generic_lib.first_of(Alpha(tag: 3), Beta(tag: 4)))
+  echo ect_generic_lib.show_id(ect_generic_lib.first_of(Beta(tag: 3), Alpha(tag: 4)))

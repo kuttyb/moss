@@ -1,0 +1,48 @@
+module main
+import ect_p00
+import ect_p01
+import ect_p02
+import ect_p03
+import ect_p04
+import ect_p05
+import ect_p06
+import ect_p07
+import ect_p08
+import ect_p09
+import ect_p10
+import ect_p11
+
+type T:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+fn main():
+  seed = 7
+  var total = 0
+  total = total + ect_p00.f00(seed, 1)
+  total = total + ect_p00.show(T(v: seed))
+  total = total + ect_p01.f03(seed, 2)
+  total = total + ect_p01.show(T(v: seed))
+  total = total + ect_p02.f06(seed, 3)
+  total = total + ect_p02.show(T(v: seed))
+  total = total + ect_p03.f09(seed, 4)
+  total = total + ect_p03.show(T(v: seed))
+  total = total + ect_p04.f12(seed, 5)
+  total = total + ect_p04.show(T(v: seed))
+  total = total + ect_p05.f15(seed, 6)
+  total = total + ect_p05.show(T(v: seed))
+  total = total + ect_p06.f18(seed, 7)
+  total = total + ect_p06.show(T(v: seed))
+  total = total + ect_p07.f21(seed, 8)
+  total = total + ect_p07.show(T(v: seed))
+  total = total + ect_p08.f24(seed, 9)
+  total = total + ect_p08.show(T(v: seed))
+  total = total + ect_p09.f27(seed, 10)
+  total = total + ect_p09.show(T(v: seed))
+  total = total + ect_p10.f30(seed, 11)
+  total = total + ect_p10.show(T(v: seed))
+  total = total + ect_p11.f33(seed, 12)
+  total = total + ect_p11.show(T(v: seed))
+  echo total

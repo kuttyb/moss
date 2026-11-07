@@ -1,0 +1,2 @@
+fn main():
+  echo missing_function(1)

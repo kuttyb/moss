@@ -1,0 +1,187 @@
+module main
+
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 4
+
+type T001:
+  v: Int
+
+  fn score() -> Int:
+    return v + 5
+
+fn c049(x):
+  # leaf body
+  k = 1
+  r = x.score()
+  return r + k
+
+fn c048(x):
+  return c049(x) + 1
+
+fn c047(x):
+  return c048(x) + 1
+
+fn c046(x):
+  return c047(x) + 1
+
+fn c045(x):
+  return c046(x) + 1
+
+fn c044(x):
+  return c045(x) + 1
+
+fn c043(x):
+  return c044(x) + 1
+
+fn c042(x):
+  return c043(x) + 1
+
+fn c041(x):
+  return c042(x) + 1
+
+fn c040(x):
+  return c041(x) + 1
+
+fn c039(x):
+  return c040(x) + 1
+
+fn c038(x):
+  return c039(x) + 1
+
+fn c037(x):
+  return c038(x) + 1
+
+fn c036(x):
+  return c037(x) + 1
+
+fn c035(x):
+  return c036(x) + 1
+
+fn c034(x):
+  return c035(x) + 1
+
+fn c033(x):
+  return c034(x) + 1
+
+fn c032(x):
+  return c033(x) + 1
+
+fn c031(x):
+  return c032(x) + 1
+
+fn c030(x):
+  return c031(x) + 1
+
+fn c029(x):
+  return c030(x) + 1
+
+fn c028(x):
+  return c029(x) + 1
+
+fn c027(x):
+  return c028(x) + 1
+
+fn c026(x):
+  return c027(x) + 1
+
+fn c025(x):
+  return c026(x) + 1
+
+fn c024(x):
+  return c025(x) + 1
+
+fn c023(x):
+  return c024(x) + 1
+
+fn c022(x):
+  return c023(x) + 1
+
+fn c021(x):
+  return c022(x) + 1
+
+fn c020(x):
+  return c021(x) + 1
+
+fn c019(x):
+  return c020(x) + 1
+
+fn c018(x):
+  return c019(x) + 1
+
+fn c017(x):
+  return c018(x) + 1
+
+fn c016(x):
+  return c017(x) + 1
+
+fn c015(x):
+  return c016(x) + 1
+
+fn c014(x):
+  return c015(x) + 1
+
+fn c013(x):
+  return c014(x) + 1
+
+fn c012(x):
+  return c013(x) + 1
+
+fn c011(x):
+  return c012(x) + 1
+
+fn c010(x):
+  return c011(x) + 1
+
+fn c009(x):
+  return c010(x) + 1
+
+fn c008(x):
+  return c009(x) + 1
+
+fn c007(x):
+  return c008(x) + 1
+
+fn c006(x):
+  return c007(x) + 1
+
+fn c005(x):
+  return c006(x) + 1
+
+fn c004(x):
+  return c005(x) + 1
+
+fn c003(x):
+  return c004(x) + 1
+
+fn c002(x):
+  return c003(x) + 1
+
+fn c001(x):
+  return c002(x) + 1
+
+fn c000(x):
+  return c001(x) + 1
+
+fn e0(x):
+  return c000(x) + 0
+
+fn e1(x):
+  return c000(x) + 1
+
+fn e2(x):
+  return c000(x) + 2
+
+fn e3(x):
+  return c000(x) + 3
+
+fn root(x):
+  return e0(x) + e1(x) + e2(x) + e3(x)
+
+fn main():
+  var total = 0.0
+  total = total + root(T000(v: 1))
+  total = total + root(T001(v: 2))
+  echo total
