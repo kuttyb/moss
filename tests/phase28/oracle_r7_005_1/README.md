@@ -47,9 +47,10 @@ The suite currently contains 62 successor fixtures covering:
 
 Current status: previous v2 expectations and diagnostic mappings were
 `CERTIFIED_FROZEN`; the P28-R7-011 successor is also `CERTIFIED_FROZEN` after
-independent normative GO and reviewer-controlled holdout PASS. The combined
-compiler comparison still has 43 provenance-only failures; certification does
-not imply compiler conformance. See
+independent normative GO and reviewer-controlled holdout PASS, revalidated on
+combined compiler source `977f5fe1a40e13cc72245b38f625ef00879194a6`. The
+comparison still has 43 provenance-only failures; certification does not imply
+compiler conformance. See
 `reports/P28_R7_011_ORACLE_LEDGER.md` for the fixture-defect record.
 The v1 oracle remains independently certified and unchanged. The R7-008
 implementation comparison records semantic mismatches and missing clone

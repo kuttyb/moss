@@ -120,4 +120,34 @@ This GO approves only the ORACLE-15/15B/15C normative expectations and holdout
 integrity. It does not approve compiler conformance or clone provenance. The
 certification metadata records the GO and PASS. Frozen expectation content SHA:
 `55ec3d44980133d2dfe38e30d75b4df8eab78783`; final certification metadata is
-committed separately afterward.
+recorded in `certification.json` at the current certified oracle SHA.
+
+## Revalidation on combined compiler source 977f5fe1
+
+After the combined compiler changed, the full 62-row harness was rerun against
+the stable binary snapshot built from source
+`977f5fe1a40e13cc72245b38f625ef00879194a6`. The source tree at integration
+HEAD `a9432fe3a99ae05cc7af1cc713eb021f0a9f72f3` differs from that SHA only in
+`.codex/CURRENT_STATUS.md`. Binary hashes: `moss-dev`
+`d0cbe77c29c7b935691641e497ab0064c668484207d71c1b159b1a74f2ee8a10`,
+`moss-opt` `82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4`.
+
+Result: 19/62 passed all applicable gates; 43 failed, all on clone provenance;
+semantic mismatches 0; missing/invalid provenance blocks 0; generated Rust
+unverified clone occurrences 264. This exactly matches the prior combined
+comparison's outcome categories and totals. ORACLE-15 passes rejection;
+ORACLE-15B/C pass checker and Fast Debug/Native Debug/Native Optimized with
+exact stdout `3`, while provenance remains failing. No provenance exceptions
+were added. The full result and generated ledger are preserved in
+`P28_R7_011_977f_RESULTS.json` (SHA-256
+`50ebc7ce500bb7d5d8a3139a4b9c62e17955b44ba9d4936683be4c36e730960a`) and
+`P28_R7_011_977f_LEDGER.md` (SHA-256
+`b787fcbab270ae0169ce347bf03e42eaab2929aa6643133deeda79a81dcc4628`).
+
+The independent reviewer reran the frozen v2 READ/CONSUME holdouts against
+these stable compiler binaries and confirmed the previous scoped GO remains
+valid. The READ case printed `4` across all three engines; the consuming case
+rejected with `OWNERSHIP_ILLEGAL_CONSUME` across checker/interpreter/native
+paths and emitted no Rust. Revalidation report and JSON are pinned in
+`reports/holdouts/p28-r7-011-oracle-v2/`. This remains oracle certification
+only; it does not claim Step 0/compiler GO or clone provenance approval.
