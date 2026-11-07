@@ -18273,62 +18273,118 @@ untouched.
   modes; feedback and diff validation pass. Full suites/oracle were not run.
   New exact-SHA Team C and Agent 2 reviews are pending; no push/integration.
 
-### Root-ingress owned-local argument disposition — active follow-up
+### Root-ingress owned-local argument disposition — reviewed candidate
 
-- Isolated worktree/branch `tmp/phase28-r7-010-root-argument-disposition` is
-  based exactly on `e3c52c8ed7ec4a1088dd1cd61918b63ab0740c8e`; staging remains
-  untouched. No candidate SHA is frozen yet.
-- The failure in `tests/phase4_materialized_message.moss` reproduced on both
-  e3c52c8e and 8d2de330. The Root message passed an owned `Vector[Int]` local
-  with no exact consume fact. Checker now routes direct local Root arguments
-  through its existing CFG ownership effect/availability analysis and retains
-  an exact statement/arena/owner-root/Message/argument/binding/definition/type
-  disposition. Native and Fast Debug require that fact and move the value into
-  the Root thunk; this authorizes no Moss copy.
-- Use after the message fails with `OWNERSHIP_USE_AFTER_CONSUME`; an explicit
-  `copy(materialized)` allows later reads and has Native/Fast Debug parity.
-  Branch joins and loop-carried availability fail with
-  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`. Direct nonprimitive local
-  arguments on nested non-owner Root message expressions fail with the same
-  checker diagnostic; computed argument expressions remain outside this slice.
-- Final focused evidence after the nested non-owner checker diagnostic:
-  Phase 28 Root-ingress gate reports 414 scenarios PASS in Default and
-  EST-shadow; Phase 21 nested Root-ingress/source-free trailer gate passes in
-  Default and EST-shadow; Phase 4 diff shard exits 0 in Default and EST-shadow.
-  Feedback validation, Python syntax validation, and `git diff --check` pass.
-  Full suites/oracle were not run. Candidate freeze and fresh Team C and Agent 2
-  exact-SHA review remain. Do not integrate or push.
+- Candidate `f033056c0eb6621ba12f4cac5180e29bde03ee66`, based on `e3c52c8e`,
+  received Team C PASS and Agent 2 GO. It was cherry-picked unchanged into
+  isolated staging as `9cad0f78bea157ffee1a3838fdd41373f95dfa5d`.
+- The `phase4_materialized_message.moss` failure reproduced on both e3c52c8e and
+  8d2de330. The checker uses its CFG ownership effect/availability analysis to
+  issue an exact disposition only for one owned, available direct-local
+  definition on the owner-root message edge. Native and Fast Debug require that
+  fact and move the value into the Root thunk; this authorizes no Moss copy.
+- Use after the message fails with `OWNERSHIP_USE_AFTER_CONSUME`; explicit
+  `copy(materialized)` keeps the original usable and has Native/Fast Debug
+  parity. Reusing the same local twice is rejected. Branch joins, loop-carried
+  availability, and direct nonprimitive locals on nested non-owner messages fail
+  with `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`; computed forms stay outside
+  this authority path.
+- Candidate evidence: Phase 28 Root-ingress gate 414/414 in Default and
+  EST-shadow; Phase 21 nested Root-ingress gate passes in both modes; full Phase
+  4 diff shard exits 0 in both modes; feedback, Python syntax, and diff checks
+  pass. Team C and Agent 2 independently rebuilt and verified the exact
+  candidate and corruption hooks. Reports are
+  `docs/phase28/team-c/TEAM_C_ROOT_INGRESS_LOCAL_TRANSFER_F033.md` and
+  `docs/phase28/agent2-reviews/R7-010-ROOT-INGRESS-LOCAL-TRANSFER-F033.md`.
+- Fresh staging build and focused reruns on `9cad0f78` passed: Root-ingress
+  authority 414/414 in Default and EST-shadow; Phase 21 nested Root-ingress in
+  both modes; Phase 4 diff shard in both modes. At the time of initial integration, full suites and the oracle were pending;
+  their exact-9cad0f78 results are recorded in the subsequent checkpoint below.
+  No clone authorization or merge to `phase28-work` or `main` is granted.
 
-### Root-ingress primitive argument TypeRef — active follow-up
+### Staging checkpoint `9cad0f78` — full-suite and oracle rerun
 
-- Fresh isolated branch `phase28-r7-010-root-ingress-primitive-type` is based
-  exactly on staging parent `9cad0f78bea157ffee1a3838fdd41373f95dfa5d`; no
-  staging worktree or prior candidate was edited.
-- At the parent SHA, exact fixture
-  `tests/phase28/oracle/fixtures/oracle_45_handler_primitive_rebind_local.moss`
-  failed only in Fast Debug with
-  `MOSS_INTERNAL_INVARIANT Root-ingress argument lacks an exact closed TypeRef`;
-  checker and Native Debug/Optimized passed. The checker retained the Root
-  capture for the nested message, but only wrote argument TypeRefs for fresh
-  nonprimitive payloads on direct statement-form messages. The enclosing echo
-  expression had `main:int`; the literal argument child had no retained type.
-- Checker now emits a distinct exact Root-ingress argument TypeRef fact for
-  each closed-typed message argument. It binds statement, arena, owner root,
-  Message/argument ExprIds, source fingerprint, selected handler and contexts.
-  Fast Debug uses the fact only for type classification. It does not grant a
-  copy or ownership disposition. Missing, duplicate, perturbed identity/type,
-  and context facts fail closed.
-- ORACLE-45 now returns `11` in Fast Debug and Native Debug/Optimized parity.
-  Focused final results: Phase 28 Root-ingress gate 474 scenarios PASS in each
-  of Default and EST-shadow; Phase 21 nested Root-ingress passes in both modes;
-  Phase 4 diff shard exits 0 in both modes. Full Shadow suite: 115/167 PASS,
-  52 FAIL, 0 SKIP. Full Default suite: 115/167 PASS, 52 FAIL, 0 SKIP. The
-  frozen `oracle_r7_005_1` has 60/60 semantic PASS, zero semantic engine
-  disagreements, 19/60 all-applicable-gate PASS, 41 provenance-only failures,
-  and 252 unverified generated `.clone()` occurrences. ORACLE-45 passes checker,
-  Fast Debug, Native Debug, and Native Optimized. The
-  full-suite failures remain the established cross-phase failures; see the
-  candidate run log at `tmp/phase28-r7-010-root-ingress-primitive-type-results/`
-  records the per-job failures.
-  Feedback, Python syntax, and diff validation pass. Candidate freeze and
-  exact-SHA Team C/Agent 2 review remain pending; no push or integration.
+- Exact staging HEAD: `9cad0f78bea157ffee1a3838fdd41373f95dfa5d`.
+- `make check`: 114/167 PASS, 53 FAIL, 0 SKIP. `make check-shadow`:
+  114/167 PASS, 53 FAIL, 0 SKIP. The same job set fails in both modes. The
+  Phase 4 diff shard and focused Phase 28 (414/414), Phase 21 nested-ingress,
+  and Team B consumer gates pass in both modes. These are measurements for this
+  SHA only; the old 166/167 baseline belongs to earlier tested SHAs.
+- Frozen 60-row ownership oracle on this staging build: 59/60 semantic PASS,
+  zero engine disagreements, 19/60 all-gate PASS, 41 provenance failures, and
+  252 unclassified direct generated `.clone()` observations. The sole semantic
+  failure is ORACLE-45 Fast Debug (`Root-ingress argument lacks an exact
+  closed TypeRef`); checker and Native Debug/Optimized pass that row. Oracle
+  artifacts are in disposable `tmp/phase28-r7-010-9cad0f78/`.
+- Current-SHA inventory by the read-only audit found 588 qualified
+  `Arc::clone` observations across 7 executor runtime sites in the 84 artifacts;
+  two additional FileChunk/FileIO source sites are outside this oracle corpus.
+  No runtime clone exception or authorization is approved.
+- Next implementation dependency: repair the exact Root-ingress primitive
+  argument TypeRef authority consumed by Fast Debug, including ORACLE-45,
+  against this exact staging parent in a fresh isolated candidate. Then freeze
+  and request independent Team C and Agent 2 verification before integration.
+  The 53 full-suite failures remain an additional baseline gate; classify
+  against exact prior logs before attributing them to this candidate.
+- Immediate parent control `e3c52c8e` ran `make check`: 113/167 PASS,
+  53 FAIL, 1 SKIP. Its Phase 4 diff shard failed at the missing owned-local
+  transfer; Phase 5 tooling was skipped by dependency. On `9cad0f78`, Phase 4
+  passes and Phase 5 runs but has three dependent Emacs failures. A failure
+  family triage is recorded in
+  `docs/phase28/R7-010_REGRESSION_TRIAGE_9CAD0F78.md`; this report is diagnostic
+  only and does not claim the 53 remaining jobs are individually fixed.
+- Exact-SHA clone remediation matrix from the read-only inventory is at
+  `/home/owner/daji/code/moss/tmp/clone-audit-9cad0f78/clone-provenance-fix-matrix.md`.
+  Independent Team C runtime lifetime review of the ten represented sites is
+  now underway. No runtime clone is authorized.
+
+### ORACLE-45 exact-TypeRef candidate — reviewed and integrated into staging
+
+- Candidate `dce8e519238e89bce228f4db90e18c782d1f4def` is based on
+  `9cad0f78bea157ffee1a3838fdd41373f95dfa5d` and remains isolated on
+  `phase28-r7-010-root-ingress-primitive-type`; after exact-SHA review it was
+  fast-forwarded into this isolated integration branch as the current HEAD. It
+  was not pushed.
+- Checker now retains an exact per-argument closed TypeRef fact for Root
+  messages; Fast Debug requires the exact fact. It grants no copy or ownership
+  authority. The nested primitive ORACLE-45 argument passes Checker, Fast
+  Debug, Native Debug, and Native Optimized.
+- Correct frozen v2 oracle: 60/60 semantic PASS, zero semantic engine
+  disagreements, 19/60 all-gate PASS, 41 provenance-only failures, 252
+  unauthorized/unclassified direct runtime clone observations. The first v1
+  56-row run was discarded and is not acceptance evidence.
+- `make check` and `make check-shadow`: each 115/167 PASS, 52 FAIL, 0 SKIP.
+  The exact 52-job list is in the candidate run log
+  `tmp/phase28-r7-010-root-ingress-primitive-type-results/make-check.log`.
+  Compared with the exact 9cad staging list, the repaired job is
+  `check_phase25_s1_checker_authority`; the other failures remain. Phase 4
+  diff stays green; Phase 5 tooling now executes and still fails.
+- Team C returned scoped PASS and Agent 2 returned scoped GO for this exact
+  SHA. Reports: `docs/phase28/team-c/TEAM_C_ROOT_INGRESS_PRIMITIVE_TYPEREF_DCE8E519.md`
+  and `docs/phase28/agent2-reviews/R7-010-ORACLE45-TYPEREF-DCE8E519.md`. This does not approve whole Phase 28. The ten runtime
+  clone sites remain unapproved pending exact per-site provenance evidence.
+- Clone-site review checkpoint: Team C and Agent 2 both found no basis to
+  authorize any of the ten represented runtime clone sites yet. Their exact-SHA
+  reports are `docs/phase28/team-c/TEAM_C_RUNTIME_CLONE_LIFETIME_AUDIT_9CAD0F78.md`
+  and `docs/phase28/agent2-reviews/R7-010-RUNTIME-CLONE-ADVERSARIAL-AUDIT-9CAD0F78.md`. Test 39 plus 42/46/47
+  directly support runtime-03/06 counts and queue races; runtime-10 moves `R`.
+  Agent 2 flags runtime-02 as a deep clone of source-derived affinity config,
+  and the remaining per-site lifetime tests are listed in both reports. The
+  FileChunk and FileIO Arc sites still need separate focused artifact coverage.
+
+### Reviewed staging HEAD
+
+- The isolated integration branch is fast-forwarded to exact SHA
+  `dce8e519238e89bce228f4db90e18c782d1f4def`. The prior staging worktree
+  changes and review reports were restored from retained stash
+  `preserve 9cad staging status and review reports before reviewed ORACLE-45
+  integration`; no prior stash was dropped. `phase28-work` and `main` are
+  unchanged.
+- Exact candidate Default/Shadow suites and v2 oracle remain applicable because
+  this branch points to that unchanged reviewed commit. Staging focused gates
+  were independently reproduced by Team C.
+- Next: implement exact-site lifetime/drop tests and runtime provenance for the
+  ten reviewed sites, including tests and sidecar support for qualified
+  `Arc::clone`; add focused FileChunk and FileIO artifacts for their two
+  additional sites. Continue triaging the 52 remaining full-suite failures by
+  the recorded root-cause groups. No runtime clone exception is authorized.
