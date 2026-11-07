@@ -19029,9 +19029,16 @@ untouched.
   dependent-package cross-module navigation. This is not a proven new
   regression. The Build Planner use-after-consume is a separate shared failure
   in `check_phase15_8_cross_package_fast_debug`.
-- `00b54a51` is the current integrated source for corpus and oracle refresh;
-  earlier 33/42 corpus and 19/62 oracle numbers remain pinned to `977f5fe1`.
-  Current-source corpus and oracle runs are pending. No runtime clone site is
-  authorized. Team A producer and Team B consumer Step 1 work continue; Team C's
+- `00b54a51` has current-source measurements: the 150ab36 corpus comparison
+  is 236/238 baseline-accepted, 203/238 candidate-accepted, 33 losses, zero
+  gains/timeouts; exact path comparison confirms all 33 losses are among the
+  prior 42, with nine callback losses recovered and zero new losses. The fresh
+  62-row oracle is recorded at isolated oracle branch commit
+  `8dd275684240dd5287fbfa111b83a091c51a8319`: 19 all-gate PASS, 43
+  provenance-only failures, zero semantic mismatches/blocked cases, 264
+  unverified clones; frozen expectations unchanged. The suite diff is
+  `docs/phase28/P28_R7_011_STEP0_SUITE_DIFF_00b.md`; oracle details are in
+  `P28_R7_011_00b54_RESULTS.json` and `P28_R7_011_00b54_LEDGER.md` on the
+  oracle branch. No runtime clone site is authorized. Team A producer and Team B consumer Step 1 work continue; Team C's
   four Map-key copy patch remains uncommitted and is held for the shared
   SpecId/EST occurrence lookup.
