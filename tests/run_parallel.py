@@ -143,6 +143,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase27_est_functional_tree", [sys.executable, "tests/tooling/check_phase27_est_functional_tree.py", "{compiler}"]),
     ("check_phase27_untyped_pipeline_return", [sys.executable, "tests/tooling/check_phase27_untyped_pipeline_return.py", "{compiler}"]),
     ("check_phase27_accepts_rustc", [sys.executable, "tests/tooling/check_phase27_accepts_rustc.py", "{compiler}"]),
+    ("check_phase28_map_get_copy_contract", [sys.executable, "tests/tooling/check_phase28_map_get_copy_contract.py", "{compiler}"]),
     ("check_phase27_three_engine", [sys.executable, "tests/tooling/check_phase27_three_engine.py", "{compiler}"]),
     ("check_phase27_optimizer_expression_uses", [sys.executable, "tests/tooling/check_phase27_optimizer_expression_uses.py", "{compiler}"]),
     ("check_phase27_5_for_match", [sys.executable, "tests/tooling/check_phase27_5_for_match.py", "{compiler}"]),

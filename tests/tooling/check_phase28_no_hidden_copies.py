@@ -11,6 +11,9 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+EXPECTED_COMPILE_FAILURES = (
+    ROOT / "tests/tooling/fixtures/phase28_no_hidden_copies_expected_compile_failures.txt"
+)
 MARK = re.compile(r"//\s*Moss line (\d+):\s*(.*)")
 CLONE = re.compile(r"\.clone\(\)|\.cloned\(\)|\.to_owned\(\)|\.to_vec\(\)|Clone::clone")
 
@@ -111,7 +114,27 @@ def main() -> int:
         print(f"COMPILE-FAIL {source.relative_to(ROOT)} exit={code}: {diagnostic}")
     for row in sorted(hidden):
         print(f"HIDDEN {row}")
-    return 1 if hidden else 0
+
+    expected_failures = {
+        line.strip()
+        for line in EXPECTED_COMPILE_FAILURES.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    actual_failures = {
+        source.relative_to(ROOT).as_posix()
+        for source, _code, _diagnostic in compile_failures
+    }
+    digest = hashlib.sha256(
+        ("\n".join(sorted(actual_failures)) + "\n").encode()
+    ).hexdigest()
+    print(f"compile_failure_list_count={len(actual_failures)} sha256={digest}")
+    unexpected = sorted(actual_failures - expected_failures)
+    missing = sorted(expected_failures - actual_failures)
+    for path in unexpected:
+        print(f"UNEXPECTED-COMPILE-FAIL {path}")
+    for path in missing:
+        print(f"EXPECTED-COMPILE-FAIL-MISSING {path}")
+    return 1 if hidden or unexpected or missing else 0
 
 
 if __name__ == "__main__":

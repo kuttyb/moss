@@ -1,0 +1,8 @@
+fn main():
+  values = Map()
+  values[1] = [1]
+  fallback = [2]
+  result = copy(values.get(99, fallback))
+  result.push(3)
+  echo result |> count
+  echo fallback |> count
