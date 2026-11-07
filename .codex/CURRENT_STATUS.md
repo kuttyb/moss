@@ -18860,3 +18860,20 @@ untouched.
 - The standalone script also passed drop and perturb hooks for the dynamic
   callback fact and checker/native compilation of all nine F3 callback corpus
   programs. These checks are not yet registered in `make check`.
+
+## Team C Step 3 audit rerun (branch SHA 44ffcae8)
+
+- Verified `check_phase28_map_get_copy_contract.py` on Team C's built compiler
+  (`moss-dev` SHA-256 `69d5b5fe9725027ba802a4d51aea25371dbde96fbc132f66abcacc937e8f745c`):
+  the original `swarm_021` implicit-copy case is rejected as a borrowed Map.get
+  result; the new explicit-copy variant builds and prints `2\n1`.
+- Re-ran the full hidden-copy gate over 2,087 sources: 1,187 compile, 900
+  compile failures, 13 explicit-copy clone occurrences, and 4 hidden clones at
+  three Map-key insertion sites (two generated variants at Counter line 12,
+  `swarm_061b_map_get_before_write.moss:5`, and
+  `text_toolkit/toolkit/src/stats.moss:104`). The actual compile-failure set
+  exactly matches the 900-entry manifest, SHA-256
+  `29e3c51e5038c9efb8e66be9db778a617cfde676c665eade3a778251972a6699`;
+  there are no unexpected or missing compile failures. The gate correctly
+  remains RED on the four unauthorized hidden value copies. No clone site is
+  authorized.
