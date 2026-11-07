@@ -55,6 +55,8 @@ void Arena::record_facts(ExprId id, std::string specialization_context,
     destination.resolved_target = std::move(facts.resolved_target);
   if (facts.inferred_effect)
     destination.inferred_effect = facts.inferred_effect;
+  if (facts.dynamic_callback)
+    destination.dynamic_callback = facts.dynamic_callback;
 }
 
 const SemanticFacts* Arena::facts(
@@ -229,6 +231,23 @@ bool Arena::test_mutate_occurrence_specialization(ExprId id, std::string_view co
     return true;
   }
   return false;
+}
+
+bool Arena::test_drop_occurrence_dynamic_callback(
+    ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it == semantic_facts_.end()) return false;
+  it->second.dynamic_callback.reset();
+  return true;
+}
+
+bool Arena::test_perturb_occurrence_dynamic_callback(
+    ExprId id, std::string_view context) {
+  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+  if (it == semantic_facts_.end() || !it->second.dynamic_callback)
+    return false;
+  it->second.dynamic_callback = !*it->second.dynamic_callback;
+  return true;
 }
 #endif
 
