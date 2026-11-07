@@ -849,6 +849,9 @@ struct SemanticCallEdge {
   // occurrence to its checked concrete callable specialization. Non-callable
   // argument slots contain InvalidSpecId.
   vector<SpecId> argument_callable_spec_ids;
+  // For a functional stage call, identifies which ordered call argument is
+  // the callback value. Invalid means this edge has no callback argument.
+  std::uint32_t callback_argument_index = UINT32_MAX;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic
