@@ -18343,8 +18343,9 @@ untouched.
 - Candidate `dce8e519238e89bce228f4db90e18c782d1f4def` is based on
   `9cad0f78bea157ffee1a3838fdd41373f95dfa5d` and remains isolated on
   `phase28-r7-010-root-ingress-primitive-type`; after exact-SHA review it was
-  fast-forwarded into this isolated integration branch as the current HEAD. It
-  was not pushed.
+  fast-forwarded into this isolated integration branch. The implementation is
+  commit dce8e519; a following docs checkpoint is current HEAD dee4b621. Neither
+  commit was pushed.
 - Checker now retains an exact per-argument closed TypeRef fact for Root
   messages; Fast Debug requires the exact fact. It grants no copy or ownership
   authority. The nested primitive ORACLE-45 argument passes Checker, Fast
@@ -18361,8 +18362,9 @@ untouched.
   diff stays green; Phase 5 tooling now executes and still fails.
 - Team C returned scoped PASS and Agent 2 returned scoped GO for this exact
   SHA. Reports: `docs/phase28/team-c/TEAM_C_ROOT_INGRESS_PRIMITIVE_TYPEREF_DCE8E519.md`
-  and `docs/phase28/agent2-reviews/R7-010-ORACLE45-TYPEREF-DCE8E519.md`. This does not approve whole Phase 28. The ten runtime
-  clone sites remain unapproved pending exact per-site provenance evidence.
+  and `docs/phase28/agent2-reviews/R7-010-ORACLE45-TYPEREF-DCE8E519.md`. This
+  does not approve whole Phase 28. The ten runtime clone sites remain
+  unapproved pending exact per-site provenance evidence.
 - Clone-site review checkpoint: Team C and Agent 2 both found no basis to
   authorize any of the ten represented runtime clone sites yet. Their exact-SHA
   reports are `docs/phase28/team-c/TEAM_C_RUNTIME_CLONE_LIFETIME_AUDIT_9CAD0F78.md`
@@ -18374,15 +18376,16 @@ untouched.
 
 ### Reviewed staging HEAD
 
-- The isolated integration branch is fast-forwarded to exact SHA
-  `dce8e519238e89bce228f4db90e18c782d1f4def`. The prior staging worktree
-  changes and review reports were restored from retained stash
+- The isolated integration branch current HEAD is `dee4b6216ff0e02c5a64b9b341598fb4bbdde054`; it contains the reviewed implementation commit
+  `dce8e519238e89bce228f4db90e18c782d1f4def` unchanged. The docs checkpoint
+  does not change source/test content. The prior staging worktree changes and
+  review reports were restored from retained stash
   `preserve 9cad staging status and review reports before reviewed ORACLE-45
   integration`; no prior stash was dropped. `phase28-work` and `main` are
   unchanged.
-- Exact candidate Default/Shadow suites and v2 oracle remain applicable because
-  this branch points to that unchanged reviewed commit. Staging focused gates
-  were independently reproduced by Team C.
+- Exact candidate Default/Shadow suites and v2 oracle remain applicable to the
+  unchanged dce8e519 source tree. Staging focused gates were independently
+  reproduced by Team C.
 - Next: implement exact-site lifetime/drop tests and runtime provenance for the
   ten reviewed sites, including tests and sidecar support for qualified
   `Arc::clone`; add focused FileChunk and FileIO artifacts for their two
