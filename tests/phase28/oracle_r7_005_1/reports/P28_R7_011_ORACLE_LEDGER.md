@@ -56,3 +56,41 @@ python3 tests/phase28/oracle_r7_005_1/oracle_harness.py \
   --json-out tmp/p28-r7-011-oracle-28e3-results.json \
   --ledger-out tmp/p28-r7-011-oracle-28e3-ledger.md
 ```
+
+## Corrected-output comparison on the combined Step 0 compiler
+
+The first combined-compiler run showed both new READ fixtures checked and
+executed successfully in Fast Debug, Native Debug, and Native Optimized, with
+actual stdout exactly `3`. The draft expectation had encoded a trailing newline
+(`3\n`), while the normal harness compares Moss output without that newline.
+This was a representation mismatch, not a semantic outcome change. The
+expected output is now the directive's exact `3` for all three modes.
+
+The normal harness was rerun against the exact combined Step 0 source
+`83e42eece65663b3de46e09a14227f9e17633513`; the `moss-dev` binary SHA-256 is
+`1e83d1874b9cd22ce714ffca0bdfb824342a2fbddcd2ba94e9f73119894ad362`. Result:
+19/62 passed every applicable gate; 43 failed at least one gate; zero semantic
+failures; zero fixtures blocked by missing/invalid provenance; 264 generated
+Rust clone occurrences were unverified. All 43 failures are clone-provenance
+failures. ORACLE-15 passed checker rejection. ORACLE-15B and ORACLE-15C passed
+checker and all three execution modes with stdout `3`; each remains a
+provenance failure. No clone exception was added.
+
+Machine results are in disposable `tmp/p28-r7-011-oracle-83e42-corrected-results.json`
+(SHA-256 `ffea7b638f2becc592f7709d9f3ff147cc3ceff9433284675cb1b19b6acbc2ea`).
+The generated machine ledger is `tmp/p28-r7-011-oracle-83e42-corrected-ledger.md`
+(SHA-256 `6d1dc4a04093ddbce5f63b3ce66143a5eca9ab0572c03f3da03d91b1dfc72e53`).
+The exact harness invocation was:
+
+```sh
+python3 tests/phase28/oracle_r7_005_1/oracle_harness.py \
+  --compiler /home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev \
+  --json-out tmp/p28-r7-011-oracle-83e42-corrected-results.json \
+  --ledger-out tmp/p28-r7-011-oracle-83e42-corrected-ledger.md
+```
+
+This remains an implementation comparison, not independent oracle
+certification. The expectation digest is refreshed in `certification.json`;
+candidate and frozen-SHA approval fields remain pending until the exact oracle
+candidate receives independent normative review and reviewer-controlled
+holdouts. Do not certify or broaden the report to unrelated changes.

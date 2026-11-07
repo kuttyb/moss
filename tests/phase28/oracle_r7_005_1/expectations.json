@@ -394,15 +394,15 @@
         "checker": "accept",
         "fast_debug": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "native_debug": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "native_optimized": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "clone_audit": {
           "authorized_copy_calls": 0,
@@ -422,15 +422,15 @@
         "checker": "accept",
         "fast_debug": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "native_debug": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "native_optimized": {
           "status": "execute",
-          "stdout": "3\n"
+          "stdout": "3"
         },
         "clone_audit": {
           "authorized_copy_calls": 0,

@@ -6,7 +6,7 @@
   "reviewer_identity": null,
   "holdout_result": "PENDING",
   "holdout_summary": "The revised ORACLE-15/15B/15C expectation set is pending independent normative review and reviewer-controlled holdouts.",
-  "expectations_sha256": null,
+  "expectations_sha256": "ce0581abcecd1b476f9f552433375493b1ed0cd9a58c61236b959c2d453fbfec",
   "runtime_callsite_allowlist_sha256": "1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d",
   "frozen_sha": null,
   "approval_status": "DRAFT_PENDING_L7_APPROVAL",

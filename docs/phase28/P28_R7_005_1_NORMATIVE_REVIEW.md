@@ -2,6 +2,13 @@
 
 **Status:** Normative approval GO on `c808e9fab5187e25703cac42e4be15162516d39d`; successor v2 is `CERTIFIED_FROZEN`. The final implementation comparison and certification evidence are recorded in `tests/phase28/oracle_r7_005_1/reports/`.
 
+**P28-R7-011 status:** the v2 certification below is historical. The current
+expectation file has 62 rows after ORACLE-15 was corrected and ORACLE-15B/C
+were added. This R7-011 successor is pending independent review and
+reviewer-controlled holdouts; it is not certified by the v2 GO below. See
+`tests/phase28/oracle_r7_005_1/reports/P28_R7_011_ORACLE_LEDGER.md` for the
+fixture-defect record and current combined-compiler comparison.
+
 ## Frozen parent preservation
 
 The original certified oracle remains under `tests/phase28/oracle/` and is not edited by this successor. Verified parent pins:
@@ -10,7 +17,11 @@ The original certified oracle remains under `tests/phase28/oracle/` and is not e
 - `runtime_callsite_allowlist.json`: `1b4cc2f59ddaec51149f84468b098c53772815c3ca64e858febd976e53a6e19d`
 - Parent certified/frozen SHA: `544506774211fbb5b9d4d3e8116525b389faa3dd`; handoff: `46619968f64ec618f4cc2576f601b86569399f3c`.
 
-The successor is `tests/phase28/oracle_r7_005_1/`, has 60 expectation rows, and completed its normative review and recertification gates. Its exact expectation digest and frozen content SHA are recorded in `certification.json`.
+At v2 certification time, the successor under `tests/phase28/oracle_r7_005_1/`
+had 60 expectation rows and completed its normative review and recertification
+gates. The R7-011 successor adds two rows and corrects one fixture; its
+expectation digest and frozen content SHA must be separately reviewed and
+recorded in `certification.json`.
 
 Normative source pins used for this review are the approved P28-R7-005 language addendum at `46619968f64ec618f4cc2576f601b86569399f3c:docs/phase28/P28_R7_005_LANGUAGE_ADDENDUM_DRAFT.md`, and the consolidated Phase 28 LOL proposal at `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc:docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md`. The latter is design authority for proposed ownership rules. These expectations define the oracle contract and are not claims about current compiler conformance. The R7-008 integration evidence is pinned at `e9d3f844bae715809f6b78f4d0d0f8ba908db6bc:docs/phase28/P28_R7_008_INTEGRATION_REPORT.md`.
 
