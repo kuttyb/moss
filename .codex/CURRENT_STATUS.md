@@ -18877,3 +18877,18 @@ untouched.
   there are no unexpected or missing compile failures. The gate correctly
   remains RED on the four unauthorized hidden value copies. No clone site is
   authorized.
+
+## Step 0 oracle certification completed (oracle branch e3d0cb70)
+
+- Oracle owner completed and pushed certification metadata on isolated branch
+  `phase28-r7-011-oracle-15-current` at
+  `e3d0cb70647238f80a1c42cb1db56868595abf9a`. Frozen expectation content SHA
+  `55ec3d44980133d2dfe38e30d75b4df8eab78783`; expectation digest
+  `4f5f2b1849ced45e520c15fc17914cc6e284b47da709d17c5c33d8668f52045a`.
+- Independent reviewer gave scoped GO and the reviewer-controlled v2 holdouts
+  passed. On combined compiler `83e42ee`, 19/62 fixtures pass all gates, 0
+  semantic mismatches, 43 provenance-only failures, 0 missing/invalid
+  provenance blocks, and 264 unverified clones. ORACLE-15 rejects; 15B/15C
+  pass checker and all engines with output `3`, while their provenance checks
+  fail. This certifies oracle expectations only, not clone provenance or
+  compiler/Step 0 conformance. Production branches remain untouched.
