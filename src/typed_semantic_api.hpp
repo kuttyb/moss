@@ -56,6 +56,7 @@ struct TypedSemanticDependencyV1 {
 };
 
 struct TypedSpecializationV1 {
+  SpecId spec_id = InvalidSpecId;
   std::string key;
   SpecializationKey identity;
   std::string callable_id;
@@ -157,6 +158,7 @@ struct TypedLocalOwnershipFactV1 {
         unsupported_reason != UnsupportedReason::None &&
         availability == Availability::NotRequired;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Checker-owned requirement that a local ownership fact must exist for
@@ -189,6 +191,7 @@ struct TypedLocalOwnershipRequirementV1 {
   InferenceStatus inference_status{InferenceStatus::Inferred};
   UnsupportedReason unsupported_reason{UnsupportedReason::None};
   Availability availability{Availability::MissingEstOccurrence};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Exact checker authorization for transferring an owned local into a longer-
@@ -251,6 +254,7 @@ struct TypedLocalTransferFactV1 {
         !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedLocalTransferRequirementV1 : TypedLocalTransferFactV1 {};
@@ -285,6 +289,7 @@ struct TypedLoopOwnershipFactV1 {
   bool reachable{false};
   Availability availability{Availability::MissingEdge};
   TypedSourceProvenanceV1 provenance;
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedLoopOwnershipRequirementV1 {
@@ -309,6 +314,7 @@ struct TypedLoopOwnershipRequirementV1 {
   Effect converged_access{Effect::Read};
   ValueState value_state{ValueState::Unavailable};
   Availability availability{Availability::MissingEdge};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Exact checker snapshot for a typed exceptional successor. State is sampled
@@ -343,6 +349,7 @@ struct TypedExceptionalOwnershipFactV1 {
   std::vector<std::string> consumed_binding_identities;
   std::vector<std::string> mutated_storage_paths;
   Availability availability{Availability::MissingOccurrence};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedExceptionalOwnershipRequirementV1 {
@@ -359,6 +366,7 @@ struct TypedExceptionalOwnershipRequirementV1 {
   std::string specialization_context;
   std::string specialization_identity;
   Availability availability{Availability::MissingOccurrence};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Exact permission to transfer the selected owned error carrier through a
@@ -406,6 +414,7 @@ struct TypedBareRaiseTransferFactV1 {
         mode == TypedBareRaiseTransferModeV1::TransferSelectedCarrier &&
         transfers_original_carrier && !permits_copy;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedBareRaiseTransferRequirementV1 {
@@ -443,6 +452,7 @@ struct TypedBareRaiseTransferRequirementV1 {
         transfers_original_carrier && !permits_copy &&
         availability == Availability::Present;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 enum class TypedTakeReplacementV1 { OptionNone, VectorEmpty, MapEmpty, QueueEmpty };
@@ -531,6 +541,7 @@ struct TypedTakeFactV1 {
         required_access == Effect::Write && transfers_original_value &&
         exclusive_projection_access;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedTakeRequirementV1 {
@@ -550,6 +561,7 @@ struct TypedTakeRequirementV1 {
   Effect required_access{Effect::Write};
   bool transfers_original_value{false};
   bool exclusive_projection_access{false};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedCopyFactV1 {
@@ -592,6 +604,7 @@ struct TypedCopyFactV1 {
         required_source_access == Effect::Read &&
         creates_independent_owner;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedCopyRequirementV1 {
@@ -609,6 +622,7 @@ struct TypedCopyRequirementV1 {
   TypeRef result_type;
   Effect required_source_access{Effect::Read};
   bool creates_independent_owner{true};
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Exact checker proof that one fresh-empty collection operation cannot return
@@ -683,6 +697,7 @@ struct TypedCollectionOutcomeFactV1 {
         argument_type && argument_type->is_closed() &&
         receiver_type->type_args.front()->structurally_equal(*argument_type);
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedCollectionOutcomeRequirementV1 : TypedCollectionOutcomeFactV1 {};
@@ -743,6 +758,7 @@ struct TypedConditionalCollectionErrorFactV1 {
       return write_value_type && write_value_type->is_closed();
     return !write_value_type;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedConditionalCollectionErrorRequirementV1
     : TypedConditionalCollectionErrorFactV1 {};
@@ -816,6 +832,7 @@ struct TypedReturnValueFactV1 {
         !source_definition_identity.empty();
     return binding != checker_proved_owned_rvalue;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedReturnValueRequirementV1 : TypedReturnValueFactV1 {};
 
@@ -928,6 +945,7 @@ struct TypedReturnValueArtifactFactV1 {
         !source_definition_identity.empty();
     return binding != checker_proved_owned_rvalue;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 enum class TypedCollectionViewOperationV1 { MapKeys, MapValues };
@@ -986,6 +1004,7 @@ struct TypedCollectionViewFactV1 {
              : !view_binding_identity.empty() && !view_definition_identity.empty() &&
                    !bounded_read_use_statement_occurrences.empty());
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedCollectionViewRequirementV1 : TypedCollectionViewFactV1 {};
 
@@ -1051,6 +1070,7 @@ struct TypedProjectedCollectionReadFactV1 {
         !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedProjectedCollectionReadRequirementV1
     : TypedProjectedCollectionReadFactV1 {};
@@ -1159,6 +1179,7 @@ struct TypedProjectedCallArgumentReadFactV1 {
          availability == Availability::Escaping ||
          availability == Availability::Contradictory);
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedProjectedCallArgumentReadRequirementV1
     : TypedProjectedCallArgumentReadFactV1 {};
@@ -1259,6 +1280,7 @@ struct TypedIndexedCallArgumentReadFactV1 {
          availability == Availability::Escaping ||
          availability == Availability::Contradictory);
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedIndexedCallArgumentReadRequirementV1
     : TypedIndexedCallArgumentReadFactV1 {};
@@ -1323,6 +1345,7 @@ struct TypedIndexedExpressionReadFactV1 {
         provenance.line > 0 && !provenance.enclosing_callable_id.empty() &&
         !provenance.defining_module_id.empty();
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedIndexedExpressionReadRequirementV1
     : TypedIndexedExpressionReadFactV1 {};
@@ -1382,6 +1405,7 @@ struct TypedEchoArgumentFactV1 {
       return false;
     return receiver_type->type_args.front()->structurally_equal(*element_type);
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedEchoArgumentRequirementV1 {
@@ -1427,6 +1451,7 @@ struct TypedEchoArgumentRequirementV1 {
         receiver_type->type_args.front() &&
         receiver_type->type_args.front()->structurally_equal(*element_type);
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // Narrow compiler-internal authority for cloning a statically constructed
@@ -1498,6 +1523,7 @@ struct TypedRootIngressDomainCaptureFactV1 {
         source_line > 0 && synchronous_root_ingress &&
         compiler_generated_capture_only && !permits_moss_value_copy;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 using TypedRootIngressDomainCaptureRequirementV1 =
@@ -1534,6 +1560,7 @@ struct TypedRootIngressArgumentTypeFactV1 {
         !specialization_context.empty() && !est_fact_context.empty() &&
         argument_type && argument_type->is_closed();
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 using TypedRootIngressArgumentTypeRequirementV1 =
     TypedRootIngressArgumentTypeFactV1;
@@ -1586,6 +1613,7 @@ struct TypedRootIngressPayloadFactV1 {
         checker_proved_fresh_rvalue && !permits_moss_value_copy &&
         action == TypedRootIngressPayloadActionV1::TransferOwnedFreshRvalue;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 using TypedRootIngressPayloadRequirementV1 = TypedRootIngressPayloadFactV1;
 
@@ -1632,6 +1660,7 @@ struct TypedRootIngressArgumentDispositionFactV1 {
         required_access == Effect::Consume && source_is_owned &&
         checker_proved_available;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 using TypedRootIngressArgumentDispositionRequirementV1 =
     TypedRootIngressArgumentDispositionFactV1;
@@ -1698,6 +1727,7 @@ struct TypedMatchOwnershipFactV1 {
     }
     return true;
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 
 struct TypedMatchOwnershipRequirementV1 {
@@ -1712,6 +1742,7 @@ struct TypedMatchOwnershipRequirementV1 {
   TypedMatchScrutineeKindV1 scrutinee_kind{TypedMatchScrutineeKindV1::Enum};
   bool is_consuming{false};
   std::vector<TypedMatchArmFactV1> arms;
+  SpecId specialization_id = InvalidSpecId;
 };
 
 // A missing or incomplete checker summary is represented as unavailable,
@@ -1785,6 +1816,7 @@ struct TypedTryContinuationFactV1 {
         !owner_callable_identity.empty() &&
         !specialization_context.empty();
   }
+  SpecId specialization_id = InvalidSpecId;
 };
 struct TypedTryContinuationRequirementV1 : TypedTryContinuationFactV1 {};
 
