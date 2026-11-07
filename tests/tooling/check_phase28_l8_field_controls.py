@@ -17,6 +17,8 @@ READ_CASES = {
     "field_nested_index": "3",
     "field_after_vector_literal": "1\n3",
     "field_parameter": "3",
+    "field_parameter_caller_reuse": "3\n3",
+    "field_rebind_after_vector_literal": "3",
 }
 
 
@@ -102,7 +104,7 @@ def main() -> int:
         for tag, expected in (
             ("swarm_027_indexed_collection_method", True),
             ("swarm_028_self_method_argument_borrow", False),
-            ("swarm_030_string_comparison_borrowed", False),
+            ("swarm_030_string_comparison_borrowed", True),
         ):
             source = ROOT / f"tests/{tag}.moss"
             if expected:

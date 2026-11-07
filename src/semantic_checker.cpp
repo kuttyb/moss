@@ -20384,7 +20384,16 @@ class Checker {
             source_access = Effect::Consume;
             const auto source = direct_statement_identifier(
                 statement, est::ExprSlot::Initializer);
-            if (source && transfer_type(*source_type))
+            const auto source_location = storage_location(statement.b, env);
+            const bool plain_field_source = source_location &&
+                !source_location->path.empty() &&
+                source_location->path.back() != "[]";
+            if (plain_field_source) {
+              // A field projection is a borrow source. The later ownership
+              // pass may reject a consuming alias, but parameter summaries
+              // must not turn the projection itself into a field transfer.
+              source_access = Effect::Read;
+            } else if (source && transfer_type(*source_type))
               if (auto inferred = infer_straight_line_definition_effect(
                       statements, index, statement.a, {}, *source, {}, env, {}))
                 source_access = *inferred;
@@ -20421,7 +20430,13 @@ class Checker {
             source_access = Effect::Consume;
             const auto source = direct_statement_identifier(
                 statement, est::ExprSlot::RhsValue);
-            if (source && transfer_type(*source_type) &&
+            const auto source_location = storage_location(statement.b, env);
+            const bool plain_field_source = source_location &&
+                !source_location->path.empty() &&
+                source_location->path.back() != "[]";
+            if (plain_field_source) {
+              source_access = Effect::Read;
+            } else if (source && transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
                 env.count(statement.a) && !receiver_fields.count(statement.a))
               if (auto inferred = infer_straight_line_definition_effect(
@@ -31260,8 +31275,7 @@ class Checker {
           bool is_plain_field_borrow_source = false;
           if (local_source) {
             source_root = *local_source;
-          } else if (!had_lexical_binding && !targets_object_field &&
-                     !env.state_fields.count(s.a)) {
+          } else if (!targets_object_field && !env.state_fields.count(s.a)) {
             if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
               source_root = loc->root;
             } else if (auto loc = storage_location(s.b, env.types);
