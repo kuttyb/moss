@@ -1,0 +1,10 @@
+enum Bad:
+  Big
+
+fn main():
+  try:
+    raise Bad.Big
+    echo 1
+  recover:
+    echo 1
+  echo 0

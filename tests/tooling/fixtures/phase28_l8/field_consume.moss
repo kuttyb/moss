@@ -1,0 +1,11 @@
+type State:
+  frontier: Vector[Int]
+
+fn archive(items: Vector[Int]) -> Vector[Int]:
+  return items
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  b = s.frontier
+  kept = archive(b)
+  echo (kept |> count)
