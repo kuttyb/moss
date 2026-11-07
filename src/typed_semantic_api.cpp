@@ -189,6 +189,7 @@ TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) {
           specialization.parameter_effects.size() != function.params.size())
         throw std::invalid_argument("checked specialization lacks typed result or access facts");
       TypedSpecializationV1 record;
+      record.spec_id = specialization.spec_id;
       record.key = specialization.stable_type_key;
       record.identity = specialization.semantic_key;
       record.callable_id = function.semantic_callable_id;
