@@ -1,0 +1,10 @@
+fn bump(x):
+  return x + 1
+
+fn twice(x):
+  var y = bump(x)
+  return bump(y)
+
+fn main():
+  echo twice(3)
+  echo twice(4)

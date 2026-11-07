@@ -1,0 +1,8 @@
+cargo: cargo 1.98.1 (797e8a9bc 2026-08-05); rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+1. first check (empty target dir)                          rustc ran on 1 unit(s), 0 reused, exit 0
+2. no change                                               rustc ran on 0 unit(s), 1 reused, exit 0
+3. touch (mtime changes, content identical)                rustc ran on 1 unit(s), 0 reused, exit 0
+4. rewrite identical bytes (mtime changes)                 rustc ran on 1 unit(s), 0 reused, exit 0
+5. content change (k = 1 -> 2)                             rustc ran on 1 unit(s), 0 reused, exit 0
+6. content restored (new mtime)                            rustc ran on 1 unit(s), 0 reused, exit 0
+7. content change, mtime reset to the old value            rustc ran on 0 unit(s), 1 reused, exit 0

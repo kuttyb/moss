@@ -1,0 +1,16 @@
+module ect_trivial_lib
+
+export trait Measured:
+  fn len() -> Int
+
+export fn double(x):
+  return x + x
+
+export fn twice_len(items):
+  return items.len() * 2
+
+fn helper(n):
+  return n + 1
+
+export fn bump(n):
+  return helper(n)

@@ -1966,8 +1966,75 @@ class Checker {
       recorder.set_counter("checked_specializations", total_specs);
       recorder.set_counter("specialization_requests", specialization_requests_);
       recorder.set_counter("specialization_body_checking", specialization_body_checking_ns_);
+      // Read-only Phase 28.5 ECT metrics (M1/M2). Counted from checked
+      // facts only; nothing here feeds back into checking.
+      {
+        uint64_t m1_total = 0, m1_scheme = 0;
+        uint64_t m2_total = 0, m2_with_summary = 0, m2_complete = 0;
+        for (const auto& f : p_.functions) {
+          // Imported (interface-loaded) callables belong to their own
+          // package's measurement.
+          if (!f.provider_origin_file.empty() ||
+              !f.provider_origin_identity.empty()) continue;
+          if (f.exported && f.generic) {
+            ++m1_total;
+            if (f.open_summary && f.open_summary->scheme_complete) ++m1_scheme;
+          } else if (!f.exported) {
+            ++m2_total;
+            if (f.open_summary) {
+              ++m2_with_summary;
+              if (f.open_summary->complete) ++m2_complete;
+            }
+          }
+        }
+        recorder.set_counter("ect_m1_exported_generics", m1_total);
+        recorder.set_counter("ect_m1_scheme_complete", m1_scheme);
+        recorder.set_counter("ect_m2_internal_functions", m2_total);
+        recorder.set_counter("ect_m2_internal_with_summary", m2_with_summary);
+        recorder.set_counter("ect_m2_internal_complete", m2_complete);
+      }
+
+      // Read-only counter sink: one JSON object per checker run appended to
+      // $MOSS_ECT_COUNTERS (requires MOSS_PROFILE_COMPILER or
+      // MOSS_PROFILE_TRACE so the counters are recorded). Used by
+      // benchmarks/ect_check; it never influences checking.
+      if (const char* sink = std::getenv("MOSS_ECT_COUNTERS");
+          sink != nullptr && *sink != '\0') {
+        recorder.set_counter("concrete_effect_evaluations", concrete_effect_evaluations_);
+        recorder.set_counter("specialization_effect_function_evaluations",
+                             specialization_effect_function_evaluations_);
+        recorder.set_counter("specialization_effect_cache_hits",
+                             specialization_effect_cache_hits_);
+        recorder.set_counter("source_function_checks", source_function_checks_);
+        std::ostringstream line;
+        // Attribution for package-level metrics: the first package-local
+        // (non-imported) function's source file.
+        string unit_source;
+        for (const auto& f : p_.functions)
+          if (f.provider_origin_file.empty() && f.provider_origin_identity.empty() &&
+              !f.source_file.empty()) {
+            unit_source = f.source_file;
+            break;
+          }
+        string escaped_unit;
+        for (char ch : unit_source) {
+          if (ch == '"' || ch == '\\') escaped_unit.push_back('\\');
+          escaped_unit.push_back(ch);
+        }
+        line << "{\"pid\":" << getpid() << ",\"unit_source\":\"" << escaped_unit << "\"";
+        for (const auto& [name, value] : recorder.all_counters())
+          line << ",\"" << name << "\":" << value;
+        line << "}\n";
+        std::ofstream out(sink, std::ios::app);
+        out << line.str();
+      }
 
       if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+        for (const char* key : {"ect_m1_exported_generics", "ect_m1_scheme_complete",
+                                "ect_m2_internal_functions",
+                                "ect_m2_internal_with_summary",
+                                "ect_m2_internal_complete"})
+          std::cerr << "MOSS_PROFILE|" << key << '|' << recorder.get_counter(key) << '\n';
         std::cerr << "MOSS_PROFILE|functions_analyzed|" << recorder.get_counter("functions_analyzed") << '\n';
         std::cerr << "MOSS_PROFILE|source_function_checks|"
                   << source_function_checks_ << '\n';

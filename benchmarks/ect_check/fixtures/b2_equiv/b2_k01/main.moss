@@ -1,0 +1,253 @@
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 2
+
+fn n019_0(x):
+  return x.score()
+
+fn n019_1(x):
+  return x.score()
+
+fn n019_2(x):
+  return x.score()
+
+fn n019_3(x):
+  return x.score()
+
+fn n018_0(x):
+  return n019_0(x) + 1
+
+fn n018_1(x):
+  return n019_1(x) + 1
+
+fn n018_2(x):
+  return n019_2(x) + 1
+
+fn n018_3(x):
+  return n019_3(x) + 1
+
+fn n017_0(x):
+  return n018_0(x) + 1
+
+fn n017_1(x):
+  return n018_1(x) + 1
+
+fn n017_2(x):
+  return n018_2(x) + 1
+
+fn n017_3(x):
+  return n018_3(x) + 1
+
+fn n016_0(x):
+  return n017_0(x) + 1
+
+fn n016_1(x):
+  return n017_1(x) + 1
+
+fn n016_2(x):
+  return n017_2(x) + 1
+
+fn n016_3(x):
+  return n017_3(x) + 1
+
+fn n015_0(x):
+  return n016_0(x) + 1
+
+fn n015_1(x):
+  return n016_1(x) + 1
+
+fn n015_2(x):
+  return n016_2(x) + 1
+
+fn n015_3(x):
+  return n016_3(x) + 1
+
+fn n014_0(x):
+  return n015_0(x) + 1
+
+fn n014_1(x):
+  return n015_1(x) + 1
+
+fn n014_2(x):
+  return n015_2(x) + 1
+
+fn n014_3(x):
+  return n015_3(x) + 1
+
+fn n013_0(x):
+  return n014_0(x) + 1
+
+fn n013_1(x):
+  return n014_1(x) + 1
+
+fn n013_2(x):
+  return n014_2(x) + 1
+
+fn n013_3(x):
+  return n014_3(x) + 1
+
+fn n012_0(x):
+  return n013_0(x) + 1
+
+fn n012_1(x):
+  return n013_1(x) + 1
+
+fn n012_2(x):
+  return n013_2(x) + 1
+
+fn n012_3(x):
+  return n013_3(x) + 1
+
+fn n011_0(x):
+  return n012_0(x) + 1
+
+fn n011_1(x):
+  return n012_1(x) + 1
+
+fn n011_2(x):
+  return n012_2(x) + 1
+
+fn n011_3(x):
+  return n012_3(x) + 1
+
+fn n010_0(x):
+  return n011_0(x) + 1
+
+fn n010_1(x):
+  return n011_1(x) + 1
+
+fn n010_2(x):
+  return n011_2(x) + 1
+
+fn n010_3(x):
+  return n011_3(x) + 1
+
+fn n009_0(x):
+  return n010_0(x) + 1
+
+fn n009_1(x):
+  return n010_1(x) + 1
+
+fn n009_2(x):
+  return n010_2(x) + 1
+
+fn n009_3(x):
+  return n010_3(x) + 1
+
+fn n008_0(x):
+  return n009_0(x) + 1
+
+fn n008_1(x):
+  return n009_1(x) + 1
+
+fn n008_2(x):
+  return n009_2(x) + 1
+
+fn n008_3(x):
+  return n009_3(x) + 1
+
+fn n007_0(x):
+  return n008_0(x) + 1
+
+fn n007_1(x):
+  return n008_1(x) + 1
+
+fn n007_2(x):
+  return n008_2(x) + 1
+
+fn n007_3(x):
+  return n008_3(x) + 1
+
+fn n006_0(x):
+  return n007_0(x) + 1
+
+fn n006_1(x):
+  return n007_1(x) + 1
+
+fn n006_2(x):
+  return n007_2(x) + 1
+
+fn n006_3(x):
+  return n007_3(x) + 1
+
+fn n005_0(x):
+  return n006_0(x) + 1
+
+fn n005_1(x):
+  return n006_1(x) + 1
+
+fn n005_2(x):
+  return n006_2(x) + 1
+
+fn n005_3(x):
+  return n006_3(x) + 1
+
+fn n004_0(x):
+  return n005_0(x) + 1
+
+fn n004_1(x):
+  return n005_1(x) + 1
+
+fn n004_2(x):
+  return n005_2(x) + 1
+
+fn n004_3(x):
+  return n005_3(x) + 1
+
+fn n003_0(x):
+  return n004_0(x) + 1
+
+fn n003_1(x):
+  return n004_1(x) + 1
+
+fn n003_2(x):
+  return n004_2(x) + 1
+
+fn n003_3(x):
+  return n004_3(x) + 1
+
+fn n002_0(x):
+  return n003_0(x) + 1
+
+fn n002_1(x):
+  return n003_1(x) + 1
+
+fn n002_2(x):
+  return n003_2(x) + 1
+
+fn n002_3(x):
+  return n003_3(x) + 1
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n001_1(x):
+  return n002_1(x) + 1
+
+fn n001_2(x):
+  return n002_2(x) + 1
+
+fn n001_3(x):
+  return n002_3(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+fn n000_1(x):
+  return n001_1(x) + 1
+
+fn n000_2(x):
+  return n001_2(x) + 1
+
+fn n000_3(x):
+  return n001_3(x) + 1
+
+fn root(x):
+  return n000_0(x) + n000_1(x) + n000_2(x) + n000_3(x)
+
+fn main():
+  var total = 0
+  total = total + root(T000(v: 1))
+  echo total

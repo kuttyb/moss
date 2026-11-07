@@ -1,0 +1,6 @@
+[project]
+name = "ect_failing_app"
+version = "0.1.0"
+
+[dependencies]
+ect_failing_lib = { path = "../lib" }

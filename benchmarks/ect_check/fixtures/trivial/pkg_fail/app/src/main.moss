@@ -1,0 +1,5 @@
+module main
+import ect_failing_lib
+
+fn main():
+  echo ect_failing_lib.not_exported(1)

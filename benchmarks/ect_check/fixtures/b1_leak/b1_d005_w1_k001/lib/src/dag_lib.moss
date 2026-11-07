@@ -1,0 +1,22 @@
+module dag_lib
+
+export trait Scorable:
+  fn score() -> Int
+
+fn n004_0(x):
+  return x.score()
+
+fn n003_0(x):
+  return n004_0(x) + 1
+
+fn n002_0(x):
+  return n003_0(x) + 1
+
+fn n001_0(x):
+  return n002_0(x) + 1
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+export fn root(x):
+  return n000_0(x)

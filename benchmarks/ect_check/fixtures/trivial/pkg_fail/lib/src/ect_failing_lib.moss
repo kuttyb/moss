@@ -1,0 +1,4 @@
+module ect_failing_lib
+
+export fn double(x):
+  return x + x

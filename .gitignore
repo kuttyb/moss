@@ -8,6 +8,8 @@ tmp/**
 !tests/phase25/g0/rust/*.rs
 !tests/phase25/g0/rust/**/*.rs
 !runtime/moss_runtime/src/*.rs
+# Team 5 Rust comparison fixtures: generated, frozen sources that must be tracked.
+!benchmarks/ect_check/fixtures/rust_dag/**/*.rs
 !tests/phase25/runtime/*.rs
 examples/**.rs
 examples/**/*.rs

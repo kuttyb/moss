@@ -1,0 +1,392 @@
+type T000:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+type T001:
+  v: Int
+
+  fn score() -> Int:
+    return v + 2
+
+type T002:
+  v: Int
+
+  fn score() -> Int:
+    return v + 3
+
+type T003:
+  v: Int
+
+  fn score() -> Int:
+    return v + 4
+
+type T004:
+  v: Int
+
+  fn score() -> Int:
+    return v + 5
+
+type T005:
+  v: Int
+
+  fn score() -> Int:
+    return v + 6
+
+type T006:
+  v: Int
+
+  fn score() -> Int:
+    return v + 7
+
+type T007:
+  v: Int
+
+  fn score() -> Int:
+    return v + 8
+
+type T008:
+  v: Int
+
+  fn score() -> Int:
+    return v + 9
+
+type T009:
+  v: Int
+
+  fn score() -> Int:
+    return v + 10
+
+type T010:
+  v: Int
+
+  fn score() -> Int:
+    return v + 11
+
+type T011:
+  v: Int
+
+  fn score() -> Int:
+    return v + 12
+
+type T012:
+  v: Int
+
+  fn score() -> Int:
+    return v + 13
+
+type T013:
+  v: Int
+
+  fn score() -> Int:
+    return v + 14
+
+type T014:
+  v: Int
+
+  fn score() -> Int:
+    return v + 15
+
+type T015:
+  v: Int
+
+  fn score() -> Int:
+    return v + 16
+
+type T016:
+  v: Int
+
+  fn score() -> Int:
+    return v + 17
+
+type T017:
+  v: Int
+
+  fn score() -> Int:
+    return v + 18
+
+type T018:
+  v: Int
+
+  fn score() -> Int:
+    return v + 19
+
+type T019:
+  v: Int
+
+  fn score() -> Int:
+    return v + 20
+
+type T020:
+  v: Int
+
+  fn score() -> Int:
+    return v + 21
+
+type T021:
+  v: Int
+
+  fn score() -> Int:
+    return v + 22
+
+type T022:
+  v: Int
+
+  fn score() -> Int:
+    return v + 23
+
+type T023:
+  v: Int
+
+  fn score() -> Int:
+    return v + 24
+
+type T024:
+  v: Int
+
+  fn score() -> Int:
+    return v + 25
+
+type T025:
+  v: Int
+
+  fn score() -> Int:
+    return v + 26
+
+type T026:
+  v: Int
+
+  fn score() -> Int:
+    return v + 27
+
+type T027:
+  v: Int
+
+  fn score() -> Int:
+    return v + 28
+
+type T028:
+  v: Int
+
+  fn score() -> Int:
+    return v + 29
+
+type T029:
+  v: Int
+
+  fn score() -> Int:
+    return v + 30
+
+type T030:
+  v: Int
+
+  fn score() -> Int:
+    return v + 31
+
+type T031:
+  v: Int
+
+  fn score() -> Int:
+    return v + 32
+
+fn c049(x):
+  return x.score()
+
+fn c048(x):
+  return c049(x) + 1
+
+fn c047(x):
+  return c048(x) + 1
+
+fn c046(x):
+  return c047(x) + 1
+
+fn c045(x):
+  return c046(x) + 1
+
+fn c044(x):
+  return c045(x) + 1
+
+fn c043(x):
+  return c044(x) + 1
+
+fn c042(x):
+  return c043(x) + 1
+
+fn c041(x):
+  return c042(x) + 1
+
+fn c040(x):
+  return c041(x) + 1
+
+fn c039(x):
+  return c040(x) + 1
+
+fn c038(x):
+  return c039(x) + 1
+
+fn c037(x):
+  return c038(x) + 1
+
+fn c036(x):
+  return c037(x) + 1
+
+fn c035(x):
+  return c036(x) + 1
+
+fn c034(x):
+  return c035(x) + 1
+
+fn c033(x):
+  return c034(x) + 1
+
+fn c032(x):
+  return c033(x) + 1
+
+fn c031(x):
+  return c032(x) + 1
+
+fn c030(x):
+  return c031(x) + 1
+
+fn c029(x):
+  return c030(x) + 1
+
+fn c028(x):
+  return c029(x) + 1
+
+fn c027(x):
+  return c028(x) + 1
+
+fn c026(x):
+  return c027(x) + 1
+
+fn c025(x):
+  return c026(x) + 1
+
+fn c024(x):
+  return c025(x) + 1
+
+fn c023(x):
+  return c024(x) + 1
+
+fn c022(x):
+  return c023(x) + 1
+
+fn c021(x):
+  return c022(x) + 1
+
+fn c020(x):
+  return c021(x) + 1
+
+fn c019(x):
+  return c020(x) + 1
+
+fn c018(x):
+  return c019(x) + 1
+
+fn c017(x):
+  return c018(x) + 1
+
+fn c016(x):
+  return c017(x) + 1
+
+fn c015(x):
+  return c016(x) + 1
+
+fn c014(x):
+  return c015(x) + 1
+
+fn c013(x):
+  return c014(x) + 1
+
+fn c012(x):
+  return c013(x) + 1
+
+fn c011(x):
+  return c012(x) + 1
+
+fn c010(x):
+  return c011(x) + 1
+
+fn c009(x):
+  return c010(x) + 1
+
+fn c008(x):
+  return c009(x) + 1
+
+fn c007(x):
+  return c008(x) + 1
+
+fn c006(x):
+  return c007(x) + 1
+
+fn c005(x):
+  return c006(x) + 1
+
+fn c004(x):
+  return c005(x) + 1
+
+fn c003(x):
+  return c004(x) + 1
+
+fn c002(x):
+  return c003(x) + 1
+
+fn c001(x):
+  return c002(x) + 1
+
+fn c000(x):
+  return c001(x) + 1
+
+fn e0(x):
+  return c000(x) + 0
+
+fn e1(x):
+  return c000(x) + 1
+
+fn e2(x):
+  return c000(x) + 2
+
+fn e3(x):
+  return c000(x) + 3
+
+fn root(x):
+  return e0(x) + e1(x) + e2(x) + e3(x)
+
+fn main():
+  var total = 0
+  total = total + root(T000(v: 1))
+  total = total + root(T001(v: 2))
+  total = total + root(T002(v: 3))
+  total = total + root(T003(v: 4))
+  total = total + root(T004(v: 5))
+  total = total + root(T005(v: 6))
+  total = total + root(T006(v: 7))
+  total = total + root(T007(v: 8))
+  total = total + root(T008(v: 9))
+  total = total + root(T009(v: 10))
+  total = total + root(T010(v: 11))
+  total = total + root(T011(v: 12))
+  total = total + root(T012(v: 13))
+  total = total + root(T013(v: 14))
+  total = total + root(T014(v: 15))
+  total = total + root(T015(v: 16))
+  total = total + root(T016(v: 17))
+  total = total + root(T017(v: 18))
+  total = total + root(T018(v: 19))
+  total = total + root(T019(v: 20))
+  total = total + root(T020(v: 21))
+  total = total + root(T021(v: 22))
+  total = total + root(T022(v: 23))
+  total = total + root(T023(v: 24))
+  total = total + root(T024(v: 25))
+  total = total + root(T025(v: 26))
+  total = total + root(T026(v: 27))
+  total = total + root(T027(v: 28))
+  total = total + root(T028(v: 29))
+  total = total + root(T029(v: 30))
+  total = total + root(T030(v: 31))
+  total = total + root(T031(v: 32))
+  echo total

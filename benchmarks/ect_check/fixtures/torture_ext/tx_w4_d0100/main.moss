@@ -1,0 +1,308 @@
+# ECT torture extension 1.1.0-ext: W4 deep dependent inference
+# Depth=100
+
+fn step000(x):
+  return x + 1
+
+fn step001(x):
+  return step000(x) + 1
+
+fn step002(x):
+  return step001(x) + 1
+
+fn step003(x):
+  return step002(x) + 1
+
+fn step004(x):
+  return step003(x) + 1
+
+fn step005(x):
+  return step004(x) + 1
+
+fn step006(x):
+  return step005(x) + 1
+
+fn step007(x):
+  return step006(x) + 1
+
+fn step008(x):
+  return step007(x) + 1
+
+fn step009(x):
+  return step008(x) + 1
+
+fn step010(x):
+  return step009(x) + 1
+
+fn step011(x):
+  return step010(x) + 1
+
+fn step012(x):
+  return step011(x) + 1
+
+fn step013(x):
+  return step012(x) + 1
+
+fn step014(x):
+  return step013(x) + 1
+
+fn step015(x):
+  return step014(x) + 1
+
+fn step016(x):
+  return step015(x) + 1
+
+fn step017(x):
+  return step016(x) + 1
+
+fn step018(x):
+  return step017(x) + 1
+
+fn step019(x):
+  return step018(x) + 1
+
+fn step020(x):
+  return step019(x) + 1
+
+fn step021(x):
+  return step020(x) + 1
+
+fn step022(x):
+  return step021(x) + 1
+
+fn step023(x):
+  return step022(x) + 1
+
+fn step024(x):
+  return step023(x) + 1
+
+fn step025(x):
+  return step024(x) + 1
+
+fn step026(x):
+  return step025(x) + 1
+
+fn step027(x):
+  return step026(x) + 1
+
+fn step028(x):
+  return step027(x) + 1
+
+fn step029(x):
+  return step028(x) + 1
+
+fn step030(x):
+  return step029(x) + 1
+
+fn step031(x):
+  return step030(x) + 1
+
+fn step032(x):
+  return step031(x) + 1
+
+fn step033(x):
+  return step032(x) + 1
+
+fn step034(x):
+  return step033(x) + 1
+
+fn step035(x):
+  return step034(x) + 1
+
+fn step036(x):
+  return step035(x) + 1
+
+fn step037(x):
+  return step036(x) + 1
+
+fn step038(x):
+  return step037(x) + 1
+
+fn step039(x):
+  return step038(x) + 1
+
+fn step040(x):
+  return step039(x) + 1
+
+fn step041(x):
+  return step040(x) + 1
+
+fn step042(x):
+  return step041(x) + 1
+
+fn step043(x):
+  return step042(x) + 1
+
+fn step044(x):
+  return step043(x) + 1
+
+fn step045(x):
+  return step044(x) + 1
+
+fn step046(x):
+  return step045(x) + 1
+
+fn step047(x):
+  return step046(x) + 1
+
+fn step048(x):
+  return step047(x) + 1
+
+fn step049(x):
+  return step048(x) + 1
+
+fn step050(x):
+  return step049(x) + 1
+
+fn step051(x):
+  return step050(x) + 1
+
+fn step052(x):
+  return step051(x) + 1
+
+fn step053(x):
+  return step052(x) + 1
+
+fn step054(x):
+  return step053(x) + 1
+
+fn step055(x):
+  return step054(x) + 1
+
+fn step056(x):
+  return step055(x) + 1
+
+fn step057(x):
+  return step056(x) + 1
+
+fn step058(x):
+  return step057(x) + 1
+
+fn step059(x):
+  return step058(x) + 1
+
+fn step060(x):
+  return step059(x) + 1
+
+fn step061(x):
+  return step060(x) + 1
+
+fn step062(x):
+  return step061(x) + 1
+
+fn step063(x):
+  return step062(x) + 1
+
+fn step064(x):
+  return step063(x) + 1
+
+fn step065(x):
+  return step064(x) + 1
+
+fn step066(x):
+  return step065(x) + 1
+
+fn step067(x):
+  return step066(x) + 1
+
+fn step068(x):
+  return step067(x) + 1
+
+fn step069(x):
+  return step068(x) + 1
+
+fn step070(x):
+  return step069(x) + 1
+
+fn step071(x):
+  return step070(x) + 1
+
+fn step072(x):
+  return step071(x) + 1
+
+fn step073(x):
+  return step072(x) + 1
+
+fn step074(x):
+  return step073(x) + 1
+
+fn step075(x):
+  return step074(x) + 1
+
+fn step076(x):
+  return step075(x) + 1
+
+fn step077(x):
+  return step076(x) + 1
+
+fn step078(x):
+  return step077(x) + 1
+
+fn step079(x):
+  return step078(x) + 1
+
+fn step080(x):
+  return step079(x) + 1
+
+fn step081(x):
+  return step080(x) + 1
+
+fn step082(x):
+  return step081(x) + 1
+
+fn step083(x):
+  return step082(x) + 1
+
+fn step084(x):
+  return step083(x) + 1
+
+fn step085(x):
+  return step084(x) + 1
+
+fn step086(x):
+  return step085(x) + 1
+
+fn step087(x):
+  return step086(x) + 1
+
+fn step088(x):
+  return step087(x) + 1
+
+fn step089(x):
+  return step088(x) + 1
+
+fn step090(x):
+  return step089(x) + 1
+
+fn step091(x):
+  return step090(x) + 1
+
+fn step092(x):
+  return step091(x) + 1
+
+fn step093(x):
+  return step092(x) + 1
+
+fn step094(x):
+  return step093(x) + 1
+
+fn step095(x):
+  return step094(x) + 1
+
+fn step096(x):
+  return step095(x) + 1
+
+fn step097(x):
+  return step096(x) + 1
+
+fn step098(x):
+  return step097(x) + 1
+
+fn step099(x):
+  return step098(x) + 1
+
+fn step100(x):
+  return step099(x) + 1
+
+fn main():
+  echo step100(10)
