@@ -1,3 +1,28 @@
+## Phase 28 W5 same-line call-edge occurrence follow-up (2026-11-07)
+
+- Follow-up branch `phase28-r7-010-w5-call-edge-occurrence-17fe` is based on
+  reviewed `17fe64aeeff4e6609fd78271e5a5dbc572dfd924`; the reviewed base and
+  staging worktrees remain untouched. The closed-result checker previously
+  attached one specialization key to all same-line edges with the same target.
+  The checker now filters non-specialized direct-call candidates using the
+  existing checked argument-type vectors, requires one matching edge, and
+  fails closed if the match is ambiguous. Specialized callers remain keyed by
+  their caller specialization identity and nested occurrence.
+- Fast Debug reads the exact Call ExprId's target/specialization fact when
+  available and filters the checked edge by that exact key. When the Call node
+  has no fact, Fast Debug accepts only a unique checker edge; it does not use
+  runtime argument types. Wrong target/key, dropped authority for ambiguous
+  same-line calls, and duplicate candidates fail closed.
+- Added a same-line `identity(8), identity("text")` call-query assertion to the
+  registered Phase 27 fact-hook gate. `check_phase27_5_4_fact_hooks.py` passes
+  Default and EST-shadow; `check_phase27_5_1_facts_and_fast_debug.py` passes in
+  both modes. W5 callback gate and W2 inference worklist gate also pass in
+  Default and EST-shadow. `make moss-dev`, Python compilation, feedback
+  validation, and `git diff --check` pass. Full `make check`,
+  `make check-shadow`, and oracle were not run.
+- Fresh exact-SHA Team A and Team C review is pending. No integration or push
+  has occurred.
+
 ## Phase 28 R7-010 recovery correction (2026-11-05)
 
 ### Reviewed validation fixes integrated — `f0d22c13`

@@ -34017,8 +34017,16 @@ class Checker {
         }
         const string caller_key = checking_specialization_
             ? checking_specialization_->stable_type_key : string();
-        std::optional<SemanticCallEdge> source_edge;
-        bool attached = false;
+        auto edge_arguments_match = [&](const SemanticCallEdge& edge) {
+          if (edge.argument_types.size() != actual_types.size()) return false;
+          for (size_t index = 0; index < actual_types.size(); ++index)
+            if (canonical_type_name(edge.argument_types[index]) !=
+                canonical_type_name(actual_types[index]))
+              return false;
+          return true;
+        };
+        vector<SemanticCallEdge*> matching_edges;
+        vector<SemanticCallEdge*> source_edges;
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ ||
               edge.line != line ||
@@ -34029,9 +34037,19 @@ class Checker {
               (!returned_result && !edge.source_file.empty() &&
                edge.source_file != current_check_statement_->source_file))
             continue;
-          if (edge.source_specialization_key.empty() && !source_edge)
-            source_edge = edge;
+          if (!nested_occurrences && caller_key.empty() &&
+              !edge_arguments_match(edge)) continue;
+          if (edge.source_specialization_key.empty())
+            source_edges.push_back(&edge);
           if (edge.source_specialization_key != caller_key) continue;
+          matching_edges.push_back(&edge);
+        }
+        if (matching_edges.size() > 1)
+          err(line, "checked call occurrence matches multiple semantic call edges",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+        bool attached = false;
+        if (!matching_edges.empty()) {
+          auto& edge = *matching_edges.front();
           if (!edge.specialization_key.empty() &&
               edge.specialization_key != exact_key)
             err(line, "one checked call context acquired two specialization identities",
@@ -34046,13 +34064,19 @@ class Checker {
               function->second->semantic_callable_id;
           attached = true;
         }
-        if (!attached && !caller_key.empty() && source_edge) {
-          if (!source_edge->target_callable_identity.empty() &&
-              source_edge->target_callable_identity !=
+        if (!attached && !caller_key.empty()) {
+          if (source_edges.size() > 1)
+            err(line, "checked call occurrence matches multiple source call edges",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+        }
+        if (!attached && !caller_key.empty() && !source_edges.empty()) {
+          const auto& source_edge = *source_edges.front();
+          if (!source_edge.target_callable_identity.empty() &&
+              source_edge.target_callable_identity !=
                   function->second->semantic_callable_id)
             err(line, "one checked call context acquired two target identities",
                 "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-          SemanticCallEdge concrete_edge = *source_edge;
+          SemanticCallEdge concrete_edge = source_edge;
           concrete_edge.source_specialization_key = caller_key;
           concrete_edge.specialization_key = exact_key;
           concrete_edge.target_callable_identity =
@@ -34070,8 +34094,16 @@ class Checker {
         const string exact_key = *key->stable_key();
         const string caller_key = checking_specialization_
             ? checking_specialization_->stable_type_key : string();
-        std::optional<SemanticCallEdge> source_edge;
-        bool attached = false;
+        auto edge_arguments_match = [&](const SemanticCallEdge& edge) {
+          if (edge.argument_types.size() != actual_types.size()) return false;
+          for (size_t index = 0; index < actual_types.size(); ++index)
+            if (canonical_type_name(edge.argument_types[index]) !=
+                canonical_type_name(actual_types[index]))
+              return false;
+          return true;
+        };
+        vector<SemanticCallEdge*> matching_edges;
+        vector<SemanticCallEdge*> source_edges;
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ || edge.line != line ||
               (nested_occurrences &&
@@ -34081,9 +34113,19 @@ class Checker {
               (!edge.source_file.empty() && current_check_statement_ &&
                edge.source_file != current_check_statement_->source_file))
             continue;
-          if (edge.source_specialization_key.empty() && !source_edge)
-            source_edge = edge;
+          if (!nested_occurrences && caller_key.empty() &&
+              !edge_arguments_match(edge)) continue;
+          if (edge.source_specialization_key.empty())
+            source_edges.push_back(&edge);
           if (edge.source_specialization_key != caller_key) continue;
+          matching_edges.push_back(&edge);
+        }
+        if (matching_edges.size() > 1)
+          err(line, "checked call occurrence matches multiple semantic call edges",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+        bool attached = false;
+        if (!matching_edges.empty()) {
+          auto& edge = *matching_edges.front();
           if (!edge.specialization_key.empty() &&
               edge.specialization_key != exact_key)
             err(line, "one checked call context acquired two specialization identities",
@@ -34098,8 +34140,11 @@ class Checker {
               function->second->semantic_callable_id;
           attached = true;
         }
-        if (!attached && source_edge) {
-          SemanticCallEdge concrete_edge = *source_edge;
+        if (!attached && !caller_key.empty() && source_edges.size() > 1)
+          err(line, "checked call occurrence matches multiple source call edges",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+        if (!attached && !source_edges.empty()) {
+          SemanticCallEdge concrete_edge = *source_edges.front();
           concrete_edge.source_specialization_key = caller_key;
           concrete_edge.specialization_key = exact_key;
           concrete_edge.target_callable_identity =

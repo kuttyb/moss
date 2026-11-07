@@ -2,6 +2,7 @@
 """Exercise test-build checked-fact perturbation/removal fail-closed paths."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -45,6 +46,20 @@ def require_fail_closed(result: subprocess.CompletedProcess[str], label: str) ->
 def main() -> None:
     work = ROOT / "tmp/phase27-5-4-fact-hooks" / str(time.time_ns())
     work.mkdir(parents=True)
+    same_line_fixture = FIXTURES / "call_edges.moss"
+    call_query = run([str(COMPILER), "calls", "identity", "--source",
+                      str(same_line_fixture), "--json"], os.environ.copy())
+    if call_query.returncode:
+        raise SystemExit("same-line call edge query failed: " +
+                         call_query.stdout + call_query.stderr)
+    call_result = json.loads(call_query.stdout)["result"]
+    same_line_callers = [caller for caller in call_result["callers"]
+                         if caller["line"] == 6 and caller["source"] == "main"]
+    call_site_ids = {caller["call_site_semantic_identity"]
+                     for caller in same_line_callers}
+    if len(same_line_callers) != 2 or len(call_site_ids) != 2:
+        raise SystemExit("same-line same-target calls did not retain distinct "
+                         f"call-edge occurrences: {same_line_callers}")
     cases = {name: list(sources) for name, sources in CASES.items()}
     selected = os.environ.get("MOSS_TEST_AGENT2_FIXTURE")
     if selected:

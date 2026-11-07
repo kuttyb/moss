@@ -1839,9 +1839,21 @@ class FastInterpreter {
       const ExpressionTreeView* tree = nullptr,
       std::optional<est::ExprId> call_expr = std::nullopt) const {
     if (!target.static_dispatch) return nullptr;
+    std::string exact_call_specialization_key;
+    if (tree && call_expr && *call_expr < tree->arena->size() &&
+        std::holds_alternative<est::Call>(tree->arena->at(*call_expr))) {
+      const auto* facts = tree->arena->facts(*call_expr,
+                                             caller.functional_context);
+      if (facts &&
+          facts->resolved_target != target.semantic_callable_id)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT exact call target specialization fact is missing or contradictory");
+      if (facts && !facts->specialization_result.empty())
+        exact_call_specialization_key = facts->specialization_result;
+    }
     const auto checked = checked_call_edge_specialization_exact(
         program_, caller.functional_context, caller.specialization_key,
-        target, line);
+        target, line, exact_call_specialization_key);
     if (checked.test_fact_dropped || checked.test_fact_perturbed ||
         checked.test_edge_dropped || checked.test_edge_duplicated ||
         checked.test_edge_perturbed ||

@@ -1015,7 +1015,7 @@ struct CheckedCallEdgeSpecialization {
 inline CheckedCallEdgeSpecialization checked_call_edge_specialization_exact(
     const Program& program, const string& caller_context,
     const string& caller_specialization_key, const Function& target,
-    int line) {
+    int line, const string& exact_target_specialization_key = {}) {
   CheckedCallEdgeSpecialization result;
   result.test_fact_dropped = moss_test_drop_fact("specializations");
   result.test_fact_perturbed = moss_test_perturb_fact("specializations");
@@ -1050,6 +1050,8 @@ inline CheckedCallEdgeSpecialization checked_call_edge_specialization_exact(
     if (!exact_source(edge) || result.test_edge_dropped) continue;
     if (result.test_target_identity_perturbed ||
         edge.target_callable_identity != target.semantic_callable_id) continue;
+    if (!exact_target_specialization_key.empty() &&
+        edge.specialization_key != exact_target_specialization_key) continue;
     ++matching_edges;
     for (const auto& specialization : target.specializations)
       if (specialization.stable_type_key == edge.specialization_key) {
