@@ -18533,3 +18533,22 @@ untouched.
   `90b648eee2487687ddd2491f38d502b534941ab6`; final docs-only freeze metadata
   is being recorded now. No full suite/oracle result is claimed and no clone
   authorization was added. Fresh Team C and Agent 2 review remains required.
+
+## R7-010 TypedCopyFact identity collision-test follow-up
+
+- Fresh isolated branch `phase28-r7-010-typedcopy-identity-tests-9c13` starts
+  from frozen `9c13c2daaa640fa9704c20c255e7ad4559c9f981`; the prior frozen
+  worktree is preserved. This follow-up only adds registered tests.
+- Added tests prove (1) identical content, filename, relative path and copy
+  occurrence under different `defining_module_id` values yields different
+  TypedCopyFact IDs, and (2) different source bytes at the same relative path
+  in separate checkout roots yields different IDs. Existing source-path
+  forgery rejection remains in the same suite.
+- The registered oracle/clone-inventory unit matrix passes 50 tests with one
+  skip in Default and EST-shadow. C++ provenance builder and focused runtime
+  evidence gates pass in both modes. Python compile, feedback validation, and
+  `git diff --check` pass. No full suite/oracle result, source behavior change,
+  schema change, or clone authorization is claimed.
+- Detailed follow-up checklist and evidence:
+  `docs/phase28/R7-010_TYPEDCOPY_IDENTITY_COLLISION_TESTS_9C13.md`. Fresh
+  exact-SHA Team A and Team C review remains required; no integration/push.

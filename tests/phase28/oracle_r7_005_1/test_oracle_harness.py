@@ -321,6 +321,55 @@ class CloneProvenanceTests(unittest.TestCase):
         self.assertNotEqual(harness.typed_copy_fact_identity(self.fact_row),
                             harness.typed_copy_fact_identity(changed))
 
+    def test_copy_identity_distinguishes_same_filename_across_modules(self):
+        source = self.source
+        copy_span = harness.moss_copy_call_spans(source)[0]
+        checkout_a = self.root / "module-checkout-a"
+        checkout_b = self.root / "module-checkout-b"
+        path_a = checkout_a / "project/src/shared.moss"
+        path_b = checkout_b / "project/src/shared.moss"
+        path_a.parent.mkdir(parents=True)
+        path_b.parent.mkdir(parents=True)
+        path_a.write_text(source)
+        path_b.write_text(source)
+        relative_a = path_a.relative_to(checkout_a)
+        relative_b = path_b.relative_to(checkout_b)
+        fact_a = self.fact_for_source(path_a, source, copy_span, "fn:shared", 11)
+        fact_b = self.fact_for_source(path_b, source, copy_span, "fn:shared", 11)
+        fact_a["provenance"]["defining_module_id"] = "module:alpha@1.0.0::shared"
+        fact_b["provenance"]["defining_module_id"] = "module:beta@1.0.0::shared"
+
+        self.assertEqual(path_a.name, path_b.name)
+        self.assertEqual(relative_a, relative_b)
+        self.assertNotEqual(fact_a["source_file"], fact_b["source_file"])
+        self.assertEqual(fact_a["source_sha256"], fact_b["source_sha256"])
+        self.assertNotEqual(harness.typed_copy_fact_identity(fact_a),
+                            harness.typed_copy_fact_identity(fact_b))
+
+    def test_copy_identity_distinguishes_contents_at_same_relative_path(self):
+        checkout_a = self.root / "content-checkout-a"
+        checkout_b = self.root / "content-checkout-b"
+        relative_path = Path("project/src/shared.moss")
+        path_a = checkout_a / relative_path
+        path_b = checkout_b / relative_path
+        path_a.parent.mkdir(parents=True)
+        path_b.parent.mkdir(parents=True)
+        source_a = self.source
+        source_b = self.source + "# content differs after the checked copy\n"
+        path_a.write_text(source_a)
+        path_b.write_text(source_b)
+        span_a = harness.moss_copy_call_spans(source_a)[0]
+        span_b = harness.moss_copy_call_spans(source_b)[0]
+        fact_a = self.fact_for_source(path_a, source_a, span_a, "fn:shared", 11)
+        fact_b = self.fact_for_source(path_b, source_b, span_b, "fn:shared", 11)
+
+        self.assertEqual(path_a.relative_to(checkout_a),
+                         path_b.relative_to(checkout_b))
+        self.assertEqual(span_a, span_b)
+        self.assertNotEqual(fact_a["source_sha256"], fact_b["source_sha256"])
+        self.assertNotEqual(harness.typed_copy_fact_identity(fact_a),
+                            harness.typed_copy_fact_identity(fact_b))
+
     def test_stable_identity_does_not_relax_exact_source_path_validation(self):
         forged_path = self.root / "other-checkout" / "unit.moss"
         forged_path.parent.mkdir()
