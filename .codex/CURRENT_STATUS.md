@@ -18892,3 +18892,23 @@ untouched.
   pass checker and all engines with output `3`, while their provenance checks
   fail. This certifies oracle expectations only, not clone provenance or
   compiler/Step 0 conformance. Production branches remain untouched.
+
+## Phase 28 R7-011 Team A dynamic callback shadowing follow-up (2026-11-07)
+
+- On the Team A branch, the callback producer now uses the checker-resolved
+  lexical environment before classifying a named callback as static. A local
+  callable parameter shadows a same-named top-level function. This is checked by
+  `tests/tooling/fixtures/phase28_l8/cb_shadow_spec.moss`.
+- The new narrow `check_phase28_l8_callback_authority` job is registered and
+  routed to moss-dev so test-only consumer mutation hooks are active. It runs
+  `cb_spec` (`12`) and `cb_shadow_spec` (`[3, 6]`) in Fast Debug and Native, then
+  verifies dropped and perturbed dynamic callback facts fail closed. Default
+  and EST-shadow runs pass; the existing W5 static-call specialization gate
+  passes too.
+- Team B consumer commit `7cbddc6b` (cherry-picked from the combined integration
+  line for testing the existing hooks) is a separate commit and is not part of
+  the scoped Team A fix/gate commit. The integration branch already contains
+  the consumer implementation; root should cherry-pick only the new producer
+  and gate commit from this branch.
+- Full suites were not run on this callback follow-up. No production merge was
+  performed.
