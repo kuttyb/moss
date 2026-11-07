@@ -1,0 +1,11 @@
+fn twice(x: Int) -> Int:
+  return x * 2
+
+fn triple(x: Int) -> Int:
+  return x * 3
+
+fn transform(xs, twice):
+  return xs |> map(twice)
+
+fn main():
+  echo transform([1, 2], triple)

@@ -20384,7 +20384,16 @@ class Checker {
             source_access = Effect::Consume;
             const auto source = direct_statement_identifier(
                 statement, est::ExprSlot::Initializer);
-            if (source && transfer_type(*source_type))
+            const auto source_location = storage_location(statement.b, env);
+            const bool plain_field_source = source_location &&
+                !source_location->path.empty() &&
+                source_location->path.back() != "[]";
+            if (plain_field_source) {
+              // A field projection is a borrow source. The later ownership
+              // pass may reject a consuming alias, but parameter summaries
+              // must not turn the projection itself into a field transfer.
+              source_access = Effect::Read;
+            } else if (source && transfer_type(*source_type))
               if (auto inferred = infer_straight_line_definition_effect(
                       statements, index, statement.a, {}, *source, {}, env, {}))
                 source_access = *inferred;
@@ -20421,7 +20430,13 @@ class Checker {
             source_access = Effect::Consume;
             const auto source = direct_statement_identifier(
                 statement, est::ExprSlot::RhsValue);
-            if (source && transfer_type(*source_type) &&
+            const auto source_location = storage_location(statement.b, env);
+            const bool plain_field_source = source_location &&
+                !source_location->path.empty() &&
+                source_location->path.back() != "[]";
+            if (plain_field_source) {
+              source_access = Effect::Read;
+            } else if (source && transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
                 env.count(statement.a) && !receiver_fields.count(statement.a))
               if (auto inferred = infer_straight_line_definition_effect(
@@ -26330,6 +26345,33 @@ class Checker {
             else if (return_is_copy_projection_of_alias(
                          statement, alias, source, env))
               use = Effect::Read;
+            else if ([&] {
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::ReturnValue ||
+                    handle.argument_index != 0)
+                  continue;
+                const auto* arena = expression_arena(handle.arena_index);
+                if (!arena || handle.expr >= arena->size()) continue;
+                const auto root = est::unparenthesized(*arena, handle.expr);
+                const auto* pipeline =
+                    std::get_if<est::Pipeline>(&arena->at(root));
+                if (!pipeline) continue;
+                const auto input = est::unparenthesized(
+                    *arena, pipeline->input);
+                const auto* input_identifier =
+                    std::get_if<est::Identifier>(&arena->at(input));
+                if (!input_identifier) continue;
+                const auto identity =
+                    binding_identities.find(input_identifier->name);
+                if (identity != binding_identities.end() &&
+                    identity->second == alias_binding_identity)
+                  return true;
+              }
+              return false;
+            }())
+              // Checked functional pipelines READ their source collection and
+              // build or compute their result without extracting the source.
+              use = Effect::Read;
             else if (auto call_effect = checked_nested_call_effect(statement))
               use = *call_effect;
             else
@@ -28311,14 +28353,33 @@ class Checker {
     string member_base, member_name;
     if (tree_parse_member_access(value, member_base, member_name)) {
       bool is_explicit_take_place = false;
-      if (ownership_current_stmt_) {
-        string callee;
-        vector<string> args;
-        if (tree_parse_simple_call(ownership_current_stmt_->b, callee, args) &&
-            callee == "take" && args.size() == 1)
-          is_explicit_take_place = tree_strip_expression_parens(
-              tree_normalize_pipeline(trim(args.front()))) ==
-              tree_strip_expression_parens(tree_normalize_pipeline(trim(value)));
+      if (ownership_current_stmt_ &&
+          !ownership_est_expression_cursors_.empty() &&
+          ownership_est_expression_cursors_.back()) {
+        const auto& place_cursor =
+            *ownership_est_expression_cursors_.back();
+        const auto rhs_slot =
+            ownership_current_stmt_->kind == Stmt::Kind::Let ||
+                    ownership_current_stmt_->kind == Stmt::Kind::Var
+                ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+        for (const auto& handle :
+             ownership_current_stmt_->expression_handles) {
+          if (handle.slot != rhs_slot ||
+              handle.arena_index != place_cursor.arena_index)
+            continue;
+          auto* arena = expression_arena(handle.arena_index);
+          if (!arena || handle.expr >= arena->size()) continue;
+          const auto rhs = est::unparenthesized(*arena, handle.expr);
+          const auto* take = std::get_if<est::Take>(&arena->at(rhs));
+          const auto* facts = arena->facts(rhs, expression_fact_context());
+          if (!take || take->arguments.size() != 1 || !facts ||
+              facts->resolved_target != "builtin:take-place-v1")
+            continue;
+          is_explicit_take_place = est::unparenthesized(
+              *arena, take->arguments.front()) == est::unparenthesized(
+                  *arena, place_cursor.expr);
+          if (is_explicit_take_place) break;
+        }
       }
       if (requested == Effect::Consume && !is_explicit_take_place) {
         auto member_type = inferred_expr_type(value, env.types);
@@ -31000,6 +31061,7 @@ class Checker {
               s, est::ExprSlot::Initializer);
           string source_root;
           bool is_projected_borrow_source = false;
+          bool is_plain_field_borrow_source = false;
           if (local_source) {
             source_root = *local_source;
           } else if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
@@ -31016,11 +31078,20 @@ class Checker {
               source_root = loc->root;
               is_projected_borrow_source = true;
             }
+          } else if (auto loc = storage_location(s.b, env.types);
+                     loc && !loc->path.empty() &&
+                     loc->path.back() != "[]") {
+            // A field binding borrows the field value. Its access comes from
+            // the uses of this definition just like a local alias; the
+            // provisional transfer effect must not decide extraction.
+            source_root = loc->root;
+            is_plain_field_borrow_source = true;
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
-          const bool is_indexed_source = !source_root.empty() && !local_source;
+          const bool is_indexed_source = !source_root.empty() && !local_source &&
+              !is_plain_field_borrow_source;
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
           if (transfers && source_binding != env.binding_identities.end() &&
@@ -31033,7 +31104,8 @@ class Checker {
             string join_id;
             if (protected_borrow_source) {
               inferred = Effect::Read;
-            } else if (current_ownership_flow_) {
+            } else if (current_ownership_flow_ &&
+                       !is_plain_field_borrow_source) {
               auto dec = current_ownership_flow_->decisions_by_statement_index.find(index);
               if (dec != current_ownership_flow_->decisions_by_statement_index.end()) {
                 if (dec->second.is_unsupported) {
@@ -31044,7 +31116,8 @@ class Checker {
                 }
               }
             }
-            if (!inferred && !current_ownership_flow_) {
+            if (!inferred &&
+                (!current_ownership_flow_ || is_plain_field_borrow_source)) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
@@ -31199,10 +31272,10 @@ class Checker {
               s, est::ExprSlot::RhsValue);
           const bool targets_object_field = is_current_object_field(s.a);
           string source_root;
+          bool is_plain_field_borrow_source = false;
           if (local_source) {
             source_root = *local_source;
-          } else if (!had_lexical_binding && !targets_object_field &&
-                     !env.state_fields.count(s.a)) {
+          } else if (!targets_object_field && !env.state_fields.count(s.a)) {
             if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
               source_root = loc->root;
             } else if (auto loc = storage_location(s.b, env.types);
@@ -31214,12 +31287,20 @@ class Checker {
                                          source_arguments) &&
                   source_method == "get" && source_arguments.size() == 1)
                 source_root = loc->root;
+            } else if (auto loc = storage_location(s.b, env.types);
+                       loc && !loc->path.empty() &&
+                       loc->path.back() != "[]") {
+              // A plain field initializer is a borrow alias. Decide whether
+              // that alias is READ or CONSUME from its downstream uses.
+              source_root = loc->root;
+              is_plain_field_borrow_source = true;
             }
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
-          const bool is_indexed_source = !source_root.empty() && !local_source;
+          const bool is_indexed_source = !source_root.empty() && !local_source &&
+              !is_plain_field_borrow_source;
           retain_local_transfer_authority(s, index, env);
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
@@ -31234,7 +31315,8 @@ class Checker {
             string join_id;
             if (protected_borrow_source) {
               inferred = Effect::Read;
-            } else if (current_ownership_flow_) {
+            } else if (current_ownership_flow_ &&
+                       !is_plain_field_borrow_source) {
               auto dec = current_ownership_flow_->decisions_by_statement_index.find(index);
               if (dec != current_ownership_flow_->decisions_by_statement_index.end()) {
                 if (dec->second.is_unsupported) {
@@ -31245,7 +31327,8 @@ class Checker {
                 }
               }
             }
-            if (!inferred && !current_ownership_flow_) {
+            if (!inferred &&
+                (!current_ownership_flow_ || is_plain_field_borrow_source)) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
                   source_root, source_binding->second, env.types,
@@ -35022,10 +35105,13 @@ class Checker {
       if (callback_index >= stage.arguments.size()) return false;
       const auto callback_name = tree_identifier_name(
           stage.arguments[callback_index]);
-      if (!callback_name || functions_.count(*callback_name)) return false;
+      if (!callback_name) return false;
       const auto binding = env.find(*callback_name);
-      return binding != env.end() &&
-          (callable_identity(binding->second) || open_generic(binding->second));
+      if (binding == env.end()) return false;
+      // `env` is the checker-resolved lexical environment for this pipeline.
+      // A local callable parameter can shadow a top-level function with the
+      // same spelling, so never use the global function table to classify it.
+      return callable_identity(binding->second) || open_generic(binding->second);
     };
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {

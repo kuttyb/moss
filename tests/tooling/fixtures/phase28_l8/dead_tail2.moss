@@ -1,0 +1,14 @@
+enum Bad:
+  Big
+
+fn main():
+  echo recover_tail()
+  echo 0
+
+fn recover_tail() -> Int:
+  try:
+    raise Bad.Big
+  recover Bad.Big:
+    return 1
+  echo 99
+  return 0

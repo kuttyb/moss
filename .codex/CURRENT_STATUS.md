@@ -18666,3 +18666,344 @@ untouched.
   and Team C review, then integrate only the approved exact SHA into isolated
   staging. Full suites and oracle have not been rerun on this follow-up. Clone
   authorizations remain pending.
+
+## P28-R7-011 ordered convergence checkpoint (2026-11-07)
+
+- Working source base is frozen `45b586c2de3a405f96f0be8268947a1abb98d3c1`;
+  latest published W5 branch remains unchanged. Production branches are
+  untouched. Isolated worktrees are preserved for Team A Step 0, Team C Step 3,
+  oracle Step 0c, and this integration branch.
+- Exact 45b586c2 full-suite baseline was rerun with the prescribed build and
+  `tests/run_parallel.py` command. Default: 112/168 pass, 55 fail, 1 skipped.
+  Shadow: 112/168 pass, 55 fail, 1 skipped. Exact failure sets and runner
+  details are in `tmp/suite-45b-default.log` and `tmp/suite-45b-shadow.log`
+  under the 45b worktree. These are baseline measurements, not Step 0 results.
+- Team A is implementing callback-owner and field-borrow repairs in its
+  isolated branch. Its live schema finding is that `take(place)` is EST `Take`,
+  not `Call`; checks must use that typed node and exact place ExprId. Its
+  callback trace also found one static named callback among the reported
+  callback losses; static authority remains fail-closed while the active
+  pipeline occurrence path is repaired.
+- Oracle candidate `a27a9f308be0b6150c28dcb88ed5c1ae859633aa` is scoped GO as an
+  oracle draft only. It fixes ORACLE-15/15B/15C and README's fixture count to
+  62; its table digest is
+  `426b6ad9d140d0235a25c8c51a826076b819b730e62148d4c203222676432242`.
+  Against 45b586c2 it records 19/62 all-gate PASS, 2 semantic failures (15B/C),
+  and 41 provenance-only failures; no recertification or clone exception is
+  authorized. Re-run with Step 0 compiler and complete reviewer holdouts.
+- Team C is implementing the five hidden-copy removals, the full-corpus
+  `check_phase28_no_hidden_copies` gate, and a type-restricted domain-share
+  runtime API on its separate branch. Do not integrate Step 3 before the Step 0
+  suite/corpus/reproducer report is recorded.
+- Next dependency: finish and review Team A Step 0 plus independent oracle
+  holdouts; then integrate into this isolated branch, run both full suites, the
+  150ab36 corpus diff and the nine-case two-engine repro gate. Step 1 has not
+  started. No change has reached `phase28-work` or `main`.
+
+## P28-R7-011 implementation findings (not yet integrated)
+
+- Team A producer checkpoint `8fe68784119831a2e8403b73d2e2c7c07b81abe2` adds
+  optional `est::SemanticFacts::dynamic_callback` on the exact EST pipeline
+  stage Call ExprId, keyed by arena/ExprId/checked context. It validates stage
+  ordinal, callee, argument count and callback argument ExprId. Follow-up
+  `fcc72aba37251243882a90e6e9b104276aa62dd6` uses the checker-owned frame
+  context. All nine callback programs pass checker and native Rust compilation;
+  `cb_spec` prints `12` in both engines on Team B's binary. Dropped and
+  contradictory marker tests fail closed. Team B commit
+  `0c571343b639d7f41aa84476eedb0264a0bc7b4b` reads the exact stage ExprId and
+  context; its existing static W5 call gate passes.
+- Team A field commit `301024e044098e735607783f95a44e497aeccb9c` fixes the
+  Assign-case source recognition: `source_access` had been initialized to
+  Consume, the Assign branch did not identify plain field aliases, and it
+  reached member-place rejection before Let/Var use inference. The fix now
+  derives the binding effect from its uses. `o15b` and `field_read` print `3`
+  in both engines; `field_consume` rejects at line 9 in both compiler paths
+  with the unchanged diagnostic. The three MapHolder controls were migrated to
+  explicit `take(h.m)`; checker validation passes, but native generation for
+  swarm_027 and swarm_030 remains blocked by the separate nonprimitive
+  Map.keys CollectionView authority (swarm_028 native-compiles). No field
+  rejection rule or diagnostic wording was weakened.
+- The combined nine-case script currently stops at `dom_spec` native with the
+  known ReturnValue specialization-identity failure (F1); `nest_spec` passes.
+  On Team B's binary, `meth_spec` also fails Fast Debug's exact call-edge
+  lookup; `try_spec`, `cb_spec`, and `dead_tail2` pass. `o15b` and `field_read`
+  pass only when Team A's field fix is included.
+  F1/F2 are Step 1 scope, so the permanent script stays unregistered during the
+  Step 0 full-suite baseline and will be registered when Step 1 makes all nine
+  cross-engine results pass. This avoids treating a known Step 1 reproducer as
+  an added Step 0 suite regression.
+- Team C's current full-corpus gate on its unintegrated changes reports 2,086
+  sources: 1,186 compile, 900 already fail, 13 explicit-copy clone occurrences,
+  and 4 hidden copies. The four are generated map-key `.clone()` at
+  `examples/swarm/Python/Counter/src/main.moss:12` (two method variants),
+  `tests/swarm_061b_map_get_before_write.moss:5`, and
+  `text_toolkit/toolkit/src/stats.moss:104`. All come from
+  `native_generator.cpp` map assignment lowering and have no exact checker
+  copy/use fact; the checker reports no per-use move provenance. Explicit
+  `copy(key)` in the index is rejected as not an exact checked EST handle.
+  This is a Step 1 checker-authority dependency; no emitter inference or source
+  workaround was accepted.
+- Team A earlier Step 0 branch SHA `4047ce1f9f45d63c2d41058f9cf46d9011ae015e` (superseded by `7e1aff28c23a0ea0346e7667e0fb24c561094fbf`);
+  it includes the field source/gate checkpoint, status note, and one feedback
+  record. The branch's latest gates are not yet a Step 0 GO.
+- Team C's non-oracle Step 3 implementation is still unreviewed and incomplete.
+  Its runtime signature is exactly
+  `share_domain<T>(&DomainHandle<T>) -> DomainHandle<T>`. The existing
+  Root-ingress provenance validator expects a `.clone()` span and remains
+  unresolved; Team C restored the prohibited oracle harness edit and retained
+  the discarded diff only in its worktree `tmp/` for audit. No Step 3 GO.
+
+## Phase 28 R7-011 Team A generalized field READ follow-up (2026-11-07)
+
+- On branch `phase28-r7-011-team-a-step0`, field alias inference now covers a
+  field reached through an indexed collection place and a field alias inside a
+  function parameter body. Functional pipeline returns use the exact EST
+  Pipeline input to classify an alias as READ; no diagnostic wording changed.
+- `check_phase28_l8_field_controls.py` is registered in `tests/run_parallel.py`.
+  It executes Fast Debug and Native for all five READ fixtures; outputs pass as
+  `3`, `3`, `3`, `1\n3`, and `3`. It also confirms `field_consume` rejects at
+  line 9 in both compiler paths with the unchanged diagnostic.
+- `swarm_027` executes in both paths and is labeled the expected Step 2
+  CollectionView failure. `swarm_028` passes both engines with output `100`.
+  `swarm_030` executes in both paths and remains an unexpected/red separate
+  CollectionView failure: Fast Debug reports missing nonescaping CollectionView
+  authority at line 9; Native reports missing checked Map.keys CollectionView
+  authority. It is not skipped or allowlisted.
+- The focused gate therefore remains red solely on `swarm_030`; the existing
+  `check_phase28_local_ownership.py` passes its drop/perturb and ownership matrix.
+  Full Default/Shadow suites were not run on this follow-up. No production merge
+  was performed.
+
+## P28-R7-011 combined Step 0 checkpoint (2026-11-07, source SHA 83e42ee)
+
+- Combined isolated branch `phase28-r7-011-integration` is frozen at
+  `83e42eece65663b3de46e09a14227f9e17633513` and pushed to origin. The build
+  used the prescribed `make --jobs=2 MOSS_LDFLAGS= && make moss-opt` command.
+  Binary hashes: `moss-dev` `1e83d1874b9cd22ce714ffca0bdfb824342a2fbddcd2ba94e9f73119894ad362`;
+  `moss-opt` `e715f529537fbbbb67ad1fc31b5713ec0e03a5c8ce1b9da3b58363f57d58e303`.
+- Field-control gate runs all fixtures and remains RED only on
+  `swarm_030_string_comparison_borrowed`, which fails in both engines due to
+  missing nonescaping Map CollectionView authority. The five requested READ
+  programs pass in Fast Debug/Native with outputs `3`, `3`, `3`, `1\n3`, `3`;
+  `field_consume` rejects at line 9 with unchanged diagnostic. `swarm_027`
+  executes in both engines and remains recorded as the expected Step 2 failure;
+  `swarm_028` passes with `100`. Team C independently reviewed this SHA and
+  returned NO-GO solely for the unresolved `swarm_030` CollectionView error.
+- Exact full Default and Shadow runs on this SHA: each 115/169 pass, 54 fail,
+  0 skipped. Run logs are `tmp/suite-step0-general-default-final.log` and the
+  initial Shadow runner output is preserved in the session tool transcript;
+  output artifacts are under `tmp/suite-step0-general-{default,shadow}/`.
+  Against the 45b586c2 112/168 baseline, 3 previous failures recover:
+  `check_phase26_1_c1_scope`, `shard_phase46_opt`, `shard_phase4_diff`.
+  Newly failing relative to that baseline: `check_phase28_l8_field_controls`
+  (new job, red on swarm_030) and `shard_phase5_tooling`. Compared with the
+  pre-general Step 0 SHA `37f00e4b`, the same 115 jobs pass and the new field
+  gate adds one failing job; no previously red job recovered or regressed.
+- Agent 2 adversarial review returned NO-GO. It found that
+  `has_dynamic_callback` at `semantic_checker.cpp:35094` checks global
+  `functions_.count(callback_name)` before lexical binding resolution. A local
+  callable parameter shadowing a top-level function is accepted by checker and
+  Native but Fast Debug fails with `static callback fact contradicts its
+  checked value`. Minimal probe is preserved at `tmp/agent2-shadow-callback.moss`.
+  Agent 2 also found the callback fact drop/perturb tests live only in the
+  unregistered all-identity repro script; they need a narrow registered gate.
+  Team A is assigned both scoped 0a repairs on its existing branch.
+- Oracle owner ran the corrected 62-row draft against this exact compiler.
+  Result: 19/62 all-applicable PASS, 0 semantic mismatches, 43 provenance-only
+  failures, 0 invalid/missing-provenance blocks, 264 unverified clone
+  occurrences. ORACLE-15/15B/15C match their expected semantic behavior; the
+  15B/15C output expectation representation was corrected from `3\\n` to `3`
+  in draft commit `ff306c27f58738bd7eb9c79b00eb165cead01209`, pushed to
+  `phase28-r7-011-oracle-15-current`. Independent holdouts received scoped GO;
+  certification metadata remains DRAFT/PENDING and no clone provenance is
+  authorized.
+- No Phase 28 production branch was touched. Next: land and review the Team A
+  callback lexical-resolution and registered mutation-gate fix; resolve the
+  `swarm_030` CollectionView failure without masking it; then rerun complete
+  Default/Shadow suites and update this checkpoint. Step 1, Step 2, and clone
+  authorization remain out of scope; all runtime clone sites stay pending.
+
+## P28-R7-011 direct corpus diff on combined Step 0 SHA 83e42ee
+
+- Compared the pinned 150ab36 source bytes with the `83e42ee` dev compiler for
+  direct `tests/*.moss` and `examples/*.moss` files (238 total). Baseline accepts
+  236; candidate accepts 203; 33 losses; 0 gains. Full JSON is
+  `tmp/phase28-r7-011-corpus-step0-general/summary.json`.
+- First diagnostic code counts for the 33 losses: 13
+  `MOSS_INTERNAL_INVARIANT`, 6 `ROOT_UNHANDLED_RAISE`, 5
+  `OWNERSHIP_ILLEGAL_CONSUME`, 4 `MOSS_COMPILE_ERROR`, 2
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`, and one each
+  `OWNERSHIP_INCOMPATIBLE_JOIN`, `OWNERSHIP_USE_AFTER_CONSUME`, and
+  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`. Nine missing bracketed codes in
+  the initial script output were resolved by checking the compiler's exact
+  emitted invariant signatures; no failures remain labeled `NO_CODE`.
+- The 13 internal invariants include six known ReturnValue/specialization
+  failures, three nonprimitive Map.keys/Map.values CollectionView failures,
+  and four other checker/emitter invariant losses. This corpus uses the pinned
+  150ab36 source bytes on both compilers, so explicit-take test migrations are
+  intentionally still visible as losses rather than being hidden by source
+  changes.
+
+## P28-R7-011 nine reproduction set on combined compiler 83e42ee
+
+- `check_phase28_l8_identity_repros.py` ran both engines on the combined dev
+  compiler. PASS: `nest_spec` = `10\n3.5`; `try_spec` = `5\n1.5`;
+  `cb_spec` = `12`; `dead_tail2` = `1\n0`; `o15b` = `3`; `field_read` =
+  `3`; and `field_consume` rejects at line 9 in both engines.
+- Known Step 1 failures remain: `dom_spec` Fast Debug prints `10`, Native
+  fails with `MOSS_INTERNAL_INVARIANT return-value requirement/fact missing
+  or ambiguous`; `meth_spec` Native prints `4\n2.5`, Fast Debug fails with
+  `MOSS_INTERNAL_INVARIANT exact checked call edge specialization is missing,
+  duplicated, or contradictory` at Moss line 8. The full nine-case script
+  remains unregistered pending Step 1; callback mutation cases need their own
+  independently passing registered job per Agent 2 review.
+- The standalone script also passed drop and perturb hooks for the dynamic
+  callback fact and checker/native compilation of all nine F3 callback corpus
+  programs. These checks are not yet registered in `make check`.
+
+## Team C Step 3 audit rerun (branch SHA 44ffcae8)
+
+- Verified `check_phase28_map_get_copy_contract.py` on Team C's built compiler
+  (`moss-dev` SHA-256 `69d5b5fe9725027ba802a4d51aea25371dbde96fbc132f66abcacc937e8f745c`):
+  the original `swarm_021` implicit-copy case is rejected as a borrowed Map.get
+  result; the new explicit-copy variant builds and prints `2\n1`.
+- Re-ran the full hidden-copy gate over 2,087 sources: 1,187 compile, 900
+  compile failures, 13 explicit-copy clone occurrences, and 4 hidden clones at
+  three Map-key insertion sites (two generated variants at Counter line 12,
+  `swarm_061b_map_get_before_write.moss:5`, and
+  `text_toolkit/toolkit/src/stats.moss:104`). The actual compile-failure set
+  exactly matches the 900-entry manifest, SHA-256
+  `29e3c51e5038c9efb8e66be9db778a617cfde676c665eade3a778251972a6699`;
+  there are no unexpected or missing compile failures. The gate correctly
+  remains RED on the four unauthorized hidden value copies. No clone site is
+  authorized.
+
+## Step 0 oracle certification completed (oracle branch e3d0cb70)
+
+- Oracle owner completed and pushed certification metadata on isolated branch
+  `phase28-r7-011-oracle-15-current` at
+  `e3d0cb70647238f80a1c42cb1db56868595abf9a`. Frozen expectation content SHA
+  `55ec3d44980133d2dfe38e30d75b4df8eab78783`; expectation digest
+  `4f5f2b1849ced45e520c15fc17914cc6e284b47da709d17c5c33d8668f52045a`.
+- Independent reviewer gave scoped GO and the reviewer-controlled v2 holdouts
+  passed. On combined compiler `83e42ee`, 19/62 fixtures pass all gates, 0
+  semantic mismatches, 43 provenance-only failures, 0 missing/invalid
+  provenance blocks, and 264 unverified clones. ORACLE-15 rejects; 15B/15C
+  pass checker and all engines with output `3`, while their provenance checks
+  fail. This certifies oracle expectations only, not clone provenance or
+  compiler/Step 0 conformance. Production branches remain untouched.
+
+## Phase 28 R7-011 Team A dynamic callback shadowing follow-up (2026-11-07)
+
+- On the Team A branch, the callback producer now uses the checker-resolved
+  lexical environment before classifying a named callback as static. A local
+  callable parameter shadows a same-named top-level function. This is checked by
+  `tests/tooling/fixtures/phase28_l8/cb_shadow_spec.moss`.
+- The new narrow `check_phase28_l8_callback_authority` job is registered and
+  routed to moss-dev so test-only consumer mutation hooks are active. It runs
+  `cb_spec` (`12`) and `cb_shadow_spec` (`[3, 6]`) in Fast Debug and Native, then
+  verifies dropped and perturbed dynamic callback facts fail closed. Default
+  and EST-shadow runs pass; the existing W5 static-call specialization gate
+  passes too.
+- Team B consumer commit `7cbddc6b` (cherry-picked from the combined integration
+  line for testing the existing hooks) is a separate commit and is not part of
+  the scoped Team A fix/gate commit. The integration branch already contains
+  the consumer implementation; root should cherry-pick only the new producer
+  and gate commit from this branch.
+- Full suites were not run on this callback follow-up. No production merge was
+  performed.
+
+## P28-R7-011 callback-shadow fix integration checkpoint (2026-11-07)
+
+- Cherry-picked only Team A's scoped commit `d3c1198b` (rebased as
+  `977f5fe1a40e13cc72245b38f625ef00879194a6`) into the isolated integration
+  branch. Team B's already-integrated consumer implementation was not
+  duplicated. New callback gate and shadow fixture are registered and pushed.
+- Rebuilt both compiler binaries using the prescribed build. Hashes:
+  `moss-dev` `8a094a5c5c901ba0ed14153d483685e81c63d890a81aa5b90907abe5cd2aff44`;
+  `moss-opt` `82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4`.
+  Registered callback-authority job passes 1/1 in Default and 1/1 in
+  `MOSS_EST=shadow`; both engines output `12` and `[3, 6]`, and drop/perturb
+  hooks fail closed.
+- Agent 2 and Team C independently gave scoped GO on the callback shadowing
+  fix and registered mutation gate at `977f5fe1`. Their verdict is limited to
+  that slice. Both retain overall Step 0 NO-GO because the field-control job
+  still fails on `swarm_030` Map CollectionView authority.
+- Full Default and Shadow suites on `977f5fe1`: each 116/170 passed, 54 failed,
+  0 skipped. Complete logs and exact failing-job sets:
+  `tmp/suite-step0-callback-default.log` and
+  `tmp/suite-step0-callback-shadow.log`. The failure set is unchanged from
+  `83e42ee`: this commit adds one passing registered callback job and does not
+  recover or regress another job. Relative to the 45b586c2 baseline, recovered
+  jobs remain `check_phase26_1_c1_scope`, `shard_phase46_opt`, and
+  `shard_phase4_diff`; new failures remain `shard_phase5_tooling` and the
+  registered field-control job.
+- Repeated the 150ab36 direct source corpus comparison on `977f5fe1`: 238
+  programs, 236 baseline-OK, 203 candidate-OK, 33 losses, 0 gains. Exact loss
+  list and first diagnostic signatures are in
+  `tmp/phase28-r7-011-corpus-step0-callback/summary.json`; counts are unchanged
+  from `83e42ee` (13 `MOSS_INTERNAL_INVARIANT`, 6 `ROOT_UNHANDLED_RAISE`, 5
+  `OWNERSHIP_ILLEGAL_CONSUME`, 4 `MOSS_COMPILE_ERROR`, 2
+  `OWNERSHIP_COLLECTION_ELEMENT_CONSUME`, and one each
+  `OWNERSHIP_INCOMPATIBLE_JOIN`, `OWNERSHIP_USE_AFTER_CONSUME`,
+  `OWNERSHIP_ROOT_INGRESS_TRANSFER_UNPROVEN`).
+- Oracle certification `e3d0cb70` remains pinned to compiler SHA `83e42ee`.
+  Oracle rerun/independent validity check is pending for exact compiler SHA
+  `977f5fe1`; do not cite the old oracle as validation of this source.
+- No production branch was changed. Next: obtain the updated oracle run,
+  disposition/fix the still-red `swarm_030` within the directed scope, then
+  rerun the required suites and request refreshed independent verification.
+  Step 1 and runtime clone authorization remain pending.
+
+## P28-R7-011 required Makefile checkpoint and latest oracle (2026-11-07)
+
+- `make --jobs=8 check-shadow TEST_JOBS=8` completed with exit 2 because its
+  170-job Shadow suite is 116/170 (54 failures, 0 skips); all four preceding
+  Phase 28 shadow authority gates passed. Full log:
+  `tmp/make-check-shadow-977.log`.
+- `make --jobs=8 check TEST_JOBS=8` completed with exit 2 because its 170-job
+  Default suite is likewise 116/170 (54 failures, 0 skips). The preceding
+  Phase 28 checker/consumer authority, corruption, copy-index, field transfer,
+  CollectionView, ReturnValue, and root-ingress gates passed. The registered
+  field-control job fails only on `swarm_030`; full log:
+  `tmp/make-check-977.log`. These complete Makefile runs agree with the direct
+  Default/Shadow results above.
+- Source-level `swarm_030` diagnosis: `moss check --json` accepts the program;
+  the `keys = m.keys()` binding at line 9 has checked type `vector[string]`,
+  while the Fast Debug/native consumers fail because no checked nonescaping
+  Map CollectionView authority is available. `moss ownership keys` reports no
+  ownership facts and no per-use move provenance. This is the deferred Step 2
+  Map.keys coverage issue, but it remains an unresolved Step 0 acceptance
+  blocker unless L8 explicitly classifies it as an allowed known failure.
+- Oracle recertification is pushed at
+  `phase28-r7-011-oracle-15-current` SHA
+  `a88748428a83d42a0e9d14d0a559213214222c80`, pinned to source
+  `977f5fe1a40e13cc72245b38f625ef00879194a6` and stable binary hashes dev
+  `d0cbe77c29c7b935691641e497ab0064c668484207d71c1b159b1a74f2ee8a10`, opt
+  `82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4`.
+  Independent reviewer reconfirmed the frozen READ/CONSUME holdouts. Result is
+  19/62 all-gate passes, 0 semantic mismatches, 43 provenance-only failures,
+  0 blocked, and 264 unverified clones. No clone authorization or compiler
+  GO is implied.
+## Phase 28 R7-011 Team A generalized field READ controls (2026-11-07)
+
+- L8's two additional shapes exposed distinct field-effect gaps. In early
+  function-effect inference, an initializer from a non-Copy projected field
+  defaulted to CONSUME; this incorrectly made `size(s)` consume its caller's
+  `State` even when its body only counted an alias. In ownership fact
+  publication, field-source discovery for Assign was guarded by
+  `!had_lexical_binding`, so `b = [9]; b = s.frontier` bypassed alias inference
+  and rejected at line 7. Parameter summaries now classify a plain projected
+  field as READ, and the Assign ownership path records a projected field root
+  even when the target binding already exists.
+- Added `field_parameter_caller_reuse.moss` (Fast Debug and Native both print
+  `3\n3`) and `field_rebind_after_vector_literal.moss` (both print `3`) to the
+  registered field-control gate. The explicit consume control still rejects
+  at line 9 with the unchanged diagnostic. `swarm_027` and `swarm_030` both
+  execute in Fast Debug and Native and are recorded as expected Step 2
+  CollectionView failures; `swarm_028` remains passing.
+- The field-control gate passed directly on the dev compiler and as the
+  registered EST-shadow job (1/1). The existing local ownership drop/perturb
+  matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
+  Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
+  and scoped checkpoint push.

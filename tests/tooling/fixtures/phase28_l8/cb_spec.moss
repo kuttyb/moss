@@ -1,0 +1,8 @@
+fn twice(x: Int) -> Int:
+  return x * 2
+
+fn transform(xs, f):
+  return xs |> map(f)
+
+fn main():
+  echo transform([1, 2, 3], twice) |> sum
