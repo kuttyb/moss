@@ -18954,3 +18954,34 @@ untouched.
   disposition/fix the still-red `swarm_030` within the directed scope, then
   rerun the required suites and request refreshed independent verification.
   Step 1 and runtime clone authorization remain pending.
+
+## P28-R7-011 required Makefile checkpoint and latest oracle (2026-11-07)
+
+- `make --jobs=8 check-shadow TEST_JOBS=8` completed with exit 2 because its
+  170-job Shadow suite is 116/170 (54 failures, 0 skips); all four preceding
+  Phase 28 shadow authority gates passed. Full log:
+  `tmp/make-check-shadow-977.log`.
+- `make --jobs=8 check TEST_JOBS=8` completed with exit 2 because its 170-job
+  Default suite is likewise 116/170 (54 failures, 0 skips). The preceding
+  Phase 28 checker/consumer authority, corruption, copy-index, field transfer,
+  CollectionView, ReturnValue, and root-ingress gates passed. The registered
+  field-control job fails only on `swarm_030`; full log:
+  `tmp/make-check-977.log`. These complete Makefile runs agree with the direct
+  Default/Shadow results above.
+- Source-level `swarm_030` diagnosis: `moss check --json` accepts the program;
+  the `keys = m.keys()` binding at line 9 has checked type `vector[string]`,
+  while the Fast Debug/native consumers fail because no checked nonescaping
+  Map CollectionView authority is available. `moss ownership keys` reports no
+  ownership facts and no per-use move provenance. This is the deferred Step 2
+  Map.keys coverage issue, but it remains an unresolved Step 0 acceptance
+  blocker unless L8 explicitly classifies it as an allowed known failure.
+- Oracle recertification is pushed at
+  `phase28-r7-011-oracle-15-current` SHA
+  `a88748428a83d42a0e9d14d0a559213214222c80`, pinned to source
+  `977f5fe1a40e13cc72245b38f625ef00879194a6` and stable binary hashes dev
+  `d0cbe77c29c7b935691641e497ab0064c668484207d71c1b159b1a74f2ee8a10`, opt
+  `82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4`.
+  Independent reviewer reconfirmed the frozen READ/CONSUME holdouts. Result is
+  19/62 all-gate passes, 0 semantic mismatches, 43 provenance-only failures,
+  0 blocked, and 264 unverified clones. No clone authorization or compiler
+  GO is implied.
