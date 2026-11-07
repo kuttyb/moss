@@ -19007,3 +19007,31 @@ untouched.
   matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
   Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
   and scoped checkpoint push.
+
+## Phase 28 R7-011 field-control integration checkpoint (2026-11-07)
+
+- Integrated Team A’s general field-alias READ fix at source SHA
+  `00b54a515364f9237ce758eb866fa621da5375b5` on the isolated
+  `phase28-r7-011-integration` review branch, pushed to origin. Agent 2 gives
+  scoped GO for this exact field slice. The complete field grid passes in
+  Fast Debug and Native, including nested indexed parent `b = v[0].frontier`,
+  rebinding `b = [9]; b = s.frontier`, parameter alias with caller reuse
+  (`3\n3`), pass-body alias followed by rereading `s.frontier`, and the
+  explicit field consume rejection at line 9. Both `swarm_027` and
+  `swarm_030` execute as expected Step 2 Map.keys CollectionView failures;
+  `swarm_028` passes. Registered field gate passes Default and EST-shadow.
+- Full suites at this SHA: Default 117/170 pass, 53 fail, 0 skipped; Shadow
+  117/170 pass, 53 fail, 0 skipped. Against fresh 45b586c2 (112/168 pass,
+  55 fail, 1 skip), 52 failing names are shared. `check_phase26_1_c1_scope`,
+  `shard_phase46_opt`, and `shard_phase4_diff` recover. `shard_phase5_tooling`
+  was skipped on baseline and now runs, exposing three Emacs-mode failures:
+  cross-package xref source location, dependent-package check/compilation, and
+  dependent-package cross-module navigation. This is not a proven new
+  regression. The Build Planner use-after-consume is a separate shared failure
+  in `check_phase15_8_cross_package_fast_debug`.
+- `00b54a51` is the current integrated source for corpus and oracle refresh;
+  earlier 33/42 corpus and 19/62 oracle numbers remain pinned to `977f5fe1`.
+  Current-source corpus and oracle runs are pending. No runtime clone site is
+  authorized. Team A producer and Team B consumer Step 1 work continue; Team C's
+  four Map-key copy patch remains uncommitted and is held for the shared
+  SpecId/EST occurrence lookup.
