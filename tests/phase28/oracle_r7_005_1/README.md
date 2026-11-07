@@ -18,7 +18,7 @@ The oracle is decoupled from Team A and Team B implementations and asserts expec
 
 ## Required Coverage
 
-The suite currently contains 60 successor fixtures covering:
+The suite currently contains 62 successor fixtures covering:
 - **Core NO-GO Review Findings (Items 1–10):**
   1. Write-through borrowed Vector elements (`ORACLE-01-VEC-WRITE-THROUGH`): expected 9,9.
   2. Indexed field reads without hidden clones (`ORACLE-02-INDEXED-FIELD-READ-NO-CLONE`).
