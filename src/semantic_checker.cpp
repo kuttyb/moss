@@ -34423,7 +34423,11 @@ class Checker {
       throw std::invalid_argument(
           "checked pipeline stage callback fact contradicts its EST child");
 
-    const string context = expression_fact_context();
+    // Fast Debug frames carry `functional_function_context`, whereas other
+    // EST facts use the specialization-key context. Publish this marker under
+    // the exact current consumer context assigned to the active function or
+    // specialization; the consumer reads with its frame key.
+    const string context = local_ownership_consumer_context();
     const auto* existing = arena->facts(stage_expr, context);
     if (existing && existing->dynamic_callback &&
         *existing->dynamic_callback != checked_stage.dynamic_callback)
