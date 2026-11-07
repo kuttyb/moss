@@ -213,7 +213,7 @@ class B3ErrorGenerator(Generator):
 
 class B4ColdWarmGenerator(Generator):
     name = "b4_cold_warm"
-    version = "1.0.0"
+    version = "1.1.0"
     category = "b4_cold_warm"
 
     def __init__(self):
@@ -226,7 +226,8 @@ class B4ColdWarmGenerator(Generator):
             pkg = root / f"p{i:02d}"
             (pkg / "src").mkdir(parents=True)
             (pkg / "Moss.toml").write_text(f'[project]\nname = "{name}"\nversion = "0.1.0"\n')
-            lines = [f"module {name}", ""]
+            # Phase 28.5.1: the exported generic `show` calls `x.score()`; declare and export the covering trait
+            lines = [f"module {name}", "", "export trait Scorable:", "  fn score() -> Int", ""]
             for j in range(PKGSET_FUNCS):
                 mult = rng.randint(2, 9)
                 lines += [f"export fn f{j:02d}(a: Int, b: Int) -> Int:",

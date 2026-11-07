@@ -13,6 +13,13 @@ import ect_common as C
 WRAPPER = '''\
 import json, os, subprocess, sys
 kind, path, moss, margo, mode = sys.argv[1:6]
+def shift(o, d):
+    if isinstance(o, dict):
+        return {k: (v + d if (k == "line" or k.endswith("_line")) and isinstance(v, int) else shift(v, d))
+                for k, v in o.items()}
+    if isinstance(o, list):
+        return [shift(x, d) for x in o]
+    return o
 env = dict(os.environ, MOSS=moss)
 if kind == "file":
     argv = [moss, "check", path, "--json"]
@@ -28,6 +35,8 @@ if mode == "diag":
     doc = json.loads(out)
     doc["ok"], doc["error"] = False, "boom"
     out = json.dumps(doc)
+if mode == "shift":        # a candidate that anchors positions differently: every line is +10
+    out = json.dumps(shift(json.loads(out), 10))
 if mode == "mutate":
     doc = json.loads(out)
     if doc.get("ok"):
@@ -174,6 +183,7 @@ def run(moss: Path, margo: Path) -> int:
     scenario_tests(R, tc, manifest, scratch, results)
     replay_tests(R, tc, manifest, scratch, results)
     guard_tests(R, tc, manifest, scratch, results)
+    wiring_tests(R, tc, manifest, scratch, results)
     rust_tests(R, tc, manifest, scratch, results)
     rust_gate_strength_tests(R, manifest, scratch, results)
     shutil.rmtree(scratch / "work", ignore_errors=True)
@@ -774,3 +784,292 @@ def rust_gate_strength_tests(R, manifest, scratch, results) -> None:
     check("missing cargo: the skip is recorded (FAIL-OPEN) and --require-rust turns it into an error",
           len(R.RUST_SKIPPED) >= 1 and "SKIPPED" in R.RUST_SKIPPED[0] and strict, str(R.RUST_SKIPPED[:1])[:90], results)
     R.RUST_SKIPPED.clear()
+
+
+# SELFTEST-ONLY stand-in for a STORE-using Moss candidate (Phase 28.5.1). It is NOT a store and
+# proves nothing about one: it only lets selftest observe the harness's store policy. It keys a
+# "result" on the SHA-256 of the project tree's file contents (paths excluded, so identical trees
+# in different worktrees collide), keeps it in $MOSS_STORE_DIR (which must equal {store}), logs
+# `hit` / `miss` there, and reports synthetic counters (7 functions analyzed on a miss, 0 on a hit)
+# through $MOSS_ECT_COUNTERS. `fake` skips the real compiler (fast verdict).
+STANDIN_STORE = '''\
+import hashlib, json, os, subprocess, sys
+from pathlib import Path
+kind, path, root, moss, margo, store, fake = sys.argv[1:8]
+assert os.environ["MOSS_STORE_DIR"] == store, (os.environ.get("MOSS_STORE_DIR"), store)
+spy = os.environ.get("ECT_SPY_FILE")
+if spy:
+    open(spy, "a").write(json.dumps({k: os.environ.get(k) for k in ("HOME", "MOSS_STORE_DIR", "XDG_CACHE_HOME")}) + "\\n")
+h = hashlib.sha256()
+for f in sorted(Path(root).rglob("*")):
+    rel = f.relative_to(root)
+    if f.is_file() and not {"build", "target", ".git"} & set(rel.parts) and f.name != ".git":
+        h.update(f.read_bytes())
+key = Path(store) / ("k-" + h.hexdigest())
+Path(store).mkdir(parents=True, exist_ok=True)
+hit = key.exists()
+with open(Path(store) / "log", "a") as log:
+    log.write(("hit" if hit else "miss") + "\\n")
+sink = os.environ.get("MOSS_ECT_COUNTERS")
+if sink:
+    open(sink, "a").write(json.dumps({"functions_analyzed": 0 if hit else 7, "source_function_checks": 0 if hit else 3}) + "\\n")
+if hit:
+    doc = json.loads(key.read_text())
+    sys.stdout.write(doc["out"]); sys.exit(doc["rc"])
+if fake == "fake":
+    out, rc = json.dumps({"ok": True, "result": {"diagnostics": []}}), 0
+else:
+    argv = [moss, "check", path, "--json"] if kind == "file" else [margo, "--root", path, "--check", "--json", "build"]
+    p = subprocess.run(argv, capture_output=True, text=True, env=dict(os.environ, MOSS=moss))
+    out, rc = p.stdout, p.returncode
+key.write_text(json.dumps({"out": out, "rc": rc}))
+sys.stdout.write(out); sys.exit(rc)
+'''
+
+# a position map for the shift client (reverses it); STEP differs per variant
+POSITION_MAP_TOOL = '''\
+import json, sys
+STEP = int(sys.argv[1])
+dump = sys.argv[2] if len(sys.argv) > 2 else None
+env = json.load(sys.stdin)
+if dump:
+    open(dump, "w").write(json.dumps(sorted(env)))
+def shift(o, d):
+    if isinstance(o, dict):
+        return {k: (v + d if (k == "line" or k.endswith("_line")) and isinstance(v, int) else shift(v, d))
+                for k, v in o.items()}
+    if isinstance(o, list):
+        return [shift(x, d) for x in o]
+    return o
+v = env["verdict"]
+v["document"] = shift(v["document"], STEP)
+v["diagnostics"] = shift(v["diagnostics"], STEP)
+json.dump(v, sys.stdout)
+'''
+
+
+def store_logs(stores_root: Path) -> dict[str, list[str]]:
+    """{store dir name: [hit|miss, ...]} for the kept stores of a StoreSet."""
+    out = {}
+    for d in sorted(Path(stores_root).iterdir()):
+        log = d / "log"
+        if d.is_dir() and not d.name.endswith(".xdg"):
+            out[d.name] = log.read_text().split() if log.exists() else []
+    return out
+
+
+def wiring_tests(R, tc, manifest, scratch, results) -> None:
+    """Phase 28.5.1: store control, counters under the same store policy, provider failures as
+    verdicts, the position-mapping hook, and the export-trait sweep."""
+    import os
+    import scenarios as S
+    import export_sweep as ES
+    import report_dag
+    fx_by = {f["id"]: f for f in manifest["fixtures"]}
+    sc_by = {s["id"]: s for s in manifest["scenarios"]}
+    client = scratch / "store_client.py"
+    client.write_text(STANDIN_STORE)
+
+    def tmpl(fake="fake"):
+        return f"python3 {shlex.quote(str(client))} {{kind}} {{path}} {{root}} {{moss}} {{margo}} {{store}} {fake}"
+
+    # --- environment: scrub, placement, refusal of the user's cache ----------------------------
+    saved = {k: os.environ.get(k) for k in ("MOSS_STORE_DIR", "MOSS_STORE_X")}
+    os.environ["MOSS_STORE_DIR"], os.environ["MOSS_STORE_X"] = "/evil/inherited", "1"
+    try:
+        env = tc.env()
+        env2 = tc.env()
+        sdir = C.StoreSet(scratch / "envstores").new("t")
+        env3 = tc.with_store(sdir).env()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    check("store env: inherited MOSS_STORE* is scrubbed; an unmanaged env() gets its own fresh store each call",
+          "MOSS_STORE_X" not in env and env[C.STORE_ENV] != "/evil/inherited" and env[C.STORE_ENV] != env2[C.STORE_ENV],
+          env[C.STORE_ENV][-40:], results)
+    check("store env: a series store is exactly $MOSS_STORE_DIR, XDG_CACHE_HOME points next to it, neither under HOME's cache",
+          env3[C.STORE_ENV] == str(sdir) and env3["XDG_CACHE_HOME"] == str(sdir) + ".xdg" and
+          str(Path.home() / ".cache") not in env3[C.STORE_ENV] + env3["XDG_CACHE_HOME"], str(sdir)[-40:], results)
+    try:
+        C.check_store_path(Path.home() / ".cache" / "moss-store")
+        refused = False
+    except C.ToolError:
+        refused = True
+    check("store env: a store under ~/.cache is refused", refused, "ToolError", results)
+    try:
+        C.expand_command("{moss} {store}", tc.values())
+        unknown = False
+    except C.ToolError as exc:
+        unknown = "store" in str(exc)
+    check("store template: {store} without a series store is an error, with one it expands",
+          unknown and C.expand_command("x {store}", tc.with_store(sdir).values()) == ["x", str(sdir)], "placeholder", results)
+
+    # --- cold reps never hit, warm reps do; counters see the same store state ------------------
+    fx = fx_by["trivial_file_pass"]
+    kept = C.StoreSet(scratch / "stores-fixture", keep=True)
+    shutil.rmtree(scratch / "stores-fixture", ignore_errors=True)
+    cold = R.measure_fixture(fx, tc, tmpl(), "cold", 3, 1, scratch / "rf-cold", True, kept)
+    cold_logs = store_logs(kept.root)
+    check("store cold: every rep (warm-up and counter run included) ran in its own fresh store: one miss, never a hit",
+          len(cold_logs) == 5 and all(v == ["miss"] for v in cold_logs.values()),
+          f"{len(cold_logs)} stores, logs {sorted(set(map(tuple, cold_logs.values())))}", results)
+    check("store cold: synthetic counters of a cold row are the miss counters, sizes recorded",
+          cold["functions_analyzed"] == 7 and cold["store_bytes"] > 0 and len(kept.records) == 5,
+          f"fns {cold['functions_analyzed']}, store bytes {cold['store_bytes']}", results)
+    kept = C.StoreSet(scratch / "stores-warm", keep=True)
+    shutil.rmtree(scratch / "stores-warm", ignore_errors=True)
+    warm = R.measure_fixture(fx, tc, tmpl(), "warm", 3, 2, scratch / "rf-warm", True, kept)
+    wl = store_logs(kept.root)
+    timed = next(v for k, v in wl.items() if "warm-trivial" in k and "counters" not in k)
+    counter = next(v for k, v in wl.items() if "counters" in k)
+    check("store warm: one store per fixture kept across primes and timed reps: first request misses, every later one hits",
+          timed == ["miss"] + ["hit"] * 4, str(timed), results)
+    check("counters: the counter pass replays the same series in its own store, step by step identical to the timed store",
+          counter == timed and warm["counters_by_request"] is not None and
+          [c["functions_analyzed"] for c in warm["counters_by_request"]] == [7, 0, 0, 0, 0] and
+          warm["functions_analyzed"] == 0, f"{counter} / {[c['functions_analyzed'] for c in warm['counters_by_request']]}", results)
+    check("counters: a template-only client (no {moss}/{margo}) reports none, a Moss-binary template does",
+          not C.counters_available("socket-client {path}") and C.counters_available(tmpl()) and C.counters_available(None),
+          "counters_available", results)
+
+    # --- scenario sequences: one store per sequence, kept across its steps, fresh per sequence --
+    sc = sc_by["b4_seq_floor_file"]
+    kept = C.StoreSet(scratch / "stores-seq", keep=True)
+    shutil.rmtree(scratch / "stores-seq", ignore_errors=True)
+    rows = S.measure_scenario(sc, fx_by[sc["fixture"]], tc, tmpl(), "cold", 2, 0, scratch / "rf-seq", True, kept)
+    sl = store_logs(kept.root)
+    check("store sequences: each sequence has its own store, kept across its steps (second check hits, the edit misses), "
+          "and no sequence hits what another left",
+          len(sl) >= 3 and all(v == ["miss", "hit", "miss"] for v in sl.values()),
+          f"{len(sl)} stores {sorted(set(map(tuple, sl.values())))}", results)
+
+    # --- B5: one store per (N, schedule, rep): hits within a rep, none across reps ---------------
+    base5 = sc_by["b5_wt_dag"]
+    # every slot edits the SAME leaf, so equal values give byte-identical worktrees (a content-addressed hit)
+    sc5 = {**base5, "counts": [4], "rep_stride": 0, "values": [5, 5, 6, 7] + [9] * 12,
+           "slots": [base5["slots"][0]] * len(base5["slots"])}
+    kept = C.StoreSet(scratch / "stores-b5", keep=True)
+    shutil.rmtree(scratch / "stores-b5", ignore_errors=True)
+    S.measure_worktrees(sc5, fx_by[sc5["fixture"]], tc, tmpl(), "cold", 2, scratch / "rf-b5", False, kept)
+    bl = store_logs(kept.root)
+    seq = {k: v for k, v in bl.items() if "-seq-" in k}
+    check("store B5: worktrees with identical content hit inside their group's store (sequential: miss, hit, miss, miss) "
+          "and every group starts from an empty store (no hit across reps although the edits repeat)",
+          len(seq) >= 3 and all(v == ["miss", "hit", "miss", "miss"] or v == ["miss"] for v in seq.values()) and
+          sum(1 for v in seq.values() if v == ["miss", "hit", "miss", "miss"]) >= 2 and
+          all(v.count("hit") <= 1 for v in bl.values()), f"{len(bl)} stores", results)
+
+    # --- gate: reference and candidate never share a store; scenario gates keep each side's ------
+    kept = C.StoreSet(scratch / "stores-gate", keep=True)
+    shutil.rmtree(scratch / "stores-gate", ignore_errors=True)
+    scg = sc_by["b4_seq_floor_file"]
+    g = S.gate_scenario(scg, fx_by[scg["fixture"]], tc, tc, tmpl("real"), scratch / "rf-gate", kept)
+    gl = store_logs(kept.root)
+    ref_store = next(v for k, v in gl.items() if "gate-reference" in k)
+    cand_store = next(v for k, v in gl.items() if "gate-candidate" in k)
+    check("gate stores: reference and candidate use separate stores; the candidate's store is kept across the "
+          "sequence's steps (miss, hit, miss) while the reference's (today's compiler) never sees it, verdicts identical",
+          g["passed"] and ref_store == [] and cand_store == ["miss", "hit", "miss"] and len(gl) == 2,
+          f"ref {ref_store} cand {cand_store}", results)
+
+    # --- nothing reaches HOME's cache: the client sees stores under the run dir only -------------
+    spy = scratch / "spy.jsonl"
+    spy.unlink(missing_ok=True)
+    os.environ["ECT_SPY_FILE"] = str(spy)
+    try:
+        R.measure_fixture(fx, tc, tmpl(), "cold", 1, 0, scratch / "rf-spy", False, C.StoreSet(scratch / "stores-spy"))
+    finally:
+        os.environ.pop("ECT_SPY_FILE", None)
+    seen = [json.loads(l) for l in spy.read_text().splitlines()]
+    check("no HOME cache: every request saw MOSS_STORE_DIR and XDG_CACHE_HOME under the run directory, never ~/.cache",
+          seen and all(str(scratch) in d["MOSS_STORE_DIR"] and str(scratch) in d["XDG_CACHE_HOME"] and
+                       str(Path.home() / ".cache") not in d["MOSS_STORE_DIR"] + d["XDG_CACHE_HOME"] for d in seen),
+          f"{len(seen)} requests", results)
+
+    # --- provider failure is a verdict ------------------------------------------------------------
+    stub = scratch / "margo_stub.py"
+    stub.write_text("#!/usr/bin/env python3\nimport os, sys, json\nreal = %r\nif '--root' in sys.argv and sys.argv[sys.argv.index('--root') + 1].endswith('/lib'):\n"
+                    "    print(json.dumps({'schema_version': 'margo-1', 'ok': False, 'error': 'provider rejected: untyped export'}))\n"
+                    "    sys.exit(1)\nos.execv(real, [real] + sys.argv[1:])\n" % str(tc.margo))
+    stub.chmod(0o755)
+    bad = C.Toolchain(tc.moss, stub)
+    pfx = fx_by["b1_d005_w1_k001"]
+    gate = R.run_gate([pfx], tc, bad, None, scratch / "rf-pgate", None, C.StoreSet(scratch / "stores-pgate"))
+    r0 = gate["results"][0]
+    check("provider failure: a candidate whose provider build fails is reported as differing (both provider verdicts shown, "
+          "consumer skipped) and the gate finishes",
+          not gate["passed"] and not r0["identical"] and r0["consumer_skipped"] and
+          r0["provider_candidate"]["ok"] is False and r0["provider_reference"]["ok"] is True and
+          "PROVIDER BUILD DIFFERS" in (r0["candidate_note"] or ""), str(r0["candidate_note"]), results)
+    gate_ok = R.run_gate([pfx], tc, tc, None, scratch / "rf-pgate2", None, C.StoreSet(scratch / "stores-pgate2"))
+    check("provider failure: with a healthy candidate the same fixture passes (provider verdicts compared, not skipped)",
+          gate_ok["passed"] and not gate_ok["results"][0]["consumer_skipped"], "identical", results)
+    scp = {"id": "t_provider", "family": "t", "fixture": pfx["id"], "kind": "edit_sequence", "patches": {},
+           "steps": [{"op": "check", "label": "base", "expect": "pass"}]}
+    gs = S.gate_scenario(scp, pfx, tc, bad, None, scratch / "rf-pgate3", C.StoreSet(scratch / "stores-pgate3"))
+    check("provider failure in a scenario gate: reported as a differing provider verdict, steps skipped, no crash",
+          not gs["passed"] and gs["provider_differs"] and gs["steps"][0]["consumer_skipped"], "scenario gate", results)
+
+    # --- position-mapping hook ----------------------------------------------------------------------
+    wrapper = scratch / "client.py"
+    wrapper.write_text(WRAPPER)
+    shift_t = f"python3 {shlex.quote(str(wrapper))} {{kind}} {{path}} {{moss}} {{margo}} shift"
+    mapper = scratch / "map_tool.py"
+    mapper.write_text(POSITION_MAP_TOOL)
+    dump = scratch / "map_input_keys.json"
+    ffail = fx_by["trivial_file_fail"]
+    def pgate(pm):
+        return R.run_gate([ffail], tc, tc, shift_t, scratch / "rf-pm", None, C.StoreSet(scratch / "stores-pm"), pm)
+    raw = pgate(None)
+    exact = pgate(f"python3 {mapper} -10 {dump}")
+    wrong = pgate(f"python3 {mapper} -3")
+    check("position map: a candidate whose lines are shifted fails without the map, passes with the exact map, a wrong map fails",
+          not raw["passed"] and exact["passed"] and not wrong["passed"],
+          f"raw {raw['passed']} exact {exact['passed']} wrong {wrong['passed']}", results)
+    check("position map: the tool receives only {kind, context, verdict} of the CANDIDATE (never the reference verdict)",
+          json.loads(dump.read_text()) == ["context", "kind", "verdict"], dump.read_text(), results)
+    try:
+        pgate("python3 -c 'import sys; sys.exit(3)'")
+        failed_map = False
+    except C.ToolError as exc:
+        failed_map = "failed" in str(exc)
+    check("position map: a failing map tool is an error, never a silent identity", failed_map, "ToolError", results)
+    import rust_cmp as RC
+
+    def rust_run(delta):
+        d = {"reason": "compiler-message", "message": {"level": "error", "code": {"code": "E0277"}, "message": "boom",
+             "rendered": "r", "spans": [{"file_name": "src/x.rs", "line_start": 3 + delta, "column_start": 5, "is_primary": True}]}}
+        return {"rc": 101, "timed_out": False, "stderr": "", "stdout": "\n".join(
+            json.dumps(x) for x in (d, {"reason": "build-finished", "success": False}))}
+    rust_map = scratch / "rust_map.py"
+    rust_map.write_text("import json, sys\nenv = json.load(sys.stdin); v = env['verdict']; d = int(sys.argv[1])\n"
+                        "for diag in v['document']['diagnostics']:\n    for sp in diag['spans']:\n        sp['line'] += d\n"
+                        "for diag in v['diagnostics']:\n    for sp in diag['spans']:\n        sp['line'] += d\n"
+                        "json.dump(v, sys.stdout)\n")
+    ref_v = RC.gate_view(RC.extract_verdict(rust_run(0), []))
+    sh_raw = RC.gate_view(RC.extract_verdict(rust_run(10), []))
+    sh_ok = RC.gate_view(RC.extract_verdict(rust_run(10), [], f"python3 {rust_map} -10"))
+    sh_bad = RC.gate_view(RC.extract_verdict(rust_run(10), [], f"python3 {rust_map} -4"))
+    check("position map (Rust): shifted span lines differ without the map, match with the exact map, differ with a wrong one",
+          sh_raw != ref_v and sh_ok == ref_v and sh_bad != ref_v, "rust spans", results)
+
+    # --- export sweep ---------------------------------------------------------------------------------
+    unc = ES.sweep_text("module m\n\nexport fn root(x):\n  return leaf(x) + 1\n\nfn leaf(x):\n  return x.score()\n")
+    cov = ES.sweep_text("module m\n\nexport trait Scorable:\n  fn score() -> Int\n\nexport fn root(x):\n  return leaf(x) + 1\n\nfn leaf(x):\n  return x.score()\n")
+    sweep = ES.sweep_fixtures(manifest)
+    check("export sweep: an uncovered transitive method is flagged, a covered one is not, and no package fixture has an "
+          "exported untyped generic that no visible trait covers",
+          len(unc) == 1 and ".score()" in unc[0] and not cov and not sweep and ES.count_exported_generics(manifest) >= 39,
+          f"{ES.count_exported_generics(manifest)} exported generics, {len(sweep)} uncovered", results)
+    bad_shape = []
+    for fid in ("b1_d005_w4_k008", "b1_d050_w4_k032", "fanin_pkg_k008", "fanin_pkg_k032"):
+        row = {"fixture_path": fx_by[fid]["path"]}
+        fns, types = report_dag.source_shape(row)
+        m = fx_by[fid]["metadata"]
+        if fns != m["predicted_functions_analyzed"] or fns * types != m["predicted_spec_keys"]:
+            bad_shape.append((fid, fns, types))
+    check("shape: callables counted from the SOURCE still equal the frozen predictions (a trait declaration adds no callable)",
+          not bad_shape, str(bad_shape), results)

@@ -60,8 +60,9 @@ def cone(graph: dict[str, set[str]], target: str) -> set[str]:
 
 
 def _query(moss: Path, source: Path, name: str) -> dict:
+    # scrubbed environment with a fresh store of its own (never an inherited MOSS_STORE_DIR / ~/.cache)
     p = subprocess.run([str(moss), "inspect", f"fn:{name}", "--source", str(source), "--json"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=C.Toolchain(moss, C.DEFAULT_MARGO).env())
     doc = json.loads(p.stdout)
     if not doc.get("ok"):
         raise C.ToolError(f"inspect fn:{name} failed on {source}: {str(doc.get('error'))[:160]}")

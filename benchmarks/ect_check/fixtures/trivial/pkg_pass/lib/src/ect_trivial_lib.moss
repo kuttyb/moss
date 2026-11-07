@@ -1,5 +1,8 @@
 module ect_trivial_lib
 
+export trait Measured:
+  fn len() -> Int
+
 export fn double(x):
   return x + x
 

@@ -1,5 +1,8 @@
 module ect_generic_lib
 
+export trait Identified:
+  fn id() -> Int
+
 export fn first_of(a, b):
   return a
 

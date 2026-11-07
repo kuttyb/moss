@@ -63,12 +63,24 @@ def _values(fx: dict, work: Path) -> dict[str, str]:
 
 
 def run_sequence(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, work: Path, *,
-                 stage: bool = True, counter_dir: Path | None = None, sample: bool = False) -> dict[str, dict]:
+                 stage: bool = True, counter_dir: Path | None = None, sample: bool = False,
+                 provider: str = "raise") -> dict[str, dict]:
     """Run every step once; return {label: run_measured result}. With
     `counter_dir`, each check also writes its own counter sink and the result
-    carries the summarized counters."""
+    carries the summarized counters. A fixture with a `provider` package gets it built
+    first (same toolchain, hence the same store, as the steps): `provider="raise"` aborts
+    on failure (bench), `provider="record"` (gate) returns it under the key `__provider__`
+    and, when it failed, runs no step (the consumer steps are skipped)."""
     values = C.stage_fixture(fx, work) if stage else _values(fx, work)
     results: dict[str, dict] = {}
+    if stage and fx.get("provider"):
+        pres, pverdict = C.build_provider_checked(fx, tc, work)
+        if provider == "record":
+            results["__provider__"] = {"result": pres, "verdict": pverdict}
+            if pres["rc"] != 0:
+                return results
+        elif pres["rc"] != 0:
+            raise C.ToolError(f"provider build of {fx['id']} failed: {(pres['stdout'] or pres['stderr'])[:300]}")
     timeout = C.fixture_timeout(fx)
     for step in sc["steps"]:
         op = step["op"]
@@ -136,7 +148,8 @@ def diag_summary(verdict: dict) -> str | None:
 
 
 def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, mode: str,
-                     reps: int, primes: int, run_dir: Path, warmup: bool = True) -> list[dict]:
+                     reps: int, primes: int, run_dir: Path, warmup: bool = True,
+                     stores: "C.StoreSet | None" = None) -> list[dict]:
     """One result row per check step: medians over `reps` complete sequences.
 
     cold: every rep stages a fresh copy and starts from an empty build dir; the
@@ -149,30 +162,67 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
     """
     work = run_dir / "work" / f"{mode}-{sc['id']}"
     repl = C.path_replacements(work, tc)
+    stores = stores or C.StoreSet(run_dir / "stores")
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = expect_exits(sc)
     codes = expect_codes(sc)
     samples: dict[str, list[dict]] = {label: [] for label in expects}
-    if mode == "warm":
-        C.stage_fixture(fx, work)
-        for _ in range(primes):
-            run_sequence(sc, fx, tc, template, work, stage=False)
-    elif warmup:
-        run_sequence(sc, fx, tc, template, work)
-    for _ in range(reps):
-        res = run_sequence(sc, fx, tc, template, work, stage=(mode == "cold"))
-        for label, r in res.items():
-            samples[label].append(r)
+    last_store: dict = {"bytes": None, "files": None}
+
+    def fresh_seq(**kw):
+        """Cold policy: every sequence (warm-up, timed, sampled, counter) gets a fresh, empty
+        store, kept across ITS OWN steps (a real edit loop) and deleted afterwards."""
+        st = stores.new(f"cold-{sc['id']}")
+        try:
+            return run_sequence(sc, fx, tc.with_store(st), template, work, **kw)
+        finally:
+            rec = stores.release(st)
+            last_store.update(bytes=rec["bytes"], files=rec["files"])
+
     counters: dict[str, dict] = {}
+    counter_series: list[dict] = []
     tree_peaks: dict[str, list[int]] = {}
-    if mode == "cold" and sc["family"] in SAMPLED_FAMILIES:
-        # whole-process-tree peak RSS, in separate untimed passes (the /proc sampler perturbs timing)
-        tree_peaks = {label: [] for label in expects}
-        for _ in range(3):
-            for label, r in run_sequence(sc, fx, tc, template, work, sample=True).items():
-                tree_peaks[label].append(r.get("tree_rss_peak_kib") or 0)
-    if mode == "cold":
-        cres = run_sequence(sc, fx, tc, template, work, counter_dir=run_dir / "counters")
+    if mode == "warm":
+        # Warm policy: ONE store per scenario, kept across the primes and the timed sequences.
+        wst = stores.new(f"warm-{sc['id']}")
+        wtc = tc.with_store(wst)
+        C.stage_fixture(fx, work)
+        if fx.get("provider"):
+            C.build_provider(fx, wtc, work)
+        for _ in range(primes):
+            run_sequence(sc, fx, wtc, template, work, stage=False)
+        for _ in range(reps):
+            for label, r in run_sequence(sc, fx, wtc, template, work, stage=False).items():
+                samples[label].append(r)
+        rec = stores.release(wst)
+        last_store.update(bytes=rec["bytes"], files=rec["files"])
+        if C.counters_available(template):
+            # Counter pass: the SAME series (same primes, same sequences, same order) under the same
+            # policy in its OWN store, so its store evolves exactly as the timed one did; the row
+            # carries the counters of the last request (steady state), all requests are kept.
+            cst = stores.new(f"warm-counters-{sc['id']}")
+            ctc = tc.with_store(cst)
+            C.stage_fixture(fx, work)
+            if fx.get("provider"):
+                C.build_provider(fx, ctc, work)
+            for _ in range(primes + reps):
+                cres = run_sequence(sc, fx, ctc, template, work, stage=False, counter_dir=run_dir / "counters")
+                counter_series.append({label: r["counters"] for label, r in cres.items()})
+            stores.release(cst)
+            counters = counter_series[-1]
+    else:
+        if warmup:
+            fresh_seq()
+        for _ in range(reps):
+            for label, r in fresh_seq().items():
+                samples[label].append(r)
+        if sc["family"] in SAMPLED_FAMILIES:
+            # whole-process-tree peak RSS, in separate untimed passes (the /proc sampler perturbs timing)
+            tree_peaks = {label: [] for label in expects}
+            for _ in range(3):
+                for label, r in fresh_seq(sample=True).items():
+                    tree_peaks[label].append(r.get("tree_rss_peak_kib") or 0)
+        cres = fresh_seq(counter_dir=run_dir / "counters")
         counters = {label: r["counters"] for label, r in cres.items()}
     shutil.rmtree(work, ignore_errors=True)
 
@@ -201,6 +251,9 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
                          "edited_function": sc.get("edited_function")},
             "fixture_path": fx["path"], "stack_kib": fx.get("stack_kib"),
         }
+        row["store_bytes"], row["store_files"] = last_store["bytes"], last_store["files"]
+        if counter_series:
+            row["counters_by_request"] = [c.get(label) for c in counter_series]
         row.update(counters.get(label) or {"checker_runs": None,
                                            **{name: None for name, _ in C.WORK_COUNTERS}})
         rows.append(row)
@@ -252,21 +305,51 @@ def verify_frozen(manifest: dict, fixtures: list[dict], scenarios: list[dict]) -
 
 
 def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolchain,
-                  candidate_template: str | None, run_dir: Path) -> dict:
+                  candidate_template: str | None, run_dir: Path, stores: "C.StoreSet | None" = None,
+                  position_map: str | None = None) -> dict:
     """Reference vs candidate on EVERY check step of the sequence: identical
     full JSON verdicts (volatile keys excluded) and reference == the step's
-    expected status."""
-    verdicts = {}
+    expected status. Each side runs against its OWN store, kept across the steps (a real
+    edit loop: the candidate's incremental path is what is compared). `position_map` rewrites
+    the CANDIDATE verdicts' positions to the reference layout first (identity when None).
+    A provider build that fails on either side is a verdict: both provider verdicts are
+    compared, the consumer steps are skipped and the run finishes."""
+    stores = stores or C.StoreSet(run_dir / "stores")
+    verdicts, providers = {}, {}
     for side, tc, template in (("reference", reference, None), ("candidate", candidate, candidate_template)):
         work = run_dir / "work" / f"gate-{side}-{sc['id']}"
-        res = run_sequence(sc, fx, tc, template, work)
+        st = stores.new(f"gate-{side}-{sc['id']}")
+        pm = position_map if side == "candidate" else None
+        try:
+            res = run_sequence(sc, fx, tc.with_store(st), template, work, provider="record")
+        finally:
+            stores.release(st)
         repl = C.path_replacements(work, tc)
-        verdicts[side] = {label: C.extract_verdict(r, repl) for label, r in res.items()}
+        prov = res.pop("__provider__", None)
+        providers[side] = prov
+        verdicts[side] = {label: C.extract_verdict(r, repl, pm, {"scenario": sc["id"], "step": label})
+                          for label, r in res.items()}
         shutil.rmtree(work, ignore_errors=True)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
     exits = expect_exits(sc)
     codes = expect_codes(sc)
     steps = []
+    failed = {side: p is not None and p["result"]["rc"] != 0 for side, p in providers.items()}
+    if any(failed.values()):
+        pv = {side: (p["verdict"] if p else None) for side, p in providers.items()}
+        same = pv["reference"] is not None and pv["candidate"] is not None and \
+            gate_view(pv["reference"]) == gate_view(pv["candidate"])
+        steps.append({"step": "provider", "identical": same, "consumer_skipped": True,
+                      "provider_failed": failed, "provider_reference": pv["reference"],
+                      "provider_candidate": pv["candidate"],
+                      "bookkeeping_reference": {}, "bookkeeping_candidate": {},
+                      "reference_matches_expected": not failed["reference"],
+                      "candidate_matches_expected": not failed["candidate"],
+                      "status": "fail" if failed["reference"] else "pass",
+                      "reference": pv["reference"], "candidate": pv["candidate"]})
+        return {"scenario": sc["id"], "fixture": fx["id"], "steps": steps,
+                "provider_differs": not same,
+                "passed": same and not failed["reference"]}
     for label, exp in expects.items():
         ref, cand = verdicts["reference"][label], verdicts["candidate"][label]
         steps.append({"step": label, "identical": gate_view(ref) == gate_view(cand),
@@ -376,9 +459,15 @@ def _wt_argv(fx: dict, tc: C.Toolchain, template: str | None, wt: Path) -> list[
 
 def run_worktree_group(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, repo: Path,
                        base: Path, n: int, concurrent: bool, rep: int,
-                       counter_dir: Path | None = None, sample: bool = False) -> dict:
+                       counter_dir: Path | None = None, sample: bool = False,
+                       stores: "C.StoreSet | None" = None) -> dict:
     """Create N worktrees of the one commit, apply each worktree's edit, run the
-    first check in each (concurrently or one after the other), then remove them."""
+    first check in each (concurrently or one after the other), then remove them.
+    Store policy: ONE store per (N, schedule, rep) group, shared by all N worktrees in it
+    (so a content-addressed store may hit across the worktrees of a group, never across groups)."""
+    stores = stores or C.StoreSet(base.parent / "stores")
+    store = stores.new(f"b5-{sc['id']}-n{n}-{'conc' if concurrent else 'seq'}-rep{rep}")
+    tc = tc.with_store(store)
     dirs = add_worktrees(sc, repo, base, n, rep)
     try:
         for i, d in enumerate(dirs):
@@ -430,27 +519,31 @@ def run_worktree_group(sc: dict, fx: dict, tc: C.Toolchain, template: str | None
                 "per_cpu_ms": [r["cpu_ms"] for r in results],
                 "per_rss_kib": [r["rss_kib"] for r in results],
                 "per_tree_rss_peak_kib": [r.get("tree_rss_peak_kib") for r in results], "all_ok": all(statuses),
-                "loadavg_start": load_start, **totals, "counters": counters}
+                "loadavg_start": load_start, "store_bytes": C.dir_size(store)["bytes"],
+                "store_files": C.dir_size(store)["files"], **totals, "counters": counters}
     finally:
         remove_worktrees(sc, repo, dirs)
+        stores.release(store)
 
 
 def measure_worktrees(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, mode: str,
-                      reps: int, run_dir: Path, warmup: bool = True) -> list[dict]:
+                      reps: int, run_dir: Path, warmup: bool = True,
+                      stores: "C.StoreSet | None" = None) -> list[dict]:
     """Rows per (N, schedule): medians over reps of total CPU, summed peak RSS,
     group wall and each worktree's first-check time."""
     base_dir = run_dir / "work" / f"{mode}-{sc['id']}"
     repo = base_dir / "repo"
+    stores = stores or C.StoreSet(run_dir / "stores")
     commit = make_fixture_repo(sc, fx, repo)
     wt_root = base_dir / "wt"
     try:
         if warmup:  # page in the binary and the project; discarded
-            run_worktree_group(sc, fx, tc, template, repo, wt_root, 1, False, 99)
+            run_worktree_group(sc, fx, tc, template, repo, wt_root, 1, False, 99, stores=stores)
         collected: dict[tuple[int, str], list[dict]] = {}
         for rep in range(reps):
             for n in sc["counts"]:
                 for concurrent in (True, False):
-                    g = run_worktree_group(sc, fx, tc, template, repo, wt_root, n, concurrent, rep)
+                    g = run_worktree_group(sc, fx, tc, template, repo, wt_root, n, concurrent, rep, stores=stores)
                     collected.setdefault((n, "concurrent" if concurrent else "sequential"), []).append(g)
         sampled: dict[tuple[int, str], list[dict]] = {}
         if mode == "cold":   # separate, untimed passes: the /proc sampler perturbs the machine
@@ -458,13 +551,13 @@ def measure_worktrees(sc: dict, fx: dict, tc: C.Toolchain, template: str | None,
                 for n in sc["counts"]:
                     for concurrent in (True, False):
                         g = run_worktree_group(sc, fx, tc, template, repo, wt_root, n, concurrent,
-                                               50 + rep, sample=True)
+                                               50 + rep, sample=True, stores=stores)
                         sampled.setdefault((n, "concurrent" if concurrent else "sequential"), []).append(g)
         counters = None
         if mode == "cold":
             nmax = max(sc["counts"])
             counters = run_worktree_group(sc, fx, tc, template, repo, wt_root, nmax, False, 98,
-                                          counter_dir=run_dir / "counters")["counters"]
+                                          counter_dir=run_dir / "counters", stores=stores)["counters"]
     finally:
         # Remove every worktree registration and the fixture repository itself.
         subprocess.run(["git", "worktree", "prune"], cwd=repo, env=_git_env(sc), capture_output=True)
@@ -488,6 +581,7 @@ def measure_worktrees(sc: dict, fx: dict, tc: C.Toolchain, template: str | None,
             "first_check_ms_later_median": C.median(by_index[1:]) if n > 1 else None,
             "first_check_ms_max": max(by_index),
             "loadavg_start": groups[0]["loadavg_start"],
+            "store_bytes": groups[-1].get("store_bytes"), "store_files": groups[-1].get("store_files"),
             "cpus": os.cpu_count(),
         }
         sg = sampled.get((n, schedule))

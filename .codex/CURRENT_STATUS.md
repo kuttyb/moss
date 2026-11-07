@@ -18187,3 +18187,11 @@ reworded b/b2, "no answer within 20 s" (one variant also within 300 s), frozen `
 + `--require-rust`, results re-run from a clean commit (`results/team5-final`, git_sha 3dd88270, noise drift 0.5%; two noisier attempts
 discarded; `rust_fanin_single_b` still spread-flagged, stated in the README). make check: only the 3 baseline failures by name
 (check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases); the earlier perf-baseline flake did not recur.
+
+## Phase 28.5.1 (benchmark wiring for Phase 28.6; suite 0.6.0) - on `phase28-5-bench`
+
+Work in progress (not yet tagged): covering `export trait`s in the 24 package fixtures (generators b1_leak, dag_fanin, b4_cold_warm,
+trivial bumped to 1.1.0; `export_sweep.py` finds no uncovered export), provider failure as a gate verdict, per-series stores via
+`MOSS_STORE_DIR` (StoreSet/Toolchain.with_store; B6 ReplayStores with clone/promote), counters under the same store policy (also warm),
+`--candidate-position-map`, `--warm-store`, `--keep-stores`; README "Behaviour changes in 0.6.0" + every old results table marked
+0.5.0 superseded. No benchmark or timed run was executed (the owner runs the baseline). src/ and compiler_torture untouched.

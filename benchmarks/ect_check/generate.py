@@ -31,7 +31,7 @@ Generator = C.Generator
 class TrivialGenerator(Generator):
     """Smoke fixtures that exercise every part of the harness."""
     name = "trivial"
-    version = "1.0.0"
+    version = "1.1.0"
     category = "smoke"
 
     def generate(self, rng: random.Random, out_dir: Path) -> list[dict]:
@@ -70,6 +70,8 @@ class TrivialGenerator(Generator):
             '[project]\nname = "ect_trivial_lib"\nversion = "0.1.0"\n')
         (d / "lib" / "src" / "ect_trivial_lib.moss").write_text(
             "module ect_trivial_lib\n\n"
+            # Phase 28.5.1: `twice_len` calls `items.len()`: declare and export the covering trait
+            "export trait Measured:\n  fn len() -> Int\n\n"
             "export fn double(x):\n  return x + x\n\n"
             "export fn twice_len(items):\n  return items.len() * 2\n\n"
             "fn helper(n):\n  return n + 1\n\n"
@@ -119,6 +121,8 @@ class TrivialGenerator(Generator):
             '[project]\nname = "ect_generic_lib"\nversion = "0.1.0"\n')
         (d / "lib" / "src" / "ect_generic_lib.moss").write_text(
             "module ect_generic_lib\n\n"
+            # Phase 28.5.1: `show_id` calls `x.id()`: declare and export the covering trait
+            "export trait Identified:\n  fn id() -> Int\n\n"
             "export fn first_of(a, b):\n  return a\n\n"
             "export fn show_id(x):\n  return x.id()\n")
         (d / "app" / "Moss.toml").write_text(

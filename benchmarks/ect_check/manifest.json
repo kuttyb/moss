@@ -1,18 +1,18 @@
 {
   "suite_name": "moss_ect_check",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "seed": 20261105,
   "total_fixtures": 80,
   "total_rust_fixtures": 4,
   "generators": {
-    "trivial": "1.0.0",
-    "b1_leak": "1.0.0",
+    "trivial": "1.1.0",
+    "b1_leak": "1.1.0",
     "b2_equiv": "1.0.0",
     "torture_ext": "1.1.0-ext",
     "dag_diamond": "1.0.0",
-    "dag_fanin": "1.0.0",
+    "dag_fanin": "1.1.0",
     "b3_edits": "1.0.0",
-    "b4_cold_warm": "1.0.0",
+    "b4_cold_warm": "1.1.0",
     "b5_worktrees": "1.0.0",
     "b3_error": "1.0.0",
     "b6_replay": "1.0.0",
@@ -31,7 +31,7 @@
       },
       "category": "smoke",
       "generator": "trivial",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "cf902962282a0e79bd7d20c7f0ed9becfba80b50a20d91caa6948129d5b85442"
     },
@@ -47,7 +47,7 @@
       },
       "category": "smoke",
       "generator": "trivial",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "cda65c9639788bbab5b558c6913009565059d59efd940bbe61ed9e406558cc93"
     },
@@ -64,9 +64,9 @@
       },
       "category": "smoke",
       "generator": "trivial",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "012c821900953705919a2acf3b77367be85b7bdfed00b69be403762e71b38cff"
+      "sha256": "a63ec0c030e1600fa808025d625e367a11415e73d7e6cb7c824ed42f02aeda7d"
     },
     {
       "id": "trivial_pkg_fail",
@@ -81,7 +81,7 @@
       },
       "category": "smoke",
       "generator": "trivial",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "90e5277a9d01647a53b3610f10980e3fe8885d7bc0640e4aa2282f72d148f699"
     },
@@ -98,9 +98,9 @@
       },
       "category": "smoke",
       "generator": "trivial",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "79d21f15e58dbe63e670077f766497b828ca8500ad13258aaaca6f6cefbab1ff"
+      "sha256": "a55d6de2952292871f56a5e5aa9997e74886ab5ed4e413a4cfdbd3447d9e1ea7"
     },
     {
       "id": "b1_d005_w1_k001",
@@ -123,9 +123,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "c4415584b166b6073ed14f2bdacd00efd61b853b717fbc736c28228bce47752d"
+      "sha256": "8a2c0cf08f6e4535027eba8763a876a79e35669a2e7dc03cec3f3b7a178146a8"
     },
     {
       "id": "b1_d005_w1_k008",
@@ -148,9 +148,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "28d1f0e59d0a56a48de5e3c30b6eeb0a6426ef92ad64de513fb1855fa4b3e9c5"
+      "sha256": "9f69601c9387a453335d7d0c8f798ab58db4c7674992c570d629a65915b2fffb"
     },
     {
       "id": "b1_d005_w1_k032",
@@ -173,9 +173,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "0bb810001fc1f182337af40fff31d3a9248b45dc43226752aca01e62206412d2"
+      "sha256": "26192329c910a47f0dc4b89c4264a6165c35b26f6826a93b01aa246be638e0c1"
     },
     {
       "id": "b1_d005_w4_k001",
@@ -198,9 +198,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "140ca3022e940a7f4219cb886c0956f60269b01c3017f275e53f426270e77045"
+      "sha256": "b54df4f81542012687e9e844c64754e5b8e58337b8be6f69da250d030dc8fa5c"
     },
     {
       "id": "b1_d005_w4_k008",
@@ -223,9 +223,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "9f0d1fe67b6628b920e69f3eb06fb7997c7d1d4f5be8e3e3464e462ee589f9a5"
+      "sha256": "4858078d6b6f6e5ac37ffe1b33b37fe2b4d43efc01dd55a9961d585d236ddd59"
     },
     {
       "id": "b1_d005_w4_k032",
@@ -248,9 +248,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "a23e642b884b674508f92fbef521cf0b66769c6b90a92aafca58a21e50231f0a"
+      "sha256": "acaf05043228ae50d06fa6ffcfef9c6b8473a9bf1e4cd9b0c6cac21524db4f8b"
     },
     {
       "id": "b1_d020_w1_k001",
@@ -273,9 +273,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "9c867cb530764d8f2383c0e1c65beef7aa4bfff91fdf53c2e8cbf3a4dcab890d"
+      "sha256": "dc590a13849de44c8626d9c3539ceee0fcadd55cd9f4d3d526bb6b3a99648b2f"
     },
     {
       "id": "b1_d020_w1_k008",
@@ -298,9 +298,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "cdb7d3cbeeac9ad4cd668a406522ca60a3c672d965d182493d6cc4887f6f6748"
+      "sha256": "3c6dbebf431dddfd312eb789940dd194cc54d23bdfa887761cec58f4cf9664ea"
     },
     {
       "id": "b1_d020_w1_k032",
@@ -323,9 +323,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "3218e0636393b0a492491c11bdeeb5ecb5e8843133e1abd9d962be31808c3696"
+      "sha256": "5812c1c23f38e7751b2f74cdaab63b3de3770739fe2eb22a1be17a25e3d4ed54"
     },
     {
       "id": "b1_d020_w4_k001",
@@ -348,9 +348,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "b2f368401ce5907634bafbfb067f0e93dd1b7d3bd6618e359e2340ec268ec704"
+      "sha256": "40a35fc289ccfb18a35938417583adba62a3dc2498d0c8e78ec40dd89175e0bc"
     },
     {
       "id": "b1_d020_w4_k008",
@@ -373,9 +373,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "67667a63ace54228215cd8f7db788431692713b840e874ed44bd2daf0892bb54"
+      "sha256": "7ec93c6c145382edeffa9422edb50c445610fcc5ea2c2bea817f6be551cb1a48"
     },
     {
       "id": "b1_d020_w4_k032",
@@ -398,9 +398,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "b30962481c9c7e3daa5b45fc5db4f201d6c94618584e14d4faf0637ffe03e5e7"
+      "sha256": "a7b1f59d991defc93cff336400dd36747f796f2770c56986ebe7a4ee4d474e4f"
     },
     {
       "id": "b1_d050_w1_k001",
@@ -423,9 +423,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "c27b7f7cf2fd9662cf5a7ff6cbde8d60bd35081d698d02b91330d75b8c84ce23"
+      "sha256": "7c954ee10c183345f141eb9d4c337dbbf398fece7b85829811a41277cf0ee389"
     },
     {
       "id": "b1_d050_w1_k008",
@@ -448,9 +448,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "23bd7503eadf8da36753528bf9dd3bc13c91b1903dbe6762cdfb894240ce6824"
+      "sha256": "dcc7ffe1bc16a85ff1fbe1847a08df51500e8ce93e47c735902d8785d0664794"
     },
     {
       "id": "b1_d050_w1_k032",
@@ -473,9 +473,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "4008beb983ec0dd0d8dc27af104445f9636cf23d4299db2121b61673a2c0bda5"
+      "sha256": "ccb76aa0a631fa406200fb55f663e6af7c4956626e5c1682c7ed4868bcf68b11"
     },
     {
       "id": "b1_d050_w4_k001",
@@ -498,9 +498,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "bcc79e1a8dc5d40820d242b724e964fa7935f3d3855ca20863e14cd851ae09c7"
+      "sha256": "b232e277d9fbab32967629f7b1851895a67c8a4e3811a9a5c9ebe7545664f345"
     },
     {
       "id": "b1_d050_w4_k008",
@@ -523,9 +523,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "68237be1a70c414f20bdd3b28b0bd9f35bbf660e2d1b2a37a64d6ba6f0c65098"
+      "sha256": "34ceb8551318aa4e956c6ed40bc0ae38fbe890b8a85d0952b56c487df67ea761"
     },
     {
       "id": "b1_d050_w4_k032",
@@ -548,9 +548,9 @@
       },
       "category": "b1_leak",
       "generator": "b1_leak",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "ffb76746ce0acacd9b5c96aa35b80d24d4d8f496ed6032a1a092fbab602ceaab"
+      "sha256": "73dc4aba1be9fdf8d426cf21f971a8b795c6b730b2696a2368012b56c106e3d7"
     },
     {
       "id": "b2_k01",
@@ -1639,9 +1639,9 @@
       "provider": "lib",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "58fda0a6822e0c063f4b2996b1dab0e457fceecb06e05a31939537a29442af24"
+      "sha256": "16c3b4e14c159af47088a0fd1341cc8574cfa814219a5a378da0657c8e40c61d"
     },
     {
       "id": "fanin_pkg_k008",
@@ -1666,9 +1666,9 @@
       "provider": "lib",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "1d2ebcfabf99885ad7f7db76b16a331faff2da4331e209fb188c230f9d724dd1"
+      "sha256": "45aa324aa33f79ad1a9064b5281a91568c7415afeb157995a428a3ed25b4a037"
     },
     {
       "id": "fanin_pkg_k032",
@@ -1693,9 +1693,9 @@
       "provider": "lib",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "491f1a9b288bcbe5e12e229839768defcf823d10bd1479356cd2dca01c48474c"
+      "sha256": "594d37bd47b8459ee40f9523afad24ac63f448ce5ecb2f475e3333478d43b28a"
     },
     {
       "id": "fanin_file_k001",
@@ -1718,7 +1718,7 @@
       "entry": "main.moss",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "510d276d625c6f3ae6fd1b34f6ce560b5f1c268e9fb8eb6667fdb2052d7332db"
     },
@@ -1743,7 +1743,7 @@
       "entry": "main.moss",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "29c88fcfc6f3a6c784c3267687e3704566f643b4c016e5d90338dc21fc4cd094"
     },
@@ -1768,7 +1768,7 @@
       "entry": "main.moss",
       "category": "dag_fanin",
       "generator": "dag_fanin",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "adde009b5ddc168f53d6c1201f0e0d70b4ab2ec00830dcf8b904374078f58845"
     },
@@ -1836,7 +1836,7 @@
       },
       "category": "b4_cold_warm",
       "generator": "b4_cold_warm",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "e89da3b53d8b3dd0bf0efe9d8ebdccab3aa0dd0abfeac3be3dda877767254655"
     },
@@ -1853,7 +1853,7 @@
       },
       "category": "b4_cold_warm",
       "generator": "b4_cold_warm",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
       "sha256": "c582508e173321212498cc1ab8de746014ceb517f0776daebf43218d33e09a5d"
     },
@@ -1872,9 +1872,9 @@
       },
       "category": "b4_cold_warm",
       "generator": "b4_cold_warm",
-      "generator_version": "1.0.0",
+      "generator_version": "1.1.0",
       "generator_seed": 20261105,
-      "sha256": "4ff8eb5f4304c9dc89d915a053f720ccbe40a9fa6ad82c6250e4ea0e279d0dbb"
+      "sha256": "8f9d54cbf75601140ec842deb1a6620e57e138016a079f6788e6e003720eb107"
     }
   ],
   "rust_fixtures": [

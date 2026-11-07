@@ -1,5 +1,8 @@
 module dag_lib
 
+export trait Scorable:
+  fn score() -> Int
+
 fn n049_0(x):
   return x.score()
 

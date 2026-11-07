@@ -1,5 +1,8 @@
 module ect_p10
 
+export trait Scorable:
+  fn score() -> Int
+
 export fn f00(a: Int, b: Int) -> Int:
   return a * 9 + b + 10
 

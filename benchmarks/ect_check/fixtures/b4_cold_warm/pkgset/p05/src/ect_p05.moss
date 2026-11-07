@@ -1,5 +1,8 @@
 module ect_p05
 
+export trait Scorable:
+  fn score() -> Int
+
 export fn f00(a: Int, b: Int) -> Int:
   return a * 2 + b + 5
 

@@ -355,9 +355,10 @@ def expect_ok_obs(expect: dict | None, obs: dict) -> bool:
     return expect is not None and obs == expect
 
 
-def verdicts_of(results: dict[str, dict], work: Path, tc: C.Toolchain) -> dict[str, dict]:
+def verdicts_of(results: dict[str, dict], work: Path, tc: C.Toolchain,
+                position_map: str | None = None) -> dict[str, dict]:
     repl = C.path_replacements(work, tc)
-    return {label: C.extract_verdict(r, repl) for label, r in results.items()}
+    return {label: C.extract_verdict(r, repl, position_map, {"label": label}) for label, r in results.items()}
 
 
 def expectation_for(sc: dict, label: str) -> dict | None:
@@ -401,8 +402,64 @@ def phase_summary(phase: str, labels_: list[str], samples: dict[str, list[dict]]
             "exit_code": max((e["exit_code"] or 0) for e in entries)}
 
 
+class ReplayStores:
+    """Store policy of the replay (Phase 28.5.1): ONE store per replay run, kept across the
+    commits. A replay run = one pass over the steps: cold mode keeps one store per rep index
+    (rep i of step n sees what rep i of steps 1..n-1 left, an agent loop; reps never share a
+    store), warm mode keeps a single store; a separate counter store follows the same evolution.
+    Every measurement attempt (spread-guard retry, noisy-block retry) runs on CLONES of the
+    masters and only the accepted attempt is promoted, so a retry never sees its own earlier run."""
+
+    def __init__(self, stores: "C.StoreSet", mode: str, reps: int):
+        self.stores, self.mode = stores, mode
+        n = reps if mode == "cold" else 1
+        self.timed = [stores.new(f"b6-{mode}-timed{i}") for i in range(n)]
+        self.counter = stores.new(f"b6-{mode}-counters")
+        self._pending: list[dict] = []
+
+    def clone(self) -> dict:
+        c = {"timed": [self.stores.clone(p, "b6-attempt") for p in self.timed],
+             "counter": self.stores.clone(self.counter, "b6-attempt-counters")}
+        self._pending.append(c)
+        return c
+
+    def promote(self, chosen: dict) -> None:
+        for m, c in zip(self.timed, chosen["timed"]):
+            self.stores.replace(m, c)
+        self.stores.replace(self.counter, chosen["counter"])
+        self._pending.remove(chosen)
+        self.discard_pending()
+
+    def discard_pending(self) -> None:
+        for c in self._pending:
+            for p in [*c["timed"], c["counter"]]:
+                shutil.rmtree(p, ignore_errors=True)
+        self._pending.clear()
+
+    def snapshot(self) -> dict:
+        return {"timed": [self.stores.clone(p, "b6-snap") for p in self.timed],
+                "counter": self.stores.clone(self.counter, "b6-snap-counters")}
+
+    def restore(self, snap: dict) -> None:
+        for m, c in zip(self.timed, snap["timed"]):
+            shutil.rmtree(m, ignore_errors=True)
+            shutil.copytree(c, m)
+        shutil.rmtree(self.counter, ignore_errors=True)
+        shutil.copytree(snap["counter"], self.counter)
+
+    def drop_snapshot(self, snap: dict) -> None:
+        for p in [*snap["timed"], snap["counter"]]:
+            shutil.rmtree(p, ignore_errors=True)
+
+    def finish(self) -> None:
+        self.discard_pending()
+        for p in [*self.timed, self.counter]:
+            self.stores.release(p)
+
+
 def measure_step_once(sc: dict, tc: C.Toolchain, template: str | None, mode: str, reps: int, primes: int,
-                 run_dir: Path, warmup: bool = True) -> list[dict]:
+                 run_dir: Path, warmup: bool = True, store_state: dict | None = None,
+                 stores: "C.StoreSet | None" = None) -> list[dict]:
     """Rows `pre` and `post` for one commit: per rep the wall of a phase is the
     sum over its entry points; medians over reps. cold: fresh tree every rep
     (every sequence materializes the parent tree anew), one discarded sequence
@@ -410,17 +467,35 @@ def measure_step_once(sc: dict, tc: C.Toolchain, template: str | None, mode: str
     work = run_dir / "work" / f"{mode}-{sc['id']}"
     all_labels = [f"{ph}:{eid}" for ph, eid in labels(sc)]
     samples: dict[str, list[dict]] = {l: [] for l in all_labels}
+    stores = stores or C.StoreSet(run_dir / "stores")
+    state = store_state or ReplayStores(stores, mode, reps).clone()      # standalone use: private stores
     if mode == "warm":
+        wtc = tc.with_store(state["timed"][0])
         for _ in range(primes):
-            run_step(sc, tc, template, work)
-    elif warmup:
-        run_step(sc, tc, template, work)
-    for _ in range(reps):
-        for l, r in run_step(sc, tc, template, work).items():
-            samples[l].append(r)
+            run_step(sc, wtc, template, work)
+        for _ in range(reps):
+            for l, r in run_step(sc, wtc, template, work).items():
+                samples[l].append(r)
+    else:
+        if warmup:       # the discarded warm-up rep gets its own fresh store like any cold rep
+            wst = stores.new("b6-warmup")
+            try:
+                run_step(sc, tc.with_store(wst), template, work)
+            finally:
+                stores.release(wst)
+        for i in range(reps):
+            for l, r in run_step(sc, tc.with_store(state["timed"][i]), template, work).items():
+                samples[l].append(r)
     counters: dict[str, dict] = {}
-    if mode == "cold":
-        cres = run_step(sc, tc, template, work, counter_dir=run_dir / "counters")
+    if mode == "cold" or C.counters_available(template):
+        # Counter pass: the same replay step under the same store policy in its own store
+        # (the counter master, which evolves across commits exactly as a timed store does). In
+        # warm mode the series is replayed in full (primes, then the timed sequences) and the
+        # counters of the last sequence are reported.
+        ctc = tc.with_store(state["counter"])
+        n_seq = 1 if mode == "cold" else primes + reps
+        for _ in range(n_seq):
+            cres = run_step(sc, ctc, template, work, counter_dir=run_dir / "counters")
         for phase in ("pre", "post"):
             recs = [rec for l, r in cres.items() if l.startswith(phase + ":") for rec in r["records"]]
             counters[phase] = C.summarize_counters(recs)
@@ -454,9 +529,28 @@ def measure_step_once(sc: dict, tc: C.Toolchain, template: str | None, mode: str
 
 
 def measure_step(sc: dict, tc: C.Toolchain, template: str | None, mode: str, reps: int, primes: int,
-                 run_dir: Path, warmup: bool = True) -> list[dict]:
-    """measure_step_once under the per-step spread guard (see guarded_measure)."""
-    return guarded_measure(lambda: measure_step_once(sc, tc, template, mode, reps, primes, run_dir, warmup))
+                 run_dir: Path, warmup: bool = True, rs: "ReplayStores | None" = None) -> list[dict]:
+    """measure_step_once under the per-step spread guard (see guarded_measure). With `rs`
+    (the replay's stores) every attempt runs on clones of the masters and the accepted
+    attempt is promoted; the attempt chosen is the one guarded_measure keeps."""
+    if rs is None:
+        return guarded_measure(lambda: measure_step_once(sc, tc, template, mode, reps, primes, run_dir, warmup))
+    attempts: list[dict] = []
+
+    def once():
+        state = rs.clone()
+        rows = measure_step_once(sc, tc, template, mode, reps, primes, run_dir, warmup, state, rs.stores)
+        for r in rows:
+            r["_attempt"] = len(attempts)
+        attempts.append(state)
+        return rows
+
+    rows = guarded_measure(once)
+    chosen = attempts[rows[0]["_attempt"]] if rows else attempts[-1]
+    for r in rows:
+        r.pop("_attempt", None)
+    rs.promote(chosen)
+    return rows
 
 
 def observe_step(sc: dict, tc: C.Toolchain, work: Path) -> dict[str, dict]:
@@ -474,7 +568,7 @@ def observe_step(sc: dict, tc: C.Toolchain, work: Path) -> dict[str, dict]:
 # --------------------------------------------------------------------------
 
 def gate_step(sc: dict, reference: C.Toolchain, candidate: C.Toolchain, candidate_template: str | None,
-              run_dir: Path) -> dict:
+              run_dir: Path, side_stores: dict | None = None, position_map: str | None = None) -> dict:
     """Reference vs candidate on EVERY check of the step (each entry point, pre
     and post): identical full JSON verdicts (volatile keys excluded, margo's
     checked/skipped bookkeeping informational only) and reference == the frozen
@@ -483,8 +577,10 @@ def gate_step(sc: dict, reference: C.Toolchain, candidate: C.Toolchain, candidat
     verdicts = {}
     for side, tc, template in (("reference", reference, None), ("candidate", candidate, candidate_template)):
         work = run_dir / "work" / f"gate-{side}-{sc['id']}"
-        res = run_step(sc, tc, template, work)
-        verdicts[side] = verdicts_of(res, work, tc)
+        # one store per side for the whole replay gate, kept across the commits (never shared by sides)
+        tcs = tc.with_store(side_stores[side]) if side_stores else tc
+        res = run_step(sc, tcs, template, work)
+        verdicts[side] = verdicts_of(res, work, tc, position_map if side == "candidate" else None)
         shutil.rmtree(work, ignore_errors=True)
     steps = []
     for phase, eid in labels(sc):
@@ -688,7 +784,8 @@ def guarded_measure(measure_once, limit: float = SPREAD_LIMIT, attempts: int = S
 
 
 def run_blocks(items: list, measure_fn, probe_fn, baseline_ms: float, block: int = BLOCK_STEPS,
-               drift_pct: float = BLOCK_DRIFT_PCT, retries: int = BLOCK_RETRIES, log=None) -> tuple[list[list[dict]], list[dict]]:
+               drift_pct: float = BLOCK_DRIFT_PCT, retries: int = BLOCK_RETRIES, log=None,
+               snapshot=None, restore=None, drop=None) -> tuple[list[list[dict]], list[dict]]:
     """Measure `items` in blocks; after each block `probe_fn()` re-times the
     calibration fixture (median wall ms). A block whose probe drifted more than
     `drift_pct` from `baseline_ms` is discarded and measured again (up to
@@ -698,7 +795,10 @@ def run_blocks(items: list, measure_fn, probe_fn, baseline_ms: float, block: int
     probes: list[dict] = []
     for start in range(0, len(items), block):
         chunk = items[start:start + block]
+        snap = snapshot() if snapshot else None      # store state at the block's start (B6 stores)
         for attempt in range(retries + 1):
+            if attempt and restore:
+                restore(snap)                         # a re-measured block starts from the same store state
             rows = [measure_fn(it) for it in chunk]
             probe = probe_fn()
             drift = abs(probe - baseline_ms) / min(probe, baseline_ms) * 100.0
@@ -709,6 +809,8 @@ def run_blocks(items: list, measure_fn, probe_fn, baseline_ms: float, block: int
                 log(probes[-1])
             if not noisy:
                 break
+        if snap is not None and drop:
+            drop(snap)
         for step_rows in rows:
             for r in step_rows:
                 r["block_attempts"] = attempt + 1

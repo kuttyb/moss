@@ -22,7 +22,7 @@ import threading
 import time
 
 SUITE_NAME = "moss_ect_check"
-SUITE_VERSION = "0.5.0"
+SUITE_VERSION = "0.6.0"
 SUITE_SEED = 20261105
 
 SUITE_DIR = Path(__file__).resolve().parent
@@ -181,6 +181,20 @@ def build_provider(fixture: dict, tc: "Toolchain", work: Path,
     return res
 
 
+def build_provider_checked(fixture: dict, tc: "Toolchain", work: Path,
+                           extra_env: dict | None = None) -> tuple[dict, dict]:
+    """Like build_provider but a failing provider build is a VERDICT, not an exception:
+    returns (measured result, verdict). Used by the gate, which must compare reference and
+    candidate provider builds and finish even when one of them fails."""
+    root = Path(work) / fixture["provider"]
+    values = {**tc.values(), "provider_root": str(root)}
+    env = tc.env()
+    env.update(extra_env or {})
+    res = run_measured(expand_command(PROVIDER_COMMAND, values), cwd=root, env=env,
+                       timeout=fixture_timeout(fixture), stack_kib=fixture_stack(fixture))
+    return res, extract_verdict(res, path_replacements(work, tc))
+
+
 def expand_command(template: str, values: dict[str, str]) -> list[str]:
     try:
         return [token.format_map(values) for token in shlex.split(template)]
@@ -195,8 +209,15 @@ def command_for(fixture: dict, values: dict[str, str], template: str | None) -> 
     return expand_command(template or DEFAULT_COMMANDS[fixture["kind"]], values)
 
 
+def counters_available(template: str | None) -> bool:
+    """Counters are reported when the candidate is a Moss binary that honors the counter
+    environment variables: the built-in command, or a template that runs {moss} / {margo}.
+    Template-only clients (a socket client, a stand-in) keep reporting none."""
+    return template is None or "{moss}" in template or "{margo}" in template
+
+
 def is_instrumentation_var(name: str) -> bool:
-    return (name.startswith(("MOSS_PROFILE", "MOSS_ECT_")) or
+    return (name.startswith(("MOSS_PROFILE", "MOSS_ECT_", "MOSS_STORE")) or
             (name.startswith("MOSS_") and name.endswith("_TRACE")) or
             name in ("MOSS_ECT_COUNTERS",))
 
@@ -219,26 +240,139 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-class Toolchain:
-    """Executables substituted into {moss} / {margo}; margo also reads $MOSS."""
+# --------------------------------------------------------------------------
+# Store control (Phase 28.5.1)
+# --------------------------------------------------------------------------
+# Contract for a store-using compiler: it takes its persistent, content-addressed store
+# root from $MOSS_STORE_DIR (today's compiler ignores it). The harness sets it per series,
+# always to a directory under the run directory, and scrubs any inherited MOSS_STORE*.
+# XDG_CACHE_HOME is pointed next to the store so a client that ignores MOSS_STORE_DIR and
+# falls back to the XDG cache still cannot reach the user's real ~/.cache.
+STORE_ENV = "MOSS_STORE_DIR"
+STORES_ADHOC = TMP_ROOT / "adhoc-stores"
+_ADHOC: list[Path] = []
 
-    def __init__(self, moss: Path, margo: Path):
+
+def _cleanup_adhoc() -> None:
+    for p in _ADHOC:
+        shutil.rmtree(p, ignore_errors=True)
+        shutil.rmtree(str(p) + ".xdg", ignore_errors=True)
+
+
+import atexit  # noqa: E402
+atexit.register(_cleanup_adhoc)
+
+
+def check_store_path(path: Path) -> Path:
+    """A store must never be the user's default store: refuse anything under ~/.cache,
+    ~/.local/share or ~/.moss*, or a path that is not absolute."""
+    path = Path(path)
+    if not path.is_absolute():
+        raise ToolError(f"store path {path} must be absolute")
+    home = Path.home().resolve()
+    r = path.resolve()
+    for bad in (home / ".cache", home / ".local" / "share"):
+        if r == bad or bad in r.parents:
+            raise ToolError(f"store path {path} is under {bad}; stores live under the run directory only")
+    parts = r.relative_to(home).parts if home in r.parents else ()
+    if parts and parts[0].startswith(".moss"):
+        raise ToolError(f"store path {path} is under a ~/.moss* directory")
+    return path
+
+
+def dir_size(path: Path) -> dict:
+    total, files = 0, 0
+    for item in Path(path).rglob("*"):
+        try:
+            if item.is_file() and not item.is_symlink():
+                total += item.stat().st_size
+                files += 1
+        except OSError:
+            pass
+    return {"bytes": total, "files": files}
+
+
+class StoreSet:
+    """Allocates the per-series stores under `root` (inside the run directory), records each
+    store's final size, and deletes them afterwards unless `keep`."""
+
+    def __init__(self, root: Path, keep: bool = False):
+        self.root = Path(root)
+        self.keep = keep
+        self.records: list[dict] = []
+        self._n = 0
+
+    def new(self, label: str) -> Path:
+        self._n += 1
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", label)[:80]
+        path = self.root / f"{self._n:05d}-{safe}"
+        shutil.rmtree(path, ignore_errors=True)
+        path.mkdir(parents=True)
+        check_store_path(path)
+        return path
+
+    def release(self, path: Path, label: str | None = None) -> dict:
+        """Record the store's final size and delete it (unless keep)."""
+        rec = {"label": label or Path(path).name, **dir_size(path), "kept": self.keep}
+        self.records.append(rec)
+        if not self.keep:
+            shutil.rmtree(path, ignore_errors=True)
+            shutil.rmtree(str(path) + ".xdg", ignore_errors=True)
+        return rec
+
+    def clone(self, path: Path, label: str) -> Path:
+        dst = self.new(label)
+        shutil.rmtree(dst)
+        shutil.copytree(path, dst)
+        return dst
+
+    def replace(self, master: Path, clone: Path) -> None:
+        """master := clone (the clone is consumed)."""
+        shutil.rmtree(master, ignore_errors=True)
+        shutil.move(str(clone), str(master))
+
+    def summary(self) -> list[dict]:
+        return list(self.records)
+
+
+class Toolchain:
+    """Executables substituted into {moss} / {margo}; margo also reads $MOSS. `store` is the
+    per-series store ($MOSS_STORE_DIR, placeholder {store}); `with_store` returns a copy bound
+    to one. Without an explicit store every env() call gets its own fresh store (cold, never
+    shared, deleted at exit)."""
+
+    def __init__(self, moss: Path, margo: Path, store: Path | None = None):
         self.moss = Path(moss).resolve()
         self.margo = Path(margo).resolve()
+        self.store = Path(store) if store is not None else None
+
+    def with_store(self, store: Path | None) -> "Toolchain":
+        return Toolchain(self.moss, self.margo, store)
 
     @property
     def flavor(self) -> str:
         return build_flavor(self.moss)
 
     def values(self) -> dict[str, str]:
-        return {"moss": str(self.moss), "margo": str(self.margo)}
+        vals = {"moss": str(self.moss), "margo": str(self.margo)}
+        if self.store is not None:
+            vals["store"] = str(self.store)
+        return vals
 
     def env(self) -> dict[str, str]:
-        """Clean environment for timed and gate runs: no profiling/counter or
-        trace variables inherited from the caller. Only the separate counter
-        run adds them back (counter_env)."""
+        """Clean environment for timed and gate runs: no profiling/counter/trace/store
+        variables inherited from the caller. Only the separate counter run adds the
+        counter ones back (counter_env). MOSS_STORE_DIR is always set (see above)."""
         env = {k: v for k, v in os.environ.items() if not is_instrumentation_var(k)}
         env["MOSS"] = str(self.moss)
+        store = self.store
+        if store is None:
+            import uuid
+            store = STORES_ADHOC / uuid.uuid4().hex
+            store.mkdir(parents=True, exist_ok=True)
+            _ADHOC.append(store)
+        env[STORE_ENV] = str(store)
+        env["XDG_CACHE_HOME"] = str(store) + ".xdg"
         return env
 
 
@@ -525,7 +659,52 @@ def _embedded_error(text: str):
         return None
 
 
-def extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
+# Phase 28.6 anchors diagnostics to declarations, so a candidate's raw positions differ from the
+# reference's. `--candidate-position-map CMD` names a tool that rewrites the CANDIDATE verdict's
+# positions to the reference layout before comparison (identity when absent). Contract: stdin is
+# one JSON object {"kind": "moss"|"rust", "context": {...}, "verdict": {...}}; stdout is the
+# rewritten verdict JSON (same shape; only `diagnostics` and `document` are taken from it).
+# It sees ONLY the candidate verdict and context, never the reference's. A non-zero exit or
+# unparsable output is a ToolError (never a silent identity).
+POSITION_MAP: str | None = None
+
+
+def apply_position_map(verdict: dict, command: str, kind: str, context: dict | None = None) -> dict:
+    if "raw" in verdict and verdict.get("ok") is None:
+        return verdict      # non-JSON output: nothing positional to map
+    argv = shlex.split(command)
+    payload = json.dumps({"kind": kind, "context": context or {}, "verdict": verdict})
+    try:
+        p = subprocess.run(argv, input=payload, capture_output=True, text=True, timeout=120,
+                           env={k: v for k, v in os.environ.items() if not is_instrumentation_var(k)})
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ToolError(f"position map {command!r} cannot run: {exc}")
+    if p.returncode != 0:
+        raise ToolError(f"position map {command!r} failed (exit {p.returncode}): {p.stderr.strip()[:200]}")
+    try:
+        mapped = json.loads(p.stdout)
+    except ValueError:
+        raise ToolError(f"position map {command!r} printed no JSON verdict")
+    if not isinstance(mapped, dict) or "document" not in mapped:
+        raise ToolError(f"position map {command!r} must print the verdict object (with `document`)")
+    out = dict(verdict)
+    out["document"] = mapped["document"]
+    if "diagnostics" in mapped:
+        out["diagnostics"] = mapped["diagnostics"]
+    return out
+
+
+def extract_verdict(result: dict, replacements: list[tuple[str, str]], position_map: str | None = None,
+                    context: dict | None = None) -> dict:
+    """With `position_map` (candidate side only) the verdict's positions are rewritten to the
+    reference layout (see POSITION_MAP) before it is returned."""
+    verdict = _extract_verdict(result, replacements)
+    if position_map:
+        verdict = apply_position_map(verdict, position_map, "moss", context)
+    return verdict
+
+
+def _extract_verdict(result: dict, replacements: list[tuple[str, str]]) -> dict:
     """Reduce a command result to {exit_code, ok, diagnostics, document}.
 
     `document` is the WHOLE parsed JSON output with VOLATILE_KEYS dropped and

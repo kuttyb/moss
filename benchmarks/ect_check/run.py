@@ -39,6 +39,7 @@ import scenarios as S  # noqa: E402
 MIN_REPS = 3
 WARM_ENV = "ECT_WARM_CLIENT_CMD"
 CANDIDATE_ENV = "ECT_CANDIDATE_CMD"
+POSITION_MAP_ENV = "ECT_CANDIDATE_POSITION_MAP"
 
 
 # --------------------------------------------------------------------------
@@ -46,20 +47,26 @@ CANDIDATE_ENV = "ECT_CANDIDATE_CMD"
 # --------------------------------------------------------------------------
 
 def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
-                    reps: int, primes: int, run_dir: Path, warmup: bool = True) -> dict:
+                    reps: int, primes: int, run_dir: Path, warmup: bool = True,
+                    stores: "C.StoreSet | None" = None) -> dict:
     """Median-of-reps wall/CPU/RSS for one fixture in one mode.
 
-    cold: a fresh staged copy per rep (full, from-scratch check).
-    warm: one staged copy, `primes` unmeasured runs, then reps in place, so a
-          resident client keeps whatever state it keeps between requests.
+    cold: a fresh staged copy per rep (full, from-scratch check), each rep (the discarded
+          warm-up included) against a fresh, empty store ($MOSS_STORE_DIR).
+    warm: one staged copy, `primes` unmeasured runs, then reps in place, so a resident
+          client keeps whatever state it keeps between requests; ONE store per fixture,
+          kept across the primes and the timed reps.
+    A provider package is built against the same store as its consumer series.
     """
     work = run_dir / "work" / f"{mode}-{fx['id']}"
+    stores = stores or C.StoreSet(run_dir / "stores")
     samples, provider_samples, verdict = [], [], None
     repl = C.path_replacements(work, tc)
     timeout = C.fixture_timeout(fx)
     provider = bool(fx.get("provider"))
+    last_store: dict = {"bytes": None, "files": None}
 
-    def one(stage: bool, extra_env: dict | None = None, provider_sink: Path | None = None,
+    def one(tcs: C.Toolchain, stage: bool, extra_env: dict | None = None, provider_sink: Path | None = None,
             record_provider: bool = False):
         """Optionally stage; for fixtures with a package boundary build the
         provider first (its own measured series, never part of the consumer
@@ -69,37 +76,70 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
              "kind": fx["kind"]}
         if stage and provider:
             pres = C.build_provider(
-                fx, tc, work, C.counter_env(provider_sink) if provider_sink else None)
+                fx, tcs, work, C.counter_env(provider_sink) if provider_sink else None)
             if record_provider:
                 provider_samples.append(pres)
-        argv = C.command_for(fx, {**tc.values(), **values}, template)
-        env = tc.env()
+        argv = C.command_for(fx, {**tcs.values(), **values}, template)
+        env = tcs.env()
         env.update(extra_env or {})
         return C.run_measured(argv, cwd=work, env=env, timeout=timeout,
                               stack_kib=C.fixture_stack(fx))
 
-    if mode == "warm":
-        C.stage_fixture(fx, work)
-        if provider:
-            C.build_provider(fx, tc, work)
-        for _ in range(primes):
-            one(stage=False)
-    if mode == "cold" and warmup:
-        one(stage=True)  # discarded: first run pays binary/page-cache page-in
-    for _ in range(reps):
-        res = one(stage=(mode == "cold"), record_provider=True)
-        samples.append(res)
-        verdict = C.extract_verdict(res, repl)
+    def cold_one(**kw):
+        st = stores.new(f"cold-{fx['id']}")
+        try:
+            return one(tc.with_store(st), **kw)
+        finally:
+            rec = stores.release(st)
+            last_store.update(bytes=rec["bytes"], files=rec["files"])
 
     counters = None
     provider_counters = None
-    if mode == "cold":
+    counters_by_request = None
+    if mode == "warm":
+        wst = stores.new(f"warm-{fx['id']}")
+        wtc = tc.with_store(wst)
+
+        def warm_series(tcs, counting=False):
+            C.stage_fixture(fx, work)
+            if provider:
+                C.build_provider(fx, tcs, work)
+            recs = []
+            for i in range(primes + reps):
+                sink = run_dir / "counters" / f"{fx['id']}.warm{i}.jsonl" if counting else None
+                if sink is not None:
+                    sink.parent.mkdir(parents=True, exist_ok=True)
+                    sink.unlink(missing_ok=True)
+                res = one(tcs, stage=False, extra_env=C.counter_env(sink) if sink else None)
+                if sink is not None:
+                    recs.append(C.summarize_counters(C.read_counter_records(sink)))
+                elif i >= primes:
+                    samples.append(res)
+            return recs
+
+        warm_series(wtc)
+        verdict = C.extract_verdict(samples[-1], repl)
+        rec = stores.release(wst)
+        last_store.update(bytes=rec["bytes"], files=rec["files"])
+        if C.counters_available(template):
+            # the SAME series (primes + timed requests) in its own store, so it evolves like the timed one
+            cst = stores.new(f"warm-counters-{fx['id']}")
+            counters_by_request = warm_series(tc.with_store(cst), counting=True)
+            counters = counters_by_request[-1]
+            stores.release(cst)
+    else:
+        if warmup:
+            cold_one(stage=True)  # discarded: first run pays binary/page-cache page-in
+        for _ in range(reps):
+            res = cold_one(stage=True, record_provider=True)
+            samples.append(res)
+            verdict = C.extract_verdict(res, repl)
         sink = run_dir / "counters" / f"{fx['id']}.jsonl"
         psink = run_dir / "counters" / f"{fx['id']}.provider.jsonl"
         sink.parent.mkdir(parents=True, exist_ok=True)
         sink.unlink(missing_ok=True)
         psink.unlink(missing_ok=True)
-        one(stage=True, extra_env=C.counter_env(sink), provider_sink=psink)
+        cold_one(stage=True, extra_env=C.counter_env(sink), provider_sink=psink)
         counters = C.summarize_counters(C.read_counter_records(sink))
         if provider:
             provider_counters = C.summarize_counters(C.read_counter_records(psink))
@@ -127,7 +167,8 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
         "fixture_path": fx["path"], "stack_kib": fx.get("stack_kib"),
         "exit_code": verdict.get("exit_code"),
         "timed_out": n_timeout > 0,
-        "has_provider": provider,
+        "has_provider": provider, "store_bytes": last_store["bytes"], "store_files": last_store["files"],
+        "counters_by_request": counters_by_request,
         "provider_wall_ms_median": C.median([s["wall_ms"] for s in provider_samples]),
         "provider_cpu_ms_median": C.median([s["cpu_ms"] for s in provider_samples]),
         "provider_rss_kib_median": C.median([s["rss_kib"] for s in provider_samples]),
@@ -148,22 +189,61 @@ def measure_fixture(fx: dict, tc: C.Toolchain, template: str | None, mode: str,
 
 def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchain,
              candidate_template: str | None, run_dir: Path,
-             scenarios: list[dict] | None = None) -> dict:
-    """Reference vs candidate: identical verdict and diagnostics on every fixture."""
+             scenarios: list[dict] | None = None, stores: "C.StoreSet | None" = None,
+             position_map: str | None = None) -> dict:
+    """Reference vs candidate: identical verdict and diagnostics on every fixture.
+
+    Each side runs against its OWN store (a fresh one per fixture; the scenario gates keep
+    each side's store across the steps of a sequence, the replay gate across the commits).
+    `position_map` rewrites the candidate's verdict positions to the reference layout first.
+    A provider build that fails on either side is a verdict: both provider verdicts are
+    compared, the consumer step is marked skipped, and the gate finishes."""
+    stores = stores or C.StoreSet(run_dir / "stores")
     results = []
     for fx in fixtures:
-        verdicts = {}
+        verdicts, provider_verdicts, skipped = {}, {}, False
         for side, tc, template in (("reference", reference, None),
                                    ("candidate", candidate, candidate_template)):
             work = run_dir / "work" / f"gate-{side}-{fx['id']}"
-            values = C.stage_fixture(fx, work)
-            if fx.get("provider"):
-                C.build_provider(fx, tc, work)
-            argv = C.command_for(fx, {**tc.values(), **values}, template)
-            res = C.run_measured(argv, cwd=work, env=tc.env(),
-                                 timeout=C.fixture_timeout(fx), stack_kib=C.fixture_stack(fx))
-            verdicts[side] = C.extract_verdict(res, C.path_replacements(work, tc))
-            shutil.rmtree(work, ignore_errors=True)
+            st = stores.new(f"gate-{side}-{fx['id']}")
+            tcs = tc.with_store(st)
+            pm = position_map if side == "candidate" else None
+            try:
+                values = C.stage_fixture(fx, work)
+                provider_ok = True
+                if fx.get("provider"):
+                    pres, pv = C.build_provider_checked(fx, tcs, work)
+                    provider_verdicts[side] = C.extract_verdict(pres, C.path_replacements(work, tc), pm,
+                                                                {"fixture": fx["id"], "step": "provider"})
+                    provider_ok = pres["rc"] == 0
+                if provider_ok:
+                    argv = C.command_for(fx, {**tcs.values(), **values}, template)
+                    res = C.run_measured(argv, cwd=work, env=tcs.env(),
+                                         timeout=C.fixture_timeout(fx), stack_kib=C.fixture_stack(fx))
+                    verdicts[side] = C.extract_verdict(res, C.path_replacements(work, tc), pm,
+                                                       {"fixture": fx["id"], "step": "check"})
+                else:
+                    verdicts[side] = None
+                    skipped = True
+            finally:
+                stores.release(st)
+                shutil.rmtree(work, ignore_errors=True)
+        if skipped:
+            # a provider failed on at least one side: the provider verdicts ARE the comparison
+            pr, pc = provider_verdicts.get("reference"), provider_verdicts.get("candidate")
+            identical = (verdicts["reference"] is None and verdicts["candidate"] is None and
+                         S.gate_view(pr) == S.gate_view(pc))
+            expected = verdicts["reference"] is not None and C.fixture_ok(fx, verdicts["reference"])
+            note = ("PROVIDER BUILD DIFFERS: " + ", ".join(
+                f"{side} {'failed' if v is None else 'passed'}" for side, v in verdicts.items())
+                    if not identical else None)
+            results.append({"fixture": fx["id"], "identical": identical,
+                            "reference_matches_expected": expected, "candidate_matches_expected": False,
+                            "candidate_note": note, "consumer_skipped": True,
+                            "provider_reference": pr, "provider_candidate": pc,
+                            "status": "fail" if verdicts["reference"] is None else C.status_of(verdicts["reference"]),
+                            "reference": verdicts["reference"], "candidate": verdicts["candidate"]})
+            continue
         identical = verdicts["reference"] == verdicts["candidate"]
         # `ok` is None for non-JSON output (e.g. a compiler crash with empty
         # stdout); fixture_ok also rejects timeouts and a wrong exit code.
@@ -178,7 +258,7 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
         results.append({"fixture": fx["id"], "identical": identical,
                         "reference_matches_expected": expected,
                         "candidate_matches_expected": cand_ok,
-                        "candidate_note": note,
+                        "candidate_note": note, "consumer_skipped": False,
                         "status": C.status_of(verdicts["reference"]),
                         "reference": verdicts["reference"],
                         "candidate": verdicts["candidate"]})
@@ -188,10 +268,17 @@ def run_gate(fixtures: list[dict], reference: C.Toolchain, candidate: C.Toolchai
     if scenarios:
         manifest = C.load_manifest()
         sc_results = [S.gate_scenario(sc, S.fixture_of(manifest, sc), reference, candidate,
-                                      candidate_template, run_dir)
+                                      candidate_template, run_dir, stores, position_map)
                       for sc in scenarios if sc["kind"] == "edit_sequence"]
-        sc_results += [RP.gate_step(sc, reference, candidate, candidate_template, run_dir)
-                       for sc in scenarios if sc["kind"] == RP.KIND]
+        # replay gate: one store per side for the whole replay, kept across the commits
+        replay_stores = {"reference": stores.new("gate-reference-b6"), "candidate": stores.new("gate-candidate-b6")}
+        try:
+            sc_results += [RP.gate_step(sc, reference, candidate, candidate_template, run_dir, replay_stores,
+                                        position_map)
+                           for sc in scenarios if sc["kind"] == RP.KIND]
+        finally:
+            for side, st in replay_stores.items():
+                stores.release(st, f"gate-{side}-b6")
     passed = all(r["identical"] and r["reference_matches_expected"] for r in results) and \
         all(r["passed"] for r in sc_results)
     return {"passed": passed, "fixtures": len(results), "scenarios": sc_results,
@@ -344,7 +431,7 @@ CSV_FIELDS = ["compiler_path", "compiler_sha256", "compiler_flavor", "fixture", 
               "base_fixture", "kind", "mode", "reps", "expected_status", "status",
               "status_ok", "wall_ms_median", "wall_ms_min", "wall_ms_max", "wall_ms_first",
               "cpu_ms_median", "rss_kib_median", "tree_rss_peak_kib_median", "checker_runs",
-              "units_checked", "units_fresh", "spread", "attempts", "spread_flagged", "block_attempts",
+              "store_bytes", "store_files", "units_checked", "units_fresh", "spread", "attempts", "spread_flagged", "block_attempts",
               "block_noisy", "diagnostic",
               "exit_code", "timed_out", "provider_wall_ms_median", "provider_cpu_ms_median",
               "provider_rss_kib_median", "provider_functions_analyzed", "provider_checker_runs",
@@ -401,7 +488,12 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
              f"**Platform:** `{meta['platform']}` ({meta['cpus']} CPUs)  ",
              f"**Reps:** {meta['reps']} timed runs per fixture/mode (median reported), "
              "plus one separate counter run (counters are not collected during timed runs)  ",
-             f"**Warm client:** {meta['warm_client'] or 'not configured'}  ", ""]
+             f"**Warm client:** {meta['warm_client'] or 'not configured'}  ",
+             f"**Stores:** every series ran against its own `$MOSS_STORE_DIR` under the run directory "
+             f"({len(meta.get('stores') or [])} stores, {sum(x['bytes'] for x in meta.get('stores') or [])} bytes "
+             f"in total at release; {'kept' if meta.get('keep_stores') else 'deleted after their series'}); "
+             "today's compiler ignores the variable, so every size is 0 unless a store-using candidate runs.  ",
+             f"**Position map:** {meta.get('position_map') or 'none (identity)'}  ", ""]
     nz = meta.get("noise")
     if nz:
         lines += [f"**Noise probe:** loadavg start {nz['start']['loadavg']}, end {nz['end']['loadavg']}; "
@@ -584,6 +676,14 @@ def add_common(ap):
 def add_gate_args(ap):
     ap.add_argument("--reference-moss", help="reference compiler (default --moss)")
     ap.add_argument("--candidate-moss", help="candidate compiler (default --moss)")
+    ap.add_argument("--candidate-position-map", default=os.environ.get(POSITION_MAP_ENV),
+                    help="command that rewrites the CANDIDATE verdict's positions to the reference layout "
+                         "before the gate compares (Phase 28.6 anchors diagnostics to declarations); stdin: "
+                         "{kind, context, verdict} JSON, stdout: the rewritten verdict JSON. Identity when "
+                         f"absent. Env: {POSITION_MAP_ENV}")
+    ap.add_argument("--keep-stores", action="store_true",
+                    help="keep the per-series stores ($MOSS_STORE_DIR) under the run directory instead of "
+                         "deleting them after their series (their final sizes are always recorded)")
     ap.add_argument("--require-rust", action="store_true",
                     help="fail instead of skipping when cargo is unavailable (default: a loud FAIL-OPEN "
                          "SKIPPED line, recorded in the gate result and the report)")
@@ -728,8 +828,10 @@ def rust_toolchains(args, scs: list[dict]):
     return ref, ref
 
 
-def run_rust_gate(scs: list[dict], manifest: dict, ref, cand, template: str | None, run_dir: Path) -> list[dict]:
-    return [RC.gate_scenario(sc, RC.fixture_by_id(manifest, sc["fixture"]), ref, cand, template, run_dir)
+def run_rust_gate(scs: list[dict], manifest: dict, ref, cand, template: str | None, run_dir: Path,
+                  position_map: str | None = None) -> list[dict]:
+    return [RC.gate_scenario(sc, RC.fixture_by_id(manifest, sc["fixture"]), ref, cand, template, run_dir,
+                             position_map)
             for sc in scs]
 
 
@@ -751,6 +853,10 @@ def main() -> int:
                    help="warm-client command template (same placeholders); measured as "
                         f"mode 'warm' after --warm-primes unmeasured runs. Env: {WARM_ENV}")
     b.add_argument("--warm-primes", type=int, default=1)
+    b.add_argument("--warm-store", action="store_true",
+                   help="Phase 28.6 warm series: the SAME built-in commands as cold, but one store "
+                        "($MOSS_STORE_DIR) kept across the primes and timed reps instead of a fresh one per rep "
+                        "(no socket client). Combine with --moss <candidate>. Counters are reported.")
     b.add_argument("--no-warmup", action="store_true",
                    help="do not discard one cold warm-up run per fixture before the timed reps")
     b.add_argument("--no-gate", action="store_true")
@@ -814,6 +920,10 @@ def main() -> int:
     tc = C.Toolchain(Path(args.moss), Path(args.margo))
     run_id, run_dir = make_run_dir(args)
     run_dir.mkdir(parents=True, exist_ok=True)
+    # Every series runs against its own store under the run directory ($MOSS_STORE_DIR; see
+    # ect_common.Toolchain); an invocation without an explicit series store gets a fresh one too.
+    stores = C.StoreSet(run_dir / "stores", keep=getattr(args, "keep_stores", False))
+    C.STORES_ADHOC = run_dir / "stores" / "adhoc"
 
     if cmd == "replay-check":
         b6 = [sc for sc in pick_scenarios(manifest, args) if sc["kind"] == RP.KIND]
@@ -845,12 +955,15 @@ def main() -> int:
     if cmd == "gate":
         ref, cand = gate_toolchains(args)
         gate = run_gate(fixtures, ref, cand, args.candidate_cmd, run_dir,
-                        pick_scenarios(manifest, args))
+                        pick_scenarios(manifest, args), stores, args.candidate_position_map)
+        gate["stores"] = stores.summary()
+        gate["position_map"] = args.candidate_position_map
         rust_scs = RC.pick(manifest, args)
         rref, rcand = rust_toolchains(args, rust_scs)
         if rref is not None:
             RC.verify_frozen(manifest, rust_scs)
-            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir)
+            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir,
+                                         args.candidate_position_map)
             gate["passed"] = gate["passed"] and all(r["passed"] for r in gate["rust"])
         (run_dir / "gate.json").write_text(json.dumps(gate, indent=2) + "\n")
         for sg in gate["scenarios"]:
@@ -898,12 +1011,12 @@ def main() -> int:
     manifest_all = C.load_manifest()
     noise_start = noise_probe(tc, manifest_all, run_dir, "start") \
         if any(f["id"] == CALIBRATION_FIXTURE for f in manifest_all["fixtures"]) else None
-    modes = ["cold"] + (["warm"] if args.warm_client_cmd else [])
+    modes = ["cold"] + (["warm"] if args.warm_client_cmd or args.warm_store else [])
     for fx in fixtures:
         for mode in modes:
             template = args.warm_client_cmd if mode == "warm" else None
             row = measure_fixture(fx, tc, template, mode, args.reps,
-                                  args.warm_primes, run_dir, not args.no_warmup)
+                                  args.warm_primes, run_dir, not args.no_warmup, stores)
             rows.append(row)
             print(f"{mode:4} {fx['id']}: wall {row['wall_ms_median']:.2f} ms, "
                   f"status {row['status']}", flush=True)
@@ -920,11 +1033,15 @@ def main() -> int:
         def log_probe(p, mode=mode):
             print(f"  probe {mode} block@{p['first_step']} try {p['attempt']}: drift {p['drift_pct']}%"
                   f"{' NOISY: block re-measured' if p['noisy'] else ''}", flush=True)
+        # B6 store policy: one store per replay run, kept across the commits (see replay.ReplayStores)
+        rs = RP.ReplayStores(stores, mode, args.reps)
         step_rows, probes = RP.run_blocks(
             b6_steps,
             lambda sc: RP.measure_step(sc, tc, template, mode, args.reps, args.warm_primes, run_dir,
-                                       not args.no_warmup),
-            lambda: block_probe(tc, manifest_all, run_dir), base_probe, log=log_probe)
+                                       not args.no_warmup, rs),
+            lambda: block_probe(tc, manifest_all, run_dir), base_probe, log=log_probe,
+            snapshot=rs.snapshot, restore=rs.restore, drop=rs.drop_snapshot)
+        rs.finish()
         block_probes += [{**p, "mode": mode, "baseline_probe_ms": base_probe} for p in probes]
         for sc, new in zip(b6_steps, step_rows):
             rows.extend(new)
@@ -939,13 +1056,13 @@ def main() -> int:
             template = args.warm_client_cmd if mode == "warm" else None
             if sc["kind"] == "edit_sequence":
                 new = S.measure_scenario(sc, fx, tc, template, mode, args.reps, args.warm_primes,
-                                         run_dir, not args.no_warmup)
+                                         run_dir, not args.no_warmup, stores)
                 rows.extend(new)
                 print(f"{mode:4} {sc['id']}: " + ", ".join(
                     f"{r['step']} {r['wall_ms_median']:.1f} ms" for r in new), flush=True)
             else:
                 new = S.measure_worktrees(sc, fx, tc, template, mode, args.reps, run_dir,
-                                          not args.no_warmup)
+                                          not args.no_warmup, stores)
                 wt_rows.extend(new)
                 print(f"{mode:4} {sc['id']}: " + ", ".join(
                     f"N={r['n']} {r['schedule'][:4]} {r['group_wall_ms_median']:.0f} ms"
@@ -992,9 +1109,11 @@ def main() -> int:
     if not args.no_gate:
         ref, cand = gate_toolchains(args)
         gate = run_gate(fixtures, ref, cand, args.candidate_cmd or args.warm_client_cmd, run_dir,
-                        chosen_scenarios)
+                        chosen_scenarios, stores, args.candidate_position_map)
+        gate["position_map"] = args.candidate_position_map
         if rust_scs:
-            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir)
+            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir,
+                                         args.candidate_position_map)
             gate["passed"] = gate["passed"] and all(r["passed"] for r in gate["rust"])
     metrics = None if args.no_metrics else {
         m: run_metrics(tc, run_dir, m) for m in args.metrics_modes.split(",")}
@@ -1008,13 +1127,16 @@ def main() -> int:
             "git_branch": git("rev-parse", "--abbrev-ref", "HEAD"),
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
-            "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise,
+            "reps": args.reps, "noise": noise,
+            "warm_client": args.warm_client_cmd or ("built-in commands with a persistent per-series store (--warm-store)"
+                                                    if args.warm_store else None),
             "block_probes": block_probes, "rust": ({k: v for k, v in rref.versions.items()
                                                     if k != "rustc_verbose"} if rust_scs else None),
             "rust_env": ("CARGO_INCREMENTAL unset (default); CARGO_HOME and CARGO_TARGET_DIR under tmp/; "
                          "--offline --locked; std only") if rust_scs else None,
             "reference_pin": RP.reference_pin(tc) if b6_steps else None,
-            "startup": startup}
+            "startup": startup, "stores": stores.summary(), "keep_stores": args.keep_stores,
+            "position_map": args.candidate_position_map}
     write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows, churn_records,
                   rust_scs)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.

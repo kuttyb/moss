@@ -58,6 +58,14 @@ DIAMOND_DEPTHS = (6, 8, 10, 12)
 DIAMOND_WIDTH = 4
 
 
+# Phase 28.5.1: Phase 28.6 hardens exported generics at package build; every untyped parameter
+# of an exported generic must resolve to a visible absolute trait. The provider of a package
+# fixture therefore declares (and exports) a trait covering exactly the method its exported
+# DAG calls (`x.score()` at the leaf). Parameters stay untyped, the call graph and the callable
+# count are unchanged (a trait is not a callable), consumers' types still conform structurally.
+SCORE_TRAIT = "export trait Scorable:\n  fn score() -> Int\n"
+
+
 def user_types(k: int, base: int) -> list[str]:
     lines: list[str] = []
     for i in range(k):
@@ -96,7 +104,7 @@ def main_calls(k: int, callee: str) -> list[str]:
 
 class B1LeakGenerator(Generator):
     name = "b1_leak"
-    version = "1.0.0"
+    version = "1.1.0"
     category = "b1_leak"
 
     def generate(self, rng: random.Random, out_dir: Path) -> list[dict]:
@@ -112,7 +120,7 @@ class B1LeakGenerator(Generator):
                     (d / "lib" / "Moss.toml").write_text(
                         '[project]\nname = "dag_lib"\nversion = "0.1.0"\n')
                     (d / "lib" / "src" / "dag_lib.moss").write_text(
-                        "module dag_lib\n\n" + "\n".join(
+                        "module dag_lib\n\n" + SCORE_TRAIT + "\n" + "\n".join(
                             dag_functions(depth, width, shared=False, export_root=True)))
                     (d / "app" / "Moss.toml").write_text(
                         '[project]\nname = "dag_app"\nversion = "0.1.0"\n\n'
@@ -288,7 +296,7 @@ class DagFaninGenerator(Generator):
     file (like B2). Per type: requests = nodes + W-1, hits = W-1 (the chain head
     is requested by W entries; one miss, W-1 memo hits)."""
     name = "dag_fanin"
-    version = "1.0.0"
+    version = "1.1.0"
     category = "dag_fanin"
 
     def generate(self, rng: random.Random, out_dir: Path) -> list[dict]:
@@ -315,7 +323,7 @@ class DagFaninGenerator(Generator):
                     (d / "lib" / "Moss.toml").write_text(
                         '[project]\nname = "dag_lib"\nversion = "0.1.0"\n')
                     (d / "lib" / "src" / "dag_lib.moss").write_text(
-                        "module dag_lib\n\n" + "\n".join(fanin_functions(depth, width, True)))
+                        "module dag_lib\n\n" + SCORE_TRAIT + "\n" + "\n".join(fanin_functions(depth, width, True)))
                     (d / "app" / "Moss.toml").write_text(
                         '[project]\nname = "dag_app"\nversion = "0.1.0"\n\n'
                         '[dependencies]\ndag_lib = { path = "../lib" }\n')

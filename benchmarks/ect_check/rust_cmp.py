@@ -152,7 +152,17 @@ def _norm(text, repl):
     return text
 
 
-def extract_verdict(result: dict, repl: list[tuple[str, str]]) -> dict:
+def extract_verdict(result: dict, repl: list[tuple[str, str]], position_map: str | None = None,
+                    context: dict | None = None) -> dict:
+    """`position_map` (candidate side only) rewrites the verdict's positions (span line/column) to
+    the reference layout first, see ect_common.POSITION_MAP; identity when None."""
+    v = _extract_verdict(result, repl)
+    if position_map:
+        v = C.apply_position_map(v, position_map, "rust", context)
+    return v
+
+
+def _extract_verdict(result: dict, repl: list[tuple[str, str]]) -> dict:
     """Reduce a cargo run to {exit_code, ok, timed_out, diagnostics, document, bookkeeping}.
 
     diagnostics: every compiler-message (level, code, message, spans (file, line,
@@ -316,7 +326,8 @@ def measure_scenario(sc, fx, rust, reps, run_dir, warmup=True):
 # gate and validation
 # --------------------------------------------------------------------------
 
-def gate_scenario(sc: dict, fx: dict, ref: Rust, cand: Rust, cand_template: str | None, run_dir: Path) -> dict:
+def gate_scenario(sc: dict, fx: dict, ref: Rust, cand: Rust, cand_template: str | None, run_dir: Path,
+                  position_map: str | None = None) -> dict:
     """Reference vs candidate on every check step: identical exit status and
     normalized diagnostics, and reference == the step's expectation."""
     verdicts = {}
@@ -324,7 +335,9 @@ def gate_scenario(sc: dict, fx: dict, ref: Rust, cand: Rust, cand_template: str 
         work = run_dir / "work" / f"rgate-{side}-{sc['id']}"
         res = run_sequence(sc, fx, rust, template, work, run_dir)
         repl = replacements(work, rust, run_dir)
-        verdicts[side] = {label: extract_verdict(r, repl) for label, r in res.items()}
+        pm = position_map if side == "candidate" else None
+        verdicts[side] = {label: extract_verdict(r, repl, pm, {"scenario": sc["id"], "step": label})
+                          for label, r in res.items()}
         shutil.rmtree(work, ignore_errors=True)
         shutil.rmtree(target_dir(work), ignore_errors=True)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}

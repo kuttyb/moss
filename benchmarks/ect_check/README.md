@@ -3,8 +3,10 @@
 **Phase 28.5, Team 1 (harness and measurement plumbing), Team 2 (generic-DAG
 fixtures), Team 3 (edit sequences B3, cold/warm B4, worktrees B5) and Team 4
 (agent-loop replay B6 and summary churn) and Team 5 (Rust comparison and the B3 error-path
-edit).** Suite version 0.5.0 (0.4.1 plus the Team 5 Rust fixtures/sequences and B3 edit `f`; every
-earlier fixture and scenario row is byte-identical, hashes unchanged).
+edit) and Phase 28.5.1 (benchmark wiring for the Phase 28.6 design).** Suite version **0.6.0** (0.5.0 plus covering
+exported traits in the package fixtures and the store/counter/provider/position-map harness changes; 0.5.0 was 0.4.1 plus
+the Team 5 Rust fixtures/sequences and B3 edit `f`). **All results tables below are 0.5.0 numbers, superseded: the owner
+re-runs on 0.6.0.**
 
 Records today's cost of the *check* part of edit-compile-test and is built to
 prove or disprove the Phase 28.5 fixes (`.mossi` firewall, content-addressed
@@ -30,7 +32,8 @@ benchmarks/ect_check/
   churn.py         Team 4: summary-churn queries, comparison and classifier
   replay_generators.py / replay_expectations.json   B6 specs (frozen into the manifest) and recorded reference verdicts
   rust_generators.py / rust_cmp.py / report_rust.py  Team 5: Rust fixtures + sequences, cargo runner/gate, report section
-  results/team5-final/  the committed Team 5 quiet run (LOCAL_REPORT.md, results.csv/json)
+  results/team5-final/  the committed Team 5 quiet run on suite 0.5.0 (superseded; LOCAL_REPORT.md, results.csv/json)
+  export_sweep.py  Phase 28.5.1: sweeps package fixtures for exported generics no visible trait covers
   report_replay.py B6 and churn report section, statistics, results_replay.csv
   results/b6-final/  the committed final quiet run (LOCAL_REPORT.md, CSVs, churn.json)
   scenarios.py     scenario engine: edit sequences, frozen-patch application, worktree groups
@@ -383,6 +386,13 @@ one lookup; diamond wall becomes linear in nodes (today it doubles per level).
 
 ### Baseline recorded on today's compiler (moss-opt, 16-CPU WSL2, median of 3, quiet machine)
 
+> **SUPERSEDED (suite 0.5.0 numbers).** Everything in this section was measured on suite 0.5.0 (or earlier). Suite 0.6.0
+> changed the package fixtures (every exported generic now has a covering exported trait, see "Behaviour changes in
+> 0.6.0") and the harness (per-series stores, counters under the same store policy), so these numbers are **not** the
+> 0.6.0 baseline. The owner re-runs the benchmarks on 0.6.0; nothing below was re-measured by the 0.6.0 change. The
+> numbers are kept unchanged for the record (the compiler measured is the pinned moss-opt of the time).
+
+
 Run `tmp/ect_check/t2r2` of 2026-11-06: loadavg 0.39 at start, calibration
 fixture 521 ms at start and 514 ms at the end (drift 1.4%, no warning). Local,
 disposable numbers; rerun on your machine and check the noise probe.
@@ -649,6 +659,13 @@ should approach lookup cost; the functions-analyzed sum should stop scaling as N
 
 ### Baseline recorded on today's compiler (moss-opt, 16 logical CPUs, 5 reps, quiet machine)
 
+> **SUPERSEDED (suite 0.5.0 numbers).** Everything in this section was measured on suite 0.5.0 (or earlier). Suite 0.6.0
+> changed the package fixtures (every exported generic now has a covering exported trait, see "Behaviour changes in
+> 0.6.0") and the harness (per-series stores, counters under the same store policy), so these numbers are **not** the
+> 0.6.0 baseline. The owner re-runs the benchmarks on 0.6.0; nothing below was re-measured by the 0.6.0 change. The
+> numbers are kept unchanged for the record (the compiler measured is the pinned moss-opt of the time).
+
+
 Run `tmp/ect_check/t3final2` of 2026-11-06 (`bench --reps 5`, gate PASS over the five fixtures
 and the 16 edit sequences; whole-suite gate PASS over 80 fixtures and 16 sequences in a separate
 run): loadavg at start 0.14, calibration fixture 530.7 ms at start and 523.5 ms at the end (drift
@@ -853,6 +870,13 @@ NOT representative of a check that completes, which is why the results below are
 the 194 checks (77 `pre`, 117 `post`), 77 pass and 117 fail; 40 of the 50 commits have at least one failing check.
 
 ### B6 results (final quiet run, `results/b6-final/`)
+
+> **SUPERSEDED (suite 0.5.0 numbers).** Everything in this section was measured on suite 0.5.0 (or earlier). Suite 0.6.0
+> changed the package fixtures (every exported generic now has a covering exported trait, see "Behaviour changes in
+> 0.6.0") and the harness (per-series stores, counters under the same store policy), so these numbers are **not** the
+> 0.6.0 baseline. The owner re-runs the benchmarks on 0.6.0; nothing below was re-measured by the 0.6.0 change. The
+> numbers are kept unchanged for the record (the compiler measured is the pinned moss-opt of the time).
+
 
 Run `20261106-112733` is the committed one (`results/b6-final/`): `moss-opt`
 (sha256 `e9a22cf0...`, the pinned reference), 16 CPUs, 5 reps, suite 0.4.1, loadavg 0.12 at start, calibration
@@ -1132,6 +1156,13 @@ failure should stay at or below today's 48 ms. The gate must keep comparing the 
 
 ### Results (committed run `results/team5-final/`, re-run from a clean commit)
 
+> **SUPERSEDED (suite 0.5.0 numbers).** Everything in this section was measured on suite 0.5.0 (or earlier). Suite 0.6.0
+> changed the package fixtures (every exported generic now has a covering exported trait, see "Behaviour changes in
+> 0.6.0") and the harness (per-series stores, counters under the same store policy), so these numbers are **not** the
+> 0.6.0 baseline. The owner re-runs the benchmarks on 0.6.0; nothing below was re-measured by the 0.6.0 change. The
+> numbers are kept unchanged for the record (the compiler measured is the pinned moss-opt of the time).
+
+
 Run `20261106-190454` from commit `3dd88270d656` with a **clean tree** (`git_dirty` false; the first committed run of this
 section was made from a dirty tree because the Rust fixture sources were not yet tracked, and was replaced), moss-opt sha256
 `e9a22cf0...fe4d36` (the pinned reference), 5 reps, one discarded warm-up sequence. Noise probe: loadavg 0.12 at start;
@@ -1282,6 +1313,98 @@ Each benchmark states it where it is described: B1 (`.mossi` firewall: consumer 
 slope toward one lookup), torture extension (chains near constant for unchanged code), B3 (rechecked set equal to the
 ideal cone; `f`: the error path above), B4 (floors approach a socket round trip; `second` about zero), B5 (CPU and RSS grow
 with divergence, not with N), B6 ("What an IMPROVEMENT looks like" in the B6 results), Rust comparison (above).
+
+### Behaviour changes in 0.6.0 (Phase 28.5.1; read before running on a 28.6 compiler)
+
+Phase 28.6 changed the design in two ways the 0.5.0 suite did not handle: exported generics are **hardened at package
+build** (each untyped parameter of an exported generic must resolve to visible, absolute traits whose methods declare
+parameter and result types, or to any; an export whose requirements no visible trait covers is a build error), and there
+is **no daemon**: plain `moss`/`margo` commands use a persistent, per-machine, content-addressed store, and "warm" means
+the same command with a populated store. Today's compiler accepts both fixture styles and ignores the store, so
+behaviour on it is unchanged.
+
+**1. Fixtures that survive hardening (generators only; new hashes).** In every package-boundary fixture the provider
+declares and **exports an absolute trait covering exactly the methods its exported generics call**. Parameters stay
+untyped, the call graph is unchanged, a trait is not a callable (the shape-check predictions are exactly as before: functions
+analyzed = callables, keys = callables x K), and the consumers' types keep conforming structurally (they never name the trait).
+
+| Generator (version) | Fixtures regenerated | Trait added (provider module) |
+|---|---|---|
+| `b1_leak` 1.1.0 | 18 (`b1_d*_w*_k*`) | `export trait Scorable: fn score() -> Int` in `dag_lib` |
+| `dag_fanin` 1.1.0 | 3 (`fanin_pkg_k001/k008/k032`; the single-file variants are unchanged) | `Scorable` in `dag_lib` |
+| `b4_cold_warm` 1.1.0 | 1 (`b4_pkgset_p12`: 12 providers; floors unchanged) | `Scorable` in each `ect_pNN` |
+| `trivial` 1.1.0 | 2 (`trivial_pkg_pass`: `Measured: fn len() -> Int` for `twice_len(items)`; `trivial_pkg_generic_types`: `Identified: fn id() -> Int` for `show_id(x)`) | as stated |
+
+24 fixtures have new hashes; the other 56 Moss fixtures, the 4 Rust fixtures and all 89 scenario rows are byte-identical to
+0.5.0 (only the `generator_version` field of rows of the four bumped generators changed). Moss fixtures not in a package
+boundary (B2, torture, diamond, B3 single package, the file variants) export nothing and are untouched. The sweep tool
+`python3 benchmarks/ect_check/export_sweep.py` (also in selftest) reads the committed sources and reports every exported
+untyped generic whose requirements (methods called on the parameter, followed through callees that receive it) no exported
+trait of its module declares: 39 exported untyped generics in package fixtures, 0 uncovered (on the 0.5.0 tree it flags
+24 fixtures). **Judgement calls:** built-in operations (`+`, comparisons, indexing, iteration) need no trait; `items.len()`
+in `trivial_pkg_pass` is a *method* call on an untyped parameter, so a `Measured` trait was added defensively (whether 28.6's
+built-in traits already cover `len` was not established); the 28.6 hardening itself could not be run (no such compiler here),
+so "survives hardening" rests on the stated rule, today's compiler accepting every fixture with its expected status, and the
+sweep. The same sweep does not look at B6's replayed repository packages (not fixtures).
+
+**2. A provider build failure is a verdict, not a crash (gate).** For fixtures and scenarios with a `provider` package the
+gate builds each side's provider with `ect_common.build_provider_checked` and records both provider verdicts. If either side's
+provider fails, the fixture is reported as differing (`PROVIDER BUILD DIFFERS: reference passed, candidate failed`), both
+provider verdicts are in `gate.json` (`provider_reference`, `provider_candidate`), the consumer step is marked
+`consumer_skipped` and the gate finishes; identical provider failures on both sides compare equal. `bench` still fails loudly
+when the reference-side provider fails.
+
+**3. Store control: the `MOSS_STORE_DIR` contract.** *A store-using compiler takes its store root from `$MOSS_STORE_DIR`.*
+This is the interface 28.6 must implement; today's compiler ignores it (every recorded store size is 0). The harness scrubs any
+inherited `MOSS_STORE*` variable, sets `MOSS_STORE_DIR` to a directory under the run directory for every measured command
+(never under HOME; paths under `~/.cache`, `~/.local/share` or `~/.moss*` are refused), points `XDG_CACHE_HOME` next to it so a
+client that ignores `MOSS_STORE_DIR` still cannot reach the user's real cache, and offers the placeholder `{store}` for command
+templates (an error when the series has no store). `--warm-store` (new) is the Phase 28.6 warm series.
+A command run outside a managed series (noise probes, evidence, metrics,
+churn) gets its own fresh store per call. HOME is passed through unchanged (rustup/cargo need it; cargo's own home is private).
+
+| Series | Store policy |
+|---|---|
+| Cold (fixtures) | A fresh, empty store for every rep, including the discarded warm-up rep and the counter run |
+| Warm (fixtures) | One store per fixture, kept across the primes and the timed reps |
+| Scenario sequences (B3, B4) | One store per sequence, kept across its steps (a real edit loop); fresh for each sequence (warm-up, timed, sampled-RSS and counter sequences alike); warm mode: one store per scenario across primes and timed sequences |
+| B5 | One store per (N, schedule, rep) group, shared by all N worktrees in it (warm-up, sampled and counter groups get their own) |
+| B6 replay | One store per replay run, kept across the commits: cold keeps one store per rep index (rep i of commit n sees what rep i of commits 1..n-1 left; reps never share), warm keeps one; a counter store follows the same evolution. Every measurement attempt (spread-guard retry, noisy-block retry) runs on a clone of the stores and only the accepted attempt is promoted, so a retry never sees its own earlier run; the discarded warm-up gets a fresh store |
+| Gate | A separate store for each side; scenario gates keep each side's store across the steps (the candidate's incremental path is what is compared); the replay gate keeps one store per side across all commits; plain fixtures get a fresh store per side |
+| Provider builds | The same store as the consumer series they belong to |
+
+Each store's final size (bytes, files) is recorded when its series ends (`results.json` `meta.stores`, `store_bytes`/`store_files`
+on rows, the report header) and the store is deleted unless `--keep-stores`.
+
+**4. Counters see the same store state as the timed run.** The counter pass replays the *same series* (the same primes and
+steps) under the same store policy in its **own** store, so that store evolves exactly as the timed one did: cold, one fresh
+rep; warm fixtures, the primes plus all timed requests (`counters_by_request` lists every request, the row carries the last, the
+steady state); warm scenarios, the primes plus all timed sequences; B6, the counter store follows the commits. Warm mode now
+reports counters whenever the candidate is a Moss binary honoring the counter environment variables, i.e. the template runs
+`{moss}` or `{margo}` (`ect_common.counters_available`); a template-only client (a socket client) keeps reporting none.
+
+**5. Position-mapping hook.** `--candidate-position-map CMD` (env `ECT_CANDIDATE_POSITION_MAP`): a tool that rewrites the
+**candidate** verdict's positions to the reference layout before comparison, applied in `ect_common.extract_verdict` (Moss,
+used by fixtures, scenarios, replay) and `rust_cmp.extract_verdict` (Rust span line/column). stdin: one JSON object
+`{"kind": "moss"|"rust", "context": {...}, "verdict": {...}}`; stdout: the rewritten verdict JSON (its `document` and
+`diagnostics` replace the candidate's). The tool sees only the candidate verdict and context, never the reference's, so it cannot
+copy the reference; a non-zero exit or unparsable output is an error (never a silent identity). Without the option the hook is the
+identity. Selftest: a candidate whose lines are shifted fails without the map, passes with the exact map and fails with a wrong one
+(Moss and Rust). **This does not remove the Team 5 L8 requirement**: the candidate's author still supplies the mapping.
+
+**6. Other.** `--keep-stores`; `results.csv` gained `store_bytes` and `store_files`; `results.json` rows may carry
+`counters_by_request`; `gate.json` carries `stores`, `position_map` and, for skipped consumers, `consumer_skipped`.
+
+**Measuring a store candidate (Phase 28.6).** The candidate is the same commands with a populated store:
+
+```bash
+# cold baseline AND warm series with the candidate's own binary; warm = same command, one store kept per series
+python3 benchmarks/ect_check/run.py bench --reps 5 --moss <candidate moss-opt> --warm-store --warm-primes 2
+# (--warm-store: the built-in per-kind commands with a store kept across the primes and timed reps; --warm-client-cmd
+#  still takes a template for a template-only client)
+python3 benchmarks/ect_check/run.py gate --scenario-ids all --reference-moss <pinned reference moss-opt> \
+  --candidate-moss <candidate moss-opt> --candidate-position-map '<tool>' --require-rust
+```
 
 ### Behaviour changes in 0.5.0 (read before upgrading a runner)
 
