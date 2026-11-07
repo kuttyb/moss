@@ -18506,3 +18506,28 @@ untouched.
   `cf0bd5e74c782d1e860d77345d1908e3a0cf6eb881d16f27139a81bdddd34329`.
   The report `docs/phase28/R7-010_RUNTIME_CLONE_GATE_FOLLOWUP_57F932.md` records
   the six unit-test resolutions individually.
+
+## R7-010 TypedCopyFact stable-identity follow-up
+
+- Fresh isolated branch `phase28-r7-010-typedcopy-stable-identity-43644` starts
+  at `43644e9d84947eaeb556422b9da1a917983c2bc2`; clone-gate follow-up branch
+  remains preserved and untouched.
+- Root cause: `native_checked_copy_identity()` hashed absolute source paths
+  embedded in both `source_file` locations of a TypedCopyFact row. The earlier
+  gate normalized IDs only for a structural hash and did not stabilize the
+  generated helper/fact identity itself. The identity projection now replaces
+  only those path values with the exact source digest while preserving both
+  physical paths in sidecar/checker evidence. Python oracle identity matches
+  the same rule and still validates exact source path, content, and spans.
+- Same fixture bytes from two checkout-like paths now have identical copy-fact
+  identity `typed-copy-fact-v1:fc1d82a2b1c25828500236edc9afe6042c2720271a0b5bd4ed3b064ce99571a9`
+  and helper suffix `fc1d82a2b1c25828`; both audits remain
+  `UNAUTHORIZED` with 1 authorized / 3 unauthorized / 3 unclassified. A forged
+  source path with the stable identity is rejected as `INVALID_PROVENANCE`.
+  Full details are in
+  `docs/phase28/R7-010_TYPEDCOPY_STABLE_IDENTITY_FOLLOWUP_43644.md`.
+- Focused provenance builder and oracle/clone-inventory unit gates pass Default
+  and EST-shadow (48 tests, 1 skipped in each mode); focused runtime evidence
+  gate passes both modes. No full suite/oracle result is claimed and no clone
+  authorization was added. Final diff/feedback checks and candidate freeze are
+  still pending.

@@ -23,9 +23,11 @@ manifest = json.loads(result.stdout)
 assert set(manifest) == {
     "format", "version", "mode", "rust_sha256", "source_sha256",
     "source_copy_occurrences", "checked_copy_facts",
-    "root_ingress_domain_captures", "occurrences",
+    "root_ingress_domain_captures", "runtime_clone_site_observations",
+    "occurrences",
 }
 assert manifest["root_ingress_domain_captures"] == []
+assert manifest["runtime_clone_site_observations"] == []
 assert manifest["format"] == "moss-clone-provenance" and manifest["version"] == 3
 assert len(manifest["source_copy_occurrences"]) == 1
 assert len(manifest["checked_copy_facts"]) == 1
@@ -33,7 +35,14 @@ group = manifest["checked_copy_facts"][0]
 assert len(group["facts"]) == 2
 identities = []
 for fact in group["facts"]:
-    canonical = json.dumps(fact, sort_keys=True, separators=(",", ":"),
+    identity_fact = dict(fact)
+    source_sha = identity_fact["source_sha256"]
+    identity_fact["source_file"] = source_sha
+    identity_fact["provenance"] = dict(identity_fact["provenance"])
+    identity_fact["provenance"]["source_file"] = source_sha
+    assert fact["source_file"] == str(source_path.resolve())
+    assert fact["provenance"]["source_file"] == str(source_path.resolve())
+    canonical = json.dumps(identity_fact, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False, allow_nan=False).encode()
     identities.append("typed-copy-fact-v1:" + hashlib.sha256(canonical).hexdigest())
 assert [row["origin_kind"] for row in manifest["occurrences"]] == [

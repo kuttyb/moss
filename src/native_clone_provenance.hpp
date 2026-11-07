@@ -285,7 +285,7 @@ inline std::string native_clone_source_copy_id(const NativeCloneSpanV2& span) {
 }
 
 inline std::string native_checked_copy_fact_json(
-    const NativeCheckedCopyFactV1& fact) {
+    const NativeCheckedCopyFactV1& fact, bool stable_source_identity = false) {
   if (fact.availability != "Present" || fact.required_source_access != "READ" ||
       !fact.creates_independent_owner || fact.source_type_key.empty() ||
       fact.result_type_key.empty() || fact.source_bytes.empty() ||
@@ -293,6 +293,14 @@ inline std::string native_checked_copy_fact_json(
       fact.est_fact_context.empty())
     throw std::runtime_error("MOSS_INTERNAL_INVARIANT invalid checked copy provenance fact");
   const auto source_hash = "sha256:" + source_free_contract_sha256(fact.source_bytes);
+  // Physical paths remain in the serialized checker evidence, but are not
+  // semantic occurrence identity: the same source copied from two checkout
+  // roots must name the same checked copy decision. The content digest,
+  // exact byte spans, callable/module identity, and EST IDs remain bound.
+  const auto source_identity = stable_source_identity
+      ? source_hash : fact.source_file;
+  const auto provenance_source_identity = stable_source_identity
+      ? source_hash : fact.provenance_source_file;
   return "{\"availability\":\"Present\",\"copy_expression_id\":" +
       std::to_string(fact.copy_expression_id) +
       ",\"copy_occurrence_span\":" + native_clone_fact_span_json(fact.copy_occurrence_span) +
@@ -303,11 +311,11 @@ inline std::string native_checked_copy_fact_json(
       native_clone_json_string(fact.defining_module_id) +
       ",\"enclosing_callable_id\":" + native_clone_json_string(fact.enclosing_callable_id) +
       ",\"line\":" + std::to_string(fact.provenance_line) +
-      ",\"source_file\":" + native_clone_json_string(fact.provenance_source_file) +
+      ",\"source_file\":" + native_clone_json_string(provenance_source_identity) +
       "},\"required_source_access\":\"READ\",\"result_type_key\":" +
       native_clone_json_string(fact.result_type_key) +
       ",\"source_expression_id\":" + std::to_string(fact.source_expression_id) +
-      ",\"source_file\":" + native_clone_json_string(fact.source_file) +
+      ",\"source_file\":" + native_clone_json_string(source_identity) +
       ",\"source_occurrence_span\":" + native_clone_fact_span_json(fact.source_occurrence_span) +
       ",\"source_sha256\":" + native_clone_json_string(source_hash) +
       ",\"source_type_key\":" + native_clone_json_string(fact.source_type_key) +
@@ -318,7 +326,7 @@ inline std::string native_checked_copy_fact_json(
 
 inline std::string native_checked_copy_identity(
     const NativeCheckedCopyFactV1& fact) {
-  const auto row = native_checked_copy_fact_json(fact);
+  const auto row = native_checked_copy_fact_json(fact, true);
   return "typed-copy-fact-v1:" + source_free_contract_sha256(row);
 }
 

@@ -332,9 +332,9 @@ def main() -> None:
                 audit.get("unclassified")) == ("UNAUTHORIZED", 1, 3, 3), audit
 
         # Rebuild identical Moss bytes under another checkout-like source path.
-        # The generated authority identities may differ because the canonical
-        # source path differs, but each artifact must still audit against its
-        # exact facts, and the structural hash must remain the same.
+        # Semantic helper/fact identity is source-content-bound and therefore
+        # stable, while each serialized fact must still retain its exact path
+        # and be checked against that artifact's source bytes.
         alternate_source = Path(tmp) / "alternate-checkout/tests/phase28/oracle_r7_005_1/fixtures/oracle_10a_explicit_copy_only.moss"
         alternate_source.parent.mkdir(parents=True)
         alternate_source.write_bytes(source_path.read_bytes())
@@ -349,11 +349,22 @@ def main() -> None:
             rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
         raw_alternate_stripped = re.sub(
             rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", alternate_rust_bytes)
-        assert raw_runtime_stripped != raw_alternate_stripped, (
-            "alternate source path should exercise path-derived helper/fact identities")
-        assert re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_runtime_stripped) != \
-            re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_alternate_stripped)
+        primary_fact_ids = re.findall(
+            rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_runtime_stripped)
+        alternate_fact_ids = re.findall(
+            rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_alternate_stripped)
+        assert primary_fact_ids == alternate_fact_ids, (
+            "identical source occurrences must retain the same checker-fact/helper identity")
+        assert re.findall(rb"__moss_copy_value_[0-9a-f]{16}", raw_runtime_stripped) == \
+            re.findall(rb"__moss_copy_value_[0-9a-f]{16}", raw_alternate_stripped)
         alternate_copy_authority = harness.query_copy_authority(compiler, alternate_source)
+        primary_copy_authority = harness.query_copy_authority(compiler, source_path)
+        assert primary_copy_authority["facts"][0]["source_file"] == str(source_path.resolve())
+        assert alternate_copy_authority["facts"][0]["source_file"] == str(alternate_source.resolve())
+        assert primary_copy_authority["facts"][0]["source_file"] != \
+            alternate_copy_authority["facts"][0]["source_file"]
+        assert harness.typed_copy_fact_identity(primary_copy_authority["facts"][0]) == \
+            harness.typed_copy_fact_identity(alternate_copy_authority["facts"][0])
         alternate_ingress_authority = harness.query_root_ingress_capture_authority(
             compiler, alternate_source)
         alternate_audit = harness.audit_clone_provenance(

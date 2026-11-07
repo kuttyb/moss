@@ -300,6 +300,42 @@ class CloneProvenanceTests(unittest.TestCase):
                 "defining_module_id": "module:unit",
                 "enclosing_callable_id": specialization or "fn:duplicate"}}
 
+    def test_copy_identity_is_checkout_stable_but_content_bound(self):
+        alternate_path = self.root / "alternate-checkout" / "unit.moss"
+        alternate_path.parent.mkdir()
+        alternate_path.write_text(self.source)
+        alternate_span = harness.moss_copy_call_spans(self.source)[0]
+        alternate = self.fact_for_source(
+            alternate_path, self.source, alternate_span, "main", 11)
+        self.assertNotEqual(self.fact_row["source_file"], alternate["source_file"])
+        self.assertEqual(self.fact_row["source_sha256"], alternate["source_sha256"])
+        self.assertEqual(harness.typed_copy_fact_identity(self.fact_row),
+                         harness.typed_copy_fact_identity(alternate))
+
+        changed_source = self.source + "# different bytes\n"
+        changed_path = self.root / "changed.moss"
+        changed_path.write_text(changed_source)
+        changed = self.fact_for_source(
+            changed_path, changed_source,
+            harness.moss_copy_call_spans(changed_source)[0], "main", 11)
+        self.assertNotEqual(harness.typed_copy_fact_identity(self.fact_row),
+                            harness.typed_copy_fact_identity(changed))
+
+    def test_stable_identity_does_not_relax_exact_source_path_validation(self):
+        forged_path = self.root / "other-checkout" / "unit.moss"
+        forged_path.parent.mkdir()
+        forged_path.write_text(self.source)
+        forged = copy.deepcopy(self.fact_row)
+        forged["source_file"] = str(forged_path.resolve())
+        forged["provenance"]["source_file"] = str(forged_path.resolve())
+        self.assertEqual(harness.typed_copy_fact_identity(self.fact_row),
+                         harness.typed_copy_fact_identity(forged))
+
+        self.write_manifest(self.manifest())
+        audit = self.audit_clone_provenance(
+            self.rust_path, self.source_path, "debug", 1, self.authority([forged]))
+        self.assertEqual(audit["status"], "INVALID_PROVENANCE")
+
     def authority(self, facts=None):
         checked_facts = [self.fact_row] if facts is None else facts
         projection = {}
@@ -455,7 +491,11 @@ class CloneProvenanceTests(unittest.TestCase):
             source_path = self.root / f"copy-order-{index}.moss"
             source_path.write_text(source)
             copy_span = harness.moss_copy_call_spans(source)[0]
-            template = self.fact_for_source(source_path, source, copy_span, "", 11)
+            # Vary exact checker occurrence IDs to exercise both digest
+            # sort positions. Checkout paths are evidence fields and no
+            # longer perturb the semantic fact identity.
+            template = self.fact_for_source(
+                source_path, source, copy_span, "", index + 1)
             concrete = self.fact_for_source(source_path, source, copy_span,
                                             "fn:duplicate<First>", 22)
             template_id = harness.typed_copy_fact_identity(template)

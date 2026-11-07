@@ -728,7 +728,23 @@ COPY_AUTHORITY_SPAN_KEYS = {
 
 
 def typed_copy_fact_identity(fact: dict) -> str:
-    canonical = json.dumps(fact, ensure_ascii=False, sort_keys=True,
+    # File paths remain in the exact checker fact and are independently
+    # checked against the source artifact. They identify where the evidence
+    # was observed, but should not perturb the semantic occurrence identity
+    # when identical source bytes are checked from another checkout root.
+    # Bind both path fields to the checked content digest for identity only.
+    identity_fact = dict(fact)
+    source_hash = identity_fact.get("source_sha256")
+    if not isinstance(source_hash, str) or not source_hash.startswith("sha256:"):
+        raise ValueError("checked copy fact lacks its source content digest")
+    identity_fact["source_file"] = source_hash
+    provenance = identity_fact.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("checked copy fact lacks provenance")
+    identity_provenance = dict(provenance)
+    identity_provenance["source_file"] = source_hash
+    identity_fact["provenance"] = identity_provenance
+    canonical = json.dumps(identity_fact, ensure_ascii=False, sort_keys=True,
                            separators=(",", ":"), allow_nan=False).encode("utf-8")
     return "typed-copy-fact-v1:" + hashlib.sha256(canonical).hexdigest()
 

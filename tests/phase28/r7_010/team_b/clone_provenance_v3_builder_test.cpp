@@ -37,6 +37,12 @@ int main(int argc, char** argv) {
   auto second = native_checked_copy_fact_from_typed(typed, source);
   second.generated_callable_symbols = {"second", "__moss_view_second"};
   const auto first_id = native_checked_copy_identity(first);
+  auto rehomed = first;
+  rehomed.source_file = "/alternate-checkout/source.moss";
+  rehomed.provenance_source_file = rehomed.source_file;
+  if (native_checked_copy_fact_json(rehomed) ==
+      native_checked_copy_fact_json(first)) return 36;
+  if (native_checked_copy_identity(rehomed) != first_id) return 37;
   const auto second_id = native_checked_copy_identity(second);
   const auto first_helper = "__moss_copy_value_" + first_id.substr(19, 16);
   const auto second_helper = "__moss_copy_value_" + second_id.substr(19, 16);
