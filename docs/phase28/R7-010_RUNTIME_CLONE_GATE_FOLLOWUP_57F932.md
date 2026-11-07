@@ -7,7 +7,7 @@ This follow-up fixes evidence-gate correctness on top of the published `57f932b9
 Worktree: `tmp/phase28-r7-010-runtime-clone-evidence-followup-57f932`
 Branch: `phase28-r7-010-runtime-clone-evidence-followup-57f932`
 Parent: `57f932b9f8facbad4c428ead1398434bcf2f2eb6`
-Follow-up SHA: pending local freeze.
+Frozen implementation commit: `26f4a301356920b9c89f4d9ff6dd775eda626d0e`. The follow-up source/test tree is frozen at this commit.
 
 ## Six Team C unit failures
 
