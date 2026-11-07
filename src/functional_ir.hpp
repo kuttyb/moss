@@ -133,6 +133,10 @@ struct FunctionalNode {
   std::string output_type;
   std::string callable_identity;
   std::string callable_expression;
+  std::uint32_t est_arena_index = UINT32_MAX;
+  std::uint32_t est_expression_id = UINT32_MAX;
+  std::vector<std::uint32_t> est_argument_expression_ids;
+  std::uint32_t callable_argument_index = UINT32_MAX;
   std::vector<std::string> captures;
   Effect ownership = Effect::Read;
   ObservableEffects effects;
@@ -177,6 +181,10 @@ struct FunctionalSemanticRewrite {
 struct FunctionalPipeline {
   // Exact compilation-local plan handle carried by the checked AST.
   std::size_t transient_id = 0;
+  // Checker-issued body identity; context remains display-only provenance.
+  std::uint32_t specialization_id = UINT32_MAX;
+  std::uint32_t est_arena_index = UINT32_MAX;
+  std::uint32_t est_expression_id = UINT32_MAX;
   std::string semantic_identity;
   // Physical source file for Phase 5/6 provenance.  This is not part of the
   // semantic identity and may differ between otherwise identical pipelines.
