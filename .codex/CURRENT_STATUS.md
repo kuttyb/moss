@@ -18666,3 +18666,32 @@ untouched.
   and Team C review, then integrate only the approved exact SHA into isolated
   staging. Full suites and oracle have not been rerun on this follow-up. Clone
   authorizations remain pending.
+
+## Phase 28 R7-011 Team A Step 0 checkpoint (2026-11-07)
+
+- Isolated branch `phase28-r7-011-team-a-step0` is based on `45b586c2`.
+  Producer commits: `8fe68784119831a2e8403b73d2e2c7c07b81abe2` adds an exact
+  EST stage `SemanticFacts::dynamic_callback` marker; `fcc72aba37251243882a90e6e9b104276aa62dd6`
+  keys it with the checker-owned active function/specialization frame context.
+  Team B consumer is isolated at `0c571343b639d7f41aa84476eedb0264a0bc7b4b`.
+- Field alias commit `301024e044098e735607783f95a44e497aeccb9c` fixes the
+  Assign-case source recognition and uses downstream per-definition effects.
+  `o15b` and `field_read` pass checker and print `3` in both engines;
+  `field_consume` rejects at line 9 in both paths with the unchanged diagnostic.
+  The three MapHolder controls were migrated to explicit `take(h.m)` and pass
+  checker validation. Native generation still fails in swarm_027 and swarm_030
+  on nonprimitive Map.keys CollectionView authority; swarm_028 native compiles.
+- Gate follow-up `dc2d0959462d92f8265a7ae0b872efa758b90d5d` keeps the nine-row
+  identity gate standalone until Step 1 closes the known dom_spec/meth_spec
+  failures. On Team B's binary, nest_spec, try_spec, cb_spec, dead_tail2,
+  field_consume and both dynamic marker mutation checks pass; dom_spec Native
+  still lacks ReturnValue fact, meth_spec Fast Debug lacks exact call edge,
+  and the Team B binary lacks the unintegrated field alias fix. All nine named
+  callback corpus programs pass check and native rustc compilation on Team B's
+  binary. The field controls script reports the known Map.keys native blocker.
+- Default/Shadow suites were not run for these isolated commits. No merge or
+  production integration was performed. Remaining Step 0 dependency: integrate
+  reviewed Team B consumer and Team A branch only after coordinator review;
+  resolve whether the swarm Map.keys native blocker belongs to later coverage.
+  Step 1 remains responsible for dom_spec/meth_spec and suite registration of
+  the all-nine identity gate.
