@@ -18843,3 +18843,20 @@ untouched.
   150ab36 source bytes on both compilers, so explicit-take test migrations are
   intentionally still visible as losses rather than being hidden by source
   changes.
+
+## P28-R7-011 nine reproduction set on combined compiler 83e42ee
+
+- `check_phase28_l8_identity_repros.py` ran both engines on the combined dev
+  compiler. PASS: `nest_spec` = `10\n3.5`; `try_spec` = `5\n1.5`;
+  `cb_spec` = `12`; `dead_tail2` = `1\n0`; `o15b` = `3`; `field_read` =
+  `3`; and `field_consume` rejects at line 9 in both engines.
+- Known Step 1 failures remain: `dom_spec` Fast Debug prints `10`, Native
+  fails with `MOSS_INTERNAL_INVARIANT return-value requirement/fact missing
+  or ambiguous`; `meth_spec` Native prints `4\n2.5`, Fast Debug fails with
+  `MOSS_INTERNAL_INVARIANT exact checked call edge specialization is missing,
+  duplicated, or contradictory` at Moss line 8. The full nine-case script
+  remains unregistered pending Step 1; callback mutation cases need their own
+  independently passing registered job per Agent 2 review.
+- The standalone script also passed drop and perturb hooks for the dynamic
+  callback fact and checker/native compilation of all nine F3 callback corpus
+  programs. These checks are not yet registered in `make check`.
