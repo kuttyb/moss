@@ -1243,7 +1243,7 @@ store would make the `revert` and `d` steps cost a hit, which cargo's mtime fres
   compares cargo's freshness test with margo's Python start-up plus hashing. The like-for-like compiler-only number (`probes/moss_check_bare_probe.txt`, quiet machine: loadavg 0.11, calibration
 drift 0.3%, 9 reps after a discarded run, single-source form of the B3 packages, `moss check <file> --json`, no margo and no
 Python) is **375 ms for the DAG and 584 ms for the fan-in** (spread 1.11 / 1.06), against 424-460 ms / 643-679 ms through
-`margo --check build`: margo adds roughly 50-90 ms per edit step here (not decomposed). Against the bare compiler, an edit
+`margo --check build`: margo adds roughly 50-95 ms per edit step here (not decomposed). Against the bare compiler, an edit
 step of `cargo check` is about 17x faster on the DAG (22.4 ms, edit `a`) and about 29x on the fan-in (20.2 ms). Cargo does no work when nothing changed,
   reuses nothing finer than a crate, and does not depend on K.
   **A reader may not conclude:** that Rust's type checking is faster per function, that Moss's checker algorithm is
