@@ -52,22 +52,24 @@ struct Handle {
 // syntax nodes. Specializations of one source occurrence have separate keys.
 struct FactKey {
   ExprId expression = 0;
-  std::string specialization_context;
+  std::uint32_t specialization_id = UINT32_MAX;
   bool operator==(const FactKey& other) const {
     return expression == other.expression &&
-        specialization_context == other.specialization_context;
+        specialization_id == other.specialization_id;
   }
 };
 struct FactKeyHash {
   std::size_t operator()(const FactKey& key) const noexcept {
     const auto expression_hash = std::hash<ExprId>{}(key.expression);
-    const auto context_hash =
-        std::hash<std::string>{}(key.specialization_context);
-    return expression_hash ^ (context_hash + 0x9e3779b9U +
+    const auto specialization_hash =
+        std::hash<std::uint32_t>{}(key.specialization_id);
+    return expression_hash ^ (specialization_hash + 0x9e3779b9U +
         (expression_hash << 6) + (expression_hash >> 2));
   }
 };
 struct SemanticFacts {
+  std::uint32_t specialization_id = UINT32_MAX;
+  std::string debug_context;
   TypeRef type;
   std::string specialization_result;
   std::string resolved_target;
@@ -146,10 +148,10 @@ class Arena {
   const Node& at(ExprId id) const;
   SourceSpan span(ExprId id) const { return spans_.at(id); }
   std::size_t size() const { return nodes_.size(); }
-  void record_facts(ExprId id, std::string specialization_context,
+  void record_facts(ExprId id, std::uint32_t specialization_id,
                     SemanticFacts facts);
   const SemanticFacts* facts(ExprId id,
-                             std::string_view specialization_context) const;
+                             std::uint32_t specialization_id) const;
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
   void test_contradict_selector_type(TypeRef wrong_type);
@@ -163,16 +165,16 @@ class Arena {
   void test_perturb_selector_target(const std::string& wrong_target);
   void test_drop_selector_effect();
   void test_perturb_specialization_identity(const std::string& wrong_spec);
-  bool test_drop_occurrence_fact(ExprId id, std::string_view context);
-  bool test_mutate_occurrence_target(ExprId id, std::string_view context, const std::string& wrong_target);
-  bool test_drop_occurrence_effect(ExprId id, std::string_view context);
-  bool test_perturb_occurrence_effect(ExprId id, std::string_view context);
-  bool test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type);
-  bool test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec);
+  bool test_drop_occurrence_fact(ExprId id, std::uint32_t specialization_id);
+  bool test_mutate_occurrence_target(ExprId id, std::uint32_t specialization_id, const std::string& wrong_target);
+  bool test_drop_occurrence_effect(ExprId id, std::uint32_t specialization_id);
+  bool test_perturb_occurrence_effect(ExprId id, std::uint32_t specialization_id);
+  bool test_mutate_occurrence_type(ExprId id, std::uint32_t specialization_id, TypeRef wrong_type);
+  bool test_mutate_occurrence_specialization(ExprId id, std::uint32_t specialization_id, const std::string& wrong_spec);
   bool test_drop_occurrence_dynamic_callback(ExprId id,
-                                            std::string_view context);
+                                            std::uint32_t specialization_id);
   bool test_perturb_occurrence_dynamic_callback(ExprId id,
-                                               std::string_view context);
+                                               std::uint32_t specialization_id);
 #endif
 
   // Same-source copies retain handles and share this immutable arena.

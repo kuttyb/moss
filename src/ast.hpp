@@ -36,6 +36,8 @@ struct ProgramSpecializationIdentity {
   string semantic_callable_identity;
   std::optional<SpecializationKey> semantic_key;
   string diagnostic_key;
+  // The owning Moss module is machine-readable and stable across source paths.
+  string module_identity;
   // Imported table rows preserve their provider-local identity while `id`
   // remains remapped into this Program's dense table.
   string provider_module_identity;
@@ -297,27 +299,38 @@ struct Stmt {
   vector<int> continuation_lines;
   string semantic_type;
   std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
+  std::unordered_map<SpecId, OpenCallResultFacts> open_call_results_by_spec_id;
   // Solver-closed member facts for the direct call in this statement. The
   // specialization registrar consumes these exact terms and access decisions.
   std::unordered_map<string, vector<MemberDispatchRequirement>>
       member_requirements_by_context;
+  std::unordered_map<SpecId, vector<MemberDispatchRequirement>>
+      member_requirements_by_spec_id;
   // Exact checked specialization selected for an open-result call in this
   // body context. Native lowering consumes this key at the source statement.
   std::unordered_map<string, string> open_call_keys_by_context;
+  std::unordered_map<SpecId, string> open_call_keys_by_spec_id;
   // Nested call results can close from an enclosing parameter type. Preserve
   // each expression's exact checked key for native lowering in that context.
   std::unordered_map<string, std::unordered_map<string, vector<string>>>
       nested_open_call_keys_by_context;
+  std::unordered_map<SpecId, std::unordered_map<string, vector<string>>>
+      nested_open_call_keys_by_spec_id;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
+  std::unordered_map<SpecId,string> receiver_types_by_spec_id;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;
+  // SpecId keyed checker result map. Context strings above are retained only
+  // as diagnostic/debug labels during migration; consumers select by ID.
+  std::unordered_map<SpecId,string> semantic_types_by_spec_id;
   // `echo` argument types the checker accepted under the display contract,
   // by specialization context ("" for a non-generic body). Native lowering
   // selects the display helper from this checked fact. Checker metadata only.
   std::unordered_map<string,vector<string>> echo_types_by_context;
+  std::unordered_map<SpecId,vector<string>> echo_types_by_spec_id;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.
@@ -326,11 +339,15 @@ struct Stmt {
   // concrete specialization. Keep each exact join environment separately.
   std::unordered_map<string,std::unordered_map<string,string>>
       joined_types_by_context;
+  std::unordered_map<SpecId,std::unordered_map<string,string>>
+      joined_types_by_spec_id;
   // Exact functional plans for the expression slots emitted by this
   // statement, keyed by the concrete semantic context.  A function body can
   // have several static specializations, so one AST statement can legitimately
   // point at several distinct compilation-local pipeline IDs.
   mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
+  mutable std::unordered_map<SpecId,vector<std::size_t>>
+      functional_pipeline_ids_by_spec_id;
   // Expression-tree keyed mirror of functional_pipeline_ids. The optimizer
   // resolves plans through the owning expression Handle; legacy IDs remain
   // available to other consumers during the staged migration.
@@ -343,6 +360,8 @@ struct Stmt {
   };
   mutable std::unordered_map<string,vector<FunctionalExpressionPlan>>
       functional_expression_plans_by_context;
+  mutable std::unordered_map<SpecId,vector<FunctionalExpressionPlan>>
+      functional_expression_plans_by_spec_id;
   // Phase 20 Agent D: nonzero once check_executor_invoke has built a checked
   // RootSubmissionPlan for this `executor.invoke(...)` statement (index into
   // Program::root_submission_plans, offset by one so 0 means "none"). See

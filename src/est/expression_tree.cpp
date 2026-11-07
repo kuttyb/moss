@@ -41,12 +41,12 @@ ExprId Arena::append(Node node, SourceSpan source_span) {
 
 const Node& Arena::at(ExprId id) const { return nodes_.at(id); }
 
-void Arena::record_facts(ExprId id, std::string specialization_context,
+void Arena::record_facts(ExprId id, std::uint32_t specialization_id,
                          SemanticFacts facts) {
   if (id >= nodes_.size())
     throw std::out_of_range("EST semantic facts refer to an unknown ExprId");
-  auto& destination = semantic_facts_[
-      FactKey{id, std::move(specialization_context)}];
+  facts.specialization_id = specialization_id;
+  auto& destination = semantic_facts_[FactKey{id, specialization_id}];
   if (facts.type) destination.type = std::move(facts.type);
   if (!facts.specialization_result.empty())
     destination.specialization_result =
@@ -59,11 +59,10 @@ void Arena::record_facts(ExprId id, std::string specialization_context,
     destination.dynamic_callback = facts.dynamic_callback;
 }
 
-const SemanticFacts* Arena::facts(
-    ExprId id, std::string_view specialization_context) const {
+const SemanticFacts* Arena::facts(ExprId id,
+                                  std::uint32_t specialization_id) const {
   if (id >= nodes_.size()) return nullptr;
-  auto found = semantic_facts_.find(
-      FactKey{id, std::string(specialization_context)});
+  auto found = semantic_facts_.find(FactKey{id, specialization_id});
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
@@ -94,7 +93,7 @@ void Arena::test_contradict_selector_target(const std::string& wrong_target) {
   }
   for (auto expr : targets) {
     for (auto& entry : semantic_facts_) {
-      if (entry.first.expression == expr && entry.first.specialization_context.rfind("source:", 0) == 0) {
+      if (entry.first.expression == expr) {
         entry.second.resolved_target = wrong_target;
       }
     }
@@ -110,7 +109,7 @@ void Arena::test_contradict_selector_effect() {
   }
   for (const auto& [expr, eff] : effects) {
     for (auto& entry : semantic_facts_) {
-      if (entry.first.expression == expr && entry.first.specialization_context.rfind("fn:", 0) == 0) {
+      if (entry.first.expression == expr) {
         entry.second.inferred_effect = (eff == Effect::Read) ? Effect::Write : Effect::Read;
       }
     }
@@ -118,23 +117,11 @@ void Arena::test_contradict_selector_effect() {
 }
 
 void Arena::test_drop_primary_selector_fact() {
-  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
-    if (it->first.specialization_context.rfind("fn:", 0) == 0) {
-      it = semantic_facts_.erase(it);
-    } else {
-      ++it;
-    }
-  }
+  if (!semantic_facts_.empty()) semantic_facts_.erase(semantic_facts_.begin());
 }
 
 void Arena::test_drop_secondary_selector_fact() {
-  for (auto it = semantic_facts_.begin(); it != semantic_facts_.end(); ) {
-    if (it->first.specialization_context.rfind("source:", 0) == 0) {
-      it = semantic_facts_.erase(it);
-    } else {
-      ++it;
-    }
-  }
+  if (!semantic_facts_.empty()) semantic_facts_.erase(semantic_facts_.begin());
 }
 
 void Arena::test_perturb_primary_effect() {
@@ -179,8 +166,8 @@ void Arena::test_perturb_specialization_identity(const std::string& wrong_spec) 
   }
 }
 
-bool Arena::test_drop_occurrence_fact(ExprId id, std::string_view context) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_drop_occurrence_fact(ExprId id, std::uint32_t specialization_id) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end()) {
     semantic_facts_.erase(it);
     return true;
@@ -188,8 +175,8 @@ bool Arena::test_drop_occurrence_fact(ExprId id, std::string_view context) {
   return false;
 }
 
-bool Arena::test_mutate_occurrence_target(ExprId id, std::string_view context, const std::string& wrong_target) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_mutate_occurrence_target(ExprId id, std::uint32_t specialization_id, const std::string& wrong_target) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end()) {
     it->second.resolved_target = wrong_target;
     return true;
@@ -197,8 +184,8 @@ bool Arena::test_mutate_occurrence_target(ExprId id, std::string_view context, c
   return false;
 }
 
-bool Arena::test_drop_occurrence_effect(ExprId id, std::string_view context) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_drop_occurrence_effect(ExprId id, std::uint32_t specialization_id) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end()) {
     it->second.inferred_effect = std::nullopt;
     return true;
@@ -206,8 +193,8 @@ bool Arena::test_drop_occurrence_effect(ExprId id, std::string_view context) {
   return false;
 }
 
-bool Arena::test_perturb_occurrence_effect(ExprId id, std::string_view context) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_perturb_occurrence_effect(ExprId id, std::uint32_t specialization_id) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end() && it->second.inferred_effect) {
     it->second.inferred_effect = (*it->second.inferred_effect == Effect::Read) ? Effect::Write : Effect::Read;
     return true;
@@ -215,8 +202,8 @@ bool Arena::test_perturb_occurrence_effect(ExprId id, std::string_view context) 
   return false;
 }
 
-bool Arena::test_mutate_occurrence_type(ExprId id, std::string_view context, TypeRef wrong_type) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_mutate_occurrence_type(ExprId id, std::uint32_t specialization_id, TypeRef wrong_type) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end()) {
     it->second.type = wrong_type;
     return true;
@@ -224,8 +211,8 @@ bool Arena::test_mutate_occurrence_type(ExprId id, std::string_view context, Typ
   return false;
 }
 
-bool Arena::test_mutate_occurrence_specialization(ExprId id, std::string_view context, const std::string& wrong_spec) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+bool Arena::test_mutate_occurrence_specialization(ExprId id, std::uint32_t specialization_id, const std::string& wrong_spec) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it != semantic_facts_.end()) {
     it->second.specialization_result = wrong_spec;
     return true;
@@ -234,16 +221,16 @@ bool Arena::test_mutate_occurrence_specialization(ExprId id, std::string_view co
 }
 
 bool Arena::test_drop_occurrence_dynamic_callback(
-    ExprId id, std::string_view context) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+    ExprId id, std::uint32_t specialization_id) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it == semantic_facts_.end()) return false;
   it->second.dynamic_callback.reset();
   return true;
 }
 
 bool Arena::test_perturb_occurrence_dynamic_callback(
-    ExprId id, std::string_view context) {
-  auto it = semantic_facts_.find(FactKey{id, std::string(context)});
+    ExprId id, std::uint32_t specialization_id) {
+  auto it = semantic_facts_.find(FactKey{id, specialization_id});
   if (it == semantic_facts_.end() || !it->second.dynamic_callback)
     return false;
   it->second.dynamic_callback = !*it->second.dynamic_callback;
@@ -2471,14 +2458,16 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     recorded_facts.specialization_result = "spec-result-v1:test";
     recorded_facts.resolved_target = "callable-v1:test";
     recorded_facts.inferred_effect = Effect::Consume;
-    arena.record_facts(same_a, "fn:fact-test@Int", recorded_facts);
-    const auto* retained_facts = arena.facts(same_a, "fn:fact-test@Int");
+    constexpr std::uint32_t int_spec_id = 17;
+    constexpr std::uint32_t string_spec_id = 18;
+    arena.record_facts(same_a, int_spec_id, recorded_facts);
+    const auto* retained_facts = arena.facts(same_a, int_spec_id);
     assert(retained_facts && retained_facts->type &&
            retained_facts->type->structurally_equal(**parsed_fact_type) &&
            retained_facts->specialization_result == "spec-result-v1:test" &&
            retained_facts->resolved_target == "callable-v1:test" &&
            retained_facts->inferred_effect == Effect::Consume);
-    assert(!arena.facts(same_a, "fn:fact-test@String"));
+    assert(!arena.facts(same_a, string_spec_id));
     auto parsed_string_type = Type::parse_canonical("String");
     assert(parsed_string_type);
     SemanticFacts string_facts;
@@ -2486,31 +2475,31 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     string_facts.specialization_result = "spec-result-v1:string";
     string_facts.resolved_target = "callable-v1:string";
     string_facts.inferred_effect = Effect::Read;
-    arena.record_facts(same_a, "fn:fact-test@String", string_facts);
+    arena.record_facts(same_a, string_spec_id, string_facts);
 
     // Multi-specialization fact isolation:
     // Query under context A returns fact A.
-    const auto* facts_a = arena.facts(same_a, "fn:fact-test@Int");
+    const auto* facts_a = arena.facts(same_a, int_spec_id);
     assert(facts_a && facts_a->type &&
            facts_a->type->structurally_equal(**parsed_fact_type) &&
            facts_a->specialization_result == "spec-result-v1:test");
 
     // Query under context B returns fact B.
-    const auto* facts_b = arena.facts(same_a, "fn:fact-test@String");
+    const auto* facts_b = arena.facts(same_a, string_spec_id);
     assert(facts_b && facts_b->type &&
            facts_b->type->structurally_equal(**parsed_string_type) &&
            facts_b->specialization_result == "spec-result-v1:string");
 
     // Query under an unrelated context returns nullptr.
-    assert(!arena.facts(same_a, "fn:fact-test@Bool"));
-    assert(!arena.facts(same_a, "specialization:unrelated"));
+    assert(!arena.facts(same_a, 19));
+    assert(!arena.facts(same_a, 20));
     Program copied_with_facts = copied;
     assert(copied_with_facts.expression_arena == program.expression_arena &&
            copied_with_facts.expression_arena->facts(
-               same_a, "fn:fact-test@Int"));
+               same_a, int_spec_id));
     const auto fresh_fact_occurrence = fresh_occurrence(arena, same_a);
     assert(fresh_fact_occurrence != same_a &&
-           !arena.facts(fresh_fact_occurrence, "fn:fact-test@Int"));
+           !arena.facts(fresh_fact_occurrence, int_spec_id));
     const auto* old_chain = std::get_if<Index>(&arena.at(same_a));
     assert(old_chain);
     const auto fresh = fresh_occurrence(arena, same_a);
@@ -2555,16 +2544,17 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     const auto old_dump = dump_node(arena, old_id);
     SemanticFacts rebuilt_facts;
     rebuilt_facts.resolved_target = "callable-v1:old";
-    arena.record_facts(old_id, "fn:rebuild-test", rebuilt_facts);
+    constexpr std::uint32_t rebuild_spec_id = 21;
+    arena.record_facts(old_id, rebuild_spec_id, rebuilt_facts);
     auto rebuilt = retained;
     const auto& old_handle = retained.front();
     rebuild_slot(arena, rebuilt, old_handle.owner, old_handle.slot,
                  old_handle.argument_index, "replacement + 1");
     assert(rebuilt.front().expr != old_id && dump_node(arena, old_id) == old_dump);
-    assert(arena.facts(old_id, "fn:rebuild-test") &&
-           arena.facts(old_id, "fn:rebuild-test")->resolved_target ==
+    assert(arena.facts(old_id, rebuild_spec_id) &&
+           arena.facts(old_id, rebuild_spec_id)->resolved_target ==
                "callable-v1:old" &&
-           !arena.facts(rebuilt.front().expr, "fn:rebuild-test"));
+           !arena.facts(rebuilt.front().expr, rebuild_spec_id));
     const char* stale = std::getenv("MOSS_EST_STALE_TEST");
     if (stale && std::string_view(stale) == "1") {
       Stmt stale_stmt;
