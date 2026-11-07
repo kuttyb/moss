@@ -4,9 +4,11 @@
 #include <map>
 #include <optional>
 #include <cstdint>
+#include <iterator>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "ast.hpp"
@@ -923,6 +925,7 @@ struct TypedReturnValueArtifactFactV1 {
         statement_preorder_ordinal == UINT32_MAX ||
         value_slot != ValueSlot::ReturnValue || value_argument_index != 0 ||
         source_line <= 0 || source_line != provenance.line ||
+        specialization_id == InvalidSpecId ||
         expression_span_line == 0 || expression_span_column == 0 ||
         expression_source_end <= expression_source_begin ||
         expression_source_fingerprint == 0 ||
@@ -3937,5 +3940,178 @@ struct TypedSemanticModuleV1 {
 };
 
 TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program);
+
+// Append a source-free provider's local SpecId table to the destination and
+// rewrite every provider-local reference before its declarations/facts are
+// merged. Display keys remain diagnostic data and are never parsed.
+inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
+    Program& destination, Program& provider,
+    const std::string& provider_module_identity) {
+  if (provider_module_identity.empty())
+    throw std::invalid_argument("imported SpecId provider has no module identity");
+  std::unordered_map<SpecId, SpecId> remap;
+  std::vector<ProgramSpecializationIdentity> appended;
+  for (std::size_t index = 0; index < provider.specialization_table.size(); ++index) {
+    auto row = provider.specialization_table[index];
+    const SpecId source_id = row.id;
+    if (source_id == InvalidSpecId || source_id != index ||
+        row.module_identity.empty() ||
+        !remap.emplace(source_id, InvalidSpecId).second)
+      throw std::invalid_argument("duplicate or non-dense imported SpecId table");
+    if (destination.specialization_table.size() + appended.size() >= InvalidSpecId)
+      throw std::invalid_argument("program SpecId table exhausted");
+    const SpecId destination_id = static_cast<SpecId>(
+        destination.specialization_table.size() + appended.size());
+    row.id = destination_id;
+    row.provider_module_identity = provider_module_identity;
+    row.provider_spec_id = source_id;
+    appended.push_back(std::move(row));
+    remap[source_id] = destination_id;
+  }
+  const auto remap_id = [&](SpecId& id) {
+    if (id == InvalidSpecId) return;
+    const auto found = remap.find(id);
+    if (found == remap.end())
+      throw std::invalid_argument("imported semantic row references unknown SpecId");
+    id = found->second;
+  };
+  const auto remap_statement = [&](auto&& self, Stmt& statement) -> void {
+    const auto remap_map_keys = [&](auto& map) {
+      using Map = std::decay_t<decltype(map)>;
+      Map rewritten;
+      rewritten.reserve(map.size());
+      for (auto& entry : map) {
+        SpecId id = entry.first;
+        remap_id(id);
+        if (!rewritten.emplace(id, std::move(entry.second)).second)
+          throw std::invalid_argument(
+              "duplicate statement facts after imported SpecId remap");
+      }
+      map = std::move(rewritten);
+    };
+    remap_map_keys(statement.open_call_results_by_spec_id);
+    remap_map_keys(statement.member_requirements_by_spec_id);
+    remap_map_keys(statement.open_call_keys_by_spec_id);
+    remap_map_keys(statement.nested_open_call_keys_by_spec_id);
+    remap_map_keys(statement.receiver_types_by_spec_id);
+    remap_map_keys(statement.semantic_types_by_spec_id);
+    remap_map_keys(statement.echo_types_by_spec_id);
+    remap_map_keys(statement.joined_types_by_spec_id);
+    remap_map_keys(statement.functional_pipeline_ids_by_spec_id);
+    remap_map_keys(statement.functional_expression_plans_by_spec_id);
+    (void)self;
+  };
+  const auto remap_body = [&](auto&& self, std::vector<Stmt>& body) -> void {
+    for (auto& statement : body) remap_statement(remap_statement, statement);
+    (void)self;
+  };
+  for (auto& function : provider.functions) {
+    remap_id(function.spec_id);
+    remap_body(remap_body, function.body);
+    for (auto& specialization : function.specializations) {
+      remap_id(specialization.spec_id);
+      for (auto& dependency : specialization.dependencies)
+        remap_id(dependency.callee_spec_id);
+    }
+  }
+  for (auto& object : provider.objects)
+    for (auto& method : object.methods) {
+      remap_id(method.spec_id);
+      remap_body(remap_body, method.body);
+    }
+  for (auto& domain : provider.domains)
+    for (auto& handler : domain.handlers) {
+      remap_id(handler.spec_id);
+      remap_body(remap_body, handler.body);
+      for (auto& arm : handler.failure_arms) remap_body(remap_body, arm.body);
+    }
+  for (auto& test : provider.tests) {
+    remap_id(test.spec_id);
+    remap_body(remap_body, test.body);
+  }
+  for (auto& benchmark : provider.benchmarks) {
+    remap_id(benchmark.spec_id);
+    remap_body(remap_body, benchmark.body);
+  }
+  if (provider.main) {
+    remap_id(provider.main->spec_id);
+    remap_body(remap_body, provider.main->body);
+  }
+  for (auto& instance : provider.domain_specializations)
+    for (auto& handler_id : instance.handler_spec_ids) remap_id(handler_id);
+  for (auto& edge : provider.semantic_call_edges) {
+    remap_id(edge.caller_spec_id);
+    remap_id(edge.callee_spec_id);
+    for (auto& argument_id : edge.argument_callable_spec_ids)
+      remap_id(argument_id);
+    if (edge.target_module_identity.empty())
+      edge.target_module_identity = provider_module_identity;
+  }
+  if (provider.typed_semantics) {
+    auto& typed = *provider.typed_semantics;
+    const auto remap_rows = [&](auto& rows) {
+      for (auto& row : rows) remap_id(row.specialization_id);
+    };
+    for (auto& entry : typed.specializations) remap_id(entry.second.spec_id);
+    std::map<SpecId, std::string> remapped_ownership_contexts;
+    for (auto& entry : typed.local_ownership_specialization_identities) {
+      SpecId id = entry.first;
+      remap_id(id);
+      if (!remapped_ownership_contexts.emplace(id, std::move(entry.second)).second)
+        throw std::invalid_argument(
+            "duplicate local ownership specialization IDs after import remap");
+    }
+    typed.local_ownership_specialization_identities =
+        std::move(remapped_ownership_contexts);
+    remap_rows(typed.local_ownership_facts);
+    remap_rows(typed.required_local_ownership_occurrences);
+    remap_rows(typed.local_transfer_facts);
+    remap_rows(typed.required_local_transfer_occurrences);
+    remap_rows(typed.loop_ownership_facts);
+    remap_rows(typed.required_loop_ownership_occurrences);
+    remap_rows(typed.exceptional_ownership_facts);
+    remap_rows(typed.required_exceptional_ownership_occurrences);
+    remap_rows(typed.bare_raise_transfer_facts);
+    remap_rows(typed.required_bare_raise_transfer_occurrences);
+    remap_rows(typed.try_continuation_facts);
+    remap_rows(typed.required_try_continuation_occurrences);
+    remap_rows(typed.take_facts);
+    remap_rows(typed.required_take_occurrences);
+    remap_rows(typed.copy_facts);
+    remap_rows(typed.required_copy_occurrences);
+    remap_rows(typed.collection_outcome_facts);
+    remap_rows(typed.required_collection_outcome_occurrences);
+    remap_rows(typed.conditional_collection_error_facts);
+    remap_rows(typed.required_conditional_collection_error_occurrences);
+    remap_rows(typed.return_value_facts);
+    remap_rows(typed.required_return_value_occurrences);
+    remap_rows(typed.collection_view_facts);
+    remap_rows(typed.required_collection_view_occurrences);
+    remap_rows(typed.projected_collection_read_facts);
+    remap_rows(typed.required_projected_collection_read_occurrences);
+    remap_rows(typed.projected_call_argument_read_facts);
+    remap_rows(typed.required_projected_call_argument_read_occurrences);
+    remap_rows(typed.indexed_call_argument_read_facts);
+    remap_rows(typed.required_indexed_call_argument_read_occurrences);
+    remap_rows(typed.indexed_expression_read_facts);
+    remap_rows(typed.required_indexed_expression_read_occurrences);
+    remap_rows(typed.match_ownership_facts);
+    remap_rows(typed.required_match_occurrences);
+    remap_rows(typed.echo_argument_facts);
+    remap_rows(typed.required_echo_argument_occurrences);
+    remap_rows(typed.root_ingress_domain_capture_facts);
+    remap_rows(typed.required_root_ingress_domain_capture_occurrences);
+    remap_rows(typed.root_ingress_argument_type_facts);
+    remap_rows(typed.required_root_ingress_argument_type_occurrences);
+    remap_rows(typed.root_ingress_payload_facts);
+    remap_rows(typed.required_root_ingress_payload_occurrences);
+    remap_rows(typed.root_ingress_argument_disposition_facts);
+    remap_rows(typed.required_root_ingress_argument_disposition_occurrences);
+  }
+  destination.specialization_table.insert(destination.specialization_table.end(),
+      std::make_move_iterator(appended.begin()),
+      std::make_move_iterator(appended.end()));
+  return remap;
+}
 
 }  // namespace moss

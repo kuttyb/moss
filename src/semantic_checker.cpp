@@ -744,6 +744,7 @@ class Checker {
 
   void run() {
     CompilerStageTimer semantic_timer("semantic_analysis");
+    assign_declared_spec_ids();
     const auto imported_signatures = imported_function_signatures();
     {
       CompilerStageTimer timer("type_inference");
@@ -806,6 +807,7 @@ class Checker {
       CompilerTraceRecorder::instance().increment_counter("inference_work_units",
           p_.domains.size() + p_.functions.size());
       infer_domain_specializations();
+      assign_domain_instance_handler_spec_ids();
       infer_domain_state_fields(true);
       infer_handler_reply_types(true);
       infer_function_signatures(true);
@@ -887,6 +889,7 @@ class Checker {
       CompilerStageTimer timer("concrete_graph");
       build_concrete_domain_graph();
     }
+    assign_domain_instance_handler_spec_ids();
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
@@ -2024,8 +2027,8 @@ class Checker {
         p_.typed_semantics->bare_raise_transfer_facts.front()
             .selected_carrier_type_identity += ":perturbed";
 #endif
-      p_.typed_semantics->local_ownership_specialization_contexts =
-          local_ownership_specialization_contexts_;
+      p_.typed_semantics->local_ownership_specialization_identities =
+          local_ownership_specialization_identities_;
       p_.typed_semantics->take_facts = take_facts_;
       p_.typed_semantics->required_take_occurrences =
           required_take_occurrences_;
@@ -2772,7 +2775,7 @@ class Checker {
               p_.typed_semantics->find_local_ownership_requirement(
                   requirement.est_arena_index,
                   requirement.expression_occurrence_id,
-                  requirement.specialization_context);
+                  requirement.specialization_id);
           if (!retained || retained->statement_occurrence_id !=
                                requirement.statement_occurrence_id ||
               retained->specialization_identity !=
@@ -3256,6 +3259,14 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  SpecId current_spec_id_ = InvalidSpecId;
+  struct SpecIdScope {
+    SpecId& slot;
+    SpecId previous;
+    SpecIdScope(SpecId& target, SpecId value)
+        : slot(target), previous(target) { slot = value; }
+    ~SpecIdScope() { slot = previous; }
+  };
   // Rechecks during the final body pass compare against effects computed after
   // inference reaches its fixed point, never against early registration facts.
   bool final_parameter_effects_ready_ = false;
@@ -3266,6 +3277,131 @@ class Checker {
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
+
+  SpecId register_program_specification(
+      string semantic_callable_identity, string diagnostic_key,
+      std::optional<SpecializationKey> semantic_key = std::nullopt,
+      string module_identity = {},
+      string provider_module_identity = {},
+      SpecId provider_spec_id = InvalidSpecId) {
+    for (const auto& row : p_.specialization_table) {
+      const auto row_key = row.semantic_key
+          ? row.semantic_key->stable_key() : std::optional<string>();
+      const auto candidate_key = semantic_key
+          ? semantic_key->stable_key() : std::optional<string>();
+      if (row.semantic_callable_identity == semantic_callable_identity &&
+          row_key == candidate_key &&
+          row.module_identity == module_identity &&
+          row.provider_module_identity == provider_module_identity &&
+          row.provider_spec_id == provider_spec_id)
+        return row.id;
+    }
+    if (p_.specialization_table.size() >= InvalidSpecId)
+      throw std::overflow_error("program specialization table exceeds SpecId range");
+    const auto id = static_cast<SpecId>(p_.specialization_table.size());
+    p_.specialization_table.push_back(
+        {id, std::move(semantic_callable_identity), std::move(semantic_key),
+         std::move(diagnostic_key), std::move(module_identity),
+         std::move(provider_module_identity), provider_spec_id});
+    return id;
+  }
+
+  void assign_declared_spec_ids() {
+    p_.specialization_table.clear();
+    for (auto& function : p_.functions) {
+      const auto callable = function.semantic_callable_id.empty()
+          ? function_semantic_identity(function)
+          : function.semantic_callable_id;
+      function.spec_id = register_program_specification(
+          program_module_identity(p_, function.defining_module) + ":" +
+              callable,
+          "fn:" + function.name, std::nullopt,
+          program_module_identity(p_, function.defining_module));
+      for (auto& specialization : function.specializations) {
+        if (specialization.stable_type_key.empty()) continue;
+        specialization.spec_id = register_program_specification(
+            callable, specialization.stable_type_key,
+            specialization.semantic_key,
+            program_module_identity(p_, function.defining_module),
+            compiled_interface_file(function.source_file)
+                ? program_module_identity(p_, function.defining_module)
+                : string(),
+            specialization.spec_id);
+      }
+    }
+    for (auto& object : p_.objects) {
+      const string owner = program_module_identity(p_, object.defining_module) + ":" +
+          (object.declaration_name.empty() ? object.name
+                                           : object.declaration_name);
+      for (auto& method : object.methods) {
+        string signature = owner + ":method:" + method.name + ":" +
+            std::to_string(method.params.size());
+        for (const auto& parameter : method.params) {
+          const auto type = canonical_type_name(parameter.type);
+          signature += ":" + std::to_string(type.size()) + ":" + type;
+        }
+        signature += ":source-line:" + std::to_string(method.line);
+        method.spec_id = register_program_specification(
+            std::move(signature), "method:" + object.name + "." + method.name,
+            std::nullopt,
+            program_module_identity(p_, object.defining_module));
+      }
+    }
+    for (auto& domain : p_.domains) {
+      const string owner = program_module_identity(p_, domain.defining_module) + ":" +
+          (domain.declaration_name.empty() ? domain.name
+                                            : domain.declaration_name);
+      for (auto& handler : domain.handlers) {
+        string signature = owner + ":handler:" + handler.name + ":" +
+            std::to_string(handler.params.size());
+        for (const auto& parameter : handler.params) {
+          const auto type = canonical_type_name(parameter.type);
+          signature += ":" + std::to_string(type.size()) + ":" + type;
+        }
+        signature += ":source-line:" + std::to_string(handler.line);
+        handler.spec_id = register_program_specification(
+            std::move(signature), "handler:" + domain.name + "." + handler.name,
+            std::nullopt,
+            program_module_identity(p_, domain.defining_module));
+      }
+    }
+    if (p_.main)
+      p_.main->spec_id = register_program_specification("program:main", "main",
+          std::nullopt, program_module_identity(p_, p_.main_module));
+    for (auto& test : p_.tests)
+      test.spec_id = register_program_specification(
+          "test:" + test.name + "@" + test.source_file + ":" +
+              std::to_string(test.line), "test:" + test.name, std::nullopt,
+          program_module_identity(p_, p_.main_module));
+    for (auto& benchmark : p_.benchmarks)
+      benchmark.spec_id = register_program_specification(
+          "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
+              std::to_string(benchmark.line), "bench:" + benchmark.name,
+          std::nullopt,
+          program_module_identity(p_, p_.main_module));
+  }
+
+  void assign_domain_instance_handler_spec_ids() {
+    for (auto& instance : p_.domain_specializations) {
+      const Domain* domain = nullptr;
+      for (const auto& candidate : p_.domains)
+        if (candidate.name == instance.source_domain) {
+          domain = &candidate;
+          break;
+        }
+      if (!domain) continue;
+      instance.handler_spec_ids.clear();
+      instance.handler_spec_ids.reserve(domain->handlers.size());
+      for (const auto& handler : domain->handlers) {
+        const string identity = "domain-instance-handler:" +
+            std::to_string(handler.spec_id) + ":" + instance.identity();
+        instance.handler_spec_ids.push_back(register_program_specification(
+            identity, "handler:" + instance.source_domain + "." +
+                handler.name + "@" + instance.instance, std::nullopt,
+            program_module_identity(p_, domain->defining_module)));
+      }
+    }
+  }
   mutable const Stmt* current_check_statement_ = nullptr;
   string current_check_body_context_;
   const Function* current_check_result_function_ = nullptr;
@@ -3307,7 +3443,7 @@ class Checker {
   vector<TypedTryContinuationFactV1> try_continuation_facts_;
   vector<TypedTryContinuationRequirementV1>
       required_try_continuation_occurrences_;
-  std::map<string, string> local_ownership_specialization_contexts_;
+  std::map<SpecId, string> local_ownership_specialization_identities_;
   struct BodyOwnershipFlowAnalysis;
   mutable std::unique_ptr<BodyOwnershipFlowAnalysis> current_ownership_flow_;
   vector<TypedTakeFactV1> take_facts_;
@@ -10471,6 +10607,7 @@ class Checker {
       }
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
+        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
         string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
@@ -10941,6 +11078,7 @@ class Checker {
             "duplicate domain member '" + route.name + "' (state and route share one namespace)");
     }
     for (const auto& h : d.handlers) {
+      SpecIdScope spec_id_scope(current_spec_id_, h.spec_id);
       string h_source = h.source_file.empty() ? d.source_file : h.source_file;
       current_source_file_ = h_source;
       SourceFileScope semantic_context(
@@ -11103,6 +11241,111 @@ class Checker {
       const_cast<Handler&>(h).phase21_capture_carrier_type = has_captures
           ? "__MossRaisedCarrier_" + d.name + "_" + h.name : string();
     }
+
+    // Specialized domains are emitted as distinct handler bodies. Recheck
+    // their shared EST occurrences under the exact instance handler SpecId so
+    // instance-local types, call edges, and ownership facts have their own
+    // checker authority.
+    for (const auto& specialization : p_.domain_specializations) {
+      if (specialization.source_domain != d.name) continue;
+      if (specialization.handler_spec_ids.size() != d.handlers.size())
+        err(d.source_file, d.line,
+            "domain specialization has an incomplete handler SpecId table",
+            "MOSS_INTERNAL_INVARIANT");
+      for (std::size_t handler_index = 0;
+           handler_index < d.handlers.size(); ++handler_index) {
+        const auto& handler = d.handlers[handler_index];
+        const SpecId handler_spec_id =
+            specialization.handler_spec_ids[handler_index];
+        if (handler_spec_id == InvalidSpecId ||
+            handler_spec_id >= p_.specialization_table.size())
+          err(handler.source_file, handler.line,
+              "domain specialization handler has an invalid SpecId",
+              "MOSS_INTERNAL_INVARIANT");
+        SpecIdScope instance_handler_scope(current_spec_id_, handler_spec_id);
+        SourceFileScope instance_context(current_semantic_context_,
+            "handler:" + d.name + "." + handler.name + "@" +
+                specialization.instance);
+        SourceFileScope instance_source(current_source_file_,
+            handler.source_file.empty() ? d.source_file : handler.source_file);
+        TypeEnv instance_env;
+        instance_env["self"] = d.name;
+        const auto parameter_types = specialization.handler_parameter_types.find(
+            handler.name);
+        for (std::size_t parameter_index = 0;
+             parameter_index < handler.params.size(); ++parameter_index) {
+          const auto& parameter = handler.params[parameter_index];
+          string type = parameter.type;
+          if (parameter_types != specialization.handler_parameter_types.end() &&
+              parameter_index < parameter_types->second.size() &&
+              !parameter_types->second[parameter_index].empty())
+            type = parameter_types->second[parameter_index];
+          if (type.empty())
+            err(handler.source_file, handler.line,
+                "domain specialization has an unresolved handler parameter type",
+                "MOSS_INTERNAL_INVARIANT");
+          instance_env[parameter.name] = type;
+        }
+        for (const auto& field : d.state) {
+          const auto selected = specialization.state_types.find(field.name);
+          instance_env[field.name] = selected == specialization.state_types.end()
+              ? field.type : selected->second;
+        }
+        for (const auto& route : d.routes)
+          instance_env[route.name] = route.type;
+        instance_env = check_stmts(handler.body, std::move(instance_env),
+                                   &d, &handler);
+        check_closed_body_types(handler.body, instance_env, handler.line);
+        OwnershipEnv instance_ownership;
+        instance_ownership.types = instance_env;
+        for (const auto& field : d.state)
+          instance_ownership.state_fields.insert(field.name);
+        for (std::size_t parameter_index = 0;
+             parameter_index < handler.params.size(); ++parameter_index) {
+          const auto& parameter = handler.params[parameter_index];
+          instance_ownership.message_payloads.insert(parameter.name);
+          const string parameter_identity = "handler:" + d.name + "." +
+              handler.name + "@" + specialization.instance + ":parameter:" +
+              std::to_string(parameter_index);
+          instance_ownership.binding_identities[parameter.name] =
+              parameter_identity;
+          instance_ownership.definition_identities[parameter.name] =
+              parameter_identity + ":definition";
+        }
+        vector<ExceptionalOwnershipExit> instance_exits;
+        check_ownership(handler.body, std::move(instance_ownership), &d,
+                        &handler, &instance_exits);
+        check_fileio_lifecycle(handler.body, instance_env, &d, handler.line);
+        for (const auto& arm : handler.failure_arms) {
+          SourceFileScope arm_source(current_source_file_, arm.source_file);
+          TypeEnv arm_env = instance_env;
+          if (!arm.binding.empty() && !arm.exceptional_alternatives.empty()) {
+            std::set<string> error_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              error_types.insert(identity.type);
+            if (error_types.size() == 1)
+              arm_env[arm.binding] = *error_types.begin();
+          }
+          for (const auto& capture : arm.captures)
+            arm_env[capture.name] = capture.type;
+          arm_env = check_stmts(arm.body, std::move(arm_env), &d, &handler);
+          OwnershipEnv arm_ownership;
+          arm_ownership.types = arm_env;
+          for (const auto& field : d.state)
+            arm_ownership.state_fields.insert(field.name);
+          for (const auto& parameter : handler.params)
+            arm_ownership.message_payloads.insert(parameter.name);
+          for (const auto& capture : arm.captures) {
+            arm_ownership.binding_identities[capture.name] =
+                capture.binding_identity;
+            arm_ownership.definition_identities[capture.name] =
+                capture.binding_identity;
+          }
+          check_ownership(arm.body, std::move(arm_ownership), &d, &handler);
+          check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
+        }
+      }
+    }
   }
 
   void check_closed_body_types(const vector<Stmt>& body, const TypeEnv& env, int fallback_line) const {
@@ -11152,6 +11395,7 @@ class Checker {
       source_function_identities_.insert(
           std::filesystem::path(m.source_file).filename().string() + ":main");
     current_source_file_ = m.source_file;
+    SpecIdScope spec_id_scope(current_spec_id_, m.spec_id);
     SourceFileScope semantic_context(current_semantic_context_, "main");
     TypeEnv env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr,
@@ -11430,6 +11674,7 @@ class Checker {
   void check_test_and_benchmark_declarations() {
     std::set<string> test_names;
     for (const auto& test : p_.tests) {
+      SpecIdScope spec_id_scope(current_spec_id_, test.spec_id);
       SourceFileScope source_scope(current_source_file_, test.source_file);
       SourceFileScope semantic_context(
           current_semantic_context_, "test:" + test.name);
@@ -11445,6 +11690,7 @@ class Checker {
     }
     std::set<string> benchmark_names;
     for (const auto& benchmark : p_.benchmarks) {
+      SpecIdScope spec_id_scope(current_spec_id_, benchmark.spec_id);
       SourceFileScope source_scope(current_source_file_, benchmark.source_file);
       SourceFileScope semantic_context(
           current_semantic_context_, "bench:" + benchmark.name);
@@ -11469,6 +11715,7 @@ class Checker {
     auto imported_validation = imported_method_validation_view(source_function);
     const Function& f = imported_validation
         ? *imported_validation : source_function;
+    SpecIdScope spec_id_scope(current_spec_id_, f.spec_id);
     ScopedOpTimer t_fn("check_function", f.name);
     if (profile_concrete_effect_work_ &&
         std::filesystem::path(f.source_file).extension() != ".mossi")
@@ -14242,6 +14489,9 @@ class Checker {
                   prior.semantic_type = canonical_type_name(retained);
                   if (!join_context.empty()) {
                     prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+                    if (current_spec_id_ != InvalidSpecId)
+                      prior.semantic_types_by_spec_id[current_spec_id_] =
+                          canonical_type_name(retained);
                     record_statement_type_fact(prior, est::ExprSlot::RhsValue,
                         0, prior.b, join_context,
                         canonical_type_name(retained));
@@ -14263,6 +14513,9 @@ class Checker {
                       prior.semantic_type = *refined;
                       if (!join_context.empty()) {
                         prior.semantic_types_by_context[join_context] = *refined;
+                        if (current_spec_id_ != InvalidSpecId)
+                          prior.semantic_types_by_spec_id[current_spec_id_] =
+                              *refined;
                         record_statement_type_fact(prior, est::ExprSlot::RhsValue,
                             0, prior.b, join_context, *refined);
                       }
@@ -14318,6 +14571,9 @@ class Checker {
               prior.semantic_type = canonical_type_name(retained);
               if (!join_context.empty()) {
                 prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+                if (current_spec_id_ != InvalidSpecId)
+                  prior.semantic_types_by_spec_id[current_spec_id_] =
+                      canonical_type_name(retained);
                 record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
                     prior.b, join_context, canonical_type_name(retained));
               }
@@ -14342,6 +14598,9 @@ class Checker {
                 prior.semantic_type = *refined;
                 if (!join_context.empty()) {
                   prior.semantic_types_by_context[join_context] = *refined;
+                  if (current_spec_id_ != InvalidSpecId)
+                    prior.semantic_types_by_spec_id[current_spec_id_] =
+                        *refined;
                   record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
                       prior.b, join_context, *refined);
                 }
@@ -14480,6 +14739,9 @@ class Checker {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
             const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+          if (current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).joined_types_by_spec_id[
+                current_spec_id_] = env;
         }
         continue;
       }
@@ -14538,6 +14800,9 @@ class Checker {
           if (!join_context.empty())
             const_cast<Stmt&>(statement)
                 .joined_types_by_context[join_context] = env;
+          if (record_join_types && current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).joined_types_by_spec_id[
+                current_spec_id_] = env;
         }
         continue;
       }
@@ -14666,6 +14931,9 @@ class Checker {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
             const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+          if (current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).joined_types_by_spec_id[
+                current_spec_id_] = env;
         }
         continue;
       }
@@ -14684,6 +14952,9 @@ class Checker {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
             const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+          if (current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).joined_types_by_spec_id[
+                current_spec_id_] = env;
         }
         continue;
       }
@@ -14741,6 +15012,9 @@ class Checker {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
             const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+          if (current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).joined_types_by_spec_id[
+                current_spec_id_] = env;
         }
         continue;
       }
@@ -14760,6 +15034,9 @@ class Checker {
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env)) {
           const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
+          if (current_spec_id_ != InvalidSpecId)
+            const_cast<Stmt&>(statement).receiver_types_by_spec_id[
+                current_spec_id_] = canonical_type_name(*receiver);
           record_statement_type_fact(statement, est::ExprSlot::Receiver, 0,
               statement.a, join_context, canonical_type_name(*receiver));
         }
@@ -14768,6 +15045,9 @@ class Checker {
           !statement.semantic_type.empty()) {
         const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
             statement.semantic_type;
+        if (current_spec_id_ != InvalidSpecId)
+          const_cast<Stmt&>(statement).semantic_types_by_spec_id[
+              current_spec_id_] = statement.semantic_type;
         const std::string& source = statement.kind == Stmt::Kind::Assign
             ? statement.b : statement.text;
         record_statement_type_fact(statement, est::ExprSlot::RhsValue, 0,
@@ -15864,6 +16144,9 @@ class Checker {
           auto& checked_statement = *const_cast<Stmt*>(pending.statement);
           checked_statement.member_requirements_by_context[semantic_context] =
               closed;
+          if (current_spec_id_ != InvalidSpecId)
+            checked_statement.member_requirements_by_spec_id[current_spec_id_] =
+                closed;
           if (closed.size() == 1 && !checked_statement.b.empty()) {
             est::SemanticFacts expression_facts;
             if (closed.front().result)
@@ -15897,6 +16180,8 @@ class Checker {
       if (record_call_facts) {
         auto& checked_statement = *const_cast<Stmt*>(statement);
         checked_statement.open_call_results_by_context[semantic_context] = facts;
+        if (current_spec_id_ != InvalidSpecId)
+          checked_statement.open_call_results_by_spec_id[current_spec_id_] = facts;
         est::SemanticFacts expression_facts;
         expression_facts.type = result;
         expression_facts.resolved_target = facts.callable_id;
@@ -19702,13 +19987,14 @@ class Checker {
       vector<std::optional<EstExpressionCursor>>& stack;
       Effect& effect;
       string context;
+      SpecId specialization_id;
       ~EffectCursorScope() {
         if (!stack.empty() && stack.back()) {
           const auto cursor = *stack.back();
           if (auto* arena = checker.expression_arena(cursor.arena_index)) {
             est::SemanticFacts facts;
             facts.inferred_effect = effect;
-            arena->record_facts(cursor.expr, context, std::move(facts));
+            arena->record_facts(cursor.expr, specialization_id, std::move(facts));
             if (const char* dump = std::getenv("MOSS_EST_FACTS_DUMP");
                 dump && std::string_view(dump) == "1")
               std::cerr << "MOSS_EST_EFFECT_FACT expr=" << cursor.expr
@@ -19720,7 +20006,7 @@ class Checker {
         stack.pop_back();
       }
     } effect_cursor_scope{*this, active_effect_cursors_, expression_effect,
-                          fact_context};
+                          fact_context, current_spec_id_};
     if (effect_cursor) {
       if (auto* arena = expression_arena(effect_cursor->arena_index)) {
         if (const auto* take = std::get_if<est::Take>(
@@ -24106,11 +24392,20 @@ class Checker {
     TypeEnvVisitor visitor = [&](const Stmt& statement,
                                  const TypeEnv& current_env) {
       auto expressions = functional_statement_expressions(statement);
+      if (!expressions.empty() && current_spec_id_ == InvalidSpecId)
+        throw std::invalid_argument(
+            "functional pipeline has no checker-owned caller SpecId");
       auto& ids = statement.functional_pipeline_ids[context];
       ids.clear();
+      auto& ids_by_spec = statement.functional_pipeline_ids_by_spec_id[
+          current_spec_id_];
+      ids_by_spec.clear();
       auto& expression_plans =
           statement.functional_expression_plans_by_context[context];
       expression_plans.clear();
+      auto& plans_by_spec = statement.functional_expression_plans_by_spec_id[
+          current_spec_id_];
+      plans_by_spec.clear();
       for (size_t index = 0; index < expressions.size(); ++index) {
         const auto& occurrence = expressions[index];
         string identity = context + "@" + std::to_string(statement.line) +
@@ -24121,6 +24416,7 @@ class Checker {
             implicit_object, statement.continuation_lines,
             statement.source_file, &statement.expression_handles);
         ids.push_back(id.value_or(0));
+        ids_by_spec.push_back(id.value_or(0));
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
         if (id) {
@@ -24139,6 +24435,7 @@ class Checker {
           }
         }
         expression_plans.push_back(expression_plan);
+        plans_by_spec.push_back(expression_plan);
       }
     };
     env = walk_type_environment(body, std::move(env), visitor, true);
@@ -24275,6 +24572,7 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
+        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
         if (compiled_interface_file(method.source_file)) continue;
         SourceFileScope source_scope(current_source_file_, method.source_file);
         SourceFileScope semantic_context(
@@ -24736,7 +25034,7 @@ class Checker {
             auto checked_occurrence_effect = [&](est::ExprId occurrence_id)
                 -> std::optional<Effect> {
               if (effect_context.empty()) return std::nullopt;
-              const auto* facts = arena->facts(occurrence_id, effect_context);
+              const auto* facts = arena->facts(occurrence_id, current_spec_id_);
               return facts ? facts->inferred_effect : std::nullopt;
             };
             auto expr_is_alias = [&](est::ExprId expr) {
@@ -24942,9 +25240,8 @@ class Checker {
       std::optional<Effect> checked_use;
       if (!statement.b.empty()) {
         const auto requirements =
-            statement.member_requirements_by_context.find(
-                current_semantic_context_);
-        if (requirements != statement.member_requirements_by_context.end()) {
+            statement.member_requirements_by_spec_id.find(current_spec_id_);
+        if (requirements != statement.member_requirements_by_spec_id.end()) {
           const bool receiver_matches = ownership_statement_uses_binding(
               statement, alias_binding_identity, binding_identities, "receiver");
           for (const auto& requirement : requirements->second) {
@@ -25954,6 +26251,7 @@ class Checker {
                         ? TypedLoopOwnershipFactV1::Availability::MissingDefinition
                     : TypedLoopOwnershipFactV1::Availability::Present;
         fact.specialization_context = current_semantic_context_;
+        fact.specialization_id = current_spec_id_;
         fact.specialization_identity = local_ownership_specialization_identity();
         fact.provenance = {
             loop.source_file.empty() ? current_source_file_ : loop.source_file,
@@ -25987,6 +26285,7 @@ class Checker {
             fact.killed_definition_identities;
         requirement.source_binding_identity = fact.source_binding_identity;
         requirement.specialization_context = fact.specialization_context;
+        requirement.specialization_id = current_spec_id_;
         requirement.specialization_identity = fact.specialization_identity;
         requirement.edge_kind = edge_kind;
         requirement.converged_access = fact.converged_access;
@@ -26193,7 +26492,7 @@ class Checker {
             auto checked_occurrence_effect = [&](est::ExprId occurrence_id)
                 -> std::optional<Effect> {
               if (effect_context.empty()) return std::nullopt;
-              const auto* facts = arena->facts(occurrence_id, effect_context);
+              const auto* facts = arena->facts(occurrence_id, current_spec_id_);
               return facts ? facts->inferred_effect : std::nullopt;
             };
             if (est_expression_is_definition(*arena, member_callee->base)) {
@@ -26399,9 +26698,8 @@ class Checker {
             std::optional<Effect> checked_use;
             if (!statement.b.empty()) {
               const auto requirements =
-                  statement.member_requirements_by_context.find(
-                      current_semantic_context_);
-              if (requirements == statement.member_requirements_by_context.end())
+                  statement.member_requirements_by_spec_id.find(current_spec_id_);
+              if (requirements == statement.member_requirements_by_spec_id.end())
                 return decline(
                     TypedLocalOwnershipFactV1::UnsupportedReason::AmbiguousUse);
               const bool receiver_matches = uses_definition(
@@ -26541,6 +26839,7 @@ class Checker {
     fact.source_kind = source_kind;
     fact.source_definition_identity = source_definition_identity;
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.access = access;
     fact.disposition = disposition;
@@ -26624,7 +26923,7 @@ class Checker {
       fact.availability = TypedLocalOwnershipFactV1::Availability::Present;
       arena = expression_arena(matched->arena_index);
       if (const auto* existing = arena->facts(
-              matched->expr, fact.specialization_context);
+              matched->expr, fact.specialization_id);
           existing && existing->inferred_effect &&
           existing->inferred_effect != access) {
         fact.availability =
@@ -26655,7 +26954,7 @@ class Checker {
           est::SemanticFacts semantic_fact;
           semantic_fact.inferred_effect = retained_access;
           const_cast<est::Arena*>(arena)->record_facts(
-              matched->expr, fact.specialization_context,
+              matched->expr, fact.specialization_id,
               std::move(semantic_fact));
 #ifdef MOSS_TEST_BUILD
         }
@@ -26669,7 +26968,7 @@ class Checker {
     std::optional<Effect> checked_access;
     if (arena && matched) {
       const auto* retained = arena->facts(matched->expr,
-                                           fact.specialization_context);
+                                           fact.specialization_id);
       if (retained && retained->inferred_effect == access)
         checked_access = *retained->inferred_effect;
       else
@@ -26698,6 +26997,7 @@ class Checker {
     req.statement_occurrence_id = fact.statement_occurrence_id;
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
+    req.specialization_id = current_spec_id_;
     req.definition_identity = fact.definition_identity;
     req.binding_identity = fact.binding_identity;
     req.killed_definition_identity = fact.killed_definition_identity;
@@ -26757,6 +27057,7 @@ class Checker {
     fact.definition_identity = element_binding;
     fact.source_binding_identity = collection_binding;
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.source_kind = TypedLocalOwnershipFactV1::SourceKind::VectorElement;
     fact.access = Effect::Read;
@@ -26815,6 +27116,7 @@ class Checker {
     req.statement_occurrence_id = fact.statement_occurrence_id;
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
+    req.specialization_id = current_spec_id_;
     req.definition_identity = fact.definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
@@ -26840,6 +27142,7 @@ class Checker {
     fact.source_binding_identity = source_binding_identity;
     fact.source_definition_identity = source_definition_identity;
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.inference_status =
         TypedLocalOwnershipFactV1::InferenceStatus::Unsupported;
@@ -26905,6 +27208,7 @@ class Checker {
     req.statement_occurrence_id = fact.statement_occurrence_id;
     req.specialization_identity = fact.specialization_identity;
     req.specialization_context = fact.specialization_context;
+    req.specialization_id = current_spec_id_;
     req.definition_identity = fact.definition_identity;
     req.join_definition_identity = fact.join_definition_identity;
     req.source_binding_identity = fact.source_binding_identity;
@@ -27004,7 +27308,7 @@ class Checker {
         est::SemanticFacts semantic_fact;
         semantic_fact.inferred_effect = fact.access;
         const_cast<est::Arena*>(arena)->record_facts(
-            fact.expression_occurrence_id, fact.specialization_context,
+            fact.expression_occurrence_id, fact.specialization_id,
             std::move(semantic_fact));
       }
     }
@@ -27486,7 +27790,7 @@ class Checker {
 
     const std::string fact_context = expression_fact_context();
     auto checked_type = [&](est::ExprId id) -> TypeRef {
-      const auto* facts = arena->facts(id, fact_context);
+      const auto* facts = arena->facts(id, current_spec_id_);
       if (facts && facts->type) return facts->type;
       return nullptr;
     };
@@ -27539,6 +27843,7 @@ class Checker {
     fact.take_occurrence_id = cursor.expr;
     fact.place_occurrence_id = take->arguments.front();
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.est_fact_context = expression_fact_context();
     fact.root_binding_identity = root_binding;
@@ -27629,9 +27934,9 @@ class Checker {
     checked_facts.type = terminal;
     checked_facts.resolved_target = "builtin:take-place-v1";
     checked_facts.inferred_effect = Effect::Write;
-    arena->record_facts(cursor.expr, fact.est_fact_context,
+    arena->record_facts(cursor.expr, current_spec_id_,
                         std::move(checked_facts));
-    const auto* retained = arena->facts(cursor.expr, fact.est_fact_context);
+    const auto* retained = arena->facts(cursor.expr, current_spec_id_);
     if (!retained || !retained->type ||
         !terminal->structurally_equal(*retained->type) ||
         retained->resolved_target != "builtin:take-place-v1" ||
@@ -27654,6 +27959,7 @@ class Checker {
     requirement.statement_occurrence_id = fact.statement_occurrence_id;
     requirement.specialization_identity = fact.specialization_identity;
     requirement.specialization_context = fact.specialization_context;
+    requirement.specialization_id = current_spec_id_;
     requirement.est_fact_context = fact.est_fact_context;
     requirement.root_binding_identity = fact.root_binding_identity;
     requirement.root_name = fact.root_name;
@@ -28069,6 +28375,7 @@ class Checker {
         auto arg_type = inferred_expr_type(call_arguments[0], env.types);
         TypedCopyFactV1 fact;
         fact.specialization_context = local_ownership_consumer_context();
+        fact.specialization_id = current_spec_id_;
         fact.specialization_identity = local_ownership_specialization_identity();
         fact.est_fact_context = expression_fact_context();
         fact.provenance.source_file = ownership_current_stmt_ &&
@@ -28122,7 +28429,7 @@ class Checker {
                   if (const auto* ident = std::get_if<est::Identifier>(&arena->at(c->callee))) {
                     if (ident->name == "copy") return id;
                   }
-                  const auto* facts = arena->facts(id, expression_fact_context());
+                  const auto* facts = arena->facts(id, current_spec_id_);
                   if (facts && facts->resolved_target == "builtin:copy-v1") return id;
                 }
               }
@@ -28202,6 +28509,7 @@ class Checker {
         req.source_occurrence_id = fact.source_occurrence_id;
         req.statement_occurrence_id = fact.statement_occurrence_id;
         req.specialization_context = fact.specialization_context;
+        req.specialization_id = current_spec_id_;
         req.specialization_identity = fact.specialization_identity;
         req.est_fact_context = fact.est_fact_context;
         req.provenance = fact.provenance;
@@ -28371,7 +28679,7 @@ class Checker {
           if (!arena || handle.expr >= arena->size()) continue;
           const auto rhs = est::unparenthesized(*arena, handle.expr);
           const auto* take = std::get_if<est::Take>(&arena->at(rhs));
-          const auto* facts = arena->facts(rhs, expression_fact_context());
+          const auto* facts = arena->facts(rhs, current_spec_id_);
           if (!take || take->arguments.size() != 1 || !facts ||
               facts->resolved_target != "builtin:take-place-v1")
             continue;
@@ -28518,6 +28826,7 @@ class Checker {
         canonical_type_name(handler.reply_type.value_or("unit")))
         .value_or(nullptr);
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.est_fact_context = expression_fact_context();
     fact.provenance.source_file = statement.source_file.empty()
@@ -28541,7 +28850,7 @@ class Checker {
           current_semantic_context_, source_context};
       fact.est_fact_context.clear();
       for (const auto& context : candidate_contexts) {
-        if (arena && arena->facts(fact.expression_occurrence_id, context)) {
+        if (arena && arena->facts(fact.expression_occurrence_id, current_spec_id_)) {
           fact.est_fact_context = context;
           break;
         }
@@ -28677,7 +28986,7 @@ class Checker {
     if (handle == statement.expression_handles.end()) return;
     const auto* arena = expression_arena(handle->arena_index);
     if (!arena || handle->expr >= arena->size()) return;
-    const auto* est_facts = arena->facts(handle->expr, expression_fact_context());
+    const auto* est_facts = arena->facts(handle->expr, current_spec_id_);
     const auto rhs_type = est_facts ? est_facts->type : nullptr;
     const auto source_type = source->value_type;
     const auto target_type = target->value_type;
@@ -28715,6 +29024,7 @@ class Checker {
     fact.target_type = target_type;
     fact.specialization_identity = local_ownership_specialization_identity();
     fact.specialization_context = local_ownership_consumer_context();
+    fact.specialization_id = current_spec_id_;
     fact.est_fact_context = expression_fact_context();
     fact.provenance.source_file = statement.source_file.empty()
         ? current_source_file_ : statement.source_file;
@@ -28795,8 +29105,8 @@ class Checker {
 #endif
         if (!checked_fact.specialization_identity.empty()) {
           const auto [identity, inserted] =
-              local_ownership_specialization_contexts_.emplace(
-                  checked_fact.specialization_context,
+              local_ownership_specialization_identities_.emplace(
+                  checked_fact.specialization_id,
                   checked_fact.specialization_identity);
           if (!inserted && identity->second !=
                   checked_fact.specialization_identity)
@@ -28942,6 +29252,7 @@ class Checker {
         fact.recovery_alternatives = std::move(recovery_alternatives);
         fact.selected_carrier_type_identity = identity.type;
         fact.specialization_context = current_semantic_context_;
+        fact.specialization_id = current_spec_id_;
         fact.specialization_identity =
             local_ownership_specialization_identity();
         fact.mode =
@@ -28971,6 +29282,7 @@ class Checker {
         requirement.selected_carrier_type_identity =
             fact.selected_carrier_type_identity;
         requirement.specialization_context = fact.specialization_context;
+        requirement.specialization_id = current_spec_id_;
         requirement.specialization_identity = fact.specialization_identity;
         requirement.mode = fact.mode;
         requirement.transfers_original_carrier =
@@ -29037,6 +29349,7 @@ class Checker {
         fact.statement_occurrence_id = statement_id->second;
         fact.specialization_identity = local_ownership_specialization_identity();
         fact.specialization_context = local_ownership_consumer_context();
+        fact.specialization_id = current_spec_id_;
         fact.est_fact_context = context;
         fact.provenance.source_file = statement.source_file.empty()
             ? current_source_file_ : statement.source_file;
@@ -29068,9 +29381,9 @@ class Checker {
               : TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead;
           receiver_id = index->base;
           key_id = index->index;
-          const auto* receiver_facts = arena->facts(receiver_id, context);
-          const auto* result_facts = arena->facts(id, context);
-          const auto* key_facts = arena->facts(key_id, context);
+          const auto* receiver_facts = arena->facts(receiver_id, current_spec_id_);
+          const auto* result_facts = arena->facts(id, current_spec_id_);
+          const auto* key_facts = arena->facts(key_id, current_spec_id_);
           if (receiver_facts) receiver_type = receiver_facts->type;
           if (result_facts) result_type = result_facts->type;
           if (key_facts) fact.key_type = key_facts->type;
@@ -29120,9 +29433,9 @@ class Checker {
           }
           receiver_id = member->base;
           key_id = call->arguments.front();
-          const auto* receiver_facts = arena->facts(receiver_id, context);
-          const auto* result_facts = arena->facts(id, context);
-          const auto* key_facts = arena->facts(key_id, context);
+          const auto* receiver_facts = arena->facts(receiver_id, current_spec_id_);
+          const auto* result_facts = arena->facts(id, current_spec_id_);
+          const auto* key_facts = arena->facts(key_id, current_spec_id_);
           if (receiver_facts) receiver_type = receiver_facts->type;
           if (result_facts) result_type = result_facts->type;
           if (key_facts) fact.key_type = key_facts->type;
@@ -29217,8 +29530,8 @@ class Checker {
             pending.insert(pending.end(), children.begin(), children.end());
             continue;
           }
-          const auto* receiver_facts = arena->facts(member->base, context);
-          const auto* result_facts = arena->facts(id, context);
+          const auto* receiver_facts = arena->facts(member->base, current_spec_id_);
+          const auto* result_facts = arena->facts(id, current_spec_id_);
           if (!receiver_facts || !result_facts || !receiver_facts->type ||
               !result_facts->type ||
               receiver_facts->type->kind != TypeKind::Builtin ||
@@ -29240,7 +29553,7 @@ class Checker {
             const auto* projection = std::get_if<est::Member>(
                 &arena->at(receiver_root));
             if (!projection) break;
-            const auto* input_facts = arena->facts(projection->base, context);
+            const auto* input_facts = arena->facts(projection->base, current_spec_id_);
             if (!input_facts || !input_facts->type ||
                 !input_facts->type->is_closed()) {
               receiver_root = UINT32_MAX;
@@ -29344,7 +29657,7 @@ class Checker {
                       ? std::get_if<est::Identifier>(
                             &arena->at(pipeline->stages.front()))
                       : nullptr;
-                  const auto* pipeline_facts = arena->facts(use_root, context);
+                  const auto* pipeline_facts = arena->facts(use_root, current_spec_id_);
                   const bool exact_count_pipeline = input &&
                       input->name == statement.a &&
                       stage && stage->name == "count" && pipeline_facts &&
@@ -29376,6 +29689,7 @@ class Checker {
           fact.bounded_non_escaping_lifetime = true;
           fact.specialization_identity = local_ownership_specialization_identity();
           fact.specialization_context = local_ownership_consumer_context();
+          fact.specialization_id = current_spec_id_;
           fact.est_fact_context = context;
           fact.provenance.source_file = statement.source_file.empty()
               ? current_source_file_ : statement.source_file;
@@ -29434,11 +29748,11 @@ class Checker {
           const auto* index = index_id == UINT32_MAX ? nullptr
               : std::get_if<est::Index>(&arena->at(index_id));
           if (member && index && !pipeline->stages.empty()) {
-            const auto* receiver_facts = arena->facts(index->base, context);
-            const auto* key_facts = arena->facts(index->index, context);
-            const auto* indexed_value_facts = arena->facts(index_id, context);
-            const auto* projection_base_facts = arena->facts(member->base, context);
-            const auto* projected_facts = arena->facts(source_id, context);
+            const auto* receiver_facts = arena->facts(index->base, current_spec_id_);
+            const auto* key_facts = arena->facts(index->index, current_spec_id_);
+            const auto* indexed_value_facts = arena->facts(index_id, current_spec_id_);
+            const auto* projection_base_facts = arena->facts(member->base, current_spec_id_);
+            const auto* projected_facts = arena->facts(source_id, current_spec_id_);
             if (receiver_facts && key_facts && indexed_value_facts &&
                 projection_base_facts && projected_facts &&
                 receiver_facts->type && key_facts->type &&
@@ -29478,6 +29792,7 @@ class Checker {
                 fact.temporary_non_escaping_query_borrow = true;
                 fact.specialization_identity = local_ownership_specialization_identity();
                 fact.specialization_context = local_ownership_consumer_context();
+                fact.specialization_id = current_spec_id_;
                 fact.est_fact_context = context;
                 fact.provenance.source_file = statement.source_file.empty()
                     ? current_source_file_ : statement.source_file;
@@ -29618,6 +29933,7 @@ class Checker {
         }
         fact.specialization_identity = specialization;
         fact.specialization_context = consumer_context;
+        fact.specialization_id = current_spec_id_;
         fact.est_fact_context = fact_context;
         fact.provenance.source_file = statement.source_file.empty()
             ? current_source_file_ : statement.source_file;
@@ -29709,13 +30025,13 @@ class Checker {
         }
       }
     } else {
-      auto requirements = statement.member_requirements_by_context.find(
-          current_semantic_context_);
-      if (requirements != statement.member_requirements_by_context.end() &&
+      auto requirements = statement.member_requirements_by_spec_id.find(
+          current_spec_id_);
+      if (requirements != statement.member_requirements_by_spec_id.end() &&
           requirements->second.size() > 1) {
         target_resolution =
             TypedProjectedCallArgumentReadFactV1::TargetResolution::Ambiguous;
-      } else if (requirements != statement.member_requirements_by_context.end() &&
+      } else if (requirements != statement.member_requirements_by_spec_id.end() &&
                  requirements->second.size() == 1) {
         const auto& requirement = requirements->second.front();
         if (requirement.selected_callable_id &&
@@ -29766,7 +30082,7 @@ class Checker {
       const auto* receiver_identifier = receiver_id < arena->size()
           ? std::get_if<est::Identifier>(&arena->at(receiver_id)) : nullptr;
       if (!receiver_identifier) continue;
-      const auto* receiver_facts = arena->facts(receiver_id, context);
+      const auto* receiver_facts = arena->facts(receiver_id, current_spec_id_);
       if (!receiver_facts || !receiver_facts->type ||
           receiver_facts->type->kind != TypeKind::Builtin ||
           receiver_facts->type->name != "vector")
@@ -29797,13 +30113,13 @@ class Checker {
               ? env.definition_identities.at(receiver_identifier->name) : string();
       fact.member_name = member->name;
       fact.receiver_type = receiver_facts->type;
-      if (const auto* index_facts = arena->facts(index_value_id, context))
+      if (const auto* index_facts = arena->facts(index_value_id, current_spec_id_))
         fact.index_type = index_facts->type;
-      if (const auto* element_facts = arena->facts(index_id, context))
+      if (const auto* element_facts = arena->facts(index_id, current_spec_id_))
         fact.indexed_element_type = element_facts->type;
-      if (const auto* base_facts = arena->facts(member->base, context))
+      if (const auto* base_facts = arena->facts(member->base, current_spec_id_))
         fact.projection_base_type = base_facts->type;
-      if (const auto* member_facts = arena->facts(argument_id, context))
+      if (const auto* member_facts = arena->facts(argument_id, current_spec_id_))
         fact.projected_member_type = member_facts->type;
       if (target_resolution !=
               TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved ||
@@ -29834,6 +30150,7 @@ class Checker {
       fact.permits_copy = false;
       fact.specialization_identity = local_ownership_specialization_identity();
       fact.specialization_context = local_ownership_consumer_context();
+      fact.specialization_id = current_spec_id_;
       fact.est_fact_context = context;
       fact.provenance.source_file = statement.source_file.empty()
           ? current_source_file_ : statement.source_file;
@@ -29962,7 +30279,7 @@ class Checker {
       const auto* receiver_identifier = receiver_id < arena->size()
           ? std::get_if<est::Identifier>(&arena->at(receiver_id)) : nullptr;
       if (!receiver_identifier) continue;
-      const auto* receiver_facts = arena->facts(receiver_id, context);
+      const auto* receiver_facts = arena->facts(receiver_id, current_spec_id_);
       if (!receiver_facts || !receiver_facts->type ||
           receiver_facts->type->kind != TypeKind::Builtin ||
           receiver_facts->type->name != "vector" ||
@@ -30009,9 +30326,9 @@ class Checker {
           receiver_identifier->name)
               ? env.definition_identities.at(receiver_identifier->name) : string();
       fact.receiver_type = receiver_facts->type;
-      if (const auto* index_facts = arena->facts(index_value_id, context))
+      if (const auto* index_facts = arena->facts(index_value_id, current_spec_id_))
         fact.index_type = index_facts->type;
-      if (const auto* element_facts = arena->facts(argument_id, context))
+      if (const auto* element_facts = arena->facts(argument_id, current_spec_id_))
         fact.indexed_element_type = element_facts->type;
       if (target_resolution !=
               TypedProjectedCallArgumentReadFactV1::TargetResolution::Resolved ||
@@ -30041,6 +30358,7 @@ class Checker {
       fact.permits_copy = false;
       fact.specialization_identity = local_ownership_specialization_identity();
       fact.specialization_context = local_ownership_consumer_context();
+      fact.specialization_id = current_spec_id_;
       fact.est_fact_context = context;
       fact.provenance.source_file = statement.source_file.empty()
           ? current_source_file_ : statement.source_file;
@@ -30097,8 +30415,7 @@ class Checker {
                   ? std::get_if<est::Identifier>(&arena.at(argument_id))
                   : nullptr;
               if (!local) continue;
-              const auto* facts = arena.facts(
-                  argument_id, expression_fact_context());
+              const auto* facts = arena.facts(argument_id, current_spec_id_);
               if (facts && facts->type && facts->type->is_closed() &&
                   facts->type->kind != TypeKind::Primitive)
                 err(statement.source_file, statement.line,
@@ -30117,8 +30434,7 @@ class Checker {
             const auto* local = std::get_if<est::Identifier>(
                 &arena.at(argument_id));
             if (!local) continue;  // Explicit copies and computed values have their own authority.
-            const auto* expression_facts = arena.facts(
-                argument_id, expression_fact_context());
+            const auto* expression_facts = arena.facts(argument_id, current_spec_id_);
             const TypeRef checked_type = expression_facts
                 ? expression_facts->type : nullptr;
             if (!checked_type || !checked_type->is_closed() ||
@@ -30175,6 +30491,7 @@ class Checker {
             fact.source_definition_identity = definition.def_identity;
             fact.specialization_identity = local_ownership_specialization_identity();
             fact.specialization_context = "main";
+            fact.specialization_id = current_spec_id_;
             fact.est_fact_context = expression_fact_context();
             fact.payload_type = checked_type;
             fact.required_access = Effect::Consume;
@@ -30348,6 +30665,7 @@ class Checker {
             fact.statement_occurrence_id = statement_id->second;
         }
         fact.specialization_context = local_ownership_consumer_context();
+        fact.specialization_id = current_spec_id_;
         fact.specialization_identity = local_ownership_specialization_identity();
         fact.is_consuming = consuming;
         bool is_option_type = starts_with(canonical_type_name(declaration.name), "option[");
@@ -30395,6 +30713,7 @@ class Checker {
         req.scrutinee_occurrence_id = fact.scrutinee_occurrence_id;
         req.statement_occurrence_id = fact.statement_occurrence_id;
         req.specialization_context = fact.specialization_context;
+        req.specialization_id = current_spec_id_;
         req.specialization_identity = fact.specialization_identity;
         req.is_consuming = fact.is_consuming;
         req.scrutinee_kind = fact.scrutinee_kind;
@@ -30618,6 +30937,7 @@ class Checker {
                 for (const auto& alternative : arm.exceptional_alternatives)
                   fact.recovery_alternatives.push_back(alternative.canonical());
                 fact.specialization_context = current_semantic_context_;
+                fact.specialization_id = current_spec_id_;
                 fact.specialization_identity =
                     local_ownership_specialization_identity();
                 fact.summary_provenance = "phase21-checked-raise-set";
@@ -30764,6 +31084,7 @@ class Checker {
                 requirement.recovery_alternatives = fact.recovery_alternatives;
                 requirement.specialization_context =
                     fact.specialization_context;
+                requirement.specialization_id = current_spec_id_;
                 requirement.specialization_identity =
                     fact.specialization_identity;
                 requirement.availability = fact.availability;
@@ -30911,6 +31232,7 @@ class Checker {
             local_ownership_specialization_identity();
         try_continuation.specialization_context =
             local_ownership_consumer_context();
+        try_continuation.specialization_id = current_spec_id_;
         try_continuation.has_normal_successor = env.can_continue;
         try_continuation_facts_.push_back(try_continuation);
         TypedTryContinuationRequirementV1 try_requirement;
@@ -31196,8 +31518,8 @@ class Checker {
           // The checker has already solved this binding's open collection.
           // Ownership consumes that semantic fact instead of re-inferring an
           // earlier constructor without its later constraints.
-          auto checked = s.semantic_types_by_context.find(current_semantic_context_);
-          const string& checked_type = checked == s.semantic_types_by_context.end()
+          auto checked = s.semantic_types_by_spec_id.find(current_spec_id_);
+          const string& checked_type = checked == s.semantic_types_by_spec_id.end()
               ? s.semantic_type : checked->second;
           if (type && (*type == "vector" || *type == "queue" || *type == "map") &&
               !checked_type.empty())
@@ -31435,8 +31757,8 @@ class Checker {
           }
           if (tree_simple_identifier(s.a)) {
             if (source_type) {
-              auto checked = s.semantic_types_by_context.find(current_semantic_context_);
-              const string& checked_type = checked == s.semantic_types_by_context.end()
+              auto checked = s.semantic_types_by_spec_id.find(current_spec_id_);
+              const string& checked_type = checked == s.semantic_types_by_spec_id.end()
                   ? s.semantic_type : checked->second;
               env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
                                 *source_type == "map") && !checked_type.empty()
@@ -31480,6 +31802,103 @@ class Checker {
         case Stmt::Kind::Message: {
           check_ownership_expression(s.line, s.a, env, Effect::Consume);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+          if (handler) {
+            if (current_spec_id_ == InvalidSpecId ||
+                handler->spec_id == InvalidSpecId)
+              err(s.line,
+                  "checked message occurrence has missing caller or handler SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+            SpecId target_spec_id = handler->spec_id;
+            const auto target_domain = domains_.find(
+                canonical_type_name(env.types.at(s.a)));
+            if (target_domain != domains_.end()) {
+              if (const auto* instance = domain_specialization_for(s.a,
+                                                                  env.types)) {
+                const auto handler_position = std::find_if(
+                    target_domain->second->handlers.begin(),
+                    target_domain->second->handlers.end(),
+                    [&](const Handler& candidate) {
+                  return candidate.name == handler->name;
+                });
+                if (handler_position == target_domain->second->handlers.end())
+                  err(s.line,
+                      "checked message target handler is absent from its domain declaration",
+                      "MOSS_INTERNAL_INVARIANT");
+                const auto handler_index = static_cast<std::size_t>(
+                    handler_position - target_domain->second->handlers.begin());
+                if (handler_index >= instance->handler_spec_ids.size() ||
+                    instance->handler_spec_ids[handler_index] == InvalidSpecId)
+                  err(s.line,
+                      "checked message target has no per-instance handler SpecId",
+                      "MOSS_INTERNAL_INVARIANT");
+                target_spec_id = instance->handler_spec_ids[handler_index];
+              }
+            }
+            bool retained = false;
+            for (const auto& handle : s.expression_handles) {
+              if (handle.slot != est::ExprSlot::Receiver) continue;
+              const auto* arena = expression_arena(handle.arena_index);
+              if (!arena || handle.expr >= arena->size()) continue;
+              const auto message_id = est::unparenthesized(
+                  *arena, handle.expr);
+              if (!std::holds_alternative<est::Message>(
+                      arena->at(message_id))) continue;
+              vector<SemanticCallEdge*> exact_rows;
+              for (auto& edge : p_.semantic_call_edges)
+                if (edge.caller_spec_id == current_spec_id_ &&
+                    edge.call_est_arena_index == handle.arena_index &&
+                    edge.call_expression_occurrence_id == message_id)
+                  exact_rows.push_back(&edge);
+              if (exact_rows.size() > 1)
+                err(s.line,
+                    "checked message occurrence has duplicate SpecId call rows",
+                    "MOSS_INTERNAL_INVARIANT");
+              const string target_identity =
+                  p_.specialization_table[target_spec_id]
+                      .semantic_callable_identity;
+              if (exact_rows.empty()) {
+                SemanticCallEdge edge;
+                edge.source = current_semantic_context_;
+                edge.target = "handler:" + canonical_type_name(
+                    env.types.at(s.a)) + "." + handler->name;
+                edge.line = s.line;
+                edge.argument_types.reserve(s.args.size());
+                for (const auto& argument : s.args)
+                  edge.argument_types.push_back(
+                      inferred_expr_type(argument, env.types).value_or(""));
+                edge.source_file = current_source_file_;
+                edge.invocation_kind = "synchronous_message";
+                edge.receiver = s.a;
+                edge.caller_spec_id = current_spec_id_;
+                edge.callee_spec_id = target_spec_id;
+                edge.target_kind = SemanticCallTargetKind::Static;
+                edge.target_callable_identity = target_identity;
+                if (target_domain != domains_.end())
+                  edge.target_module_identity = program_module_identity(
+                      p_, target_domain->second->defining_module);
+                edge.call_est_arena_index = handle.arena_index;
+                edge.call_expression_occurrence_id = message_id;
+                p_.semantic_call_edges.push_back(std::move(edge));
+              } else {
+                auto& edge = *exact_rows.front();
+                if (edge.callee_spec_id != InvalidSpecId &&
+                    edge.callee_spec_id != target_spec_id)
+                  err(s.line,
+                      "checked message occurrence acquired contradictory handler SpecIds",
+                      "MOSS_INTERNAL_INVARIANT");
+                edge.caller_spec_id = current_spec_id_;
+                edge.callee_spec_id = target_spec_id;
+                edge.target_kind = SemanticCallTargetKind::Static;
+                edge.target_callable_identity = target_identity;
+              }
+              retained = true;
+              break;
+            }
+            if (!retained)
+              err(s.line,
+                  "checked message occurrence has no exact EST identity",
+                  "MOSS_INTERNAL_INVARIANT");
+          }
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             struct MessageArgumentOwnershipScope {
               std::uint32_t& slot;
@@ -31748,6 +32167,7 @@ class Checker {
                 ? functional_function_context(*current_check_result_function_,
                                               checking_specialization_)
                 : local_ownership_consumer_context();
+            fact.specialization_id = current_spec_id_;
             fact.specialization_identity = local_ownership_specialization_identity();
             // Point the fact at an exact retained EST context. Specialized
             // bodies share source occurrences with their generic declaration;
@@ -31827,7 +32247,7 @@ class Checker {
               const string exact_method_context = functional_method_context(
                   *current_object_, *current_method_);
               if (const auto* existing = method_return_arena->facts(
-                      fact.expression_occurrence_id, exact_method_context);
+                      fact.expression_occurrence_id, current_spec_id_);
                   existing && existing->type &&
                   existing->type->is_closed() &&
                   !existing->type->structurally_equal(
@@ -31857,13 +32277,13 @@ class Checker {
                 method_return_facts.type = perturb_declared_none_fact
                     ? moss::Type::primitive("Int") : declared_method_result;
                 method_return_arena->record_facts(
-                    fact.expression_occurrence_id, exact_method_context,
+                    fact.expression_occurrence_id, current_spec_id_,
                     std::move(method_return_facts));
               }
               fact.est_fact_context = exact_method_context;
               const auto* retained_method_return = drop_declared_none_fact
                   ? nullptr : method_return_arena->facts(
-                        fact.expression_occurrence_id, exact_method_context);
+                        fact.expression_occurrence_id, current_spec_id_);
               if (!retained_method_return || !retained_method_return->type ||
                   !retained_method_return->type->is_closed() ||
                   !retained_method_return->type->structurally_equal(
@@ -31974,7 +32394,7 @@ class Checker {
                       "MOSS_INTERNAL_INVARIANT");
                 fact.expression_type = specialization_type;
                 const auto* existing = imported_return_arena->facts(
-                    fact.expression_occurrence_id, exact_import_context);
+                    fact.expression_occurrence_id, current_spec_id_);
                 if (existing && existing->type &&
                     existing->type->is_closed() &&
                     !existing->type->structurally_equal(
@@ -32015,7 +32435,7 @@ class Checker {
 #endif
                   imported_facts.type = retained_type;
                   imported_return_arena->record_facts(fact.expression_occurrence_id,
-                                      exact_import_context,
+                                      current_spec_id_,
                                       std::move(imported_facts));
                   fact.est_fact_context = exact_import_context;
 #ifdef MOSS_TEST_BUILD
@@ -32090,7 +32510,7 @@ class Checker {
 #endif
                 if (const auto* existing = arena->facts(
                         fact.expression_occurrence_id,
-                        exact_method_est_context);
+                        current_spec_id_);
                     existing && existing->type &&
                     !existing->type->structurally_equal(*retained_type))
                   err(s.line,
@@ -32100,12 +32520,12 @@ class Checker {
                   est::SemanticFacts exact_facts;
                   exact_facts.type = retained_type;
                   arena->record_facts(fact.expression_occurrence_id,
-                                      exact_method_est_context,
+                                      current_spec_id_,
                                       exact_facts);
                 }
                 const auto* retained = drop_method_context ? nullptr :
                     arena->facts(fact.expression_occurrence_id,
-                                 exact_method_est_context);
+                                 current_spec_id_);
                 if (!retained || !retained->type ||
                     !retained->type->structurally_equal(
                         *fact.expression_type))
@@ -32115,7 +32535,7 @@ class Checker {
               } else if (imported_generic_specialization) {
                 const auto* retained = arena
                     ? arena->facts(fact.expression_occurrence_id,
-                                   fact.est_fact_context)
+                                   current_spec_id_)
                     : nullptr;
                 if (!retained || !retained->type ||
                     !retained->type->is_closed() ||
@@ -32131,7 +32551,7 @@ class Checker {
               if (arena &&
                   std::getenv("MOSS_TEST_DROP_RETURN_VALUE_SOURCE_EST_FACT"))
                 arena->test_drop_occurrence_fact(
-                    fact.expression_occurrence_id, source_context);
+                    fact.expression_occurrence_id, fact.specialization_id);
 #endif
               std::array<string, 3> candidate_contexts{
                   current_semantic_context_, source_context, string()};
@@ -32144,7 +32564,7 @@ class Checker {
               for (const auto& context : candidate_contexts) {
                 if (context.empty()) continue;
                 const auto* source_occurrence = arena
-                    ? arena->facts(fact.expression_occurrence_id, context)
+                    ? arena->facts(fact.expression_occurrence_id, current_spec_id_)
                     : nullptr;
                 if (source_occurrence) {
                   fact.est_fact_context = context;
@@ -32217,12 +32637,12 @@ class Checker {
                   est::SemanticFacts contradictory_facts;
                   contradictory_facts.type = *wrong_type;
                   arena->record_facts(fact.expression_occurrence_id,
-                                      local_context,
+                                      current_spec_id_,
                                       std::move(contradictory_facts));
                 }
 #endif
                 if (const auto* existing = arena->facts(
-                        fact.expression_occurrence_id, local_context);
+                        fact.expression_occurrence_id, current_spec_id_);
                     existing && existing->type) {
                   if (existing->type->is_closed()
                           ? !existing->type->structurally_equal(
@@ -32258,11 +32678,11 @@ class Checker {
                   est::SemanticFacts local_return_facts;
                   local_return_facts.type = retained_type;
                   arena->record_facts(fact.expression_occurrence_id,
-                                      local_context,
+                                      fact.specialization_id,
                                       std::move(local_return_facts));
                 }
                 const auto* retained = drop_local_fact ? nullptr : arena->facts(
-                    fact.expression_occurrence_id, local_context);
+                    fact.expression_occurrence_id, fact.specialization_id);
                 if (!retained || !retained->type ||
                     !retained->type->is_closed() ||
                     !retained->type->structurally_equal(
@@ -32297,7 +32717,7 @@ class Checker {
               const auto* arena = expression_arena(fact.est_arena_index);
               const auto* source_occurrence = arena
                   ? arena->facts(fact.expression_occurrence_id,
-                                 fact.est_fact_context)
+                                 fact.specialization_id)
                   : nullptr;
               if (!source_occurrence)
                 err(s.line,
@@ -32907,14 +33327,28 @@ class Checker {
       if (!checking_specialization_) return;
       StaticSpecializationDependency dependency{function.name, canonical_types,
                                                 stable_key};
+      dependency.callee_callable_identity = function.semantic_callable_id;
+      for (const auto& target_specialization : function.specializations)
+        if (target_specialization.stable_type_key == stable_key)
+          dependency.callee_spec_id = target_specialization.spec_id;
+      if (dependency.callee_spec_id == InvalidSpecId)
+        err(line,
+            "checked specialization dependency has no callee SpecId",
+            "MOSS_INTERNAL_INVARIANT");
       auto existing_dependency = std::find_if(
           checking_specialization_->dependencies.begin(),
           checking_specialization_->dependencies.end(),
           [&](const StaticSpecializationDependency& existing) {
-            return existing.specialization_key == dependency.specialization_key;
+            return existing.callee_callable_identity ==
+                    dependency.callee_callable_identity &&
+                existing.specialization_key == dependency.specialization_key;
           });
       if (existing_dependency == checking_specialization_->dependencies.end())
         checking_specialization_->dependencies.push_back(std::move(dependency));
+      else if (existing_dependency->callee_spec_id != dependency.callee_spec_id)
+        err(line,
+            "one checked specialization dependency acquired contradictory SpecIds",
+            "MOSS_INTERNAL_INVARIANT");
     };
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
@@ -32990,6 +33424,9 @@ class Checker {
     if (closed_result_type)
       specialization.return_type_ref = *closed_result_type;
     specialization.stable_type_key = stable_key;
+    specialization.spec_id = register_program_specification(
+        function.semantic_callable_id, stable_key, *semantic_key,
+        program_module_identity(p_, function.defining_module));
     specialization.member_requirements = std::move(member_requirements);
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
@@ -33012,6 +33449,8 @@ class Checker {
     CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
                                        {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
+    SpecIdScope specialization_id_scope(
+        current_spec_id_, checking_specialization_->spec_id);
     // The specialized ReturnValue fact must pair the exact AST statement with
     // its checked body and specialization. Keep that function identity in
     // scope while the specialized body is checked so the retained statement
@@ -33440,6 +33879,8 @@ class Checker {
                                nested_occurrences = std::nullopt,
                            Function** resolved_target = nullptr) {
     const auto exact_call_cursor = checked_call_est_cursor(name, args);
+    Function* exact_call_target = nullptr;
+    string exact_callee_specialization_key;
     const auto exact_source_occurrence = exact_call_cursor
         ? checked_call_source_occurrence(*exact_call_cursor, name)
         : std::nullopt;
@@ -33447,6 +33888,30 @@ class Checker {
       if (!exact_call_cursor) return;
       edge.call_est_arena_index = exact_call_cursor->arena_index;
       edge.call_expression_occurrence_id = exact_call_cursor->expr;
+      edge.caller_spec_id = current_spec_id_;
+      if (exact_call_target) {
+        edge.target_kind = SemanticCallTargetKind::Static;
+        edge.target_callable_identity =
+            exact_call_target->semantic_callable_id;
+        if (exact_call_target->static_dispatch) {
+          size_t matches = 0;
+          for (const auto& specialization :
+               exact_call_target->specializations) {
+            if (specialization.stable_type_key !=
+                exact_callee_specialization_key) continue;
+            edge.callee_spec_id = specialization.spec_id;
+            ++matches;
+          }
+          if (matches != 1)
+            err(line,
+                "checked call occurrence has missing or duplicate callee SpecId",
+                "MOSS_INTERNAL_INVARIANT");
+        } else {
+          edge.callee_spec_id = exact_call_target->spec_id;
+        }
+        edge.target_module_identity = program_module_identity(
+            p_, exact_call_target->defining_module);
+      }
     };
     if (name == "copy") {
       if (args.size() != 1)
@@ -34205,6 +34670,20 @@ class Checker {
                                      open_result ? std::optional<moss::TypeRef>(
                                                        open_result->result)
                                                  : std::nullopt);
+      exact_call_target = function->second;
+      if (function->second->static_dispatch) {
+        auto exact_semantic_key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
+            std::nullopt, open_result ? open_result->ordered_bindings
+                                      : vector<std::pair<uint32_t,
+                                            moss::TypeRef>>{});
+        if (!exact_semantic_key || !exact_semantic_key->stable_key())
+          err(line, "static call specialization has unresolved SpecId key",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        exact_callee_specialization_key =
+            *exact_semantic_key->stable_key();
+      }
       if (function->second->static_dispatch) {
         auto key = specialization_key_inputs(
             function->second->semantic_callable_id,
@@ -34230,6 +34709,9 @@ class Checker {
           auto& keys = const_cast<Stmt*>(current_check_statement_)
               ->nested_open_call_keys_by_context[current_check_body_context_]
                   [function->second->name + "(" + join_arguments(args) + ")"];
+          auto& keys_by_spec = const_cast<Stmt*>(current_check_statement_)
+              ->nested_open_call_keys_by_spec_id[current_spec_id_]
+                  [function->second->name + "(" + join_arguments(args) + ")"];
           const uint32_t occurrence = nested_occurrences
               ? nested_occurrences->second : 0;
           if (keys.size() <= occurrence) keys.resize(occurrence + 1);
@@ -34237,14 +34719,27 @@ class Checker {
             err(line, "one nested call occurrence acquired two specialization keys",
                 "SOURCE_FREE_SPECIALIZATION_MISMATCH");
           keys[occurrence] = exact_key;
+          if (keys_by_spec.size() <= occurrence)
+            keys_by_spec.resize(occurrence + 1);
+          if (!keys_by_spec[occurrence].empty() &&
+              keys_by_spec[occurrence] != exact_key)
+            err(line, "one nested call occurrence acquired two specialization keys",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          keys_by_spec[occurrence] = exact_key;
         }
-        if (current_check_statement_ && !returned_result && !nested_result)
+        if (current_check_statement_ && !returned_result && !nested_result) {
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
               current_check_body_context_] = exact_key;
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_spec_id[
+              current_spec_id_] = exact_key;
+        }
         if (returned_result && current_check_statement_ &&
-            checking_specialization_)
+            checking_specialization_) {
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
               checking_specialization_->stable_type_key] = exact_key;
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_spec_id[
+              current_spec_id_] = exact_key;
+        }
         if (returned_result && checking_specialization_)
           checking_specialization_->result_call_key = exact_key;
         if (est::mode() == est::Mode::Shadow && current_check_statement_ &&
@@ -34259,7 +34754,7 @@ class Checker {
             if (cursor) {
               const auto* arena = expression_arena(cursor->arena_index);
               const auto* tree_facts = arena
-                  ? arena->facts(cursor->expr, expression_fact_context()) : nullptr;
+                  ? arena->facts(cursor->expr, current_spec_id_) : nullptr;
               assert(tree_facts &&
                      tree_facts->specialization_result == selected->second);
             }
@@ -34454,6 +34949,98 @@ class Checker {
           p_.semantic_call_edges.push_back(std::move(checked_edge));
         }
       }
+      if (exact_call_cursor) {
+        if (current_spec_id_ == InvalidSpecId)
+          err(line, "checked call occurrence has no caller SpecId",
+              "MOSS_INTERNAL_INVARIANT");
+        vector<SemanticCallEdge*> exact_rows;
+        for (auto& edge : p_.semantic_call_edges)
+          if (edge.caller_spec_id == current_spec_id_ &&
+              edge.call_est_arena_index == exact_call_cursor->arena_index &&
+              edge.call_expression_occurrence_id == exact_call_cursor->expr)
+            exact_rows.push_back(&edge);
+        if (exact_rows.size() > 1)
+          err(line, "checked call occurrence has duplicate SpecId call rows",
+              "MOSS_INTERNAL_INVARIANT");
+        if (exact_rows.empty()) {
+          SemanticCallEdge edge;
+          edge.source = current_semantic_context_;
+          edge.target = "fn:" + function->second->name;
+          edge.line = line;
+          edge.argument_types = actual_types;
+          edge.source_file = current_source_file_;
+          edge.invocation_kind = "ordinary_call";
+          edge.occurrence = exact_source_occurrence.value_or(0);
+          edge.caller_spec_id = current_spec_id_;
+          edge.call_est_arena_index = exact_call_cursor->arena_index;
+          edge.call_expression_occurrence_id = exact_call_cursor->expr;
+          p_.semantic_call_edges.push_back(std::move(edge));
+          exact_rows.push_back(&p_.semantic_call_edges.back());
+        }
+        auto& edge = *exact_rows.front();
+        edge.caller_spec_id = current_spec_id_;
+        edge.target_kind = SemanticCallTargetKind::Static;
+        edge.target_callable_identity = function->second->semantic_callable_id;
+        edge.target_module_identity = program_module_identity(
+            p_, function->second->defining_module);
+        edge.argument_callable_spec_ids.assign(args.size(), InvalidSpecId);
+        const FunctionSpecialization* selected_target_specialization = nullptr;
+        if (function->second->static_dispatch) {
+          size_t specialization_matches = 0;
+          for (const auto& specialization :
+               function->second->specializations) {
+            if (specialization.stable_type_key !=
+                exact_callee_specialization_key) continue;
+            edge.callee_spec_id = specialization.spec_id;
+            selected_target_specialization = &specialization;
+            ++specialization_matches;
+          }
+          if (specialization_matches != 1)
+            err(line,
+                "checked call occurrence has missing or duplicate callee SpecId",
+                "MOSS_INTERNAL_INVARIANT");
+        } else {
+          edge.callee_spec_id = function->second->spec_id;
+        }
+        for (std::size_t argument_index = 0;
+             argument_index < actual_types.size() &&
+             argument_index < edge.argument_callable_spec_ids.size();
+             ++argument_index) {
+          const string callable_type = canonical_type_name(
+              actual_types[argument_index]);
+          if (!starts_with(callable_type, "callable-v1:")) continue;
+          const Function* callback =
+              find_function_by_callable_id(callable_type);
+          if (!callback)
+            err(line,
+                "checked callable argument has no semantic function identity",
+                "MOSS_INTERNAL_INVARIANT");
+          if (!callback->static_dispatch) {
+            edge.argument_callable_spec_ids[argument_index] = callback->spec_id;
+            continue;
+          }
+          if (!selected_target_specialization)
+            err(line,
+                "checked callable argument has no owning caller specialization",
+                "MOSS_INTERNAL_INVARIANT");
+          size_t dependency_matches = 0;
+          for (const auto& dependency :
+               selected_target_specialization->dependencies) {
+            if (dependency.callee_callable_identity != callable_type) continue;
+            if (dependency.callee_spec_id == InvalidSpecId)
+              err(line,
+                  "checked callable dependency has no callee SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+            edge.argument_callable_spec_ids[argument_index] =
+                dependency.callee_spec_id;
+            ++dependency_matches;
+          }
+          if (dependency_matches != 1)
+            err(line,
+                "checked callable argument has missing or duplicate specialization authority",
+                "MOSS_INTERNAL_INVARIANT");
+        }
+      }
     }
   }
 
@@ -34511,15 +35098,15 @@ class Checker {
     // the exact current consumer context assigned to the active function or
     // specialization; the consumer reads with its frame key.
     const string context = local_ownership_consumer_context();
-    const auto* existing = arena->facts(stage_expr, context);
+    const auto* existing = arena->facts(stage_expr, current_spec_id_);
     if (existing && existing->dynamic_callback &&
         *existing->dynamic_callback != checked_stage.dynamic_callback)
       throw std::invalid_argument(
           "checked pipeline stage callback classification is contradictory");
     est::SemanticFacts facts = existing ? *existing : est::SemanticFacts{};
     facts.dynamic_callback = checked_stage.dynamic_callback;
-    arena->record_facts(stage_expr, context, std::move(facts));
-    const auto* retained = arena->facts(stage_expr, context);
+    arena->record_facts(stage_expr, current_spec_id_, std::move(facts));
+    const auto* retained = arena->facts(stage_expr, current_spec_id_);
     if (!retained || !retained->dynamic_callback ||
         *retained->dynamic_callback != checked_stage.dynamic_callback)
       throw std::invalid_argument(
@@ -34582,6 +35169,51 @@ class Checker {
               stage_occurrence->dynamic_callback;
     if (pipeline_callback && dynamic_callback) {
       if (stage_occurrence) stage_occurrence->dynamic_callback = true;
+      if (current_spec_id_ == InvalidSpecId || arena_index == UINT32_MAX ||
+          owner_expr == UINT32_MAX)
+        err(line,
+            "dynamic callback call occurrence lacks caller or EST identity",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto* owner_arena = expression_arena(arena_index);
+      if (!owner_arena || owner_expr >= owner_arena->size())
+        err(line, "dynamic callback call occurrence has no EST arena",
+            "MOSS_INTERNAL_INVARIANT");
+      est::ExprId call_expression = owner_expr;
+      if (exact_callback_cursor) {
+        const auto root = est::unparenthesized(*owner_arena, owner_expr);
+        if (const auto* pipeline =
+                std::get_if<est::Pipeline>(&owner_arena->at(root))) {
+          if (exact_callback_cursor->stage_ordinal >= pipeline->stages.size())
+            err(line, "dynamic callback stage ordinal is outside its pipeline",
+                "MOSS_INTERNAL_INVARIANT");
+          call_expression = est::unparenthesized(
+              *owner_arena,
+              pipeline->stages[exact_callback_cursor->stage_ordinal]);
+        } else if (exact_callback_cursor->callback_expr < owner_arena->size()) {
+          call_expression = exact_callback_cursor->callback_expr;
+        }
+      }
+      for (const auto& edge : p_.semantic_call_edges)
+        if (edge.caller_spec_id == current_spec_id_ &&
+            edge.call_est_arena_index == arena_index &&
+            edge.call_expression_occurrence_id == call_expression) {
+          if (edge.target_kind != SemanticCallTargetKind::DynamicCallback)
+            err(line,
+                "dynamic callback occurrence contradicts an existing static call fact",
+                "MOSS_INTERNAL_INVARIANT");
+          return;
+        }
+      SemanticCallEdge callback_edge;
+      callback_edge.source = current_semantic_context_;
+      callback_edge.target = "dynamic-callback:" + callback_source;
+      callback_edge.line = line;
+      callback_edge.source_file = current_source_file_;
+      callback_edge.invocation_kind = "dynamic_callback";
+      callback_edge.caller_spec_id = current_spec_id_;
+      callback_edge.call_est_arena_index = arena_index;
+      callback_edge.call_expression_occurrence_id = call_expression;
+      callback_edge.target_kind = SemanticCallTargetKind::DynamicCallback;
+      p_.semantic_call_edges.push_back(std::move(callback_edge));
       return;  // Dynamic callbacks have no static owner arena or static edge.
     }
     if (!pipeline_callback) {
@@ -34693,7 +35325,7 @@ class Checker {
       stable_key = *key->stable_key();
     }
     const string context = expression_fact_context();
-    const auto* existing = arena->facts(callback_id, context);
+    const auto* existing = arena->facts(callback_id, current_spec_id_);
     if (existing &&
         ((!existing->resolved_target.empty() &&
           existing->resolved_target != function.semantic_callable_id) ||
@@ -34705,8 +35337,8 @@ class Checker {
     est::SemanticFacts facts = existing ? *existing : est::SemanticFacts{};
     facts.resolved_target = function.semantic_callable_id;
     if (!stable_key.empty()) facts.specialization_result = stable_key;
-    arena->record_facts(callback_id, context, std::move(facts));
-    const auto* retained = arena->facts(callback_id, context);
+    arena->record_facts(callback_id, current_spec_id_, std::move(facts));
+    const auto* retained = arena->facts(callback_id, current_spec_id_);
     if (!retained ||
         retained->resolved_target != function.semantic_callable_id ||
         (!stable_key.empty() &&
@@ -35827,8 +36459,9 @@ class Checker {
         const std::string consumer_context = functional_function_context(
             *function->second, checking_specialization_);
         const auto [mapping, inserted] =
-            local_ownership_specialization_contexts_.emplace(
-                consumer_context, checking_specialization_->stable_type_key);
+            local_ownership_specialization_identities_.emplace(
+                checking_specialization_->spec_id,
+                checking_specialization_->stable_type_key);
         if (!inserted &&
             mapping->second != checking_specialization_->stable_type_key)
           throw std::invalid_argument(
@@ -35857,10 +36490,10 @@ class Checker {
       est::assert_fresh(handle, std::string(source));
       auto* arena = expression_arena(handle.arena_index);
       if (!arena) continue;
-      arena->record_facts(handle.expr, context, facts);
+      arena->record_facts(handle.expr, current_spec_id_, facts);
       recorded = true;
       if (est::mode() == est::Mode::Shadow) {
-        const auto* retained = arena->facts(handle.expr, context);
+        const auto* retained = arena->facts(handle.expr, current_spec_id_);
         assert(retained);
         if (facts.type)
           assert(retained->type &&
@@ -35914,7 +36547,7 @@ class Checker {
         continue;
       est::assert_fresh(handle, std::string(source));
       const auto* arena = expression_arena(handle.arena_index);
-      const auto* actual = arena ? arena->facts(handle.expr, context) : nullptr;
+      const auto* actual = arena ? arena->facts(handle.expr, current_spec_id_) : nullptr;
       assert(actual);
       if (expected_type)
         assert(actual->type && expected_type->structurally_equal(*actual->type));
@@ -36042,7 +36675,7 @@ class Checker {
       return false;
     const string context = expression_fact_context();
     if (context.empty()) return false;
-    const auto* call_facts = arena->facts(call_occurrence, context);
+    const auto* call_facts = arena->facts(call_occurrence, current_spec_id_);
     if (!call_facts || call_facts->resolved_target.empty() ||
         call_facts->resolved_target != selected_target)
       return false;
@@ -36052,7 +36685,7 @@ class Checker {
     // place, that context is also the one retained by its take requirement.
     for (std::size_t index = 0; index < call->arguments.size(); ++index) {
       const auto argument = call->arguments[index];
-      const auto* existing = arena->facts(argument, context);
+      const auto* existing = arena->facts(argument, current_spec_id_);
       if (existing && existing->inferred_effect &&
           *existing->inferred_effect != argument_effects[index]) {
         throw std::invalid_argument(
@@ -36060,9 +36693,9 @@ class Checker {
       }
       est::SemanticFacts facts;
       facts.inferred_effect = argument_effects[index];
-      const_cast<est::Arena*>(arena)->record_facts(argument, context,
+      const_cast<est::Arena*>(arena)->record_facts(argument, current_spec_id_,
                                                    std::move(facts));
-      const auto* retained = arena->facts(argument, context);
+      const auto* retained = arena->facts(argument, current_spec_id_);
       if (!retained || retained->inferred_effect != argument_effects[index])
         throw std::invalid_argument(
             "checked selector argument effect failed EST fact publication");
@@ -36251,7 +36884,7 @@ class Checker {
         !active_est_expression_cursors_.back()) return;
     const auto& cursor = *active_est_expression_cursors_.back();
     if (auto* arena = expression_arena(cursor.arena_index))
-      arena->record_facts(cursor.expr, expression_fact_context(),
+      arena->record_facts(cursor.expr, current_spec_id_,
                           std::move(facts));
   }
 
@@ -36284,7 +36917,7 @@ class Checker {
       const auto& cursor = *active_est_expression_cursors_.back();
       const auto* arena = expression_arena(cursor.arena_index);
       assert(arena && legacy.semantic_target_id == semantic_target_id);
-      const auto* retained = arena->facts(cursor.expr, expression_fact_context());
+      const auto* retained = arena->facts(cursor.expr, current_spec_id_);
       assert(retained && retained->resolved_target == legacy.semantic_target_id);
     }
   }
@@ -36350,26 +36983,98 @@ class Checker {
     } tree_cursor_scope{active_est_expression_cursors_,
         tree_cursor ? std::function<void()>([this, cursor = *tree_cursor,
                                              fact_context, source = original,
+                                             spec_id = current_spec_id_,
+                                             line,
                                              &env] {
           auto* arena = expression_arena(cursor.arena_index);
           if (!arena) return;
-          const auto* existing = arena->facts(cursor.expr, fact_context);
+          const auto* existing = arena->facts(cursor.expr, current_spec_id_);
           if (!existing || !existing->type) {
             try {
               auto type = inferred_expr_term(source, env);
               if (type) {
                 est::SemanticFacts facts;
                 facts.type = std::move(type);
-                arena->record_facts(cursor.expr, fact_context, std::move(facts));
+                arena->record_facts(cursor.expr, current_spec_id_, std::move(facts));
               }
             } catch (...) {
               // Facts are an observational side table. Never replace a checker
               // diagnostic or alter the string path while recording them.
             }
           }
+          const auto* checked_call = arena->facts(cursor.expr, spec_id);
+          if (checked_call &&
+              starts_with(checked_call->resolved_target, "method:") &&
+              cursor.expr < arena->size() &&
+              std::holds_alternative<est::Call>(arena->at(cursor.expr))) {
+            if (spec_id == InvalidSpecId)
+              err(line, "checked method Call has no caller SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+            string receiver, method_name;
+            vector<string> arguments;
+            if (!tree_parse_member_call(source, receiver, method_name,
+                                        arguments))
+              err(line,
+                  "checked method Call has no exact receiver and argument view",
+                  "MOSS_INTERNAL_INVARIANT");
+            auto receiver_type = inferred_expr_type(receiver, env);
+            vector<string> argument_types;
+            for (const auto& argument : arguments)
+              argument_types.push_back(
+                  inferred_expr_type(argument, env).value_or(""));
+            const Method* selected_method = receiver_type
+                ? resolve_method(canonical_type_name(*receiver_type),
+                                 method_name, argument_types, true, nullptr)
+                : nullptr;
+            if (!selected_method ||
+                selected_method->spec_id == InvalidSpecId ||
+                selected_method->spec_id >= p_.specialization_table.size())
+              err(line,
+                  "checked method Call has missing or ambiguous declaration SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+            vector<SemanticCallEdge*> exact_rows;
+            for (auto& edge : p_.semantic_call_edges)
+              if (edge.caller_spec_id == spec_id &&
+                  edge.call_est_arena_index == cursor.arena_index &&
+                  edge.call_expression_occurrence_id == cursor.expr)
+                exact_rows.push_back(&edge);
+            if (exact_rows.size() > 1)
+              err(line, "checked method Call has duplicate SpecId call rows",
+                  "MOSS_INTERNAL_INVARIANT");
+            if (exact_rows.empty()) {
+              SemanticCallEdge edge;
+              edge.source = current_semantic_context_;
+              edge.target = checked_call->resolved_target;
+              edge.line = line;
+              edge.argument_types = argument_types;
+              edge.source_file = current_source_file_;
+              edge.invocation_kind = "ordinary_call";
+              edge.caller_spec_id = spec_id;
+              edge.callee_spec_id = selected_method->spec_id;
+              edge.target_kind = SemanticCallTargetKind::Static;
+              edge.target_callable_identity =
+                  p_.specialization_table[selected_method->spec_id]
+                      .semantic_callable_identity;
+              edge.call_est_arena_index = cursor.arena_index;
+              edge.call_expression_occurrence_id = cursor.expr;
+              p_.semantic_call_edges.push_back(std::move(edge));
+            } else {
+              auto& edge = *exact_rows.front();
+              if (edge.callee_spec_id != InvalidSpecId &&
+                  edge.callee_spec_id != selected_method->spec_id)
+                err(line,
+                    "checked method Call acquired contradictory SpecIds",
+                    "MOSS_INTERNAL_INVARIANT");
+              edge.callee_spec_id = selected_method->spec_id;
+              edge.target_kind = SemanticCallTargetKind::Static;
+              edge.target_callable_identity =
+                  p_.specialization_table[selected_method->spec_id]
+                      .semantic_callable_identity;
+            }
+          }
           if (const char* dump = std::getenv("MOSS_EST_FACTS_DUMP");
               dump && std::string_view(dump) == "1") {
-            if (const auto* facts = arena->facts(cursor.expr, fact_context)) {
+            if (const auto* facts = arena->facts(cursor.expr, spec_id)) {
               std::cerr << "MOSS_EST_FACT expr=" << cursor.expr
                         << " context=" << std::quoted(fact_context)
                         << " type=" << std::quoted(facts->type
@@ -36529,11 +37234,11 @@ class Checker {
                   est::SemanticFacts facts;
                   facts.type = retained.checked_type;
                   if (auto* arena = expression_arena(tree_cursor->arena_index)) {
-                    arena->record_facts(tree_cursor->expr, fact_context,
+                    arena->record_facts(tree_cursor->expr, current_spec_id_,
                                         std::move(facts));
                     if (est::mode() == est::Mode::Shadow) {
                       const auto* tree_facts = arena->facts(
-                          tree_cursor->expr, fact_context);
+                          tree_cursor->expr, current_spec_id_);
                       assert(tree_facts && tree_facts->type &&
                              retained.checked_type->structurally_equal(
                                  *tree_facts->type));
@@ -37930,7 +38635,7 @@ class Checker {
             const auto* call_arena =
                 expression_arena(call_cursor.arena_index);
             const auto* call_facts = call_arena
-                ? call_arena->facts(call_cursor.expr, expression_fact_context())
+                ? call_arena->facts(call_cursor.expr, current_spec_id_)
                 : nullptr;
             if (call_facts && call_facts->resolved_target ==
                                   resolved_target->semantic_callable_id) {
@@ -38493,6 +39198,7 @@ class Checker {
         fact.source_fingerprint = handle.source_fingerprint;
         fact.origin_id = handle.origin_id;
         fact.specialization_context = "main";
+        fact.specialization_id = current_spec_id_;
         fact.est_fact_context = expression_fact_context();
         fact.receiver_binding = target_name->name;
         fact.source_file = statement.source_file.empty()
@@ -38633,7 +39339,7 @@ class Checker {
           if (!parsed_type || !*parsed_type || !(*parsed_type)->is_closed())
             continue;
           if (const auto* existing = arena->facts(
-                  argument_id, fact.est_fact_context);
+                  argument_id, current_spec_id_);
               existing && existing->type &&
               !existing->type->structurally_equal(**parsed_type))
             err(statement.source_file, statement.line,
@@ -38650,6 +39356,7 @@ class Checker {
           argument_type.source_fingerprint = handle.source_fingerprint;
           argument_type.selected_handler_identity = selected_handler_identity;
           argument_type.specialization_context = "main";
+          argument_type.specialization_id = current_spec_id_;
           argument_type.est_fact_context = fact.est_fact_context;
           argument_type.argument_type = *parsed_type;
           argument_type.availability =
@@ -38731,17 +39438,17 @@ class Checker {
               });
           if (has_copy || has_return) continue;
           auto* mutable_arena = const_cast<est::Arena*>(arena);
-          if (const auto* existing = arena->facts(argument_id, payload_context);
+          if (const auto* existing = arena->facts(argument_id, current_spec_id_);
               existing && existing->type &&
               !existing->type->structurally_equal(*checked_type))
             err(statement.source_file, statement.line,
                 "contradictory checked Root-ingress payload TypeRef",
                 "MOSS_INTERNAL_INVARIANT");
           est::SemanticFacts checked_argument_facts;
-          if (const auto* existing = arena->facts(argument_id, payload_context))
+          if (const auto* existing = arena->facts(argument_id, current_spec_id_))
             checked_argument_facts = *existing;
           checked_argument_facts.type = checked_type;
-          mutable_arena->record_facts(argument_id, payload_context,
+          mutable_arena->record_facts(argument_id, current_spec_id_,
                                       std::move(checked_argument_facts));
           TypedRootIngressPayloadFactV1 payload;
           payload.statement_occurrence_id = fact.statement_occurrence_id;
@@ -38752,6 +39459,7 @@ class Checker {
           payload.source_fingerprint = handle.source_fingerprint;
           payload.selected_handler_identity = selected_handler_identity;
           payload.specialization_context = "main";
+          payload.specialization_id = current_spec_id_;
           payload.est_fact_context = payload_context;
           payload.payload_type = checked_type;
           payload.checker_proved_fresh_rvalue = true;
@@ -39389,6 +40097,9 @@ class Checker {
             : string();
         const_cast<Stmt&>(statement).echo_types_by_context[echo_context] =
             echo_types;
+        if (current_spec_id_ != InvalidSpecId)
+          const_cast<Stmt&>(statement).echo_types_by_spec_id[current_spec_id_] =
+              echo_types;
         for (size_t index = 0; index < echo_type_refs.size(); ++index) {
           if (!echo_type_refs[index]) continue;
           est::SemanticFacts facts;
@@ -39413,6 +40124,7 @@ class Checker {
           fact.specialization_identity =
               local_ownership_specialization_identity();
           fact.specialization_context = echo_context;
+          fact.specialization_id = current_spec_id_;
           fact.est_fact_context = echo_fact_context;
           fact.argument_type = index < echo_type_refs.size()
               ? echo_type_refs[index] : nullptr;
@@ -39488,7 +40200,7 @@ class Checker {
             if (fact.mode ==
                 TypedEchoArgumentModeV1::BorrowedVectorElement) {
               const auto* retained = arena
-                  ? arena->facts(argument_handle->expr, fact.est_fact_context)
+                  ? arena->facts(argument_handle->expr, current_spec_id_)
                   : nullptr;
               if (!retained)
                 fact.availability = TypedEchoArgumentFactV1::Availability::
@@ -39540,6 +40252,7 @@ class Checker {
           requirement.selector_occurrence_id = fact.selector_occurrence_id;
           requirement.specialization_identity = fact.specialization_identity;
           requirement.specialization_context = fact.specialization_context;
+          requirement.specialization_id = current_spec_id_;
           requirement.est_fact_context = fact.est_fact_context;
           requirement.argument_type = fact.argument_type;
           requirement.receiver_type = fact.receiver_type;
